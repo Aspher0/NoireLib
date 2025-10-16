@@ -4,4 +4,4 @@ TODO
 
 ## Modules
 
-- [Changelog Module](https://github.com/Aspher0/NoireLib/blob/master/NoireLib/ChangelogManager/README.md)
+- [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/ChangelogManager/README.md)

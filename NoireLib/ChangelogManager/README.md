@@ -26,7 +26,7 @@ The `NoireChangelogManager` is a module that manages and displays changelogs for
 ## Getting Started
 
 ***❗ We will assume you have already initialized NoireLib in your plugin, and know how to create/register modules.
-If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/NoireLib/blob/master/NoireLib/README.md).***
+If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md).***
 
 ### 1. Create Your First Changelog
 
