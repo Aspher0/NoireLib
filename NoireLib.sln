@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.14.36414.22
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoireLib", "NoireLib\NoireLib.csproj", "{C584B1E0-383B-17C9-7F43-DA227011B9E5}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NoireLib.Tests", "NoireLib.Tests\NoireLib.Tests.csproj", "{1CA063AD-983E-A165-155E-18F4B83D0041}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{C584B1E0-383B-17C9-7F43-DA227011B9E5}.Debug|x64.ActiveCfg = Debug|x64
+		{C584B1E0-383B-17C9-7F43-DA227011B9E5}.Debug|x64.Build.0 = Debug|x64
+		{C584B1E0-383B-17C9-7F43-DA227011B9E5}.Release|x64.ActiveCfg = Release|x64
+		{C584B1E0-383B-17C9-7F43-DA227011B9E5}.Release|x64.Build.0 = Release|x64
+		{1CA063AD-983E-A165-155E-18F4B83D0041}.Debug|x64.ActiveCfg = Debug|x64
+		{1CA063AD-983E-A165-155E-18F4B83D0041}.Debug|x64.Build.0 = Debug|x64
+		{1CA063AD-983E-A165-155E-18F4B83D0041}.Release|x64.ActiveCfg = Release|x64
+		{1CA063AD-983E-A165-155E-18F4B83D0041}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {B17E85B1-5F60-4440-9F9A-3DDE877E8CDF}
+	EndGlobalSection
+EndGlobal
