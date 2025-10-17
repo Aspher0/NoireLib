@@ -38,7 +38,7 @@ public class CharacterHelper
     /// <returns>The Content ID, or null if not found, or if not a player character.</returns>
     public unsafe static ulong? GetCIDFromPlayerCharacterAddress(nint charaAddress)
     {
-        if (charaAddress == nint.Zero)return null;
+        if (charaAddress == nint.Zero) return null;
 
         var castChar = TryGetCharacterFromAddress(charaAddress);
 
@@ -84,5 +84,16 @@ public class CharacterHelper
         var castChar = TryGetCharacterFromAddress(charaAddress);
         if (castChar == null) return false;
         return castChar.StatusFlags.HasFlag(StatusFlags.WeaponOut);
+    }
+
+    /// <summary>
+    /// Returns whether the character exists in the Object Table.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is in the Object Table, false otherwise.</returns>
+    public static unsafe bool IsCharacterInObjectTable(ICharacter chara)
+    {
+        if (chara == null) return false;
+        return NoireService.ObjectTable.Any(o => o.Address == (nint)GetCharacterAddress(chara));
     }
 }

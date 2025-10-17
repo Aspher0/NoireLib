@@ -116,7 +116,7 @@ public class NoireService
     public static IGameLifecycle GameLifecycle { get; private set; } = null!;
 
     [PluginService]
-    internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    public static ITextureProvider TextureProvider { get; private set; } = null!;
 
     [PluginService]
     public static IFlyTextGui FlyTextGui { get; private set; } = null!;
