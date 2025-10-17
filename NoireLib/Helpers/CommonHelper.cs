@@ -11,28 +11,6 @@ namespace NoireLib.Helpers;
 public class CommonHelper
 {
     /// <summary>
-    /// Executes the provided action only in DEBUG builds.
-    /// </summary>
-    /// <param name="action">The action to execute.</param>
-    public static void ExecuteIfDebug(Action action)
-    {
-        #if DEBUG
-        action();
-        #endif
-    }
-
-    /// <summary>
-    /// Executes the provided action only in RELEASE builds.
-    /// </summary>
-    /// <param name="action">The action to execute.</param>
-    public static void ExecuteIfRelease(Action action)
-    {
-        #if !DEBUG
-        action();
-        #endif
-    }
-
-    /// <summary>
     /// Executes the provided action safely, catching and logging any exceptions that occur.
     /// </summary>
     /// <param name="action">The action to execute.</param>
