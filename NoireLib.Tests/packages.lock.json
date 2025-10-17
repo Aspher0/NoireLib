@@ -136,10 +136,7 @@
         }
       },
       "noirelib": {
-        "type": "Project",
-        "dependencies": {
-          "DalamudPackager": "[13.1.0, )"
-        }
+        "type": "Project"
       }
     }
   }
