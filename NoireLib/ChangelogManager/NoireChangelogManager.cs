@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using static Dalamud.Interface.Windowing.Window;
 using NoireLib.Core.Modules;
+using NoireLib.Configuration;
 
 namespace NoireLib.Changelog;
 
@@ -222,13 +223,16 @@ public class NoireChangelogManager : NoireModuleBase
         if (latestVersion == null)
             return;
 
-        //var lastSeenVersion = NoireService.Configuration.LastSeenChangelogVersion;
-        Version? lastSeenVersion = null; // Temporary until configuration is implemented
+        var config = NoireConfigManager.GetConfig<ChangelogManagerConfig>();
+        if (config == null)
+            return;
+
+        var lastSeenVersion = config.LastSeenChangelogVersion;
 
         if (lastSeenVersion == null || lastSeenVersion != latestVersion)
         {
             ChangelogWindow.ShowChangelogForVersion(latestVersion);
-            //NoireService.Configuration.UpdateConfiguration(() => Service.Configuration.LastSeenChangelogVersion = latestVersion);
+            config.UpdateLastSeenVersion(latestVersion);
         }
     }
 
@@ -240,7 +244,21 @@ public class NoireChangelogManager : NoireModuleBase
     /// <returns></returns>
     public NoireChangelogManager ClearLastSeenVersion()
     {
-        //NoireService.Configuration.UpdateConfiguration(() => Service.Configuration.LastSeenChangelogVersion = null);
+        NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.ClearLastSeenVersion());
+        return this;
+    }
+
+    public NoireChangelogManager ForceLastSeenVersionToLatest()
+    {
+        var latestVersion = GetLatestVersion();
+        if (latestVersion != null)
+            NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.UpdateLastSeenVersion(latestVersion));
+        return this;
+    }
+
+    public NoireChangelogManager SetLastSeenVersion(Version version)
+    {
+        NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.UpdateLastSeenVersion(version));
         return this;
     }
 

@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <None Include="ChangelogManager\README.md" />
+    <None Include="Configuration\README.md" />
     <None Include="README.md" />
   </ItemGroup>
 
