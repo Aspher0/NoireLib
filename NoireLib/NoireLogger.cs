@@ -21,7 +21,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogInfo<T>(string message, string? prefix = null) where T : class
+    public static void LogInfo<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Info, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -52,7 +52,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogError<T>(string message, string? prefix = null) where T : class
+    public static void LogError<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -80,7 +80,7 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogError<T>(Exception ex, string message, string? prefix = null) where T : class
+    public static void LogError<T>(Exception ex, string message, string? prefix = null)
         => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, prefix), ex);
 
     /// <summary>
@@ -113,7 +113,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogFatal<T>(string message, string? prefix = null) where T : class
+    public static void LogFatal<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -141,7 +141,7 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogFatal<T>(Exception ex, string message, string? prefix = null) where T : class
+    public static void LogFatal<T>(Exception ex, string message, string? prefix = null)
         => WriteLog(LogLevel.Fatal, GetLogStringWithCaller<T>(message, prefix), ex);
 
     /// <summary>
@@ -174,7 +174,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogWarning<T>(string message, string? prefix = null) where T : class
+    public static void LogWarning<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Warning, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -205,7 +205,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogDebug<T>(string message, string? prefix = null) where T : class
+    public static void LogDebug<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Debug, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -236,7 +236,7 @@ public static class NoireLogger
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogVerbose<T>(string message, string? prefix = null) where T : class
+    public static void LogVerbose<T>(string message, string? prefix = null)
         => WriteLog(LogLevel.Verbose, GetLogStringWithCaller<T>(message, prefix));
 
     /// <summary>
@@ -280,31 +280,19 @@ public static class NoireLogger
         prefix = GetPrefix(prefix);
         var fullMessage = $"{prefix}{message}";
 
-        // Apply glow color if specified
         if (glowColor.HasValue)
-        {
             builder.AddUiForeground(glowColor.Value);
-        }
 
-        // Apply foreground color if specified
         if (foregroundColor.HasValue)
-        {
             builder.AddUiForeground(foregroundColor.Value);
-        }
 
         builder.AddText(fullMessage);
 
-        // Close foreground color if specified
         if (foregroundColor.HasValue)
-        {
             builder.AddUiForegroundOff();
-        }
 
-        // Close glow color if specified
         if (glowColor.HasValue)
-        {
             builder.AddUiForegroundOff();
-        }
 
         entry.Message = builder.Build();
 
@@ -330,31 +318,19 @@ public static class NoireLogger
         prefix = GetPrefix(prefix);
         var fullMessage = $"{prefix}{message}";
 
-        // Apply foreground color if specified
         if (foregroundColor.HasValue)
-        {
             builder.Add(new ColorPayload(foregroundColor.Value).AsRaw());
-        }
 
-        // Apply glow color if specified
         if (glowColor.HasValue)
-        {
             builder.Add(new GlowPayload(glowColor.Value).AsRaw());
-        }
 
         builder.AddText(fullMessage);
 
-        // Close glow color if specified
         if (glowColor.HasValue)
-        {
             builder.Add(new GlowEndPayload().AsRaw());
-        }
 
-        // Close foreground color if specified
         if (foregroundColor.HasValue)
-        {
             builder.Add(new ColorEndPayload().AsRaw());
-        }
 
         entry.Message = builder.Build();
 
@@ -460,7 +436,7 @@ public static class NoireLogger
     /// Gets a log string with caller type name.
     /// </summary>
     /// <returns>The formatted log string.</returns>
-    private static string GetLogStringWithCaller<T>(string message, string? prefix = null) where T : class
+    private static string GetLogStringWithCaller<T>(string message, string? prefix = null)
     {
         prefix = GetPrefix(prefix);
         var caller = typeof(T).Name;
