@@ -137,4 +137,7 @@ public class NoireService
 
     [PluginService]
     public static IContextMenu ContextMenu { get; private set; } = null!;
+
+    [PluginService]
+    public static ISeStringEvaluator SeStringEvaluator { get; private set; } = null!;
 }
