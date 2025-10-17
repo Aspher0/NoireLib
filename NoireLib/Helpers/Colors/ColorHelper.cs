@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 
-namespace NoireLib.Helpers;
+namespace NoireLib.Helpers.Colors;
 
 /// <summary>
 /// Helper class for converting different formats of colors including HEX, Vector3 and Vector4.

@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 
+namespace NoireLib.Internal;
+
 /// <summary>
 /// Internal extension methods for objects.
 /// </summary>
@@ -11,7 +13,7 @@ public static class ObjectExtensions
     /// <typeparam name="T">Type of the value.</typeparam>
     /// <param name="value">Value to check.</param>
     /// <returns>True if <paramref name="value"/> is null or equals default(T); otherwise false.</returns>
-    public static bool IsDefault<T>(this T value)
+    internal static bool IsDefault<T>(this T value)
     {
         if (value is null) return true;
         return EqualityComparer<T>.Default.Equals(value, default);

@@ -6,6 +6,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using System;
 using System.Collections.Generic;
+using NoireLib.Core.Modules;
 
 namespace NoireLib;
 
@@ -67,28 +68,28 @@ public class NoireService
     }
 
     [PluginService]
-    internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     [PluginService]
-    internal static IPluginLog PluginLog { get; private set; } = null!;
+    public static IPluginLog PluginLog { get; private set; } = null!;
     
     [PluginService]
-    internal static IClientState ClientState { get; private set; } = null!;
+    public static IClientState ClientState { get; private set; } = null!;
     
     [PluginService]
-    internal static IDataManager DataManager { get; private set; } = null!;
+    public static IDataManager DataManager { get; private set; } = null!;
     
     [PluginService]
-    internal static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
+    public static IGameInteropProvider GameInteropProvider { get; private set; } = null!;
     
     [PluginService]
-    internal static ISigScanner SigScanner { get; private set; } = null!;
+    public static ISigScanner SigScanner { get; private set; } = null!;
     
     [PluginService]
-    internal static IFramework Framework { get; private set; } = null!;
+    public static IFramework Framework { get; private set; } = null!;
     
     [PluginService]
-    internal static ITargetManager TargetManager { get; private set; } = null!;
+    public static ITargetManager TargetManager { get; private set; } = null!;
     
     [PluginService]
     public static IChatGui ChatGui { get; private set; } = null!;

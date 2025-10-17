@@ -9,9 +9,9 @@ using Dalamud.Game.Text.SeStringHandling;
 using System.Numerics;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 
-namespace NoireLib.ExtraPayloads;
+namespace NoireLib.Internal.Payloads;
 
-public abstract class CustomPayload : Payload
+internal abstract class CustomPayload : Payload
 {
     public RawPayload AsRaw()
     {
@@ -19,7 +19,7 @@ public abstract class CustomPayload : Payload
     }
 }
 
-public abstract class AbstractColorPayload : CustomPayload
+internal abstract class AbstractColorPayload : CustomPayload
 {
     public byte Red { get; set; }
     public byte Green { get; set; }
@@ -40,7 +40,7 @@ public abstract class AbstractColorPayload : CustomPayload
 
 }
 
-public abstract class AbstractColorEndPayload : CustomPayload
+internal abstract class AbstractColorEndPayload : CustomPayload
 {
     protected override byte[] EncodeImpl()
     {
@@ -57,7 +57,7 @@ public abstract class AbstractColorEndPayload : CustomPayload
 }
 
 
-public class ColorPayload : AbstractColorPayload
+internal class ColorPayload : AbstractColorPayload
 {
     public override byte ChunkType => 0x13;
 
@@ -76,14 +76,14 @@ public class ColorPayload : AbstractColorPayload
     }
 }
 
-public class ColorEndPayload : AbstractColorEndPayload
+internal class ColorEndPayload : AbstractColorEndPayload
 {
     public override byte ChunkType => 0x13;
 }
 
 
 
-public class GlowPayload : AbstractColorPayload
+internal class GlowPayload : AbstractColorPayload
 {
     public override byte ChunkType => 0x14;
 
@@ -102,7 +102,7 @@ public class GlowPayload : AbstractColorPayload
     }
 }
 
-public class GlowEndPayload : AbstractColorEndPayload
+internal class GlowEndPayload : AbstractColorEndPayload
 {
     public override byte ChunkType => 0x14;
 }

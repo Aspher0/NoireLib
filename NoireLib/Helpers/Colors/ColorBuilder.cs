@@ -1,7 +1,7 @@
 using System;
 using System.Numerics;
 
-namespace NoireLib.Helpers;
+namespace NoireLib.Helpers.Colors;
 
 /// <summary>
 /// Class for building colors from HEX strings, Vector3 and Vector4 values, then allowing access to all representations.

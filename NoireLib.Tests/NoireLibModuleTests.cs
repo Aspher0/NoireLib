@@ -1,7 +1,7 @@
 using FluentAssertions;
-using System;
 using System.Runtime.Versioning;
 using Xunit;
+using NoireLib.Core.Modules;
 
 namespace NoireLib.Tests;
 

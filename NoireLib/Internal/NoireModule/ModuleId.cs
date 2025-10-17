@@ -1,4 +1,4 @@
-namespace NoireLib;
+namespace NoireLib.Core.Modules;
 
 /// <summary>
 /// Internal class representing a module identifier.<br/>

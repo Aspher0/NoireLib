@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace NoireLib;
+namespace NoireLib.Core.Modules;
 
 /// <summary>
 /// Base class for modules within the NoireLib library.<br/>

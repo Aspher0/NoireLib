@@ -11,6 +11,44 @@ namespace NoireLib.Helpers;
 public class CommonHelper
 {
     /// <summary>
+    /// Executes the provided action only in DEBUG builds.
+    /// </summary>
+    /// <param name="action">The action to execute.</param>
+    public static void ExecuteIfDebug(Action action)
+    {
+        #if DEBUG
+        action();
+        #endif
+    }
+
+    /// <summary>
+    /// Executes the provided action only in RELEASE builds.
+    /// </summary>
+    /// <param name="action">The action to execute.</param>
+    public static void ExecuteIfRelease(Action action)
+    {
+        #if !DEBUG
+        action();
+        #endif
+    }
+
+    /// <summary>
+    /// Executes the provided action safely, catching and logging any exceptions that occur.
+    /// </summary>
+    /// <param name="action">The action to execute.</param>
+    public static void ExecuteSafely(Action action)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "An error occurred while executing a safe action.");
+        }
+    }
+
+    /// <summary>
     /// Generates a new GUID string with optional hyphen ("-") removal.
     /// </summary>
     /// <param name="removeHyphens">If true, removes hyphens from the GUID string.</param>

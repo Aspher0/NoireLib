@@ -3,6 +3,8 @@ using Dalamud.Utility;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using NoireLib.Core.Modules;
+using NoireLib.Internal;
 
 namespace NoireLib;
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using static Dalamud.Interface.Windowing.Window;
+using NoireLib.Core.Modules;
 
 namespace NoireLib.Changelog;
 

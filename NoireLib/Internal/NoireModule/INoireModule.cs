@@ -1,4 +1,4 @@
-namespace NoireLib;
+namespace NoireLib.Core.Modules;
 
 /// <summary>
 /// Interface for modules within the NoireLib library.
