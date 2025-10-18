@@ -16,6 +16,7 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     protected static readonly Vector4 Green = ColorHelper.HexToVector4("#1BCC18");
     protected static readonly Vector4 Orange = ColorHelper.HexToVector4("#FCC203");
     protected static readonly Vector4 Red = ColorHelper.HexToVector4("#E81313");
+    protected static readonly Vector4 LightRed = ColorHelper.HexToVector4("#E64040");
     protected static readonly Vector4 Blue = ColorHelper.HexToVector4("#4d8eff");
     protected static readonly Vector4 Grey = ColorHelper.HexToVector4("#B3B3B3");
     protected static readonly Vector4 DarkGrey = ColorHelper.HexToVector4("#262626");

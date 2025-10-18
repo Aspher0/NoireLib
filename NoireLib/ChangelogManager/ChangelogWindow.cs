@@ -120,7 +120,6 @@ public class ChangelogWindow : Window, IDisposable
         ImGui.Dummy(new Vector2(0, 3));
         DrawFooter();
     }
-
     private void DrawVersionSelector()
     {
         ImGui.Text("Select Version:");
@@ -154,9 +153,24 @@ public class ChangelogWindow : Window, IDisposable
 
             if (!string.IsNullOrWhiteSpace(currentChangelog.Title))
             {
-                ImGui.SameLine();
+                var availableWidth = ImGui.GetContentRegionAvail().X;
+
+                // Start on a new line if there's not enough space
+                if (availableWidth < 100f)
+                {
+                    ImGui.NewLine();
+                }
+                else
+                {
+                    ImGui.SameLine();
+                }
+
                 var titleColor = currentChangelog.TitleColor ?? new Vector4(1f, 1f, 1f, 1f);
-                ImGui.TextColored(titleColor, $"- {currentChangelog.Title}");
+                ImGui.PushStyleColor(ImGuiCol.Text, titleColor);
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
+                ImGui.TextWrapped($"- {currentChangelog.Title}");
+                ImGui.PopTextWrapPos();
+                ImGui.PopStyleColor();
             }
         }
     }
