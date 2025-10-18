@@ -96,4 +96,59 @@ public class CharacterHelper
         if (chara == null) return false;
         return NoireService.ObjectTable.Any(o => o.Address == (nint)GetCharacterAddress(chara));
     }
+
+    /// <summary>
+    /// Checks if the character is ground sitting.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is ground sitting, false otherwise.</returns>
+    public static unsafe bool IsCharacterGroundSitting(ICharacter chara)
+    {
+        var native = GetCharacterAddress(chara);
+        return (native->Mode == CharacterModes.EmoteLoop || native->Mode == CharacterModes.InPositionLoop) && native->ModeParam == 1;
+    }
+
+    /// <summary>
+    /// Checks if the character is chair sitting.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is chair sitting, false otherwise.</returns>
+    public static unsafe bool IsCharacterChairSitting(ICharacter chara)
+    {
+        var native = GetCharacterAddress(chara);
+        return (native->Mode == CharacterModes.EmoteLoop || native->Mode == CharacterModes.InPositionLoop) && native->ModeParam == 2;
+    }
+
+    /// <summary>
+    /// Checks if the character is sleeping.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is sleeping, false otherwise.</returns>
+    public static unsafe bool IsCharacterSleeping(ICharacter chara)
+    {
+        var native = GetCharacterAddress(chara);
+        return (native->Mode == CharacterModes.EmoteLoop || native->Mode == CharacterModes.InPositionLoop) && native->ModeParam == 3;
+    }
+
+    /// <summary>
+    /// Checks if the character is mounted.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is mounted, false otherwise.</returns>
+    public static unsafe bool IsCharacterMounted(ICharacter chara)
+    {
+        var native = GetCharacterAddress(chara);
+        return native->Mode == CharacterModes.Mounted;
+    }
+
+    /// <summary>
+    /// Checks if the character is riding pillion.
+    /// </summary>
+    /// <param name="chara">The character instance.</param>
+    /// <returns>True if the character is riding pillion, false otherwise.</returns>
+    public static unsafe bool IsCharacterRidingPillion(ICharacter chara)
+    {
+        var native = GetCharacterAddress(chara);
+        return native->Mode == CharacterModes.RidingPillion;
+    }
 }
