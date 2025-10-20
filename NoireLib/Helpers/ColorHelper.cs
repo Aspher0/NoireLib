@@ -1,12 +1,12 @@
 using System;
 using System.Numerics;
 
-namespace NoireLib.Helpers.Colors;
+namespace NoireLib.Helpers;
 
 /// <summary>
 /// Helper class for converting different formats of colors including HEX, Vector3 and Vector4.
 /// </summary>
-public class ColorHelper
+public static class ColorHelper
 {
     /// <summary>
     /// Converts a HEX color string to a Vector3 representing RGB values between 0 and 1.

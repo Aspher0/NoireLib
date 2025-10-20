@@ -1,6 +1,6 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
-using NoireLib.Helpers.Colors;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;

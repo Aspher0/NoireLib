@@ -9,7 +9,7 @@ namespace NoireLib.Helpers;
 /// <summary>
 /// Helper class for in-game character-related operations.
 /// </summary>
-public class CharacterHelper
+public static class CharacterHelper
 {
     /// <summary>
     /// Retrieves the memory address of the given character.

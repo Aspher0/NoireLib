@@ -5,6 +5,8 @@ using NoireLib.Internal.Payloads;
 using System;
 using System.Numerics;
 using NoireLib.Core.Modules;
+using NoireLib.Helpers;
+using NoireLib.Models;
 
 namespace NoireLib;
 
@@ -262,79 +264,126 @@ public static class NoireLogger
     #region PrintToChat
 
     /// <summary>
-    /// Prints a message to the in-game chat with optional color formatting.
+    /// Prints a message to the in-game chat with optional RGB color formatting.
     /// </summary>
+    /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <param name="foregroundColor">The foreground color of the message (optional).</param>
-    /// <param name="glowColor">The glow color of the message (optional, default null).</param>
-    public static void PrintToChat(string message, string? prefix = null, ushort? foregroundColor = null, ushort? glowColor = null)
+    /// <param name="sender">The sender of the message (optional).</param>
+    /// <param name="foregroundColor">The foreground RGB color of the message (Vector3 with values 0-1, optional).</param>
+    /// <param name="glowColor">The glow RGB color of the message (Vector3 with values 0-1, optional).</param>
+    private static void PrintToChatInternal(XivChatType chatType, string message, string? prefix = null, PlayerModel? sender = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
     {
         var entry = new XivChatEntry
         {
-            Type = XivChatType.Echo
+            Type = chatType,
         };
 
-        var builder = new SeStringBuilder();
+        if (sender != null)
+        {
+            var builderName = new SeStringBuilder();
+
+            if (foregroundColor.HasValue)
+                builderName.Add(new ColorPayload(foregroundColor.Value).AsRaw());
+
+            if (glowColor.HasValue)
+                builderName.Add(new GlowPayload(glowColor.Value).AsRaw());
+
+            // DO NOT add a player payload if the sender is the local player
+            // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world id
+            builderName.AddText(sender.FullName);
+
+            if (glowColor.HasValue)
+                builderName.Add(new GlowEndPayload().AsRaw());
+
+            if (foregroundColor.HasValue)
+                builderName.Add(new ColorEndPayload().AsRaw());
+
+            entry.Name = builderName.Build();
+        }
+
+        var builderText = new SeStringBuilder();
         
         prefix = GetPrefix(prefix);
         var fullMessage = $"{prefix}{message}";
 
-        if (glowColor.HasValue)
-            builder.AddUiForeground(glowColor.Value);
-
         if (foregroundColor.HasValue)
-            builder.AddUiForeground(foregroundColor.Value);
-
-        builder.AddText(fullMessage);
-
-        if (foregroundColor.HasValue)
-            builder.AddUiForegroundOff();
+            builderText.Add(new ColorPayload(foregroundColor.Value).AsRaw());
 
         if (glowColor.HasValue)
-            builder.AddUiForegroundOff();
+            builderText.Add(new GlowPayload(glowColor.Value).AsRaw());
 
-        entry.Message = builder.Build();
+        builderText.AddText(fullMessage);
+
+        if (glowColor.HasValue)
+            builderText.Add(new GlowEndPayload().AsRaw());
+
+        if (foregroundColor.HasValue)
+            builderText.Add(new ColorEndPayload().AsRaw());
+
+        entry.Message = builderText.Build();
 
         NoireService.ChatGui.Print(entry);
     }
 
+    /// <inheritdoc cref="PrintToChatInternal"/>
+    [Obsolete("Will get replaced later, use PrintToChat() instead.")]
+    public static void PrintToChatAdvanced(XivChatType chatType, string message, string? prefix = null, PlayerModel? sender = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    {
+        PrintToChatInternal(chatType, message, prefix, sender, foregroundColor, glowColor);
+    }
+
     /// <summary>
-    /// Prints a message to the in-game chat with optional RGB color formatting.
+    /// Prints a message to the in-game chat as an echo message.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <param name="foregroundColor">The foreground RGB color of the message (Vector3 with values 0-1, optional).</param>
-    /// <param name="glowColor">The glow RGB color of the message (Vector3 with values 0-1, optional).</param>
-    public static void PrintToChatRGB(string message, string? prefix = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    public static void PrintToChat(string message, string? prefix = null)
     {
-        var entry = new XivChatEntry
-        {
-            Type = XivChatType.Echo
-        };
+        PrintToChatInternal(XivChatType.Echo, message, prefix);
+    }
 
-        var builder = new SeStringBuilder();
-        
-        prefix = GetPrefix(prefix);
-        var fullMessage = $"{prefix}{message}";
+    /// <summary>
+    /// Prints a message to the in-game chat with specified chat type.
+    /// </summary>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    public static void PrintToChat(XivChatType chatType, string message, string? prefix = null)
+    {
+        PrintToChatInternal(chatType, message, prefix);
+    }
 
-        if (foregroundColor.HasValue)
-            builder.Add(new ColorPayload(foregroundColor.Value).AsRaw());
+    /// <summary>
+    /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.<br/>
+    /// For using Vector4 colors, use <see cref="PrintToChat(XivChatType, string, Vector4, Vector4?, string?)"/>.
+    /// </summary>
+    /// <seealso cref="PrintToChat(XivChatType, string, Vector4, Vector4, string?)"/>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="foregroundColor">The foreground RGB color of the message.</param>
+    /// <param name="glowColor">The glow RGB color of the message.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    public static void PrintToChat(XivChatType chatType, string message, Vector3 foregroundColor, Vector3? glowColor = null, string? prefix = null)
+    {
+        PrintToChatInternal(chatType, message, prefix, null, foregroundColor, glowColor);
+    }
 
-        if (glowColor.HasValue)
-            builder.Add(new GlowPayload(glowColor.Value).AsRaw());
-
-        builder.AddText(fullMessage);
-
-        if (glowColor.HasValue)
-            builder.Add(new GlowEndPayload().AsRaw());
-
-        if (foregroundColor.HasValue)
-            builder.Add(new ColorEndPayload().AsRaw());
-
-        entry.Message = builder.Build();
-
-        NoireService.ChatGui.Print(entry);
+    /// <summary>
+    /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector4 values.<br/>
+    /// This method simply drops the Alpha channel from the Vector4 colors.<br/>
+    /// The result will be the same as with <see cref="PrintToChat(XivChatType, string, Vector3, Vector3?, string?)"/>.
+    /// </summary>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="foregroundColor">The foreground RGBA color of the message.</param>
+    /// <param name="glowColor"></param>
+    /// <param name="prefix"></param>
+    public static void PrintToChat(XivChatType chatType, string message, Vector4 foregroundColor, Vector4? glowColor = null, string? prefix = null)
+    {
+        Vector3 foregroundColorVector3 = ColorHelper.Vector4ToVector3(foregroundColor);
+        Vector3? glowColorVector3 = glowColor.HasValue ? ColorHelper.Vector4ToVector3(glowColor.Value) : null;
+        PrintToChatInternal(chatType, message, prefix, null, foregroundColorVector3, glowColorVector3);
     }
 
     #endregion

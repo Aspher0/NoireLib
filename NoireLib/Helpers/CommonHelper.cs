@@ -8,7 +8,7 @@ namespace NoireLib.Helpers;
 /// <summary>
 /// Helper class with common utility methods.
 /// </summary>
-public class CommonHelper
+public static class CommonHelper
 {
     /// <summary>
     /// Executes the provided action safely, catching and logging any exceptions that occur.

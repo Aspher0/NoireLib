@@ -1,8 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/13.1.0">
   <PropertyGroup>
-    <Version>1.0.0.0</Version>
+    <Version>1.0.1.0</Version>
     <Use_DalamudPackager>false</Use_DalamudPackager>
+    <Title>NoireLib - A library for Dalamud Plugins</Title>
+    <Authors>Aspher0</Authors>
+    <Description>A flexible library for creating Dalamud Plugins.</Description>
+    <Copyright>© 2025 Aspher0</Copyright>
+    <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>NoireLib;Dalamud;Plugin;Dalamud Plugin;Aspher0;Plugins;Library;Plugin Library</PackageTags>
+    <NeutralLanguage>en</NeutralLanguage>
+    <PackageId>NoireLib</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
   </PropertyGroup>
     
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -19,6 +31,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Folder Include="EventManager\" />
     <Folder Include="HistoryLogger\" />
   </ItemGroup>
 </Project>

@@ -9,7 +9,7 @@ using System;
 
 namespace NoireLib.Helpers;
 
-public class ChatHelper
+public static class ChatHelper
 {
     /// <summary>
     /// Send a given message to the chat box. <b>This can send chat to the server.</b><br/>
