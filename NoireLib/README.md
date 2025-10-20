@@ -23,7 +23,7 @@ public sealed class Plugin : IDalamudPlugin
 }
 ```
 
-Once initialized, you can fully benefit of the library.
+Once initialized, you can fully benefit from the library.
 
 NoireLib also comes with Modules you can use.<br/>
 Those modules are all-in-one autonomous packages you can easily add and configure.<br/>
