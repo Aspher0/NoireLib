@@ -32,8 +32,8 @@ As an example, the [Changelog Module](https://github.com/Aspher0/NoireLib/blob/m
 The examples below show different ways to add modules to your project, and then retrieve them later. For these examples, I will be using the `NoireChangelogManager` module.
 
 The easiest way to add a module is with the `NoireLibMain.AddModule<T>(string? moduleId)` method, where T is the module you want to add.<br/>
-This method is useful since it will store the instance of the module for you to retrieve later, without having to manually store it anywhere.<br/>
-You can also add multiple modules of the same type if you want that.
+This method is useful since it will store the instance of the module for you to retrieve later, without having to manually store it anywhere. It will also make it so that disposing NoireLib will also dispose any module instance automatically for you.<br/>
+Additionnaly, you can add multiple modules of the same type if you want multiple instances for debugging or any other needs.
 
 ```csharp
 // Add the module with an ID:
@@ -67,9 +67,10 @@ var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>("ChangelogM
 ```
 
 Now, of course, you do not need to use `NoireLibMain` to add modules.<br/>
-You can also just call the module's constructor and store it yourself somewhere.<br/>
+You can also just call the module's constructor and store it yourself somewhere, but then ***do not forget to dispose the module***, since it won't be done automatically this way.<br/>
 For a list of modules, see the [Modules Section](#modules)
 
 ## Modules
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/ChangelogManager/README.md)
+- [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/EventBus/README.md)
