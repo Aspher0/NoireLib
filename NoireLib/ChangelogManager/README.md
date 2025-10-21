@@ -8,8 +8,10 @@ You are reading the documentation for the `NoireChangelogManager` module.
 - [Configuration](#configuration)
 - [Creating Changelogs](#creating-changelogs)
 - [Displaying the Changelog Window](#displaying-the-changelog-window)
+- [EventBus Integration](#eventbus-integration)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
+- [See Also](#see-also)
 
 ---
 
@@ -20,6 +22,7 @@ The `NoireChangelogManager` is a module that manages and displays changelogs for
 - **Automatic display** of new versions to users
 - **Version management** with ordered display (newest to oldest)
 - **Rich formatting** with colors, icons, headers, separators, and buttons
+- **EventBus integration** for reacting to changelog actions
 
 ---
 
@@ -87,11 +90,14 @@ That's it! You have created your first changelog.
 You can configure the most important options of the module with the module's constructor:
 
 ```csharp
+var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Changelog"); // Optional
+
 var changelogManager = new NoireChangelogManager(
     active: true,                               // Enable/disable the module
     moduleId: "MyChangelog",                    // Optional identifier
     shouldAutomaticallyShowChangelog: true,     // Auto-show on new versions
-    versions: null                              // Optional pre-loaded list of versions, if null, it loads from your assembly
+    versions: null,                             // Optional pre-loaded list of versions, if null, it loads from your assembly
+    eventBus: eventBus                          // Optional EventBus for publishing events
 );
 ```
 
@@ -100,6 +106,7 @@ Additionnaly, you can modify the following properties after having created the m
 - `ShouldAutomaticallyShowChangelog`: If true, the changelog window will automatically open when a new version is detected. Default: `false`.
 - `WindowName`: Optional custom name for the changelog window. Default: `"Changelog"`.
 - `TitleBarButtons`: Optional list of buttons to add to the title bar. Default: `empty list`. Use methods to modify.
+- `EventBus`: Optional EventBus instance for publishing changelog events. Default: `null`.
 
 You can also use the provided methods to modify the module configuration after creation (see [Property Configuration](#property-configuration)).
 
@@ -289,6 +296,44 @@ When `ShouldAutomaticallyShowChangelog` is enabled, the window automatically ope
 
 ---
 
+## EventBus Integration
+
+The `NoireChangelogManager` can publish events to a `NoireEventBus` for all important changelog actions.<br/>
+This allows you to react to user interactions with the changelog.
+
+### Quick Example
+
+```csharp
+// Create EventBus
+var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Changelog");
+
+// Subscribe to changelog events **before** creating the ChangelogManager, since it will be showing the window on initialization
+eventBus?.Subscribe<ChangelogWindowOpenedEvent>(evt =>
+{
+    NoireLogger.LogInfo($"Changelog opened for version {evt.Version}");
+}, owner: this);
+
+// Create ChangelogManager with EventBus
+var changelogManager = NoireLibMain.AddModule(new NoireChangelogManager(
+    active: true,
+    shouldAutomaticallyShowChangelog: true,
+    eventBus: eventBus
+));
+```
+
+### Available Events
+
+- `ChangelogWindowOpenedEvent` - Window opened
+- `ChangelogWindowClosedEvent` - Window closed
+- `ChangelogVersionChangedEvent` - User changed version
+- `ChangelogVersionAddedEvent` - Version added
+- `ChangelogVersionRemovedEvent` - Version removed
+- `ChangelogVersionsClearedEvent` - All versions cleared
+- `ChangelogLastSeenVersionUpdatedEvent` - Last seen version updated
+- `ChangelogLastSeenVersionClearedEvent` - Last seen version cleared
+
+---
+
 ## Advanced Features
 
 ### Title Bar Buttons
@@ -378,3 +423,15 @@ changelogManager?.ClearVersions();
 - Ensure the module is active (`IsActive = true`).
 - Check that a new version is detected (compare with last seen version).
 - Additionnaly, you can manually call `ClearLastSeenVersion()`, set `ShouldAutomaticallyShowChangelog = true`, and check if the changelog window appears the next time the module is initialized.
+
+### EventBus events not firing
+- Ensure an `EventBus` is provided to the ChangelogManager (either in constructor or via property).
+- Check that the EventBus is active and has subscribers.
+- Enable EventBus logging with `enableLogging: true` for debugging.
+
+---
+
+## See Also
+
+- [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
+- [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/EventBus/README.md)

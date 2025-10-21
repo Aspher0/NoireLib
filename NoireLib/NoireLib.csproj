@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/13.1.0">
   <PropertyGroup>
-    <Version>1.0.1.0</Version>
+    <Version>1.1.0.0</Version>
     <Use_DalamudPackager>false</Use_DalamudPackager>
     <Title>NoireLib - A library for Dalamud Plugins</Title>
     <Authors>Aspher0</Authors>
@@ -27,6 +27,7 @@
   <ItemGroup>
     <None Include="ChangelogManager\README.md" />
     <None Include="Configuration\README.md" />
+    <None Include="eventbus\README.md" />
     <None Include="README.md" />
   </ItemGroup>
 

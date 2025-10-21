@@ -290,7 +290,7 @@ public static class NoireLogger
                 builderName.Add(new GlowPayload(glowColor.Value).AsRaw());
 
             // DO NOT add a player payload if the sender is the local player
-            // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world id
+            // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world ID
             builderName.AddText(sender.FullName);
 
             if (glowColor.HasValue)

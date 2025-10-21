@@ -68,6 +68,26 @@ var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>("ChangelogM
 
 Now, of course, you do not need to use `NoireLibMain` to add modules.<br/>
 You can also just call the module's constructor and store it yourself somewhere, but then ***do not forget to dispose the module***, since it won't be done automatically this way.<br/>
+
+Once your module is added, you can access it and use it as you would do with any other object.<br/>
+You can then set the module active or inactive with the `SetActive(bool active)` method, and check if it's active with the `IsActive` property.
+
+```csharp
+// Activate the module:
+changelogManager.SetActive(true);
+changelogManager.Activate(); // Alternative
+changelogManager.Deactivate(); // Alternative
+
+// Check if the module is active:
+bool isActive = changelogManager.IsActive;
+
+// Or with NoireLibMain:
+isActive = NoireLibMain.IsModuleActive<NoireChangelogManager>("ChangelogModule");
+```
+
+When active, the module functions normally.<br/>
+When inactive, the module will not do anything until reactivated.
+
 For a list of modules, see the [Modules Section](#modules)
 
 ## Modules

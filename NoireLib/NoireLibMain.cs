@@ -94,7 +94,7 @@ public class NoireLibMain
     /// Removes a module from your project.
     /// </summary>
     /// <typeparam name="T">The type of the module to remove.</typeparam>
-    /// <param name="moduleId">The optional id of the module to remove.</param>
+    /// <param name="moduleId">The optional ID of the module to remove.</param>
     /// <returns>True if successfully removed, otherwise false if module not found or if module failed to dispose.</returns>
     public static bool RemoveModule<T>(string? moduleId = null) where T : class, INoireModule
     {
@@ -177,7 +177,7 @@ public class NoireLibMain
     /// See <see cref="AddModule"/> or <see cref="AddModules"/>.
     /// </summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
-    /// <param name="moduleId">The optional id of the module to check.</param>
+    /// <param name="moduleId">The optional ID of the module to check.</param>
     /// <returns>True if the module is added, otherwise false.</returns>
     public static bool IsModuleAdded<T>(string? moduleId = null) where T : class, INoireModule
     {
@@ -189,7 +189,7 @@ public class NoireLibMain
     /// See <see cref="INoireModule.IsActive"/>.
     /// </summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
-    /// <param name="moduleId">The optional id of the module to check.</param>
+    /// <param name="moduleId">The optional ID of the module to check.</param>
     /// <returns>True if the module is added and active, otherwise false.</returns>
     public static bool IsModuleActive<T>(string? moduleId = null) where T : class, INoireModule
     {
@@ -198,13 +198,13 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Tries to retrieve an instance of an added module by its type, module id and/or index.<br/>
+    /// Tries to retrieve an instance of an added module by its type, module ID and/or index.<br/>
     /// </summary>
     /// <typeparam name="T">The type of the module to retrieve.</typeparam>
-    /// <param name="moduleId">The optional id of the module to retrieve.</param>
+    /// <param name="moduleId">The optional ID of the module to retrieve.</param>
     /// <param name="index">
     /// The zero-based index of the instance to retrieve in the list.<br/>
-    /// If <paramref name="moduleId"/> is provided, the index will be applied only to the instances with the specified id.
+    /// If <paramref name="moduleId"/> is provided, the index will be applied only to the instances with the specified ID.
     /// </param>
     /// <returns>
     /// The n-th (<paramref name="index"/>) instance of the module if added and found, otherwise null if the module couldn't be found or if the module wasn't added to your project.<br/>

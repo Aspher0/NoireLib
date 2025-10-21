@@ -16,6 +16,7 @@ public class ChangelogWindow : Window, IDisposable
 {
     private NoireChangelogManager ChangelogManager { get; init; }
     private Version? selectedVersion = null;
+    private Version? previousSelectedVersion = null;
     private ChangelogVersion? currentChangelog = null;
     private Version[] availableVersions = [];
 
@@ -103,14 +104,25 @@ public class ChangelogWindow : Window, IDisposable
             selectedVersion = availableVersions[0];
 
         currentChangelog = ChangelogManager.GetVersion(selectedVersion);
+        previousSelectedVersion = selectedVersion;
 
         IsOpen = true;
+        
+        // Notify manager that window was opened
+        ChangelogManager.OnWindowOpened(selectedVersion);
     }
 
     /// <summary>
     /// Closes the changelog window.
     /// </summary>
-    public void CloseWindow() => IsOpen = false;
+    public void CloseWindow()
+    {
+        if (IsOpen)
+        {
+            IsOpen = false;
+            ChangelogManager.OnWindowClosed();
+        }
+    }
 
     public override void Draw()
     {
@@ -120,6 +132,7 @@ public class ChangelogWindow : Window, IDisposable
         ImGui.Dummy(new Vector2(0, 3));
         DrawFooter();
     }
+    
     private void DrawVersionSelector()
     {
         ImGui.Text("Select Version:");
@@ -135,8 +148,16 @@ public class ChangelogWindow : Window, IDisposable
                 var versionString = version.ToString(4);
                 if (ImGui.Selectable($"{versionString}##version_{versionString}", isSelected))
                 {
+                    var oldVersion = selectedVersion;
                     selectedVersion = version;
                     currentChangelog = ChangelogManager.GetVersion(selectedVersion);
+                    
+                    // Notify manager that version changed
+                    if (oldVersion != selectedVersion)
+                    {
+                        ChangelogManager.OnVersionChanged(oldVersion, selectedVersion);
+                        previousSelectedVersion = selectedVersion;
+                    }
                 }
 
                 if (isSelected)
@@ -357,7 +378,7 @@ public class ChangelogWindow : Window, IDisposable
         ImGui.SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
         
         if (ImGui.Button("Close", new Vector2(buttonWidth, 0)))
-            IsOpen = false;
+            CloseWindow();
     }
 
     public void Dispose() { }
