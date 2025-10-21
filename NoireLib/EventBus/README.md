@@ -672,4 +672,4 @@ public class Plugin : IDalamudPlugin
 ## See Also
 
 - [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
-- [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/EventBus/README.md)
+- [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/ChangelogManager/README.md)
