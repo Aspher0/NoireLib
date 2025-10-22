@@ -24,47 +24,61 @@ public class NoireEventBus : NoireModuleBase
     /// </summary>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="moduleId">Optional module ID for multiple event bus instances.</param>
-    /// <param name="enableLogging">Whether to log event publications and subscriptions.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="exceptionHandling">How to handle exceptions thrown by event handlers.</param>
     public NoireEventBus(
         bool active = true,
         string? moduleId = null,
-        bool enableLogging = false,
-        EventExceptionMode exceptionHandling = EventExceptionMode.LogAndContinue) : base(active, moduleId)
-    {
-        EnableLogging = enableLogging;
-        ExceptionHandling = exceptionHandling;
-    }
+        bool enableLogging = true,
+        EventExceptionMode exceptionHandling = EventExceptionMode.LogAndContinue) : base(active, moduleId, enableLogging, exceptionHandling) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
     /// Only used for internal module management.
     /// </summary>
-    public NoireEventBus(ModuleId moduleId, bool active = true) : base(moduleId, active) { }
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    public NoireEventBus(ModuleId? moduleId = null, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
-    protected override void InitializeModule()
+    protected override void InitializeModule(params object?[] args)
     {
-        NoireLogger.LogInfo(this, "EventBus module initialized.");
+        if (args.Length > 0 && args[0] is EventExceptionMode exceptionHandling)
+            ExceptionHandling = exceptionHandling;
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "EventBus module initialized.");
     }
 
     protected override void OnActivated()
     {
-        NoireLogger.LogInfo(this, "EventBus module activated.");
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "EventBus module activated.");
     }
 
     protected override void OnDeactivated()
     {
-        NoireLogger.LogInfo(this, "EventBus module deactivated.");
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "EventBus module deactivated.");
     }
 
 
 
     /// <summary>
-    /// Defines whether to log event publications and subscriptions.
+    /// Defines how exceptions thrown by event handlers are handled.
     /// </summary>
-    public bool EnableLogging { get; set; }
-    public EventExceptionMode ExceptionHandling { get; set; }
+    public EventExceptionMode ExceptionHandling { get; set; } = EventExceptionMode.LogAndContinue;
 
+    /// <summary>
+    /// Sets how exceptions thrown by event handlers are handled.
+    /// </summary>
+    /// <param name="mode">The exception handling mode.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireEventBus SetExceptionHandling(EventExceptionMode mode)
+    {
+        ExceptionHandling = mode;
+        return this;
+    }
 
 
     /// <summary>
@@ -75,7 +89,7 @@ public class NoireEventBus : NoireModuleBase
     /// <param name="priority">The priority of this handler (higher values execute first).</param>
     /// <param name="filter">Optional filter to conditionally invoke the handler.</param>
     /// <param name="owner">Optional owner object for tracking subscriptions.</param>
-    /// <returns>A subscription token that can be used to unsubscribe.</returns>
+    /// <returns>An <see cref="EventSubscriptionToken"/> that can be used to unsubscribe.</returns>
     public EventSubscriptionToken Subscribe<TEvent>(
         Action<TEvent> handler,
         int priority = 0,
@@ -124,7 +138,7 @@ public class NoireEventBus : NoireModuleBase
     /// <param name="priority">The priority of this handler (higher values execute first).</param>
     /// <param name="filter">Optional filter to conditionally invoke the handler.</param>
     /// <param name="owner">Optional owner object for tracking subscriptions.</param>
-    /// <returns>A subscription token that can be used to unsubscribe.</returns>
+    /// <returns>An <see cref="EventSubscriptionToken"/> that can be used to unsubscribe.</returns>
     public EventSubscriptionToken SubscribeAsync<TEvent>(
         Func<TEvent, Task> handler,
         int priority = 0,
@@ -170,13 +184,14 @@ public class NoireEventBus : NoireModuleBase
     /// </summary>
     /// <typeparam name="TEvent">The event type.</typeparam>
     /// <param name="eventData">The event data to publish.</param>
-    public void Publish<TEvent>(TEvent eventData)
+    /// <returns>The module instance for chaining.</returns>
+    public NoireEventBus Publish<TEvent>(TEvent eventData)
     {
         if (!IsActive)
         {
             if (EnableLogging)
                 NoireLogger.LogWarning(this, $"Cannot publish {typeof(TEvent).Name} - EventBus is not active.");
-            return;
+            return this;
         }
 
         var eventType = typeof(TEvent);
@@ -188,7 +203,7 @@ public class NoireEventBus : NoireModuleBase
             {
                 if (EnableLogging)
                     NoireLogger.LogVerbose(this, $"Published {eventType.Name} with no subscribers.");
-                return;
+                return this;
             }
 
             handlers = handlers.ToList(); // Copy to avoid modification during iteration
@@ -229,6 +244,8 @@ public class NoireEventBus : NoireModuleBase
                 HandleException(ex, eventType);
             }
         }
+
+        return this;
     }
 
     /// <summary>
@@ -236,6 +253,7 @@ public class NoireEventBus : NoireModuleBase
     /// </summary>
     /// <typeparam name="TEvent">The event type.</typeparam>
     /// <param name="eventData">The event data to publish.</param>
+    /// <returns>A task representing the asynchronous operation.</returns>
     public async Task PublishAsync<TEvent>(TEvent eventData)
     {
         if (!IsActive)
@@ -332,6 +350,7 @@ public class NoireEventBus : NoireModuleBase
     /// <summary>
     /// Unsubscribes the first handler found for the specified event type and owner.
     /// </summary>
+    /// <returns>True if a subscription was found and removed.</returns>
     public bool UnsubscribeFirst<TEvent>(object? owner = null)
     {
         lock (subscriptionLock)
@@ -419,7 +438,8 @@ public class NoireEventBus : NoireModuleBase
     /// <summary>
     /// Clears all event subscriptions.
     /// </summary>
-    public void ClearAllSubscriptions()
+    /// <returns>The module instance for chaining.</returns>
+    public NoireEventBus ClearAllSubscriptions()
     {
         lock (subscriptionLock)
         {
@@ -429,11 +449,14 @@ public class NoireEventBus : NoireModuleBase
             if (EnableLogging)
                 NoireLogger.LogInfo(this, $"Cleared {totalCount} subscription(s).");
         }
+
+        return this;
     }
 
     /// <summary>
     /// Gets statistics about the event bus.
     /// </summary>
+    /// <returns>An <see cref="EventBusStatistics"/> object containing statistics.</returns>
     public EventBusStatistics GetStatistics()
     {
         lock (subscriptionLock)
@@ -453,6 +476,7 @@ public class NoireEventBus : NoireModuleBase
     /// <summary>
     /// Gets the number of subscribers for a specific event type.
     /// </summary>
+    /// <returns>The number of subscribers for the specified event type.</returns>
     public int GetSubscriberCount<TEvent>()
     {
         lock (subscriptionLock)
@@ -482,12 +506,12 @@ public class NoireEventBus : NoireModuleBase
 
     public override void Dispose()
     {
+        ClearAllSubscriptions();
+
         if (EnableLogging)
         {
             var stats = GetStatistics();
             NoireLogger.LogInfo(this, $"EventBus disposed. Published: {stats.TotalEventsPublished}, Exceptions: {stats.TotalExceptionsCaught}");
         }
-
-        ClearAllSubscriptions();
     }
 }

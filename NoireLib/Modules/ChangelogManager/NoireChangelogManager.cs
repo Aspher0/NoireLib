@@ -19,50 +19,55 @@ public class NoireChangelogManager : NoireModuleBase
 
     private readonly Dictionary<Version, ChangelogVersion> changelogs = new();
 
-    public NoireEventBus? EventBus { get; set; }
+    public NoireEventBus? EventBus { get; set; } = null;
 
     public NoireChangelogManager() : base() { }
 
     /// <summary>
     /// Creates a new instance of the <see cref="NoireChangelogManager"/> module.
     /// </summary>
-    /// <param name="active">True to activate the module upon creation; otherwise, false.</param>
+    /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="moduleId">The optional module identifier.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="shouldAutomaticallyShowChangelog">Defines whether the changelog window should automatically show when a new version is detected.</param>
     /// <param name="versions">A list of changelog versions to initialize the manager with.</param>
     /// <param name="eventBus">Optional EventBus instance to publish changelog events. If null, no event will be published.</param>
     public NoireChangelogManager(
         bool active = true,
         string? moduleId = null,
+        bool enableLogging = true,
         bool shouldAutomaticallyShowChangelog = false,
         List<ChangelogVersion>? versions = null,
-        NoireEventBus? eventBus = null) : base(active, moduleId)
-    {
-        EventBus = eventBus;
-        ShouldAutomaticallyShowChangelog = shouldAutomaticallyShowChangelog;
-        
-        if (versions != null)
-        {
-            ClearVersions();
-            AddVersions(versions);
-        }
-    }
+        NoireEventBus? eventBus = null) : base(active, moduleId, enableLogging, shouldAutomaticallyShowChangelog, versions, eventBus) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
     /// Only used for internal module management.
     /// </summary>
-    public NoireChangelogManager(ModuleId moduleId, bool active = true) : base(moduleId, active) { }
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    public NoireChangelogManager(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
-    protected override void InitializeModule()
+    protected override void InitializeModule(params object?[] args)
     {
+        if (args.Length > 0 && args[0] is bool autoShow)
+            shouldAutomaticallyShowChangelog = autoShow;
+
+        if (args.Length > 1 && args[1] is List<ChangelogVersion> versions)
+            AddVersions(versions);
+
+        if (args.Length > 2 && args[2] is NoireEventBus eventBus)
+            EventBus = eventBus;
+
         ChangelogWindow = new ChangelogWindow(this);
         NoireService.NoireWindowSystem.AddWindow(ChangelogWindow);
 
         if (changelogs.Count == 0)
             LoadVersionsFromAssembly();
 
-        NoireLogger.LogInfo(this, $"Changelog Manager initialized.");
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, $"Changelog Manager initialized.");
     }
 
     protected override void OnActivated()
@@ -70,7 +75,8 @@ public class NoireChangelogManager : NoireModuleBase
         if (ShouldAutomaticallyShowChangelog)
             AutomaticallyCheckChangelogAndShowIfNewVersion();
 
-        NoireLogger.LogInfo(this, $"Changelog Manager activated.");
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, $"Changelog Manager activated.");
     }
 
     protected override void OnDeactivated()
@@ -78,7 +84,8 @@ public class NoireChangelogManager : NoireModuleBase
         if (ChangelogWindow.IsOpen)
             ChangelogWindow.IsOpen = false;
 
-        NoireLogger.LogInfo(this, $"Changelog Manager deactivated.");
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, $"Changelog Manager deactivated.");
     }
 
 
@@ -451,7 +458,8 @@ public class NoireChangelogManager : NoireModuleBase
 
             if (assembly == null)
             {
-                NoireLogger.LogError(this, "NoireLib was not initialized. Please, initialize NoireLib in your Plugin constructor.");
+                if (EnableLogging)
+                    NoireLogger.LogError(this, "NoireLib was not initialized. Please, initialize NoireLib in your Plugin constructor.");
                 return;
             }
 
@@ -474,13 +482,15 @@ public class NoireChangelogManager : NoireModuleBase
                 }
                 catch (Exception ex)
                 {
-                    NoireLogger.LogError(this, ex, $"Failed to load changelog version from type {type.Name}");
+                    if (EnableLogging)
+                        NoireLogger.LogError(this, ex, $"Failed to load changelog version from type {type.Name}");
                 }
             }
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(this, ex, $"Failed to load changelog versions from assembly.");
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, $"Failed to load changelog versions from assembly.");
         }
     }
 
@@ -488,5 +498,8 @@ public class NoireChangelogManager : NoireModuleBase
     {
         NoireService.NoireWindowSystem.RemoveWindow(ChangelogWindow);
         ChangelogWindow.Dispose();
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Changelog Manager disposed.");
     }
 }

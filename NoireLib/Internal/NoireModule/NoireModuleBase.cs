@@ -12,15 +12,40 @@ public abstract class NoireModuleBase : INoireModule
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();
     private static readonly object CounterLock = new();
 
+    /// <summary>
+    /// Defines whether the module is currently active.
+    /// </summary>
     public bool IsActive { get; set; } = false;
+
+    /// <summary>
+    /// The module ID, can be null.
+    /// </summary>
     public string? ModuleId { get; set; } = null;
+
+    /// <summary>
+    /// The instance counter for this specific module instance.<br/>
+    /// Used internally to differentiate between multiple instances of the same module type and ID.
+    /// </summary>
     public int InstanceCounter { get; private set; }
 
-    public NoireModuleBase(bool active = false, string? moduleId = null)
+    /// <summary>
+    /// Defines whether to log this module's actions.
+    /// </summary>
+    public bool EnableLogging { get; set; } = true;
+
+    /// <summary>
+    /// Constructor for the module base class.
+    /// </summary>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="args">Arguments for module initialization.</param>
+    public NoireModuleBase(bool active = true, string? moduleId = null, bool enableLogging = true, params object?[] args)
     {
         ModuleId = moduleId;
         InstanceCounter = GetNextInstanceCounter();
-        InitializeModule();
+        EnableLogging = enableLogging;
+        InitializeModule(args);
         SetActive(active);
     }
 
@@ -30,13 +55,31 @@ public abstract class NoireModuleBase : INoireModule
     /// </summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
-    public NoireModuleBase(ModuleId moduleId, bool active = false)
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    public NoireModuleBase(ModuleId? moduleId = null, bool active = true, bool enableLogging = true)
     {
         ModuleId = moduleId?.Id;
         InstanceCounter = GetNextInstanceCounter();
+        EnableLogging = enableLogging;
         InitializeModule();
         SetActive(active);
     }
+
+    /// <summary>
+    /// Initializes the module. Called in the constructor.
+    /// </summary>
+    /// <param name="args">Arguments for module initialization.</param>
+    protected abstract void InitializeModule(params object?[] args);
+
+    /// <summary>
+    /// Called when the module switches from <see cref="IsActive"/> false to true, hence when activated.
+    /// </summary>
+    protected abstract void OnActivated();
+
+    /// <summary>
+    /// Called when the module switches from <see cref="IsActive"/> true to false, hence when deactivated.
+    /// </summary>
+    protected abstract void OnDeactivated();
 
     /// <summary>
     /// Gets the next instance counter for this specific module type and ID combination.<br/>
@@ -70,19 +113,14 @@ public abstract class NoireModuleBase : INoireModule
     }
 
     /// <summary>
-    /// Initializes the module. Called in the constructor.
+    /// Sets whether to log this module's actions.
     /// </summary>
-    protected abstract void InitializeModule();
-
-    /// <summary>
-    /// Called when the module switches from <see cref="IsActive"/> false to true, hence when activated.
-    /// </summary>
-    protected abstract void OnActivated();
-
-    /// <summary>
-    /// Called when the module switches from <see cref="IsActive"/> true to false, hence when deactivated.
-    /// </summary>
-    protected abstract void OnDeactivated();
+    /// <param name="enableLogging">Whether to enable logging.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public virtual void SetEnableLogging(bool enableLogging)
+    {
+        EnableLogging = enableLogging;
+    }
 
     /// <summary>
     /// Sets the active state of the module.

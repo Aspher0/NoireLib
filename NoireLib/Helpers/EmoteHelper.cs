@@ -12,14 +12,18 @@ public static class EmoteHelper
     /// Retrieves an Emote by its command, searching through all client languages.
     /// </summary>
     /// <param name="command">The emote command, in any supported game client language. With or without the "/".</param>
+    /// <param name="clientLanguage">The client language to search in. If null, searches all languages.</param>
     /// <returns>The matching Emote if found; otherwise, null.</returns>
-    public static Emote? GetEmoteByCommand(string command)
+    public static Emote? GetEmoteByCommand(string command, ClientLanguage? clientLanguage = null)
     {
         if (command.StartsWith("/"))
             command = command[1..];
 
         foreach (var lang in Enum.GetValues<ClientLanguage>())
         {
+            if (clientLanguage.HasValue && clientLanguage.Value != lang)
+                continue;
+
             var sheet = ExcelSheetHelper.GetSheet<Emote>(lang);
             if (sheet == null) continue;
 
@@ -49,6 +53,11 @@ public static class EmoteHelper
         return null;
     }
 
+    /// <summary>
+    /// Tries to retrieve an Emote by its ID.
+    /// </summary>
+    /// <param name="emoteId">The ID of the Emote to retrieve.</param>
+    /// <returns>The Emote if found; otherwise, null.</returns>
     public static Emote? GetEmoteById(uint emoteId)
     {
         var sheet = ExcelSheetHelper.GetSheet<Emote>();
@@ -66,7 +75,7 @@ public static class EmoteHelper
     }
 
     /// <summary>
-    /// Checks if the specified emote is unlocked for the player.
+    /// Checks if the specified emote is unlocked for the local player.
     /// </summary>
     /// <param name="emoteId">The ID of the Emote to check.</param>
     /// <returns>True if the emote is unlocked; otherwise, false.</returns>
@@ -81,12 +90,10 @@ public static class EmoteHelper
     /// Retrieves the category of the specified emote.
     /// </summary>
     /// <param name="emote">The Emote whose category is to be retrieved.</param>
-    /// <returns>The category of the emote as a <see cref="NoireLib.Enums.EmoteCategory"/>.</returns>
+    /// <returns>The category of the emote as an <see cref="Enums.EmoteCategory"/>.</returns>
     public static Enums.EmoteCategory GetEmoteCategory(Emote emote)
     {
         var emoteCategory = emote.EmoteCategory;
-
-        NoireLogger.LogDebug($"Emote '{emote.RowId}' Category RowId: {emoteCategory.RowId}");
 
         switch (emoteCategory.RowId)
         {

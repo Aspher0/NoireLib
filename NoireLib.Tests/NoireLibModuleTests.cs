@@ -10,7 +10,7 @@ public class NoireLibModuleTests
 {
     private class DummyModule : NoireModuleBase
     {
-        protected override void InitializeModule() { /* no-op */ }
+        protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
         public override void Dispose() { /* no-op */ }
@@ -21,7 +21,7 @@ public class NoireLibModuleTests
         public string? ModuleIdOnInit = null;
         public DummyModule2() : base() { }
         public DummyModule2(ModuleId moduleId, bool active = true) : base(moduleId, active) { }
-        protected override void InitializeModule() { ModuleIdOnInit = ModuleId; }
+        protected override void InitializeModule(params object?[] args) { ModuleIdOnInit = ModuleId; }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
         public override void Dispose() { /* no-op */ }

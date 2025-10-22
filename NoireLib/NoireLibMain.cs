@@ -26,9 +26,9 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="TryGetModuleById"/>.<br/>
+    /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
     /// Multiple modules of the same type can be added, and they can be differentiated by their <paramref name="moduleId"/> or their zero-based index.<br/>
-    /// If no instance is provided, a new instance of the module will be created and activated. If this is not what you are looking for, specify an instance.<br/>
+    /// If no instance is provided, a new instance of the module will be created and activated. Logging will also be enabled. If this is not what you are looking for, specify an instance instead.<br/>
     /// </summary>
     /// <typeparam name="T">The type of the module to add.</typeparam>
     /// <param name="moduleId">Optional module ID for the module instance, in case you want to create multiple instances of the same module and be able to retrieve a specific one later.</param>
@@ -39,13 +39,13 @@ public class NoireLibMain
 
         T instanceToAdd;
 
-        var constructorWithString = moduleType.GetConstructor([typeof(ModuleId), typeof(bool)]);
+        var specialConstructor = moduleType.GetConstructor([typeof(ModuleId), typeof(bool), typeof(bool)]);
 
-        if (constructorWithString != null && !moduleId.IsNullOrEmpty())
-            instanceToAdd = (T)constructorWithString.Invoke([new ModuleId(moduleId), true]);
+        if (specialConstructor != null)
+            instanceToAdd = (T)specialConstructor.Invoke([(moduleId.IsNullOrEmpty() ? null : new ModuleId(moduleId)), true, true]);
         else
         {
-            NoireLogger.LogWarning($"Module of type {moduleType.Name} does not have a constructor with (ModuleId, bool) parameters or no moduleId was provided. Using parameterless constructor instead. Please report this to the devs.");
+            NoireLogger.LogWarning($"Module of type {moduleType.Name} does not have a constructor with (ModuleId, bool, bool) parameters. Using parameterless constructor instead. Please report this to the devs.");
             instanceToAdd = new T();
             instanceToAdd.ModuleId = moduleId;
         }
@@ -55,13 +55,17 @@ public class NoireLibMain
         return instanceToAdd;
     }
 
-    /// <inheritdoc cref="AddModule"/>
-    /// <param name="instance">The instance of the module to add. If null, a new instance will be created and activated.</param>
+    /// <summary>
+    /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
+    /// Multiple modules of the same type can be added, and they can be differentiated by their <paramref name="moduleId"/> or their zero-based index.<br/>
+    /// </summary>
+    /// <typeparam name="T">The type of the module to add.</typeparam>
+    /// <param name="instance">The instance of the module to add.</param>
+    /// <returns>The instance of the module added.</returns>
     public static T? AddModule<T>(T instance) where T : class, INoireModule
     {
         var moduleType = typeof(T);
 
-        // Check if a module with the same ID already exists
         if (!instance.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId == instance.ModuleId))
             NoireLogger.LogWarning($"Warning, a module of type {moduleType.Name} with id {instance.ModuleId} has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later.");
 
@@ -71,7 +75,7 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Adds multiple NoireLib modules to be used in your project. Can be retrieved later with <see cref="TryGetModuleById"/>.<br/>
+    /// Adds multiple NoireLib modules to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
     /// Multiple modules of the same type can be added, and they can be differentiated by their module ID or their index.<br/>
     /// See <see cref="AddModule"/> to add a module with an optional custom ID.
     /// </summary>
