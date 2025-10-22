@@ -14,6 +14,7 @@
     <PackageId>NoireLib</PackageId>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
   </PropertyGroup>
     
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -24,6 +25,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\Nuget_README.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
     <None Include="Modules\ChangelogManager\README.md" />
     <None Include="Configuration\README.md" />
     <None Include="Modules\EventBus\README.md" />
