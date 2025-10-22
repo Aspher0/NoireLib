@@ -28,7 +28,7 @@ Once initialized, you can fully benefit from the library.
 NoireLib also comes with Modules you can use.<br/>
 Those modules are all-in-one autonomous packages you can easily add and configure.<br/>
 Each of the modules are made with one goal in mind: add it and then forget it.<br/>
-As an example, the [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/ChangelogManager/README.md) is an all-in-one changelog manager that's either fully automatic or manually managed.<br/>
+As an example, the [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md) is an all-in-one changelog manager that's either fully automatic or manually managed.<br/>
 The examples below show different ways to add modules to your project, and then retrieve them later. For these examples, I will be using the `NoireChangelogManager` module.
 
 The easiest way to add a module is with the `NoireLibMain.AddModule<T>(string? moduleId)` method, where T is the module you want to add.<br/>
