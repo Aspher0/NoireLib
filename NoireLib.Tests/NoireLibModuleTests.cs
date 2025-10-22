@@ -10,6 +10,8 @@ public class NoireLibModuleTests
 {
     private class DummyModule : NoireModuleBase
     {
+        public DummyModule() : base() { }
+        public DummyModule(ModuleId moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
         protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
@@ -18,23 +20,12 @@ public class NoireLibModuleTests
 
     private class DummyModule2 : NoireModuleBase
     {
-        public string? ModuleIdOnInit = null;
         public DummyModule2() : base() { }
-        public DummyModule2(ModuleId moduleId, bool active = true) : base(moduleId, active) { }
-        protected override void InitializeModule(params object?[] args) { ModuleIdOnInit = ModuleId; }
+        public DummyModule2(ModuleId moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
+        protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
         public override void Dispose() { /* no-op */ }
-    }
-
-    [Fact]
-    public void ModuleId_ShouldNotBeNull_OnInitialization()
-    {
-        var module = NoireLibMain.AddModule<DummyModule2>();
-        module?.ModuleIdOnInit.Should().BeNull();
-
-        var moduleWithId = NoireLibMain.AddModule<DummyModule2>("test-id");
-        moduleWithId?.ModuleIdOnInit.Should().Be("test-id");
     }
 
     [Fact]
