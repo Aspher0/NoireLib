@@ -32,8 +32,17 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// <param name="icon">The optional icon to display next to the text, on the left.</param>
     /// <param name="iconColor">The optional color of the icon.</param>
     /// <returns>The built changelog entry.</returns>
-    protected static ChangelogEntry Header(string text, Vector4? textColor = null, FontAwesomeIcon? icon = null, Vector4? iconColor = null)
-        => new() { Text = text, IsHeader = true, TextColor = textColor, Icon = icon, IconColor = iconColor };
+    protected static ChangelogEntry Header(string text, Vector4? textColor = null, int indentLevel = 0, FontAwesomeIcon? icon = null, Vector4? iconColor = null)
+        => new() { Text = text, IsHeader = true, TextColor = textColor, IndentLevel = indentLevel, Icon = icon, IconColor = iconColor };
+
+    /// <summary>
+    /// Creates a header entry, which is a bold text and a bullet.
+    /// </summary>
+    /// <param name="text">The text to display.</param>
+    /// <param name="textColor">The color of the text.</param>
+    /// <returns>The built changelog entry.</returns>
+    protected static ChangelogEntry HeaderBullet(string text, Vector4? textColor = null, int indentLevel = 0)
+        => new() { Text = text, IsHeader = true, TextColor = textColor, IndentLevel = indentLevel, HasBullet = true };
 
     /// <summary>
     /// Creates a separator entry, which is a horizontal line.
@@ -53,8 +62,22 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// <param name="icon">The optional icon to display next to the text, on the left.</param>
     /// <param name="iconColor">The optional color of the icon.</param>
     /// <returns>The built changelog entry.</returns>
-    protected static ChangelogEntry Button(string? text = null, Vector4? textColor = null, string? buttonText = null, Vector4? buttonTextColor = null, Vector4? buttonColor = null, Action<ImGuiMouseButton>? action = null, FontAwesomeIcon? icon = null, Vector4? iconColor = null)
-        => new() { Text = text, TextColor = textColor, ButtonText = buttonText, ButtonColor = buttonColor, ButtonTextColor = buttonTextColor, ButtonAction = action, Icon = icon, IconColor = iconColor };
+    protected static ChangelogEntry Button(string? text = null, Vector4? textColor = null, string? buttonText = null, Vector4? buttonTextColor = null, Vector4? buttonColor = null, Action<ImGuiMouseButton>? action = null, int indentLevel = 0, FontAwesomeIcon? icon = null, Vector4? iconColor = null)
+        => new() { Text = text, TextColor = textColor, ButtonText = buttonText, ButtonColor = buttonColor, ButtonTextColor = buttonTextColor, ButtonAction = action, IndentLevel = indentLevel, Icon = icon, IconColor = iconColor };
+
+    /// <summary>
+    /// Creates a button entry, which is a button with optional text and a bullet.
+    /// </summary>
+    /// <param name="text">The text to display on the left of the button.</param>
+    /// <param name="textColor">The color of the text left of the button.</param>
+    /// <param name="buttonText">The text to display on the button.</param>
+    /// <param name="buttonTextColor">The color of the text on the button.</param>
+    /// <param name="buttonColor">The color of the button.</param>
+    /// <param name="action">The action to perform when the button is clicked with the mouse button as parameter.</param>
+    /// <returns>The built changelog entry.</returns>
+    protected static ChangelogEntry ButtonBullet(string? text = null, Vector4? textColor = null, string? buttonText = null, Vector4? buttonTextColor = null, Vector4? buttonColor = null, Action<ImGuiMouseButton>? action = null, int indentLevel = 0)
+        => new() { Text = text, TextColor = textColor, ButtonText = buttonText, ButtonColor = buttonColor, ButtonTextColor = buttonTextColor, ButtonAction = action, IndentLevel = indentLevel, HasBullet = true };
+
 
     /// <summary>
     /// Creates a standard entry, which is a normal text with optional icon and indentation.
@@ -67,6 +90,16 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// <returns></returns>
     protected static ChangelogEntry Entry(string text, Vector4? textColor = null, int indentLevel = 0, FontAwesomeIcon? icon = null, Vector4? iconColor = null)
         => new() { Text = text, TextColor = textColor, IndentLevel = indentLevel, Icon = icon, IconColor = iconColor };
+
+    /// <summary>
+    /// Creates a standard entry, which is a normal text with a bullet and indentation.
+    /// </summary>
+    /// <param name="text"></param>
+    /// <param name="textColor"></param>
+    /// <param name="indentLevel"></param>
+    /// <returns></returns>
+    protected static ChangelogEntry EntryBullet(string text, Vector4? textColor = null, int indentLevel = 0)
+        => new() { Text = text, TextColor = textColor, IndentLevel = indentLevel, HasBullet = true };
 
     /// <summary>
     /// Creates a raw entry that executes custom ImGui code through a callback.

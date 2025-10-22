@@ -67,7 +67,7 @@ public class ChangelogWindow : Window, IDisposable
     /// <summary>
     /// Updates the title bar buttons of the window.
     /// </summary>
-    /// <param name="titleBarButtons"></param>
+    /// <param name="titleBarButtons">The new list of title bar buttons.</param>
     public void UpdateTitleBarButtons(List<TitleBarButton> titleBarButtons)
     {
         TitleBarButtons.Clear();
@@ -215,7 +215,8 @@ public class ChangelogWindow : Window, IDisposable
         ImGui.Dummy(new Vector2(0, padding));
         ImGui.Indent(padding);
         
-        ImGui.PushTextWrapPos(ImGui.GetContentRegionAvail().X - padding);
+        // Set wrap position accounting for padding
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding);
 
         if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
         {
@@ -258,7 +259,24 @@ public class ChangelogWindow : Window, IDisposable
         {
             ImGui.Spacing();
 
-            if (entry.Icon.HasValue)
+            // Apply indentation for headers
+            var headerIndent = 20f;
+            var headerTotalIndent = entry.IndentLevel * headerIndent;
+
+            if (headerTotalIndent > 0)
+            {
+                var currentPosX = ImGui.GetCursorPosX();
+                ImGui.SetCursorPosX(currentPosX + headerTotalIndent);
+            }
+
+            // Headers with bullets
+            if (entry.HasBullet)
+            {
+                ImGui.Bullet();
+                ImGui.SameLine();
+            }
+            // Headers with icons (optional)
+            else if (entry.Icon.HasValue)
             {
                 ImGui.PushFont(UiBuilder.IconFont);
                 var iconColor = entry.IconColor ?? new Vector4(1f, 1f, 1f, 1f);
@@ -283,6 +301,7 @@ public class ChangelogWindow : Window, IDisposable
             return;
         }
 
+        // Regular entry
         var startPos = ImGui.GetCursorPos();
         var levelIndent = 20f;
         var totalIndent = entry.IndentLevel * levelIndent;
@@ -295,35 +314,112 @@ public class ChangelogWindow : Window, IDisposable
         var entryTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
         ImGui.PushStyleColor(ImGuiCol.Text, entryTextColor);
 
-        if (entry.Icon.HasValue)
+        // Check if we have a button to determine text wrapping behavior
+        bool hasButton = !string.IsNullOrWhiteSpace(entry.ButtonText) && entry.ButtonAction != null;
+        bool shouldPlaceButtonOnNewLine = false;
+
+        // Calculate prefix width (bullet or icon)
+        float prefixWidth = 0f;
+        
+        // Determine what prefix we're using
+        bool willShowBullet = entry.HasBullet;
+        bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
+        
+        if (willShowIcon)
         {
-            var bulletColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
             ImGui.PushFont(UiBuilder.IconFont);
-            ImGui.TextColored(bulletColor, entry.Icon.Value.ToIconString());
+            prefixWidth = ImGui.CalcTextSize(entry.Icon.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
+            ImGui.PopFont();
+        }
+        else if (willShowBullet)
+        {
+            prefixWidth = ImGui.CalcTextSize("• ").X;
+        }
+
+        if (hasButton)
+        {
+            // Calculate if text will wrap
+            var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 35f;
+            var availableWidth = ImGui.GetContentRegionAvail().X;
+            var textWidth = ImGui.CalcTextSize(entry.Text ?? string.Empty).X;
+
+            // If text + button doesn't fit on one line, put button on new line
+            if (textWidth + prefixWidth + buttonWidth + 10f > availableWidth)
+            {
+                shouldPlaceButtonOnNewLine = true;
+            }
+        }
+
+        // Store position after bullet/icon for button alignment
+        var textStartPosX = 0f;
+
+        // Draw prefix (bullet or icon) + text
+        if (willShowBullet)
+        {
+            // Entry with bullet
+            ImGui.Bullet();
+            ImGui.SameLine();
+            
+            textStartPosX = ImGui.GetCursorPosX();
+            
+            if (shouldPlaceButtonOnNewLine)
+            {
+                ImGui.TextWrapped(entry.Text);
+            }
+            else
+            {
+                ImGui.TextUnformatted(entry.Text);
+            }
+        }
+        else if (willShowIcon)
+        {
+            // Entry with icon
+            var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
+            ImGui.PushFont(UiBuilder.IconFont);
+            ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
             ImGui.PopFont();
             ImGui.SameLine();
-
-            var availWidth = ImGui.GetContentRegionAvail().X;
-            if (!string.IsNullOrWhiteSpace(entry.ButtonText))
+            
+            textStartPosX = ImGui.GetCursorPosX();
+            
+            if (shouldPlaceButtonOnNewLine)
             {
-                var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 20f;
-                availWidth -= buttonWidth + 10f;
+                ImGui.TextWrapped(entry.Text);
             }
-
-            ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + availWidth);
-            ImGui.TextWrapped(entry.Text);
-            ImGui.PopTextWrapPos();
+            else
+            {
+                ImGui.TextUnformatted(entry.Text);
+            }
         }
         else
         {
-            ImGui.BulletText(entry.Text);
+            // Entry with no prefix (no bullet, no icon)
+            textStartPosX = ImGui.GetCursorPosX();
+            
+            if (shouldPlaceButtonOnNewLine)
+            {
+                ImGui.TextWrapped(entry.Text);
+            }
+            else
+            {
+                ImGui.TextUnformatted(entry.Text);
+            }
         }
 
         ImGui.PopStyleColor();
 
-        if (!string.IsNullOrWhiteSpace(entry.ButtonText) && entry.ButtonAction != null)
+        // Draw button
+        if (hasButton)
         {
-            ImGui.SameLine();
+            if (!shouldPlaceButtonOnNewLine)
+            {
+                ImGui.SameLine();
+            }
+            else
+            {
+                // Position button at the same X position as the text (after bullet/icon)
+                ImGui.SetCursorPosX(textStartPosX);
+            }
 
             var colorCount = 0;
 

@@ -72,8 +72,7 @@ public class NoireChangelogManager : NoireModuleBase
 
     protected override void OnActivated()
     {
-        if (ShouldAutomaticallyShowChangelog)
-            AutomaticallyCheckChangelogAndShowIfNewVersion();
+        AutomaticallyCheckChangelogAndShowIfNewVersion();
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, $"Changelog Manager activated.");
@@ -141,6 +140,8 @@ public class NoireChangelogManager : NoireModuleBase
         WindowName = windowName;
         return this;
     }
+
+    // TODO: Add an option to change the window size
 
     /// <summary>
     /// Gets the full window name of the changelog window, including hidden IDs.
@@ -278,7 +279,7 @@ public class NoireChangelogManager : NoireModuleBase
 
     private void AutomaticallyCheckChangelogAndShowIfNewVersion()
     {
-        if (!IsActive || !ShouldAutomaticallyShowChangelog)
+        if (!IsActive)
             return;
 
         var latestVersion = GetLatestVersion();
@@ -293,7 +294,10 @@ public class NoireChangelogManager : NoireModuleBase
 
         if (lastSeenVersion == null || lastSeenVersion != latestVersion)
         {
-            ChangelogWindow.ShowChangelogForVersion(latestVersion);
+            if (!ShouldAutomaticallyShowChangelog)
+                ChangelogWindow.ShowChangelogForVersion(latestVersion);
+
+            // Update the last seen version, even if should not show automatically to avoid showing it when enabling the option
             config.UpdateLastSeenVersion(latestVersion);
         }
     }

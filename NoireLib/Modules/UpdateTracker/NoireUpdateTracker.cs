@@ -316,11 +316,14 @@ public class NoireUpdateTracker : NoireModuleBase
             return;
         }
 
+        var wasTimerRunning = updateCheckTimer != null;
+        var dueTime = wasTimerRunning ? TimeSpan.FromMinutes(CheckIntervalMinutes) : TimeSpan.Zero;
+
         StopUpdateCheckTimer();
 
         updateCheckTimer = new Timer(async _ => await CheckForUpdateAsync(),
             null,
-            TimeSpan.Zero,
+            dueTime,
             TimeSpan.FromMinutes(CheckIntervalMinutes));
     }
 

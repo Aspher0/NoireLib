@@ -52,6 +52,7 @@ public record ChangelogEntry
     public bool IsHeader { get; init; } = false;
     public bool IsSeparator { get; init; } = false;
     public int IndentLevel { get; init; } = 0;
+    public bool HasBullet { get; init; } = false;
     public bool IsRaw { get; init; } = false;
     public Action? RawAction { get; init; }
 }
