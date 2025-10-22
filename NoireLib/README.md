@@ -92,5 +92,6 @@ For a list of modules, see the [Modules Section](#modules)
 
 ## Modules
 
-- [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/ChangelogManager/README.md)
-- [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/EventBus/README.md)
+- [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
+- [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
+- [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)
