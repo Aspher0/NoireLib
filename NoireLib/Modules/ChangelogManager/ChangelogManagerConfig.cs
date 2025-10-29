@@ -3,24 +3,18 @@ using NoireLib.Configuration;
 
 namespace NoireLib.Changelog;
 
-public class ChangelogManagerConfig : NoireConfigBase
+[Serializable]
+public class ChangelogManagerConfig : NoireConfigBase<ChangelogManagerConfig>
 {
     public override string GetConfigFileName() => "ChangelogManagerConfig";
 
     /// <summary>
     /// The last seen changelog version by the user.
     /// </summary>
-    public Version? LastSeenChangelogVersion { get; set; }
+    [AutoSave]
+    public virtual Version? LastSeenChangelogVersion { get; set; }
 
-    public bool UpdateLastSeenVersion(Version? version)
-    {
-        LastSeenChangelogVersion = version;
-        return Save();
-    }
+    public void UpdateLastSeenVersion(Version? version) => LastSeenChangelogVersion = version;
 
-    public bool ClearLastSeenVersion()
-    {
-        LastSeenChangelogVersion = null;
-        return Save();
-    }
+    public void ClearLastSeenVersion() => LastSeenChangelogVersion = null;
 }

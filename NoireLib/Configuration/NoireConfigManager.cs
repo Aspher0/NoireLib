@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using NoireLib.Helpers;
 
 namespace NoireLib.Configuration;
 
@@ -226,13 +227,6 @@ public static class NoireConfigManager
     /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>
     public static string? GetConfigDirectoryPath()
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
-        {
-            NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[NoireConfigManager] ");
-            return null;
-        }
-
-        var configDirectory = NoireService.PluginInterface.ConfigDirectory;
-        return configDirectory.FullName;
+        return FileHelper.GetPluginConfigDirectory();
     }
 }

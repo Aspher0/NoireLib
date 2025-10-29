@@ -1,5 +1,3 @@
-using Dalamud.Bindings.ImGui;
-using Dalamud.Interface;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -12,19 +10,19 @@ namespace NoireLib.Changelog;
 public record ChangelogVersion
 {
     private Version version = null!;
-    
-    public required Version Version 
-    { 
+
+    public required Version Version
+    {
         get => version;
         init => version = NormalizeVersion(value);
     }
-    
+
     public required string Date { get; init; }
     public required List<ChangelogEntry> Entries { get; init; }
     public string? Title { get; init; }
     public Vector4? TitleColor { get; init; }
     public string? Description { get; init; }
-    
+
     /// <summary>
     /// Normalizes a Version object to always have 4 components (Major.Minor.Build.Revision).
     /// </summary>
@@ -37,22 +35,4 @@ public record ChangelogVersion
             v.Revision >= 0 ? v.Revision : 0
         );
     }
-}
-
-public record ChangelogEntry
-{
-    public string? Text { get; init; }
-    public Vector4? TextColor { get; init; }
-    public FontAwesomeIcon? Icon { get; init; }
-    public Vector4? IconColor { get; init; }
-    public string? ButtonText { get; init; }
-    public Vector4? ButtonTextColor { get; init; }
-    public Vector4? ButtonColor { get; init; }
-    public Action<ImGuiMouseButton>? ButtonAction { get; init; }
-    public bool IsHeader { get; init; } = false;
-    public bool IsSeparator { get; init; } = false;
-    public int IndentLevel { get; init; } = 0;
-    public bool HasBullet { get; init; } = false;
-    public bool IsRaw { get; init; } = false;
-    public Action? RawAction { get; init; }
 }

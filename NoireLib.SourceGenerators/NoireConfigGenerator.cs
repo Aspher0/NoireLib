@@ -1,0 +1,331 @@
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.CodeAnalysis.Text;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+
+namespace NoireLib.SourceGenerators;
+
+[Generator]
+public class NoireConfigGenerator : IIncrementalGenerator
+{
+    public void Initialize(IncrementalGeneratorInitializationContext context)
+    {
+        var classDeclarations = context.SyntaxProvider
+            .CreateSyntaxProvider(
+                static (s, _) => IsCandidateClass(s),
+                static (ctx, _) => GetSemanticTarget(ctx))
+            .Where(static m => m is not null);
+
+        context.RegisterSourceOutput(classDeclarations, Execute!);
+    }
+
+    private static bool IsCandidateClass(SyntaxNode node)
+    {
+        return node is ClassDeclarationSyntax c && c.AttributeLists.Count > 0;
+    }
+
+    private static ClassInfo? GetSemanticTarget(GeneratorSyntaxContext context)
+    {
+        var classDeclaration = (ClassDeclarationSyntax)context.Node;
+        var classSymbol = context.SemanticModel.GetDeclaredSymbol(classDeclaration);
+
+        if (classSymbol == null)
+            return null;
+
+        // Check if class has [NoireConfig] attribute
+        var noireConfigAttribute = classSymbol.GetAttributes()
+          .FirstOrDefault(a => a.AttributeClass?.Name == "NoireConfigAttribute");
+
+        if (noireConfigAttribute == null)
+            return null;
+
+        // Get the static class name from the attribute parameter, or use the instance class name
+        string staticClassName;
+
+        if (noireConfigAttribute.ConstructorArguments.Length > 0)
+        {
+            // User provided a custom name via [NoireConfig("CustomName")]
+            var argument = noireConfigAttribute.ConstructorArguments[0];
+            if (argument.Value is string customName && !string.IsNullOrWhiteSpace(customName))
+            {
+                staticClassName = customName;
+            }
+            else
+            {
+                // Invalid argument, skip this class
+                return null;
+            }
+        }
+        else
+        {
+            // No argument provided, use the instance class name with Static suffix
+            staticClassName = classSymbol.Name + "Static";
+        }
+
+        // Get all public properties
+        var properties = new List<PropertyInfo>();
+        foreach (var member in classSymbol.GetMembers().OfType<IPropertySymbol>())
+        {
+            if (member.DeclaredAccessibility != Accessibility.Public)
+                continue;
+
+            if (member.IsStatic)
+                continue;
+
+            var hasAutoSave = member.GetAttributes()
+                .Any(a => a.AttributeClass?.Name == "AutoSaveAttribute");
+
+            properties.Add(new PropertyInfo(member.Name, member.Type.ToDisplayString(), hasAutoSave));
+        }
+
+        // Get all public methods
+        var methods = new List<MethodInfo>();
+        foreach (var method in classSymbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (method.DeclaredAccessibility != Accessibility.Public)
+                continue;
+
+            // If getter or setter of a property, skip
+            if (method.MethodKind == MethodKind.PropertyGet || method.MethodKind == MethodKind.PropertySet)
+                continue;
+
+            // If constructor, skip
+            if (method.MethodKind == MethodKind.Constructor)
+                continue;
+
+            List<(string Type, string Name)> parameters = new List<(string Type, string Name)>();
+            foreach (var param in method.Parameters)
+                parameters.Add((param.Type.ToDisplayString(), param.Name));
+
+            var hasAutoSave = method.GetAttributes()
+                .Any(a => a.AttributeClass?.Name == "AutoSaveAttribute");
+
+            methods.Add(new MethodInfo(method.Name, method.ReturnType.ToDisplayString(), parameters, method.IsStatic, hasAutoSave));
+        }
+
+        return new ClassInfo(classSymbol.ContainingNamespace.ToDisplayString(),
+            staticClassName,
+            classSymbol.Name,
+            properties,
+            methods);
+    }
+
+    private void Execute(SourceProductionContext context, ClassInfo? classInfo)
+    {
+        if (classInfo == null)
+            return;
+
+        var source = GenerateSource(classInfo);
+        context.AddSource($"{classInfo.StaticClassName}.g.cs", SourceText.From(source, Encoding.UTF8));
+    }
+
+    /// <summary>
+    /// Generates the source code for the static configuration accessor class.
+    /// </summary>
+    /// <param name="classInfo">The class information to generate the source for.</param>
+    /// <returns>The generated and formatted C# source code.</returns>
+    private string GenerateSource(ClassInfo classInfo)
+    {
+        var sb = new StringBuilder();
+
+        sb.AppendLine("// <auto-generated/>");
+        sb.AppendLine("#nullable enable");
+        sb.AppendLine();
+        sb.AppendLine($"namespace {classInfo.Namespace}");
+        sb.AppendLine("{");
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine($"/// Static accessor for {classInfo.StaticClassName} configuration.");
+        sb.AppendLine($"/// Instance class: {classInfo.InstanceClassName}");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public static class {classInfo.StaticClassName}");
+        sb.AppendLine("{");
+        sb.AppendLine($"private static {classInfo.InstanceClassName}? _instance;");
+        sb.AppendLine("private static readonly object _lock = new object();");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Gets the singleton instance of this configuration.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine($"public static {classInfo.InstanceClassName} Instance");
+        sb.AppendLine("{");
+        sb.AppendLine("get");
+        sb.AppendLine("{");
+        sb.AppendLine("if (_instance == null)");
+        sb.AppendLine("{");
+        sb.AppendLine("lock (_lock)");
+        sb.AppendLine("{");
+        sb.AppendLine("if (_instance == null)");
+        sb.AppendLine($"_instance = global::NoireLib.Configuration.NoireConfigManager.GetConfig<{classInfo.InstanceClassName}>();");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+        sb.AppendLine("return _instance!;");
+
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+        sb.AppendLine();
+
+        // Generate static properties
+        foreach (var property in classInfo.Properties)
+        {
+            sb.AppendLine("/// <summary>");
+            sb.AppendLine($"/// Gets or sets the {property.Name} property on the configuration instance.");
+
+            if (property.HasAutoSave)
+                sb.AppendLine("/// Automatically saves the configuration on set.");
+
+            sb.AppendLine("/// </summary>");
+            sb.AppendLine($"public static {property.TypeName} {property.Name}");
+            sb.AppendLine("{");
+            sb.AppendLine("get => Instance." + property.Name + ";");
+            sb.AppendLine("set");
+            sb.AppendLine("{");
+            sb.AppendLine("Instance." + property.Name + " = value;");
+
+            if (property.HasAutoSave)
+                sb.AppendLine("Save();");
+
+            sb.AppendLine("}");
+            sb.AppendLine("}");
+            sb.AppendLine();
+        }
+
+        // Generate static methods
+        foreach (var method in classInfo.Methods)
+        {
+            // Build parameter declaration list and argument list explicitly as strings
+            var paramDecls = method.Parameters.Count > 0
+                ? string.Join(", ", method.Parameters.Select(p => $"{p.Type} {p.Name}").ToArray())
+                : string.Empty;
+
+            var argList = method.Parameters.Count > 0
+                ? string.Join(", ", method.Parameters.Select(p => p.Name).ToArray())
+                : string.Empty;
+
+            sb.AppendLine("/// <summary>");
+            sb.AppendLine($"/// Calls the {method.Name} method on the configuration instance.");
+            sb.AppendLine("/// </summary>");
+            sb.AppendLine($"public static {method.ReturnType} {method.Name}({paramDecls})");
+            sb.AppendLine("{");
+
+            bool hasReturnValue = method.ReturnType != "void";
+
+            if (hasReturnValue && method.HasAutoSave)
+            {
+                // Auto saves and returns value
+                sb.AppendLine($"var result = {(method.IsStatic ? classInfo.InstanceClassName : "Instance")}.{method.Name}({argList});");
+                sb.AppendLine("Save();");
+                sb.AppendLine("return result;");
+            }
+            else if (hasReturnValue)
+            {
+                // No auto saving, just return value
+                sb.AppendLine($"return {(method.IsStatic ? classInfo.InstanceClassName : "Instance")}.{method.Name}({argList});");
+            }
+            else
+            {
+                // No return, no auto save
+                sb.AppendLine($"{(method.IsStatic ? classInfo.InstanceClassName : "Instance")}.{method.Name}({argList});");
+                if (method.HasAutoSave)
+                    sb.AppendLine("Save();");
+            }
+
+            sb.AppendLine("}");
+            sb.AppendLine();
+        }
+
+        // Generate utility methods
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Saves the configuration to disk.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static bool Save() => Instance.Save();");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Reloads the configuration from disk.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static void Reload()");
+        sb.AppendLine("{");
+        sb.AppendLine("lock (_lock)");
+        sb.AppendLine("{");
+        sb.AppendLine($"_instance = global::NoireLib.Configuration.NoireConfigManager.ReloadConfig<{classInfo.InstanceClassName}>();");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Clears the cached instance.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static void ClearCache()");
+        sb.AppendLine("{");
+        sb.AppendLine("lock (_lock)");
+        sb.AppendLine("{");
+        sb.AppendLine("_instance = null;");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+        sb.AppendLine("}");
+
+        return FormatCSharpCode(sb.ToString());
+    }
+
+    /// <summary>
+    /// Indents and formats the generated C# code for better readability.
+    /// </summary>
+    /// <param name="code">The unformatted C# code.</param>
+    /// <returns>The formatted C# code.</returns>
+    private string FormatCSharpCode(string code)
+    {
+        var tree = CSharpSyntaxTree.ParseText(code);
+        var root = tree.GetRoot().NormalizeWhitespace();
+        return root.ToFullString();
+    }
+
+    private class ClassInfo
+    {
+        public string Namespace { get; }
+        public string StaticClassName { get; }
+        public string InstanceClassName { get; }
+        public List<PropertyInfo> Properties { get; }
+        public List<MethodInfo> Methods { get; }
+
+        public ClassInfo(string @namespace, string staticClassName, string instanceClassName, List<PropertyInfo> properties, List<MethodInfo> methods)
+        {
+            Namespace = @namespace;
+            StaticClassName = staticClassName;
+            InstanceClassName = instanceClassName;
+            Properties = properties;
+            Methods = methods;
+        }
+    }
+
+    private class PropertyInfo
+    {
+        public string Name { get; }
+        public string TypeName { get; }
+        public bool HasAutoSave { get; }
+
+        public PropertyInfo(string name, string typeName, bool hasAutoSave)
+        {
+            Name = name;
+            TypeName = typeName;
+            HasAutoSave = hasAutoSave;
+        }
+    }
+
+    private class MethodInfo
+    {
+        public string Name { get; }
+        public string ReturnType { get; }
+        public List<(string Type, string Name)> Parameters { get; } = new List<(string Type, string Name)>();
+        public bool IsStatic { get; }
+        public bool HasAutoSave { get; }
+        public MethodInfo(string name, string returnType, List<(string Type, string Name)> parameters, bool isStatic, bool hasAutoSave)
+        {
+            Name = name;
+            ReturnType = returnType;
+            Parameters = parameters;
+            IsStatic = isStatic;
+            HasAutoSave = hasAutoSave;
+        }
+    }
+}

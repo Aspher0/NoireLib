@@ -22,6 +22,7 @@ public class NoireLibMain
     public static void Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
         NoireService.Initialize(dalamudPluginInterface, plugin);
+
         NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
     }
 

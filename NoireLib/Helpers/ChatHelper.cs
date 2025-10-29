@@ -26,38 +26,29 @@ public static class ChatHelper
         try
         {
             if (utf8->Length == 0)
-            {
                 throw new ArgumentException("message is empty", nameof(message));
-            }
 
             if (utf8->Length > 500)
-            {
                 throw new ArgumentException("message is longer than 500 bytes", nameof(message));
-            }
 
             var oldLength = utf8->Length;
 
             utf8->SanitizeString(AllowedEntities.UppercaseLetters | AllowedEntities.LowercaseLetters | AllowedEntities.Numbers | AllowedEntities.SpecialCharacters | AllowedEntities.CharacterList | AllowedEntities.OtherCharacters | AllowedEntities.Payloads | AllowedEntities.Unknown9);
 
             if (utf8->Length != oldLength)
-            {
                 throw new ArgumentException($"message contained invalid characters", nameof(message));
-            }
 
             var uiModule = UIModule.Instance();
+
             if (uiModule == null)
-            {
                 throw new InvalidOperationException("The UiModule is currently unavailable");
-            }
 
             uiModule->ProcessChatBoxEntry(utf8);
         }
         finally
         {
             if (utf8 != null)
-            {
                 utf8->Dtor(true);
-            }
         }
     }
 }

@@ -1,43 +1,48 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/13.1.0">
-  <PropertyGroup>
-    <Version>1.1.0.1</Version>
-    <Use_DalamudPackager>false</Use_DalamudPackager>
-    <Title>NoireLib - A library for Dalamud Plugins</Title>
-    <Authors>Aspher0</Authors>
-    <Description>A flexible library for creating Dalamud Plugins.</Description>
-    <Copyright>© 2025 Aspher0</Copyright>
-    <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
-    <RepositoryType>git</RepositoryType>
-    <PackageTags>NoireLib;Dalamud;Plugin;Dalamud Plugin;Aspher0;Plugins;Library;Plugin Library</PackageTags>
-    <NeutralLanguage>en</NeutralLanguage>
-    <PackageId>NoireLib</PackageId>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
-    <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
-  </PropertyGroup>
-    
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <DebugType>none</DebugType>
-  </PropertyGroup>
-  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <DebugType>none</DebugType>
-  </PropertyGroup>
+    <PropertyGroup>
+        <Version>1.2.0.9</Version>
+        <Use_DalamudPackager>false</Use_DalamudPackager>
+        <Title>NoireLib - A library for Dalamud Plugins</Title>
+        <Authors>Aspher0</Authors>
+        <Description>A flexible library for creating Dalamud Plugins.</Description>
+        <Copyright>© 2025 Aspher0</Copyright>
+        <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageTags>NoireLib;Dalamud;Plugin;Dalamud Plugin;Aspher0;Plugins;Library;Plugin Library</PackageTags>
+        <NeutralLanguage>en</NeutralLanguage>
+        <PackageId>NoireLib</PackageId>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
+    </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\Nuget_README.md">
-      <Pack>True</Pack>
-      <PackagePath>\</PackagePath>
-    </None>
-    <None Include="Modules\ChangelogManager\README.md" />
-    <None Include="Configuration\README.md" />
-    <None Include="Modules\EventBus\README.md" />
-    <None Include="README.md" />
-    <None Include="Modules\UpdateTracker\README.md" />
-  </ItemGroup>
+    <ItemGroup>
+        <None Include="..\Nuget_README.md">
+            <Pack>True</Pack>
+            <PackagePath>\</PackagePath>
+        </None>
+        <None Include="Modules\ChangelogManager\README.md" />
+        <None Include="Configuration\README.md" />
+        <None Include="Modules\EventBus\README.md" />
+        <None Include="README.md" />
+        <None Include="Modules\UpdateTracker\README.md" />
+    </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="Modules\EventManager\" />
-    <Folder Include="Modules\HistoryLogger\" />
-  </ItemGroup>
+    <ItemGroup>
+        <Folder Include="Modules\EventManager\" />
+        <Folder Include="Modules\HistoryLogger\" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="..\NoireLib.SourceGenerators\bin\$(Configuration)\netstandard2.0\NoireLib.SourceGenerators.dll" Pack="true" PackagePath="analyzers/dotnet/cs" Visible="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Castle.Core" Version="5.2.1" />
+    </ItemGroup>
 </Project>

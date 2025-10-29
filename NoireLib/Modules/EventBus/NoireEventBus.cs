@@ -101,10 +101,10 @@ public class NoireEventBus : NoireModuleBase
 
         var eventType = typeof(TEvent);
         var token = new EventSubscriptionToken(Guid.NewGuid());
-        
+
         Action<object> wrappedHandler = evt => handler((TEvent)evt);
         Func<object, bool>? wrappedFilter = filter != null ? (Func<object, bool>)(evt => filter((TEvent)evt)) : null;
-        
+
         var entry = new SubscriptionEntry(
             token,
             wrappedHandler,
@@ -150,10 +150,10 @@ public class NoireEventBus : NoireModuleBase
 
         var eventType = typeof(TEvent);
         var token = new EventSubscriptionToken(Guid.NewGuid());
-        
+
         Func<object, Task> wrappedHandler = evt => handler((TEvent)evt);
         Func<object, bool>? wrappedFilter = filter != null ? (Func<object, bool>)(evt => filter((TEvent)evt)) : null;
-        
+
         var entry = new SubscriptionEntry(
             token,
             wrappedHandler,

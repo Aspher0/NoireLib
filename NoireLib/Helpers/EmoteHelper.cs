@@ -69,7 +69,7 @@ public static class EmoteHelper
         }
         catch (Exception)
         {
-            NoireLogger.LogError($"Failed to get Emote by ID: {emoteId}.");
+            NoireLogger.LogError($"Failed to get Emote by ID: {emoteId}.", "[EmoteHelper] ");
             return null;
         }
     }

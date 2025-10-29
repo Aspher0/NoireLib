@@ -303,7 +303,7 @@ public static class NoireLogger
         }
 
         var builderText = new SeStringBuilder();
-        
+
         prefix = GetPrefix(prefix);
         var fullMessage = $"{prefix}{message}";
 

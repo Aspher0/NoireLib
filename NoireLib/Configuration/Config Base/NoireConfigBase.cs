@@ -1,7 +1,7 @@
 using System;
-using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using NoireLib.Helpers;
 
 namespace NoireLib.Configuration;
 
@@ -32,31 +32,8 @@ public abstract class NoireConfigBase : INoireConfig
     /// <returns>The full path to the configuration JSON file, or null if NoireLib is not initialized.</returns>
     protected string? GetConfigFilePath()
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
-        {
-            NoireLogger.LogError<NoireConfigBase>("Cannot get config file path: NoireLib is not initialized.");
-            return null;
-        }
-
-        try
-        {
-            var configDirectory = NoireService.PluginInterface.ConfigDirectory;
-            var pluginConfigDirectory = configDirectory.FullName;
-
-            if (!Directory.Exists(pluginConfigDirectory))
-            {
-                Directory.CreateDirectory(pluginConfigDirectory);
-                NoireLogger.LogDebug<NoireConfigBase>($"Created configuration directory: {pluginConfigDirectory}");
-            }
-
-            var fileName = $"{GetConfigFileName()}.json";
-            return Path.Combine(pluginConfigDirectory, fileName);
-        }
-        catch (Exception ex)
-        {
-            NoireLogger.LogError<NoireConfigBase>(ex, "Failed to get config file path.");
-            return null;
-        }
+        var fileName = $"{GetConfigFileName()}.json";
+        return FileHelper.GetPluginConfigFilePath(fileName);
     }
 
     /// <summary>
@@ -77,10 +54,11 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
-            var json = JsonSerializer.Serialize(this, GetType(), JsonOptions);
-            File.WriteAllText(filePath, json);
-            NoireLogger.LogDebug<NoireConfigBase>($"Configuration saved successfully to: {filePath}");
-            return true;
+            var success = FileHelper.WriteJsonToFile(filePath, this, JsonOptions);
+            if (success)
+                NoireLogger.LogVerbose<NoireConfigBase>($"Configuration saved successfully to: {filePath}");
+
+            return success;
         }
         catch (Exception ex)
         {
@@ -107,13 +85,19 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
-            if (!File.Exists(filePath))
+            if (!FileHelper.FileExists(filePath))
             {
                 NoireLogger.LogDebug<NoireConfigBase>($"Configuration file not found: {filePath}. Using default values.");
                 return false;
             }
 
-            var json = File.ReadAllText(filePath);
+            var json = FileHelper.ReadTextFromFile(filePath);
+            if (json == null)
+            {
+                NoireLogger.LogWarning<NoireConfigBase>($"Failed to read configuration from: {filePath}");
+                return false;
+            }
+
             var loadedConfig = JsonSerializer.Deserialize(json, GetType(), JsonOptions);
 
             if (loadedConfig == null)
@@ -124,7 +108,7 @@ public abstract class NoireConfigBase : INoireConfig
 
             CopyPropertiesFrom(loadedConfig);
 
-            NoireLogger.LogDebug<NoireConfigBase>($"Configuration loaded successfully from: {filePath}");
+            NoireLogger.LogVerbose<NoireConfigBase>($"Configuration loaded successfully from: {filePath}");
             return true;
         }
         catch (Exception ex)
@@ -174,14 +158,12 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
-            if (File.Exists(filePath))
+            var success = FileHelper.DeleteFile(filePath);
+            if (success)
             {
-                File.Delete(filePath);
                 NoireLogger.LogDebug<NoireConfigBase>($"Configuration file deleted: {filePath}");
-                return true;
             }
-
-            return false;
+            return success;
         }
         catch (Exception ex)
         {
@@ -197,6 +179,6 @@ public abstract class NoireConfigBase : INoireConfig
     public virtual bool Exists()
     {
         var filePath = GetConfigFilePath();
-        return !string.IsNullOrEmpty(filePath) && File.Exists(filePath);
+        return FileHelper.FileExists(filePath);
     }
 }

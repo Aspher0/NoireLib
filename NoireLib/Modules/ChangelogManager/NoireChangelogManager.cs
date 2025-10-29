@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using static Dalamud.Interface.Windowing.Window;
 using NoireLib.Core.Modules;
-using NoireLib.Configuration;
 using NoireLib.EventBus;
 
 namespace NoireLib.Changelog;
@@ -286,11 +285,7 @@ public class NoireChangelogManager : NoireModuleBase
         if (latestVersion == null)
             return;
 
-        var config = NoireConfigManager.GetConfig<ChangelogManagerConfig>();
-        if (config == null)
-            return;
-
-        var lastSeenVersion = config.LastSeenChangelogVersion;
+        var lastSeenVersion = ChangelogManagerConfig.Instance.LastSeenChangelogVersion;
 
         if (lastSeenVersion == null || lastSeenVersion != latestVersion)
         {
@@ -298,7 +293,7 @@ public class NoireChangelogManager : NoireModuleBase
                 ChangelogWindow.ShowChangelogForVersion(latestVersion);
 
             // Update the last seen version, even if should not show automatically to avoid showing it when enabling the option
-            config.UpdateLastSeenVersion(latestVersion);
+            ChangelogManagerConfig.Instance.UpdateLastSeenVersion(latestVersion);
         }
     }
 
@@ -310,7 +305,7 @@ public class NoireChangelogManager : NoireModuleBase
     /// <returns></returns>
     public NoireChangelogManager ClearLastSeenVersion()
     {
-        NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.ClearLastSeenVersion());
+        ChangelogManagerConfig.Instance.ClearLastSeenVersion();
         PublishEvent(new ChangelogLastSeenVersionClearedEvent());
         return this;
     }
@@ -324,7 +319,7 @@ public class NoireChangelogManager : NoireModuleBase
         var latestVersion = GetLatestVersion();
         if (latestVersion != null)
         {
-            NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.UpdateLastSeenVersion(latestVersion));
+            ChangelogManagerConfig.Instance.UpdateLastSeenVersion(latestVersion);
             PublishEvent(new ChangelogLastSeenVersionUpdatedEvent(latestVersion));
         }
         return this;
@@ -337,7 +332,7 @@ public class NoireChangelogManager : NoireModuleBase
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager SetLastSeenVersion(Version version)
     {
-        NoireConfigManager.UpdateConfig<ChangelogManagerConfig>(config => config.UpdateLastSeenVersion(version));
+        ChangelogManagerConfig.Instance.UpdateLastSeenVersion(version);
         PublishEvent(new ChangelogLastSeenVersionUpdatedEvent(version));
         return this;
     }
@@ -411,7 +406,7 @@ public class NoireChangelogManager : NoireModuleBase
         var removed = changelogs.Remove(version);
         if (removed)
             PublishEvent(new ChangelogVersionRemovedEvent(version));
-        
+
         ChangelogWindow.UpdateVersions();
         return removed;
     }
@@ -432,7 +427,7 @@ public class NoireChangelogManager : NoireModuleBase
                 PublishEvent(new ChangelogVersionRemovedEvent(version));
             }
         }
-        
+
         ChangelogWindow.UpdateVersions();
         return removedAmount;
     }

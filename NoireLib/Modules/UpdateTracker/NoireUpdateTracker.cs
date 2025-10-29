@@ -66,7 +66,8 @@ public class NoireUpdateTracker : NoireModuleBase
             notificationTitle,
             notificationMessage,
             notificationDurationMs,
-            eventBus) { }
+            eventBus)
+    { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
@@ -359,7 +360,7 @@ public class NoireUpdateTracker : NoireModuleBase
             }
 
             var remote = entries.FirstOrDefault(e => string.Equals(e.InternalName, NoireService.PluginInterface.InternalName, StringComparison.OrdinalIgnoreCase));
-            
+
             if (remote == null || string.IsNullOrWhiteSpace(remote.AssemblyVersion))
             {
                 NoireLogger.LogWarning(this, $"No matching internal name entry found in the repository or the assembly version is missing. Looking for internal name: {NoireService.PluginInterface.InternalName}.");

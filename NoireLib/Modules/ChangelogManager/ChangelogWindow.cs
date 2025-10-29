@@ -107,7 +107,7 @@ public class ChangelogWindow : Window, IDisposable
         previousSelectedVersion = selectedVersion;
 
         IsOpen = true;
-        
+
         // Notify manager that window was opened
         ChangelogManager.OnWindowOpened(selectedVersion);
     }
@@ -132,7 +132,7 @@ public class ChangelogWindow : Window, IDisposable
         ImGui.Dummy(new Vector2(0, 3));
         DrawFooter();
     }
-    
+
     private void DrawVersionSelector()
     {
         ImGui.Text("Select Version:");
@@ -151,7 +151,7 @@ public class ChangelogWindow : Window, IDisposable
                     var oldVersion = selectedVersion;
                     selectedVersion = version;
                     currentChangelog = ChangelogManager.GetVersion(selectedVersion);
-                    
+
                     // Notify manager that version changed
                     if (oldVersion != selectedVersion)
                     {
@@ -205,16 +205,16 @@ public class ChangelogWindow : Window, IDisposable
         }
 
         var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // Reserve space for footer
-       
+
         var bgColor = new Vector4(0.5f, 0.5f, 0.5f, 0.05f);
         ImGui.PushStyleColor(ImGuiCol.ChildBg, bgColor);
-        
+
         ImGui.BeginChild("##ChangelogContent", new Vector2(0, availHeight), false);
-        
+
         var padding = 5f;
         ImGui.Dummy(new Vector2(0, padding));
         ImGui.Indent(padding);
-        
+
         // Set wrap position accounting for padding
         ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding);
 
@@ -230,7 +230,7 @@ public class ChangelogWindow : Window, IDisposable
         {
             DrawChangelogEntry(entry);
         }
-        
+
         ImGui.PopTextWrapPos();
         ImGui.Unindent(padding);
         ImGui.Dummy(new Vector2(0, padding));
@@ -320,15 +320,15 @@ public class ChangelogWindow : Window, IDisposable
 
         // Calculate prefix width (bullet or icon)
         float prefixWidth = 0f;
-        
+
         // Determine what prefix we're using
         bool willShowBullet = entry.HasBullet;
         bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
-        
+
         if (willShowIcon)
         {
             ImGui.PushFont(UiBuilder.IconFont);
-            prefixWidth = ImGui.CalcTextSize(entry.Icon.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
+            prefixWidth = ImGui.CalcTextSize(entry.Icon!.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
             ImGui.PopFont();
         }
         else if (willShowBullet)
@@ -359,9 +359,9 @@ public class ChangelogWindow : Window, IDisposable
             // Entry with bullet
             ImGui.Bullet();
             ImGui.SameLine();
-            
+
             textStartPosX = ImGui.GetCursorPosX();
-            
+
             if (shouldPlaceButtonOnNewLine)
             {
                 ImGui.TextWrapped(entry.Text);
@@ -376,12 +376,12 @@ public class ChangelogWindow : Window, IDisposable
             // Entry with icon
             var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
             ImGui.PushFont(UiBuilder.IconFont);
-            ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
+            ImGui.TextColored(iconColor, entry.Icon!.Value.ToIconString());
             ImGui.PopFont();
             ImGui.SameLine();
-            
+
             textStartPosX = ImGui.GetCursorPosX();
-            
+
             if (shouldPlaceButtonOnNewLine)
             {
                 ImGui.TextWrapped(entry.Text);
@@ -395,7 +395,7 @@ public class ChangelogWindow : Window, IDisposable
         {
             // Entry with no prefix (no bullet, no icon)
             textStartPosX = ImGui.GetCursorPosX();
-            
+
             if (shouldPlaceButtonOnNewLine)
             {
                 ImGui.TextWrapped(entry.Text);
@@ -445,15 +445,15 @@ public class ChangelogWindow : Window, IDisposable
             {
                 if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                 {
-                    entry.ButtonAction.Invoke(ImGuiMouseButton.Left);
+                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Left);
                 }
                 else if (ImGui.IsMouseClicked(ImGuiMouseButton.Right))
                 {
-                    entry.ButtonAction.Invoke(ImGuiMouseButton.Right);
+                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Right);
                 }
                 else if (ImGui.IsMouseClicked(ImGuiMouseButton.Middle))
                 {
-                    entry.ButtonAction.Invoke(ImGuiMouseButton.Middle);
+                    entry.ButtonAction?.Invoke(ImGuiMouseButton.Middle);
                 }
             }
 
@@ -470,9 +470,9 @@ public class ChangelogWindow : Window, IDisposable
     {
         var buttonWidth = 100f;
         var windowWidth = ImGui.GetWindowWidth();
-        
+
         ImGui.SetCursorPosX((windowWidth - buttonWidth) * 0.5f);
-        
+
         if (ImGui.Button("Close", new Vector2(buttonWidth, 0)))
             CloseWindow();
     }

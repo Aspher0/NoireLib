@@ -180,9 +180,9 @@ public class NoireEventBusTests
 
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(1, 19, "Paladin"));
         eventBus.Publish(new Dummy_Event2(DateTime.Now));
-        
+
         var removed = eventBus.UnsubscribeAll<Dummy_PlayerJobChangedEvent>();
-        
+
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(19, 20, "Warrior"));
         eventBus.Publish(new Dummy_Event2(DateTime.Now));
 
@@ -209,9 +209,9 @@ public class NoireEventBusTests
         eventBus.Subscribe<Dummy_PlayerJobChangedEvent>(_ => callCount4++); // No owner
 
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(1, 19, "Paladin"));
-        
+
         var removed = eventBus.UnsubscribeAll<Dummy_PlayerJobChangedEvent>(owner1);
-        
+
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(19, 20, "Warrior"));
 
         removed.Should().Be(2); // 2 handlers from owner1 removed
@@ -247,16 +247,16 @@ public class NoireEventBusTests
         eventBus.Subscribe<Dummy_PlayerJobChangedEvent>(_ => callCount3++);
 
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(1, 19, "Paladin"));
-        
+
         var removed = eventBus.UnsubscribeAll<Dummy_PlayerJobChangedEvent>(); // Remove ALL
-        
+
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(19, 20, "Warrior"));
 
         removed.Should().Be(3); // All 3 handlers removed
         callCount1.Should().Be(1);
         callCount2.Should().Be(1);
         callCount3.Should().Be(1);
-        
+
         eventBus.GetSubscriberCount<Dummy_PlayerJobChangedEvent>().Should().Be(0);
     }
 
@@ -274,9 +274,9 @@ public class NoireEventBusTests
 
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(1, 19, "Paladin"));
         eventBus.Publish(new Dummy_Event2(DateTime.Now));
-        
+
         var removedCount = eventBus.UnsubscribeAll(owner);
-        
+
         eventBus.Publish(new Dummy_PlayerJobChangedEvent(19, 20, "Warrior"));
         eventBus.Publish(new Dummy_Event2(DateTime.Now));
 
@@ -359,7 +359,7 @@ public class NoireEventBusTests
 
         handler1Called.Should().BeTrue();
         handler3Called.Should().BeTrue();
-        
+
         var stats = eventBus.GetStatistics();
         stats.TotalExceptionsCaught.Should().Be(1);
 
@@ -402,7 +402,7 @@ public class NoireEventBusTests
         Action act1 = () => eventBus!.Publish(new Dummy_PlayerJobChangedEvent(1, 19, "Paladin"));
         Action act2 = () => eventBus!.Publish(new Dummy_Event2(DateTime.Now));
         Action act3 = () => eventBus!.Publish(new Dummy_Event4());
-        
+
         act1.Should().NotThrow();
         act2.Should().NotThrow();
         act3.Should().NotThrow();
