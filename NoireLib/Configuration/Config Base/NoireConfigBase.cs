@@ -54,6 +54,18 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
+            var currentJson = JsonSerializer.Serialize(this, GetType(), JsonOptions);
+
+            if (FileHelper.FileExists(filePath))
+            {
+                var existingJson = FileHelper.ReadTextFromFile(filePath);
+                if (existingJson != null && existingJson.Equals(currentJson, StringComparison.Ordinal))
+                {
+                    NoireLogger.LogVerbose<NoireConfigBase>($"Configuration unchanged, skipping save: {filePath}");
+                    return true;
+                }
+            }
+
             var success = FileHelper.WriteJsonToFile(filePath, this, JsonOptions);
             if (success)
                 NoireLogger.LogVerbose<NoireConfigBase>($"Configuration saved successfully to: {filePath}");

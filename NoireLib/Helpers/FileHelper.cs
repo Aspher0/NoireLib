@@ -316,7 +316,7 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Checks if two files are equal by comparing their contents.
+    /// Checks whether two files are equal by comparing their contents.
     /// </summary>
     /// <param name="filePath1">The path to the first file.</param>
     /// <param name="filePath2">The path to the second file.</param>
