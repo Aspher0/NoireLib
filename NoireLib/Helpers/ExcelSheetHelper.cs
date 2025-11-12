@@ -5,6 +5,10 @@ using System.Collections.Concurrent;
 
 namespace NoireLib.Internal;
 
+/// <summary>
+/// A helper class for managing Excel sheets across different client languages.<br/>
+/// Supports lazy loading and caching of sheets for fast retrieval.
+/// </summary>
 public static class ExcelSheetHelper
 {
     private static readonly ConcurrentDictionary<(Type SheetType, ClientLanguage Language), object> Sheets = new();
@@ -13,7 +17,7 @@ public static class ExcelSheetHelper
     /// Loads the Excel sheets for the specified type across all client languages.
     /// </summary>
     /// <typeparam name="T">The type of the Excel row.</typeparam>
-    public static void LoadSheets<T>() where T : struct, IExcelRow<T>
+    private static void LoadSheets<T>() where T : struct, IExcelRow<T>
     {
         foreach (var lang in Enum.GetValues<ClientLanguage>())
         {

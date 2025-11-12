@@ -7,7 +7,8 @@ namespace NoireLib.Core.Modules;
 /// Base class for modules within the NoireLib library.<br/>
 /// Allows for multiple instances of the same module type with unique identifiers and instance counters.
 /// </summary>
-public abstract class NoireModuleBase : INoireModule
+/// <typeparam name="TModule">The type of the module.</typeparam>
+public abstract class NoireModuleBase<TModule> : INoireModule where TModule : NoireModuleBase<TModule>, new()
 {
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();
     private static readonly object CounterLock = new();
@@ -36,11 +37,11 @@ public abstract class NoireModuleBase : INoireModule
     /// <summary>
     /// Constructor for the module base class.
     /// </summary>
-    /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="args">Arguments for module initialization.</param>
-    public NoireModuleBase(bool active = true, string? moduleId = null, bool enableLogging = true, params object?[] args)
+    public NoireModuleBase(string? moduleId = null, bool active = true, bool enableLogging = true, params object?[] args)
     {
         ModuleId = moduleId;
         InstanceCounter = GetNextInstanceCounter();
@@ -50,8 +51,8 @@ public abstract class NoireModuleBase : INoireModule
     }
 
     /// <summary>
-    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active)<br/>
-    /// Used in <see cref="NoireLibMain.AddModule"/> to create modules with specific IDs.
+    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active, enableLogging)<br/>
+    /// Used in <see cref="NoireLibMain.AddModule{T}(string?)"/> to create modules with specific IDs.
     /// </summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
@@ -86,6 +87,7 @@ public abstract class NoireModuleBase : INoireModule
     /// This ensures that multiple instances of the same module with the same ID get unique counters.<br/>
     /// Prevents duplicate modules to cause crashes or unexpected behavior if the said modules have their own windows.
     /// </summary>
+    /// <returns>The next instance counter.</returns>
     private int GetNextInstanceCounter()
     {
         var moduleType = GetType();
@@ -104,12 +106,17 @@ public abstract class NoireModuleBase : INoireModule
     /// Gets a unique identifier string combining the ModuleId and InstanceCounter.<br/>
     /// Used for Window IDs and other unique identification needs.
     /// </summary>
+    /// <returns>The unique identifier string.</returns>
     public string GetUniqueIdentifier()
     {
+        string identifier = $"{(NoireService.IsInitialized() ? NoireService.PluginInterface.InternalName : "NoireLib")}_";
+
         if (!string.IsNullOrWhiteSpace(ModuleId))
-            return InstanceCounter > 0 ? $"{ModuleId}_{InstanceCounter}" : ModuleId;
+            identifier += InstanceCounter > 0 ? $"{ModuleId}_{InstanceCounter}" : ModuleId;
         else
-            return $"{GetType()}_{InstanceCounter}";
+            identifier += $"{GetType().Name}_{InstanceCounter}";
+
+        return identifier;
     }
 
     /// <summary>
@@ -117,18 +124,21 @@ public abstract class NoireModuleBase : INoireModule
     /// </summary>
     /// <param name="enableLogging">Whether to enable logging.</param>
     /// <returns>The module instance for chaining.</returns>
-    public virtual void SetEnableLogging(bool enableLogging)
+    public virtual TModule SetEnableLogging(bool enableLogging)
     {
         EnableLogging = enableLogging;
+        return (TModule)this;
     }
 
     /// <summary>
     /// Sets the active state of the module.
     /// </summary>
     /// <param name="active">Whether to activate the module.</param>
-    public virtual void SetActive(bool active)
+    /// <returns>The module instance for chaining.</returns>
+    public virtual TModule SetActive(bool active)
     {
-        if (IsActive == active) return;
+        if (IsActive == active)
+            return (TModule)this;
 
         IsActive = active;
 
@@ -136,30 +146,48 @@ public abstract class NoireModuleBase : INoireModule
             OnActivated();
         else
             OnDeactivated();
+
+        return (TModule)this;
     }
 
     /// <summary>
     /// Activates the module.
     /// </summary>
-    public virtual void Activate()
+    /// <returns>The module instance for chaining.</returns>
+    public virtual TModule Activate()
     {
-        if (IsActive) return;
+        if (IsActive)
+            return (TModule)this;
         SetActive(true);
-        OnActivated();
+        return (TModule)this;
     }
 
     /// <summary>
     /// Deactivates the module.
     /// </summary>
-    public virtual void Deactivate()
+    /// <returns>The module instance for chaining.</returns>
+    public virtual TModule Deactivate()
     {
-        if (!IsActive) return;
+        if (!IsActive)
+            return (TModule)this;
         SetActive(false);
-        OnDeactivated();
+        return (TModule)this;
     }
 
     /// <summary>
-    /// Disposes of the module, releasing any resources.
+    /// Internal method that disposes the module resources.<br/>
+    /// Not to be confused with <see cref="Dispose"/>, which is the public method.<br/>
+    /// Do not call <see cref="Dispose"/> in this method to avoid infinite recursion.
     /// </summary>
-    public abstract void Dispose();
+    protected abstract void DisposeInternal();
+
+    /// <summary>
+    /// Disposes the module completely.<br/>
+    /// This is here because modules may have windows. This way, windows can be disposed automatically.<br/>
+    /// Do not call manually unless you are managing module lifecycles yourself (i.e. Without using <see cref="NoireLibMain.AddModule{T}(T)"/>).
+    /// </summary>
+    public virtual void Dispose()
+    {
+        DisposeInternal();
+    }
 }

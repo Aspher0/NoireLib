@@ -9,6 +9,9 @@ using System;
 
 namespace NoireLib.Helpers;
 
+/// <summary>
+/// A helper class for sending chat messages to the game.
+/// </summary>
 public static class ChatHelper
 {
     /// <summary>

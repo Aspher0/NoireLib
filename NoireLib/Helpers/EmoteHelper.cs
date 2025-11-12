@@ -6,6 +6,9 @@ using System;
 
 namespace NoireLib.Helpers;
 
+/// <summary>
+/// A helper class for working with Emotes.
+/// </summary>
 public static class EmoteHelper
 {
     /// <summary>

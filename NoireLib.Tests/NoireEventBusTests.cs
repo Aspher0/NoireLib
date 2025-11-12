@@ -23,7 +23,7 @@ public class NoireEventBusTests
 
     public NoireEventBusTests()
     {
-        eventBus = new NoireEventBus(true, enableLogging: false);
+        eventBus = new NoireEventBus(null, true, enableLogging: false);
     }
 
     [Fact]

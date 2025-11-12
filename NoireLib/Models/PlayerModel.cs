@@ -10,9 +10,24 @@ namespace NoireLib.Models;
 /// </summary>
 public class PlayerModel
 {
+    /// <summary>
+    /// The name of the player, without the homeworld.
+    /// </summary>
     public string PlayerName { get; set; }
+
+    /// <summary>
+    /// The name of the player's homeworld.
+    /// </summary>
     public string Homeworld { get; set; }
+
+    /// <summary>
+    /// The world ID of the player's homeworld.
+    /// </summary>
     public uint? WorldId { get; set; } = null;
+
+    /// <summary>
+    /// The content ID (CID) of the player.
+    /// </summary>
     public ulong? ContentId { get; set; } = null;
 
     /// <summary>
@@ -25,6 +40,8 @@ public class PlayerModel
     /// </summary>
     /// <param name="playerName">The name of the player.</param>
     /// <param name="homeworld">The homeworld of the player.</param>
+    /// <param name="worldId">The world ID of the player's homeworld (optional).</param>
+    /// <param name="contentId">The content ID (CID) of the player (optional).</param>
     public PlayerModel(string playerName, string homeworld, uint? worldId = null, ulong? contentId = null)
     {
         PlayerName = playerName;

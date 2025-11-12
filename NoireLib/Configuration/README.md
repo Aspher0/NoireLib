@@ -1,4 +1,5 @@
 
+
 # NoireLib Documentation - NoireConfigManager
 
 You are reading the documentation for `NoireConfigManager`.
@@ -7,9 +8,9 @@ You are reading the documentation for `NoireConfigManager`.
 - [Overview](#overview)
 - [Getting Started](#getting-started)
 - [Configuration Approaches](#configuration-approaches)
-  - [1. Source Generator Approach](#source-generator-approach)
-  - [2. Castle DynamicProxy Approach](#castle-dynamicproxy-approach)
-  - [3. Legacy Manual Approach](#legacy-manual-approach)
+  - [1. With Source Generator](#with-source-generator)
+  - [2. With Castle DynamicProxy](#with-castle-dynamicproxy)
+  - [3. Legacy-Manual](#legacy---manual)
 - [AutoSave Attribute](#autosave-attribute)
 - [Using NoireConfigManager](#using-noireconfigmanager)
 - [Advanced Features](#advanced-features)
@@ -71,7 +72,7 @@ You can read about the details and other ways of creating configurations below.
 
 NoireLib offers **three different approaches** for creating configurations, each with its own trade-offs.
 
-### 1. Source Generator Approach
+### 1. With Source Generator
 
 **Uses a compile-time source generator to create a static class wrapper around your configuration.**<br/>
 With this approach, you define your configuration class inheriting from `NoireConfigBase` and decorate it with the `[NoireConfig("ClassName")]` attribute. The source generator will then create a static class named `ClassName` that provides direct access to the configuration instance.
@@ -145,7 +146,7 @@ MyConfig.ClearCache();
 
 ---
 
-### 2. Castle DynamicProxy Approach
+### 2. With Castle DynamicProxy
 
 **Uses runtime proxying to intercept property and method calls for automatic saving.**<br/>
 With this approach, you define your configuration class inheriting from `NoireConfigBase<T>` and access the singleton instance via the static `Instance` property. Properties and methods that should trigger automatic saving must be marked with the `[AutoSave]` attribute and declared as `virtual`.
@@ -229,7 +230,7 @@ MyConfigCastle.ClearCache();
 
 ---
 
-### 3. Legacy Manual Approach
+### 3. Legacy - Manual
 
 **Traditional approach with manual instance management and saving.**<br/>
 With this approach, you need to manually instanciate, store, load and save the configuration yourself.<br>

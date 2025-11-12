@@ -12,6 +12,8 @@ namespace NoireLib.Changelog;
 /// </summary>
 public abstract class BaseChangelogVersion : IChangelogVersion
 {
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
     protected static readonly Vector4 White = ColorHelper.HexToVector4("#FFFFFF");
     protected static readonly Vector4 Green = ColorHelper.HexToVector4("#1BCC18");
     protected static readonly Vector4 Orange = ColorHelper.HexToVector4("#FCC203");
@@ -22,6 +24,12 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     protected static readonly Vector4 DarkGrey = ColorHelper.HexToVector4("#262626");
     protected static readonly Vector4 Black = ColorHelper.HexToVector4("#000000");
 
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+
+    /// <summary>
+    /// Gets the list of changelog versions.
+    /// </summary>
+    /// <returns></returns>
     public abstract List<ChangelogVersion> GetVersions();
 
     /// <summary>
@@ -29,6 +37,7 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// </summary>
     /// <param name="text">The text to display.</param>
     /// <param name="textColor">The color of the text.</param>
+    /// <param name="indentLevel">The indentation level of the entry.</param>
     /// <param name="icon">The optional icon to display next to the text, on the left.</param>
     /// <param name="iconColor">The optional color of the icon.</param>
     /// <returns>The built changelog entry.</returns>
@@ -40,6 +49,7 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// </summary>
     /// <param name="text">The text to display.</param>
     /// <param name="textColor">The color of the text.</param>
+    /// <param name="indentLevel">The indentation level of the entry.</param>
     /// <returns>The built changelog entry.</returns>
     protected static ChangelogEntry HeaderBullet(string text, Vector4? textColor = null, int indentLevel = 0)
         => new() { Text = text, IsHeader = true, TextColor = textColor, IndentLevel = indentLevel, HasBullet = true };
@@ -59,6 +69,7 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// <param name="buttonTextColor">The color of the text on the button.</param>
     /// <param name="buttonColor">The color of the button.</param>
     /// <param name="action">The action to perform when the button is clicked with the mouse button as parameter.</param>
+    /// <param name="indentLevel">The indentation level of the entry.</param>
     /// <param name="icon">The optional icon to display next to the text, on the left.</param>
     /// <param name="iconColor">The optional color of the icon.</param>
     /// <returns>The built changelog entry.</returns>
@@ -74,6 +85,7 @@ public abstract class BaseChangelogVersion : IChangelogVersion
     /// <param name="buttonTextColor">The color of the text on the button.</param>
     /// <param name="buttonColor">The color of the button.</param>
     /// <param name="action">The action to perform when the button is clicked with the mouse button as parameter.</param>
+    /// <param name="indentLevel">The indentation level of the entry.</param>
     /// <returns>The built changelog entry.</returns>
     protected static ChangelogEntry ButtonBullet(string? text = null, Vector4? textColor = null, string? buttonText = null, Vector4? buttonTextColor = null, Vector4? buttonColor = null, Action<ImGuiMouseButton>? action = null, int indentLevel = 0)
         => new() { Text = text, TextColor = textColor, ButtonText = buttonText, ButtonColor = buttonColor, ButtonTextColor = buttonTextColor, ButtonAction = action, IndentLevel = indentLevel, HasBullet = true };

@@ -634,22 +634,13 @@ public static class FileHelper
     /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>
     public static string? GetPluginConfigDirectory()
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
+        if (!NoireService.IsInitialized())
         {
             NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
             return null;
         }
 
-        try
-        {
-            var configDirectory = NoireService.PluginInterface.ConfigDirectory;
-            return configDirectory.FullName;
-        }
-        catch (Exception ex)
-        {
-            NoireLogger.LogError(ex, "Failed to get plugin config directory.", "[FileHelper] ");
-            return null;
-        }
+        return NoireService.PluginInterface.GetPluginConfigDirectory();
     }
 
     /// <summary>
@@ -659,7 +650,7 @@ public static class FileHelper
     /// <returns>The full path to the file in the config directory, or null if NoireLib is not initialized.</returns>
     public static string? GetPluginConfigFilePath(string fileName)
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
+        if (!NoireService.IsInitialized())
         {
             NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
             return null;

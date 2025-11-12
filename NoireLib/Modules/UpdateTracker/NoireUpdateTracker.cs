@@ -17,8 +17,12 @@ namespace NoireLib.UpdateTracker;
 /// <summary>
 /// A module that tracks updates for the plugin by checking a JSON repository URL at regular intervals.
 /// </summary>
-public class NoireUpdateTracker : NoireModuleBase
+public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 {
+    /// <summary>
+    /// The EventBus instance to publish events to.<br/>
+    /// If <see langword="null"/>, no events will be published.
+    /// </summary>
     public NoireEventBus? EventBus { get; set; }
 
     private readonly HttpClient httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
@@ -27,14 +31,17 @@ public class NoireUpdateTracker : NoireModuleBase
     private Timer? updateCheckTimer;
     private bool updateNotificationShown = false;
 
+    /// <summary>
+    /// The default constructor needed for internal purposes.
+    /// </summary>
     public NoireUpdateTracker() : base() { }
 
     /// <summary>
     /// Creates a new instance of the <see cref="NoireUpdateTracker"/> module.<br/>
     /// See <see cref="UpdateTrackerTextTags"/> to add dynamic content to messages and notifications.
     /// </summary>
-    /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="moduleId">The optional module identifier.</param>
+    /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="repoUrl">The URL of the JSON repository to check for updates.</param>
     /// <param name="shouldPrintMessageInChatOnUpdate">Whether to print a message in chat when an update is detected.</param>
@@ -45,8 +52,8 @@ public class NoireUpdateTracker : NoireModuleBase
     /// <param name="notificationDurationMs">The duration in milliseconds for which the update notification will be displayed.</param>
     /// <param name="eventBus">Optional EventBus instance to publish events. If null, no event will be published.</param>
     public NoireUpdateTracker(
-        bool active = true,
         string? moduleId = null,
+        bool active = true,
         bool enableLogging = true,
         string? repoUrl = null,
         bool shouldPrintMessageInChatOnUpdate = true,
@@ -56,17 +63,17 @@ public class NoireUpdateTracker : NoireModuleBase
         string? notificationMessage = null,
         int notificationDurationMs = 30000,
         NoireEventBus? eventBus = null)
-        : base(active,
-            moduleId,
-            enableLogging,
-            repoUrl,
-            shouldPrintMessageInChatOnUpdate,
-            shouldShowNotificationOnUpdate,
-            message,
-            notificationTitle,
-            notificationMessage,
-            notificationDurationMs,
-            eventBus)
+        : base(moduleId,
+               active,
+               enableLogging,
+               repoUrl,
+               shouldPrintMessageInChatOnUpdate,
+               shouldShowNotificationOnUpdate,
+               message,
+               notificationTitle,
+               notificationMessage,
+               notificationDurationMs,
+               eventBus)
     { }
 
     /// <summary>
@@ -76,8 +83,12 @@ public class NoireUpdateTracker : NoireModuleBase
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
-    public NoireUpdateTracker(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
+    internal NoireUpdateTracker(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
+    /// <summary>
+    /// Initializes the module with optional initialization parameters.
+    /// </summary>
+    /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
         if (NoireService.PluginInterface == null)
@@ -110,12 +121,18 @@ public class NoireUpdateTracker : NoireModuleBase
         NoireLogger.LogInfo(this, $"Update Tracker initialized.");
     }
 
+    /// <summary>
+    /// Called when the module is activated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> false to true.
+    /// </summary>
     protected override void OnActivated()
     {
         StartUpdateCheckTimer();
         NoireLogger.LogInfo(this, $"Update Tracker activated.");
     }
 
+    /// <summary>
+    /// Called when the module is deactivated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> true to false.
+    /// </summary>
     protected override void OnDeactivated()
     {
         StopUpdateCheckTimer();
@@ -154,7 +171,7 @@ public class NoireUpdateTracker : NoireModuleBase
         return this;
     }
 
-    /// <<summary>
+    /// <summary>
     /// Whether to show a notification when an update is detected.
     /// </summary>>
     public bool ShouldShowNotificationOnUpdate { get; set; } = true;
@@ -244,7 +261,7 @@ public class NoireUpdateTracker : NoireModuleBase
     /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerText.NewVersion}"<br/>
     /// Set to <see langword="null"/> to use the default content.
     /// </summary>
-    /// <param name="message">The notification message content.</param>
+    /// <param name="notificationMessage">The notification message content.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireUpdateTracker SetNotificationMessage(string? notificationMessage)
     {
@@ -345,6 +362,12 @@ public class NoireUpdateTracker : NoireModuleBase
         if (!IsActive || RepoUrl.IsNullOrWhitespace() || (ShouldStopNotifyingAfterFirstNotification && updateNotificationShown))
             return;
 
+        if (!NoireService.IsInitialized())
+        {
+            NoireLogger.LogWarning(this, "Cannot check for updates: NoireLib is not initialized.");
+            return;
+        }
+
         try
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, RepoUrl);
@@ -429,7 +452,10 @@ public class NoireUpdateTracker : NoireModuleBase
             .Replace(UpdateTrackerTextTags.NewVersion, newVersion);
     }
 
-    public override void Dispose()
+    /// <summary>
+    /// Internal dispose method called when the module is disposed.
+    /// </summary>
+    protected override void DisposeInternal()
     {
         StopUpdateCheckTimer();
         httpClient.Dispose();

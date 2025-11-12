@@ -1,45 +1,39 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.ImGuiNotification;
-using Dalamud.Interface.Windowing;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using NoireLib.Core.Modules;
 
 namespace NoireLib.Changelog;
 
 /// <summary>
 /// Changelog window that displays changelog entries using ImGui.
 /// </summary>
-public class ChangelogWindow : Window, IDisposable
+public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 {
-    private NoireChangelogManager ChangelogManager { get; init; }
     private Version? selectedVersion = null;
     private Version? previousSelectedVersion = null;
     private ChangelogVersion? currentChangelog = null;
     private Version[] availableVersions = [];
 
     /// <summary>
-    /// Gets the unique window name based on the <see cref="NoireChangelogManager.WindowName"/> and <see cref="NoireModuleBase.GetUniqueIdentifier"/>.
+    /// Gets or sets the name of the display window.
     /// </summary>
-    /// <param name="noireChangelogManager"></param>
-    /// <returns></returns>
-    private static string GetWindowName(NoireChangelogManager noireChangelogManager)
-    {
-        var windowName = noireChangelogManager.WindowName + "##";
-        windowName += noireChangelogManager.GetUniqueIdentifier();
-        return windowName;
-    }
+    public override string DisplayWindowName { get; set; } = "Changelog";
 
-    public ChangelogWindow(NoireChangelogManager noireChangelogManager) : base(GetWindowName(noireChangelogManager), ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+    /// <summary>
+    /// Constructor for ChangelogWindow.
+    /// </summary>
+    /// <param name="noireChangelogManager">The <see cref="NoireChangelogManager"/> instance associated with this window.</param>
+    public ChangelogWindow(NoireChangelogManager noireChangelogManager)
+        : base(noireChangelogManager, ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
         Size = new Vector2(750, 500);
 
-        ChangelogManager = noireChangelogManager;
-
         UpdateVersions();
-        UpdateTitleBarButtons(noireChangelogManager.TitleBarButtons);
+        UpdateTitleBarButtons();
     }
 
     /// <summary>
@@ -51,34 +45,18 @@ public class ChangelogWindow : Window, IDisposable
         currentChangelog = null;
         availableVersions = Array.Empty<Version>();
 
-        var versions = ChangelogManager.GetAllVersions();
+        var versions = ParentModule.GetAllVersions();
         availableVersions = versions.Select(v => v.Version).ToArray();
 
         if (availableVersions.Length > 0)
         {
             selectedVersion = availableVersions[0];
-            currentChangelog = ChangelogManager.GetVersion(selectedVersion);
+            currentChangelog = ParentModule.GetVersion(selectedVersion);
         }
 
         if (availableVersions.Length == 0)
             CloseWindow();
     }
-
-    /// <summary>
-    /// Updates the title bar buttons of the window.
-    /// </summary>
-    /// <param name="titleBarButtons">The new list of title bar buttons.</param>
-    public void UpdateTitleBarButtons(List<TitleBarButton> titleBarButtons)
-    {
-        TitleBarButtons.Clear();
-        foreach (var titleBarButton in titleBarButtons)
-            TitleBarButtons.Add(titleBarButton);
-    }
-
-    /// <summary>
-    /// Updates the window name, keeping its uniqueness.
-    /// </summary>
-    public void UpdateWindowName() => WindowName = GetWindowName(ChangelogManager);
 
     /// <summary>
     /// Shows the changelog window for a specific version. If no version is provided, it shows the latest version.
@@ -103,27 +81,31 @@ public class ChangelogWindow : Window, IDisposable
         else
             selectedVersion = availableVersions[0];
 
-        currentChangelog = ChangelogManager.GetVersion(selectedVersion);
+        currentChangelog = ParentModule.GetVersion(selectedVersion);
         previousSelectedVersion = selectedVersion;
 
         IsOpen = true;
 
-        // Notify manager that window was opened
-        ChangelogManager.OnWindowOpened(selectedVersion);
+        ParentModule.OnWindowOpened(selectedVersion);
     }
 
     /// <summary>
     /// Closes the changelog window.
     /// </summary>
-    public void CloseWindow()
+    public new void CloseWindow()
     {
         if (IsOpen)
         {
             IsOpen = false;
-            ChangelogManager.OnWindowClosed();
+            ParentModule.OnWindowClosed();
         }
     }
 
+    #region Drawing
+
+    /// <summary>
+    /// Draws the changelog window content.
+    /// </summary>
     public override void Draw()
     {
         DrawVersionSelector();
@@ -150,12 +132,12 @@ public class ChangelogWindow : Window, IDisposable
                 {
                     var oldVersion = selectedVersion;
                     selectedVersion = version;
-                    currentChangelog = ChangelogManager.GetVersion(selectedVersion);
+                    currentChangelog = ParentModule.GetVersion(selectedVersion);
 
                     // Notify manager that version changed
                     if (oldVersion != selectedVersion)
                     {
-                        ChangelogManager.OnVersionChanged(oldVersion, selectedVersion);
+                        ParentModule.OnVersionChanged(oldVersion, selectedVersion);
                         previousSelectedVersion = selectedVersion;
                     }
                 }
@@ -477,5 +459,10 @@ public class ChangelogWindow : Window, IDisposable
             CloseWindow();
     }
 
-    public void Dispose() { }
+    #endregion
+
+    /// <summary>
+    /// Disposes resources used by the ChangelogWindow.
+    /// </summary>
+    public override void Dispose() { /* no-op */ }
 }

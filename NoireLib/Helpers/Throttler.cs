@@ -1,28 +1,20 @@
+using NoireLib.Internal.Helpers;
 using System;
-using System.Threading;
 
 namespace NoireLib.Helpers;
 
 /// <summary>
 /// Provides throttle functionality to limit the rate at which an action can be executed.
 /// </summary>
-public class Throttler
+public class Throttler : TimingHelperBase
 {
-    private int _intervalMilliseconds;
     private long _lastExecutionMs = 0;
-    private readonly SemaphoreSlim _lock = new(1, 1);
 
     /// <summary>
     /// Creates a new throttler with the specified interval.
     /// </summary>
     /// <param name="intervalMilliseconds">The minimum interval in milliseconds between action executions.</param>
-    public Throttler(int intervalMilliseconds)
-    {
-        if (intervalMilliseconds <= 0)
-            throw new ArgumentException("Interval must be greater than zero.", nameof(intervalMilliseconds));
-
-        _intervalMilliseconds = intervalMilliseconds;
-    }
+    public Throttler(int intervalMilliseconds) : base(intervalMilliseconds) { }
 
     /// <summary>
     /// Throttles the specified action. If called multiple times within the interval, only the first call executes.
@@ -31,6 +23,8 @@ public class Throttler
     /// <returns>True if the action was executed, false if it was throttled.</returns>
     public bool Throttle(Action action)
     {
+        ThrowIfDisposed();
+
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
@@ -42,7 +36,7 @@ public class Throttler
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
 
-            if (timeSinceLastExecution >= _intervalMilliseconds)
+            if (timeSinceLastExecution >= _delayMilliseconds)
             {
                 _lastExecutionMs = now;
                 shouldExecute = true;
@@ -72,8 +66,9 @@ public class Throttler
     /// <returns>The function result if executed, or the default value if throttled.</returns>
     public T? Throttle<T>(Func<T> func, T? defaultValue = default)
     {
-        if (func == null)
-            throw new ArgumentNullException(nameof(func));
+        ThrowIfDisposed();
+
+        func.ThrowIfNull(nameof(func));
 
         bool shouldExecute = false;
 
@@ -83,7 +78,7 @@ public class Throttler
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
 
-            if (timeSinceLastExecution >= _intervalMilliseconds)
+            if (timeSinceLastExecution >= _delayMilliseconds)
             {
                 _lastExecutionMs = now;
                 shouldExecute = true;
@@ -113,12 +108,14 @@ public class Throttler
     /// <returns>The remaining time in milliseconds, or 0 if the throttler is already available.</returns>
     public double GetRemainingTime(bool allowNegative = false)
     {
+        ThrowIfDisposed();
+
         _lock.Wait();
         try
         {
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
-            var remaining = _intervalMilliseconds - timeSinceLastExecution;
+            var remaining = _delayMilliseconds - timeSinceLastExecution;
             return allowNegative ? remaining : Math.Max(0, remaining);
         }
         finally
@@ -133,15 +130,7 @@ public class Throttler
     /// <returns>The current throttle interval in milliseconds.</returns>
     public int GetInterval()
     {
-        _lock.Wait();
-        try
-        {
-            return _intervalMilliseconds;
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        return GetDelay();
     }
 
     /// <summary>
@@ -151,18 +140,7 @@ public class Throttler
     /// <exception cref="ArgumentException">Thrown when interval is less than or equal to zero.</exception>
     public void SetInterval(int intervalMilliseconds)
     {
-        if (intervalMilliseconds <= 0)
-            throw new ArgumentException("Interval must be greater than zero.", nameof(intervalMilliseconds));
-
-        _lock.Wait();
-        try
-        {
-            _intervalMilliseconds = intervalMilliseconds;
-        }
-        finally
-        {
-            _lock.Release();
-        }
+        SetDelay(intervalMilliseconds);
     }
 
     /// <summary>
@@ -170,6 +148,8 @@ public class Throttler
     /// </summary>
     public void Reset()
     {
+        ThrowIfDisposed();
+
         _lock.Wait();
         try
         {
@@ -179,5 +159,19 @@ public class Throttler
         {
             _lock.Release();
         }
+    }
+
+    /// <summary>
+    /// Disposes the throttler and releases resources.
+    /// </summary>
+    public override void Dispose()
+    {
+        if (_disposed)
+            return;
+
+        _disposed = true;
+
+        // Throttler doesn't need additional cleanup beyond marking as disposed
+        // Do not dispose the SemaphoreSlim to avoid racing with in-flight Release calls.
     }
 }

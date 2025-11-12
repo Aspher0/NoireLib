@@ -1,7 +1,7 @@
 namespace NoireLib.Core.Modules;
 
 /// <summary>
-/// Interface for modules within the NoireLib library.
+/// Interface for base modules within the NoireLib library.
 /// </summary>
 public interface INoireModule
 {
@@ -21,22 +21,13 @@ public interface INoireModule
     int InstanceCounter { get; }
 
     /// <summary>
-    /// Disposes of the module, releasing any resources.
+    /// Gets the unique identifier for this module instance, combining ModuleId and InstanceCounter, or the module type if ModuleId is null.
+    /// </summary>
+    /// <returns>The unique identifier for this module.</returns>
+    string GetUniqueIdentifier();
+
+    /// <summary>
+    /// Disposes the module completely, unregistering the window, if any.
     /// </summary>
     void Dispose();
-
-    /// <summary>
-    /// Sets the active state of the module.
-    /// </summary>
-    void SetActive(bool active);
-
-    /// <summary>
-    /// Activates the module.
-    /// </summary>
-    void Activate();
-
-    /// <summary>
-    /// Deactivates the module.
-    /// </summary>
-    void Deactivate();
 }

@@ -10,27 +10,30 @@ namespace NoireLib.EventBus;
 /// A module providing a type-safe pub/sub event bus for decoupled component communication.<br/>
 /// Supports priority ordering, filtering, async handlers, and lifecycle management.
 /// </summary>
-public class NoireEventBus : NoireModuleBase
+public class NoireEventBus : NoireModuleBase<NoireEventBus>
 {
     private readonly Dictionary<Type, List<SubscriptionEntry>> subscriptions = new();
     private readonly object subscriptionLock = new();
     private long totalEventsPublished;
     private long totalExceptionsCaught;
 
+    /// <summary>
+    /// The default constructor needed for internal purposes.
+    /// </summary>
     public NoireEventBus() : base() { }
 
     /// <summary>
     /// Creates a new EventBus module.
     /// </summary>
-    /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="moduleId">Optional module ID for multiple event bus instances.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="exceptionHandling">How to handle exceptions thrown by event handlers.</param>
     public NoireEventBus(
-        bool active = true,
         string? moduleId = null,
+        bool active = true,
         bool enableLogging = true,
-        EventExceptionMode exceptionHandling = EventExceptionMode.LogAndContinue) : base(active, moduleId, enableLogging, exceptionHandling) { }
+        EventExceptionMode exceptionHandling = EventExceptionMode.LogAndContinue) : base(moduleId, active, enableLogging, exceptionHandling) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
@@ -39,8 +42,12 @@ public class NoireEventBus : NoireModuleBase
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
-    public NoireEventBus(ModuleId? moduleId = null, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
+    internal NoireEventBus(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
+    /// <summary>
+    /// Initializes the module with optional initialization parameters.
+    /// </summary>
+    /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
         if (args.Length > 0 && args[0] is EventExceptionMode exceptionHandling)
@@ -50,19 +57,23 @@ public class NoireEventBus : NoireModuleBase
             NoireLogger.LogInfo(this, "EventBus module initialized.");
     }
 
+    /// <summary>
+    /// Called when the module is activated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> false to true.
+    /// </summary>
     protected override void OnActivated()
     {
         if (EnableLogging)
             NoireLogger.LogInfo(this, "EventBus module activated.");
     }
 
+    /// <summary>
+    /// Called when the module is deactivated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> true to false.
+    /// </summary>
     protected override void OnDeactivated()
     {
         if (EnableLogging)
             NoireLogger.LogInfo(this, "EventBus module deactivated.");
     }
-
-
 
     /// <summary>
     /// Defines how exceptions thrown by event handlers are handled.
@@ -103,7 +114,7 @@ public class NoireEventBus : NoireModuleBase
         var token = new EventSubscriptionToken(Guid.NewGuid());
 
         Action<object> wrappedHandler = evt => handler((TEvent)evt);
-        Func<object, bool>? wrappedFilter = filter != null ? (Func<object, bool>)(evt => filter((TEvent)evt)) : null;
+        Func<object, bool>? wrappedFilter = filter != null ? (evt => filter((TEvent)evt)) : null;
 
         var entry = new SubscriptionEntry(
             token,
@@ -504,7 +515,10 @@ public class NoireEventBus : NoireModuleBase
         }
     }
 
-    public override void Dispose()
+    /// <summary>
+    /// Internal dispose method called when the module is disposed.
+    /// </summary>
+    protected override void DisposeInternal()
     {
         ClearAllSubscriptions();
 

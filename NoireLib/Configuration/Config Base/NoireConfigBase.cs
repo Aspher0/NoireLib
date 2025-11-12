@@ -42,7 +42,7 @@ public abstract class NoireConfigBase : INoireConfig
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     public virtual bool Save()
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
+        if (!NoireService.IsInitialized())
         {
             NoireLogger.LogWarning<NoireConfigBase>("Cannot save configuration: NoireLib is not initialized.");
             return false;
@@ -85,7 +85,7 @@ public abstract class NoireConfigBase : INoireConfig
     /// <returns>True if the load operation was successful; otherwise, false.</returns>
     public virtual bool Load()
     {
-        if (NoireService.PluginInstance == null || NoireService.PluginInterface == null)
+        if (!NoireService.IsInitialized())
         {
             NoireLogger.LogWarning<NoireConfigBase>("Cannot load configuration: NoireLib is not initialized.");
             return false;

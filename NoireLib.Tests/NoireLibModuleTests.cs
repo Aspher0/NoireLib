@@ -8,24 +8,24 @@ namespace NoireLib.Tests;
 [SupportedOSPlatform("windows")]
 public class NoireLibModuleTests
 {
-    private class DummyModule : NoireModuleBase
+    private class DummyModule : NoireModuleBase<DummyModule>
     {
         public DummyModule() : base() { }
         public DummyModule(ModuleId moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
         protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
-        public override void Dispose() { /* no-op */ }
+        protected override void DisposeInternal() { /* no-op */ }
     }
 
-    private class DummyModule2 : NoireModuleBase
+    private class DummyModule2 : NoireModuleBase<DummyModule2>
     {
         public DummyModule2() : base() { }
         public DummyModule2(ModuleId moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
         protected override void InitializeModule(params object?[] args) { /* no-op */ }
         protected override void OnActivated() { /* no-op */ }
         protected override void OnDeactivated() { /* no-op */ }
-        public override void Dispose() { /* no-op */ }
+        protected override void DisposeInternal() { /* no-op */ }
     }
 
     [Fact]

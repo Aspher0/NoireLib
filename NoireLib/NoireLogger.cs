@@ -358,7 +358,6 @@ public static class NoireLogger
     /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.<br/>
     /// For using Vector4 colors, use <see cref="PrintToChat(XivChatType, string, Vector4, Vector4?, string?)"/>.
     /// </summary>
-    /// <seealso cref="PrintToChat(XivChatType, string, Vector4, Vector4, string?)"/>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="foregroundColor">The foreground RGB color of the message.</param>
@@ -409,7 +408,6 @@ public static class NoireLogger
     /// <param name="level">The log level.</param>
     /// <param name="message">The formatted message to log.</param>
     /// <param name="exception">Optional exception to include in the log.</param>
-    /// <param name="catchException">Whether to catch exceptions (for unit tests).</param>
     private static void WriteLog(LogLevel level, string message, Exception? exception = null)
     {
         try
@@ -482,13 +480,21 @@ public static class NoireLogger
     }
 
     /// <summary>
+    /// Gets the friendly name of the caller type, stripping any generic type information.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <returns>The friendly name of the caller type.</returns>
+    private static string GetCallerFriendlyName<T>() where T : class
+        => typeof(T).Name.Split('`')[0];
+
+    /// <summary>
     /// Gets a log string with caller type name.
     /// </summary>
     /// <returns>The formatted log string.</returns>
     private static string GetLogStringWithCaller<T>(string message, string? prefix = null) where T : class
     {
         prefix = GetPrefix(prefix);
-        var caller = typeof(T).Name;
+        var caller = GetCallerFriendlyName<T>();
         return $"{prefix}[{caller}] {message}";
     }
 
@@ -499,7 +505,7 @@ public static class NoireLogger
     private static string GetLogStringWithCaller<T>(T instance, string message, string? prefix = null) where T : class
     {
         prefix = GetPrefix(prefix);
-        var caller = typeof(T).Name;
+        var caller = GetCallerFriendlyName<T>();
 
         if (instance is INoireModule module)
         {

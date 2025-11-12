@@ -1,0 +1,1135 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using NoireLib.Core.Modules;
+using NoireLib.EventBus;
+using Dalamud.Plugin.Services;
+
+namespace NoireLib.TaskQueue;
+
+/// <summary>
+/// A module providing task queuing and processing, in a blocking or non-blocking way, based on conditions and callbacks.<br/>
+/// Useful for processing tasks one at a time while awaiting certain conditions, or for scheduling tasks to be executed under specific scenarios.<br/>
+/// See <see cref="QueuedTask"/> and <see cref="TaskCompletionCondition"/> for task definitions and completion conditions.<br/>
+/// See <see cref="TaskBuilder"/> for building and enqueuing tasks comprehensively and easily with chainable methods.
+/// </summary>
+public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
+{
+    private readonly List<QueuedTask> taskQueue = new();
+    private readonly object queueLock = new();
+
+    private QueuedTask? currentTask;
+
+    private int totalTasksQueued;
+    private int tasksCompleted;
+    private int tasksCancelled;
+    private int tasksFailed;
+    private long processingStartTimeTicks; // last start/resume tick
+    private long accumulatedProcessingMillis; // total active processing time excluding pauses
+
+    /// <summary>
+    /// The associated EventBus instance for publishing queue events or subscribing to events for task completion conditions.<br/>
+    /// If <see langword="null"/>, no events will be published, and event-based completion conditions will not function.
+    /// </summary>
+    public NoireEventBus? EventBus { get; set; } = null;
+
+    private QueueState queueState = QueueState.Idle;
+    /// <summary>
+    /// The current state of the queue.
+    /// </summary>
+    public QueueState QueueState
+    {
+        get => queueState;
+        private set => queueState = value;
+    }
+
+    private bool shouldProcessQueueAutomatically = false;
+    /// <summary>
+    /// If true, the queue will automatically start processing when a task is added.
+    /// </summary>
+    public bool ShouldProcessQueueAutomatically
+    {
+        get => shouldProcessQueueAutomatically;
+        set => shouldProcessQueueAutomatically = value;
+    }
+
+    private bool shouldStopQueueOnComplete = true;
+    /// <summary>
+    /// If true, completed tasks will be automatically removed from the queue.
+    /// </summary>
+    public bool ShouldStopQueueOnComplete
+    {
+        get => shouldStopQueueOnComplete;
+        set => shouldStopQueueOnComplete = value;
+    }
+
+    /// <summary>
+    /// The default constructor needed for internal purposes.
+    /// </summary>
+    public NoireTaskQueue() : base() { }
+
+    /// <summary>
+    /// Creates a new instance of the <see cref="NoireTaskQueue"/> module.
+    /// </summary>
+    /// <param name="moduleId">The optional module identifier.</param>
+    /// <param name="active">Whether the module should be active upon creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="shouldProcessQueueAutomatically">Whether to automatically start processing when tasks are added.</param>
+    /// <param name="shouldStopQueueOnComplete">Whether to clear completed tasks automatically.</param>
+    /// <param name="eventBus">Optional EventBus instance to publish queue events.</param>
+    public NoireTaskQueue(
+    string? moduleId = null,
+    bool active = true,
+    bool enableLogging = true,
+    bool shouldProcessQueueAutomatically = false,
+    bool shouldStopQueueOnComplete = true,
+    NoireEventBus? eventBus = null)
+    : base(moduleId, active, enableLogging, shouldProcessQueueAutomatically, shouldStopQueueOnComplete, eventBus) { }
+
+    /// <summary>
+    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
+    /// Only used for internal module management.
+    /// </summary>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    internal NoireTaskQueue(ModuleId? moduleId, bool active = true, bool enableLogging = true)
+    : base(moduleId, active, enableLogging) { }
+
+    /// <summary>
+    /// Initializes the module with optional initialization parameters.
+    /// </summary>
+    /// <param name="args">The initialization parameters</param>
+    protected override void InitializeModule(params object?[] args)
+    {
+        if (args.Length > 0 && args[0] is bool autoProcess)
+            shouldProcessQueueAutomatically = autoProcess;
+
+        if (args.Length > 1 && args[1] is bool stopOnComplete)
+            shouldStopQueueOnComplete = stopOnComplete;
+
+        if (args.Length > 2 && args[2] is NoireEventBus eventBus)
+            EventBus = eventBus;
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Task Queue initialized.");
+    }
+
+    /// <summary>
+    /// Called when the module is activated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> false to true.
+    /// </summary>
+    protected override void OnActivated()
+    {
+        NoireService.Framework.Update += OnFrameworkUpdate;
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Task Queue activated.");
+    }
+
+    /// <summary>
+    /// Called when the module is deactivated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> true to false.
+    /// </summary>
+    protected override void OnDeactivated()
+    {
+        NoireService.Framework.Update -= OnFrameworkUpdate;
+        StopQueue();
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Task Queue deactivated.");
+    }
+
+    #region Framework Update
+
+    /// <summary>
+    /// Used to process the queue every frame.
+    /// </summary>
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        if (!IsActive || QueueState != QueueState.Running)
+            return;
+
+        try
+        {
+            ProcessQueue();
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "Error in queue processing.");
+        }
+    }
+
+    #endregion
+
+    #region EventBus Integration
+
+    /// <summary>
+    /// Publishes a queue event to the EventBus if available.
+    /// </summary>
+    private void PublishEvent<TEvent>(TEvent eventData)
+    {
+        EventBus?.Publish(eventData);
+    }
+
+    /// <summary>
+    /// Subscribes to an event for a specific task's completion condition.
+    /// </summary>
+    private void SubscribeToEventForTask(QueuedTask task)
+    {
+        if (EventBus == null || task.CompletionCondition?.EventType == null)
+            return;
+
+        var eventType = task.CompletionCondition.EventType;
+
+        // Use reflection to call the generic Subscribe method with the correct event type
+        var subscribeMethod = typeof(NoireEventBus).GetMethod(nameof(NoireEventBus.Subscribe));
+        if (subscribeMethod == null)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, "Could not find Subscribe method on EventBus");
+            return;
+        }
+
+        var genericSubscribeMethod = subscribeMethod.MakeGenericMethod(eventType);
+
+        // Create a wrapper that captures the task context
+        var wrapperDelegate = CreateEventHandlerWrapper(eventType, task);
+
+        try
+        {
+            var token = genericSubscribeMethod.Invoke(EventBus, [wrapperDelegate, 0, null, this]);
+            if (token != null)
+            {
+                task.EventSubscriptionToken = (EventSubscriptionToken)token;
+                if (EnableLogging)
+                    NoireLogger.LogDebug(this, $"Subscribed task {task} to event {eventType.Name} with token {token}");
+            }
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, $"Failed to subscribe task {task} to event {eventType.Name}");
+        }
+    }
+
+    /// <summary>
+    /// Creates a wrapper delegate for event handling that captures the task context.
+    /// </summary>
+    private Delegate CreateEventHandlerWrapper(Type eventType, QueuedTask task)
+    {
+        var handlerType = typeof(Action<>).MakeGenericType(eventType);
+
+        // Create a dynamic method that checks the filter of the Event and sets the condition met flag
+        Action<object> wrapper = (evt) =>
+        {
+            if (task.Status != TaskStatus.WaitingForCompletion)
+                return;
+
+            if (task.CompletionCondition?.EventFilter == null || task.CompletionCondition.EventFilter(evt))
+            {
+                if (task.CompletionCondition != null)
+                    task.CompletionCondition.EventConditionMet = true;
+
+                if (EnableLogging)
+                    NoireLogger.LogDebug(this, $"Event condition met for task: {task}");
+            }
+        };
+
+        return Delegate.CreateDelegate(handlerType, wrapper.Target, wrapper.Method);
+    }
+
+    /// <summary>
+    /// Unsubscribes a specific task from its EventBus event.
+    /// </summary>
+    private void UnsubscribeTask(QueuedTask task)
+    {
+        if (EventBus == null || task.EventSubscriptionToken == null)
+            return;
+
+        try
+        {
+            EventBus.Unsubscribe(task.EventSubscriptionToken.Value);
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Unsubscribed task {task} from EventBus event");
+        }
+        finally
+        {
+            task.EventSubscriptionToken = null;
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes from all events by unsubscribing all tasks.
+    /// </summary>
+    private void UnsubscribeFromAllEvents()
+    {
+        if (EventBus == null)
+            return;
+
+        lock (queueLock)
+        {
+            foreach (var task in taskQueue)
+                if (task.EventSubscriptionToken != null)
+                    UnsubscribeTask(task);
+        }
+    }
+
+    #endregion
+
+    #region Queue Management
+
+    /// <summary>
+    /// Adds a task to the queue.
+    /// </summary>
+    /// <param name="task">The <see cref="QueuedTask"/> to add.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireTaskQueue EnqueueTask(QueuedTask task)
+    {
+        if (!IsActive)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot enqueue task - module is not active.");
+            return this;
+        }
+
+        bool subscribed = false;
+        lock (queueLock)
+        {
+            taskQueue.Add(task);
+            totalTasksQueued++;
+            if (task.CompletionCondition?.Type == CompletionConditionType.EventBusEvent && task.CompletionCondition.EventType != null)
+            {
+                SubscribeToEventForTask(task);
+                subscribed = true;
+            }
+        }
+
+        PublishEvent(new TaskQueuedEvent(task));
+
+        if (EnableLogging)
+            NoireLogger.LogDebug(this, $"Task enqueued: {task}{(subscribed ? " (event subscribed)" : "")}");
+
+        if (ShouldProcessQueueAutomatically && (QueueState == QueueState.Idle || QueueState == QueueState.Stopped))
+            StartQueue();
+
+        return this;
+    }
+
+    /// <summary>
+    /// Creates and enqueues a simple task.
+    /// </summary>
+    /// <param name="customId">Optional custom identifier.</param>
+    /// <param name="isBlocking">Whether the task blocks subsequent tasks.</param>
+    /// <param name="executeAction">The action to execute.</param>
+    /// <param name="completionCondition">The completion condition.</param>
+    /// <param name="onCompleted">Optional completion callback.</param>
+    /// <param name="timeout">Optional timeout.</param>
+    /// <returns>The created task.</returns>
+    public QueuedTask EnqueueTask(
+        string? customId,
+        bool isBlocking,
+        Action? executeAction,
+        TaskCompletionCondition? completionCondition,
+        Action<QueuedTask>? onCompleted = null,
+        TimeSpan? timeout = null)
+    {
+        var task = new QueuedTask(customId, isBlocking)
+        {
+            ExecuteAction = executeAction,
+            CompletionCondition = completionCondition ?? TaskCompletionCondition.Immediate(),
+            OnCompleted = onCompleted,
+            Timeout = timeout
+        };
+
+        EnqueueTask(task);
+        return task;
+    }
+
+    /// <summary>
+    /// Gets a task by its system ID.
+    /// </summary>
+    public QueuedTask? GetTaskBySystemId(Guid systemId)
+    {
+        lock (queueLock)
+        {
+            return taskQueue.FirstOrDefault(t => t.SystemId == systemId);
+        }
+    }
+
+    /// <summary>
+    /// Gets a task by its custom ID.
+    /// </summary>
+    public QueuedTask? GetTaskByCustomId(string customId)
+    {
+        lock (queueLock)
+        {
+            return taskQueue.FirstOrDefault(t => t.CustomId == customId);
+        }
+    }
+
+    /// <summary>
+    /// Gets all tasks with a specific custom ID.
+    /// </summary>
+    public IReadOnlyList<QueuedTask> GetTasksByCustomId(string customId)
+    {
+        lock (queueLock)
+        {
+            return taskQueue.Where(t => t.CustomId == customId).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Cancels a task by its system ID.
+    /// </summary>
+    public bool CancelTask(Guid systemId)
+    {
+        lock (queueLock)
+        {
+            var task = taskQueue.FirstOrDefault(t => t.SystemId == systemId);
+            if (task == null)
+                return false;
+
+            return CancelTaskInternal(task);
+        }
+    }
+
+    /// <summary>
+    /// Cancels a task by its custom ID.
+    /// </summary>
+    public bool CancelTask(string customId)
+    {
+        lock (queueLock)
+        {
+            var task = taskQueue.FirstOrDefault(t => t.CustomId == customId);
+            if (task == null)
+                return false;
+
+            return CancelTaskInternal(task);
+        }
+    }
+
+    /// <summary>
+    /// Cancels all tasks with a specific custom ID.
+    /// </summary>
+    public int CancelAllTasks(string customId)
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                var tasks = taskQueue.Where(t => t.CustomId == customId).ToList();
+                int cancelled = 0;
+
+                foreach (var task in tasks)
+                    if (CancelTaskInternal(task))
+                        cancelled++;
+
+                return cancelled;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+    /// <summary>
+    /// Internal method to cancel a task.
+    /// </summary>
+    private bool CancelTaskInternal(QueuedTask task)
+    {
+        if (task.Status == TaskStatus.Completed || task.Status == TaskStatus.Cancelled || task.Status == TaskStatus.Failed)
+            return false;
+
+        UnsubscribeTask(task);
+
+        task.Status = TaskStatus.Cancelled;
+        task.FinishedAtTicks = Environment.TickCount64;
+        tasksCancelled++;
+
+        try
+        {
+            task.OnCancelled?.Invoke(task);
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "OnCancelled callback threw an exception.");
+        }
+
+        PublishEvent(new TaskCancelledEvent(task));
+
+        if (ReferenceEquals(currentTask, task))
+            currentTask = null;
+
+        if (task.StopQueueOnCancel)
+        {
+            if (EnableLogging)
+                NoireLogger.LogInfo(this, $"Stopping queue due to task cancellation: {task}");
+            StopQueue();
+        }
+
+        if (EnableLogging)
+            NoireLogger.LogDebug(this, $"Task cancelled: {task}");
+
+        return true;
+    }
+
+    /// <summary>
+    /// Clears all tasks from the queue.
+    /// </summary>
+    /// <returns>The number of tasks cleared.</returns>
+    public int ClearQueue()
+    {
+        var previousState = QueueState;
+
+        QueueState = QueueState.Paused;
+
+        List<QueuedTask> removed = new();
+        try
+        {
+            lock (queueLock)
+            {
+                if (currentTask != null)
+                    CancelTaskInternal(currentTask);
+
+                removed = taskQueue.ToList();
+                taskQueue.Clear();
+                currentTask = null;
+            }
+        }
+        finally
+        {
+            foreach (var t in removed)
+                UnsubscribeTask(t);
+
+            PublishEvent(new QueueClearedEvent(removed.Count));
+
+            if (EnableLogging)
+                NoireLogger.LogInfo(this, $"Queue cleared: {removed.Count} tasks removed.");
+
+            QueueState = previousState;
+        }
+
+        return removed.Count;
+    }
+
+    /// <summary>
+    /// Removes completed/cancelled/failed tasks from the queue.
+    /// </summary>
+    /// <returns>The number of tasks removed.</returns>
+    public int ClearCompletedTasks()
+    {
+        List<QueuedTask> toRemove;
+        lock (queueLock)
+        {
+            toRemove = taskQueue.Where(t =>
+            t.Status == TaskStatus.Completed ||
+            t.Status == TaskStatus.Cancelled ||
+            t.Status == TaskStatus.Failed).ToList();
+
+            foreach (var task in toRemove)
+                taskQueue.Remove(task);
+
+            if (currentTask != null && toRemove.Contains(currentTask))
+                currentTask = null;
+        }
+
+        foreach (var task in toRemove)
+            UnsubscribeTask(task);
+
+        if (EnableLogging && toRemove.Count > 0)
+            NoireLogger.LogDebug(this, $"Cleared {toRemove.Count} completed tasks.");
+
+        return toRemove.Count;
+    }
+
+    #endregion
+
+    #region Queue Control
+
+    /// <summary>
+    /// Starts processing the queue.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireTaskQueue StartQueue()
+    {
+        if (!IsActive)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot start queue - module is not active.");
+            return this;
+        }
+
+        if (QueueState == QueueState.Running)
+        {
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, "Queue is already running.");
+            return this;
+        }
+
+        if (taskQueue.Count == 0)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot start queue - no tasks in the queue.");
+            return this;
+        }
+
+        // If starting from paused state, resume delay-based tasks and timeouts
+        if (QueueState == QueueState.Paused)
+        {
+            lock (queueLock)
+            {
+                foreach (var task in taskQueue)
+                {
+                    if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
+                        task.CompletionCondition.ResumeDelay();
+
+                    if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
+                        task.ResumeTimeout();
+                }
+            }
+        }
+
+        QueueState = QueueState.Running;
+        processingStartTimeTicks = Environment.TickCount64;
+
+        PublishEvent(new QueueStartedEvent());
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Queue started.");
+
+        return this;
+    }
+
+    /// <summary>
+    /// Pauses the queue processing.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireTaskQueue PauseQueue()
+    {
+        if (QueueState != QueueState.Running)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot pause queue - it is not running.");
+            return this;
+        }
+
+        accumulatedProcessingMillis += Environment.TickCount64 - processingStartTimeTicks;
+        processingStartTimeTicks = 0;
+
+        lock (queueLock)
+        {
+            foreach (var task in taskQueue)
+            {
+                if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
+                    task.CompletionCondition.PauseDelay();
+
+                if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
+                    task.PauseTimeout();
+            }
+        }
+
+        QueueState = QueueState.Paused;
+        PublishEvent(new QueuePausedEvent());
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Queue paused.");
+
+        return this;
+    }
+
+    /// <summary>
+    /// Resumes the queue processing from pause.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireTaskQueue ResumeQueue()
+    {
+        if (QueueState != QueueState.Paused)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot resume queue - it is not paused.");
+            return this;
+        }
+
+        QueueState = QueueState.Running;
+        processingStartTimeTicks = Environment.TickCount64;
+
+        lock (queueLock)
+        {
+            foreach (var task in taskQueue)
+            {
+                if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
+                    task.CompletionCondition.ResumeDelay();
+
+                if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
+                    task.ResumeTimeout();
+            }
+        }
+
+        PublishEvent(new QueueResumedEvent());
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Queue resumed.");
+
+        return this;
+    }
+
+    /// <summary>
+    /// Stops the queue processing and clears any remaining tasks.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireTaskQueue StopQueue()
+    {
+        if (QueueState == QueueState.Idle || QueueState == QueueState.Stopped)
+        {
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, "Queue is already stopped or idle.");
+            return this;
+        }
+
+        if (QueueState == QueueState.Running && processingStartTimeTicks > 0)
+        {
+            accumulatedProcessingMillis += Environment.TickCount64 - processingStartTimeTicks;
+            processingStartTimeTicks = 0;
+        }
+
+        ClearQueue();
+
+        QueueState = QueueState.Stopped;
+
+        PublishEvent(new QueueStoppedEvent());
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, "Queue stopped.");
+
+        return this;
+    }
+
+    #endregion
+
+    #region Queue Processing
+
+    /// <summary>
+    /// Main queue processing method called every frame.
+    /// </summary>
+    private void ProcessQueue()
+    {
+        QueuedTask? taskToProcess = null;
+        bool shouldWaitForBlocking = false;
+        bool shouldCheckCompletion = false;
+        bool earlyReturn = false;
+
+        // Newly added lists for non-current waiting tasks completion/timeout checks.
+        List<QueuedTask> waitingTasksToComplete = new();
+        List<QueuedTask> waitingTasksToFail = new();
+
+        lock (queueLock)
+        {
+            if (currentTask != null)
+            {
+                if (currentTask.Status == TaskStatus.WaitingForCompletion)
+                {
+                    if (currentTask.CompletionCondition?.IsMet() == true)
+                    {
+                        CompleteTask(currentTask);
+                        earlyReturn = true; // allow next frame to pick new task; avoid re-entrancy issues
+                    }
+                    else if (currentTask.HasTimedOut())
+                    {
+                        FailTask(currentTask, new TimeoutException("Task timed out."));
+                        earlyReturn = true;
+                    }
+                }
+
+                if (!earlyReturn && currentTask.IsBlocking &&
+                    currentTask.Status != TaskStatus.Completed &&
+                    currentTask.Status != TaskStatus.Cancelled &&
+                    currentTask.Status != TaskStatus.Failed)
+                {
+                    shouldWaitForBlocking = true;
+                }
+            }
+
+            // Iterate all other tasks waiting for completion (previously started tasks that are non-blocking)
+            foreach (var wt in taskQueue.Where(t => t.Status == TaskStatus.WaitingForCompletion && !ReferenceEquals(t, currentTask)))
+            {
+                if (wt.CompletionCondition?.IsMet() == true)
+                {
+                    waitingTasksToComplete.Add(wt);
+                }
+                else if (wt.HasTimedOut())
+                {
+                    waitingTasksToFail.Add(wt);
+                }
+            }
+
+            if (!shouldWaitForBlocking && !earlyReturn)
+            {
+                taskToProcess = taskQueue.FirstOrDefault(t => t.Status == TaskStatus.Queued);
+
+                if (taskToProcess != null)
+                {
+                    currentTask = taskToProcess;
+                    taskToProcess.Status = TaskStatus.Executing;
+                    taskToProcess.StartedAtTicks = Environment.TickCount64;
+                }
+                else
+                {
+                    // If no tasks queued (tasks not yet started) but currentTask was just completed/failed and there are still waiting tasks (example, non blocking ones),
+                    // set currentTask to the first non-blocking waiting task to maintain visibility
+                    if (currentTask == null)
+                    {
+                        var firstWaitingTask = taskQueue.FirstOrDefault(t => t.Status == TaskStatus.WaitingForCompletion);
+                        if (firstWaitingTask != null)
+                            currentTask = firstWaitingTask;
+                        else
+                            shouldCheckCompletion = true;
+                    }
+                    else
+                        shouldCheckCompletion = true;
+                }
+            }
+        }
+
+        if (earlyReturn)
+            return;
+
+        // Complete / fail any non-current waiting tasks outside lock to avoid long holds
+        foreach (var wt in waitingTasksToComplete)
+            CompleteTask(wt);
+        foreach (var wt in waitingTasksToFail)
+            FailTask(wt, new TimeoutException("Task timed out."));
+
+        if (taskToProcess != null)
+        {
+            ExecuteTask(taskToProcess);
+        }
+        else if (shouldCheckCompletion)
+        {
+            CheckQueueCompletion();
+        }
+    }
+
+    /// <summary>
+    /// Executes a task.
+    /// </summary>
+    private void ExecuteTask(QueuedTask task)
+    {
+        if (task.Status != TaskStatus.Executing)
+        {
+            if (ReferenceEquals(currentTask, task))
+                lock (queueLock)
+                    if (ReferenceEquals(currentTask, task))
+                        currentTask = null;
+
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Skipping execution for task no longer executing: {task} (Status: {task.Status})");
+
+            return;
+        }
+
+        try
+        {
+            PublishEvent(new TaskStartedEvent(task));
+
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Executing task: {task}");
+
+            task.ExecuteAction?.Invoke();
+
+            if (task.CompletionCondition?.Type == CompletionConditionType.Delay)
+                task.CompletionCondition.DelayStartTimeTicks = Environment.TickCount64;
+
+            lock (queueLock)
+            {
+                if (task.CompletionCondition?.Type == CompletionConditionType.Immediate)
+                    CompleteTask(task);
+                else
+                {
+                    // Only transition to waiting if still executing (could have been externally cancelled during ExecuteAction)
+                    if (task.Status == TaskStatus.Executing)
+                    {
+                        task.Status = TaskStatus.WaitingForCompletion;
+
+                        if (EnableLogging)
+                            NoireLogger.LogDebug(this, $"Task waiting for completion: {task}");
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            lock (queueLock)
+                FailTask(task, ex);
+        }
+    }
+
+    /// <summary>
+    /// Checks if the queue has completed all tasks.
+    /// </summary>
+    private void CheckQueueCompletion()
+    {
+        bool queueCompleted = false;
+        int completedCount = 0;
+
+        lock (queueLock)
+        {
+            var hasUnfinishedTasks = taskQueue.Any(t =>
+                t.Status == TaskStatus.Queued ||
+                t.Status == TaskStatus.Executing ||
+                t.Status == TaskStatus.WaitingForCompletion);
+
+            if (!hasUnfinishedTasks)
+            {
+                queueCompleted = true;
+                completedCount = taskQueue.Count(t => t.Status == TaskStatus.Completed);
+            }
+        }
+
+        if (queueCompleted)
+        {
+            PublishEvent(new QueueCompletedEvent(completedCount));
+
+            if (ShouldStopQueueOnComplete)
+                StopQueue();
+
+            if (EnableLogging)
+                NoireLogger.LogInfo(this, $"Queue completed. Tasks: {completedCount}");
+        }
+    }
+
+    /// <summary>
+    /// Completes a task successfully.
+    /// </summary>
+    private void CompleteTask(QueuedTask task)
+    {
+        UnsubscribeTask(task);
+
+        task.Status = TaskStatus.Completed;
+        task.FinishedAtTicks = Environment.TickCount64;
+        tasksCompleted++;
+
+        try
+        {
+            task.OnCompleted?.Invoke(task);
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "OnCompleted callback threw an exception.");
+        }
+
+        PublishEvent(new TaskCompletedEvent(task));
+
+        if (ReferenceEquals(currentTask, task))
+            currentTask = null;
+
+        if (EnableLogging)
+            NoireLogger.LogDebug(this, $"Task completed: {task} (Duration: {task.GetExecutionTime()})");
+    }
+
+    /// <summary>
+    /// Marks a task as failed.
+    /// </summary>
+    private void FailTask(QueuedTask task, Exception exception)
+    {
+        UnsubscribeTask(task);
+
+        task.Status = TaskStatus.Failed;
+        task.FinishedAtTicks = Environment.TickCount64;
+        task.FailureException = exception;
+        tasksFailed++;
+
+        try
+        {
+            task.OnFailed?.Invoke(task, exception);
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "OnFailed callback threw an exception.");
+        }
+
+        PublishEvent(new TaskFailedEvent(task, exception));
+
+        if (ReferenceEquals(currentTask, task))
+            currentTask = null;
+
+        if (task.StopQueueOnFail)
+        {
+            if (EnableLogging)
+                NoireLogger.LogInfo(this, $"Stopping queue due to task failure: {task}");
+
+            StopQueue();
+        }
+
+        if (EnableLogging)
+            NoireLogger.LogError(this, exception, $"Task failed: {task}");
+    }
+
+    #endregion
+
+    #region Statistics and Info
+
+    /// <summary>
+    /// Gets statistics about the task queue.
+    /// </summary>
+    /// <param name="getCopyOfCurrentTask">If true, returns a copy of the task being processed at this exact moment instead of the reference.</param>
+    public TaskQueueStatistics GetStatistics(bool getCopyOfCurrentTask = false)
+    {
+        lock (queueLock)
+        {
+            long activeMillis = accumulatedProcessingMillis;
+            if (QueueState == QueueState.Running && processingStartTimeTicks > 0)
+                activeMillis += Environment.TickCount64 - processingStartTimeTicks;
+
+            var totalTime = TimeSpan.FromMilliseconds(activeMillis);
+
+
+            QueuedTask? task = null;
+            if (currentTask != null)
+                task = getCopyOfCurrentTask ? currentTask.Clone() : currentTask;
+
+            return new TaskQueueStatistics(
+                TotalTasksQueued: totalTasksQueued,
+                TasksCompleted: tasksCompleted,
+                TasksCancelled: tasksCancelled,
+                TasksFailed: tasksFailed,
+                CurrentQueueSize: taskQueue.Count,
+                QueueState: QueueState,
+                CurrentTask: task,
+                TotalProcessingTime: totalTime);
+        }
+    }
+
+    /// <summary>
+    /// Gets the current queue size.
+    /// </summary>
+    public int GetQueueSize()
+    {
+        lock (queueLock)
+        {
+            return taskQueue.Count;
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of pending (queued) tasks.
+    /// </summary>
+    public int GetPendingTaskCount()
+    {
+        lock (queueLock)
+        {
+            return taskQueue.Count(t => t.Status == TaskStatus.Queued);
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of remaining tasks (queued, executing, waiting).
+    /// </summary>
+    /// <returns></returns>
+    public int GetRemainingTaskCount()
+    {
+        lock (queueLock)
+        {
+            return taskQueue.Count(t =>
+            t.Status == TaskStatus.Queued ||
+            t.Status == TaskStatus.Executing ||
+            t.Status == TaskStatus.WaitingForCompletion);
+        }
+    }
+
+    /// <summary>
+    /// Gets the currently executing task.
+    /// </summary>
+    public QueuedTask? GetCurrentTask()
+    {
+        lock (queueLock)
+        {
+            return currentTask;
+        }
+    }
+
+    /// <summary>
+    /// Gets all tasks in the queue.
+    /// </summary>
+    public IReadOnlyList<QueuedTask> GetAllTasks()
+    {
+        lock (queueLock)
+        {
+            return taskQueue.ToList();
+        }
+    }
+
+    /// <summary>
+    /// Gets the progress of the queue (0.0 to 1.0), useful for percentage display.
+    /// </summary>
+    public double GetQueueProgress()
+    {
+        lock (queueLock)
+        {
+            if (taskQueue.Count == 0)
+                return 1.0;
+
+            var finishedTasks = taskQueue.Count(t =>
+            t.Status == TaskStatus.Completed ||
+            t.Status == TaskStatus.Cancelled ||
+            t.Status == TaskStatus.Failed);
+
+            return (double)finishedTasks / taskQueue.Count;
+        }
+    }
+
+    #endregion
+
+    #region Configuration
+
+    /// <summary>
+    /// Sets whether to automatically process the queue when tasks are added.
+    /// </summary>
+    public NoireTaskQueue SetAutoProcessing(bool autoProcess)
+    {
+        ShouldProcessQueueAutomatically = autoProcess;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets whether to automatically stop the queue when all tasks are completed.
+    /// </summary>
+    public NoireTaskQueue SetAutoStopQueueOnComplete(bool autoClear)
+    {
+        ShouldStopQueueOnComplete = autoClear;
+        return this;
+    }
+
+    #endregion
+
+    /// <summary>
+    /// Internal dispose method called when the module is disposed.
+    /// </summary>
+    protected override void DisposeInternal()
+    {
+        NoireService.Framework.Update -= OnFrameworkUpdate;
+        StopQueue();
+        UnsubscribeFromAllEvents();
+
+        lock (queueLock)
+        {
+            taskQueue.Clear();
+            currentTask = null;
+        }
+
+        if (EnableLogging)
+        {
+            var stats = GetStatistics();
+            NoireLogger.LogInfo(this, $"Task Queue disposed. Total: {stats.TotalTasksQueued}, Completed: {stats.TasksCompleted}, Failed: {stats.TasksFailed}");
+        }
+    }
+}

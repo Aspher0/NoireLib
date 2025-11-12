@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NoireLib.Core.Modules;
-using NoireLib.Internal;
+using NoireLib.Helpers;
 
 namespace NoireLib;
 
@@ -18,12 +18,12 @@ public class NoireLibMain
     /// </summary>
     /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
     /// <param name="plugin">The instance of your plugin.</param>
-    /// <param name="windowSystem">Optional window system to use for NoireLib windows. If null, a new window system will be created.</param>
     public static void Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
-        NoireService.Initialize(dalamudPluginInterface, plugin);
-
-        NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
+        if (NoireService.Initialize(dalamudPluginInterface, plugin))
+        {
+            NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
+        }
     }
 
     /// <summary>
@@ -40,7 +40,12 @@ public class NoireLibMain
 
         T instanceToAdd;
 
-        var specialConstructor = moduleType.GetConstructor([typeof(ModuleId), typeof(bool), typeof(bool)]);
+        var specialConstructor = moduleType.GetConstructor(
+            System.Reflection.BindingFlags.Instance |
+            System.Reflection.BindingFlags.NonPublic,
+            null,
+            [typeof(ModuleId), typeof(bool), typeof(bool)],
+            null);
 
         if (specialConstructor != null)
             instanceToAdd = (T)specialConstructor.Invoke([(moduleId.IsNullOrEmpty() ? null : new ModuleId(moduleId)), true, true]);
@@ -58,7 +63,7 @@ public class NoireLibMain
 
     /// <summary>
     /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
-    /// Multiple modules of the same type can be added, and they can be differentiated by their <paramref name="moduleId"/> or their zero-based index.<br/>
+    /// Multiple modules of the same type can be added, and they can be differentiated by their <see cref="NoireModuleBase{TModule}.ModuleId"/> or their zero-based index.
     /// </summary>
     /// <typeparam name="T">The type of the module to add.</typeparam>
     /// <param name="instance">The instance of the module to add.</param>
@@ -68,7 +73,7 @@ public class NoireLibMain
         var moduleType = typeof(T);
 
         if (!instance.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId == instance.ModuleId))
-            NoireLogger.LogWarning($"Warning, a module of type {moduleType.Name} with id {instance.ModuleId} has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later.");
+            NoireLogger.LogWarning($"A module of type {moduleType.Name} with id {instance.ModuleId} has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later. Adding the module anyway.");
 
         NoireService.ActiveModules.Add((moduleType, instance));
 
@@ -78,7 +83,7 @@ public class NoireLibMain
     /// <summary>
     /// Adds multiple NoireLib modules to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
     /// Multiple modules of the same type can be added, and they can be differentiated by their module ID or their index.<br/>
-    /// See <see cref="AddModule"/> to add a module with an optional custom ID.
+    /// See <see cref="AddModule{T}(string?)"/> to add a module with an optional custom ID.
     /// </summary>
     /// <param name="modules">The instances of the modules to add.</param>
     /// <returns>An array of the instances of the modules added.</returns>
@@ -179,7 +184,7 @@ public class NoireLibMain
 
     /// <summary>
     /// Checks if a module has been added to your project.<br/>
-    /// See <see cref="AddModule"/> or <see cref="AddModules"/>.
+    /// See <see cref="AddModule{T}(string?)"/>, <see cref="AddModule{T}(T)"/> or <see cref="AddModules"/>.
     /// </summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
     /// <param name="moduleId">The optional ID of the module to check.</param>
@@ -242,7 +247,7 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Disposes NoireLib services and all active modules. Should be called in your plugin's Dispose method.
+    /// Disposes NoireLib services and all active modules. Should be called in your plugin's DisposeInternal method.
     /// </summary>
     public static void Dispose()
     {

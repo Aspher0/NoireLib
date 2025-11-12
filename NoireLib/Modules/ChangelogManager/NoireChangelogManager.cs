@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static Dalamud.Interface.Windowing.Window;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
 
@@ -12,32 +11,38 @@ namespace NoireLib.Changelog;
 /// Includes a fully automatic version handling, as well as manual management methods.<br/>
 /// Publishes events via <see cref="EventBus"/> for changelog actions.
 /// </summary>
-public class NoireChangelogManager : NoireModuleBase
+public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogManager, ChangelogWindow>
 {
-    private ChangelogWindow ChangelogWindow { get; set; } = null!;
-
     private readonly Dictionary<Version, ChangelogVersion> changelogs = new();
 
+    /// <summary>
+    /// The associated EventBus instance for publishing changelog events.<br/>
+    /// If <see langword="null"/>, no events will be published.
+    /// </summary>
     public NoireEventBus? EventBus { get; set; } = null;
 
+    /// <summary>
+    /// The default constructor needed for internal purposes.
+    /// </summary>
     public NoireChangelogManager() : base() { }
 
     /// <summary>
     /// Creates a new instance of the <see cref="NoireChangelogManager"/> module.
     /// </summary>
-    /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="moduleId">The optional module identifier.</param>
+    /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="shouldAutomaticallyShowChangelog">Defines whether the changelog window should automatically show when a new version is detected.</param>
     /// <param name="versions">A list of changelog versions to initialize the manager with.</param>
     /// <param name="eventBus">Optional EventBus instance to publish changelog events. If null, no event will be published.</param>
     public NoireChangelogManager(
-        bool active = true,
         string? moduleId = null,
+        bool active = true,
         bool enableLogging = true,
         bool shouldAutomaticallyShowChangelog = false,
         List<ChangelogVersion>? versions = null,
-        NoireEventBus? eventBus = null) : base(active, moduleId, enableLogging, shouldAutomaticallyShowChangelog, versions, eventBus) { }
+        NoireEventBus? eventBus = null)
+            : base(moduleId, active, enableLogging, shouldAutomaticallyShowChangelog, versions, eventBus) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
@@ -46,8 +51,13 @@ public class NoireChangelogManager : NoireModuleBase
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
-    public NoireChangelogManager(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
+    internal NoireChangelogManager(ModuleId? moduleId, bool active = true, bool enableLogging = true)
+        : base(moduleId, active, enableLogging) { }
 
+    /// <summary>
+    /// Initializes the module with optional initialization parameters.
+    /// </summary>
+    /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
         if (args.Length > 0 && args[0] is bool autoShow)
@@ -59,8 +69,7 @@ public class NoireChangelogManager : NoireModuleBase
         if (args.Length > 2 && args[2] is NoireEventBus eventBus)
             EventBus = eventBus;
 
-        ChangelogWindow = new ChangelogWindow(this);
-        NoireService.NoireWindowSystem.AddWindow(ChangelogWindow);
+        RegisterWindow(new ChangelogWindow(this));
 
         if (changelogs.Count == 0)
             LoadVersionsFromAssembly();
@@ -69,6 +78,9 @@ public class NoireChangelogManager : NoireModuleBase
             NoireLogger.LogInfo(this, $"Changelog Manager initialized.");
     }
 
+    /// <summary>
+    /// Called when the module is activated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> false to true.
+    /// </summary>
     protected override void OnActivated()
     {
         AutomaticallyCheckChangelogAndShowIfNewVersion();
@@ -77,16 +89,17 @@ public class NoireChangelogManager : NoireModuleBase
             NoireLogger.LogInfo(this, $"Changelog Manager activated.");
     }
 
+    /// <summary>
+    /// Called when the module is deactivated, specifically going from <see cref="NoireModuleBase{TModule}.IsActive"/> true to false.
+    /// </summary>
     protected override void OnDeactivated()
     {
-        if (ChangelogWindow.IsOpen)
-            ChangelogWindow.IsOpen = false;
+        if (ModuleWindow!.IsOpen)
+            ModuleWindow.IsOpen = false;
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, $"Changelog Manager deactivated.");
     }
-
-
 
     private bool shouldAutomaticallyShowChangelog = false;
     /// <summary>
@@ -114,115 +127,6 @@ public class NoireChangelogManager : NoireModuleBase
         return this;
     }
 
-
-    private string windowName = "Changelog";
-    /// <summary>
-    /// The name displayed in the title bar of the changelog window.
-    /// </summary>
-    public string WindowName
-    {
-        get => windowName;
-        set
-        {
-            windowName = value;
-            ChangelogWindow.UpdateWindowName();
-        }
-    }
-
-    /// <summary>
-    /// Sets the window name of the changelog window.
-    /// </summary>
-    /// <param name="windowName">The name of the window.</param>
-    /// <returns>The module instance for chaining.</returns>
-    public NoireChangelogManager SetWindowName(string windowName)
-    {
-        WindowName = windowName;
-        return this;
-    }
-
-    // TODO: Add an option to change the window size
-
-    /// <summary>
-    /// Gets the full window name of the changelog window, including hidden IDs.
-    /// </summary>
-    /// <returns>The full window name.</returns>
-    public string GetFullWindowName() => ChangelogWindow.WindowName;
-
-    #region Title Bar Buttons
-
-    /// <summary>
-    /// Do not add buttons directly to this list, use the provided methods instead.<br/>
-    /// <see cref="AddTitleBarButton"/>, <see cref="RemoveTitleBarButton"/>, <see cref="SetTitleBarButtons"/>, <see cref="ClearTitleBarButtons"/>
-    /// </summary>
-    public List<TitleBarButton> TitleBarButtons { get; private set; } = new();
-
-    /// <summary>
-    /// Adds a button to the title bar of the changelog window.
-    /// </summary>
-    /// <param name="titleBarButton">The title bar button to add.</param>
-    /// <returns>The module instance for chaining.</returns>
-    public NoireChangelogManager AddTitleBarButton(TitleBarButton titleBarButton)
-    {
-        if (titleBarButton == null)
-            return this;
-
-        TitleBarButtons.Add(titleBarButton);
-
-        if (ChangelogWindow != null)
-            ChangelogWindow.UpdateTitleBarButtons(TitleBarButtons);
-
-        return this;
-    }
-
-    /// <summary>
-    /// Removes a button from the title bar of the changelog window by its index.
-    /// </summary>
-    /// <param name="index">The index of the title bar button to remove.</param>
-    /// <returns>The module instance for chaining.</returns>
-    public NoireChangelogManager RemoveTitleBarButton(int index)
-    {
-        if (index < 0 || index >= TitleBarButtons.Count)
-            return this;
-
-        TitleBarButtons.RemoveAt(index);
-
-        if (ChangelogWindow != null)
-            ChangelogWindow.UpdateTitleBarButtons(TitleBarButtons);
-
-        return this;
-    }
-
-    /// <summary>
-    /// Sets the title bar buttons of the changelog window, replacing any existing buttons.
-    /// </summary>
-    /// <param name="titleBarButtons">The list of title bar buttons to set.</param>
-    /// <returns>The module instance for chaining.</returns>
-    public NoireChangelogManager SetTitleBarButtons(List<TitleBarButton> titleBarButtons)
-    {
-        TitleBarButtons = titleBarButtons ?? new();
-
-        if (ChangelogWindow != null)
-            ChangelogWindow.UpdateTitleBarButtons(TitleBarButtons);
-
-        return this;
-    }
-
-    /// <summary>
-    /// Clears all title bar buttons from the changelog window.
-    /// </summary>
-    /// <returns>The module instance for chaining.</returns>
-    public NoireChangelogManager ClearTitleBarButtons()
-    {
-        TitleBarButtons.Clear();
-
-        if (ChangelogWindow != null)
-            ChangelogWindow.UpdateTitleBarButtons(TitleBarButtons);
-
-        return this;
-    }
-
-    #endregion
-
     #region EventBus Integration
 
     /// <summary>
@@ -239,18 +143,29 @@ public class NoireChangelogManager : NoireModuleBase
     /// Toggles the changelog window.
     /// </summary>
     /// <param name="show">Set to null to toggle the state, true to force show, false to force hide.</param>
-    public NoireChangelogManager ShowChangelogWindow(bool? show = null, Version? version = null)
+    /// <param name="version">The version to show in the changelog window. If null, shows the latest version.</param>
+    public NoireChangelogManager ShowWindow(bool? show = null, Version? version = null)
     {
         if (!IsActive)
             return this;
 
-        if (show == false || (show == null && ChangelogWindow.IsOpen == true))
-            ChangelogWindow.CloseWindow();
+        if (show == false || (show == null && ModuleWindow!.IsOpen == true))
+            ModuleWindow!.CloseWindow();
         else
-            ChangelogWindow.ShowChangelogForVersion(version);
+            ModuleWindow!.ShowChangelogForVersion(version);
 
         return this;
     }
+
+    // Just an override to use ShowWindow method
+    /// <inheritdoc cref="NoireModuleWithWindowBase{TModule, TWindow}.ToggleWindow"/>
+    public override NoireChangelogManager ToggleWindow()
+        => ShowWindow();
+
+    // Just an override to use ShowWindow method
+    /// <inheritdoc cref="ShowWindow(bool?, Version?)"/>
+    public override NoireChangelogManager ShowWindow()
+        => ShowWindow();
 
     /// <summary>
     /// Internal method called by ChangelogWindow when the window is opened.
@@ -287,12 +202,14 @@ public class NoireChangelogManager : NoireModuleBase
 
         var lastSeenVersion = ChangelogManagerConfig.Instance.LastSeenChangelogVersion;
 
+        NoireLogger.LogDebug(this, $"Latest version: {latestVersion}, Last seen version: {lastSeenVersion}");
+
         if (lastSeenVersion == null || lastSeenVersion != latestVersion)
         {
-            if (!ShouldAutomaticallyShowChangelog)
-                ChangelogWindow.ShowChangelogForVersion(latestVersion);
+            if (ShouldAutomaticallyShowChangelog)
+                ModuleWindow!.ShowChangelogForVersion(latestVersion);
 
-            // Update the last seen version, even if should not show automatically to avoid showing it when enabling the option
+            // Update the last seen version, even if should not show automatically to avoid showing it automatically when enabling the option
             ChangelogManagerConfig.Instance.UpdateLastSeenVersion(latestVersion);
         }
     }
@@ -302,7 +219,7 @@ public class NoireChangelogManager : NoireModuleBase
     /// <summary>
     /// Clears the last seen changelog version, causing the changelog window to show again on the next check if a version is available.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager ClearLastSeenVersion()
     {
         ChangelogManagerConfig.Instance.ClearLastSeenVersion();
@@ -376,7 +293,7 @@ public class NoireChangelogManager : NoireModuleBase
     public NoireChangelogManager AddVersion(ChangelogVersion version)
     {
         changelogs[version.Version] = version;
-        ChangelogWindow.UpdateVersions();
+        ModuleWindow!.UpdateVersions();
         PublishEvent(new ChangelogVersionAddedEvent(version.Version));
         return this;
     }
@@ -390,9 +307,7 @@ public class NoireChangelogManager : NoireModuleBase
     {
         foreach (var version in versions)
             AddVersion(version);
-
-        ChangelogWindow.UpdateVersions();
-
+        ModuleWindow!.UpdateVersions();
         return this;
     }
 
@@ -406,8 +321,7 @@ public class NoireChangelogManager : NoireModuleBase
         var removed = changelogs.Remove(version);
         if (removed)
             PublishEvent(new ChangelogVersionRemovedEvent(version));
-
-        ChangelogWindow.UpdateVersions();
+        ModuleWindow!.UpdateVersions();
         return removed;
     }
 
@@ -428,7 +342,8 @@ public class NoireChangelogManager : NoireModuleBase
             }
         }
 
-        ChangelogWindow.UpdateVersions();
+        ModuleWindow!.UpdateVersions();
+
         return removedAmount;
     }
 
@@ -439,7 +354,7 @@ public class NoireChangelogManager : NoireModuleBase
     public NoireChangelogManager ClearVersions()
     {
         changelogs.Clear();
-        ChangelogWindow.UpdateVersions();
+        ModuleWindow!.UpdateVersions();
         PublishEvent(new ChangelogVersionsClearedEvent());
         return this;
     }
@@ -453,14 +368,14 @@ public class NoireChangelogManager : NoireModuleBase
     {
         try
         {
-            var assembly = NoireService.PluginInstance?.GetType().Assembly;
-
-            if (assembly == null)
+            if (!NoireService.IsInitialized())
             {
                 if (EnableLogging)
                     NoireLogger.LogError(this, "NoireLib was not initialized. Please, initialize NoireLib in your Plugin constructor.");
                 return;
             }
+
+            var assembly = NoireService.PluginInstance!.GetType().Assembly;
 
             var versionTypes = assembly.GetTypes()
                 .Where(t => typeof(IChangelogVersion).IsAssignableFrom(t) &&
@@ -493,10 +408,12 @@ public class NoireChangelogManager : NoireModuleBase
         }
     }
 
-    public override void Dispose()
+    /// <summary>
+    /// Internal dispose method called when the module is disposed.
+    /// </summary>
+    protected override void DisposeInternal()
     {
-        NoireService.NoireWindowSystem.RemoveWindow(ChangelogWindow);
-        ChangelogWindow.Dispose();
+        changelogs.Clear();
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Changelog Manager disposed.");

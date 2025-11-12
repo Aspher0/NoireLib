@@ -11,6 +11,8 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 
 namespace NoireLib.Internal.Payloads;
 
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
 public abstract class CustomPayload : Payload
 {
     public RawPayload AsRaw()
@@ -106,3 +108,5 @@ public class GlowEndPayload : AbstractColorEndPayload
 {
     public override byte ChunkType => 0x14;
 }
+
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member

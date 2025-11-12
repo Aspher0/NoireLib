@@ -15,29 +15,33 @@ namespace NoireLib;
 /// </summary>
 public class NoireService
 {
-    private static bool Initialized = false;
-
-    public static readonly WindowSystem NoireWindowSystem = new("NoireLibWindowSystem");
+    /// <summary>
+    /// The window system used by NoireLib for managing module windows.
+    /// </summary>
+    public static WindowSystem? NoireWindowSystem { get; private set; } = null;
 
     /// <summary>
     /// The instance of the plugin using NoireLib.<br/>
-    /// Do not modify this property directly. Use <see cref="NoireLibMain.Initialize"/> instead.
+    /// Do not modify this property directly. Use <see cref="NoireLibMain.Initialize(IDalamudPluginInterface, IDalamudPlugin)"/> instead.
     /// </summary>
     public static IDalamudPlugin? PluginInstance { get; set; } = null;
 
     /// <summary>
     /// A list of active NoireLib modules and their types.<br/>
-    /// Do not modify this list directly. Use <see cref="NoireLibMain.AddModule"/> and <see cref="NoireLibMain.RemoveModule"/> instead.
+    /// Do not modify this list directly. Use <see cref="NoireLibMain.AddModule{T}(string?)"/> and <see cref="NoireLibMain.RemoveModule{T}(string)"/> instead.
     /// </summary>
     public static List<(Type Type, INoireModule Module)> ActiveModules = new();
 
     /// <summary>
     /// Should not be called directly. Use <see cref="NoireLibMain.Initialize"/> instead.
     /// </summary>
-    public static void Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
+    public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
-        if (Initialized)
-            return;
+        if (IsInitialized())
+        {
+            NoireLogger.LogDebug<NoireService>("NoireLib is already initialized. Initialization skipped.");
+            return false;
+        }
 
         if (dalamudPluginInterface == null || plugin == null)
         {
@@ -53,19 +57,31 @@ public class NoireService
         dalamudPluginInterface.Create<NoireService>();
         PluginInstance = plugin;
 
+        NoireWindowSystem = new WindowSystem($"NoireLib_WindowSystem_For_{dalamudPluginInterface.InternalName}");
+
         PluginInterface.UiBuilder.Draw += NoireWindowSystem.Draw;
 
-        Initialized = true;
+        return true;
     }
+
+    /// <summary>
+    /// Gets a value indicating whether the plugin has been successfully initialized.
+    /// </summary>
+    public static bool IsInitialized() => PluginInstance != null && PluginInterface != null;
 
     /// <summary>
     /// Do not call this method directly. Use <see cref="NoireLibMain.Dispose"/> instead.
     /// </summary>
     public static void Dispose()
     {
-        PluginInterface.UiBuilder.Draw -= NoireWindowSystem.Draw;
-        NoireWindowSystem.RemoveAllWindows();
+        if (NoireWindowSystem != null)
+        {
+            PluginInterface.UiBuilder.Draw -= NoireWindowSystem.Draw;
+            NoireWindowSystem.RemoveAllWindows();
+        }
     }
+
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 
     [PluginService]
     public static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
@@ -141,4 +157,6 @@ public class NoireService
 
     [PluginService]
     public static ISeStringEvaluator SeStringEvaluator { get; private set; } = null!;
+
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 }
