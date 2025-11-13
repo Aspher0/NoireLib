@@ -1,3 +1,4 @@
+using NoireLib.Helpers.ObjectExtensions;
 using NoireLib.Internal.Helpers;
 using System;
 

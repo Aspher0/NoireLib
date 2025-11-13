@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using NoireLib.Core.Modules;
-using NoireLib.Helpers;
+using NoireLib.Helpers.ObjectExtensions;
 
 namespace NoireLib;
 

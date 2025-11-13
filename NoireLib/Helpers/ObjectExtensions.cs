@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 
-namespace NoireLib.Helpers;
+namespace NoireLib.Helpers.ObjectExtensions;
 
 /// <summary>
 /// Extension methods for objects.
