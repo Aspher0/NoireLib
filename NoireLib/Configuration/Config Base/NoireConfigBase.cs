@@ -14,7 +14,7 @@ public abstract class NoireConfigBase : INoireConfig
     {
         WriteIndented = true,
         PropertyNameCaseInsensitive = true,
-        IncludeFields = false,
+        IncludeFields = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.Never,
         Converters = { new JsonStringEnumConverter() }
     };

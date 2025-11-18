@@ -1,6 +1,8 @@
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using NoireLib.Helpers;
 using System.Linq;
+using System;
+using System.Text.Json.Serialization;
 
 namespace NoireLib.Models;
 
@@ -8,8 +10,14 @@ namespace NoireLib.Models;
 /// A model representing a player character.<br/>
 /// Allows easy access to player-related information such as name, homeworld, world ID, and content ID.
 /// </summary>
+[Serializable]
 public class PlayerModel
 {
+    /// <summary>
+    /// A unique identifier for this PlayerModel instance.
+    /// </summary>
+    public string UniqueId { get; set; } = RandomGenerator.GenerateGuidString();
+
     /// <summary>
     /// The name of the player, without the homeworld.
     /// </summary>
@@ -53,6 +61,26 @@ public class PlayerModel
     }
 
     /// <summary>
+    /// Constructs a new PlayerModel with the specified values.
+    /// </summary>
+    /// <param name="uniqueId">A unique identifier for this PlayerModel instance.</param>
+    /// <param name="playerName">The name of the player.</param>
+    /// <param name="homeworld">The homeworld of the player.</param>
+    /// <param name="worldId">The world ID of the player's homeworld (optional).</param>
+    /// <param name="contentId">The content ID (CID) of the player (optional).</param>
+    [JsonConstructor]
+    public PlayerModel(string uniqueId, string playerName, string homeworld, uint? worldId = null, ulong? contentId = null)
+    {
+        UniqueId = uniqueId;
+        PlayerName = playerName;
+        Homeworld = homeworld;
+        WorldId = worldId;
+        ContentId = contentId;
+
+        TryUpdateFromObjectTable();
+    }
+
+    /// <summary>
     /// Constructs a new PlayerModel from an IPlayerCharacter object.
     /// </summary>
     /// <param name="character">The IPlayerCharacter object to extract data from.</param>
@@ -82,11 +110,7 @@ public class PlayerModel
     /// <returns>True if a matching character was found and the model was updated; otherwise, false.</returns>
     public bool TryUpdateFromObjectTable()
     {
-        var matchingCharacter = NoireService.ObjectTable
-            .OfType<IPlayerCharacter>()
-            .FirstOrDefault(pc =>
-                pc.Name.TextValue == PlayerName &&
-                pc.HomeWorld.Value.Name.ExtractText() == Homeworld);
+        var matchingCharacter = FindPlayerOnMap();
 
         if (matchingCharacter != null)
         {
@@ -95,6 +119,21 @@ public class PlayerModel
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Tries to find the player character on the current map based on PlayerName and Homeworld.
+    /// </summary>
+    /// <returns></returns>
+    public IPlayerCharacter? FindPlayerOnMap()
+    {
+        var matchingCharacter = NoireService.ObjectTable
+            .OfType<IPlayerCharacter>()
+            .FirstOrDefault(pc =>
+                pc.Name.TextValue == PlayerName &&
+                pc.HomeWorld.Value.Name.ExtractText() == Homeworld);
+
+        return matchingCharacter;
     }
 
     /// <summary>
@@ -125,5 +164,14 @@ public class PlayerModel
                Homeworld == character.HomeWorld.Value.Name.ExtractText() &&
                WorldId == character.HomeWorld.Value.RowId &&
                ContentId == CharacterHelper.GetCIDFromPlayerCharacterAddress((nint)CharacterHelper.GetCharacterAddress(character));
+    }
+
+    /// <summary>
+    /// Clones this PlayerModel instance.
+    /// </summary>
+    /// <returns>The cloned PlayerModel.</returns>
+    public PlayerModel Clone()
+    {
+        return new PlayerModel(UniqueId, PlayerName, Homeworld, WorldId, ContentId);
     }
 }

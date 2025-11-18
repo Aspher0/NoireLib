@@ -78,13 +78,13 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// <param name="shouldStopQueueOnComplete">Whether to clear completed tasks automatically.</param>
     /// <param name="eventBus">Optional EventBus instance to publish queue events.</param>
     public NoireTaskQueue(
-    string? moduleId = null,
-    bool active = true,
-    bool enableLogging = true,
-    bool shouldProcessQueueAutomatically = false,
-    bool shouldStopQueueOnComplete = true,
-    NoireEventBus? eventBus = null)
-    : base(moduleId, active, enableLogging, shouldProcessQueueAutomatically, shouldStopQueueOnComplete, eventBus) { }
+        string? moduleId = null,
+        bool active = true,
+        bool enableLogging = true,
+        bool shouldProcessQueueAutomatically = false,
+        bool shouldStopQueueOnComplete = true,
+        NoireEventBus? eventBus = null)
+        : base(moduleId, active, enableLogging, shouldProcessQueueAutomatically, shouldStopQueueOnComplete, eventBus) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
@@ -633,6 +633,9 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
                 if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
                     task.PauseTimeout();
+
+                if (task.Status == TaskStatus.WaitingForCompletion && task.RetryConfiguration != null)
+                    task.PauseStallTracking();
             }
         }
 
@@ -670,6 +673,9 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
                 if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
                     task.ResumeTimeout();
+
+                if (task.Status == TaskStatus.WaitingForCompletion && task.RetryConfiguration != null)
+                    task.ResumeStallTracking();
             }
         }
 
@@ -734,21 +740,70 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         {
             if (currentTask != null)
             {
-                if (currentTask.Status == TaskStatus.WaitingForCompletion)
+                // Special handling for retry-delayed tasks in Queued status
+                if (currentTask.Status == TaskStatus.Queued && currentTask.Metadata is RetryDelayMetadata)
                 {
-                    if (currentTask.CompletionCondition?.IsMet() == true)
+                    // This is a task waiting for retry delay - we need to process it
+                    taskToProcess = currentTask;
+                    taskToProcess.Status = TaskStatus.Executing;
+                }
+                else if (currentTask.Status == TaskStatus.WaitingForCompletion)
+                {
+                    bool conditionMet = currentTask.CompletionCondition?.IsMet() == true;
+
+                    if (conditionMet)
                     {
                         CompleteTask(currentTask);
-                        earlyReturn = true; // allow next frame to pick new task; avoid re-entrancy issues
+                        earlyReturn = true;
                     }
                     else if (currentTask.HasTimedOut())
                     {
                         FailTask(currentTask, new TimeoutException("Task timed out."));
                         earlyReturn = true;
                     }
+                    else if (currentTask.HasConditionStalled())
+                    {
+                        // Condition has stalled - attempt retry
+                        if (!earlyReturn && TryRetryTask(currentTask))
+                        {
+                            // Retry was initiated, continue processing
+                        }
+                        else if (!currentTask.RetryConfiguration!.MaxAttempts.HasValue ||
+                            currentTask.CurrentRetryAttempt < currentTask.RetryConfiguration.MaxAttempts.Value)
+                        {
+                            // Still have retries left or unlimited, reset stall tracking
+                            currentTask.ResetStallTracking();
+                        }
+                        else
+                        {
+                            // Max retries exceeded
+                            try
+                            {
+                                currentTask.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(currentTask);
+                            }
+                            catch (Exception ex)
+                            {
+                                if (EnableLogging)
+                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
+                            }
+
+                            FailTask(currentTask, new MaxRetryAttemptsExceededException(
+                                $"Task exceeded maximum retry attempts ({currentTask.RetryConfiguration?.MaxAttempts.ToString() ?? "Unknown"})"));
+                            earlyReturn = true;
+                        }
+                    }
+                    else
+                    {
+                        // Update stall tracking
+                        if (currentTask.RetryConfiguration != null && currentTask.CompletionCondition?.Type == CompletionConditionType.Predicate)
+                        {
+                            if (!currentTask.LastConditionCheckTicks.HasValue)
+                                currentTask.ResetStallTracking();
+                        }
+                    }
                 }
 
-                if (!earlyReturn && currentTask.IsBlocking &&
+                if (!earlyReturn && taskToProcess == null && currentTask.IsBlocking &&
                     currentTask.Status != TaskStatus.Completed &&
                     currentTask.Status != TaskStatus.Cancelled &&
                     currentTask.Status != TaskStatus.Failed)
@@ -760,7 +815,9 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             // Iterate all other tasks waiting for completion (previously started tasks that are non-blocking)
             foreach (var wt in taskQueue.Where(t => t.Status == TaskStatus.WaitingForCompletion && !ReferenceEquals(t, currentTask)))
             {
-                if (wt.CompletionCondition?.IsMet() == true)
+                bool conditionMet = wt.CompletionCondition?.IsMet() == true;
+
+                if (conditionMet)
                 {
                     waitingTasksToComplete.Add(wt);
                 }
@@ -768,9 +825,45 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                 {
                     waitingTasksToFail.Add(wt);
                 }
+                else if (wt.HasConditionStalled())
+                {
+                    // Non-blocking task stalled - attempt retry
+                    if (TryRetryTask(wt))
+                    {
+                        // Retry initiated
+                    }
+                    else if (!wt.RetryConfiguration!.MaxAttempts.HasValue ||
+                             wt.CurrentRetryAttempt < wt.RetryConfiguration.MaxAttempts.Value)
+                    {
+                        wt.ResetStallTracking();
+                    }
+                    else
+                    {
+                        try
+                        {
+                            wt.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(wt);
+                        }
+                        catch (Exception ex)
+                        {
+                            if (EnableLogging)
+                                NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
+                        }
+
+                        waitingTasksToFail.Add(wt);
+                    }
+                }
+                else
+                {
+                    // Update stall tracking
+                    if (wt.RetryConfiguration != null && wt.CompletionCondition?.Type == CompletionConditionType.Predicate)
+                    {
+                        if (!wt.LastConditionCheckTicks.HasValue)
+                            wt.ResetStallTracking();
+                    }
+                }
             }
 
-            if (!shouldWaitForBlocking && !earlyReturn)
+            if (!shouldWaitForBlocking && !earlyReturn && taskToProcess == null)
             {
                 taskToProcess = taskQueue.FirstOrDefault(t => t.Status == TaskStatus.Queued);
 
@@ -805,7 +898,15 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         foreach (var wt in waitingTasksToComplete)
             CompleteTask(wt);
         foreach (var wt in waitingTasksToFail)
-            FailTask(wt, new TimeoutException("Task timed out."));
+        {
+            Exception exception;
+            if (wt.RetryConfiguration != null && wt.CurrentRetryAttempt >= (wt.RetryConfiguration.MaxAttempts ?? int.MaxValue))
+                exception = new MaxRetryAttemptsExceededException($"Task exceeded maximum retry attempts ({wt.RetryConfiguration.MaxAttempts})");
+            else
+                exception = new TimeoutException("Task timed out.");
+
+            FailTask(wt, exception);
+        }
 
         if (taskToProcess != null)
         {
@@ -814,6 +915,109 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         else if (shouldCheckCompletion)
         {
             CheckQueueCompletion();
+        }
+    }
+
+    /// <summary>
+    /// Attempts to retry a stalled task by re-executing its action or retry override.
+    /// </summary>
+    /// <param name="task">The task to retry.</param>
+    /// <returns>True if retry was initiated, false if max retries exceeded.</returns>
+    private bool TryRetryTask(QueuedTask task)
+    {
+        if (task.RetryConfiguration == null)
+            return false;
+
+        // Check if we've exceeded max attempts
+        if (task.RetryConfiguration.MaxAttempts.HasValue &&
+            task.CurrentRetryAttempt >= task.RetryConfiguration.MaxAttempts.Value)
+            return false;
+
+        task.CurrentRetryAttempt++;
+
+        if (EnableLogging)
+            NoireLogger.LogInfo(this, $"Retrying task {task} (Attempt {task.CurrentRetryAttempt}/{task.RetryConfiguration.MaxAttempts?.ToString() ?? "∞"})");
+
+        try
+        {
+            task.RetryConfiguration.OnBeforeRetry?.Invoke(task, task.CurrentRetryAttempt);
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "OnBeforeRetry callback threw an exception.");
+        }
+
+        task.ResetStallTracking();
+
+        if (task.RetryConfiguration.RetryDelay.HasValue)
+        {
+            // Set task back to queued and insert delay logic
+            task.Status = TaskStatus.Queued;
+
+            // We'll handle the delay by setting a special flag and checking it in ExecuteTask
+            task.Metadata = new RetryDelayMetadata
+            {
+                DelayUntilTicks = Environment.TickCount64 + (long)task.RetryConfiguration.RetryDelay.Value.TotalMilliseconds,
+                OriginalMetadata = task.Metadata is RetryDelayMetadata rdm ? rdm.OriginalMetadata : task.Metadata
+            };
+
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Task retry scheduled after delay: {task}");
+
+            return true;
+        }
+
+        return ExecuteRetryAction(task);
+    }
+
+    /// <summary>
+    /// Executes the retry action for a task.
+    /// </summary>
+    /// <param name="task">The task to execute retry action for.</param>
+    /// <returns>True if retry action executed successfully, false if it failed.</returns>
+    private bool ExecuteRetryAction(QueuedTask task)
+    {
+        try
+        {
+            PublishEvent(new TaskRetryingEvent(task, task.CurrentRetryAttempt));
+
+            // Execute override action or fall back to original action
+            if (task.RetryConfiguration?.OverrideRetryAction != null)
+            {
+                task.RetryConfiguration.OverrideRetryAction(task, task.CurrentRetryAttempt);
+            }
+            else if (task.ExecuteAction != null)
+            {
+                task.ExecuteAction();
+            }
+
+            if (task.CompletionCondition?.Type == CompletionConditionType.EventBusEvent)
+            {
+                task.CompletionCondition.EventConditionMet = false;
+            }
+            else if (task.CompletionCondition?.Type == CompletionConditionType.Delay)
+            {
+                task.CompletionCondition.DelayStartTimeTicks = Environment.TickCount64;
+                task.CompletionCondition.AccumulatedDelayMillis = 0;
+                task.CompletionCondition.DelayPausedAtTicks = null;
+            }
+
+            task.Status = TaskStatus.WaitingForCompletion;
+            task.ResetStallTracking();
+
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Task retry executed: {task}");
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, $"Retry action failed for task {task}");
+
+            FailTask(task, ex);
+            return false;
         }
     }
 
@@ -832,6 +1036,29 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             if (EnableLogging)
                 NoireLogger.LogDebug(this, $"Skipping execution for task no longer executing: {task} (Status: {task.Status})");
 
+            return;
+        }
+
+        // Check if this is a delayed retry
+        if (task.Metadata is RetryDelayMetadata delayMetadata)
+        {
+            if (Environment.TickCount64 < delayMetadata.DelayUntilTicks)
+            {
+                // Delay not elapsed yet, set back to queued
+                task.Status = TaskStatus.Queued;
+                return;
+            }
+
+            // Delay elapsed, restore original metadata and execute retry action
+            task.Metadata = delayMetadata.OriginalMetadata;
+
+            if (!ExecuteRetryAction(task))
+            {
+                // Retry action failed, task will be failed by ExecuteRetryAction
+                return;
+            }
+
+            // Retry action succeeded, task is now waiting for completion
             return;
         }
 
@@ -857,6 +1084,10 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                     if (task.Status == TaskStatus.Executing)
                     {
                         task.Status = TaskStatus.WaitingForCompletion;
+
+                        // Initialize stall tracking if retry is configured
+                        if (task.RetryConfiguration != null)
+                            task.ResetStallTracking();
 
                         if (EnableLogging)
                             NoireLogger.LogDebug(this, $"Task waiting for completion: {task}");

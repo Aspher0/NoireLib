@@ -28,6 +28,11 @@ public record TaskCancelledEvent(QueuedTask Task);
 public record TaskFailedEvent(QueuedTask Task, Exception Exception);
 
 /// <summary>
+/// Published when a task is retrying due to a stalled condition.
+/// </summary>
+public record TaskRetryingEvent(QueuedTask Task, int RetryAttempt);
+
+/// <summary>
 /// Published when the queue starts processing.
 /// </summary>
 public record QueueStartedEvent();

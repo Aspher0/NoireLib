@@ -16,6 +16,11 @@ public class QueuedTask
     public Guid SystemId { get; }
 
     /// <summary>
+    /// The queue that owns this task.
+    /// </summary>
+    public NoireTaskQueue? OwningQueue { get; internal set; }
+
+    /// <summary>
     /// Optional user-defined identifier for this task.
     /// </summary>
     public string? CustomId { get; set; }
@@ -118,10 +123,62 @@ public class QueuedTask
     internal EventSubscriptionToken? EventSubscriptionToken { get; set; }
 
     /// <summary>
+    /// Configuration for retry behavior when the completion condition stalls.
+    /// </summary>
+    public TaskRetryConfiguration? RetryConfiguration { get; set; }
+
+    /// <summary>
+    /// The current retry attempt number (0-based). 0 means first execution, 1 means first retry, etc.
+    /// </summary>
+    internal int CurrentRetryAttempt { get; set; }
+
+    /// <summary>
+    /// The tick count when the condition was last checked and found to be false.
+    /// Used for detecting stalled conditions.
+    /// </summary>
+    internal long? LastConditionCheckTicks { get; set; }
+
+    /// <summary>
+    /// Accumulated elapsed time in milliseconds that the condition has been false (stalled), excluding paused time.
+    /// </summary>
+    internal long AccumulatedStallMillis { get; set; }
+
+    /// <summary>
+    /// The tick count when stall tracking was last paused.
+    /// </summary>
+    internal long? StallPausedAtTicks { get; set; }
+
+    /// <summary>
+    /// Cancels this task if it is still in the queue.
+    /// </summary>
+    /// <returns>True if the task was successfully cancelled; otherwise, false.</returns>
+    public bool Cancel()
+    {
+        return OwningQueue?.CancelTask(SystemId) ?? false;
+    }
+
+    /// <summary>
     /// Creates a new queued task.
     /// </summary>
+    /// <param name="owningQueue">The queue that owns this task.</param>
     /// <param name="customId">Optional user-defined identifier.</param>
     /// <param name="isBlocking">Whether this task blocks subsequent tasks.</param>
+    public QueuedTask(NoireTaskQueue owningQueue, string? customId = null, bool isBlocking = true)
+    {
+        SystemId = Guid.NewGuid();
+        OwningQueue = owningQueue;
+        CustomId = customId;
+        IsBlocking = isBlocking;
+        Status = TaskStatus.Queued;
+        QueuedAtTicks = Environment.TickCount64;
+        CurrentRetryAttempt = 0;
+    }
+
+    /// <summary>
+    /// Used internally to clone tasks without an owning queue, or for creating tasks with no owning queue.
+    /// </summary>
+    /// <param name="customId"></param>
+    /// <param name="isBlocking"></param>
     public QueuedTask(string? customId = null, bool isBlocking = true)
     {
         SystemId = Guid.NewGuid();
@@ -129,6 +186,7 @@ public class QueuedTask
         IsBlocking = isBlocking;
         Status = TaskStatus.Queued;
         QueuedAtTicks = Environment.TickCount64;
+        CurrentRetryAttempt = 0;
     }
 
     /// <summary>
@@ -198,14 +256,76 @@ public class QueuedTask
     }
 
     /// <summary>
+    /// Checks if the completion condition has stalled (been false for too long).
+    /// </summary>
+    /// <returns>True if the condition has stalled beyond the configured threshold.</returns>
+    internal bool HasConditionStalled()
+    {
+        if (RetryConfiguration == null || !RetryConfiguration.StallTimeout.HasValue)
+            return false;
+
+        if (!LastConditionCheckTicks.HasValue)
+            return false;
+
+        long elapsedMs;
+
+        if (StallPausedAtTicks.HasValue)
+            elapsedMs = AccumulatedStallMillis;
+        else
+            elapsedMs = AccumulatedStallMillis + (Environment.TickCount64 - LastConditionCheckTicks.Value);
+
+        var stallThreshold = CurrentRetryAttempt == 0
+            ? RetryConfiguration.StallTimeout.Value
+            : (RetryConfiguration.RetryDelay ?? RetryConfiguration.StallTimeout.Value);
+
+        return elapsedMs > stallThreshold.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// Resets the stall tracking for this task.
+    /// </summary>
+    internal void ResetStallTracking()
+    {
+        LastConditionCheckTicks = Environment.TickCount64;
+        AccumulatedStallMillis = 0;
+        StallPausedAtTicks = null;
+    }
+
+    /// <summary>
+    /// Pauses the stall tracking for this task.
+    /// </summary>
+    internal void PauseStallTracking()
+    {
+        if (!LastConditionCheckTicks.HasValue || StallPausedAtTicks.HasValue)
+            return;
+
+        AccumulatedStallMillis += Environment.TickCount64 - LastConditionCheckTicks.Value;
+        StallPausedAtTicks = Environment.TickCount64;
+    }
+
+    /// <summary>
+    /// Resumes the stall tracking for this task.
+    /// </summary>
+    internal void ResumeStallTracking()
+    {
+        if (!StallPausedAtTicks.HasValue)
+            return;
+
+        LastConditionCheckTicks = Environment.TickCount64;
+        StallPausedAtTicks = null;
+    }
+
+    /// <summary>
     /// Clones this task, creating a new instance with the same properties.<br/>
     /// Used for immutable statistics.
     /// </summary>
+    /// <param name="owningQueue">The queue that will own the cloned task. If null, </param>
     /// <returns>A copy of the QueuedTask.</returns>
     public QueuedTask Clone()
     {
         return new QueuedTask(CustomId, IsBlocking)
         {
+            OwningQueue = null,
             ExecuteAction = ExecuteAction,
             CompletionCondition = CompletionCondition,
             OnCompleted = OnCompleted,
@@ -214,7 +334,8 @@ public class QueuedTask
             Timeout = Timeout,
             Metadata = Metadata,
             StopQueueOnFail = StopQueueOnFail,
-            StopQueueOnCancel = StopQueueOnCancel
+            StopQueueOnCancel = StopQueueOnCancel,
+            RetryConfiguration = RetryConfiguration
         };
     }
 
