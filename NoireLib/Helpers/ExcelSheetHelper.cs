@@ -3,7 +3,7 @@ using Lumina.Excel;
 using System;
 using System.Collections.Concurrent;
 
-namespace NoireLib.Internal;
+namespace NoireLib.Helpers;
 
 /// <summary>
 /// A helper class for managing Excel sheets across different client languages.<br/>

@@ -29,7 +29,6 @@ public static class SystemHelper
             }
             else if (IsLinux)
             {
-                // Try xdg-open first (standard on most Linux distributions)
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "xdg-open",
@@ -69,7 +68,6 @@ public static class SystemHelper
             }
             else if (IsLinux)
             {
-                // Try xdg-open (works with most file managers)
                 Process.Start(new ProcessStartInfo
                 {
                     FileName = "xdg-open",
@@ -147,7 +145,6 @@ public static class SystemHelper
             }
             else if (IsLinux)
             {
-                // On Linux, open the parent directory instead (most file managers don't support direct file selection)
                 var directory = Path.GetDirectoryName(filePath);
                 if (!string.IsNullOrEmpty(directory))
                 {

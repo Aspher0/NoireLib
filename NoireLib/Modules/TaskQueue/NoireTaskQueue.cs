@@ -1,9 +1,9 @@
+using Dalamud.Plugin.Services;
+using NoireLib.Core.Modules;
+using NoireLib.EventBus;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using NoireLib.Core.Modules;
-using NoireLib.EventBus;
-using Dalamud.Plugin.Services;
 
 namespace NoireLib.TaskQueue;
 
@@ -713,7 +713,14 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         PublishEvent(new QueueStoppedEvent());
 
         if (EnableLogging)
-            NoireLogger.LogInfo(this, "Queue stopped.");
+        {
+            NoireLogger.LogInfo(this, "Queue stopped. " +
+                $"Total Tasks Queued: {totalTasksQueued}, " +
+                $"Completed: {tasksCompleted}, " +
+                $"Cancelled: {tasksCancelled}, " +
+                $"Failed: {tasksFailed}, " +
+                $"Total Active Processing Time: {accumulatedProcessingMillis} ms.");
+        }
 
         return this;
     }
@@ -1208,6 +1215,42 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     #endregion
 
     #region Statistics and Info
+
+    /// <summary>
+    /// Determines whether the queue is currently in the running state.
+    /// </summary>
+    /// <returns>true if the queue is running; otherwise, false.</returns>
+    public bool IsQueueRunning()
+    {
+        lock (queueLock)
+        {
+            return QueueState switch
+            {
+                QueueState.Running => true,
+                _ => false,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Determines whether the queue is currently processing items, including both running and paused states.
+    /// </summary>
+    /// <remarks>This method considers the queue to be processing if it is either actively running or
+    /// temporarily paused. Use this method to check if the queue is engaged in processing, regardless of whether it is
+    /// momentarily paused.</remarks>
+    /// <returns>true if the queue is in a running or paused state; otherwise, false.</returns>
+    public bool IsQueueProcessing()
+    {
+        lock (queueLock)
+        {
+            return QueueState switch
+            {
+                QueueState.Running => true,
+                QueueState.Paused => true,
+                _ => false,
+            };
+        }
+    }
 
     /// <summary>
     /// Gets statistics about the task queue.

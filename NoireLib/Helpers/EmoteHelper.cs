@@ -1,7 +1,6 @@
 using Dalamud.Game;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
-using NoireLib.Internal;
 using System;
 
 namespace NoireLib.Helpers;

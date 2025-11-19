@@ -126,6 +126,32 @@ public class TaskBuilder
     }
 
     /// <summary>
+    /// Sets a delay-based completion condition using a predicate function.<br/>
+    /// The delay will be evaluated when the task starts, allowing for dynamic delay calculation.<br/>
+    /// This is a condition on its own, meaning it is not combinable with other conditions.
+    /// </summary>
+    /// <param name="delayPredicate">A function that returns the delay duration.</param>
+    /// <returns>The TaskBuilder instance for chaining.</returns>
+    public TaskBuilder WithDelay(Func<TimeSpan> delayPredicate)
+    {
+        task.CompletionCondition = TaskCompletionCondition.FromDelay(delayPredicate());
+        return this;
+    }
+
+    /// <summary>
+    /// Sets a delay-based completion condition using a predicate function with access to the task.<br/>
+    /// The delay will be evaluated when the task starts, allowing for dynamic delay calculation based on task state.<br/>
+    /// This is a condition on its own, meaning it is not combinable with other conditions.
+    /// </summary>
+    /// <param name="delayPredicate">A function that receives the task and returns the delay duration.</param>
+    /// <returns>The TaskBuilder instance for chaining.</returns>
+    public TaskBuilder WithDelay(Func<QueuedTask, TimeSpan> delayPredicate)
+    {
+        task.CompletionCondition = TaskCompletionCondition.FromDelay(delayPredicate(task));
+        return this;
+    }
+
+    /// <summary>
     /// Sets immediate completion, meaning the task completes as soon as action finishes.
     /// </summary>
     /// <returns>The TaskBuilder instance for chaining.</returns>
@@ -397,6 +423,7 @@ public class TaskBuilder
     public static T? GetMetadataFromTask<T>(NoireTaskQueue queue, string customId)
     {
         var previousTask = queue.GetTaskByCustomId(customId);
+
         if (previousTask?.Metadata is T metadata)
             return metadata;
 
@@ -414,6 +441,7 @@ public class TaskBuilder
     public static unsafe T* GetPointerMetadataFromTask<T>(NoireTaskQueue queue, string customId) where T : unmanaged
     {
         var previousTask = queue.GetTaskByCustomId(customId);
+
         if (previousTask?.Metadata is PointerMetadata<T> pointerMetadata)
             return pointerMetadata.GetPointer();
 
