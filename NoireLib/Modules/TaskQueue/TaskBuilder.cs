@@ -482,7 +482,7 @@ public class TaskBuilder
     /// <summary>
     /// Creates a new task builder which can be further configured.<br/>
     /// Same as calling the constructor <see cref="TaskBuilder(string?)"/>.<br/>
-    /// The <see cref="QueuedTask"/> will be created as non blocking by default when <see cref="Build()"/> is called, or when <see cref="EnqueueTo(NoireTaskQueue)"/> is called.
+    /// The <see cref="QueuedTask"/> will be created as blocking by default when <see cref="Build()"/> is called, or when <see cref="EnqueueTo(NoireTaskQueue)"/> is called.
     /// </summary>
     /// <returns>The TaskBuilder instance for chaining.</returns>
     public static TaskBuilder Create(string? customId = null)
