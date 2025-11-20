@@ -693,10 +693,13 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// <returns>The module instance for chaining.</returns>
     public NoireTaskQueue StopQueue()
     {
+        ClearQueue();
+
         if (QueueState == QueueState.Idle || QueueState == QueueState.Stopped)
         {
             if (EnableLogging)
                 NoireLogger.LogDebug(this, "Queue is already stopped or idle.");
+
             return this;
         }
 
@@ -705,8 +708,6 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             accumulatedProcessingMillis += Environment.TickCount64 - processingStartTimeTicks;
             processingStartTimeTicks = 0;
         }
-
-        ClearQueue();
 
         QueueState = QueueState.Stopped;
 
