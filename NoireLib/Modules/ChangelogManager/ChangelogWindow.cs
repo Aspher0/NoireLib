@@ -1,10 +1,11 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.ImGuiNotification;
+using Dalamud.Interface.Utility.Raii;
+using NoireLib.Core.Modules;
 using System;
 using System.Linq;
 using System.Numerics;
-using NoireLib.Core.Modules;
 
 namespace NoireLib.Changelog;
 
@@ -122,30 +123,32 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
         ImGui.SetNextItemWidth(200f);
         var selectedVersionString = selectedVersion?.ToString(4) ?? string.Empty;
-        if (ImGui.BeginCombo("##VersionSelector", selectedVersionString))
+        using (var combo = ImRaii.Combo("##VersionSelector", selectedVersionString, ImGuiComboFlags.HeightRegular))
         {
-            foreach (var version in availableVersions)
+            if (combo)
             {
-                bool isSelected = version == selectedVersion;
-                var versionString = version.ToString(4);
-                if (ImGui.Selectable($"{versionString}##version_{versionString}", isSelected))
+                foreach (var version in availableVersions)
                 {
-                    var oldVersion = selectedVersion;
-                    selectedVersion = version;
-                    currentChangelog = ParentModule.GetVersion(selectedVersion);
-
-                    // Notify manager that version changed
-                    if (oldVersion != selectedVersion)
+                    bool isSelected = version == selectedVersion;
+                    var versionString = version.ToString(4);
+                    if (ImGui.Selectable($"{versionString}##version_{versionString}", isSelected))
                     {
-                        ParentModule.OnVersionChanged(oldVersion, selectedVersion);
-                        previousSelectedVersion = selectedVersion;
-                    }
-                }
+                        var oldVersion = selectedVersion;
+                        selectedVersion = version;
+                        currentChangelog = ParentModule.GetVersion(selectedVersion);
 
-                if (isSelected)
-                    ImGui.SetItemDefaultFocus();
+                        // Notify manager that version changed
+                        if (oldVersion != selectedVersion)
+                        {
+                            ParentModule.OnVersionChanged(oldVersion, selectedVersion);
+                            previousSelectedVersion = selectedVersion;
+                        }
+                    }
+
+                    if (isSelected)
+                        ImGui.SetItemDefaultFocus();
+                }
             }
-            ImGui.EndCombo();
         }
 
         // Show selected version info
@@ -169,11 +172,13 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
                 }
 
                 var titleColor = currentChangelog.TitleColor ?? new Vector4(1f, 1f, 1f, 1f);
-                ImGui.PushStyleColor(ImGuiCol.Text, titleColor);
-                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
-                ImGui.TextWrapped($"- {currentChangelog.Title}");
-                ImGui.PopTextWrapPos();
-                ImGui.PopStyleColor();
+                using (ImRaii.PushColor(ImGuiCol.Text, titleColor))
+                {
+                    using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
+                    {
+                        ImGui.TextWrapped($"- {currentChangelog.Title}");
+                    }
+                }
             }
         }
     }
@@ -189,36 +194,35 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // Reserve space for footer
 
         var bgColor = new Vector4(0.5f, 0.5f, 0.5f, 0.05f);
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, bgColor);
-
-        ImGui.BeginChild("##ChangelogContent", new Vector2(0, availHeight), false);
-
-        var padding = 5f;
-        ImGui.Dummy(new Vector2(0, padding));
-        ImGui.Indent(padding);
-
-        // Set wrap position accounting for padding
-        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding);
-
-        if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
+        using (ImRaii.PushColor(ImGuiCol.Border, bgColor))
         {
-            ImGui.TextWrapped(currentChangelog.Description);
-            ImGui.Spacing();
-            ImGui.Separator();
-            ImGui.Spacing();
+            using (ImRaii.Child("##ChangelogContentChild", new Vector2(0, availHeight), false))
+            {
+                var padding = 5f;
+                ImGui.Dummy(new Vector2(0, padding));
+                using (ImRaii.PushIndent(padding))
+                {
+                    // Set wrap position accounting for padding
+                    using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
+                    {
+                        if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
+                        {
+                            ImGui.TextWrapped(currentChangelog.Description);
+                            ImGui.Spacing();
+                            ImGui.Separator();
+                            ImGui.Spacing();
+                        }
+
+                        foreach (var entry in currentChangelog.Entries)
+                        {
+                            DrawChangelogEntry(entry);
+                        }
+                    }
+                }
+
+                ImGui.Dummy(new Vector2(0, padding));
+            }
         }
-
-        foreach (var entry in currentChangelog.Entries)
-        {
-            DrawChangelogEntry(entry);
-        }
-
-        ImGui.PopTextWrapPos();
-        ImGui.Unindent(padding);
-        ImGui.Dummy(new Vector2(0, padding));
-
-        ImGui.EndChild();
-        ImGui.PopStyleColor();
     }
 
     private void DrawChangelogEntry(ChangelogEntry entry)
@@ -260,24 +264,24 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             // Headers with icons (optional)
             else if (entry.Icon.HasValue)
             {
-                ImGui.PushFont(UiBuilder.IconFont);
-                var iconColor = entry.IconColor ?? new Vector4(1f, 1f, 1f, 1f);
-                ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
-                ImGui.PopFont();
+                using (ImRaii.PushFont(UiBuilder.IconFont))
+                {
+                    var iconColor = entry.IconColor ?? new Vector4(1f, 1f, 1f, 1f);
+                    ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
+                }
                 ImGui.SameLine();
             }
 
             var headerTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
-            ImGui.PushStyleColor(ImGuiCol.Text, headerTextColor);
+            using (ImRaii.PushColor(ImGuiCol.Text, headerTextColor))
+            {
+                var originalPos = ImGui.GetCursorPos();
 
-            var originalPos = ImGui.GetCursorPos();
-
-            ImGui.SetCursorPos(new Vector2(originalPos.X + 0.5f, originalPos.Y));
-            ImGui.TextUnformatted(entry.Text);
-            ImGui.SetCursorPos(originalPos);
-            ImGui.TextUnformatted(entry.Text);
-
-            ImGui.PopStyleColor();
+                ImGui.SetCursorPos(new Vector2(originalPos.X + 0.5f, originalPos.Y));
+                ImGui.TextUnformatted(entry.Text);
+                ImGui.SetCursorPos(originalPos);
+                ImGui.TextUnformatted(entry.Text);
+            }
 
             ImGui.Spacing();
             return;
@@ -294,101 +298,103 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         }
 
         var entryTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
-        ImGui.PushStyleColor(ImGuiCol.Text, entryTextColor);
 
         // Check if we have a button to determine text wrapping behavior
         bool hasButton = !string.IsNullOrWhiteSpace(entry.ButtonText) && entry.ButtonAction != null;
         bool shouldPlaceButtonOnNewLine = false;
-
-        // Calculate prefix width (bullet or icon)
-        float prefixWidth = 0f;
-
-        // Determine what prefix we're using
-        bool willShowBullet = entry.HasBullet;
-        bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
-
-        if (willShowIcon)
-        {
-            ImGui.PushFont(UiBuilder.IconFont);
-            prefixWidth = ImGui.CalcTextSize(entry.Icon!.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
-            ImGui.PopFont();
-        }
-        else if (willShowBullet)
-        {
-            prefixWidth = ImGui.CalcTextSize("• ").X;
-        }
-
-        if (hasButton)
-        {
-            // Calculate if text will wrap
-            var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 35f;
-            var availableWidth = ImGui.GetContentRegionAvail().X;
-            var textWidth = ImGui.CalcTextSize(entry.Text ?? string.Empty).X;
-
-            // If text + button doesn't fit on one line, put button on new line
-            if (textWidth + prefixWidth + buttonWidth + 10f > availableWidth)
-            {
-                shouldPlaceButtonOnNewLine = true;
-            }
-        }
-
         // Store position after bullet/icon for button alignment
         var textStartPosX = 0f;
 
-        // Draw prefix (bullet or icon) + text
-        if (willShowBullet)
+        using (ImRaii.PushColor(ImGuiCol.Text, entryTextColor))
         {
-            // Entry with bullet
-            ImGui.Bullet();
-            ImGui.SameLine();
 
-            textStartPosX = ImGui.GetCursorPosX();
+            // Calculate prefix width (bullet or icon)
+            float prefixWidth = 0f;
 
-            if (shouldPlaceButtonOnNewLine)
+            // Determine what prefix we're using
+            bool willShowBullet = entry.HasBullet;
+            bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
+
+            if (willShowIcon)
             {
-                ImGui.TextWrapped(entry.Text);
+                using (ImRaii.PushFont(UiBuilder.IconFont))
+                {
+                    prefixWidth = ImGui.CalcTextSize(entry.Icon!.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
+                }
+            }
+            else if (willShowBullet)
+            {
+                prefixWidth = ImGui.CalcTextSize("• ").X;
+            }
+
+            if (hasButton)
+            {
+                // Calculate if text will wrap
+                var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 35f;
+                var availableWidth = ImGui.GetContentRegionAvail().X;
+                var textWidth = ImGui.CalcTextSize(entry.Text ?? string.Empty).X;
+
+                // If text + button doesn't fit on one line, put button on new line
+                if (textWidth + prefixWidth + buttonWidth + 10f > availableWidth)
+                {
+                    shouldPlaceButtonOnNewLine = true;
+                }
+            }
+
+            // Draw prefix (bullet or icon) + text
+            if (willShowBullet)
+            {
+                // Entry with bullet
+                ImGui.Bullet();
+                ImGui.SameLine();
+
+                textStartPosX = ImGui.GetCursorPosX();
+
+                if (shouldPlaceButtonOnNewLine)
+                {
+                    ImGui.TextWrapped(entry.Text);
+                }
+                else
+                {
+                    ImGui.TextUnformatted(entry.Text);
+                }
+            }
+            else if (willShowIcon)
+            {
+                // Entry with icon
+                var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
+                using (ImRaii.PushFont(UiBuilder.IconFont))
+                {
+                    ImGui.TextColored(iconColor, entry.Icon!.Value.ToIconString());
+                }
+                ImGui.SameLine();
+
+                textStartPosX = ImGui.GetCursorPosX();
+
+                if (shouldPlaceButtonOnNewLine)
+                {
+                    ImGui.TextWrapped(entry.Text);
+                }
+                else
+                {
+                    ImGui.TextUnformatted(entry.Text);
+                }
             }
             else
             {
-                ImGui.TextUnformatted(entry.Text);
+                // Entry with no prefix (no bullet, no icon)
+                textStartPosX = ImGui.GetCursorPosX();
+
+                if (shouldPlaceButtonOnNewLine)
+                {
+                    ImGui.TextWrapped(entry.Text);
+                }
+                else
+                {
+                    ImGui.TextUnformatted(entry.Text);
+                }
             }
         }
-        else if (willShowIcon)
-        {
-            // Entry with icon
-            var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
-            ImGui.PushFont(UiBuilder.IconFont);
-            ImGui.TextColored(iconColor, entry.Icon!.Value.ToIconString());
-            ImGui.PopFont();
-            ImGui.SameLine();
-
-            textStartPosX = ImGui.GetCursorPosX();
-
-            if (shouldPlaceButtonOnNewLine)
-            {
-                ImGui.TextWrapped(entry.Text);
-            }
-            else
-            {
-                ImGui.TextUnformatted(entry.Text);
-            }
-        }
-        else
-        {
-            // Entry with no prefix (no bullet, no icon)
-            textStartPosX = ImGui.GetCursorPosX();
-
-            if (shouldPlaceButtonOnNewLine)
-            {
-                ImGui.TextWrapped(entry.Text);
-            }
-            else
-            {
-                ImGui.TextUnformatted(entry.Text);
-            }
-        }
-
-        ImGui.PopStyleColor();
 
         // Draw button
         if (hasButton)
