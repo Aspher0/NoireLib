@@ -1,5 +1,5 @@
-using System;
 using NoireLib.EventBus;
+using System;
 
 namespace NoireLib.TaskQueue;
 
@@ -319,7 +319,6 @@ public class QueuedTask
     /// Clones this task, creating a new instance with the same properties.<br/>
     /// Used for immutable statistics.
     /// </summary>
-    /// <param name="owningQueue">The queue that will own the cloned task. If null, </param>
     /// <returns>A copy of the QueuedTask.</returns>
     public QueuedTask Clone()
     {

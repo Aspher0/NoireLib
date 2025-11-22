@@ -165,4 +165,74 @@ public static class ObjectExtensions
     /// <param name="items">Collection to check against.</param>
     /// <returns>True if the value is not in the collection; otherwise false.</returns>
     public static bool NotIn<T>(this T value, IEnumerable<T> items) => !items.Contains(value);
+
+    /// <summary>
+    /// Converts an integer to a TimeSpan representing milliseconds.
+    /// </summary>
+    /// <param name="milliseconds">Number of milliseconds.</param>
+    /// <returns>A TimeSpan representing the specified milliseconds.</returns>
+    public static TimeSpan Milliseconds(this int milliseconds) => TimeSpan.FromMilliseconds(milliseconds);
+
+    /// <summary>
+    /// Converts a double to a TimeSpan representing milliseconds.
+    /// </summary>
+    /// <param name="milliseconds">Number of milliseconds.</param>
+    /// <returns>A TimeSpan representing the specified milliseconds.</returns>
+    public static TimeSpan Milliseconds(this double milliseconds) => TimeSpan.FromMilliseconds(milliseconds);
+
+    /// <summary>
+    /// Converts an integer to a TimeSpan representing seconds.
+    /// </summary>
+    /// <param name="seconds">Number of seconds.</param>
+    /// <returns>A TimeSpan representing the specified seconds.</returns>
+    public static TimeSpan Seconds(this int seconds) => TimeSpan.FromSeconds(seconds);
+
+    /// <summary>
+    /// Converts a double to a TimeSpan representing seconds.
+    /// </summary>
+    /// <param name="seconds">Number of seconds.</param>
+    /// <returns>A TimeSpan representing the specified seconds.</returns>
+    public static TimeSpan Seconds(this double seconds) => TimeSpan.FromSeconds(seconds);
+
+    /// <summary>
+    /// Converts an integer to a TimeSpan representing minutes.
+    /// </summary>
+    /// <param name="minutes">Number of minutes.</param>
+    /// <returns>A TimeSpan representing the specified minutes.</returns>
+    public static TimeSpan Minutes(this int minutes) => TimeSpan.FromMinutes(minutes);
+
+    /// <summary>
+    /// Converts a double to a TimeSpan representing minutes.
+    /// </summary>
+    /// <param name="minutes">Number of minutes.</param>
+    /// <returns>A TimeSpan representing the specified minutes.</returns>
+    public static TimeSpan Minutes(this double minutes) => TimeSpan.FromMinutes(minutes);
+
+    /// <summary>
+    /// Converts an integer to a TimeSpan representing hours.
+    /// </summary>
+    /// <param name="hours">Number of hours.</param>
+    /// <returns>A TimeSpan representing the specified hours.</returns>
+    public static TimeSpan Hours(this int hours) => TimeSpan.FromHours(hours);
+
+    /// <summary>
+    /// Converts a double to a TimeSpan representing hours.
+    /// </summary>
+    /// <param name="hours">Number of hours.</param>
+    /// <returns>A TimeSpan representing the specified hours.</returns>
+    public static TimeSpan Hours(this double hours) => TimeSpan.FromHours(hours);
+
+    /// <summary>
+    /// Converts an integer to a TimeSpan representing days.
+    /// </summary>
+    /// <param name="days">Number of days.</param>
+    /// <returns>A TimeSpan representing the specified days.</returns>
+    public static TimeSpan Days(this int days) => TimeSpan.FromDays(days);
+
+    /// <summary>
+    /// Converts a double to a TimeSpan representing days.
+    /// </summary>
+    /// <param name="days">Number of days.</param>
+    /// <returns>A TimeSpan representing the specified days.</returns>
+    public static TimeSpan Days(this double days) => TimeSpan.FromDays(days);
 }

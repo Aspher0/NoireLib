@@ -1,10 +1,10 @@
 using Dalamud.Plugin;
 using Dalamud.Utility;
+using NoireLib.Core.Modules;
+using NoireLib.Helpers.ObjectExtensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using NoireLib.Core.Modules;
-using NoireLib.Helpers.ObjectExtensions;
 
 namespace NoireLib;
 
@@ -13,6 +13,11 @@ namespace NoireLib;
 /// </summary>
 public class NoireLibMain
 {
+    /// <summary>
+    /// List of registered callbacks to be invoked on disposal.
+    /// </summary>
+    private static readonly List<(string Key, Action Callback, int Priority)> _onDisposeCallbacks = new();
+
     /// <summary>
     /// Initializes NoireLib services. Must be called in your plugin's constructor.
     /// </summary>
@@ -211,7 +216,7 @@ public class NoireLibMain
     /// Tries to retrieve an instance of an added module by its type, module ID and/or index.<br/>
     /// </summary>
     /// <typeparam name="T">The type of the module to retrieve.</typeparam>
-    /// <param name="moduleId">The optional ID of the module to retrieve.</param>
+    /// <param name="moduleId">The ID of the module to retrieve. If <see langword="null"/>, will return the first matching element.</param>
     /// <param name="index">
     /// The zero-based index of the instance to retrieve in the list.<br/>
     /// If <paramref name="moduleId"/> is provided, the index will be applied only to the instances with the specified ID.
@@ -247,11 +252,73 @@ public class NoireLibMain
     }
 
     /// <summary>
+    /// Registers a callback to be invoked when the service is disposed.<br/>
+    /// Throws if <paramref name="key"/> is null, blank or if callback is null.<br/>
+    /// </summary>
+    /// <param name="key">A unique key to identify the callback. Cannot be null, blank or already registered.</param>
+    /// <param name="callback">The action to execute during disposal. Cannot be null.</param>
+    /// <param name="priority">The priority of the callback. Lower priority callbacks are executed first.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank, or when <paramref name="callback"/> is null.</exception>
+    /// <returns>True if the callback was successfully registered, otherwise false if a callback with the same key is already registered.</returns>
+    public static bool RegisterOnDispose(string key, Action callback, int priority = 0)
+    {
+        if (key.IsNullOrWhitespace())
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
+
+        if (callback == null)
+            throw new ArgumentNullException(nameof(callback), "Callback cannot be null.");
+
+        if (_onDisposeCallbacks.Any(c => c.Key == key))
+            return false;
+
+        _onDisposeCallbacks.Add((key, callback, priority));
+        return true;
+    }
+
+    /// <summary>
+    /// Unregisters a previously registered disposal callback by its key.<br/>
+    /// Throws if <paramref name="key"/> is null or blank.
+    /// </summary>
+    /// <param name="key">The key of the callback to unregister. Cannot be null or blank.</param>
+    /// <returns>True if a callback was found and unregistered, otherwise false.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>
+    public static bool UnregisterOnDispose(string key)
+    {
+        if (key.IsNullOrWhitespace())
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
+
+        if (!_onDisposeCallbacks.Any(c => c.Key == key))
+            return false;
+
+        _onDisposeCallbacks.RemoveAll(c => c.Key == key);
+        return true;
+    }
+
+    /// <summary>
+    /// Determines whether a callback is registered to be invoked on dispose for the specified key.<br/>
+    /// Throws if <paramref name="key"/> is null or blank.
+    /// </summary>
+    /// <param name="key">The key to check for a registered dispose callback. Cannot be null or blank.</param>
+    /// <returns>True if a dispose callback is registered for the specified key; otherwise, false.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>
+    public static bool IsRegisteredOnDispose(string key)
+    {
+        if (key.IsNullOrWhitespace())
+            throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
+        return _onDisposeCallbacks.Any(c => c.Key == key);
+    }
+
+    /// <summary>
     /// Disposes NoireLib services and all active modules. Should be called in your plugin's DisposeInternal method.
     /// </summary>
     public static void Dispose()
     {
         ClearAllModules();
+
+        var orderedCallbacks = _onDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
+        foreach (var (_, callback, _) in orderedCallbacks)
+            callback.Invoke();
+
         NoireService.Dispose();
     }
 }

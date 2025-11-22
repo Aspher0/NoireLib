@@ -220,7 +220,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// </summary>
     /// <param name="show">Whether to show the window. Set to null to toggle the window.</param>
     /// <returns>The module instance for chaining.</returns>
-    public virtual TModule ShowWindow(bool? show)
+    public virtual TModule SetShowWindow(bool? show)
     {
         if (ModuleWindow != null)
         {

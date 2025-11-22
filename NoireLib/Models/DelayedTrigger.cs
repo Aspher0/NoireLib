@@ -18,7 +18,7 @@ public class DelayedTrigger
     internal bool CheckConditionImmediately { get; set; }
     internal long ScheduledExecutionMs { get; set; }
     internal CancellationTokenSource Cts { get; set; } = new();
-    internal TaskDelayer? ParentTrigger { get; set; }
+    internal Delayer? ParentTrigger { get; set; }
 
     /// <summary>
     /// Gets whether this trigger has been cancelled.

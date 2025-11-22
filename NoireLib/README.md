@@ -85,8 +85,55 @@ bool isActive = changelogManager.IsActive;
 isActive = NoireLibMain.IsModuleActive<NoireChangelogManager>("ChangelogModule");
 ```
 
-When active, the module functions normally.<br/>
-When inactive, the module will not do anything until reactivated.
+When active, the module functions normally. When inactive, the module will not do anything until reactivated.
+
+All modules share the same few settings and methods:
+
+```csharp
+// The active state of the module:
+bool isActive = module.IsActive;
+
+// Activate or deactivate the module:
+module.SetActive(!isActive);
+module.Activate();
+module.Deactivate();
+
+// Enable logging for the module
+module.EnableLogging();
+
+// Dispose the module when no longer needed (not needed if added with NoireLibMain.AddModule):
+module.Dispose();
+
+/*
+ * For modules with an associated window
+ */
+
+// Gets or sets the window name:
+string windowName = module.DisplayWindowName;
+// Or with the method (for chaining):
+module.SetWindowName(windowName);
+
+// Get the full window name (including ID):
+string fullWindowName = module.GetFullWindowName();
+
+// Add title bar buttons:
+module.AddTitleBarButton(titleBarButton);
+
+// Remove title bar buttons:
+module.RemoveTitleBarButton(index);
+
+// Replace all title bar buttons:
+module.SetTitleBarButtons(titleBarButtons);
+
+// Remove all title bar buttons:
+module.ClearTitleBarButtons();
+
+// Show or hide the window:
+module.SetShowWindow(bool? show); // If null: toggles the window
+module.ShowWindow(); // Forces showing the window
+module.HideWindow(); // Forces hiding the window
+module.ToggleWindow(); // Toggles the window
+```
 
 For a list of modules, see the [Modules Section](#modules)
 
@@ -95,3 +142,4 @@ For a list of modules, see the [Modules Section](#modules)
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
 - [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
 - [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)
+- [Task Queue Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/TaskQueue/README.md)

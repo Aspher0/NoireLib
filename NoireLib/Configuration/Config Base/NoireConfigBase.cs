@@ -1,7 +1,7 @@
+using NoireLib.Helpers;
 using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using NoireLib.Helpers;
 
 namespace NoireLib.Configuration;
 
