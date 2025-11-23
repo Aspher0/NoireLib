@@ -19,9 +19,4 @@ public enum CompletionConditionType
     /// Task completes when a specific EventBus event is received.
     /// </summary>
     EventBusEvent,
-
-    /// <summary>
-    /// Task completes after a specified delay.
-    /// </summary>
-    Delay
 }

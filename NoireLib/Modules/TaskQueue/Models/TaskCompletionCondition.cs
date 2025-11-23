@@ -33,30 +33,9 @@ public class TaskCompletionCondition
     public Func<object, bool>? EventFilter { get; set; }
 
     /// <summary>
-    /// The delay duration for time-based completion.
-    /// Used for <see cref="CompletionConditionType.Delay"/>.
-    /// </summary>
-    public TimeSpan? Delay { get; set; }
-
-    /// <summary>
     /// Internal flag to track if the event-based condition has been met.
     /// </summary>
     internal bool EventConditionMet { get; set; }
-
-    /// <summary>
-    /// Internal tick count for delay-based conditions.
-    /// </summary>
-    internal long? DelayStartTimeTicks { get; set; }
-
-    /// <summary>
-    /// Accumulated elapsed time in milliseconds for delay-based conditions, excluding paused time.
-    /// </summary>
-    internal long AccumulatedDelayMillis { get; set; }
-
-    /// <summary>
-    /// The tick count when the delay was last paused.
-    /// </summary>
-    internal long? DelayPausedAtTicks { get; set; }
 
     /// <summary>
     /// Creates a predicate-based completion condition.
@@ -89,20 +68,6 @@ public class TaskCompletionCondition
     }
 
     /// <summary>
-    /// Creates a delay-based completion condition.
-    /// </summary>
-    /// <param name="delay">The delay duration.</param>
-    /// <returns>A new <see cref="TaskCompletionCondition"/>.</returns>
-    public static TaskCompletionCondition FromDelay(TimeSpan delay)
-    {
-        return new TaskCompletionCondition
-        {
-            Type = CompletionConditionType.Delay,
-            Delay = delay
-        };
-    }
-
-    /// <summary>
     /// Creates an immediate completion condition (task completes as soon as execution finishes).
     /// </summary>
     /// <returns>A new <see cref="TaskCompletionCondition"/>.</returns>
@@ -125,51 +90,7 @@ public class TaskCompletionCondition
             CompletionConditionType.Immediate => true,
             CompletionConditionType.Predicate => Condition?.Invoke() ?? false,
             CompletionConditionType.EventBusEvent => EventConditionMet,
-            CompletionConditionType.Delay => CheckDelayCondition(),
             _ => false
         };
-    }
-
-    /// <summary>
-    /// Checks if the delay condition is met, accounting for paused time.
-    /// </summary>
-    private bool CheckDelayCondition()
-    {
-        if (!DelayStartTimeTicks.HasValue || !Delay.HasValue)
-            return false;
-
-        long totalElapsedMillis = AccumulatedDelayMillis;
-
-        // If not currently paused, add the time since last resume
-        if (!DelayPausedAtTicks.HasValue)
-            totalElapsedMillis += Environment.TickCount64 - DelayStartTimeTicks.Value;
-
-        return totalElapsedMillis >= Delay.Value.TotalMilliseconds;
-    }
-
-    /// <summary>
-    /// Pauses the delay tracking for this condition.
-    /// </summary>
-    internal void PauseDelay()
-    {
-        if (Type != CompletionConditionType.Delay || !DelayStartTimeTicks.HasValue || DelayPausedAtTicks.HasValue)
-            return;
-
-        // Accumulate the time elapsed before pausing
-        AccumulatedDelayMillis += Environment.TickCount64 - DelayStartTimeTicks.Value;
-        DelayPausedAtTicks = Environment.TickCount64;
-    }
-
-    /// <summary>
-    /// Resumes the delay tracking for this condition.
-    /// </summary>
-    internal void ResumeDelay()
-    {
-        if (Type != CompletionConditionType.Delay || !DelayPausedAtTicks.HasValue)
-            return;
-
-        // Reset the start time to now
-        DelayStartTimeTicks = Environment.TickCount64;
-        DelayPausedAtTicks = null;
     }
 }

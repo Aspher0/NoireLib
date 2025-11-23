@@ -1,4 +1,5 @@
 
+
 # Module Documentation : NoireTaskQueue
 
 You are reading the documentation for the `NoireTaskQueue` module.
@@ -10,6 +11,7 @@ You are reading the documentation for the `NoireTaskQueue` module.
 - [Creating Tasks](#creating-tasks)
   - [Using TaskBuilder](#using-taskbuilder)
   - [Task Completion Conditions](#task-completion-conditions)
+  - [Add Delay to Tasks](#add-delay-to-tasks)
   - [Blocking vs Non-Blocking Tasks](#blocking-vs-non-blocking-tasks)
 - [Queue Control](#queue-control)
 - [Task Management](#task-management)
@@ -29,13 +31,13 @@ You are reading the documentation for the `NoireTaskQueue` module.
 
 The `NoireTaskQueue` is a powerful module that manages task queuing and processing with support for:
 - **Blocking and non-blocking tasks** for flexible execution flow
-- **Multiple completion conditions** (predicate, event-based, delay, immediate)
+- **Multiple completion conditions** (predicate, event-based, immediate)
 - **Automatic retry logic** with configurable stall detection
 - **Timeout support** for cancelling tasks that takes too long to complete
 - **EventBus integration** for event-driven task completion
 - **Task metadata** for passing data between tasks
 - **Comprehensive callbacks** for task lifecycle events
-- **Queue state management** (start, pause, resume, stop)
+- **Queue state management** (start, pause, resume, stop, skip n tasks, goto ...)
 
 This module is ideal for scenarios where you need to:
 - Execute tasks sequentially with specific completion conditions
@@ -184,12 +186,12 @@ Tasks can complete based on different conditions:
 
 #### 1. Immediate Completion
 
-Task completes as soon as the action finishes:
+Task completes as soon as the action finishes (default):
 
 ```csharp
 TaskBuilder.Create()
     .WithAction(() => DoWork())
-    .WithImmediateCompletion()
+    .WithImmediateCompletion() // Can omit since this is the default behavior
     .EnqueueTo(queue);
 ```
 
@@ -232,14 +234,46 @@ TaskBuilder.Create()
     .EnqueueTo(queue);
 ```
 
-#### 4. Delay-Based Condition
+### Add Delay to Tasks
 
-Task completes after a specified duration:
+You can also add tasks that will either act as a delay on their own, or you can add a post-completion delay.
+In either cases, the process is the same:
 
 ```csharp
+// Enqueue a 5 seconds delay task
 TaskBuilder.Create()
-    .WithAction(() => StartCooldown())
     .WithDelay(TimeSpan.FromSeconds(5))
+    .EnqueueTo(queue);
+
+// Enqueue a task that will wait for completion
+// then after condition completes, will wait 1 second
+TaskBuilder.Create()
+    .WithAction(() => StartMoving())
+    .WithCondition(() => HasReachedDestination())
+    .WithDelay(TimeSpan.FromSeconds(1))
+    .EnqueueTo(queue);
+
+// Add a predicate based delay
+TaskBuilder.Create()
+    .WithDelay(() => NoireService.ClientState.TerritoryType == 123 ?
+      TimeSpan.FromSeconds(1) : null)
+    .EnqueueTo(queue);
+
+// Or accessing the task
+TaskBuilder.Create()
+    .WithAction(task => 
+    {
+       if (NoireService.ClientState.TerritoryType == 123)
+       {
+          task.Metadata = null;
+          MoveToDestination();
+          return;
+       }
+       
+       task.Metadata = TimeSpan.FromMilliseconds(500);
+       TeleportToTerritory();       
+    })
+    .WithDelay(task => task.Metadata)
     .EnqueueTo(queue);
 ```
 
@@ -266,6 +300,45 @@ TaskBuilder.Create()
 **Use cases:**
 - **Blocking**: Sequential operations where order matters (e.g., teleport → wait for load → interact)
 - **Non-blocking**: Parallel operations that can run independently (e.g., logging, monitoring)
+
+### Inserting a Task after another one
+
+The fluent `TaskBuilder` API also lets you insert a task after another task down the queue:
+
+```csharp
+// Insert after a Task's system ID or custom ID
+TaskBuilder.Create()
+    .WithDelay(TimeSpan.FromSeconds(5))
+    .EnqueueToAfterTask(queue, systemOrCustomTaskId); // Will insert after task with id in variable `systemOrCustomTaskId` in the specified `queue`
+```
+
+### Skipping N amount of Tasks
+
+You may want to skip upcoming tasks based on some conditions, you can do it like so:
+
+```csharp
+TaskBuilder.Create()
+    .WithAction(task =>
+    {
+        if (SomeCondition())
+        {
+            int numberOfTasksToSkip = 3;
+            bool alsoSkipCurrent = true;
+            queue.SkipNextTasks(numberOfTasksToSkip , alsoSkipCurrent);
+            // Will skip current task, AND next 3 tasks.
+            // If alsoSkipCurrent == false, will only skip next 3 tasks
+        }
+    })
+    .EnqueueTo(queue);
+```
+
+### Jumping to a Task (Goto)
+
+```csharp
+// Will jump to the target task with system or custom ID
+// Cancelling/Skipping all tasks preceding the target
+queue.JumpToTask(targetTaskSystemOrCustomId);
+```
 
 ---
 

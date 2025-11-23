@@ -21,6 +21,11 @@ public enum TaskStatus
     WaitingForCompletion,
 
     /// <summary>
+    /// The task is waiting for its post-completion delay to elapse.
+    /// </summary>
+    WaitingForPostDelay,
+
+    /// <summary>
     /// The task has completed successfully.
     /// </summary>
     Completed,

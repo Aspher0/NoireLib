@@ -316,6 +316,219 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     }
 
     /// <summary>
+    /// Inserts a task after another task in the queue.
+    /// </summary>
+    /// <param name="task">The task to insert.</param>
+    /// <param name="afterTaskSystemId">The system ID of the task to insert after.</param>
+    /// <returns>True if the task was successfully inserted; false if the target task was not found.</returns>
+    public bool InsertTaskAfter(QueuedTask task, Guid afterTaskSystemId)
+    {
+        return InsertTaskAfterInternal(task, t => t.SystemId == afterTaskSystemId, afterTaskSystemId.ToString());
+    }
+
+    /// <summary>
+    /// Inserts a task after another task in the queue by custom ID.
+    /// </summary>
+    /// <param name="task">The task to insert.</param>
+    /// <param name="afterTaskCustomId">The custom ID of the task to insert after.</param>
+    /// <returns>True if the task was successfully inserted; false if the target task was not found.</returns>
+    public bool InsertTaskAfter(QueuedTask task, string afterTaskCustomId)
+    {
+        return InsertTaskAfterInternal(task, t => t.CustomId == afterTaskCustomId, afterTaskCustomId);
+    }
+
+    /// <summary>
+    /// Internal method to insert a task after another task matching a predicate.
+    /// </summary>
+    private bool InsertTaskAfterInternal(QueuedTask task, Func<QueuedTask, bool> predicate, string targetDescription)
+    {
+        if (!IsActive)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "Cannot insert task - module is not active.");
+            return false;
+        }
+
+        bool subscribed = false;
+        bool inserted = false;
+        lock (queueLock)
+        {
+            var targetIndex = taskQueue.FindIndex(t => predicate(t));
+            if (targetIndex == -1)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogWarning(this, $"Cannot insert task - target task with ID '{targetDescription}' not found.");
+                return false;
+            }
+
+            var currentExecutingTaskIndex = currentTask != null ? taskQueue.IndexOf(currentTask) : -1;
+
+            if (targetIndex < currentExecutingTaskIndex)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogWarning(this, $"Cannot insert task - target task '{targetDescription}' is already executed. Can only insert after queued or current tasks.");
+                return false;
+            }
+
+            taskQueue.Insert(targetIndex + 1, task);
+            totalTasksQueued++;
+            inserted = true;
+
+            if (task.CompletionCondition?.Type == CompletionConditionType.EventBusEvent && task.CompletionCondition.EventType != null)
+            {
+                SubscribeToEventForTask(task);
+                subscribed = true;
+            }
+        }
+
+        if (inserted)
+        {
+            PublishEvent(new TaskQueuedEvent(task));
+
+            if (EnableLogging)
+                NoireLogger.LogDebug(this, $"Task inserted after {targetDescription}: {task}{(subscribed ? " (event subscribed)" : "")}");
+
+            if (ShouldProcessQueueAutomatically && (QueueState == QueueState.Idle || QueueState == QueueState.Stopped))
+                StartQueue();
+        }
+
+        return inserted;
+    }
+
+    /// <summary>
+    /// Skips the next N queued (not yet started) tasks in the queue by cancelling them.
+    /// </summary>
+    /// <param name="count">The number of queued tasks to skip. Excluding the current task if <paramref name="alsoSkipCurrentTask"/> is true.</param>
+    /// <param name="alsoSkipCurrentTask">If true, also cancels the currently executing task if it exists.<br/>
+    /// Argument <paramref name="count"/> should not include the current task in this case.</param>
+    /// <returns>The number of tasks that were actually skipped.</returns>
+    public int SkipNextTasks(int count, bool alsoSkipCurrentTask = false)
+    {
+        if (count <= 0)
+            return 0;
+
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                int skipped = 0;
+
+                if (alsoSkipCurrentTask && currentTask != null &&
+                    (currentTask.Status == TaskStatus.Executing ||
+                     currentTask.Status == TaskStatus.WaitingForCompletion ||
+                     currentTask.Status == TaskStatus.WaitingForPostDelay))
+                {
+                    if (CancelTaskInternal(currentTask))
+                    {
+                        skipped++;
+                        if (EnableLogging)
+                            NoireLogger.LogInfo(this, $"Skipped current task: {currentTask}");
+                    }
+                }
+
+                var queuedTasks = taskQueue.Where(t => t.Status == TaskStatus.Queued).Take(count).ToList();
+
+                foreach (var task in queuedTasks)
+                {
+                    if (CancelTaskInternal(task))
+                        skipped++;
+                }
+
+                if (EnableLogging && skipped > 0)
+                    NoireLogger.LogInfo(this, $"Skipped {skipped} task(s){(alsoSkipCurrentTask ? " (including current task)" : "")}.");
+
+                return skipped;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+    /// <summary>
+    /// Jumps to a specific task by system ID, cancelling all queued tasks before it.
+    /// </summary>
+    /// <param name="targetSystemId">The system ID of the task to jump to.</param>
+    /// <returns>True if the jump was successful; false if the target task was not found or not in Queued status.</returns>
+    public bool JumpToTask(Guid targetSystemId)
+    {
+        return JumpToTaskInternal(t => t.SystemId == targetSystemId, targetSystemId.ToString());
+    }
+
+    /// <summary>
+    /// Jumps to a specific task by custom ID, cancelling all queued tasks before it.
+    /// </summary>
+    /// <param name="targetCustomId">The custom ID of the task to jump to.</param>
+    /// <returns>True if the jump was successful; false if the target task was not found or not in Queued status.</returns>
+    public bool JumpToTask(string targetCustomId)
+    {
+        return JumpToTaskInternal(t => t.CustomId == targetCustomId, targetCustomId);
+    }
+
+    /// <summary>
+    /// Internal method to jump to a task matching a predicate.
+    /// </summary>
+    private bool JumpToTaskInternal(Func<QueuedTask, bool> predicate, string targetDescription)
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                var targetTask = taskQueue.FirstOrDefault(predicate);
+                if (targetTask == null)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task with ID {targetDescription} not found.");
+                    return false;
+                }
+
+                if (targetTask.Status != TaskStatus.Queued)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task {targetTask} is not in Queued status (Status: {targetTask.Status}).");
+                    return false;
+                }
+
+                var targetIndex = taskQueue.IndexOf(targetTask);
+                var tasksToCancel = taskQueue.Take(targetIndex).Where(t =>
+                    t.Status == TaskStatus.Queued ||
+                    t.Status == TaskStatus.Executing ||
+                    t.Status == TaskStatus.WaitingForCompletion ||
+                    t.Status == TaskStatus.WaitingForPostDelay).ToList();
+                int cancelled = 0;
+
+                foreach (var task in tasksToCancel)
+                {
+                    if (CancelTaskInternal(task))
+                        cancelled++;
+                }
+
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Jumped to task {targetTask}, cancelled {cancelled} task(s) before it.");
+
+                return true;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+    /// <summary>
     /// Creates and enqueues a simple task.
     /// </summary>
     /// <param name="customId">Optional custom identifier.</param>
@@ -588,8 +801,8 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             {
                 foreach (var task in taskQueue)
                 {
-                    if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
-                        task.CompletionCondition.ResumeDelay();
+                    if (task.Status == TaskStatus.WaitingForPostDelay && task.PostCompletionDelay.HasValue)
+                        task.PausePostDelay();
 
                     if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
                         task.ResumeTimeout();
@@ -628,14 +841,14 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         {
             foreach (var task in taskQueue)
             {
-                if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
-                    task.CompletionCondition.PauseDelay();
-
-                if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
+                if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion || task.Status == TaskStatus.WaitingForPostDelay) && task.Timeout.HasValue)
                     task.PauseTimeout();
 
                 if (task.Status == TaskStatus.WaitingForCompletion && task.RetryConfiguration != null)
                     task.PauseStallTracking();
+
+                if (task.Status == TaskStatus.WaitingForPostDelay && task.PostCompletionDelay.HasValue)
+                    task.PausePostDelay();
             }
         }
 
@@ -668,14 +881,14 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         {
             foreach (var task in taskQueue)
             {
-                if (task.Status == TaskStatus.WaitingForCompletion && task.CompletionCondition?.Type == CompletionConditionType.Delay)
-                    task.CompletionCondition.ResumeDelay();
-
                 if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion) && task.Timeout.HasValue)
                     task.ResumeTimeout();
 
                 if (task.Status == TaskStatus.WaitingForCompletion && task.RetryConfiguration != null)
                     task.ResumeStallTracking();
+
+                if (task.Status == TaskStatus.WaitingForPostDelay && task.PostCompletionDelay.HasValue)
+                    task.ResumePostDelay();
             }
         }
 
@@ -761,8 +974,23 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
                     if (conditionMet)
                     {
-                        CompleteTask(currentTask);
-                        earlyReturn = true;
+                        // Check if we need to start post-completion delay
+                        if (currentTask.PostCompletionDelay.HasValue && !currentTask.PostDelayStartTicks.HasValue)
+                        {
+                            currentTask.PostDelayStartTicks = Environment.TickCount64;
+                            currentTask.Status = TaskStatus.WaitingForPostDelay;
+
+                            if (currentTask.Timeout.HasValue)
+                                currentTask.PauseTimeout();
+
+                            if (EnableLogging)
+                                NoireLogger.LogDebug(this, $"Task entering post-completion delay: {currentTask}");
+                        }
+                        else
+                        {
+                            CompleteTask(currentTask);
+                            earlyReturn = true;
+                        }
                     }
                     else if (currentTask.HasTimedOut())
                     {
@@ -810,6 +1038,20 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                         }
                     }
                 }
+                else if (currentTask.Status == TaskStatus.WaitingForPostDelay)
+                {
+                    // Check if post-completion delay has elapsed
+                    if (currentTask.HasPostDelayCompleted())
+                    {
+                        CompleteTask(currentTask);
+                        earlyReturn = true;
+                    }
+                    else if (currentTask.HasTimedOut())
+                    {
+                        FailTask(currentTask, new TimeoutException("Task timed out during post-completion delay."));
+                        earlyReturn = true;
+                    }
+                }
 
                 if (!earlyReturn && taskToProcess == null && currentTask.IsBlocking &&
                     currentTask.Status != TaskStatus.Completed &&
@@ -821,52 +1063,83 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             }
 
             // Iterate all other tasks waiting for completion (previously started tasks that are non-blocking)
-            foreach (var wt in taskQueue.Where(t => t.Status == TaskStatus.WaitingForCompletion && !ReferenceEquals(t, currentTask)))
+            foreach (var wt in taskQueue.Where(t =>
+                (t.Status == TaskStatus.WaitingForCompletion || t.Status == TaskStatus.WaitingForPostDelay) &&
+                !ReferenceEquals(t, currentTask)))
             {
-                bool conditionMet = wt.CompletionCondition?.IsMet() == true;
-
-                if (conditionMet)
+                if (wt.Status == TaskStatus.WaitingForPostDelay)
                 {
-                    waitingTasksToComplete.Add(wt);
-                }
-                else if (wt.HasTimedOut())
-                {
-                    waitingTasksToFail.Add(wt);
-                }
-                else if (wt.HasConditionStalled())
-                {
-                    // Non-blocking task stalled - attempt retry
-                    if (TryRetryTask(wt))
+                    if (wt.HasPostDelayCompleted())
                     {
-                        // Retry initiated
+                        waitingTasksToComplete.Add(wt);
                     }
-                    else if (!wt.RetryConfiguration!.MaxAttempts.HasValue ||
-                             wt.CurrentRetryAttempt < wt.RetryConfiguration.MaxAttempts.Value)
+                    else if (wt.HasTimedOut())
                     {
-                        wt.ResetStallTracking();
-                    }
-                    else
-                    {
-                        try
-                        {
-                            wt.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(wt);
-                        }
-                        catch (Exception ex)
-                        {
-                            if (EnableLogging)
-                                NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
-                        }
-
                         waitingTasksToFail.Add(wt);
                     }
                 }
                 else
                 {
-                    // Update stall tracking
-                    if (wt.RetryConfiguration != null && wt.CompletionCondition?.Type == CompletionConditionType.Predicate)
+                    bool conditionMet = wt.CompletionCondition?.IsMet() == true;
+
+                    if (conditionMet)
                     {
-                        if (!wt.LastConditionCheckTicks.HasValue)
+                        // Check if we need to start post-completion delay
+                        if (wt.PostCompletionDelay.HasValue && !wt.PostDelayStartTicks.HasValue)
+                        {
+                            wt.PostDelayStartTicks = Environment.TickCount64;
+                            wt.Status = TaskStatus.WaitingForPostDelay;
+
+                            if (wt.Timeout.HasValue)
+                                wt.PauseTimeout();
+
+                            if (EnableLogging)
+                                NoireLogger.LogDebug(this, $"Task entering post-completion delay: {wt}");
+                        }
+                        else
+                        {
+                            waitingTasksToComplete.Add(wt);
+                        }
+                    }
+                    else if (wt.HasTimedOut())
+                    {
+                        waitingTasksToFail.Add(wt);
+                    }
+                    else if (wt.HasConditionStalled())
+                    {
+                        // Non-blocking task stalled - attempt retry
+                        if (TryRetryTask(wt))
+                        {
+                            // Retry initiated
+                        }
+                        else if (!wt.RetryConfiguration!.MaxAttempts.HasValue ||
+                                 wt.CurrentRetryAttempt < wt.RetryConfiguration.MaxAttempts.Value)
+                        {
                             wt.ResetStallTracking();
+                        }
+                        else
+                        {
+                            try
+                            {
+                                wt.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(wt);
+                            }
+                            catch (Exception ex)
+                            {
+                                if (EnableLogging)
+                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
+                            }
+
+                            waitingTasksToFail.Add(wt);
+                        }
+                    }
+                    else
+                    {
+                        // Update stall tracking
+                        if (wt.RetryConfiguration != null && wt.CompletionCondition?.Type == CompletionConditionType.Predicate)
+                        {
+                            if (!wt.LastConditionCheckTicks.HasValue)
+                                wt.ResetStallTracking();
+                        }
                     }
                 }
             }
@@ -887,7 +1160,9 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                     // set currentTask to the first non-blocking waiting task to maintain visibility
                     if (currentTask == null)
                     {
-                        var firstWaitingTask = taskQueue.FirstOrDefault(t => t.Status == TaskStatus.WaitingForCompletion);
+                        var firstWaitingTask = taskQueue.FirstOrDefault(t =>
+                            t.Status == TaskStatus.WaitingForCompletion ||
+                            t.Status == TaskStatus.WaitingForPostDelay);
                         if (firstWaitingTask != null)
                             currentTask = firstWaitingTask;
                         else
@@ -1004,11 +1279,11 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             {
                 task.CompletionCondition.EventConditionMet = false;
             }
-            else if (task.CompletionCondition?.Type == CompletionConditionType.Delay)
+            else if (task.PostCompletionDelay.HasValue)
             {
-                task.CompletionCondition.DelayStartTimeTicks = Environment.TickCount64;
-                task.CompletionCondition.AccumulatedDelayMillis = 0;
-                task.CompletionCondition.DelayPausedAtTicks = null;
+                task.PostDelayStartTicks = Environment.TickCount64;
+                task.AccumulatedPostDelayMillis = 0;
+                task.PostDelayPausedAtTicks = null;
             }
 
             task.Status = TaskStatus.WaitingForCompletion;
@@ -1079,13 +1354,27 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
             task.ExecuteAction?.Invoke();
 
-            if (task.CompletionCondition?.Type == CompletionConditionType.Delay)
-                task.CompletionCondition.DelayStartTimeTicks = Environment.TickCount64;
-
             lock (queueLock)
             {
                 if (task.CompletionCondition?.Type == CompletionConditionType.Immediate)
-                    CompleteTask(task);
+                {
+                    // Check if we need to start post-completion delay
+                    if (task.PostCompletionDelay.HasValue)
+                    {
+                        task.PostDelayStartTicks = Environment.TickCount64;
+                        task.Status = TaskStatus.WaitingForPostDelay;
+
+                        if (task.Timeout.HasValue)
+                            task.PauseTimeout();
+
+                        if (EnableLogging)
+                            NoireLogger.LogDebug(this, $"Task entering post-completion delay: {task}");
+                    }
+                    else
+                    {
+                        CompleteTask(task);
+                    }
+                }
                 else
                 {
                     // Only transition to waiting if still executing (could have been externally cancelled during ExecuteAction)
@@ -1123,7 +1412,8 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             var hasUnfinishedTasks = taskQueue.Any(t =>
                 t.Status == TaskStatus.Queued ||
                 t.Status == TaskStatus.Executing ||
-                t.Status == TaskStatus.WaitingForCompletion);
+                t.Status == TaskStatus.WaitingForCompletion ||
+                t.Status == TaskStatus.WaitingForPostDelay);
 
             if (!hasUnfinishedTasks)
             {

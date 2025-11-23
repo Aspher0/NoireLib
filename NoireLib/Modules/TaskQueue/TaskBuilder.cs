@@ -114,40 +114,37 @@ public class TaskBuilder
     }
 
     /// <summary>
-    /// Sets a delay-based completion condition.<br/>
-    /// The task will complete after the specified delay has elapsed since the task started.<br/>
-    /// This is a condition on its own, meaning it is not combinable with other conditions.
+    /// Sets a post-completion delay.<br/>
+    /// Once the task completes, the queue will wait this amount of time before proceeding with the rest of the tasks.
     /// </summary>
     /// <returns>The TaskBuilder instance for chaining.</returns>
-    public TaskBuilder WithDelay(TimeSpan delay)
+    public TaskBuilder WithDelay(TimeSpan? delay)
     {
-        task.CompletionCondition = TaskCompletionCondition.FromDelay(delay);
+        task.PostCompletionDelay = delay;
         return this;
     }
 
     /// <summary>
-    /// Sets a delay-based completion condition using a predicate function.<br/>
-    /// The delay will be evaluated when the task starts, allowing for dynamic delay calculation.<br/>
-    /// This is a condition on its own, meaning it is not combinable with other conditions.
+    /// Sets a post-completion delay using a predicate function.<br/>
+    /// The delay will be evaluated when the task is built, allowing for dynamic delay calculation.
     /// </summary>
     /// <param name="delayPredicate">A function that returns the delay duration.</param>
     /// <returns>The TaskBuilder instance for chaining.</returns>
-    public TaskBuilder WithDelay(Func<TimeSpan> delayPredicate)
+    public TaskBuilder WithDelay(Func<TimeSpan?> delayPredicate)
     {
-        task.CompletionCondition = TaskCompletionCondition.FromDelay(delayPredicate());
+        task.PostCompletionDelay = delayPredicate();
         return this;
     }
 
     /// <summary>
-    /// Sets a delay-based completion condition using a predicate function with access to the task.<br/>
-    /// The delay will be evaluated when the task starts, allowing for dynamic delay calculation based on task state.<br/>
-    /// This is a condition on its own, meaning it is not combinable with other conditions.
+    /// Sets a post-completion delay using a predicate function with access to the task.<br/>
+    /// The delay will be evaluated when the task is built, allowing for dynamic delay calculation based on task state.
     /// </summary>
     /// <param name="delayPredicate">A function that receives the task and returns the delay duration.</param>
     /// <returns>The TaskBuilder instance for chaining.</returns>
-    public TaskBuilder WithDelay(Func<QueuedTask, TimeSpan> delayPredicate)
+    public TaskBuilder WithDelay(Func<QueuedTask, TimeSpan?> delayPredicate)
     {
-        task.CompletionCondition = TaskCompletionCondition.FromDelay(delayPredicate(task));
+        task.PostCompletionDelay = delayPredicate(task);
         return this;
     }
 
@@ -477,6 +474,34 @@ public class TaskBuilder
         var builtTask = Build();
         queue.EnqueueTask(builtTask);
         return builtTask;
+    }
+
+    /// <summary>
+    /// Builds the task and inserts it after another task in the specified <see cref="NoireTaskQueue"/> by system ID.
+    /// </summary>
+    /// <param name="queue">The <see cref="NoireTaskQueue"/> to add the task to.</param>
+    /// <param name="afterTaskSystemId">The system ID of the task to insert after.</param>
+    /// <returns>The built task if insertion was successful; otherwise, null.</returns>
+    public QueuedTask? EnqueueToAfterTask(NoireTaskQueue queue, Guid afterTaskSystemId)
+    {
+        task.OwningQueue = queue;
+        var builtTask = Build();
+        var success = queue.InsertTaskAfter(builtTask, afterTaskSystemId);
+        return success ? builtTask : null;
+    }
+
+    /// <summary>
+    /// Builds the task and inserts it after another task in the specified <see cref="NoireTaskQueue"/> by custom ID.
+    /// </summary>
+    /// <param name="queue">The <see cref="NoireTaskQueue"/> to add the task to.</param>
+    /// <param name="afterTaskCustomId">The custom ID of the task to insert after.</param>
+    /// <returns>The built task if insertion was successful; otherwise, null.</returns>
+    public QueuedTask? EnqueueToAfterTask(NoireTaskQueue queue, string afterTaskCustomId)
+    {
+        task.OwningQueue = queue;
+        var builtTask = Build();
+        var success = queue.InsertTaskAfter(builtTask, afterTaskCustomId);
+        return success ? builtTask : null;
     }
 
     /// <summary>

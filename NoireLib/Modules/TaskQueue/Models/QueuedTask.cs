@@ -149,6 +149,27 @@ public class QueuedTask
     internal long? StallPausedAtTicks { get; set; }
 
     /// <summary>
+    /// Optional delay to wait after the task's condition is met or action completes (if no condition).
+    /// This delay executes after the task would normally complete.
+    /// </summary>
+    public TimeSpan? PostCompletionDelay { get; set; }
+
+    /// <summary>
+    /// The tick count when the post-completion delay started.
+    /// </summary>
+    internal long? PostDelayStartTicks { get; set; }
+
+    /// <summary>
+    /// Accumulated elapsed time in milliseconds for post-completion delay, excluding paused time.
+    /// </summary>
+    internal long AccumulatedPostDelayMillis { get; set; }
+
+    /// <summary>
+    /// The tick count when the post-completion delay was last paused.
+    /// </summary>
+    internal long? PostDelayPausedAtTicks { get; set; }
+
+    /// <summary>
     /// Cancels this task if it is still in the queue.
     /// </summary>
     /// <returns>True if the task was successfully cancelled; otherwise, false.</returns>
@@ -316,6 +337,49 @@ public class QueuedTask
     }
 
     /// <summary>
+    /// Checks if the post-completion delay has elapsed.
+    /// </summary>
+    /// <returns>True if the delay has completed; otherwise, false.</returns>
+    internal bool HasPostDelayCompleted()
+    {
+        if (PostCompletionDelay == null || !PostDelayStartTicks.HasValue)
+            return true;
+
+        long elapsedMs;
+
+        if (PostDelayPausedAtTicks.HasValue)
+            elapsedMs = AccumulatedPostDelayMillis;
+        else
+            elapsedMs = AccumulatedPostDelayMillis + (Environment.TickCount64 - PostDelayStartTicks.Value);
+
+        return elapsedMs >= PostCompletionDelay.Value.TotalMilliseconds;
+    }
+
+    /// <summary>
+    /// Pauses the post-completion delay tracking for this task.
+    /// </summary>
+    internal void PausePostDelay()
+    {
+        if (PostCompletionDelay == null || !PostDelayStartTicks.HasValue || PostDelayPausedAtTicks.HasValue)
+            return;
+
+        AccumulatedPostDelayMillis += Environment.TickCount64 - PostDelayStartTicks.Value;
+        PostDelayPausedAtTicks = Environment.TickCount64;
+    }
+
+    /// <summary>
+    /// Resumes the post-completion delay tracking for this task.
+    /// </summary>
+    internal void ResumePostDelay()
+    {
+        if (PostCompletionDelay == null || !PostDelayPausedAtTicks.HasValue)
+            return;
+
+        PostDelayStartTicks = Environment.TickCount64;
+        PostDelayPausedAtTicks = null;
+    }
+
+    /// <summary>
     /// Clones this task, creating a new instance with the same properties.<br/>
     /// Used for immutable statistics.
     /// </summary>
@@ -334,7 +398,8 @@ public class QueuedTask
             Metadata = Metadata,
             StopQueueOnFail = StopQueueOnFail,
             StopQueueOnCancel = StopQueueOnCancel,
-            RetryConfiguration = RetryConfiguration
+            RetryConfiguration = RetryConfiguration,
+            PostCompletionDelay = PostCompletionDelay
         };
     }
 
@@ -345,6 +410,9 @@ public class QueuedTask
     public override string ToString()
     {
         var id = string.IsNullOrEmpty(CustomId) ? SystemId.ToString() : CustomId;
-        return $"Task '{id}' - Status: {Status}, Blocking: {IsBlocking}";
+        var remainingPostDelay = PostCompletionDelay != null && PostDelayStartTicks.HasValue
+            ? PostCompletionDelay.Value.TotalMilliseconds - (AccumulatedPostDelayMillis + (Environment.TickCount64 - PostDelayStartTicks.Value))
+            : 0;
+        return $"Task '{id}' - Status: {Status}{(Status == TaskStatus.WaitingForPostDelay ? $"({remainingPostDelay}ms)" : "")}, Blocking: {IsBlocking}";
     }
 }
