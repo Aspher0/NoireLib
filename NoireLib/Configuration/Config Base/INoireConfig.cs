@@ -6,6 +6,11 @@ namespace NoireLib.Configuration;
 public interface INoireConfig
 {
     /// <summary>
+    /// The version of the configuration schema, for potential migrations.
+    /// </summary>
+    int Version { get; set; }
+
+    /// <summary>
     /// Saves the current configuration to a JSON file.
     /// </summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>

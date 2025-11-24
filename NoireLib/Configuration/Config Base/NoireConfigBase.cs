@@ -1,3 +1,4 @@
+using NoireLib.Configuration.Migrations;
 using NoireLib.Helpers;
 using System;
 using System.Text.Json;
@@ -20,11 +21,38 @@ public abstract class NoireConfigBase : INoireConfig
     };
 
     /// <summary>
+    /// The version of the configuration schema, for potential migrations.
+    /// </summary>
+    public abstract int Version { get; set; }
+
+    /// <summary>
     /// Gets the configuration file name (without extension).
     /// Override this method to provide a custom file name for your configuration.
     /// </summary>
     /// <returns>The configuration file name.</returns>
     public abstract string GetConfigFileName();
+
+    /// <summary>
+    /// Gets the default version value defined in the derived class.
+    /// </summary>
+    /// <returns>The default version value.</returns>
+    protected virtual int GetDefaultVersion()
+    {
+        try
+        {
+            var tempInstance = Activator.CreateInstance(GetType());
+            if (tempInstance is NoireConfigBase configInstance)
+            {
+                return configInstance.Version;
+            }
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError<NoireConfigBase>(ex, "Failed to get default version, using current version.");
+        }
+
+        return Version;
+    }
 
     /// <summary>
     /// Gets the full path to the configuration file.
@@ -54,6 +82,10 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
+            // Force save with default version
+            var defaultVersion = GetDefaultVersion();
+            Version = defaultVersion;
+
             var currentJson = JsonSerializer.Serialize(this, GetType(), JsonOptions);
 
             if (FileHelper.FileExists(filePath))
@@ -81,6 +113,7 @@ public abstract class NoireConfigBase : INoireConfig
 
     /// <summary>
     /// Loads the configuration from a JSON file and populates the current instance.
+    /// Automatically executes migrations if the file version is older than the current version.
     /// </summary>
     /// <returns>True if the load operation was successful; otherwise, false.</returns>
     public virtual bool Load()
@@ -110,6 +143,28 @@ public abstract class NoireConfigBase : INoireConfig
                 return false;
             }
 
+            var fileVersion = GetVersionFromJson(json);
+            var targetVersion = Version;
+            bool migrationSuccess = false;
+
+            if (fileVersion < targetVersion)
+            {
+                NoireLogger.LogInfo<NoireConfigBase>($"Configuration version mismatch: file={fileVersion}, target={targetVersion}. Attempting migration.");
+
+                var migratedJson = MigrationExecutor.ExecuteMigrations(GetType(), json, fileVersion, targetVersion);
+
+                if (migratedJson != null)
+                {
+                    migrationSuccess = true;
+                    json = migratedJson;
+                    NoireLogger.LogInfo<NoireConfigBase>($"Successfully migrated configuration from version {fileVersion} to {targetVersion}");
+                }
+                else
+                {
+                    NoireLogger.LogError<NoireConfigBase>($"Failed to migrate configuration {GetType().Name} from version {fileVersion} to {targetVersion}. Using default values.");
+                }
+            }
+
             var loadedConfig = JsonSerializer.Deserialize(json, GetType(), JsonOptions);
 
             if (loadedConfig == null)
@@ -120,6 +175,12 @@ public abstract class NoireConfigBase : INoireConfig
 
             CopyPropertiesFrom(loadedConfig);
 
+            if (fileVersion < targetVersion && migrationSuccess)
+            {
+                NoireLogger.LogDebug<NoireConfigBase>("Saving migrated configuration to disk...");
+                Save();
+            }
+
             NoireLogger.LogVerbose<NoireConfigBase>($"Configuration loaded successfully from: {filePath}");
             return true;
         }
@@ -128,6 +189,29 @@ public abstract class NoireConfigBase : INoireConfig
             NoireLogger.LogError<NoireConfigBase>(ex, $"Failed to load configuration from: {filePath}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Extracts the version number from a JSON string.
+    /// </summary>
+    /// <param name="json">The JSON string.</param>
+    /// <returns>The version number, or 0 if not found.</returns>
+    private static int GetVersionFromJson(string json)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("Version", out var versionElement))
+            {
+                return versionElement.GetInt32();
+            }
+        }
+        catch
+        {
+            // Ignore parsing errors
+        }
+
+        return 0;
     }
 
     /// <summary>

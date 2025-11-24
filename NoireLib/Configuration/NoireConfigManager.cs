@@ -1,6 +1,7 @@
+using NoireLib.Configuration.Migrations;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
-using NoireLib.Helpers;
 
 namespace NoireLib.Configuration;
 
@@ -228,5 +229,24 @@ public static class NoireConfigManager
     public static string? GetConfigDirectoryPath()
     {
         return FileHelper.GetPluginConfigDirectory();
+    }
+
+    /// <summary>
+    /// Registers a migration for a configuration type.
+    /// This is useful for organizing migrations outside of the configuration class.
+    /// </summary>
+    /// <typeparam name="T">The configuration type.</typeparam>
+    /// <param name="migration">The migration to register.</param>
+    public static void RegisterMigration<T>(IConfigMigration migration) where T : NoireConfigBase
+    {
+        MigrationExecutor.RegisterMigration(typeof(T), migration);
+    }
+
+    /// <summary>
+    /// Clears all runtime-registered migrations.
+    /// </summary>
+    public static void ClearMigrations()
+    {
+        MigrationExecutor.ClearRuntimeMigrations();
     }
 }

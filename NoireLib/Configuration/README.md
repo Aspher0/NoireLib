@@ -1,5 +1,4 @@
 
-
 # NoireLib Documentation - NoireConfigManager
 
 You are reading the documentation for `NoireConfigManager`.
@@ -13,6 +12,14 @@ You are reading the documentation for `NoireConfigManager`.
   - [3. Legacy-Manual](#legacy---manual)
 - [AutoSave Attribute](#autosave-attribute)
 - [Using NoireConfigManager](#using-noireconfigmanager)
+- [Configuration Migrations](#configuration-migrations)
+  - [What are Migrations?](#what-are-migrations)
+  - [Migration Approaches](#migration-approaches)
+    - [1. Nested Class Migration](#nested-class-migration)
+    - [2. Attribute-Based Migration](#attribute-based-migration)
+    - [3. Runtime Migration Registration](#runtime-migration-registration)
+  - [Using MigrationBuilder](#using-migrationbuilder)
+  - [Migration Best Practices](#migration-best-practices)
 - [Advanced Features](#advanced-features)
 - [Comparison Table](#comparison-table)
 - [Troubleshooting](#troubleshooting)
@@ -26,6 +33,7 @@ The `NoireConfigManager` is a configuration system that manages JSON-based confi
 - **Automatic JSON serialization and management** of configuration files, they are loaded automatically when you access any of the properties
 - **Multiple configuration approaches** to suit different needs
 - **AutoSave functionality** for automatic configuration saving
+- **Configuration migrations** to handle version upgrades seamlessly
 - **Centralized cache management**
 - **Type-safe configuration**
 
@@ -40,8 +48,8 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 
 Whatever way you create your configuration, you will need to either inherit from `NoireConfigBase` or `NoireConfigBase<T>`.<br/>
 You will also need to override the `GetConfigFileName` method to specify the name of the configuration file in the default dalamud config folder.<br/>
+You must also implement the `Version` property to track the configuration schema version.<br/>
 In the example below, the configuration file will be named `MyPluginConfig.json` and we use the Source Generator.
-
 
 ```csharp
 using System;
@@ -53,6 +61,7 @@ namespace MyPlugin.Configuration;
 [NoireConfig("MyPluginConfig")]
 public class MyPluginConfigInstance : NoireConfigBase
 {
+    public override int Version { get; set; } = 1;
     public override string GetConfigFileName() => "MyPluginConfig"; // Do not include the .json extension
 
     [AutoSave]
@@ -91,7 +100,8 @@ namespace MyPlugin.Configuration;
 [NoireConfig("MyConfig")]
 public class MyConfigInstance : NoireConfigBase
 {
-  public override string GetConfigFileName() => "MyConfig"; // Do not include the .json extension
+    public override int Version { get; set; } = 1;
+    public override string GetConfigFileName() => "MyConfig"; // Do not include the .json extension
 
     [AutoSave]
     public bool AutoSavedProperty { get; set; } = true; // This property will auto save when you access its setter on the static MyConfig class
@@ -164,6 +174,7 @@ namespace MyPlugin.Configuration;
 [Serializable]
 public class MyConfigCastle : NoireConfigBase<MyConfigCastle>
 {
+    public override int Version { get; set; } = 1;
     public override string GetConfigFileName() => "MyConfigCastle";
 
     [AutoSave]
@@ -187,11 +198,11 @@ Methods that are only used to modify `[AutoSave]` properties do not need to be m
 
 ```csharp
 [AutoSave]
-public bool Property1 { get; set; } = false;
+public virtual bool Property1 { get; set; } = false;
 
 public bool Property2 { get; set; } = false;
 
-public virtual void Method()
+public void Method()
 {
     Property1 = true;
     // Implicit auto-save since Property1 has [AutoSave]
@@ -248,6 +259,7 @@ namespace MyPlugin.Configuration;
 [Serializable]
 public class MyConfigLegacy : NoireConfigBase
 {
+    public override int Version { get; set; } = 1;
     public override string GetConfigFileName() => "MyConfigLegacy";
 
     public bool SomeProperty { get; set; } = false;
@@ -425,6 +437,440 @@ bool exists = NoireConfigManager.ConfigExists<MyConfig>();
 
 ---
 
+## Configuration Migrations
+
+### What are Migrations?
+
+Configuration migrations allow you to automatically upgrade your configuration files when you change the schema (add/remove/rename properties, change types, etc.). When a user upgrades your plugin to a new version with schema changes, migrations ensure their existing configuration is transformed to match the new structure without data loss.
+
+**Key Concepts:**
+- **Version Property**: Each configuration has a `Version` property that tracks the schema version
+- **Automatic Execution**: Migrations run automatically when loading a configuration with an older version
+- **Migration Chain**: Multiple migrations can be chained together (e.g., v1 -> v2 -> v3)
+- **Attention**: Migrations only support upgrading, not downgrading
+
+### Migration Approaches
+
+NoireLib provides **three different ways** to define migrations, each suited for different scenarios.
+
+---
+
+#### 1 - Nested Class Migration
+
+**Define migrations as nested classes inside your configuration class.**
+
+This is the most straightforward approach and keeps your migration logic close to your configuration.
+
+##### Example
+
+```csharp
+using System;
+using System.Text.Json;
+using NoireLib.Configuration;
+using NoireLib.Configuration.Migrations;
+
+namespace MyPlugin.Configuration;
+
+[Serializable]
+[NoireConfig("MyConfig")]
+public class MyConfigInstance : NoireConfigBase
+{
+    public override int Version { get; set; } = 3; // Current version
+    public override string GetConfigFileName() => "MyConfig";
+
+    public bool NewPropertyName { get; set; } = true;
+    public int SomeCounter { get; set; } = 0;
+    public string UserPreference { get; set; } = "default";
+
+    // Migration from version 1 to version 2: Rename property
+    private class MigrationV1ToV2 : ConfigMigrationBase
+    {
+        public override int FromVersion => 1;
+        public override int ToVersion => 2;
+
+        public override string Migrate(JsonDocument jsonDocument)
+        {
+            return MigrationBuilder.Create()
+                .RenameProperty("OldPropertyName", "NewPropertyName")
+                .Migrate(jsonDocument, ToVersion);
+        }
+    }
+
+    // Migration from version 2 to version 3: Add new property
+    private class MigrationV2ToV3 : ConfigMigrationBase
+    {
+        public override int FromVersion => 2;
+        public override int ToVersion => 3;
+
+        public override string Migrate(JsonDocument jsonDocument)
+        {
+            return MigrationBuilder.Create()
+                .AddProperty("UserPreference", "default")
+                .Migrate(jsonDocument, ToVersion);
+        }
+    }
+}
+```
+
+##### How It Works
+
+1. The `MigrationExecutor` automatically discovers all nested classes that implement `IConfigMigration`
+2. When loading a v1 configuration, both migrations execute in order: v1 -> v2 -> v3
+3. The migrated configuration is automatically saved to disk with the new version
+
+##### Pros
+- **Organized** - Migrations live with the configuration they modify
+- **No registration needed** - Automatically discovered
+- **Simple** - Easy to understand and maintain
+
+##### Cons
+- **Class clutter** - Can make configuration class large with many migrations
+- **Limited reuse** - Hard to share migrations between configurations
+
+---
+
+#### 2 - Attribute-Based Migration
+
+**Define migrations in separate classes and register them with attributes.**
+
+This approach keeps your configuration class clean while organizing migrations in dedicated files.
+
+##### Example
+
+**Migration Class (Migrations/MyConfigMigrations.cs):**
+
+```csharp
+using System.Text.Json;
+using NoireLib.Configuration.Migrations;
+
+namespace MyPlugin.Configuration.Migrations;
+
+public class MyConfigMigrationV1ToV2 : ConfigMigrationBase
+{
+    public override int FromVersion => 1;
+    public override int ToVersion => 2;
+
+    public override string Migrate(JsonDocument jsonDocument)
+    {
+        return MigrationBuilder.Create()
+            .RenameProperty("OldPropertyName", "NewPropertyName")
+            .DeleteProperty("ObsoleteProperty")
+            .Migrate(jsonDocument, ToVersion);
+    }
+}
+
+public class MyConfigMigrationV2ToV3 : ConfigMigrationBase
+{
+    public override int FromVersion => 2;
+    public override int ToVersion => 3;
+
+    public override string Migrate(JsonDocument jsonDocument)
+    {
+        return MigrationBuilder.Create()
+            .AddProperty("UserPreference", "default")
+            .ChangePropertyType<int, string>("SomeCounter", count => count.ToString())
+            .Migrate(jsonDocument, ToVersion);
+    }
+}
+```
+
+**Configuration Class:**
+
+```csharp
+using System;
+using NoireLib.Configuration;
+using NoireLib.Configuration.Migrations;
+using MyPlugin.Configuration.Migrations;
+
+namespace MyPlugin.Configuration;
+
+[Serializable]
+[ConfigMigration(typeof(MyConfigMigrationV1ToV2))]
+[ConfigMigration(typeof(MyConfigMigrationV2ToV3))]
+public class MyConfig : NoireConfigBase<MyConfig>
+{
+    public override int Version { get; set; } = 3;
+    public override string GetConfigFileName() => "MyConfig";
+
+    public bool NewPropertyName { get; set; } = true;
+    public string SomeCounter { get; set; } = "0"; // Changed to string in v3
+    public string UserPreference { get; set; } = "default";
+}
+```
+
+##### How It Works
+
+1. Apply `[ConfigMigration(typeof(MigrationClass))]` attributes to your configuration class
+2. Each attribute registers one migration class
+3. Migrations are discovered and executed in the correct order automatically
+
+##### Pros
+- **Clean separation** - Configuration class stays focused on data
+- **Better organization** - Group migrations in a dedicated folder/namespace
+- **Reusable** - Can share migration classes across configurations if needed
+- **Explicit** - Easy to see which migrations are registered
+
+##### Cons
+- **Attribute overhead** - Need to add attributes for each migration
+
+---
+
+#### 3 - Runtime Migration Registration
+
+**Register migrations dynamically at runtime using NoireConfigManager.**
+
+This approach is useful for plugin systems, dynamic configuration, or when you need programmatic control over migrations.
+
+##### Example
+
+**Migration Classes (Migrations/DynamicMigrations.cs):**
+
+```csharp
+using System.Text.Json;
+using NoireLib.Configuration.Migrations;
+
+namespace MyPlugin.Configuration.Migrations;
+
+public class DynamicMigrationV1ToV2 : ConfigMigrationBase
+{
+    public override int FromVersion => 1;
+    public override int ToVersion => 2;
+
+    public override string Migrate(JsonDocument jsonDocument)
+    {
+        return MigrationBuilder.Create()
+            .RenameProperty("LegacyName", "ModernName")
+            .Migrate(jsonDocument, ToVersion);
+    }
+}
+
+public class DynamicMigrationV2ToV3 : ConfigMigrationBase
+{
+    public override int FromVersion => 2;
+    public override int ToVersion => 3;
+
+    public override string Migrate(JsonDocument jsonDocument)
+    {
+        return MigrationBuilder.Create()
+            .AddProperty("NewFeatureEnabled", false)
+            .Migrate(jsonDocument, ToVersion);
+    }
+}
+```
+
+**Plugin Initialization:**
+
+```csharp
+using NoireLib;
+using NoireLib.Configuration;
+using MyPlugin.Configuration;
+using MyPlugin.Configuration.Migrations;
+
+public class MyPlugin : IDalamudPlugin
+{
+    public void Initialize()
+    {
+        // Initialize NoireLib first
+        NoireService.Initialize(pluginInterface, logger);
+
+        // Register migrations dynamically
+        NoireConfigManager.RegisterMigration<MyConfigInstance>(new DynamicMigrationV1ToV2());
+        NoireConfigManager.RegisterMigration<MyConfigInstance>(new DynamicMigrationV2ToV3());
+
+        // Now when config loads, migrations will be applied
+        var config = NoireConfigManager.GetConfig<MyConfigInstance>();
+    }
+
+    public void Dispose()
+    {
+        // Optional: Clear migrations on cleanup
+        NoireConfigManager.ClearMigrations();
+    }
+}
+```
+
+**Configuration Class:**
+
+```csharp
+using System;
+using NoireLib.Configuration;
+
+namespace MyPlugin.Configuration;
+
+[Serializable]
+[NoireConfig("MyConfig")]
+public class MyConfigInstance : NoireConfigBase
+{
+    public override int Version { get; set; } = 3;
+    public override string GetConfigFileName() => "MyConfig";
+
+    public string ModernName { get; set; } = "value";
+    public bool NewFeatureEnabled { get; set; } = false;
+}
+```
+
+##### How It Works
+
+1. Call `NoireConfigManager.RegisterMigration<TConfig>(migrationInstance)` before first config access
+2. Registered migrations are added to the runtime migration registry
+3. When configurations load, runtime migrations are discovered alongside nested/attribute-based ones
+4. Optionally call `NoireConfigManager.ClearMigrations()` to remove runtime registrations
+
+##### Pros
+- **Maximum flexibility** - Register migrations conditionally based on runtime logic
+- **Dynamic scenarios** - Can add/remove migrations based on configuration, user settings, etc.
+- **Testing** - Easy to test migrations in isolation
+
+##### Cons
+- **Manual registration** - Must remember to register before first config access
+- **Order matters** - Registration must happen during initialization
+- **Less discoverable** - Migrations aren't visible by looking at the configuration class
+
+---
+
+### Using MigrationBuilder
+
+The `MigrationBuilder` provides a fluent API for common migration operations. This is the recommended way to write migrations.
+
+#### Common Operations
+
+```csharp
+public override string Migrate(JsonDocument jsonDocument)
+{
+    return MigrationBuilder.Create()
+        // Rename a property
+        .RenameProperty("OldName", "NewName")
+        
+        // Delete properties
+        .DeleteProperty("ObsoleteProperty")
+        .DeleteProperties("Prop1", "Prop2", "Prop3")
+        
+        // Add new properties with default values
+        .AddProperty("NewFeature", true)
+        .AddProperty("MaxRetries", 3)
+        
+        // Change property types with conversion
+        .ChangePropertyType<int, string>("Counter", count => count.ToString())
+        .ChangePropertyType<string, bool>("Enabled", str => str == "true")
+        
+        // Transform property values
+        .TransformProperty<int>("Level", level => Math.Max(level, 1))
+        
+        // Add computed properties from existing data
+        .AddComputedProperty("FullName", root =>
+        {
+            var firstName = root.GetProperty("FirstName").GetString();
+            var lastName = root.GetProperty("LastName").GetString();
+            return $"{firstName} {lastName}";
+        })
+        
+        // Custom operations for complex scenarios
+        .WithCustomOperation((root, writer) =>
+        {
+            // Write custom JSON transformation
+            if (root.TryGetProperty("ComplexData", out var data))
+            {
+                writer.WritePropertyName("TransformedData");
+                // ... custom logic
+            }
+        })
+        
+        // Build the migrated JSON
+        .Migrate(jsonDocument, ToVersion);
+}
+```
+
+#### Manual Migration (Without MigrationBuilder)
+
+For complex scenarios, you can manually manipulate JSON:
+
+```csharp
+public class ComplexMigration : ConfigMigrationBase
+{
+    public override int FromVersion => 2;
+    public override int ToVersion => 3;
+
+    public override string Migrate(JsonDocument jsonDocument)
+    {
+        using var stream = new MemoryStream();
+        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
+
+        writer.WriteStartObject();
+
+        var root = jsonDocument.RootElement;
+        foreach (var property in root.EnumerateObject())
+        {
+            if (property.Name == "Version")
+                continue;
+
+            // Custom transformation logic
+            if (property.Name == "Settings")
+            {
+                writer.WritePropertyName("Settings");
+                TransformSettings(property.Value, writer);
+            }
+            else
+            {
+                property.WriteTo(writer);
+            }
+        }
+
+        writer.WriteNumber("Version", ToVersion);
+        writer.WriteEndObject();
+        writer.Flush();
+
+        return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    private void TransformSettings(JsonElement settings, Utf8JsonWriter writer)
+    {
+        // Complex nested transformation
+        // ...
+    }
+}
+```
+
+---
+
+### Migration Best Practices
+
+#### 1. **Test Migrations with Real Data**
+
+```csharp
+public void TestMigrationV1ToV2()
+{
+    var oldJson = @"{""OldProperty"": true, ""Version"": 1}";
+    var document = JsonDocument.Parse(oldJson);
+    
+    var migration = new MigrationV1ToV2();
+    var newJson = migration.Migrate(document);
+    
+    NoireLogger.LogDebug("Migrated JSON: " + newJson);
+}
+```
+
+#### 2. **Document Migration Reasons**
+
+```csharp
+/// <summary>
+/// Migration from V1 to V2.
+/// Changes:
+/// - Renamed "EnableDebugMode" to "DebugMode" for consistency
+/// - Removed "LegacyFeature" (deprecated in 1.5.0)
+/// - Added "MaxCacheSize" with default 100
+/// </summary>
+private class MigrationV1ToV2 : ConfigMigrationBase
+{
+    // ...
+}
+```
+
+#### 6. **Never Remove Old Migrations**
+
+Once deployed, migrations should never be removed or modified. Users might be upgrading from any previous version.
+
+---
+
 ## Advanced Features
 
 ### Cache Management
@@ -477,6 +923,16 @@ instance.RegularMethod();
 instance.CopyPropertiesFrom(otherConfig);
 ```
 
+### Migration Management
+
+```csharp
+// Register a migration at runtime
+NoireConfigManager.RegisterMigration<MyConfig>(new CustomMigration());
+
+// Clear all runtime-registered migrations (useful for testing)
+NoireConfigManager.ClearMigrations();
+```
+
 ---
 
 ## Troubleshooting
@@ -511,6 +967,23 @@ instance.CopyPropertiesFrom(otherConfig);
 - Ensure the JSON format is valid
 - Try deleting the file and letting it regenerate
 - Check dalamud logs with `/xllog`
+
+### Migration issues
+
+#### Migration not executing
+- Verify the `Version` property is incremented in your configuration class
+- Check that your migration's `FromVersion` matches the file's version
+- Ensure migrations are properly registered (nested class, attribute, or runtime)
+- Check `/xllog` for migration discovery and execution logs
+
+#### Wrong migration path
+- Verify `FromVersion` and `ToVersion` values create a valid chain
+- Example: v1->v2, v2->v3 works; v1->v3 without v2->v3 fails if user has v2
+- Use `/xllog` to see the discovered migration path
+
+#### Migration executed but version not updated
+- Make sure you updated the Version in your actual configuration class (not just in migrations)
+- Check logs in `/xllog` for potential errors
 
 ---
 

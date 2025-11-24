@@ -1,11 +1,13 @@
-using System;
 using NoireLib.Configuration;
+using System;
 
 namespace NoireLib.Changelog;
 
 [Serializable]
 public class ChangelogManagerConfig : NoireConfigBase<ChangelogManagerConfig>
 {
+    public override int Version { get; set; } = 1;
+
     public override string GetConfigFileName() => "ChangelogManagerConfig";
 
     /// <summary>
