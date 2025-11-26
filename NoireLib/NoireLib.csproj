@@ -12,7 +12,7 @@
         <PackageTags>NoireLib;Dalamud;Plugin;Dalamud Plugin;Aspher0;Plugins;Library;Plugin Library</PackageTags>
         <NeutralLanguage>en</NeutralLanguage>
         <PackageId>NoireLib</PackageId>
-        <PackageLicenseExpression>AGPL-3.0</PackageLicenseExpression>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
         <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
         <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -26,6 +26,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+        <None Include="..\LICENSE">
+          <Pack>True</Pack>
+          <PackagePath>\</PackagePath>
+        </None>
         <None Include="..\Nuget_README.md">
             <Pack>True</Pack>
             <PackagePath>\</PackagePath>
