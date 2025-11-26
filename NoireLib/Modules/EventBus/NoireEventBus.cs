@@ -1,8 +1,8 @@
+using NoireLib.Core.Modules;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using NoireLib.Core.Modules;
 
 namespace NoireLib.EventBus;
 

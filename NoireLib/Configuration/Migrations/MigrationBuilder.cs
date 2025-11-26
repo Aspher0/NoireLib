@@ -7,8 +7,9 @@ using System.Text.Json;
 namespace NoireLib.Configuration.Migrations;
 
 /// <summary>
-/// Fluent helper for easily building JSON migrations with common operations like rename, delete, and type conversion.
-/// Use MigrationBuilder.Create() to start building a migration.
+/// Fluent helper for easily building JSON migrations with common operations like rename, delete, and type conversion.<br/>
+/// Use MigrationBuilder.Create() to start building a migration.<br/>
+/// Meant for use with <see cref="ConfigMigrationBase"/>.
 /// </summary>
 public class MigrationBuilder
 {
@@ -23,11 +24,15 @@ public class MigrationBuilder
     /// <summary>
     /// Creates a new migration builder.
     /// </summary>
+    /// <returns>A new instance of <see cref="MigrationBuilder"/>.</returns>
     public static MigrationBuilder Create() => new();
 
     /// <summary>
     /// Renames a property in the JSON.
     /// </summary>
+    /// <param name="oldName">The name of the property in the previous version.</param>
+    /// <param name="newName">The new name for the property.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder RenameProperty(string oldName, string newName)
     {
         _propertiesToRename[oldName] = newName;
@@ -35,8 +40,12 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Deletes a property from the JSON.
+    /// Deletes a property from the JSON.<br/>
+    /// Does not need to be called if you omit the property in your configuration class.<br/>
+    /// Added for completeness.
     /// </summary>
+    /// <param name="propertyName">The name of the property to delete.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder DeleteProperty(string propertyName)
     {
         _propertiesToDelete.Add(propertyName);
@@ -44,8 +53,12 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Deletes multiple properties from the JSON.
+    /// Deletes multiple properties from the JSON.<br/>
+    /// Does not need to be called if you omit the properties in your configuration class.<br/>
+    /// Added for completeness.
     /// </summary>
+    /// <param name="propertyNames">The names of the properties to delete.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder DeleteProperties(params string[] propertyNames)
     {
         foreach (var name in propertyNames)
@@ -58,6 +71,11 @@ public class MigrationBuilder
     /// <summary>
     /// Changes the type of a property with a custom converter.
     /// </summary>
+    /// <typeparam name="TFrom">The original type of the property.</typeparam>
+    /// <typeparam name="TTo">The new type of the property.</typeparam>
+    /// <param name="propertyName">The name of the property to change.</param>
+    /// <param name="converter">A conversion function that takes one argument TFrom and returns TTo.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder ChangePropertyType<TFrom, TTo>(string propertyName, Func<TFrom, TTo> converter)
     {
         _propertiesWithTypeChange.Add(propertyName);
@@ -87,8 +105,14 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Adds a new property with a default value.
+    /// Adds a new property with a default value.<br/>
+    /// Does not need to be called since you add the property in your configuration class with a default value.<br/>
+    /// Added for completeness.
     /// </summary>
+    /// <typeparam name="T">The type of the property to add.</typeparam>
+    /// <param name="propertyName">The name of the property to add.</param>
+    /// <param name="defaultValue">The default value for the new property.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder AddProperty<T>(string propertyName, T defaultValue)
     {
         _propertiesToAdd[propertyName] = defaultValue;
@@ -98,6 +122,10 @@ public class MigrationBuilder
     /// <summary>
     /// Adds a new property with a value computed from existing properties.
     /// </summary>
+    /// <typeparam name="T">The type of the property to add.</typeparam>
+    /// <param name="propertyName">The name of the property to add.</param>
+    /// <param name="computeValue">A function that computes the value based on the existing JSON element.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder AddComputedProperty<T>(string propertyName, Func<JsonElement, T> computeValue)
     {
         _customOperations.Add((root, writer) =>
@@ -112,6 +140,10 @@ public class MigrationBuilder
     /// <summary>
     /// Transforms a property value using a custom function.
     /// </summary>
+    /// <typeparam name="T">The type of the property to transform.</typeparam>
+    /// <param name="propertyName">The name of the property to transform.</param>
+    /// <param name="transform">A transformation function that takes one argument of type T and returns a transformed value of type T.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder TransformProperty<T>(string propertyName, Func<T, T> transform)
     {
         _customOperations.Add((root, writer) =>
@@ -141,6 +173,8 @@ public class MigrationBuilder
     /// <summary>
     /// Adds a custom operation to the migration.
     /// </summary>
+    /// <param name="operation">An action that takes the root JsonElement and a Utf8JsonWriter to perform custom migration logic.</param>
+    /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder WithCustomOperation(Action<JsonElement, Utf8JsonWriter> operation)
     {
         _customOperations.Add(operation);
@@ -150,6 +184,9 @@ public class MigrationBuilder
     /// <summary>
     /// Applies all operations and returns the migrated JSON string.
     /// </summary>
+    /// <param name="document">The original JSON document.</param>
+    /// <param name="targetVersion">The target version number to set in the migrated JSON.</param>
+    /// <returns>The migrated JSON string.</returns>
     public string Migrate(JsonDocument document, int targetVersion)
     {
         using var stream = new MemoryStream();

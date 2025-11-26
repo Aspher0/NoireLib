@@ -1,9 +1,9 @@
+using NoireLib.Models.Gambling;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
-using NoireLib.Models.Gambling;
 
 namespace NoireLib.Helpers;
 

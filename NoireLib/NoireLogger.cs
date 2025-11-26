@@ -1,12 +1,12 @@
 using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Utility;
-using NoireLib.Internal.Payloads;
-using System;
-using System.Numerics;
 using NoireLib.Core.Modules;
 using NoireLib.Helpers;
+using NoireLib.Internal.Payloads;
 using NoireLib.Models;
+using System;
+using System.Numerics;
 
 namespace NoireLib;
 

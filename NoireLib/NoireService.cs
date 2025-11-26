@@ -4,9 +4,9 @@ using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using NoireLib.Core.Modules;
 using System;
 using System.Collections.Generic;
-using NoireLib.Core.Modules;
 
 namespace NoireLib;
 

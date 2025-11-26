@@ -3,11 +3,11 @@
  * Thank you!
  */
 
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using System;
 using System.IO;
-using Dalamud.Game.Text.SeStringHandling;
 using System.Numerics;
-using Dalamud.Game.Text.SeStringHandling.Payloads;
 
 namespace NoireLib.Internal.Payloads;
 

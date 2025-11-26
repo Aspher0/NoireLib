@@ -1,7 +1,7 @@
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using NoireLib.Helpers;
-using System.Linq;
 using System;
+using System.Linq;
 using System.Text.Json.Serialization;
 
 namespace NoireLib.Models;
