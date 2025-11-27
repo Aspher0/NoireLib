@@ -39,14 +39,14 @@ public static class SeStringHelper
         }
 
         var senderText = sender.TextValue;
-        if (senderText.IsNullOrEmpty() || NoireService.ClientState.LocalPlayer == null)
+        if (senderText.IsNullOrEmpty() || NoireService.ObjectTable.LocalPlayer == null)
             return null;
 
-        var localPlayerName = NoireService.ClientState.LocalPlayer.Name.TextValue;
+        var localPlayerName = NoireService.ObjectTable.LocalPlayer.Name.TextValue;
         if (senderText.Contains(localPlayerName))
         {
-            var worldName = NoireService.ClientState.LocalPlayer.HomeWorld.Value.Name.ExtractText();
-            var worldId = NoireService.ClientState.LocalPlayer.HomeWorld.Value.RowId;
+            var worldName = NoireService.ObjectTable.LocalPlayer.HomeWorld.Value.Name.ExtractText();
+            var worldId = NoireService.ObjectTable.LocalPlayer.HomeWorld.Value.RowId;
             if (!worldName.IsNullOrEmpty())
                 return new(localPlayerName, worldName, worldId);
         }

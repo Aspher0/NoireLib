@@ -239,5 +239,9 @@ public class NoireService
     [PluginService]
     public static ITextureReadbackProvider TextureReadbackProvider { get; private set; } = null!;
 
+    /// <inheritdoc cref="IPlayerState"/>
+    [PluginService]
+    public static IPlayerState PlayerState { get; private set; } = null!;
+
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 }
