@@ -1,5 +1,6 @@
 
 
+
 # Module Documentation : NoireTaskQueue
 
 You are reading the documentation for the `NoireTaskQueue` module.
@@ -614,14 +615,17 @@ eventBus.Subscribe<TaskRetryingEvent>(evt =>
 Pass data between tasks using metadata:
 
 ```csharp
-// Store metadata in a task
+// Store metadata in a task within actions
 TaskBuilder.Create("task1")
-    .WithAction(() => {
+    .WithAction(task => {
         var result = ComputeSomething();
-        // Metadata will be accessible later
+        task.Metadata = result;
     })
+    .EnqueueTo(queue);
+
+// Or using the WithMetadata method
+TaskBuilder.Create("task1bis")
     .WithMetadata(new { Result = 42, Message = "Success" })
-    .WithImmediateCompletion()
     .EnqueueTo(queue);
 
 // Retrieve metadata in a later task
@@ -633,7 +637,6 @@ TaskBuilder.Create("task2")
             // Use the data
         }
     })
-    .WithImmediateCompletion()
     .EnqueueTo(queue);
 ```
 
