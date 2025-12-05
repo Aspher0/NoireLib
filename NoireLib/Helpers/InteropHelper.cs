@@ -23,22 +23,21 @@ public static class InteropHelper
     /// </returns>
     public static PluginAvailability IsPluginAvailable(string pluginInternalName, Version? minVersion = null)
     {
-        var plugin = NoireService.PluginInterface.InstalledPlugins.FirstOrDefault(x => x.InternalName == pluginInternalName);
+        // Get all installed plugins, including dev ones
+        var plugins = NoireService.PluginInterface.InstalledPlugins.Where(x => x.InternalName == pluginInternalName);
 
-        if (plugin == null)
-        {
+        if (plugins.Count() == 0)
             return PluginAvailability.NotInstalled;
-        }
-        else
-        {
-            if (!plugin.IsLoaded)
-                return PluginAvailability.Disabled;
 
-            if (plugin.Version < minVersion)
-                return PluginAvailability.UnsupportedVersion;
-            else
-                return PluginAvailability.Available;
-        }
+        if (!plugins.Any(x => x.IsLoaded))
+            return PluginAvailability.Disabled;
+
+        var supportedPlugin = plugins.FirstOrDefault(x => x.IsLoaded && x.Version < minVersion);
+
+        if (supportedPlugin == null)
+            return PluginAvailability.UnsupportedVersion;
+        else
+            return PluginAvailability.Available;
     }
 
     /// <inheritdoc cref="IsPluginAvailable(string, Version?)"/>
