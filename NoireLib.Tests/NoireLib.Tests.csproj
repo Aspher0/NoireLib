@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Project Sdk="Dalamud.NET.Sdk/13.1.0">
+<Project Sdk="Dalamud.NET.Sdk/14.0.0">
   <PropertyGroup>
-    <TargetFramework>net9.0-windows7.0</TargetFramework>
+    <TargetFramework>net10.0-windows7.0</TargetFramework>
     <LangVersion>13.0</LangVersion>
     <IsPackable>false</IsPackable>
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+    <Use_DalamudPackager>false</Use_DalamudPackager>
   </PropertyGroup>
 
   <ItemGroup>
