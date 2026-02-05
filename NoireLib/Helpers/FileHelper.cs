@@ -12,6 +12,55 @@ namespace NoireLib.Helpers;
 public static class FileHelper
 {
     /// <summary>
+    /// Gets the configuration directory path for the current plugin.
+    /// </summary>
+    /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>
+    public static string? GetPluginConfigDirectory()
+    {
+        if (!NoireService.IsInitialized())
+        {
+            NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
+            return null;
+        }
+
+        return NoireService.PluginInterface.GetPluginConfigDirectory();
+    }
+
+    /// <summary>
+    /// Builds a file path within the plugin's configuration directory.
+    /// </summary>
+    /// <param name="fileName">The file name (including extension).</param>
+    /// <returns>The full path to the file in the config directory, or null if NoireLib is not initialized.</returns>
+    public static string? GetPluginConfigFilePath(string fileName)
+    {
+        if (!NoireService.IsInitialized())
+        {
+            NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(fileName))
+            return null;
+
+        var configDirectory = GetPluginConfigDirectory();
+        if (configDirectory == null)
+            return null;
+
+        try
+        {
+            if (!EnsureDirectoryExists(configDirectory))
+                return null;
+
+            return Path.Combine(configDirectory, fileName);
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to get plugin config file path for: {fileName}", "[FileHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Ensures that a directory exists, creating it if necessary.
     /// </summary>
     /// <param name="directoryPath">The path to the directory.</param>
@@ -624,55 +673,6 @@ public static class FileHelper
         catch (Exception ex)
         {
             NoireLogger.LogError(ex, $"Failed to create backup of file: {filePath}", "[FileHelper] ");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// Gets the configuration directory path for the current plugin.
-    /// </summary>
-    /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>
-    public static string? GetPluginConfigDirectory()
-    {
-        if (!NoireService.IsInitialized())
-        {
-            NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
-            return null;
-        }
-
-        return NoireService.PluginInterface.GetPluginConfigDirectory();
-    }
-
-    /// <summary>
-    /// Builds a file path within the plugin's configuration directory.
-    /// </summary>
-    /// <param name="fileName">The file name (including extension).</param>
-    /// <returns>The full path to the file in the config directory, or null if NoireLib is not initialized.</returns>
-    public static string? GetPluginConfigFilePath(string fileName)
-    {
-        if (!NoireService.IsInitialized())
-        {
-            NoireLogger.LogError("Cannot get config directory path: NoireLib is not initialized.", "[FileHelper] ");
-            return null;
-        }
-
-        if (string.IsNullOrWhiteSpace(fileName))
-            return null;
-
-        var configDirectory = GetPluginConfigDirectory();
-        if (configDirectory == null)
-            return null;
-
-        try
-        {
-            if (!EnsureDirectoryExists(configDirectory))
-                return null;
-
-            return Path.Combine(configDirectory, fileName);
-        }
-        catch (Exception ex)
-        {
-            NoireLogger.LogError(ex, $"Failed to get plugin config file path for: {fileName}", "[FileHelper] ");
             return null;
         }
     }

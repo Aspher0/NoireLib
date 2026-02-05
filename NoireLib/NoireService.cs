@@ -1,5 +1,3 @@
-using Dalamud.Game;
-using Dalamud.Game.ClientState.Objects;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -18,7 +16,7 @@ public class NoireService
     /// <summary>
     /// The window system used by NoireLib for managing module windows.
     /// </summary>
-    public static WindowSystem? NoireWindowSystem { get; private set; } = null;
+    internal static WindowSystem? NoireWindowSystem { get; private set; } = null;
 
     /// <summary>
     /// The instance of the plugin using NoireLib.<br/>

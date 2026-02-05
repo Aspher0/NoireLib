@@ -5,6 +5,7 @@ using NoireLib.Helpers.ObjectExtensions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using NoireDatabase = NoireLib.Database.NoireDatabase;
 
 namespace NoireLib;
 
@@ -27,6 +28,11 @@ public class NoireLibMain
     {
         if (NoireService.Initialize(dalamudPluginInterface, plugin))
         {
+            var preloadDatabases = Database.NoireDbModelBase.GetDatabasesToPreload(plugin.GetType().Assembly);
+            foreach (var databaseName in preloadDatabases)
+                NoireDatabase.RegisterForInitialization(databaseName, true);
+
+            NoireDatabase.InitializeRegisteredDatabases();
             NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
         }
     }
