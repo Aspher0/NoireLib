@@ -51,6 +51,11 @@ public abstract class NoireDbModelBase
     protected abstract string? TableName { get; }
 
     /// <summary>
+    /// Gets the directory override for the database file path.
+    /// </summary>
+    protected virtual string? DatabaseDirectoryOverride => null;
+
+    /// <summary>
     /// Gets a value indicating whether the database should load at plugin initialization.
     /// </summary>
     protected virtual bool LoadDatabaseOnInit { get; } = true;
@@ -629,7 +634,13 @@ public abstract class NoireDbModelBase
     /// Gets the database instance for this model.
     /// </summary>
     /// <returns>The database instance.</returns>
-    protected NoireDatabase GetDb() => NoireDatabase.GetInstance(DatabaseName);
+    protected NoireDatabase GetDb()
+    {
+        if (!string.IsNullOrWhiteSpace(DatabaseDirectoryOverride))
+            NoireDatabase.SetDatabaseDirectoryOverride(DatabaseName, DatabaseDirectoryOverride);
+
+        return NoireDatabase.GetInstance(DatabaseName);
+    }
 
     /// <summary>
     /// Ensures the database table exists for the model.
@@ -956,6 +967,9 @@ public abstract class NoireDbModelBase
 
             if (Activator.CreateInstance(type) is not NoireDbModelBase model)
                 continue;
+
+            if (!string.IsNullOrWhiteSpace(model.DatabaseDirectoryOverride))
+                NoireDatabase.SetDatabaseDirectoryOverride(model.DatabaseName, model.DatabaseDirectoryOverride);
 
             if (model.LoadDatabaseOnInit)
                 databases.Add(model.DatabaseName);

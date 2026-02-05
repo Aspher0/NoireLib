@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using NoireLib.Database.Migrations;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -21,7 +22,7 @@ public sealed class NoireDatabase : IDisposable
     private sealed record CacheEntry(object? Data, DateTime ExpiresAt);
 
     private static readonly Dictionary<string, NoireDatabase> Instances = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, string> DatabasePathOverrides = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> DatabaseDirectoryOverrides = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<string> DatabasesToInitialize = new(StringComparer.OrdinalIgnoreCase);
     private static readonly object InstanceLock = new();
     private static bool IsInitialized;
@@ -58,6 +59,7 @@ public sealed class NoireDatabase : IDisposable
         _connection = new SqliteConnection(connectionString);
         _connection.Open();
         ApplyConcurrencySettings();
+        DatabaseMigrationExecutor.ExecuteMigrations(this);
     }
 
     #endregion
@@ -163,80 +165,50 @@ public sealed class NoireDatabase : IDisposable
     }
 
     /// <summary>
-    /// Gets a shared instance of a database connection with an optional file path override.
+    /// Overrides the database directory for a database name.
     /// </summary>
     /// <param name="databaseName">The database name.</param>
-    /// <param name="databaseFilePath">The database file path override.</param>
-    /// <returns>A shared <see cref="NoireDatabase"/> instance.</returns>
-    public static NoireDatabase GetInstance(string databaseName, string? databaseFilePath)
-    {
-        if (!string.IsNullOrWhiteSpace(databaseFilePath))
-            SetDatabaseFilePathOverride(databaseName, databaseFilePath);
-
-        return GetInstance(databaseName);
-    }
-
-    /// <summary>
-    /// Overrides the file path for a database name.
-    /// </summary>
-    /// <param name="databaseName">The database name.</param>
-    /// <param name="filePath">The database file path.</param>
-    public static void SetDatabaseFilePathOverride(string databaseName, string filePath)
+    /// <param name="directoryPath">The database directory path.</param>
+    internal static void SetDatabaseDirectoryOverride(string databaseName, string directoryPath)
     {
         if (string.IsNullOrWhiteSpace(databaseName))
             throw new ArgumentException("Database name cannot be null or empty.", nameof(databaseName));
 
-        if (string.IsNullOrWhiteSpace(filePath))
-            throw new ArgumentException("Database file path cannot be null or empty.", nameof(filePath));
+        if (string.IsNullOrWhiteSpace(directoryPath))
+            throw new ArgumentException("Database directory path cannot be null or empty.", nameof(directoryPath));
 
-        var fullPath = Path.GetFullPath(filePath);
+        var fullPath = Path.GetFullPath(directoryPath);
 
-        NoireDatabase? existingInstance = null;
-        var shouldReinitialize = false;
         lock (InstanceLock)
         {
-            DatabasePathOverrides[databaseName] = fullPath;
-            if (Instances.TryGetValue(databaseName, out var instance))
-            {
-                existingInstance = instance;
-                Instances.Remove(databaseName);
-                shouldReinitialize = IsInitialized;
-            }
+            DatabaseDirectoryOverrides[databaseName] = fullPath;
         }
-
-        if (existingInstance != null)
-            existingInstance.Dispose();
-
-        if (shouldReinitialize)
-            GetInstance(databaseName);
-
-        NoireLogger.LogDebug($"Set file path override for database '{databaseName}': {fullPath}");
     }
 
     /// <summary>
-    /// Removes the file path override for a database name.
+    /// Removes the directory override for a database name.
     /// </summary>
     /// <param name="databaseName">The database name.</param>
     /// <returns>True if an override was removed; otherwise, false.</returns>
-    public static bool RemoveDatabaseFilePathOverride(string databaseName)
+    public static bool RemoveDatabaseDirectoryOverride(string databaseName)
     {
         if (string.IsNullOrWhiteSpace(databaseName))
             throw new ArgumentException("Database name cannot be null or empty.", nameof(databaseName));
 
         lock (InstanceLock)
         {
-            return DatabasePathOverrides.Remove(databaseName);
+            return DatabaseDirectoryOverrides.Remove(databaseName);
         }
     }
 
     /// <summary>
-    /// Clears all configured database file path overrides.
+    /// Clears all configured database directory overrides.
     /// </summary>
-    public static void ClearDatabaseFilePathOverrides()
+    public static void ClearDatabaseDirectoryOverrides()
     {
         lock (InstanceLock)
         {
-            DatabasePathOverrides.Clear();
+            DatabaseDirectoryOverrides.Clear();
         }
     }
 
@@ -253,12 +225,18 @@ public sealed class NoireDatabase : IDisposable
         string? overridePath = null;
         lock (InstanceLock)
         {
-            if (DatabasePathOverrides.TryGetValue(databaseName, out var path))
+            if (DatabaseDirectoryOverrides.TryGetValue(databaseName, out var path))
                 overridePath = path;
         }
 
         if (!string.IsNullOrWhiteSpace(overridePath))
-            return EnsureDatabaseDirectory(overridePath);
+        {
+            var fullPath = Path.GetFullPath(overridePath);
+            if (!FileHelper.EnsureDirectoryExists(fullPath))
+                return null;
+
+            return Path.Combine(fullPath, $"{databaseName}.db");
+        }
 
         var configDirectory = FileHelper.GetPluginConfigDirectory();
         if (string.IsNullOrWhiteSpace(configDirectory))
@@ -276,6 +254,26 @@ public sealed class NoireDatabase : IDisposable
     /// </summary>
     /// <returns>The active <see cref="SqliteConnection"/>.</returns>
     public SqliteConnection GetConnection() => _connection;
+
+    /// <summary>
+    /// Gets the current database schema version.
+    /// </summary>
+    /// <returns>The schema version number.</returns>
+    public int GetSchemaVersion()
+    {
+        var result = FetchScalar("PRAGMA user_version");
+        return result == null ? 0 : Convert.ToInt32(result);
+    }
+
+    /// <summary>
+    /// Sets the database schema version.
+    /// </summary>
+    /// <param name="version">The schema version number.</param>
+    public void SetSchemaVersion(int version)
+    {
+        var normalizedVersion = Math.Max(0, version);
+        Execute($"PRAGMA user_version = {normalizedVersion}");
+    }
 
     /// <summary>
     /// Gets the number of logged queries.

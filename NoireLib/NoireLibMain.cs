@@ -1,6 +1,7 @@
 using Dalamud.Plugin;
 using Dalamud.Utility;
 using NoireLib.Core.Modules;
+using NoireLib.Database.Migrations;
 using NoireLib.Helpers.ObjectExtensions;
 using System;
 using System.Collections.Generic;
@@ -28,6 +29,7 @@ public class NoireLibMain
     {
         if (NoireService.Initialize(dalamudPluginInterface, plugin))
         {
+            DatabaseMigrationExecutor.RegisterMigrationsFromAssembly(plugin.GetType().Assembly);
             var preloadDatabases = Database.NoireDbModelBase.GetDatabasesToPreload(plugin.GetType().Assembly);
             foreach (var databaseName in preloadDatabases)
                 NoireDatabase.RegisterForInitialization(databaseName, true);

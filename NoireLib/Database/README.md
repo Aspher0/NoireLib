@@ -1,3 +1,4 @@
+
 # NoireLib Documentation - NoireDatabase
 
 You are reading the documentation for the `NoireDatabase` system.
@@ -21,6 +22,10 @@ You are reading the documentation for the `NoireDatabase` system.
 - [Validation Rules](#validation-rules)
 - [Casting](#casting)
 - [Using the Database Core](#using-the-database-core)
+- [Database Migrations](#database-migrations)
+  - [1. Create migrations](#create-migrations)
+  - [2. Use common operations](#use-common-operations)
+  - [3. Check current schema version](#check-current-schema-version)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
@@ -355,6 +360,89 @@ db.Commit();
 
 ---
 
+## Database Migrations
+
+Database migrations let you evolve schemas safely using the SQLite `PRAGMA user_version` value.
+Migrations run automatically the first time a database is opened and whenever the schema version is behind.
+
+#### 1. Create migrations
+
+Create a class per migration step and annotate it with `[DatabaseMigration("DatabaseName")]`.
+Implement `FromVersion`, `ToVersion`, and `Migrate`.
+
+```csharp
+using NoireLib.Database;
+using NoireLib.Database.Migrations;
+using System.Collections.Generic;
+
+namespace MyPlugin.Database.Migrations;
+
+[DatabaseMigration("MyPluginDatabase")]
+public sealed class ProfileMigrationV0ToV1 : DatabaseMigrationBase
+{
+    public override int FromVersion => 0;
+    public override int ToVersion => 1;
+
+    public override void Migrate(NoireDatabase database)
+    {
+        var columns = new List<DbColumnDefinition>
+        {
+            new("user_id", "INTEGER") { IsPrimaryKey = true, IsAutoIncrement = true, IsNullable = false },
+            new("name", "TEXT") { IsNullable = false },
+            new("created_at", "TEXT") { IsNullable = false }
+        };
+
+        DatabaseMigrationBuilder.Create(database)
+            .CreateTable("user_profiles", columns)
+            .Apply();
+    }
+}
+
+[DatabaseMigration("MyPluginDatabase")]
+public sealed class ProfileMigrationV1ToV2 : DatabaseMigrationBase
+{
+    public override int FromVersion => 1;
+    public override int ToVersion => 2;
+
+    public override void Migrate(NoireDatabase database)
+    {
+        DatabaseMigrationBuilder.Create(database)
+            .AddColumn("user_profiles", "last_login_at", "TEXT")
+            .Apply();
+    }
+}
+```
+
+#### 2. Use common operations
+
+`DatabaseMigrationBuilder` supports:
+- `CreateTable`, `DropTable`, `RenameTable`
+- `AddColumn`, `RenameColumn`, `DropColumn`
+- `ExecuteRaw` for custom SQL
+
+```csharp
+DatabaseMigrationBuilder.Create(database)
+    .RenameTable("profiles", "profiles_archive")
+    .CreateTable("profiles", columns)
+    .ExecuteRaw("CREATE INDEX IF NOT EXISTS idx_profiles_name ON profiles(name)")
+    .Apply();
+```
+
+#### 3. Check current schema version
+
+```csharp
+var db = NoireDatabase.GetInstance("MyPluginDatabase");
+var version = db.GetSchemaVersion();
+```
+
+You can also check externally with a SQLite tool by running:
+
+```
+PRAGMA user_version;
+```
+
+---
+
 ## Advanced Features
 
 ### Preventing Preloading Databases at Initialization
@@ -390,9 +478,19 @@ var queries = db.GetQueries();
 ### Database Path Overrides
 
 ```csharp
-NoireDatabase.SetDatabaseFilePathOverride("MyPluginDatabase", "C:\\path\\to\\database.db");
-NoireDatabase.RemoveDatabaseFilePathOverride("MyPluginDatabase");
-NoireDatabase.ClearDatabaseFilePathOverrides();
+public sealed class ProfileModel : NoireDbModelBase<ProfileModel>
+{
+    protected override string DatabaseName => "MyPluginDatabase";
+    protected override string? TableName => null;
+    protected override string PrimaryKey => "user_id";
+
+    protected override string? DatabaseDirectoryOverride => FileHelper.GetPluginConfigDirectory() is { } directory
+        ? Path.Combine(directory, "DatabasesDev")
+        : null;
+}
+
+NoireDatabase.RemoveDatabaseDirectoryOverride("MyPluginDatabase");
+NoireDatabase.ClearDatabaseDirectoryOverrides();
 ```
 
 ### Concurrency Settings
