@@ -191,10 +191,26 @@ public sealed class NoireDatabase : IDisposable
 
         var fullPath = Path.GetFullPath(filePath);
 
+        NoireDatabase? existingInstance = null;
+        var shouldReinitialize = false;
         lock (InstanceLock)
         {
             DatabasePathOverrides[databaseName] = fullPath;
+            if (Instances.TryGetValue(databaseName, out var instance))
+            {
+                existingInstance = instance;
+                Instances.Remove(databaseName);
+                shouldReinitialize = IsInitialized;
+            }
         }
+
+        if (existingInstance != null)
+            existingInstance.Dispose();
+
+        if (shouldReinitialize)
+            GetInstance(databaseName);
+
+        NoireLogger.LogDebug($"Set file path override for database '{databaseName}': {fullPath}");
     }
 
     /// <summary>

@@ -1,4 +1,3 @@
-
 # NoireLib Documentation - NoireDatabase
 
 You are reading the documentation for the `NoireDatabase` system.
@@ -9,7 +8,8 @@ You are reading the documentation for the `NoireDatabase` system.
 - [Defining Database Models](#defining-database-models)
   - [1. Model Basics](#model-basics)
   - [2. Column Definitions](#column-definitions)
-  - [3. Custom Schema Definitions](#custom-schema-definitions)
+  - [3. Manual Accessors](#manual-accessors)
+  - [4. Custom Schema Definitions](#custom-schema-definitions)
 - [Querying Data](#querying-data)
   - [1. Query Builder Basics](#query-builder-basics)
   - [2. Filtering, Joins, and Aggregates](#filtering-joins-and-aggregates)
@@ -46,6 +46,9 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 
 ### Things to know and quick example
 
+To avoid boilerplate `GetColumn`/`SetColumn` accessors, mark your model as `partial` and use `partial` auto-properties with `[NoireDbColumn]`.
+The source generator will emit the accessors in a generated `*.g.cs` file while keeping the same class type.
+
 All database models must inherit from `NoireDbModelBase<T>` and implement `DatabaseName`, `PrimaryKey` and `TableName`.
 Tables are created on demand when you query or save models.
 
@@ -55,6 +58,81 @@ using System;
 
 namespace MyPlugin.Database;
 
+public sealed partial class ProfileModel : NoireDbModelBase<ProfileModel>
+{
+    protected override string DatabaseName => "MyPluginDatabase";
+    protected override string? TableName => "user_profiles"; // set to null for default
+    protected override string PrimaryKey => "user_id";
+
+    [NoireDbColumn("user_id", IsPrimaryKey = true, IsAutoIncrement = true)]
+    public partial long UserId { get; set; }
+
+    [NoireDbColumn("name", Type = "TEXT", IsNullable = false)]
+    public partial string Name { get; set; }
+
+    [NoireDbColumn("created_at", Type = "TEXT")]
+    public partial DateTime CreatedAt { get; set; }
+
+    protected override IReadOnlyDictionary<string, DbColumnCast> Casts =>
+        new Dictionary<string, DbColumnCast>
+        {
+            ["created_at"] = DbColumnCast.DateTime
+        };
+}
+
+// Usage
+var profile = new ProfileModel { Name = "Noire", CreatedAt = DateTime.UtcNow };
+profile.Name = "New Name";
+var saved = profile.Save();
+
+// Retrieving later
+var profileModel = ProfileModel.Find(profile.UserId);
+```
+
+---
+
+## Defining Database Models
+
+NoireDatabase offers **three primary ways** to define schema and behavior.
+
+### 1. Model Basics
+
+At minimum you provide:
+- `DatabaseName` (SQLite file name)
+- `TableName` (set to `null` for the default)
+- `PrimaryKey` column
+
+If you use `[NoireDbColumn]`, declare the class and the properties as `partial` to let the source generator produce the accessors.
+
+```csharp
+public sealed partial class ItemModel : NoireDbModelBase<ItemModel>
+{
+    protected override string DatabaseName => "MyPluginDatabase";
+    protected override  string? TableName => "items";  // set to null for default
+    protected override string PrimaryKey => "user_id";
+
+    [NoireDbColumn("item_id", IsPrimaryKey = true, IsAutoIncrement = true)]
+    public partial long ItemId { get; set; }
+}
+```
+
+### 2. Column Definitions
+
+Use `[NoireDbColumn]` on properties to customize column metadata.
+
+```csharp
+[NoireDbColumn("name", Type = "TEXT", IsNullable = false)]
+public partial string Name { get; set; }
+
+[NoireDbColumn("is_active", Type = "INTEGER", DefaultValue = 1)]
+public partial bool IsActive { get; set; }
+```
+
+### 3. Manual Accessors
+
+If you prefer not to use the source generator, keep the class non-`partial` and set the accessors manually with `GetColumn` and `SetColumn`.
+
+```csharp
 public sealed class ProfileModel : NoireDbModelBase<ProfileModel>
 {
     protected override string DatabaseName => "MyPluginDatabase";
@@ -74,82 +152,18 @@ public sealed class ProfileModel : NoireDbModelBase<ProfileModel>
         get => GetColumn<string>("name") ?? string.Empty;
         set => SetColumn("name", value);
     }
-
-    [NoireDbColumn("created_at", Type = "TEXT")]
-    public DateTime CreatedAt
-    {
-        get => GetColumn<DateTime>("created_at");
-        set => SetColumn("created_at", value);
-    }
-
-    protected override IReadOnlyDictionary<string, DbColumnCast> Casts =>
-        new Dictionary<string, DbColumnCast>
-        {
-            ["created_at"] = DbColumnCast.DateTime
-        };
-}
-
-// Usage
-var profile = new ProfileModel { Name = "Noire", CreatedAt = DateTime.UtcNow };
-var saved = profile.Save();
-
-var profileModel = ProfileModel.Find(profile.UserId);
-```
-
----
-
-## Defining Database Models
-
-NoireDatabase offers **three primary ways** to define schema and behavior.
-
-### 1. Model Basics
-
-At minimum you provide:
-- `DatabaseName` (SQLite file name)
-- `TableName` (set to `null` for the default)
-- `PrimaryKey` column
-
-```csharp
-public sealed class ItemModel : NoireDbModelBase<ItemModel>
-{
-    protected override string DatabaseName => "my_plugin";
-    protected override string? TableName => null;
-    protected override string PrimaryKey => "id";
-
-    [NoireDbColumn("id", IsPrimaryKey = true, IsAutoIncrement = true)]
-    public long Id { get => GetColumn<long>("id"); set => SetColumn("id", value); }
 }
 ```
 
-### 2. Column Definitions
+### 4. Custom Schema Definitions
 
-Use `[NoireDbColumn]` on properties to customize column metadata.
-
-```csharp
-[NoireDbColumn("name", Type = "TEXT", IsNullable = false)]
-public string Name
-{
-    get => GetColumn<string>("name") ?? string.Empty;
-    set => SetColumn("name", value);
-}
-
-[NoireDbColumn("is_active", Type = "INTEGER", DefaultValue = 1)]
-public bool IsActive
-{
-    get => GetColumn<bool>("is_active");
-    set => SetColumn("is_active", value);
-}
-```
-
-### 3. Custom Schema Definitions
-
-For full control, override `Columns` to define schema programmatically.
+Optionally, for whatever reason, you can override `Columns` to define schema programmatically instead.
 
 ```csharp
 protected override IReadOnlyDictionary<string, DbColumnDefinition> Columns =>
     new Dictionary<string, DbColumnDefinition>
     {
-        ["id"] = new DbColumnDefinition("id", "INTEGER")
+        ["user_id"] = new DbColumnDefinition("user_id", "INTEGER")
         {
             IsPrimaryKey = true,
             IsAutoIncrement = true,
@@ -185,7 +199,7 @@ var firstProfile = ProfileModel.Query()
 var count = ProfileModel.Query().Count();
 
 var recent = ProfileModel.Query()
-    .WhereBetween("created_at", new object?[] { DateTime.UtcNow.AddDays(-7), DateTime.UtcNow })
+    .WhereBetween("created_at", [DateTime.UtcNow.AddDays(-7), DateTime.UtcNow])
     .OrderByDesc("created_at")
     .Get();
 
@@ -224,7 +238,7 @@ protected override IReadOnlyDictionary<string, DbRelationDefinition> Relations =
         ["notes"] = new DbRelationDefinition(DbRelationType.HasMany, typeof(ProfileNoteModel))
         {
             ForeignKey = "profile_id",
-            LocalKey = "id"
+            LocalKey = "note_id"
         }
     };
 
@@ -322,16 +336,16 @@ Supported casts:
 If you need raw SQL or low-level control, use `NoireDatabase` directly.
 
 ```csharp
-var db = NoireDatabase.GetInstance("my_plugin");
+var db = NoireDatabase.GetInstance("MyPluginDatabase");
 
 db.Execute("CREATE TABLE IF NOT EXISTS notes (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT)");
 
 var id = db.Insert("notes", new Dictionary<string, object?>
 {
-    ["body"] = "Hello"
+    { "body", "Hello" },
 });
 
-var row = db.Fetch("SELECT * FROM notes WHERE id = @p0", new object?[] { id });
+var row = db.Fetch("SELECT * FROM notes WHERE id = @p0", [ id ]);
 var all = db.FetchAll("SELECT * FROM notes");
 
 db.BeginTransaction();
@@ -343,7 +357,7 @@ db.Commit();
 
 ## Advanced Features
 
-### Preloading Databases at Initialization
+### Preventing Preloading Databases at Initialization
 
 By default, databases are preloaded when the plugin loads. This is the recommended setting to avoid loading SQLite files during gameplay.
 Set `LoadDatabaseOnInit` to `false` to prevent that if needed.
@@ -351,9 +365,9 @@ Set `LoadDatabaseOnInit` to `false` to prevent that if needed.
 ```csharp
 public sealed class ProfileModel : NoireDbModelBase<ProfileModel>
 {
-    protected override string DatabaseName => "my_plugin";
+    protected override string DatabaseName => "MyPluginDatabase";
     protected override string? TableName => null;
-    protected override string PrimaryKey => "id";
+    protected override string PrimaryKey => "user_id";
     protected override bool LoadDatabaseOnInit => false;
 }
 ```
@@ -376,8 +390,8 @@ var queries = db.GetQueries();
 ### Database Path Overrides
 
 ```csharp
-NoireDatabase.SetDatabaseFilePathOverride("my_plugin", "C:\\path\\to\\database.db");
-NoireDatabase.RemoveDatabaseFilePathOverride("my_plugin");
+NoireDatabase.SetDatabaseFilePathOverride("MyPluginDatabase", "C:\\path\\to\\database.db");
+NoireDatabase.RemoveDatabaseFilePathOverride("MyPluginDatabase");
 NoireDatabase.ClearDatabaseFilePathOverrides();
 ```
 

@@ -159,31 +159,6 @@ public static class SystemHelper
     }
 
     /// <summary>
-    /// Gets the path to a special system folder.
-    /// </summary>
-    /// <param name="folder">The special folder to get the path for.</param>
-    /// <returns>The path to the special folder.</returns>
-    public static string GetSpecialFolderPath(Environment.SpecialFolder folder)
-    {
-        return Environment.GetFolderPath(folder);
-    }
-
-    /// <summary>
-    /// Gets the user's Documents folder path.
-    /// </summary>
-    public static string DocumentsPath => GetSpecialFolderPath(Environment.SpecialFolder.MyDocuments);
-
-    /// <summary>
-    /// Gets the user's AppData/Roaming folder path (Windows) or equivalent config folder (Linux).
-    /// </summary>
-    public static string AppDataPath => GetSpecialFolderPath(Environment.SpecialFolder.ApplicationData);
-
-    /// <summary>
-    /// Gets the user's Desktop folder path.
-    /// </summary>
-    public static string DesktopPath => GetSpecialFolderPath(Environment.SpecialFolder.Desktop);
-
-    /// <summary>
     /// Checks if the current OS is Windows.
     /// </summary>
     public static bool IsWindows => RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
