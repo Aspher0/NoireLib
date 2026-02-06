@@ -719,19 +719,6 @@ public sealed class NoireDatabase : IDisposable
 
     private string GetSavepointName() => $"SAVEPOINT_LEVEL_{_transactionLevel}";
 
-    private static string? EnsureDatabaseDirectory(string filePath)
-    {
-        var fullPath = Path.GetFullPath(filePath);
-        var directory = Path.GetDirectoryName(fullPath);
-        if (string.IsNullOrWhiteSpace(directory))
-            return null;
-
-        if (!FileHelper.EnsureDirectoryExists(directory))
-            return null;
-
-        return fullPath;
-    }
-
     private void ApplyConcurrencySettings()
     {
         var busyTimeoutMs = Math.Max(0, (int)BusyTimeout.TotalMilliseconds);
