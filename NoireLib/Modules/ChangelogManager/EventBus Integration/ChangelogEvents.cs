@@ -3,10 +3,6 @@ using System;
 namespace NoireLib.Changelog;
 
 /// <summary>
-/// Events published by the NoireChangelogManager module.
-/// </summary>
-
-/// <summary>
 /// Event fired when the changelog window is opened.
 /// </summary>
 /// <param name="Version">The version being displayed.</param>
