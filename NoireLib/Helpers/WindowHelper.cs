@@ -32,6 +32,12 @@ public static class WindowHelper
     }
 
     /// <summary>
+    /// Gets the handle of the game window.
+    /// </summary>
+    /// <returns>The game window handle.</returns>
+    public static nint GetGameWindowHandle() => NoireService.PluginInterface.UiBuilder.WindowHandlePtr;
+
+    /// <summary>
     /// Maximizes the specified window.
     /// </summary>
     /// <param name="hWnd">The window handle.</param>
@@ -160,6 +166,27 @@ public static class WindowHelper
             SetWindowPosFlags.NoZOrder | SetWindowPosFlags.ShowWindow);
     }
 
+    /// <summary>
+    /// Gets the size of the specified window.
+    /// </summary>
+    /// <param name="hWnd">The window handle.</param>
+    /// <param name="width">The window width.</param>
+    /// <param name="height">The window height.</param>
+    /// <returns><see langword="true"/> if the operation succeeds; otherwise <see langword="false"/>.</returns>
+    public static bool TryGetWindowSize(nint hWnd, out int width, out int height)
+    {
+        if (!ValidateWindow(hWnd) || !GetWindowRect(hWnd, out var rect))
+        {
+            width = 0;
+            height = 0;
+            return false;
+        }
+
+        width = rect.Width;
+        height = rect.Height;
+        return true;
+    }
+
     private static (int X, int Y) CenterIn(RECT rect, int width, int height)
     {
         var x = rect.Left + ((rect.Width - width) / 2);
@@ -205,6 +232,9 @@ public static class WindowHelper
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(nint hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool GetWindowRect(nint hWnd, out RECT lpRect);
 
     [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowLongPtrW", CharSet = CharSet.Auto)]
     private static extern nint GetWindowLongPtr64(nint hWnd, int nIndex);

@@ -396,13 +396,13 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     }
 
     /// <summary>
-    /// Skips the next N queued (not yet started) tasks in the queue by cancelling them.
+    /// Skips the next N tasks in the queue by cancelling them.
     /// </summary>
-    /// <param name="count">The number of queued tasks to skip. Excluding the current task if <paramref name="alsoSkipCurrentTask"/> is true.</param>
-    /// <param name="alsoSkipCurrentTask">If true, also cancels the currently executing task if it exists.<br/>
-    /// Argument <paramref name="count"/> should not include the current task in this case.</param>
+    /// <param name="count">The number of queued tasks to skip. Needs to be greater than 0.</param>
+    /// <param name="includeCurrentTask">If true, will mark the currently executing task for skipping if it exists.<br/>
+    /// If true, argument <paramref name="count"/> will include the current task in the skip count.</param>
     /// <returns>The number of tasks that were actually skipped.</returns>
-    public int SkipNextTasks(int count, bool alsoSkipCurrentTask = false)
+    public int SkipNextTasks(int count, bool includeCurrentTask = false)
     {
         if (count <= 0)
             return 0;
@@ -418,10 +418,7 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             {
                 int skipped = 0;
 
-                if (alsoSkipCurrentTask && currentTask != null &&
-                    (currentTask.Status == TaskStatus.Executing ||
-                     currentTask.Status == TaskStatus.WaitingForCompletion ||
-                     currentTask.Status == TaskStatus.WaitingForPostDelay))
+                if (includeCurrentTask && currentTask != null)
                 {
                     if (CancelTaskInternal(currentTask))
                     {
@@ -431,7 +428,9 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                     }
                 }
 
-                var queuedTasks = taskQueue.Where(t => t.Status == TaskStatus.Queued).Take(count).ToList();
+                var queuedTasks = count > skipped
+                    ? taskQueue.Where(t => t.Status == TaskStatus.Queued).Take(count - skipped).ToList()
+                    : [];
 
                 foreach (var task in queuedTasks)
                 {
@@ -440,9 +439,44 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                 }
 
                 if (EnableLogging && skipped > 0)
-                    NoireLogger.LogInfo(this, $"Skipped {skipped} task(s){(alsoSkipCurrentTask ? " (including current task)" : "")}.");
+                    NoireLogger.LogInfo(this, $"Skipped {skipped} task(s){(includeCurrentTask ? " (including current task)" : "")}.");
 
                 return skipped;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+
+    /// <summary>
+    /// Skips the current task regardless of its status.
+    /// </summary>
+    /// <returns>true if the current task was skipped; otherwise, false.</returns>
+    public bool SkipCurrentTask()
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                if (currentTask == null)
+                    return false;
+
+                if (!CancelTaskInternal(currentTask))
+                    return false;
+
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Skipped current task: {currentTask}");
+
+                return true;
             }
         }
         finally
