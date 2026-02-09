@@ -418,7 +418,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         return changed;
     }
 
-
     #region Private Methods
 
     private void RefreshValidKeys()

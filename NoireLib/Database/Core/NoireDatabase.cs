@@ -99,6 +99,7 @@ public sealed class NoireDatabase : IDisposable
             {
                 instance = new NoireDatabase(databaseName);
                 Instances[databaseName] = instance;
+                NoireLogger.LogDebug($"Created new database instance for: {databaseName}", $"[{nameof(NoireDatabase)}] ");
             }
 
             return instance;
@@ -143,7 +144,7 @@ public sealed class NoireDatabase : IDisposable
 
         foreach (var databaseName in databasesToLoad)
         {
-            NoireLogger.LogDebug($"Initializing registered database: {databaseName}");
+            NoireLogger.LogDebug($"Initializing registered database: {databaseName}", $"[{nameof(NoireDatabase)}] ");
             GetInstance(databaseName);
         }
     }
@@ -605,7 +606,7 @@ public sealed class NoireDatabase : IDisposable
     /// </summary>
     public void Dispose()
     {
-        NoireLogger.LogDebug($"Disposing database instance: {DatabaseName}");
+        NoireLogger.LogDebug(this, $"Disposing database instance: {DatabaseName}");
         try
         {
             _transaction?.Dispose();

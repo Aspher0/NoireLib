@@ -18,5 +18,5 @@ public class HotkeyManagerConfig : NoireConfigBase<HotkeyManagerConfig>
     public Dictionary<string, HotkeyBinding> Keybinds { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <inheritdoc />
-    public override string GetConfigFileName() => "NoireHotkeyManager";
+    public override string GetConfigFileName() => "HotkeyManagerConfig";
 }

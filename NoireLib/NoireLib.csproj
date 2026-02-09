@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/14.0.0">
     <PropertyGroup>
-        <Version>1.3.5.0</Version>
+        <Version>1.3.6.0</Version>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>
@@ -42,6 +42,7 @@
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Configuration\README.md" />
         <None Include="Modules\EventBus\README.md" />
+        <None Include="modules\historylogger\README.md" />
         <None Include="modules\hotkeymanager\README.md" />
         <None Include="Modules\TaskQueue\README.md" />
         <None Include="README.md" />
@@ -50,7 +51,6 @@
 
     <ItemGroup>
         <Folder Include="Modules\GameEventManager\" />
-        <Folder Include="Modules\HistoryLogger\" />
     </ItemGroup>
 
     <ItemGroup>
