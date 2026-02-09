@@ -55,19 +55,20 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     public override void Draw()
     {
         var isExpanded = HistoryLoggerConfig.Instance.IsHeaderPanelExpanded;
-        
+
         if (isExpanded)
         {
             DrawHeader();
-            ImGui.Dummy(new Vector2(0, 6));
+            ImGui.Dummy(new Vector2(0, 1));
         }
-        
+
         DrawLogEntries();
     }
 
     private void DrawHeader()
     {
-        using var child = ImRaii.Child("HistoryLoggerHeader", new Vector2(0, 178f), true, ImGuiWindowFlags.AlwaysUseWindowPadding);
+        var headerHeight = ParentModule.AllowManualEntryCreation ? 178f : 98f;
+        using var child = ImRaii.Child("HistoryLoggerHeader", new Vector2(0, headerHeight), true, ImGuiWindowFlags.AlwaysUseWindowPadding);
         if (!child)
             return;
 
@@ -75,16 +76,19 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.SameLine();
         ImGui.TextDisabled("Filters & Storage");
         DrawFiltersSection();
-        ImGui.Separator();
-        ImGui.TextDisabled("Manual Entry");
-        DrawManualEntrySection();
+        if (ParentModule.AllowManualEntryCreation)
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled("Manual Entry");
+            DrawManualEntrySection();
+        }
     }
 
     private void DrawHeaderToggleButton()
     {
         var isExpanded = HistoryLoggerConfig.Instance.IsHeaderPanelExpanded;
         var buttonText = isExpanded ? FontAwesomeIcon.ChevronUp.ToIconString() : FontAwesomeIcon.ChevronDown.ToIconString();
-        
+
         ImGui.PushFont(NoireService.PluginInterface.UiBuilder.FontIcon);
         if (ImGui.Button($"{buttonText}##HeaderToggle"))
         {
@@ -357,7 +361,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             DrawHeaderToggleButton();
             ImGui.SameLine();
         }
-        
+
         ImGui.TextDisabled($"Showing {startIndex + 1}-{endIndex} of {filtered.Count} entries ({entries.Count} total)");
         ImGui.SameLine();
         DrawPaginationControls(totalPages, itemsPerPage);

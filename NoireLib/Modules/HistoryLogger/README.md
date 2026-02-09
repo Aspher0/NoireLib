@@ -85,7 +85,8 @@ var historyLogger = new NoireHistoryLogger(
     databaseName: "MyPluginLogs",                   // Optional custom database name
     allowUserTogglePersistence: false,              // Allow user to toggle persistence in UI
     allowUserClearInMemory: true,                   // Allow user to clear in-memory logs
-    allowUserClearDatabase: true                    // Allow user to clear database logs
+    allowUserClearDatabase: true,                   // Allow user to clear database logs
+    allowManualEntryCreation: false                 // Allow user to create manual entries in UI
 );
 ```
 
@@ -105,7 +106,8 @@ logger?.SetDatabaseName("CustomDatabase");
 // Configure user permissions
 logger?.SetAllowUserTogglePersistence(true)
        ?.SetAllowUserClearInMemory(true)
-       ?.SetAllowUserClearDatabase(false);
+       ?.SetAllowUserClearDatabase(false)
+       ?.SetAllowManualEntryCreation(true);
 
 // Set maximum in-memory entries (default: 2000)
 if (logger != null)
@@ -119,11 +121,13 @@ Control what users can do in the UI:
 - `AllowUserTogglePersistence`: Allow toggling database persistence on/off
 - `AllowUserClearInMemory`: Allow clearing in-memory (runtime) logs
 - `AllowUserClearDatabase`: Allow clearing database logs
+- `AllowManualEntryCreation`: Allow creating manual entries in the window
 
 ```csharp
 logger?.SetAllowUserTogglePersistence(false)
        ?.SetAllowUserClearInMemory(false)
-       ?.SetAllowUserClearDatabase(false);
+       ?.SetAllowUserClearDatabase(false)
+       ?.SetAllowManualEntryCreation(false);
 ```
 
 ---

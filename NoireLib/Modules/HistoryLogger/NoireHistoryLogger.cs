@@ -25,6 +25,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     private bool allowUserTogglePersistence = false;
     private bool allowUserClearInMemory = true;
     private bool allowUserClearDatabase = true;
+    private bool allowManualEntryCreation = false;
 
     /// <summary>
     /// The default constructor needed for internal purposes.
@@ -42,6 +43,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <param name="allowUserTogglePersistence">Whether the user can toggle database persistence in the UI.</param>
     /// <param name="allowUserClearInMemory">Whether the user can clear in-memory entries in the UI.</param>
     /// <param name="allowUserClearDatabase">Whether the user can clear database entries in the UI.</param>
+    /// <param name="allowManualEntryCreation">Whether the user can create manual entries in the UI.</param>
     public NoireHistoryLogger(
         string? moduleId = null,
         bool active = true,
@@ -50,8 +52,9 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         string? databaseName = null,
         bool allowUserTogglePersistence = false,
         bool allowUserClearInMemory = true,
-        bool allowUserClearDatabase = true)
-            : base(moduleId, active, enableLogging, persistLogs, databaseName, allowUserTogglePersistence, allowUserClearInMemory, allowUserClearDatabase) { }
+        bool allowUserClearDatabase = true,
+        bool allowManualEntryCreation = false)
+            : base(moduleId, active, enableLogging, persistLogs, databaseName, allowUserTogglePersistence, allowUserClearInMemory, allowUserClearDatabase, allowManualEntryCreation) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.
@@ -103,6 +106,15 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     {
         get => allowUserClearDatabase;
         set => allowUserClearDatabase = value;
+    }
+
+    /// <summary>
+    /// Gets or sets whether the user can create manual entries in the UI.
+    /// </summary>
+    public bool AllowManualEntryCreation
+    {
+        get => allowManualEntryCreation;
+        set => allowManualEntryCreation = value;
     }
 
     /// <summary>
@@ -190,6 +202,9 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
 
         if (args.Length > 4 && args[4] is bool clearDatabase)
             allowUserClearDatabase = clearDatabase;
+
+        if (args.Length > 5 && args[5] is bool allowManualEntry)
+            allowManualEntryCreation = allowManualEntry;
 
         RegisterWindow(new HistoryLoggerWindow(this));
 
@@ -279,6 +294,17 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     public NoireHistoryLogger SetAllowUserClearDatabase(bool allow)
     {
         allowUserClearDatabase = allow;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets whether the user can create manual entries in the UI.
+    /// </summary>
+    /// <param name="allow">Whether to allow manual entry creation.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireHistoryLogger SetAllowManualEntryCreation(bool allow)
+    {
+        allowManualEntryCreation = allow;
         return this;
     }
 
