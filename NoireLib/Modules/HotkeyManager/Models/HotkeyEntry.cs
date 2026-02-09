@@ -79,10 +79,13 @@ public sealed class HotkeyEntry
     public bool BlockGameInput { get; set; } = false;
 
     internal bool WasDown { get; set; }
+    internal bool Armed { get; set; }
+    internal bool PhysicallyHeld { get; set; }
     internal long? HoldStartTimestamp { get; set; }
     internal bool HoldTriggered { get; set; }
     internal long? NextRepeatTimestamp { get; set; }
     internal bool BlockedWhileDown { get; set; }
+    internal volatile bool NeedsInputForward;
 
     /// <summary>
     /// Creates a new hotkey entry.

@@ -30,9 +30,6 @@ public static class KeybindsHelper
         .Where(value => value != 0 && IsSingleFlag(value))
         .ToArray();
 
-    private const int InputKeyboard = 1;
-    private const uint KeyEventKeyUp = 0x0002;
-
     [DllImport("user32.dll")]
     private static extern short GetAsyncKeyState(int vKey);
 
@@ -46,9 +43,6 @@ public static class KeybindsHelper
     {
         return (GetAsyncKeyState(vkCode) & 0x8000) != 0;
     }
-
-    [DllImport("user32.dll")]
-    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
 
     /// <summary>
     /// Gets a display name for a virtual key code.
@@ -80,24 +74,6 @@ public static class KeybindsHelper
             parts.Add(GetKeyName(binding.VkCode));
 
         return parts.Count == 0 ? "Unbound" : string.Join(" + ", parts);
-    }
-
-    /// <summary>
-    /// Formats the currently held keyboard input while listening.
-    /// </summary>
-    /// <param name="keyState">The current key state.</param>
-    /// <param name="keysDown">The currently pressed keys.</param>
-    /// <returns>A formatted string representing the currently held keyboard input.</returns>
-    public static string FormatListeningKeyboardInput(IKeyState keyState, IReadOnlyCollection<int> keysDown)
-    {
-        var modifierState = GetModifierState(keyState);
-        var parts = FormatModifierParts(modifierState.Ctrl, modifierState.Shift, modifierState.Alt);
-        var keyCode = keysDown.FirstOrDefault(code => !IsModifierKey(code));
-
-        if (keyCode != 0)
-            parts.Add(GetKeyName(keyCode));
-
-        return parts.Count == 0 ? string.Empty : string.Join(" + ", parts);
     }
 
     /// <summary>
@@ -133,15 +109,12 @@ public static class KeybindsHelper
     /// Returns whether a game text input is focused.
     /// </summary>
     /// <returns>True if a game text input is focused, false otherwise.</returns>
-    public static bool IsTextInputActive()
+    public unsafe static bool IsTextInputActive()
     {
         try
         {
-            unsafe
-            {
-                var module = RaptureAtkModule.Instance();
-                return module != null && module->AtkModule.IsTextInputActive();
-            }
+            var module = RaptureAtkModule.Instance();
+            return module != null && module->AtkModule.IsTextInputActive();
         }
         catch
         {
@@ -235,7 +208,7 @@ public static class KeybindsHelper
     /// <param name="vkCode">The virtual key code to press.</param>
     public static void SendKeyPress(int vkCode)
     {
-        SendInputs(CreateKeyInputs(vkCode));
+        SendModifiedKeyPress(vkCode, false, false, false);
     }
 
     /// <summary>
@@ -246,7 +219,7 @@ public static class KeybindsHelper
     /// <param name="alt">Whether to press Alt.</param>
     public static void SendModifierPress(bool ctrl, bool shift, bool alt)
     {
-        SendInputs(CreateModifierInputs(ctrl, shift, alt).ToArray());
+        SendModifiedKeyPress(0, ctrl, shift, alt);
     }
 
     /// <summary>
@@ -258,11 +231,32 @@ public static class KeybindsHelper
     /// <param name="alt">Whether to press Alt.</param>
     public static void SendModifiedKeyPress(int vkCode, bool ctrl, bool shift, bool alt)
     {
-        var inputs = new List<INPUT>();
-        inputs.AddRange(CreateModifierInputs(ctrl, shift, alt, false));
-        inputs.AddRange(CreateKeyInputs(vkCode));
-        inputs.AddRange(CreateModifierInputs(ctrl, shift, alt, true));
-        SendInputs(inputs.ToArray());
+        if (vkCode == 0 && !ctrl && !shift && !alt)
+            return;
+
+        var gameWindow = WindowHelper.GetGameWindowHandle();
+        if (gameWindow == nint.Zero)
+            return;
+
+        var modifiers = new List<ushort>();
+        if (ctrl)
+            modifiers.Add(VkControl);
+        if (shift)
+            modifiers.Add(VkShift);
+        if (alt)
+            modifiers.Add(VkAlt);
+
+        foreach (var modifier in modifiers)
+            SendKeyMessage(gameWindow, modifier, false, alt);
+
+        if (vkCode != 0)
+        {
+            SendKeyMessage(gameWindow, (ushort)vkCode, false, alt);
+            SendKeyMessage(gameWindow, (ushort)vkCode, true, alt);
+        }
+
+        for (var index = modifiers.Count - 1; index >= 0; index--)
+            SendKeyMessage(gameWindow, modifiers[index], true, alt);
     }
 
     /// <summary>
@@ -391,70 +385,31 @@ public static class KeybindsHelper
             || IsRawKeyDown(keyState, VkRightAlt);
     }
 
-    private static INPUT[] CreateKeyInputs(int vkCode)
+    private const uint WmKeyDown = 0x0100;
+    private const uint WmKeyUp = 0x0101;
+    private const uint WmSysKeyDown = 0x0104;
+    private const uint WmSysKeyUp = 0x0105;
+    private const uint MapvkVkToVsc = 0;
+
+    [DllImport("user32.dll")]
+    private static extern nint SendMessage(nint hWnd, uint msg, nint wParam, nint lParam);
+
+    [DllImport("user32.dll")]
+    private static extern uint MapVirtualKey(uint uCode, uint uMapType);
+
+    private static void SendKeyMessage(nint hWnd, ushort vkCode, bool keyUp, bool altDown)
     {
-        return
-        [
-            CreateKeyboardInput(vkCode, false),
-            CreateKeyboardInput(vkCode, true),
-        ];
+        var scanCode = MapVirtualKey(vkCode, MapvkVkToVsc);
+        var lParam = BuildKeyLParam(scanCode, keyUp);
+        var message = altDown ? (keyUp ? WmSysKeyUp : WmSysKeyDown) : (keyUp ? WmKeyUp : WmKeyDown);
+        SendMessage(hWnd, message, (nint)vkCode, lParam);
     }
 
-    private static IEnumerable<INPUT> CreateModifierInputs(bool ctrl, bool shift, bool alt, bool keyUp = false)
+    private static nint BuildKeyLParam(uint scanCode, bool keyUp)
     {
-        if (ctrl)
-            yield return CreateKeyboardInput(VkControl, keyUp);
-        if (shift)
-            yield return CreateKeyboardInput(VkShift, keyUp);
-        if (alt)
-            yield return CreateKeyboardInput(VkAlt, keyUp);
-    }
-
-    private static INPUT CreateKeyboardInput(int vkCode, bool keyUp)
-    {
-        return new INPUT
-        {
-            type = InputKeyboard,
-            U = new InputUnion
-            {
-                ki = new KEYBDINPUT
-                {
-                    wVk = (ushort)vkCode,
-                    dwFlags = keyUp ? KeyEventKeyUp : 0u,
-                },
-            },
-        };
-    }
-
-    private static void SendInputs(INPUT[] inputs)
-    {
-        if (inputs.Length == 0)
-            return;
-
-        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf<INPUT>());
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct INPUT
-    {
-        public int type;
-        public InputUnion U;
-    }
-
-    [StructLayout(LayoutKind.Explicit)]
-    private struct InputUnion
-    {
-        [FieldOffset(0)]
-        public KEYBDINPUT ki;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KEYBDINPUT
-    {
-        public ushort wVk;
-        public ushort wScan;
-        public uint dwFlags;
-        public uint time;
-        public IntPtr dwExtraInfo;
+        var lParam = 1u | (scanCode << 16);
+        if (keyUp)
+            lParam |= 1u << 30 | 1u << 31;
+        return (nint)lParam;
     }
 }

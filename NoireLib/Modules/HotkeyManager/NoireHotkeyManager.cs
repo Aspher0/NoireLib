@@ -120,6 +120,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
         BlockListeningInputOnFramework();
         BlockHotkeyInputsOnFramework();
+        ForwardPendingInputs();
     }
 
     private bool shouldSaveKeybinds = true;
@@ -675,29 +676,35 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     {
         var binding = entry.Binding;
         var modifierState = KeybindsHelper.GetRawModifierState(rawKeyboardState);
+        var modifiersExactMatch = AreExactModifiersDown(modifierState, binding);
+
+        bool mainKeyPhysicallyDown;
+        bool combinationActive;
 
         if (binding.IsModifierOnly)
         {
-            var requiredModifiersDown = AreRequiredModifiersDown(modifierState, binding);
-            if (!requiredModifiersDown)
-                return EvaluateActivation(entry, false);
+            mainKeyPhysicallyDown = AreRequiredModifiersDown(modifierState, binding);
+            combinationActive = modifiersExactMatch;
+        }
+        else
+        {
+            mainKeyPhysicallyDown = KeybindsHelper.IsRawKeyDown(rawKeyboardState, binding.VkCode);
+            combinationActive = mainKeyPhysicallyDown && modifiersExactMatch;
 
-            return EvaluateActivation(entry, true);
+            if (combinationActive && (binding.Ctrl || binding.Shift || binding.Alt))
+            {
+                foreach (var code in currentKeysDown)
+                {
+                    if (!KeybindsHelper.IsModifierKey(code) && code != binding.VkCode)
+                    {
+                        combinationActive = false;
+                        break;
+                    }
+                }
+            }
         }
 
-        var modifiersDown = AreExactModifiersDown(modifierState, binding);
-
-        if (!modifiersDown)
-            return EvaluateActivation(entry, false);
-
-        if (binding.VkCode != 0 && (binding.Ctrl || binding.Shift || binding.Alt) && lastPressedKey != binding.VkCode)
-            return EvaluateActivation(entry, false);
-
-        var isDown = binding.IsModifierOnly
-            ? modifiersDown
-            : KeybindsHelper.IsRawKeyDown(rawKeyboardState, binding.VkCode);
-
-        return EvaluateActivation(entry, isDown);
+        return EvaluateActivation(entry, combinationActive, mainKeyPhysicallyDown);
     }
 
     private bool IsGamepadTriggered(HotkeyEntry entry)
@@ -711,24 +718,49 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
             return false;
 
         var isDown = gamepadState.Raw(button) > 0f;
-        return EvaluateActivation(entry, isDown);
+        return EvaluateActivation(entry, isDown, isDown);
     }
 
-    private bool EvaluateActivation(HotkeyEntry entry, bool isDown)
+    private bool EvaluateActivation(HotkeyEntry entry, bool combinationActive, bool mainKeyPhysicallyDown)
     {
-        var wasDown = entry.WasDown;
+        var wasPhysicallyHeld = entry.PhysicallyHeld;
+        entry.PhysicallyHeld = mainKeyPhysicallyDown;
 
-        if (!isDown)
+        if (!mainKeyPhysicallyDown)
         {
+            var wasArmed = entry.Armed;
+            var holdTriggered = entry.HoldTriggered;
+
+            if (entry.ActivationMode == HotkeyActivationMode.Held
+                && entry.BlockGameInput && wasArmed && !holdTriggered)
+            {
+                entry.NeedsInputForward = true;
+            }
+
+            var shouldTriggerRelease = entry.ActivationMode == HotkeyActivationMode.Released && wasArmed;
+
+            entry.Armed = false;
             entry.WasDown = false;
             entry.HoldStartTimestamp = null;
             entry.HoldTriggered = false;
             entry.NextRepeatTimestamp = null;
-            return entry.ActivationMode == HotkeyActivationMode.Released && wasDown;
+
+            return shouldTriggerRelease;
         }
 
-        if (!wasDown)
+        if (!combinationActive)
         {
+            entry.WasDown = false;
+
+            if (!entry.HoldTriggered)
+                entry.HoldStartTimestamp = null;
+
+            return false;
+        }
+
+        if (!wasPhysicallyHeld)
+        {
+            entry.Armed = true;
             entry.WasDown = true;
             entry.HoldStartTimestamp = GetTimestamp();
             entry.HoldTriggered = false;
@@ -736,6 +768,13 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
             if (entry.ActivationMode == HotkeyActivationMode.Pressed)
                 return true;
+        }
+        else if (!entry.WasDown)
+        {
+            entry.WasDown = true;
+
+            if (!entry.HoldTriggered)
+                entry.HoldStartTimestamp = GetTimestamp();
         }
 
         return entry.ActivationMode switch
@@ -798,9 +837,12 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     private void ResetEntryState(HotkeyEntry entry)
     {
         entry.WasDown = false;
+        entry.Armed = false;
+        entry.PhysicallyHeld = false;
         entry.HoldStartTimestamp = null;
         entry.HoldTriggered = false;
         entry.NextRepeatTimestamp = null;
+        entry.NeedsInputForward = false;
     }
 
     private void PublishEvent<TEvent>(TEvent eventData)
@@ -983,8 +1025,64 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
             if (entry.RequireGameFocus && !isFocused)
                 continue;
 
-            if (IsFrameworkKeyDown(entry.Binding, modifierState))
+            if (entry.Binding.IsModifierOnly)
+            {
+                if (AreExactModifiersDown(modifierState, entry.Binding))
+                    BlockModifierKeys(entry.Binding);
+            }
+            else if (IsFrameworkKeyDown(entry.Binding, modifierState))
+            {
                 NoireService.KeyState[entry.Binding.VkCode] = false;
+            }
+        }
+    }
+
+    private void ForwardPendingInputs()
+    {
+        List<HotkeyEntry> entries;
+        lock (hotkeyLock)
+        {
+            entries = hotkeys.Values.ToList();
+        }
+
+        foreach (var entry in entries)
+        {
+            if (!entry.NeedsInputForward)
+                continue;
+
+            entry.NeedsInputForward = false;
+            var binding = entry.Binding;
+
+            if (binding.IsModifierOnly)
+                KeybindsHelper.SendModifierPress(binding.Ctrl, binding.Shift, binding.Alt);
+            else if (binding.Ctrl || binding.Shift || binding.Alt)
+                KeybindsHelper.SendModifiedKeyPress(binding.VkCode, binding.Ctrl, binding.Shift, binding.Alt);
+            else if (binding.VkCode != 0)
+                KeybindsHelper.SendKeyPress(binding.VkCode);
+        }
+    }
+
+    private void BlockModifierKeys(HotkeyBinding binding)
+    {
+        if (binding.Ctrl)
+        {
+            NoireService.KeyState[KeybindsHelper.VkControl] = false;
+            NoireService.KeyState[KeybindsHelper.VkLeftControl] = false;
+            NoireService.KeyState[KeybindsHelper.VkRightControl] = false;
+        }
+
+        if (binding.Shift)
+        {
+            NoireService.KeyState[KeybindsHelper.VkShift] = false;
+            NoireService.KeyState[KeybindsHelper.VkLeftShift] = false;
+            NoireService.KeyState[KeybindsHelper.VkRightShift] = false;
+        }
+
+        if (binding.Alt)
+        {
+            NoireService.KeyState[KeybindsHelper.VkAlt] = false;
+            NoireService.KeyState[KeybindsHelper.VkLeftAlt] = false;
+            NoireService.KeyState[KeybindsHelper.VkRightAlt] = false;
         }
     }
 
@@ -992,9 +1090,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     {
         if (binding.VkCode == 0)
             return false;
-
-        if (binding.IsModifierOnly)
-            return AreRequiredModifiersDown(modifierState, binding);
 
         if (!AreExactModifiersDown(modifierState, binding))
             return false;
