@@ -141,5 +141,7 @@ For a list of modules, see the [Modules Section](#modules)
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
 - [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
-- [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)
+- [History Logger Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HistoryLogger/README.md)
+- [Hotkey Manager Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HotkeyManager/README.md)
 - [Task Queue Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/TaskQueue/README.md)
+- [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)
