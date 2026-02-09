@@ -111,7 +111,9 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
     DisplayName = "Toggle Borderless",
     Binding = new HotkeyBinding((int)VirtualKey.F6),
     Callback = () => ToggleBorderless(),
-    ActivationMode = HotkeyActivationMode.Pressed
+    ActivationMode = HotkeyActivationMode.Pressed,
+    BlockGameInput = true,
+    RequireGameFocus = true,
 });
 ```
 
@@ -128,6 +130,8 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
 - `RepeatDelayMin`/`RepeatDelayMax`: Bounds for random repeat delay.
 - `UseRandomRepeatDelay`: Randomize repeat delay between min/max.
 - `BlockWhenTextInputActive`: Prevent firing while text input is active.
+- `BlockGameInput`: Block the associated game inputs when triggering.
+- `RequireGameFocus`: Require the game window to be focused for the hotkey to trigger.
 
 ### Keyboard bindings
 

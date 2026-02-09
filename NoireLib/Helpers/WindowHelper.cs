@@ -187,6 +187,16 @@ public static class WindowHelper
         return true;
     }
 
+    /// <summary>
+    /// Returns whether the game window is focused.
+    /// </summary>
+    /// <returns>True if the game window is focused, false otherwise.</returns>
+    public static bool IsGameWindowFocused()
+    {
+        var handle = GetGameWindowHandle();
+        return handle != IntPtr.Zero && GetForegroundWindow() == handle;
+    }
+
     private static (int X, int Y) CenterIn(RECT rect, int width, int height)
     {
         var x = rect.Left + ((rect.Width - width) / 2);
@@ -227,8 +237,12 @@ public static class WindowHelper
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, SetWindowPosFlags uFlags);
 
+    /// <summary>
+    /// Gets the handle of the foreground window (the window currently receiving input).
+    /// </summary>
+    /// <returns>The handle of the foreground window.</returns>
     [DllImport("user32.dll")]
-    private static extern nint GetForegroundWindow();
+    public static extern nint GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(nint hWnd);

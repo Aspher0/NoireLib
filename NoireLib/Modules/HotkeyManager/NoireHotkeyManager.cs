@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
 
 namespace NoireLib.HotkeyManager;
 
@@ -21,6 +22,11 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     private readonly object hotkeyLock = new();
     private readonly HashSet<int> previousKeysDown = new();
     private readonly HashSet<int> currentKeysDown = new();
+    private readonly byte[] rawKeyboardState = new byte[256];
+    private const int UpdateIntervalMilliseconds = 16;
+    private Timer? updateTimer;
+    private long lastUpdateTick;
+    private int updateInProgress;
 
     private IReadOnlyList<int> validKeyCodes = Array.Empty<int>();
     private string? listeningHotkeyId;
@@ -30,6 +36,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     private GamepadButtons? lastPressedGamepadButton;
     private (bool Ctrl, bool Shift, bool Alt)? listeningModifierState;
     private bool waitingForModifierRelease;
+    private volatile int postListeningBlockKeyCode;
     private HotkeyManagerConfig? hotkeyConfig;
 
     /// <summary>
@@ -86,6 +93,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     /// </summary>
     protected override void OnActivated()
     {
+        StartUpdateTimer();
         NoireService.Framework.Update += OnFrameworkUpdate;
 
         if (EnableLogging)
@@ -98,10 +106,20 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     protected override void OnDeactivated()
     {
         NoireService.Framework.Update -= OnFrameworkUpdate;
+        StopUpdateTimer();
         ResetInputState();
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Hotkey Manager deactivated.");
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        if (!IsActive || !NoireService.IsInitialized())
+            return;
+
+        BlockListeningInputOnFramework();
+        BlockHotkeyInputsOnFramework();
     }
 
     private bool shouldSaveKeybinds = true;
@@ -148,6 +166,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     /// Contains the hotkey entry that was changed.
     /// </summary>
     public event Action<HotkeyEntry>? OnHotkeyChanged;
+
 
     /// <summary>
     /// Gets a value indicating whether the module is currently listening for a new binding.
@@ -431,36 +450,86 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         validKeyCodes = NoireService.KeyState.GetValidVirtualKeys().Select(vk => (int)vk).ToArray();
     }
 
-    private void OnFrameworkUpdate(IFramework framework)
+    private void StartUpdateTimer()
     {
-        if (!IsActive || !NoireService.IsInitialized())
+        // We use a system timer instead of the framework update because framework update is bound to FPS.
+        // On low FPS, hotkeys are skipped
+        if (updateTimer != null)
             return;
 
-        if (validKeyCodes.Count == 0)
-            RefreshValidKeys();
+        lastUpdateTick = Environment.TickCount64;
+        updateTimer = new Timer(_ => OnSystemUpdate(), null, 0, UpdateIntervalMilliseconds);
+    }
 
-        UpdateKeyStates();
+    private void StopUpdateTimer()
+    {
+        updateTimer?.Dispose();
+        updateTimer = null;
+        updateInProgress = 0;
+    }
 
-        if (listeningHotkeyId != null)
+    /// <summary>
+    /// We use a system timer instead of the framework update because framework update is bound to FPS.
+    /// </summary>
+    private void OnSystemUpdate()
+    {
+        if (Interlocked.Exchange(ref updateInProgress, 1) == 1)
+            return;
+
+        try
         {
-            ProcessListening();
-            return;
-        }
+            var now = Environment.TickCount64;
+            if (now - lastUpdateTick < UpdateIntervalMilliseconds)
+                return;
 
-        ProcessHotkeys();
+            lastUpdateTick = now;
+
+            if (!IsActive || !NoireService.IsInitialized())
+                return;
+
+            var isFocused = WindowHelper.IsGameWindowFocused();
+            if (!isFocused && listeningHotkeyId != null)
+            {
+                ResetInputState();
+                return;
+            }
+
+            if (validKeyCodes.Count == 0)
+                RefreshValidKeys();
+
+            UpdateKeyStates();
+
+            if (listeningHotkeyId != null)
+            {
+                ProcessListening();
+                return;
+            }
+
+            ProcessHotkeys();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref updateInProgress, 0);
+        }
     }
 
     private void UpdateKeyStates()
     {
+        KeybindsHelper.TryGetRawKeyboardState(rawKeyboardState);
         currentKeysDown.Clear();
 
         foreach (var keyCode in validKeyCodes)
         {
-            if (NoireService.KeyState[keyCode])
+            if (KeybindsHelper.IsRawKeyDown(rawKeyboardState, keyCode))
                 currentKeysDown.Add(keyCode);
         }
 
-        lastPressedKey = KeybindsHelper.GetNewlyPressedKey(NoireService.KeyState, validKeyCodes, previousKeysDown);
+        if (currentKeysDown.Count == 0)
+            lastPressedKey = null;
+
+        var newlyPressedKey = KeybindsHelper.GetNewlyPressedKey(rawKeyboardState, validKeyCodes, previousKeysDown);
+        if (newlyPressedKey.HasValue)
+            lastPressedKey = newlyPressedKey;
         lastPressedGamepadButton = NoireService.GamepadState != null
             ? KeybindsHelper.GetPressedGamepadButton(NoireService.GamepadState)
             : null;
@@ -477,7 +546,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
         if (listeningMode == HotkeyListenMode.Keyboard)
         {
-            var modifierState = KeybindsHelper.GetModifierState(NoireService.KeyState);
+            var modifierState = KeybindsHelper.GetRawModifierState(rawKeyboardState);
             var hasModifiers = modifierState.Ctrl || modifierState.Shift || modifierState.Alt;
             var activeKeyCode = currentKeysDown.FirstOrDefault(code => !KeybindsHelper.IsModifierKey(code));
 
@@ -491,6 +560,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
                 var binding = new HotkeyBinding(activeKeyCode, modifierState.Ctrl, modifierState.Shift, modifierState.Alt);
                 SetHotkeyBinding(listeningHotkeyId, binding);
+                postListeningBlockKeyCode = activeKeyCode;
                 SuppressHotkeyUntilRelease(listeningHotkeyId);
                 StopListening(false);
                 return;
@@ -554,10 +624,14 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         }
 
         var textInputActive = KeybindsHelper.IsTextInputActive();
+        var isFocused = WindowHelper.IsGameWindowFocused();
 
         foreach (var entry in entries)
         {
             if (!entry.Enabled || entry.Binding.IsEmpty)
+                continue;
+
+            if (entry.RequireGameFocus && !isFocused)
                 continue;
 
             if (entry.BlockedWhileDown)
@@ -590,7 +664,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
             if (entry.Binding.IsKeyboardBinding)
             {
-                if (IsKeyboardTriggered(entry))
+                var triggered = IsKeyboardTriggered(entry);
+                if (triggered)
                     TriggerHotkey(entry);
             }
         }
@@ -598,16 +673,29 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
     private bool IsKeyboardTriggered(HotkeyEntry entry)
     {
-        var keyState = NoireService.KeyState;
         var binding = entry.Binding;
-        var modifiersDown = AreExactModifiersDown(keyState, binding);
+        var modifierState = KeybindsHelper.GetRawModifierState(rawKeyboardState);
+
+        if (binding.IsModifierOnly)
+        {
+            var requiredModifiersDown = AreRequiredModifiersDown(modifierState, binding);
+            if (!requiredModifiersDown)
+                return EvaluateActivation(entry, false);
+
+            return EvaluateActivation(entry, true);
+        }
+
+        var modifiersDown = AreExactModifiersDown(modifierState, binding);
 
         if (!modifiersDown)
             return EvaluateActivation(entry, false);
 
+        if (binding.VkCode != 0 && (binding.Ctrl || binding.Shift || binding.Alt) && lastPressedKey != binding.VkCode)
+            return EvaluateActivation(entry, false);
+
         var isDown = binding.IsModifierOnly
             ? modifiersDown
-            : keyState[binding.VkCode];
+            : KeybindsHelper.IsRawKeyDown(rawKeyboardState, binding.VkCode);
 
         return EvaluateActivation(entry, isDown);
     }
@@ -814,20 +902,104 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         if (!entry.Binding.IsKeyboardBinding)
             return false;
 
-        var keyState = NoireService.KeyState;
-        var modifiersDown = AreExactModifiersDown(keyState, entry.Binding);
+        var modifierState = KeybindsHelper.GetRawModifierState(rawKeyboardState);
+        if (entry.Binding.IsModifierOnly)
+            return AreRequiredModifiersDown(modifierState, entry.Binding);
+
+        var modifiersDown = AreExactModifiersDown(modifierState, entry.Binding);
         if (!modifiersDown)
             return false;
 
-        return entry.Binding.IsModifierOnly || keyState[entry.Binding.VkCode];
+        return KeybindsHelper.IsRawKeyDown(rawKeyboardState, entry.Binding.VkCode);
     }
 
-    private bool AreExactModifiersDown(IKeyState keyState, HotkeyBinding binding)
+    private bool AreExactModifiersDown((bool Ctrl, bool Shift, bool Alt) modifierState, HotkeyBinding binding)
     {
-        var state = KeybindsHelper.GetModifierState(keyState);
-        return state.Ctrl == binding.Ctrl
-            && state.Shift == binding.Shift
-            && state.Alt == binding.Alt;
+        return modifierState.Ctrl == binding.Ctrl
+            && modifierState.Shift == binding.Shift
+            && modifierState.Alt == binding.Alt;
+    }
+
+    private bool AreRequiredModifiersDown((bool Ctrl, bool Shift, bool Alt) modifierState, HotkeyBinding binding)
+    {
+        if (binding.Ctrl && !modifierState.Ctrl)
+            return false;
+        if (binding.Shift && !modifierState.Shift)
+            return false;
+        if (binding.Alt && !modifierState.Alt)
+            return false;
+
+        return true;
+    }
+
+    private void BlockListeningInputOnFramework()
+    {
+        if (!NoireService.IsInitialized())
+            return;
+
+        var blockCode = postListeningBlockKeyCode;
+        if (blockCode != 0)
+        {
+            if (KeybindsHelper.IsAsyncKeyDown(blockCode))
+                NoireService.KeyState[blockCode] = false;
+            else
+                postListeningBlockKeyCode = 0;
+        }
+
+        if (listeningHotkeyId == null)
+            return;
+
+        if (listeningMode == HotkeyListenMode.Keyboard)
+        {
+            if (validKeyCodes.Count == 0)
+                RefreshValidKeys();
+
+            foreach (var code in validKeyCodes)
+            {
+                if (!KeybindsHelper.IsModifierKey(code) && KeybindsHelper.IsAsyncKeyDown(code))
+                {
+                    NoireService.KeyState[code] = false;
+                }
+            }
+        }
+    }
+
+    private void BlockHotkeyInputsOnFramework()
+    {
+        List<HotkeyEntry> entries;
+        lock (hotkeyLock)
+        {
+            entries = hotkeys.Values.ToList();
+        }
+
+        var isFocused = WindowHelper.IsGameWindowFocused();
+        var modifierState = KeybindsHelper.GetModifierState(NoireService.KeyState);
+
+        foreach (var entry in entries)
+        {
+            if (!entry.Enabled || entry.Binding.IsEmpty || !entry.BlockGameInput || !entry.Binding.IsKeyboardBinding)
+                continue;
+
+            if (entry.RequireGameFocus && !isFocused)
+                continue;
+
+            if (IsFrameworkKeyDown(entry.Binding, modifierState))
+                NoireService.KeyState[entry.Binding.VkCode] = false;
+        }
+    }
+
+    private bool IsFrameworkKeyDown(HotkeyBinding binding, (bool Ctrl, bool Shift, bool Alt) modifierState)
+    {
+        if (binding.VkCode == 0)
+            return false;
+
+        if (binding.IsModifierOnly)
+            return AreRequiredModifiersDown(modifierState, binding);
+
+        if (!AreExactModifiersDown(modifierState, binding))
+            return false;
+
+        return NoireService.KeyState[binding.VkCode];
     }
 
     private string GetListeningDisplayText(HotkeyListenMode mode, string buttonLabel, bool showOnlyBinding)
@@ -841,12 +1013,13 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
             return showOnlyBinding ? listeningText : $"{buttonLabel}: {listeningText}";
         }
 
-        var keyboardText = KeybindsHelper.FormatListeningKeyboardInput(NoireService.KeyState, currentKeysDown);
+        var keyboardText = KeybindsHelper.FormatListeningKeyboardInput(rawKeyboardState, currentKeysDown);
         if (string.IsNullOrWhiteSpace(keyboardText))
             keyboardText = "Press a key...";
 
         return showOnlyBinding ? keyboardText : $"{buttonLabel}: {keyboardText}";
     }
+
 
     private void TriggerHotkey(HotkeyEntry entry)
     {
@@ -871,6 +1044,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         lastPressedGamepadButton = null;
         listeningModifierState = null;
         waitingForModifierRelease = false;
+        postListeningBlockKeyCode = 0;
         StopListening();
     }
 
@@ -879,6 +1053,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     /// </summary>
     protected override void DisposeInternal()
     {
+        StopUpdateTimer();
         ResetInputState();
         hotkeys.Clear();
     }

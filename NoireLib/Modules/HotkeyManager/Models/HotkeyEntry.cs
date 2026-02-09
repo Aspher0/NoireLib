@@ -68,6 +68,16 @@ public sealed class HotkeyEntry
     /// </summary>
     public bool BlockWhenTextInputActive { get; set; } = true;
 
+    /// <summary>
+    /// Gets or sets whether this hotkey should only trigger when the game window is focused.
+    /// </summary>
+    public bool RequireGameFocus { get; set; } = true;
+
+    /// <summary>
+    /// Gets or sets whether to block game input when this hotkey is pressed.
+    /// </summary>
+    public bool BlockGameInput { get; set; } = false;
+
     internal bool WasDown { get; set; }
     internal long? HoldStartTimestamp { get; set; }
     internal bool HoldTriggered { get; set; }
