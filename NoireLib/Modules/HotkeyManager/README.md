@@ -129,9 +129,9 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
 - `FixedRepeatDelay`: Delay between repeats when `Repeat` is fixed.
 - `RepeatDelayMin`/`RepeatDelayMax`: Bounds for random repeat delay.
 - `UseRandomRepeatDelay`: Randomize repeat delay between min/max.
-- `BlockWhenTextInputActive`: Prevent firing while text input is active.
-- `BlockGameInput`: Block the associated game inputs when triggering.
-- `RequireGameFocus`: Require the game window to be focused for the hotkey to trigger.
+- `BlockWhenTextInputActive`: Prevent firing while text input is active (default `true`).
+- `BlockGameInput`: Block the associated game inputs when triggering (default `false`).
+- `RequireGameFocus`: Require the game window to be focused for the hotkey to trigger (default `true`).
 
 ### Keyboard bindings
 
@@ -325,7 +325,7 @@ var allHotkeys = hotkeyManager?.GetHotkeys();
 
 ### Binding not saved
 - Ensure `ShouldSaveKeybinds` is enabled
-- Confirm `NoireHotkeyManager.json` is present in your plugin config folder
+- Confirm `HotkeyManagerConfig.json` is present in your plugin config folder
 
 ### EventBus events not firing
 - Ensure `EventBus` is assigned to the hotkey manager
