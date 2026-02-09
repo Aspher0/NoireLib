@@ -600,7 +600,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     {
         var keyState = NoireService.KeyState;
         var binding = entry.Binding;
-        var modifiersDown = KeybindsHelper.AreModifiersDown(keyState, binding);
+        var modifiersDown = AreExactModifiersDown(keyState, binding);
 
         if (!modifiersDown)
             return EvaluateActivation(entry, false);
@@ -815,11 +815,19 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
             return false;
 
         var keyState = NoireService.KeyState;
-        var modifiersDown = KeybindsHelper.AreModifiersDown(keyState, entry.Binding);
+        var modifiersDown = AreExactModifiersDown(keyState, entry.Binding);
         if (!modifiersDown)
             return false;
 
         return entry.Binding.IsModifierOnly || keyState[entry.Binding.VkCode];
+    }
+
+    private bool AreExactModifiersDown(IKeyState keyState, HotkeyBinding binding)
+    {
+        var state = KeybindsHelper.GetModifierState(keyState);
+        return state.Ctrl == binding.Ctrl
+            && state.Shift == binding.Shift
+            && state.Alt == binding.Alt;
     }
 
     private string GetListeningDisplayText(HotkeyListenMode mode, string buttonLabel, bool showOnlyBinding)
