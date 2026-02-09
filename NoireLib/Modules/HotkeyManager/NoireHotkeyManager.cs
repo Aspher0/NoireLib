@@ -1053,12 +1053,13 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
             entry.NeedsInputForward = false;
             var binding = entry.Binding;
 
-            if (binding.IsModifierOnly)
-                KeybindsHelper.SendModifierPress(binding.Ctrl, binding.Shift, binding.Alt);
-            else if (binding.Ctrl || binding.Shift || binding.Alt)
-                KeybindsHelper.SendModifiedKeyPress(binding.VkCode, binding.Ctrl, binding.Shift, binding.Alt);
-            else if (binding.VkCode != 0)
-                KeybindsHelper.SendKeyPress(binding.VkCode);
+            // Not working properly, commented out for now.
+            //if (binding.IsModifierOnly)
+            //    KeybindsHelper.SendModifierPress(binding.Ctrl, binding.Shift, binding.Alt);
+            //else if (binding.Ctrl || binding.Shift || binding.Alt)
+            //    KeybindsHelper.SendModifiedKeyPress(binding.VkCode, binding.Ctrl, binding.Shift, binding.Alt);
+            //else if (binding.VkCode != 0)
+            //    KeybindsHelper.SendKeyPress(binding.VkCode);
         }
     }
 
