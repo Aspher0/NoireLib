@@ -23,6 +23,18 @@ public class HistoryLoggerConfig : NoireConfigBase<HistoryLoggerConfig>
     public virtual bool SelectLinesSeparately { get; set; } = true;
 
     /// <summary>
+    /// Hides the category column in the log entries table when set to true.
+    /// </summary>
+    [AutoSave]
+    public virtual bool HideCategoryColumn { get; set; } = false;
+
+    /// <summary>
+    /// Hides the source column in the log entries table when set to true.
+    /// </summary>
+    [AutoSave]
+    public virtual bool HideSourceColumn { get; set; } = false;
+
+    /// <summary>
     /// Gets or sets the number of items to display per page.
     /// </summary>
     [AutoSave]

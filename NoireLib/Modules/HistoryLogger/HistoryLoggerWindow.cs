@@ -2,6 +2,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Core.Modules;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -201,7 +202,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.SameLine();
 
         var allowSelectLinesSeparately = HistoryLoggerConfig.Instance.SelectLinesSeparately;
-        if (ImGui.Checkbox("Select individual lines", ref allowSelectLinesSeparately))
+        if (ImGui.Checkbox("Split lines", ref allowSelectLinesSeparately))
         {
             var previousMode = HistoryLoggerConfig.Instance.SelectLinesSeparately;
             HistoryLoggerConfig.Instance.SelectLinesSeparately = allowSelectLinesSeparately;
@@ -230,6 +231,17 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                     selectedEntries.Add(entry);
             }
         }
+
+        ImGui.SameLine();
+        var hideCategoryColumn = HistoryLoggerConfig.Instance.HideCategoryColumn;
+        if (ImGui.Checkbox("Hide category", ref hideCategoryColumn))
+            HistoryLoggerConfig.Instance.HideCategoryColumn = hideCategoryColumn;
+
+        ImGui.SameLine();
+
+        var hideSourceColumn = HistoryLoggerConfig.Instance.HideSourceColumn;
+        if (ImGui.Checkbox("Hide source", ref hideSourceColumn))
+            HistoryLoggerConfig.Instance.HideSourceColumn = hideSourceColumn;
 
         ImGui.SameLine();
 
@@ -372,32 +384,52 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (!child)
             return;
 
-        using var table = ImRaii.Table("HistoryLoggerEntriesTable", 5, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Sortable);
+        // Déterminer dynamiquement les colonnes à afficher
+        bool hideCategory = HistoryLoggerConfig.Instance.HideCategoryColumn;
+        bool hideSource = HistoryLoggerConfig.Instance.HideSourceColumn;
+        int columnCount = 3 + (hideCategory ? 0 : 1) + (hideSource ? 0 : 1); // Time, Level, Message, [Category], [Source]
+
+        using var table = ImRaii.Table("HistoryLoggerEntriesTable", columnCount, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Sortable);
         if (!table)
             return;
 
         ImGui.TableSetupScrollFreeze(0, 1);
+        int col = 0;
         ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.NoResize);
+        col++;
         ImGui.TableSetupColumn("Level", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize);
-        ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed, 100f);
+        col++;
+        if (!hideCategory)
+        {
+            ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize, 100f);
+            col++;
+        }
         ImGui.TableSetupColumn("Message", ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.NoSort, 250f);
-        ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthFixed, 200f);
+        col++;
+        if (!hideSource)
+        {
+            ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthFixed, 200f);
+            col++;
+        }
         ImGui.TableHeadersRow();
 
         UpdateSortSpecs();
 
         // Pre-calculate message column width for row height estimation
+        // Trouver l'index de la colonne Message
+        int messageColIndex = 2;
+        if (!hideCategory) messageColIndex++;
         ImGui.TableNextRow();
-        ImGui.TableSetColumnIndex(3);
+        ImGui.TableSetColumnIndex(messageColIndex);
         var messageColumnWidth = ImGui.GetContentRegionAvail().X;
 
         if (HistoryLoggerConfig.Instance.SelectLinesSeparately)
-            DrawLogEntriesWithLineSeparation(pagedEntries, messageColumnWidth);
+            DrawLogEntriesWithLineSeparation(pagedEntries, messageColumnWidth, hideCategory, hideSource);
         else
-            DrawLogEntriesStandard(pagedEntries, messageColumnWidth);
+            DrawLogEntriesStandard(pagedEntries, messageColumnWidth, hideCategory, hideSource);
     }
 
-    private void DrawLogEntriesStandard(List<HistoryLogEntry> pagedEntries, float messageColumnWidth)
+    private void DrawLogEntriesStandard(List<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
     {
         for (var index = 0; index < pagedEntries.Count; index++)
         {
@@ -412,7 +444,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             var isSelected = selectedEntries.Contains(entry);
 
             if (isSelected)
-                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(0.22f, 0.32f, 0.55f, 0.35f)));
+                ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ColorHelper.HexToUint("#FFFFFF44"));
             else if (HistoryLoggerConfig.Instance.ShowLevelBackgroundColors)
             {
                 var levelColor = GetLevelBackgroundColor(entry.Level);
@@ -422,7 +454,8 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                 }
             }
 
-            ImGui.TableSetColumnIndex(0);
+            int col = 0;
+            ImGui.TableSetColumnIndex(col++); // Time
             var timeText = entry.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss");
             var timeCursor = ImGui.GetCursorPos();
             var rowId = $"##HistoryLoggerRow_{index}";
@@ -457,22 +490,28 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                 ImGui.EndPopup();
             }
 
-            ImGui.TableSetColumnIndex(1);
+            ImGui.TableSetColumnIndex(col++); // Level
             using (ImRaii.PushColor(ImGuiCol.Text, GetLevelColor(entry.Level)))
                 ImGui.TextUnformatted(entry.Level.ToString());
 
-            ImGui.TableSetColumnIndex(2);
-            ImGui.TextUnformatted(entry.Category);
+            if (!hideCategory)
+            {
+                ImGui.TableSetColumnIndex(col++); // Category
+                ImGui.TextUnformatted(entry.Category);
+            }
 
-            ImGui.TableSetColumnIndex(3);
+            ImGui.TableSetColumnIndex(col++); // Message
             ImGui.TextWrapped(entry.Message);
 
-            ImGui.TableSetColumnIndex(4);
-            ImGui.TextDisabled(entry.Source ?? string.Empty);
+            if (!hideSource)
+            {
+                ImGui.TableSetColumnIndex(col++); // Source
+                ImGui.TextDisabled(entry.Source ?? string.Empty);
+            }
         }
     }
 
-    private void DrawLogEntriesWithLineSeparation(List<HistoryLogEntry> pagedEntries, float messageColumnWidth)
+    private void DrawLogEntriesWithLineSeparation(List<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
     {
         var rowIndex = 0;
         for (var entryIndex = 0; entryIndex < pagedEntries.Count; entryIndex++)
@@ -496,7 +535,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
                 if (isLineSelected)
                 {
-                    ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.ColorConvertFloat4ToU32(new Vector4(0.22f, 0.32f, 0.55f, 0.35f)));
+                    ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ColorHelper.HexToUint("#FFFFFF44"));
                 }
                 else if (HistoryLoggerConfig.Instance.ShowLevelBackgroundColors)
                 {
@@ -507,7 +546,8 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                     }
                 }
 
-                ImGui.TableSetColumnIndex(0);
+                int col = 0;
+                ImGui.TableSetColumnIndex(col++); // Time
                 var timeCursor = ImGui.GetCursorPos();
                 var rowId = $"##HistoryLoggerLine_{rowIndex}";
                 var popupId = $"HistoryLoggerLineMenu_{rowIndex}";
@@ -542,23 +582,29 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                     ImGui.EndPopup();
                 }
 
-                ImGui.TableSetColumnIndex(1);
+                ImGui.TableSetColumnIndex(col++); // Level
                 if (lineIndex == 0)
                 {
                     using (ImRaii.PushColor(ImGuiCol.Text, GetLevelColor(entry.Level)))
                         ImGui.TextUnformatted(entry.Level.ToString());
                 }
 
-                ImGui.TableSetColumnIndex(2);
-                if (lineIndex == 0)
-                    ImGui.TextUnformatted(entry.Category);
+                if (!hideCategory)
+                {
+                    ImGui.TableSetColumnIndex(col++); // Category
+                    if (lineIndex == 0)
+                        ImGui.TextUnformatted(entry.Category);
+                }
 
-                ImGui.TableSetColumnIndex(3);
+                ImGui.TableSetColumnIndex(col++); // Message
                 ImGui.TextWrapped(line);
 
-                ImGui.TableSetColumnIndex(4);
-                if (lineIndex == 0)
-                    ImGui.TextDisabled(entry.Source ?? string.Empty);
+                if (!hideSource)
+                {
+                    ImGui.TableSetColumnIndex(col++); // Source
+                    if (lineIndex == 0)
+                        ImGui.TextDisabled(entry.Source ?? string.Empty);
+                }
 
                 rowIndex++;
             }

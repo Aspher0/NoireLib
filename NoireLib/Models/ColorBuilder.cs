@@ -30,6 +30,11 @@ public class ColorBuilder
     public string HexAlpha { get; set; } = "#FFFFFFFF";
 
     /// <summary>
+    /// The uint representation of the color, including alpha channel. Format: 0xRRGGBBAA.
+    /// </summary>
+    public uint U32Color { get; set; }
+
+    /// <summary>
     /// Creates a ColorBuilder instance from a HEX color string.
     /// </summary>
     /// <param name="hex">The HEX value of the color. Format: "#RRGGBBAA". "#" Optionnal.</param>
@@ -68,6 +73,7 @@ public class ColorBuilder
         {
             Vector3 = ColorHelper.HexToVector3(hex);
             Vector4 = ColorHelper.HexToVector4(hex);
+            U32Color = ColorHelper.HexToUint(hex);
             hex = hex.TrimStart('#');
             if (hex.Length == 8)
             {
@@ -97,6 +103,7 @@ public class ColorBuilder
         Vector4 = ColorHelper.Vector3ToVector4(vector);
         Hex = ColorHelper.Vector3ToHex(vector);
         HexAlpha = ColorHelper.Vector3ToHexAlpha(vector);
+        U32Color = ColorHelper.Vector3ToUint(vector);
         Vector3 = vector;
     }
 
@@ -109,6 +116,7 @@ public class ColorBuilder
         Vector3 = ColorHelper.Vector4ToVector3(vector);
         Hex = ColorHelper.Vector4ToHex(vector);
         HexAlpha = ColorHelper.Vector4ToHexAlpha(vector);
+        U32Color = ColorHelper.Vector4ToUint(vector);
         Vector4 = vector;
     }
 }

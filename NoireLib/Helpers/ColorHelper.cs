@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 
@@ -145,4 +146,34 @@ public static class ColorHelper
     /// <param name="color">The Vector4 color to convert.</param>
     /// <returns>The Vector3 representation of the Vector4 color provided.</returns>
     public static Vector3 Vector4ToVector3(Vector4 color) => new(color.X, color.Y, color.Z);
+
+    /// <summary>
+    /// Converts a Vector4 representing RGBA values between 0 and 1 to a uint color value used by ImGui.
+    /// </summary>
+    /// <param name="color">The Vector4 color to convert.</param>
+    /// <returns>The uint representation of the Vector4 color provided.</returns>
+    public static uint Vector4ToUint(Vector4 color) => ImGui.ColorConvertFloat4ToU32(color);
+
+    /// <summary>
+    /// Converts a hexadecimal color string to its equivalent 32-bit unsigned integer representation.
+    /// </summary>
+    /// <param name="hex">The HEX value of the color. Format: "#123456". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
+    /// <returns>A uint representation of the HEX color string provided.</returns>
+    /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
+    public static uint HexToUint(string hex)
+    {
+        Vector4 color = HexToVector4(hex);
+        return Vector4ToUint(color);
+    }
+
+    /// <summary>
+    /// Converts a Vector3 representing RGB values between 0 and 1 to a uint color value used by ImGui, with alpha set to 1 (255).
+    /// </summary>
+    /// <param name="color">The Vector3 color to convert.</param>
+    /// <returns>A uint representation of the Vector3 color provided, with alpha set to 1 (255).</returns>
+    public static uint Vector3ToUint(Vector3 color)
+    {
+        Vector4 colorWithAlpha = Vector3ToVector4(color);
+        return Vector4ToUint(colorWithAlpha);
+    }
 }
