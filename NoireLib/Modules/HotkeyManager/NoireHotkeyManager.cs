@@ -1015,7 +1015,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         }
 
         var isFocused = WindowHelper.IsGameWindowFocused();
-        var modifierState = KeybindsHelper.GetModifierState(NoireService.KeyState);
+        var modifierState = KeybindsHelper.GetModifierState();
 
         foreach (var entry in entries)
         {
