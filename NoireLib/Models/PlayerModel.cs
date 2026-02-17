@@ -1,7 +1,9 @@
 using Dalamud.Game.ClientState.Objects.SubKinds;
+using Dalamud.Game.ClientState.Objects.Types;
 using NoireLib.Helpers;
 using System;
 using System.Linq;
+using System.Numerics;
 using System.Text.Json.Serialization;
 
 namespace NoireLib.Models;
@@ -134,6 +136,33 @@ public class PlayerModel
                 pc.HomeWorld.Value.Name.ExtractText() == Homeworld);
 
         return matchingCharacter;
+    }
+
+    /// <summary>
+    /// Gets the distance between the specified object and the character represented by this PlayerModel.
+    /// </summary>
+    /// <param name="_object">The object to measure the distance from.</param>
+    /// <returns>The distance between the object and the character, or null if </returns>
+    public float? DistanceFromObject(IGameObject _object)
+    {
+        var objectPosition = _object.Position;
+        var character = FindPlayerOnMap();
+        if (character == null)
+            return null;
+        var characterPosition = character.Position;
+        return Vector3.Distance(objectPosition, characterPosition);
+    }
+
+    /// <summary>
+    /// Checks whether the character represented by this PlayerModel is currently interactable by the local player (i.e., is within a reach a 4 yalms).
+    /// </summary>
+    /// <returns>True if the character is in reach to be interacted with; otherwise false.</returns>
+    public bool IsInteractable()
+    {
+        var playerCharacter = FindPlayerOnMap();
+        if (playerCharacter == null || NoireService.ObjectTable.LocalPlayer == null)
+            return false;
+        return DistanceFromObject(NoireService.ObjectTable.LocalPlayer) <= 4.0f;
     }
 
     /// <summary>
