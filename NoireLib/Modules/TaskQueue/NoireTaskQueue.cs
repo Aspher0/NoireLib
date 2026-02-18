@@ -1009,21 +1009,28 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                     if (conditionMet)
                     {
                         // Check if we need to start post-completion delay
-                        if (currentTask.PostCompletionDelay.HasValue && !currentTask.PostDelayStartTicks.HasValue)
+                        if (!currentTask.PostDelayStartTicks.HasValue)
                         {
-                            currentTask.PostDelayStartTicks = Environment.TickCount64;
-                            currentTask.Status = TaskStatus.WaitingForPostDelay;
+                            // Evaluate the delay provider if present
+                            if (currentTask.PostCompletionDelayProvider != null)
+                                currentTask.PostCompletionDelay = currentTask.PostCompletionDelayProvider(currentTask);
 
-                            if (currentTask.Timeout.HasValue)
-                                currentTask.PauseTimeout();
+                            if (currentTask.PostCompletionDelay.HasValue)
+                            {
+                                currentTask.PostDelayStartTicks = Environment.TickCount64;
+                                currentTask.Status = TaskStatus.WaitingForPostDelay;
 
-                            if (EnableLogging)
-                                NoireLogger.LogDebug(this, $"Task entering post-completion delay: {currentTask}");
-                        }
-                        else
-                        {
-                            CompleteTask(currentTask);
-                            earlyReturn = true;
+                                if (currentTask.Timeout.HasValue)
+                                    currentTask.PauseTimeout();
+
+                                if (EnableLogging)
+                                    NoireLogger.LogDebug(this, $"Task entering post-completion delay: {currentTask}");
+                            }
+                            else
+                            {
+                                CompleteTask(currentTask);
+                                earlyReturn = true;
+                            }
                         }
                     }
                     else if (currentTask.HasTimedOut())
@@ -1119,16 +1126,27 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                     if (conditionMet)
                     {
                         // Check if we need to start post-completion delay
-                        if (wt.PostCompletionDelay.HasValue && !wt.PostDelayStartTicks.HasValue)
+                        if (!wt.PostDelayStartTicks.HasValue)
                         {
-                            wt.PostDelayStartTicks = Environment.TickCount64;
-                            wt.Status = TaskStatus.WaitingForPostDelay;
+                            // Evaluate the delay provider if present
+                            if (wt.PostCompletionDelayProvider != null)
+                                wt.PostCompletionDelay = wt.PostCompletionDelayProvider(wt);
 
-                            if (wt.Timeout.HasValue)
-                                wt.PauseTimeout();
+                            if (wt.PostCompletionDelay.HasValue)
+                            {
+                                wt.PostDelayStartTicks = Environment.TickCount64;
+                                wt.Status = TaskStatus.WaitingForPostDelay;
 
-                            if (EnableLogging)
-                                NoireLogger.LogDebug(this, $"Task entering post-completion delay: {wt}");
+                                if (wt.Timeout.HasValue)
+                                    wt.PauseTimeout();
+
+                                if (EnableLogging)
+                                    NoireLogger.LogDebug(this, $"Task entering post-completion delay: {wt}");
+                            }
+                            else
+                            {
+                                waitingTasksToComplete.Add(wt);
+                            }
                         }
                         else
                         {
@@ -1392,6 +1410,10 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             {
                 if (task.CompletionCondition?.Type == CompletionConditionType.Immediate)
                 {
+                    // Evaluate the delay provider if present
+                    if (task.PostCompletionDelayProvider != null)
+                        task.PostCompletionDelay = task.PostCompletionDelayProvider(task);
+
                     // Check if we need to start post-completion delay
                     if (task.PostCompletionDelay.HasValue)
                     {

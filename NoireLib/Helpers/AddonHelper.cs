@@ -38,5 +38,5 @@ public static class AddonHelper
     /// <param name="addon">The addon to check.</param>
     /// <returns>True if the addon is loaded and ready to be interacted with; otherwise, false.</returns>
     public static unsafe bool IsAddonLoaded(AtkUnitBase* addon)
-        => addon->IsVisible && addon->UldManager.LoadedState == AtkLoadState.Loaded && addon->IsFullyLoaded();
+        => addon->IsVisible && addon->UldManager.LoadedState == AtkLoadState.Loaded && addon->IsReady && addon->IsFullyLoaded();
 }

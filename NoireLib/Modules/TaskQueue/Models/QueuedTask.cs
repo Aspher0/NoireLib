@@ -151,8 +151,14 @@ public class QueuedTask
     /// <summary>
     /// Optional delay to wait after the task's condition is met or action completes (if no condition).
     /// This delay executes after the task would normally complete.
+    /// If <see cref="PostCompletionDelayProvider"/> is set, it will be used to determine the delay at runtime.
     /// </summary>
     public TimeSpan? PostCompletionDelay { get; set; }
+
+    /// <summary>
+    /// Optional provider for post-completion delay. If set, this function will be called at the moment the post-completion delay is about to start, and its result will be used as the delay.
+    /// </summary>
+    public Func<QueuedTask, TimeSpan?>? PostCompletionDelayProvider { get; set; }
 
     /// <summary>
     /// The tick count when the post-completion delay started.

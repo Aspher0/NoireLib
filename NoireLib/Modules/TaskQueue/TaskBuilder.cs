@@ -126,25 +126,25 @@ public class TaskBuilder
 
     /// <summary>
     /// Sets a post-completion delay using a predicate function.<br/>
-    /// The delay will be evaluated when the task is built, allowing for dynamic delay calculation.
+    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation.
     /// </summary>
     /// <param name="delayPredicate">A function that returns the delay duration.</param>
     /// <returns>The TaskBuilder instance for chaining.</returns>
     public TaskBuilder WithDelay(Func<TimeSpan?> delayPredicate)
     {
-        task.PostCompletionDelay = delayPredicate();
+        task.PostCompletionDelayProvider = _ => delayPredicate();
         return this;
     }
 
     /// <summary>
     /// Sets a post-completion delay using a predicate function with access to the task.<br/>
-    /// The delay will be evaluated when the task is built, allowing for dynamic delay calculation based on task state.
+    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation based on task state.
     /// </summary>
     /// <param name="delayPredicate">A function that receives the task and returns the delay duration.</param>
     /// <returns>The TaskBuilder instance for chaining.</returns>
     public TaskBuilder WithDelay(Func<QueuedTask, TimeSpan?> delayPredicate)
     {
-        task.PostCompletionDelay = delayPredicate(task);
+        task.PostCompletionDelayProvider = delayPredicate;
         return this;
     }
 
