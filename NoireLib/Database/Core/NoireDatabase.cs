@@ -1,8 +1,8 @@
-using Microsoft.Data.Sqlite;
 using NoireLib.Database.Migrations;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Data.SQLite;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -27,8 +27,8 @@ public sealed class NoireDatabase : IDisposable
     private static readonly object InstanceLock = new();
     private static bool IsInitialized;
 
-    private readonly SqliteConnection _connection;
-    private SqliteTransaction? _transaction;
+    private readonly SQLiteConnection _connection;
+    private SQLiteTransaction? _transaction;
     private readonly List<DatabaseQueryLog> _queries = new();
     private readonly Dictionary<string, CacheEntry> _cacheResults = new(StringComparer.Ordinal);
     private bool _logQueries = false;
@@ -47,16 +47,14 @@ public sealed class NoireDatabase : IDisposable
         if (string.IsNullOrWhiteSpace(filePath))
             throw new InvalidOperationException("Database path could not be resolved.");
 
-        var connectionString = new SqliteConnectionStringBuilder
+        var connectionString = new SQLiteConnectionStringBuilder
         {
             DataSource = filePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared,
             Pooling = true,
             DefaultTimeout = Math.Max(1, (int)BusyTimeout.TotalSeconds)
         }.ToString();
 
-        _connection = new SqliteConnection(connectionString);
+        _connection = new SQLiteConnection(connectionString);
         _connection.Open();
         ApplyConcurrencySettings();
         DatabaseMigrationExecutor.ExecuteMigrations(this);
@@ -162,7 +160,7 @@ public sealed class NoireDatabase : IDisposable
             Instances.Clear();
         }
 
-        SqliteConnection.ClearAllPools();
+        SQLiteConnection.ClearAllPools();
     }
 
     /// <summary>
@@ -253,8 +251,8 @@ public sealed class NoireDatabase : IDisposable
     /// <summary>
     /// Gets the underlying SQLite connection.
     /// </summary>
-    /// <returns>The active <see cref="SqliteConnection"/>.</returns>
-    public SqliteConnection GetConnection() => _connection;
+    /// <returns>The active <see cref="SQLiteConnection"/>.</returns>
+    public SQLiteConnection GetConnection() => _connection;
 
     /// <summary>
     /// Gets the current database schema version.
@@ -620,7 +618,7 @@ public sealed class NoireDatabase : IDisposable
         try
         {
             _connection.Close();
-            SqliteConnection.ClearPool(_connection);
+            SQLiteConnection.ClearPool(_connection);
         }
         catch
         {
@@ -654,7 +652,7 @@ public sealed class NoireDatabase : IDisposable
 
     #region Private Methods
 
-    private SqliteCommand CreateCommand(string sql, IReadOnlyList<object?>? parameters)
+    private SQLiteCommand CreateCommand(string sql, IReadOnlyList<object?>? parameters)
     {
         var command = _connection.CreateCommand();
         command.CommandText = sql;
@@ -673,7 +671,7 @@ public sealed class NoireDatabase : IDisposable
         return command;
     }
 
-    private static Dictionary<string, object?> ReadRow(SqliteDataReader reader)
+    private static Dictionary<string, object?> ReadRow(SQLiteDataReader reader)
     {
         var row = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         for (var i = 0; i < reader.FieldCount; i++)
@@ -685,7 +683,7 @@ public sealed class NoireDatabase : IDisposable
         return row;
     }
 
-    private SqliteDataReader ExecuteReader(SqliteCommand command, string sql, IReadOnlyList<object?>? parameters)
+    private SQLiteDataReader ExecuteReader(SQLiteCommand command, string sql, IReadOnlyList<object?>? parameters)
     {
         var stopwatch = Stopwatch.StartNew();
         var reader = command.ExecuteReader();
@@ -695,7 +693,7 @@ public sealed class NoireDatabase : IDisposable
         return reader;
     }
 
-    private int ExecuteNonQuery(SqliteCommand command, string sql, IReadOnlyList<object?>? parameters)
+    private int ExecuteNonQuery(SQLiteCommand command, string sql, IReadOnlyList<object?>? parameters)
     {
         var stopwatch = Stopwatch.StartNew();
         var result = command.ExecuteNonQuery();
