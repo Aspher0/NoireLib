@@ -1,3 +1,5 @@
+using NoireLib.Helpers.ObjectExtensions;
+
 namespace NoireLib.Configuration;
 
 /// <summary>
@@ -23,7 +25,13 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
                     if (_instance == null)
                     {
                         var rawInstance = NoireConfigManager.GetConfig<T>();
-                        _instance = NoireConfigAutoSaveProxy.Create(rawInstance);
+                        var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
+
+                        IsInternalCopying = true;
+                        rawInstance?.CopyMembersTo(proxy);
+                        IsInternalCopying = false;
+
+                        _instance = proxy;
                     }
 
             return _instance!;
@@ -37,8 +45,14 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
     {
         lock (_lock)
         {
-            var rawInstance = NoireConfigManager.ReloadConfig<T>();
-            _instance = NoireConfigAutoSaveProxy.Create(rawInstance);
+            var rawInstance = NoireConfigManager.GetConfig<T>();
+            var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
+
+            IsInternalCopying = true;
+            rawInstance?.CopyMembersTo(proxy);
+            IsInternalCopying = false;
+
+            _instance = proxy;
         }
     }
 

@@ -1,8 +1,7 @@
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
-using System.Text.Json;
 
 namespace NoireLib.Configuration.Migrations;
 
@@ -13,12 +12,7 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public class MigrationBuilder
 {
-    private readonly HashSet<string> _propertiesToDelete = new();
-    private readonly Dictionary<string, string> _propertiesToRename = new();
-    private readonly Dictionary<string, object?> _propertiesToAdd = new();
-    private readonly List<Action<JsonElement, Utf8JsonWriter>> _customOperations = new();
-    private readonly HashSet<string> _propertiesWithTypeChange = new();
-
+    private readonly List<Action<JObject>> _orderedOperations = new();
     private MigrationBuilder() { }
 
     /// <summary>
@@ -35,7 +29,14 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder RenameProperty(string oldName, string newName)
     {
-        _propertiesToRename[oldName] = newName;
+        _orderedOperations.Add(root =>
+        {
+            if (root.ContainsKey(oldName))
+            {
+                root[newName] = root[oldName];
+                root.Remove(oldName);
+            }
+        });
         return this;
     }
 
@@ -48,7 +49,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder DeleteProperty(string propertyName)
     {
-        _propertiesToDelete.Add(propertyName);
+        _orderedOperations.Add(root => root.Remove(propertyName));
         return this;
     }
 
@@ -63,7 +64,7 @@ public class MigrationBuilder
     {
         foreach (var name in propertyNames)
         {
-            _propertiesToDelete.Add(name);
+            _orderedOperations.Add(root => root.Remove(name));
         }
         return this;
     }
@@ -78,26 +79,22 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder ChangePropertyType<TFrom, TTo>(string propertyName, Func<TFrom, TTo> converter)
     {
-        _propertiesWithTypeChange.Add(propertyName);
-        _customOperations.Add((root, writer) =>
+        _orderedOperations.Add(root =>
         {
-            if (root.TryGetProperty(propertyName, out var value))
+            if (root.TryGetValue(propertyName, out JToken? value))
             {
                 try
                 {
-                    var oldValue = JsonSerializer.Deserialize<TFrom>(value.GetRawText());
+                    var oldValue = value.ToObject<TFrom>();
                     if (oldValue != null)
                     {
                         var newValue = converter(oldValue);
-                        writer.WritePropertyName(propertyName);
-                        JsonSerializer.Serialize(writer, newValue);
+                        root[propertyName] = JToken.FromObject(newValue);
                     }
                 }
                 catch
                 {
-                    // If conversion fails, write original value
-                    writer.WritePropertyName(propertyName);
-                    value.WriteTo(writer);
+                    // If conversion fails, keep original value
                 }
             }
         });
@@ -115,7 +112,11 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder AddProperty<T>(string propertyName, T defaultValue)
     {
-        _propertiesToAdd[propertyName] = defaultValue;
+        _orderedOperations.Add(root =>
+        {
+            if (!root.ContainsKey(propertyName))
+                root[propertyName] = JToken.FromObject(defaultValue);
+        });
         return this;
     }
 
@@ -126,13 +127,12 @@ public class MigrationBuilder
     /// <param name="propertyName">The name of the property to add.</param>
     /// <param name="computeValue">A function that computes the value based on the existing JSON element.</param>
     /// <returns>The MigrationBuilder instance for chaining.</returns>
-    public MigrationBuilder AddComputedProperty<T>(string propertyName, Func<JsonElement, T> computeValue)
+    public MigrationBuilder AddComputedProperty<T>(string propertyName, Func<JObject, T> computeValue)
     {
-        _customOperations.Add((root, writer) =>
+        _orderedOperations.Add(root =>
         {
             var value = computeValue(root);
-            writer.WritePropertyName(propertyName);
-            JsonSerializer.Serialize(writer, value);
+            root[propertyName] = JToken.FromObject(value);
         });
         return this;
     }
@@ -142,28 +142,26 @@ public class MigrationBuilder
     /// </summary>
     /// <typeparam name="T">The type of the property to transform.</typeparam>
     /// <param name="propertyName">The name of the property to transform.</param>
-    /// <param name="transform">A transformation function that takes one argument of type T and returns a transformed value of type T.</param>
+    /// <param name="transform">A transformation function that takes one argument of type <typeparamref name="T"/> and returns a transformed value of type <typeparamref name="T"/>.</param>
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder TransformProperty<T>(string propertyName, Func<T, T> transform)
     {
-        _customOperations.Add((root, writer) =>
+        _orderedOperations.Add(root =>
         {
-            if (root.TryGetProperty(propertyName, out var value))
+            if (root.TryGetValue(propertyName, out JToken? value))
             {
                 try
                 {
-                    var oldValue = JsonSerializer.Deserialize<T>(value.GetRawText());
+                    var oldValue = value.ToObject<T>();
                     if (oldValue != null)
                     {
                         var newValue = transform(oldValue);
-                        writer.WritePropertyName(propertyName);
-                        JsonSerializer.Serialize(writer, newValue);
+                        root[propertyName] = JToken.FromObject(newValue);
                     }
                 }
                 catch
                 {
-                    writer.WritePropertyName(propertyName);
-                    value.WriteTo(writer);
+                    // If conversion fails, keep original value
                 }
             }
         });
@@ -171,13 +169,14 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Adds a custom operation to the migration.
+    /// Adds a custom operation to the migration chain.<br/>
+    /// The operation receives the current <see cref="JObject"/> and can perform any transformation or logic.
     /// </summary>
-    /// <param name="operation">An action that takes the root JsonElement and a Utf8JsonWriter to perform custom migration logic.</param>
+    /// <param name="operation">An action that takes the root <see cref="JObject"/> to perform custom migration logic.</param>
     /// <returns>The MigrationBuilder instance for chaining.</returns>
-    public MigrationBuilder WithCustomOperation(Action<JsonElement, Utf8JsonWriter> operation)
+    public MigrationBuilder WithCustomOperation(Action<JObject> operation)
     {
-        _customOperations.Add(operation);
+        _orderedOperations.Add(operation);
         return this;
     }
 
@@ -187,66 +186,14 @@ public class MigrationBuilder
     /// <param name="document">The original JSON document.</param>
     /// <param name="targetVersion">The target version number to set in the migrated JSON.</param>
     /// <returns>The migrated JSON string.</returns>
-    public string Migrate(JsonDocument document, int targetVersion)
+    public string Migrate(JObject document, int targetVersion)
     {
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-
-        writer.WriteStartObject();
-
-        var root = document.RootElement;
-        var processedProperties = new HashSet<string>();
-
-        foreach (var property in root.EnumerateObject())
+        var root = (JObject)document.DeepClone();
+        foreach (var op in _orderedOperations)
         {
-            var propertyName = property.Name;
-
-            if (propertyName == "Version")
-                continue;
-
-            if (_propertiesToDelete.Contains(propertyName))
-                continue;
-
-            if (_propertiesWithTypeChange.Contains(propertyName))
-                continue;
-
-            if (_propertiesToRename.TryGetValue(propertyName, out var newName))
-            {
-                if (_propertiesWithTypeChange.Contains(newName))
-                {
-                    continue;
-                }
-
-                writer.WritePropertyName(newName);
-                property.Value.WriteTo(writer);
-                processedProperties.Add(newName);
-            }
-            else
-            {
-                property.WriteTo(writer);
-                processedProperties.Add(propertyName);
-            }
+            op(root);
         }
-
-        foreach (var operation in _customOperations)
-        {
-            operation(root, writer);
-        }
-
-        foreach (var (name, value) in _propertiesToAdd)
-        {
-            if (!processedProperties.Contains(name))
-            {
-                writer.WritePropertyName(name);
-                JsonSerializer.Serialize(writer, value);
-            }
-        }
-
-        writer.WriteNumber("Version", targetVersion);
-
-        writer.WriteEndObject();
-        writer.Flush();
-
-        return Encoding.UTF8.GetString(stream.ToArray());
+        root["Version"] = targetVersion;
+        return root.ToString(Formatting.Indented);
     }
 }

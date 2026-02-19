@@ -45,6 +45,10 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
 
         var methodName = invocation.Method.Name;
 
+        // Do not auto-save if an internal copy is in progress
+        if (NoireConfigBase.IsInternalCopying)
+            return;
+
         if ((autoSavePropertySetters.Contains(methodName) || autoSaveMethods.Contains(methodName))
             && invocation.InvocationTarget is NoireConfigBase config)
             config.Save();

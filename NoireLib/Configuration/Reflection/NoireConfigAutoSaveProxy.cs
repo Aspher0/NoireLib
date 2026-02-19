@@ -24,13 +24,8 @@ internal static class NoireConfigAutoSaveProxy
         try
         {
             var interceptor = new NoireConfigAutoSaveInterceptor(typeof(T));
-            var proxy = ProxyGenerator.CreateClassProxyWithTarget(
-                instance,
-                ProxyOptions,
-                interceptor
-            );
-
-            return proxy;
+            var proxy = ProxyGenerator.CreateClassProxy(typeof(T), interceptor);
+            return (T)proxy;
         }
         catch (Exception ex)
         {

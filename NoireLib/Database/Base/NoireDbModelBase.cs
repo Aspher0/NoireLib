@@ -1,10 +1,10 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using System.Text.Json;
 
 namespace NoireLib.Database;
 
@@ -417,11 +417,11 @@ public abstract class NoireDbModelBase
     /// <summary>
     /// Serializes the model columns to JSON.
     /// </summary>
-    /// <param name="options">Optional JSON serialization options.</param>
+    /// <param name="settings">Optional JSON serialization settings.</param>
     /// <returns>A JSON string representing the model columns.</returns>
-    public string ToJson(JsonSerializerOptions? options = null)
+    public string ToJson(JsonSerializerSettings? settings = null)
     {
-        return JsonSerializer.Serialize(ToDictionary(), options ?? new JsonSerializerOptions { WriteIndented = true });
+        return JsonConvert.SerializeObject(ToDictionary(), settings ?? new JsonSerializerSettings { Formatting = Formatting.Indented });
     }
 
     /// <summary>
@@ -748,7 +748,7 @@ public abstract class NoireDbModelBase
             }
             else if (value is System.Collections.IEnumerable && value is not string)
             {
-                columnValues[key] = JsonSerializer.Serialize(value);
+                columnValues[key] = JsonConvert.SerializeObject(value);
             }
             else
             {
@@ -779,8 +779,8 @@ public abstract class NoireDbModelBase
             DbColumnCast.Float => Convert.ToDouble(value, CultureInfo.InvariantCulture),
             DbColumnCast.String => Convert.ToString(value, CultureInfo.InvariantCulture),
             DbColumnCast.Boolean => Convert.ToBoolean(value, CultureInfo.InvariantCulture),
-            DbColumnCast.Array => value is string text ? JsonSerializer.Deserialize<object[]>(text) : value,
-            DbColumnCast.Json => value is string json ? JsonSerializer.Deserialize<object>(json) : JsonSerializer.Serialize(value),
+            DbColumnCast.Array => value is string text ? JsonConvert.DeserializeObject<object[]>(text) : value,
+            DbColumnCast.Json => value is string json ? JsonConvert.DeserializeObject<object>(json) : JsonConvert.SerializeObject(value),
             DbColumnCast.DateTime => value is DateTime dateTime ? dateTime : DateTime.Parse(value.ToString()!, CultureInfo.InvariantCulture),
             DbColumnCast.Timestamp => value is long longValue ? DateTimeOffset.FromUnixTimeSeconds(longValue).DateTime : DateTimeOffset.FromUnixTimeSeconds(Convert.ToInt64(value, CultureInfo.InvariantCulture)).DateTime,
             _ => value

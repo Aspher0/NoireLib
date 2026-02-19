@@ -1,7 +1,8 @@
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
+using System.Reflection;
 
 namespace NoireLib.Helpers.ObjectExtensions;
 
@@ -112,8 +113,8 @@ public static class ObjectExtensions
     public static T? Clone<T>(this T value) where T : class
     {
         if (value is null) return null;
-        var json = JsonSerializer.Serialize(value);
-        return JsonSerializer.Deserialize<T>(json);
+        var json = JsonConvert.SerializeObject(value);
+        return JsonConvert.DeserializeObject<T>(json);
     }
 
     /// <summary>
@@ -235,4 +236,33 @@ public static class ObjectExtensions
     /// <param name="days">Number of days.</param>
     /// <returns>A TimeSpan representing the specified days.</returns>
     public static TimeSpan Days(this double days) => TimeSpan.FromDays(days);
+
+    /// <summary>
+    /// Copies all public and non-public instance properties and fields from the source object to the target object.
+    /// </summary>
+    /// <typeparam name="T">The type of the objects.</typeparam>
+    /// <param name="source">The source object.</param>
+    /// <param name="target">The target object.</param>
+    public static void CopyMembersTo<T>(this T source, T target)
+    {
+        if (source == null || target == null)
+            return;
+
+        var type = typeof(T);
+
+        foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+        {
+            if (prop.CanRead && prop.CanWrite)
+            {
+                var value = prop.GetValue(source);
+                prop.SetValue(target, value);
+            }
+        }
+
+        foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+        {
+            var value = field.GetValue(source);
+            field.SetValue(target, value);
+        }
+    }
 }

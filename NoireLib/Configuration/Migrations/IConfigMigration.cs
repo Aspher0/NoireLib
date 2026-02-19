@@ -1,4 +1,4 @@
-using System.Text.Json;
+using Newtonsoft.Json.Linq;
 
 namespace NoireLib.Configuration.Migrations;
 
@@ -18,9 +18,9 @@ public interface IConfigMigration
     int ToVersion { get; }
 
     /// <summary>
-    /// Executes the migration on the JSON document.
+    /// Executes a migration on a JSON object.
     /// </summary>
-    /// <param name="jsonDocument">The JSON document to migrate.</param>
-    /// <returns>The migrated JSON document as a string.</returns>
-    string Migrate(JsonDocument jsonDocument);
+    /// <param name="jsonObject">The JSON object to migrate.</param>
+    /// <returns>The migrated JSON as a string.</returns>
+    string Migrate(JObject jsonObject);
 }

@@ -1,3 +1,4 @@
+
 # NoireLib Documentation - NoireConfigManager
 
 You are reading the documentation for `NoireConfigManager`.
@@ -6,17 +7,17 @@ You are reading the documentation for `NoireConfigManager`.
 - [Overview](#overview)
 - [Getting Started](#getting-started)
 - [Configuration Approaches](#configuration-approaches)
-  - [1. With Source Generator](#with-source-generator)
-  - [2. With Castle DynamicProxy](#with-castle-dynamicproxy)
-  - [3. Legacy-Manual](#legacy---manual)
+  - [1. With Source Generator](#1-with-source-generator)
+  - [2. With Castle DynamicProxy](#2-with-castle-dynamicproxy)
+  - [3. Legacy-Manual](#3-legacy---manual)
 - [AutoSave Attribute](#autosave-attribute)
 - [Using NoireConfigManager](#using-noireconfigmanager)
 - [Configuration Migrations](#configuration-migrations)
   - [What are Migrations?](#what-are-migrations)
   - [Migration Approaches](#migration-approaches)
-    - [1. Nested Class Migration](#nested-class-migration)
-    - [2. Attribute-Based Migration](#attribute-based-migration)
-    - [3. Runtime Migration Registration](#runtime-migration-registration)
+    - [1. Nested Class Migration](#1---nested-class-migration)
+    - [2. Attribute-Based Migration](#2---attribute-based-migration)
+    - [3. Runtime Migration Registration](#3---runtime-migration-registration)
   - [Using MigrationBuilder](#using-migrationbuilder)
   - [Migration Best Practices](#migration-best-practices)
 - [Advanced Features](#advanced-features)
@@ -487,11 +488,11 @@ public class MyConfigInstance : NoireConfigBase
         public override int FromVersion => 1;
         public override int ToVersion => 2;
 
-        public override string Migrate(JsonDocument jsonDocument)
+        public override string Migrate(JObject jsonObject)
         {
             return MigrationBuilder.Create()
                 .RenameProperty("OldPropertyName", "NewPropertyName")
-                .Migrate(jsonDocument, ToVersion);
+                .Migrate(jsonObject, ToVersion);
         }
     }
 
@@ -501,11 +502,11 @@ public class MyConfigInstance : NoireConfigBase
         public override int FromVersion => 2;
         public override int ToVersion => 3;
 
-        public override string Migrate(JsonDocument jsonDocument)
+        public override string Migrate(JObject jsonObject)
         {
             return MigrationBuilder.Create()
                 .AddProperty("UserPreference", "default")
-                .Migrate(jsonDocument, ToVersion);
+                .Migrate(jsonObject, ToVersion);
         }
     }
 }
@@ -549,12 +550,12 @@ public class MyConfigMigrationV1ToV2 : ConfigMigrationBase
     public override int FromVersion => 1;
     public override int ToVersion => 2;
 
-    public override string Migrate(JsonDocument jsonDocument)
+    public override string Migrate(JObject jsonObject)
     {
         return MigrationBuilder.Create()
             .RenameProperty("OldPropertyName", "NewPropertyName")
             .DeleteProperty("ObsoleteProperty")
-            .Migrate(jsonDocument, ToVersion);
+            .Migrate(jsonObject, ToVersion);
     }
 }
 
@@ -563,12 +564,12 @@ public class MyConfigMigrationV2ToV3 : ConfigMigrationBase
     public override int FromVersion => 2;
     public override int ToVersion => 3;
 
-    public override string Migrate(JsonDocument jsonDocument)
+    public override string Migrate(JObject jsonObject)
     {
         return MigrationBuilder.Create()
             .AddProperty("UserPreference", "default")
             .ChangePropertyType<int, string>("SomeCounter", count => count.ToString())
-            .Migrate(jsonDocument, ToVersion);
+            .Migrate(jsonObject, ToVersion);
     }
 }
 ```
@@ -635,11 +636,11 @@ public class DynamicMigrationV1ToV2 : ConfigMigrationBase
     public override int FromVersion => 1;
     public override int ToVersion => 2;
 
-    public override string Migrate(JsonDocument jsonDocument)
+    public override string Migrate(JObject jsonObject)
     {
         return MigrationBuilder.Create()
             .RenameProperty("LegacyName", "ModernName")
-            .Migrate(jsonDocument, ToVersion);
+            .Migrate(jsonObject, ToVersion);
     }
 }
 
@@ -648,11 +649,11 @@ public class DynamicMigrationV2ToV3 : ConfigMigrationBase
     public override int FromVersion => 2;
     public override int ToVersion => 3;
 
-    public override string Migrate(JsonDocument jsonDocument)
+    public override string Migrate(JObject jsonObject)
     {
         return MigrationBuilder.Create()
             .AddProperty("NewFeatureEnabled", false)
-            .Migrate(jsonDocument, ToVersion);
+            .Migrate(jsonObject, ToVersion);
     }
 }
 ```
@@ -734,7 +735,7 @@ The `MigrationBuilder` provides a fluent API for common migration operations. Th
 #### Common Operations
 
 ```csharp
-public override string Migrate(JsonDocument jsonDocument)
+public override string Migrate(JObject jsonObject)
 {
     return MigrationBuilder.Create()
         // Rename a property
@@ -758,74 +759,20 @@ public override string Migrate(JsonDocument jsonDocument)
         // Add computed properties from existing data
         .AddComputedProperty("FullName", root =>
         {
-            var firstName = root.GetProperty("FirstName").GetString();
-            var lastName = root.GetProperty("LastName").GetString();
+            var firstName = root.GetValue("FirstName")?.ToString();
+            var lastName = root.GetValue("LastName")?.ToString();
             return $"{firstName} {lastName}";
         })
         
-        // Custom operations for complex scenarios
-        .WithCustomOperation((root, writer) =>
+        .WithCustomOperation(root =>
         {
-            // Write custom JSON transformation
-            if (root.TryGetProperty("ComplexData", out var data))
-            {
-                writer.WritePropertyName("TransformedData");
-                // ... custom logic
-            }
+            var fullname = root.GetValue("FullName")?.ToString();
+            if (!string.IsNullOrEmpty(fullname))
+                root["DisplayName"] = $"Name: {fullname}"; // New property
         })
         
         // Build the migrated JSON
-        .Migrate(jsonDocument, ToVersion);
-}
-```
-
-#### Manual Migration (Without MigrationBuilder)
-
-For complex scenarios, you can manually manipulate JSON:
-
-```csharp
-public class ComplexMigration : ConfigMigrationBase
-{
-    public override int FromVersion => 2;
-    public override int ToVersion => 3;
-
-    public override string Migrate(JsonDocument jsonDocument)
-    {
-        using var stream = new MemoryStream();
-        using var writer = new Utf8JsonWriter(stream, new JsonWriterOptions { Indented = true });
-
-        writer.WriteStartObject();
-
-        var root = jsonDocument.RootElement;
-        foreach (var property in root.EnumerateObject())
-        {
-            if (property.Name == "Version")
-                continue;
-
-            // Custom transformation logic
-            if (property.Name == "Settings")
-            {
-                writer.WritePropertyName("Settings");
-                TransformSettings(property.Value, writer);
-            }
-            else
-            {
-                property.WriteTo(writer);
-            }
-        }
-
-        writer.WriteNumber("Version", ToVersion);
-        writer.WriteEndObject();
-        writer.Flush();
-
-        return Encoding.UTF8.GetString(stream.ToArray());
-    }
-
-    private void TransformSettings(JsonElement settings, Utf8JsonWriter writer)
-    {
-        // Complex nested transformation
-        // ...
-    }
+        .Migrate(jsonObject, ToVersion);
 }
 ```
 
@@ -835,18 +782,7 @@ public class ComplexMigration : ConfigMigrationBase
 
 #### 1. **Test Migrations with Real Data**
 
-```csharp
-public void TestMigrationV1ToV2()
-{
-    var oldJson = @"{""OldProperty"": true, ""Version"": 1}";
-    var document = JsonDocument.Parse(oldJson);
-    
-    var migration = new MigrationV1ToV2();
-    var newJson = migration.Migrate(document);
-    
-    NoireLogger.LogDebug("Migrated JSON: " + newJson);
-}
-```
+Try migrating sample data and see if everything works as it should.
 
 #### 2. **Document Migration Reasons**
 
@@ -864,7 +800,7 @@ private class MigrationV1ToV2 : ConfigMigrationBase
 }
 ```
 
-#### 6. **Never Remove Old Migrations**
+#### 3. **Never Remove Old Migrations**
 
 Once deployed, migrations should never be removed or modified. Users might be upgrading from any previous version.
 

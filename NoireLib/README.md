@@ -137,6 +137,11 @@ module.ToggleWindow(); // Toggles the window
 
 For a list of modules, see the [Modules Section](#modules)
 
+## Special Modules
+
+- [Configuration System](https://github.com/Aspher0/NoireLib/tree/main/NoireLib/Configuration/README.md)
+- [Database System](https://github.com/Aspher0/NoireLib/tree/main/NoireLib/Database/README.md)
+
 ## Modules
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)

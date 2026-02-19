@@ -1,7 +1,7 @@
+using Newtonsoft.Json;
 using System;
 using System.IO;
 using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace NoireLib.Helpers;
@@ -500,9 +500,9 @@ public static class FileHelper
     /// <typeparam name="T">The type of the object to serialize.</typeparam>
     /// <param name="filePath">The path to the file.</param>
     /// <param name="obj">The object to serialize.</param>
-    /// <param name="options">Optional JSON serializer options.</param>
+    /// <param name="settings">Optional JSON serializer settings.</param>
     /// <returns>True if the operation was successful; otherwise, false.</returns>
-    public static bool WriteJsonToFile<T>(string filePath, T obj, JsonSerializerOptions? options = null)
+    public static bool WriteJsonToFile<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
     {
         if (string.IsNullOrWhiteSpace(filePath) || obj == null)
             return false;
@@ -513,7 +513,7 @@ public static class FileHelper
             if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
                 return false;
 
-            var json = JsonSerializer.Serialize(obj, obj.GetType(), options);
+            var json = JsonConvert.SerializeObject(obj, settings);
             File.WriteAllText(filePath, json);
             return true;
         }
@@ -529,9 +529,9 @@ public static class FileHelper
     /// </summary>
     /// <typeparam name="T">The type to deserialize to.</typeparam>
     /// <param name="filePath">The path to the file.</param>
-    /// <param name="options">Optional JSON serializer options.</param>
+    /// <param name="settings">Optional JSON serializer settings.</param>
     /// <returns>The deserialized object, or default(T) if the operation failed.</returns>
-    public static T? ReadJsonFromFile<T>(string filePath, JsonSerializerOptions? options = null)
+    public static T? ReadJsonFromFile<T>(string filePath, JsonSerializerSettings? settings = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             return default;
@@ -542,7 +542,7 @@ public static class FileHelper
                 return default;
 
             var json = File.ReadAllText(filePath);
-            var obj = JsonSerializer.Deserialize<T>(json, options);
+            var obj = JsonConvert.DeserializeObject<T>(json, settings);
             return obj;
         }
         catch (Exception ex)
@@ -614,9 +614,9 @@ public static class FileHelper
     /// <typeparam name="T">The type of the object to serialize.</typeparam>
     /// <param name="filePath">The path to the file.</param>
     /// <param name="obj">The object to serialize.</param>
-    /// <param name="options">Optional JSON serializer options.</param>
+    /// <param name="settings">Optional JSON serializer settings.</param>
     /// <returns>True if the operation was successful; otherwise, false.</returns>
-    public static async Task<bool> WriteJsonToFileAsync<T>(string filePath, T obj, JsonSerializerOptions? options = null)
+    public static async Task<bool> WriteJsonToFileAsync<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
     {
         if (string.IsNullOrWhiteSpace(filePath) || obj == null)
             return false;
@@ -627,7 +627,7 @@ public static class FileHelper
             if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
                 return false;
 
-            var json = JsonSerializer.Serialize(obj, options);
+            var json = JsonConvert.SerializeObject(obj, settings);
             await File.WriteAllTextAsync(filePath, json);
             return true;
         }
@@ -643,9 +643,9 @@ public static class FileHelper
     /// </summary>
     /// <typeparam name="T">The type to deserialize to.</typeparam>
     /// <param name="filePath">The path to the file.</param>
-    /// <param name="options">Optional JSON serializer options.</param>
+    /// <param name="settings">Optional JSON serializer settings.</param>
     /// <returns>The deserialized object, or default(T) if the operation failed.</returns>
-    public static async Task<T?> ReadJsonFromFileAsync<T>(string filePath, JsonSerializerOptions? options = null)
+    public static async Task<T?> ReadJsonFromFileAsync<T>(string filePath, JsonSerializerSettings? settings = null)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             return default;
@@ -656,7 +656,7 @@ public static class FileHelper
                 return default;
 
             var json = await File.ReadAllTextAsync(filePath);
-            var obj = JsonSerializer.Deserialize<T>(json, options);
+            var obj = JsonConvert.DeserializeObject<T>(json, settings);
             return obj;
         }
         catch (Exception ex)

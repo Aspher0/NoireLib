@@ -1,4 +1,4 @@
-using System.Text.Json;
+using Newtonsoft.Json.Linq;
 
 namespace NoireLib.Configuration.Migrations;
 
@@ -15,5 +15,5 @@ public abstract class ConfigMigrationBase : IConfigMigration
     public abstract int ToVersion { get; }
 
     /// <inheritdoc/>
-    public abstract string Migrate(JsonDocument jsonDocument);
+    public abstract string Migrate(JObject jsonObject);
 }

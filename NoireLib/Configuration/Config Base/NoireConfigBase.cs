@@ -1,8 +1,7 @@
+using Newtonsoft.Json;
 using NoireLib.Configuration.Migrations;
 using NoireLib.Helpers;
 using System;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 
 namespace NoireLib.Configuration;
 
@@ -11,13 +10,12 @@ namespace NoireLib.Configuration;
 /// </summary>
 public abstract class NoireConfigBase : INoireConfig
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static bool IsInternalCopying { get; set; } = false;
+
+    protected static readonly JsonSerializerSettings JsonSettings = new()
     {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        IncludeFields = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-        Converters = { new JsonStringEnumConverter() }
+        Formatting = Formatting.Indented,
+        ObjectCreationHandling = ObjectCreationHandling.Replace,
     };
 
     /// <summary>
@@ -86,7 +84,7 @@ public abstract class NoireConfigBase : INoireConfig
             var defaultVersion = GetDefaultVersion();
             Version = defaultVersion;
 
-            var currentJson = JsonSerializer.Serialize(this, GetType(), JsonOptions);
+            var currentJson = JsonConvert.SerializeObject(this, GetType(), JsonSettings);
 
             if (FileHelper.FileExists(filePath))
             {
@@ -98,7 +96,7 @@ public abstract class NoireConfigBase : INoireConfig
                 }
             }
 
-            var success = FileHelper.WriteJsonToFile(filePath, this, JsonOptions);
+            var success = FileHelper.WriteJsonToFile(filePath, this, JsonSettings);
             if (success)
                 NoireLogger.LogVerbose<NoireConfigBase>($"Configuration saved successfully to: {filePath}");
 
@@ -165,7 +163,7 @@ public abstract class NoireConfigBase : INoireConfig
                 }
             }
 
-            var loadedConfig = JsonSerializer.Deserialize(json, GetType(), JsonOptions);
+            var loadedConfig = JsonConvert.DeserializeObject(json, GetType(), JsonSettings);
 
             if (loadedConfig == null)
             {
@@ -200,10 +198,10 @@ public abstract class NoireConfigBase : INoireConfig
     {
         try
         {
-            using var document = JsonDocument.Parse(json);
-            if (document.RootElement.TryGetProperty("Version", out var versionElement))
+            var obj = JsonConvert.DeserializeObject<dynamic>(json);
+            if (obj?.Version != null)
             {
-                return versionElement.GetInt32();
+                return (int)obj.Version;
             }
         }
         catch

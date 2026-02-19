@@ -1,6 +1,7 @@
 using Dalamud.Game.Text;
 using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Utility;
+using Newtonsoft.Json;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
 using NoireLib.Helpers;
@@ -8,7 +9,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,7 +26,6 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     public NoireEventBus? EventBus { get; set; }
 
     private readonly HttpClient httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
-    private readonly JsonSerializerOptions jsonOptions = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
     private Timer? updateCheckTimer;
     private bool updateNotificationShown = false;
@@ -375,7 +374,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
             resp.EnsureSuccessStatusCode();
 
             var json = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-            var entries = JsonSerializer.Deserialize<List<RepoEntry>>(json, jsonOptions);
+            var entries = JsonConvert.DeserializeObject<List<RepoEntry>>(json);
             if (entries is null || entries.Count == 0)
             {
                 NoireLogger.LogWarning(this, "The JSON repository fetch returned no entries.");

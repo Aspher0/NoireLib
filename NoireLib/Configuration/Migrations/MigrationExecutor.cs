@@ -3,7 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using System.Text.Json;
+using Newtonsoft.Json.Linq;
 
 namespace NoireLib.Configuration.Migrations;
 
@@ -155,7 +155,7 @@ public static class MigrationExecutor
             {
                 NoireLogger.LogDebug($"Executing migration {migration.FromVersion} -> {migration.ToVersion}", "[MigrationExecutor] ");
 
-                using var document = JsonDocument.Parse(currentJson);
+                var document = JObject.Parse(currentJson);
                 currentJson = migration.Migrate(document);
 
                 if (currentJson.IsNullOrEmpty())
