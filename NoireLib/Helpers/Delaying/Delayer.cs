@@ -12,7 +12,9 @@ namespace NoireLib.Helpers;
 /// Provides delayed trigger functionality that executes an action only if it hasn't been cancelled before the specified delay.
 /// Useful for showing loading indicators, timeout handlers, or any deferred action that should be cancelled if the primary operation completes quickly.<br/>
 /// For example, you might want to show a loading spinner only if a data fetch takes longer than 500ms. You can use this class to schedule the spinner display after 500ms, and cancel it if the data fetch completes sooner.<br/>
-/// Each trigger is independent with its own delay, allowing multiple triggers to be started and managed individually.
+/// Each trigger is independent with its own delay, allowing multiple triggers to be started and managed individually.<br/>
+/// Use <see cref="DelayerHelper"/> instead, unless you know what you're doing.<br/>
+/// If you are using this class, then do not forget to call <see cref="Dispose"/>.
 /// </summary>
 public class Delayer : IDisposable
 {

@@ -32,7 +32,7 @@ public static class InteropHelper
         if (!plugins.Any(x => x.IsLoaded))
             return PluginAvailability.Disabled;
 
-        var supportedPlugin = plugins.FirstOrDefault(x => x.IsLoaded && x.Version < minVersion);
+        var supportedPlugin = plugins.FirstOrDefault(x => x.IsLoaded && x.Version >= minVersion);
 
         if (supportedPlugin == null)
             return PluginAvailability.UnsupportedVersion;

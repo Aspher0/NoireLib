@@ -6,7 +6,9 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides debounce functionality to delay action execution until a specified time has passed without new calls.
+/// Provides debounce functionality to delay action execution until a specified time has passed without new calls.<br/>
+/// Use <see cref="DebounceHelper"/> instead, unless you know what you're doing.<br/>
+/// If you are using this class, then do not forget to call <see cref="Dispose"/>.
 /// </summary>
 public class Debouncer : TimingHelperBase
 {
