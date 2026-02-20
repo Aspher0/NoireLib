@@ -1,6 +1,9 @@
+using Dalamud.Utility;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -39,7 +42,7 @@ public static class FileHelper
             return null;
         }
 
-        if (string.IsNullOrWhiteSpace(fileName))
+        if (fileName.IsNullOrWhitespace())
             return null;
 
         var configDirectory = GetPluginConfigDirectory();
@@ -92,7 +95,7 @@ public static class FileHelper
     /// <returns>True if the directory exists or was created successfully; otherwise, false.</returns>
     public static bool EnsureDirectoryExists(string directoryPath)
     {
-        if (string.IsNullOrWhiteSpace(directoryPath))
+        if (directoryPath.IsNullOrWhitespace())
             return false;
 
         try
@@ -116,7 +119,7 @@ public static class FileHelper
     /// <returns>True if the file exists; otherwise, false.</returns>
     public static bool FileExists(string? filePath)
     {
-        return !string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath);
+        return !filePath.IsNullOrWhitespace() && File.Exists(filePath);
     }
 
     /// <summary>
@@ -126,7 +129,7 @@ public static class FileHelper
     /// <returns>True if the directory exists; otherwise, false.</returns>
     public static bool DirectoryExists(string? directoryPath)
     {
-        return !string.IsNullOrWhiteSpace(directoryPath) && Directory.Exists(directoryPath);
+        return !directoryPath.IsNullOrWhitespace() && Directory.Exists(directoryPath);
     }
 
     /// <summary>
@@ -138,14 +141,14 @@ public static class FileHelper
     /// <returns>True if the write operation was successful; otherwise, false.</returns>
     public static bool WriteTextToFile(string filePath, string content, Encoding? encoding = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(filePath);
 
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             encoding ??= Encoding.UTF8;
@@ -167,7 +170,7 @@ public static class FileHelper
     /// <returns>The content of the file, or null if the read operation failed.</returns>
     public static string? ReadTextFromFile(string filePath, Encoding? encoding = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         try
@@ -193,7 +196,7 @@ public static class FileHelper
     /// <returns>True if the file was deleted or doesn't exist; otherwise, false.</returns>
     public static bool DeleteFile(string filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return false;
 
         try
@@ -218,7 +221,7 @@ public static class FileHelper
     /// <returns>True if the directory was deleted or doesn't exist; otherwise, false.</returns>
     public static bool DeleteDirectory(string directoryPath, bool recursive = false)
     {
-        if (string.IsNullOrWhiteSpace(directoryPath))
+        if (directoryPath.IsNullOrWhitespace())
             return false;
 
         try
@@ -244,13 +247,14 @@ public static class FileHelper
     /// <returns>True if the copy operation was successful; otherwise, false.</returns>
     public static bool CopyFile(string sourceFilePath, string destinationFilePath, bool overwrite = false)
     {
-        if (string.IsNullOrWhiteSpace(sourceFilePath) || string.IsNullOrWhiteSpace(destinationFilePath))
+        if (sourceFilePath.IsNullOrWhitespace() || destinationFilePath.IsNullOrWhitespace())
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(destinationFilePath);
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             File.Copy(sourceFilePath, destinationFilePath, overwrite);
@@ -272,13 +276,14 @@ public static class FileHelper
     /// <returns>True if the move operation was successful; otherwise, false.</returns>
     public static bool MoveFile(string sourceFilePath, string destinationFilePath, bool overwrite = false)
     {
-        if (string.IsNullOrWhiteSpace(sourceFilePath) || string.IsNullOrWhiteSpace(destinationFilePath))
+        if (sourceFilePath.IsNullOrWhitespace() || destinationFilePath.IsNullOrWhitespace())
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(destinationFilePath);
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             if (overwrite && File.Exists(destinationFilePath))
@@ -303,7 +308,7 @@ public static class FileHelper
     /// <returns>An array of file paths, or an empty array if the operation failed.</returns>
     public static string[] GetFiles(string directoryPath, string searchPattern = "*", bool recursive = false)
     {
-        if (string.IsNullOrWhiteSpace(directoryPath))
+        if (directoryPath.IsNullOrWhitespace())
             return [];
 
         try
@@ -329,7 +334,7 @@ public static class FileHelper
     /// <returns>An array of directory paths, or an empty array if the operation failed.</returns>
     public static string[] GetDirectories(string directoryPath, bool recursive = false)
     {
-        if (string.IsNullOrWhiteSpace(directoryPath))
+        if (directoryPath.IsNullOrWhitespace())
             return [];
 
         try
@@ -354,7 +359,7 @@ public static class FileHelper
     /// <returns>The file size in bytes, or -1 if the operation failed.</returns>
     public static long GetFileSize(string filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return -1;
 
         try
@@ -397,7 +402,7 @@ public static class FileHelper
     /// <returns>True if the files are equal; otherwise, false.</returns>
     public static bool AreFilesEqual(string filePath1, string filePath2)
     {
-        if (string.IsNullOrWhiteSpace(filePath1) || string.IsNullOrWhiteSpace(filePath2))
+        if (filePath1.IsNullOrWhitespace() || filePath2.IsNullOrWhitespace())
             return false;
 
         try
@@ -449,7 +454,7 @@ public static class FileHelper
     /// <returns>The file name with extension.</returns>
     public static string? GetFileName(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         return Path.GetFileName(filePath);
@@ -462,7 +467,7 @@ public static class FileHelper
     /// <returns>The file name without extension.</returns>
     public static string? GetFileNameWithoutExtension(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         return Path.GetFileNameWithoutExtension(filePath);
@@ -475,7 +480,7 @@ public static class FileHelper
     /// <returns>The file extension including the dot (e.g., ".json").</returns>
     public static string? GetFileExtension(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         return Path.GetExtension(filePath);
@@ -488,7 +493,7 @@ public static class FileHelper
     /// <returns>The directory name.</returns>
     public static string? GetDirectoryName(string? filePath)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         return Path.GetDirectoryName(filePath);
@@ -504,13 +509,13 @@ public static class FileHelper
     /// <returns>True if the operation was successful; otherwise, false.</returns>
     public static bool WriteJsonToFile<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || obj == null)
+        if (filePath.IsNullOrWhitespace() || obj == null)
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             var json = JsonConvert.SerializeObject(obj, settings);
@@ -533,7 +538,7 @@ public static class FileHelper
     /// <returns>The deserialized object, or default(T) if the operation failed.</returns>
     public static T? ReadJsonFromFile<T>(string filePath, JsonSerializerSettings? settings = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return default;
 
         try
@@ -561,13 +566,13 @@ public static class FileHelper
     /// <returns>True if the write operation was successful; otherwise, false.</returns>
     public static async Task<bool> WriteTextToFileAsync(string filePath, string content, Encoding? encoding = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             encoding ??= Encoding.UTF8;
@@ -589,7 +594,7 @@ public static class FileHelper
     /// <returns>The content of the file, or null if the read operation failed.</returns>
     public static async Task<string?> ReadTextFromFileAsync(string filePath, Encoding? encoding = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return null;
 
         try
@@ -618,13 +623,14 @@ public static class FileHelper
     /// <returns>True if the operation was successful; otherwise, false.</returns>
     public static async Task<bool> WriteJsonToFileAsync<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || obj == null)
+        if (filePath.IsNullOrWhitespace() || obj == null)
             return false;
 
         try
         {
             var directory = Path.GetDirectoryName(filePath);
-            if (!string.IsNullOrEmpty(directory) && !EnsureDirectoryExists(directory))
+
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
             var json = JsonConvert.SerializeObject(obj, settings);
@@ -647,7 +653,7 @@ public static class FileHelper
     /// <returns>The deserialized object, or default(T) if the operation failed.</returns>
     public static async Task<T?> ReadJsonFromFileAsync<T>(string filePath, JsonSerializerSettings? settings = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath))
+        if (filePath.IsNullOrWhitespace())
             return default;
 
         try
@@ -674,7 +680,7 @@ public static class FileHelper
     /// <returns>The path to the backup file, or null if the operation failed.</returns>
     public static string? BackupFile(string filePath, string? backupDirectory = null)
     {
-        if (string.IsNullOrWhiteSpace(filePath) || !File.Exists(filePath))
+        if (filePath.IsNullOrWhitespace() || !File.Exists(filePath))
             return null;
 
         try
@@ -685,7 +691,7 @@ public static class FileHelper
             var backupFileName = $"{fileName}_backup_{timestamp}{extension}";
 
             var targetDirectory = backupDirectory ?? Path.GetDirectoryName(filePath);
-            if (string.IsNullOrEmpty(targetDirectory))
+            if (targetDirectory.IsNullOrWhitespace())
                 return null;
 
             if (!EnsureDirectoryExists(targetDirectory))
@@ -699,6 +705,332 @@ public static class FileHelper
         {
             NoireLogger.LogError(ex, $"Failed to create backup of file: {filePath}", "[FileHelper] ");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Retrieves all file paths from a directory that match a search pattern, with options to search recursively and return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match files.</param>
+    /// <param name="recursive">Whether to search recursively in subdirectories.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of file paths.</returns>
+    public static List<string> GetFilePathsInFolder(string parentDirectoryPath, string searchPattern, bool recursive, bool returnRelativePaths)
+    {
+        var filePaths = new List<string>();
+
+        if (parentDirectoryPath.IsNullOrWhitespace() || !Directory.Exists(parentDirectoryPath))
+            return filePaths;
+
+        try
+        {
+            var allFiles = Directory.GetFiles(parentDirectoryPath, searchPattern, recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+
+            foreach (var file in allFiles)
+            {
+                if (returnRelativePaths)
+                    filePaths.Add(Path.GetRelativePath(parentDirectoryPath, file));
+                else
+                    filePaths.Add(file);
+            }
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to get file paths {(recursive ? "recursively" : "non-recursively")} from: {parentDirectoryPath} with search pattern: {searchPattern}", "[FileHelper] ");
+        }
+        return filePaths;
+    }
+
+    /// <summary>
+    /// Retrieves all file paths from a directory that match a search pattern, with an option to return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match files.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of file paths.</returns>
+    public static List<string> GetFilePathsInFolder(string parentDirectoryPath, string searchPattern = "*", bool returnRelativePaths = false)
+        => GetFilePathsInFolder(parentDirectoryPath, searchPattern, false, returnRelativePaths);
+
+    /// <summary>
+    /// Retrieves all file paths from a directory and its subdirectories that match a search pattern, with an option to return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match files.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of file paths.</returns>
+    public static List<string> GetFilePathsInFolderRecursive(string parentDirectoryPath, string searchPattern = "*", bool returnRelativePaths = false)
+        => GetFilePathsInFolder(parentDirectoryPath, searchPattern, true, returnRelativePaths);
+
+    /// <summary>
+    /// Retrieves all directory paths from a directory and its subdirectories, with an option to return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match directories.</param>
+    /// <param name="recursive">Whether to search recursively in subdirectories.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of directory paths.</returns>
+    public static List<string> GetDirectoryPathsInFolder(string parentDirectoryPath, string searchPattern, bool recursive, bool returnRelativePaths)
+    {
+        var directoryPaths = new List<string>();
+
+        if (parentDirectoryPath.IsNullOrWhitespace() || !Directory.Exists(parentDirectoryPath))
+            return directoryPaths;
+
+        try
+        {
+            var allDirectories = Directory.GetDirectories(parentDirectoryPath, searchPattern, recursive ? SearchOption.AllDirectories : SearchOption.TopDirectoryOnly);
+
+            foreach (var dir in allDirectories)
+            {
+                if (returnRelativePaths)
+                    directoryPaths.Add(Path.GetRelativePath(parentDirectoryPath, dir));
+                else
+                    directoryPaths.Add(dir);
+            }
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to get directory paths recursively from: {parentDirectoryPath}", "[FileHelper] ");
+        }
+
+        return directoryPaths;
+    }
+
+    /// <summary>
+    /// Retrieves all directory paths from a directory that match a search pattern, with an option to return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match directories.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of directory paths.</returns>
+    public static List<string> GetDirectoryPathsInFolder(string parentDirectoryPath, string searchPattern = "*", bool returnRelativePaths = false)
+        => GetDirectoryPathsInFolder(parentDirectoryPath, searchPattern, false, returnRelativePaths);
+
+    /// <summary>
+    /// Retrieves all directory paths from a directory and its subdirectories that match a search pattern, with an option to return paths relative to the parent directory.
+    /// </summary>
+    /// <param name="parentDirectoryPath">The path to the parent directory.</param>
+    /// <param name="searchPattern">The search pattern to match directories.</param>
+    /// <param name="returnRelativePaths">Whether to return paths relative to the parent directory.</param>
+    /// <returns>A list of directory paths.</returns>
+    public static List<string> GetDirectoryPathsInFolderRecursive(string parentDirectoryPath, string searchPattern = "*", bool returnRelativePaths = false)
+        => GetDirectoryPathsInFolder(parentDirectoryPath, searchPattern, true, returnRelativePaths);
+
+    /// <summary>
+    /// Creates a zip file containing the specified files.
+    /// </summary>
+    /// <param name="files">The list of files to be included in the zip file, each including its path and optional entry name.</param>
+    /// <param name="destinationDirectory">The directory where the zip file will be created.</param>
+    /// <param name="zipFileName">The name of the zip file. If not provided, a default name with a timestamp is used.</param>
+    /// <returns>The path to the created zip file, or null if the operation fails.</returns>
+    public static string? ZipFiles(List<(string FilePath, string? EntryName)> files, string destinationDirectory, string? zipFileName = null)
+    {
+        if (files == null || files.Count == 0)
+            return null;
+
+        try
+        {
+            if (zipFileName.IsNullOrWhitespace())
+                zipFileName = $"Archive_{DateTime.Now:yyyyMMdd_HHmmss}.zip";
+
+            if (!zipFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                zipFileName += ".zip";
+
+            if (destinationDirectory.IsNullOrWhitespace())
+                return null;
+
+            if (!EnsureDirectoryExists(destinationDirectory))
+                return null;
+
+            var zipFilePath = Path.Combine(destinationDirectory, zipFileName);
+
+            using (var zipArchive = System.IO.Compression.ZipFile.Open(zipFilePath, ZipArchiveMode.Create))
+            {
+                foreach (var file in files)
+                {
+                    if (File.Exists(file.FilePath))
+                    {
+                        string entryName;
+
+                        if (file.EntryName.IsNullOrWhitespace())
+                            entryName = Path.GetFileName(file.FilePath);
+                        else
+                            entryName = file.EntryName;
+
+                        zipArchive.CreateEntryFromFile(file.FilePath, entryName);
+                    }
+                }
+            }
+
+            return zipFilePath;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to zip files", "[FileHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a zip file containing the specified file. 
+    /// </summary>
+    /// <param name="file">The file to be included in the zip file, including its path and optional entry name.</param>
+    /// <param name="destinationDirectory">The directory where the zip file will be created.</param>
+    /// <param name="zipFileName">The name of the zip file. If not provided, a default name with a timestamp is used.</param>
+    /// <returns>The path to the created zip file, or null if the operation fails.</returns>
+    public static string? ZipFile((string FilePath, string? EntryName) file, string? destinationDirectory = null, string? zipFileName = null)
+    {
+        if (file.FilePath.IsNullOrWhitespace() || !File.Exists(file.FilePath))
+            return null;
+
+        if (destinationDirectory.IsNullOrWhitespace())
+            destinationDirectory = Path.GetDirectoryName(file.FilePath);
+
+        if (destinationDirectory.IsNullOrWhitespace()) // Just in case Path.GetDirectoryName() returns null
+            return null;
+
+        if (!EnsureDirectoryExists(destinationDirectory))
+            return null;
+
+        return ZipFiles(new List<(string, string?)> { file }, destinationDirectory, zipFileName);
+    }
+
+    /// <summary>
+    /// Creates a zip file containing the contents of the specified directories.<br/>
+    /// Each directory can have an optional entry name to specify how it should appear in the zip file.<br/>
+    /// If no entry name is provided, the directory's name will be used as the root entry in the zip file.
+    /// </summary>
+    /// <param name="sourceDirectories">A list of tuples containing the directory path and an optional entry name for each directory.</param>
+    /// <param name="destinationDirectory">The directory where the zip file will be created.</param>
+    /// <param name="zipFileName">The name of the zip file. If not provided, a default name with a timestamp is used.</param>
+    /// <returns>The path to the created zip file, or null if the operation fails.</returns>
+    public static string? ZipFolders(List<(string DirectoryPath, string? EntryName)> sourceDirectories, string destinationDirectory, string? zipFileName = null)
+    {
+        if (sourceDirectories == null || sourceDirectories.Count == 0)
+            return null;
+
+        try
+        {
+            if (zipFileName.IsNullOrWhitespace())
+                zipFileName = $"Archive_{DateTime.Now:yyyyMMdd_HHmmss}.zip";
+
+            if (!zipFileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                zipFileName += ".zip";
+
+            if (destinationDirectory.IsNullOrWhitespace())
+                return null;
+
+            if (!EnsureDirectoryExists(destinationDirectory))
+                return null;
+
+            var zipFilePath = Path.Combine(destinationDirectory, zipFileName);
+
+            using (var zipArchive = System.IO.Compression.ZipFile.Open(zipFilePath, ZipArchiveMode.Create))
+            {
+                foreach (var dir in sourceDirectories)
+                {
+                    if (Directory.Exists(dir.DirectoryPath))
+                    {
+                        var directoryInfo = new DirectoryInfo(dir.DirectoryPath);
+                        var files = directoryInfo.GetFiles("*", SearchOption.AllDirectories);
+                        string rootName = !dir.EntryName.IsNullOrWhitespace()
+                            ? dir.EntryName!
+                            : directoryInfo.Name;
+                        foreach (var file in files)
+                        {
+                            var relativePath = Path.GetRelativePath(directoryInfo.FullName, file.FullName);
+                            var entryName = Path.Combine(rootName, relativePath);
+                            zipArchive.CreateEntryFromFile(file.FullName, entryName);
+                        }
+                    }
+                }
+            }
+
+            return zipFilePath;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to zip folders", "[FileHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a zip file containing the contents of the specified directory.<br/>
+    /// Each directory can have an optional entry name to specify how it should appear in the zip file.<br/>
+    /// If no entry name is provided, the directory's name will be used as the root entry in the zip file.
+    /// </summary>
+    /// <param name="sourceDirectory">The directory to be zipped, along with an optional entry name.</param>
+    /// <param name="destinationDirectory">The directory where the zip file will be created. If not provided, the source directory's parent will be used.</param>
+    /// <param name="zipFileName">The name of the zip file. If not provided, a default name with a timestamp is used.</param>
+    /// <returns>The path to the created zip file, or null if the operation fails.</returns>
+    public static string? ZipFolder((string DirectoryPath, string? EntryName) sourceDirectory, string? destinationDirectory = null, string? zipFileName = null)
+    {
+        if (sourceDirectory.DirectoryPath.IsNullOrWhitespace() || !Directory.Exists(sourceDirectory.DirectoryPath))
+            return null;
+
+        if (destinationDirectory.IsNullOrWhitespace())
+            destinationDirectory = Path.GetDirectoryName(sourceDirectory.DirectoryPath);
+
+        if (destinationDirectory.IsNullOrWhitespace()) // Just in case Path.GetDirectoryName() returns null
+            return null;
+
+        if (!EnsureDirectoryExists(destinationDirectory))
+            return null;
+
+        return ZipFolders(new List<(string, string?)> { sourceDirectory }, destinationDirectory, zipFileName);
+    }
+
+    /// <summary>
+    /// Extracts a zip file to the specified destination directory.
+    /// </summary>
+    /// <param name="zipFilePath">The path to the zip file.</param>
+    /// <param name="destinationDirectory">The directory to extract to. If null, uses the zip file's directory.</param>
+    /// <param name="overwrite">Whether to overwrite existing files.</param>
+    /// <returns>True if extraction was successful; otherwise, false.</returns>
+    public static bool UnzipFile(string zipFilePath, string? destinationDirectory = null, bool overwrite = false)
+    {
+        if (zipFilePath.IsNullOrWhitespace() || !zipFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || !File.Exists(zipFilePath))
+            return false;
+
+        try
+        {
+            if (destinationDirectory.IsNullOrWhitespace())
+                destinationDirectory = Path.GetDirectoryName(zipFilePath);
+
+            if (destinationDirectory.IsNullOrWhitespace())
+                return false;
+
+            if (!EnsureDirectoryExists(destinationDirectory))
+                return false;
+
+            using (var archive = System.IO.Compression.ZipFile.OpenRead(zipFilePath))
+            {
+                foreach (var entry in archive.Entries)
+                {
+                    var destinationPath = Path.Combine(destinationDirectory, entry.FullName);
+                    var destinationDir = Path.GetDirectoryName(destinationPath);
+
+                    if (!destinationDir.IsNullOrWhitespace() && !Directory.Exists(destinationDir))
+                        Directory.CreateDirectory(destinationDir);
+
+                    if (entry.Name.IsNullOrEmpty()) // Directory entry
+                        continue;
+
+                    if (File.Exists(destinationPath) && !overwrite)
+                        continue;
+
+                    entry.ExtractToFile(destinationPath, overwrite);
+                }
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to unzip file: {zipFilePath}", "[FileHelper] ");
+            return false;
         }
     }
 }
