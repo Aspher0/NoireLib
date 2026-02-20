@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/14.0.2">
     <PropertyGroup>
-        <Version>1.4.0.1</Version>
+        <Version>1.4.0.2</Version>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>
@@ -51,6 +51,7 @@
 
     <ItemGroup>
         <Folder Include="Modules\GameEventManager\" />
+        <Folder Include="Modules\FileWatcher\" />
     </ItemGroup>
 
     <ItemGroup>
