@@ -9,7 +9,7 @@ namespace NoireLib.HistoryLogger;
 /// <summary>
 /// A module for logging historical events with optional database persistence and a built-in UI for viewing and managing logs.
 /// </summary>
-public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, HistoryLoggerWindow>
+public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, HistoryLoggerWindow, HistoryLoggerConfigInstance>
 {
     internal const string DefaultDatabaseName = "NoireHistoryLogger";
 

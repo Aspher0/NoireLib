@@ -11,7 +11,8 @@ namespace NoireLib.Core.Modules;
 /// Provides automatic window registration and management within the NoireLib window system.
 /// </summary>
 /// <typeparam name="TModule">The type of the parent module associated with this window.</typeparam>
-public abstract class NoireModuleWindowBase<TModule> : Window, IDisposable, INoireModuleWindow where TModule : class, INoireModuleWithWindow, new()
+public abstract class NoireModuleWindowBase<TModule> : Window, IDisposable, INoireModuleWindow
+    where TModule : class, INoireModuleWithWindow, new()
 {
     /// <summary>
     /// The parent module associated with this window.

@@ -8,6 +8,7 @@ namespace NoireLib.Configuration;
 /// <summary>
 /// Base class for NoireLib configuration classes that provides automatic JSON serialization and file management.
 /// </summary>
+[Serializable]
 public abstract class NoireConfigBase : INoireConfig
 {
     internal static bool IsInternalCopying { get; set; } = false;
@@ -24,11 +25,17 @@ public abstract class NoireConfigBase : INoireConfig
     public abstract int Version { get; set; }
 
     /// <summary>
-    /// Gets the configuration file name (without extension).
+    /// Gets the configuration file name (with or without extension).
     /// Override this method to provide a custom file name for your configuration.
     /// </summary>
     /// <returns>The configuration file name.</returns>
     public abstract string GetConfigFileName();
+
+    /// <summary>
+    /// Determines whether the configuration should be automatically loaded from disk when NoireLib initializes.
+    /// </summary>
+    [JsonIgnore]
+    public virtual bool LoadFromDiskOnInitialization => true;
 
     /// <summary>
     /// Gets the default version value defined in the derived class.
@@ -55,10 +62,19 @@ public abstract class NoireConfigBase : INoireConfig
     /// <summary>
     /// Gets the full path to the configuration file.
     /// </summary>
-    /// <returns>The full path to the configuration JSON file, or null if NoireLib is not initialized.</returns>
+    /// <returns>The full path to the configuration JSON file, or null if NoireLib is not initialized or the file name is invalid.</returns>
     protected string? GetConfigFilePath()
     {
-        var fileName = $"{GetConfigFileName()}.json";
+        var fileName = GetConfigFileName();
+        if (string.IsNullOrEmpty(fileName))
+        {
+            NoireLogger.LogError<NoireConfigBase>($"Configuration file name is null or empty: {GetType().Name}");
+            return null;
+        }
+
+        if (!fileName.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            fileName += ".json";
+
         return FileHelper.GetPluginConfigFilePath(fileName);
     }
 
@@ -126,9 +142,13 @@ public abstract class NoireConfigBase : INoireConfig
         if (string.IsNullOrEmpty(filePath))
             return false;
 
+#if DEBUG
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
         try
         {
-            if (!FileHelper.FileExists(filePath))
+            if (!Exists())
             {
                 NoireLogger.LogDebug<NoireConfigBase>($"Configuration file not found: {filePath}. Using default values.");
                 return false;
@@ -179,6 +199,8 @@ public abstract class NoireConfigBase : INoireConfig
                 Save();
             }
 
+            NoireConfigManager.AddConfigToCache(GetType(), this);
+
             NoireLogger.LogVerbose<NoireConfigBase>($"Configuration loaded successfully from: {filePath}");
             return true;
         }
@@ -186,6 +208,13 @@ public abstract class NoireConfigBase : INoireConfig
         {
             NoireLogger.LogError<NoireConfigBase>(ex, $"Failed to load configuration from: {filePath}");
             return false;
+        }
+        finally
+        {
+#if DEBUG
+            stopwatch.Stop();
+            NoireLogger.LogInfo($"Loaded configuration \"{GetType().Name}\" in {stopwatch.ElapsedMilliseconds} ms");
+#endif
         }
     }
 

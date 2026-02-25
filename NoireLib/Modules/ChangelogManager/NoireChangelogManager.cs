@@ -11,7 +11,7 @@ namespace NoireLib.Changelog;
 /// Includes a fully automatic version handling, as well as manual management methods.<br/>
 /// Publishes events via <see cref="EventBus"/> for changelog actions.
 /// </summary>
-public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogManager, ChangelogWindow>
+public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogManager, ChangelogWindow, ChangelogManagerConfigInstance>
 {
     private readonly Dictionary<Version, ChangelogVersion> changelogs = new();
 
@@ -200,7 +200,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         if (latestVersion == null)
             return;
 
-        var lastSeenVersion = ChangelogManagerConfig.Instance.LastSeenChangelogVersion;
+        var lastSeenVersion = ChangelogManagerConfig.LastSeenChangelogVersion;
 
         NoireLogger.LogDebug(this, $"Latest version: {latestVersion}, Last seen version: {lastSeenVersion}");
 
@@ -210,7 +210,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
                 ModuleWindow!.ShowChangelogForVersion(latestVersion);
 
             // Update the last seen version, even if should not show automatically to avoid showing it automatically when enabling the option
-            ChangelogManagerConfig.Instance.UpdateLastSeenVersion(latestVersion);
+            ChangelogManagerConfig.UpdateLastSeenVersion(latestVersion);
         }
     }
 
@@ -222,7 +222,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager ClearLastSeenVersion()
     {
-        ChangelogManagerConfig.Instance.ClearLastSeenVersion();
+        ChangelogManagerConfig.ClearLastSeenVersion();
         PublishEvent(new ChangelogLastSeenVersionClearedEvent());
         return this;
     }
@@ -236,7 +236,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         var latestVersion = GetLatestVersion();
         if (latestVersion != null)
         {
-            ChangelogManagerConfig.Instance.UpdateLastSeenVersion(latestVersion);
+            ChangelogManagerConfig.UpdateLastSeenVersion(latestVersion);
             PublishEvent(new ChangelogLastSeenVersionUpdatedEvent(latestVersion));
         }
         return this;
@@ -249,7 +249,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager SetLastSeenVersion(Version version)
     {
-        ChangelogManagerConfig.Instance.UpdateLastSeenVersion(version);
+        ChangelogManagerConfig.UpdateLastSeenVersion(version);
         PublishEvent(new ChangelogLastSeenVersionUpdatedEvent(version));
         return this;
     }

@@ -1,7 +1,9 @@
 using NoireLib.Configuration.Migrations;
 using NoireLib.Helpers;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NoireLib.Configuration;
 
@@ -10,8 +12,7 @@ namespace NoireLib.Configuration;
 /// </summary>
 public static class NoireConfigManager
 {
-    private static readonly Dictionary<Type, INoireConfig> ConfigCache = new();
-    private static readonly object CacheLock = new();
+    private static readonly ConcurrentDictionary<Type, INoireConfig> ConfigCache = new();
 
     /// <summary>
     /// Gets or creates a configuration instance of the specified type.
@@ -23,24 +24,23 @@ public static class NoireConfigManager
     {
         var type = typeof(T);
 
-        lock (CacheLock)
-        {
-            if (ConfigCache.TryGetValue(type, out var cachedConfig))
-                return cachedConfig as T;
+        if (ConfigCache.TryGetValue(type, out var cachedConfig))
+            return cachedConfig as T;
 
-            try
-            {
-                var config = new T();
-                config.Load();
-                ConfigCache[type] = config;
-                return config;
-            }
-            catch (Exception ex)
-            {
-                NoireLogger.LogError(ex, $"Failed to get or create configuration of type: {type.Name}", "[NoireConfigManager] ");
-                return null;
-            }
+        T? config = null;
+        try
+        {
+            config = new T();
+            config.Load();
         }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to get or create configuration of type: {type.Name}", "[NoireConfigManager] ");
+            return null;
+        }
+
+        ConfigCache.TryAdd(type, config!);
+        return config;
     }
 
     /// <summary>
@@ -82,10 +82,7 @@ public static class NoireConfigManager
 
         if (success)
         {
-            lock (CacheLock)
-            {
-                ConfigCache[typeof(T)] = config;
-            }
+            ConfigCache.TryAdd(typeof(T), config);
         }
 
         return success;
@@ -122,11 +119,7 @@ public static class NoireConfigManager
     /// <returns>The reloaded configuration instance, or null if the reload failed.</returns>
     public static T? ReloadConfig<T>() where T : NoireConfigBase, new()
     {
-        lock (CacheLock)
-        {
-            ConfigCache.Remove(typeof(T));
-        }
-
+        ConfigCache.Remove(typeof(T), out _);
         return GetConfig<T>();
     }
 
@@ -137,10 +130,7 @@ public static class NoireConfigManager
     /// <returns>True if the configuration was removed from cache; otherwise, false.</returns>
     public static bool UnloadConfig<T>() where T : NoireConfigBase
     {
-        lock (CacheLock)
-        {
-            return ConfigCache.Remove(typeof(T));
-        }
+        return ConfigCache.Remove(typeof(T), out _);
     }
 
     /// <summary>
@@ -158,10 +148,7 @@ public static class NoireConfigManager
 
         if (success)
         {
-            lock (CacheLock)
-            {
-                ConfigCache.Remove(typeof(T));
-            }
+            ConfigCache.Remove(typeof(T), out _);
         }
 
         return success;
@@ -183,11 +170,8 @@ public static class NoireConfigManager
     /// </summary>
     public static void ClearCache()
     {
-        lock (CacheLock)
-        {
-            ConfigCache.Clear();
-            NoireLogger.LogDebug("Configuration cache cleared.", "[NoireConfigManager] ");
-        }
+        ConfigCache.Clear();
+        NoireLogger.LogDebug("Configuration cache cleared.", "[NoireConfigManager] ");
     }
 
     /// <summary>
@@ -196,10 +180,7 @@ public static class NoireConfigManager
     /// <returns>The number of cached configurations.</returns>
     public static int GetCachedConfigCount()
     {
-        lock (CacheLock)
-        {
-            return ConfigCache.Count;
-        }
+        return ConfigCache.Count;
     }
 
     /// <summary>
@@ -208,18 +189,23 @@ public static class NoireConfigManager
     /// <returns>True if all configurations were saved successfully; otherwise, false.</returns>
     public static bool SaveAllCached()
     {
-        lock (CacheLock)
+        var allSuccess = true;
+
+        foreach (var config in ConfigCache.Values)
         {
-            var allSuccess = true;
-
-            foreach (var config in ConfigCache.Values)
-            {
-                if (!config.Save())
-                    allSuccess = false;
-            }
-
-            return allSuccess;
+            if (!config.Save())
+                allSuccess = false;
         }
+
+        return allSuccess;
+    }
+
+    internal static bool AddConfigToCache(Type configType, INoireConfig config)
+    {
+#if DEBUG
+        NoireLogger.LogDebug($"Adding configuration of type {configType.Name} to cache.", "[NoireConfigManager] ");
+#endif
+        return ConfigCache.TryAdd(configType, config);
     }
 
     /// <summary>
@@ -248,5 +234,68 @@ public static class NoireConfigManager
     public static void ClearMigrations()
     {
         MigrationExecutor.ClearRuntimeMigrations();
+    }
+
+    internal static void LoadMarkedConfigsFromDisk()
+    {
+        // Get all configurations that have LoadFromDiskOnInitialization set to true
+        var configTypes = NoireService.PluginInstance?.GetType().Assembly.GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && typeof(NoireConfigBase).IsAssignableFrom(t))
+            .Where(t =>
+            {
+                var prop = t.GetProperty(nameof(NoireConfigBase.LoadFromDiskOnInitialization));
+                if (prop == null || !prop.CanRead)
+                    return false;
+
+                try
+                {
+                    var instance = Activator.CreateInstance(t) as NoireConfigBase;
+                    return instance?.LoadFromDiskOnInitialization == true;
+                }
+                catch
+                {
+                    return false;
+                }
+            });
+
+        if (configTypes == null)
+            return;
+
+        foreach (var configType in configTypes)
+        {
+            if (configType == null)
+                continue;
+
+            try
+            {
+                var baseType = configType.BaseType;
+                var isGenericBase = baseType != null &&
+                    baseType.IsGenericType &&
+                    baseType.GetGenericTypeDefinition() == typeof(NoireConfigBase<>);
+
+                if (isGenericBase)
+                {
+                    var instanceProp = configType.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                    if (instanceProp == null && baseType != null)
+                        instanceProp = baseType.GetProperty("Instance", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+
+                    if (instanceProp != null)
+                        instanceProp.GetValue(null);
+                    else
+                        NoireLogger.LogWarning($"Could not find static Instance property for generic config type: {configType.Name}", "[NoireConfigManager] ");
+                }
+                else
+                {
+                    var configInstance = Activator.CreateInstance(configType) as NoireConfigBase;
+                    if (configInstance != null)
+                        configInstance.Load();
+                }
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, $"Failed to load configuration of type: {configType.Name} during initialization.", "[NoireConfigManager] ");
+            }
+        }
     }
 }

@@ -23,7 +23,7 @@ public interface INoireConfig
     bool Load();
 
     /// <summary>
-    /// Gets the configuration file name (without extension).
+    /// Gets the configuration file name (with or without extension).
     /// </summary>
     /// <returns>The configuration file name.</returns>
     string GetConfigFileName();

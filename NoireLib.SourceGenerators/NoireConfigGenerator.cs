@@ -12,6 +12,16 @@ namespace NoireLib.SourceGenerators;
 [Generator]
 public class NoireConfigGenerator : IIncrementalGenerator
 {
+    private readonly List<string> _propertiesToIgnore = new List<string>()
+    {
+        "LoadFromDiskOnInitialization",
+    };
+
+    private readonly List<string> _methodsToIgnore = new List<string>()
+    {
+        "GetConfigFileName",
+    };
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         var classDeclarations = context.SyntaxProvider
@@ -170,6 +180,9 @@ public class NoireConfigGenerator : IIncrementalGenerator
         // Generate static properties
         foreach (var property in classInfo.Properties)
         {
+            if (_propertiesToIgnore.Contains(property.Name))
+                continue;
+
             sb.AppendLine("/// <summary>");
             sb.AppendLine($"/// Gets or sets the {property.Name} property on the configuration instance.");
 
@@ -195,6 +208,9 @@ public class NoireConfigGenerator : IIncrementalGenerator
         // Generate static methods
         foreach (var method in classInfo.Methods)
         {
+            if (_methodsToIgnore.Contains(method.Name))
+                continue;
+
             // Build parameter declaration list and argument list explicitly as strings
             var paramDecls = method.Parameters.Count > 0
                 ? string.Join(", ", method.Parameters.Select(p => $"{p.Type} {p.Name}").ToArray())

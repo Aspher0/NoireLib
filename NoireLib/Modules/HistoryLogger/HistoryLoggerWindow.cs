@@ -55,7 +55,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     /// </summary>
     public override void Draw()
     {
-        var isExpanded = HistoryLoggerConfig.Instance.IsHeaderPanelExpanded;
+        var isExpanded = HistoryLoggerConfig.IsHeaderPanelExpanded;
 
         if (isExpanded)
         {
@@ -87,13 +87,13 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
     private void DrawHeaderToggleButton()
     {
-        var isExpanded = HistoryLoggerConfig.Instance.IsHeaderPanelExpanded;
+        var isExpanded = HistoryLoggerConfig.IsHeaderPanelExpanded;
         var buttonText = isExpanded ? FontAwesomeIcon.ChevronUp.ToIconString() : FontAwesomeIcon.ChevronDown.ToIconString();
 
         ImGui.PushFont(NoireService.PluginInterface.UiBuilder.FontIcon);
         if (ImGui.Button($"{buttonText}##HeaderToggle"))
         {
-            HistoryLoggerConfig.Instance.IsHeaderPanelExpanded = !isExpanded;
+            HistoryLoggerConfig.IsHeaderPanelExpanded = !isExpanded;
         }
         ImGui.PopFont();
 
@@ -195,17 +195,17 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             ImGui.SameLine();
         }
 
-        var showLevelBackgroundColors = HistoryLoggerConfig.Instance.ShowLevelBackgroundColors;
+        var showLevelBackgroundColors = HistoryLoggerConfig.ShowLevelBackgroundColors;
         if (ImGui.Checkbox("Show colors", ref showLevelBackgroundColors))
-            HistoryLoggerConfig.Instance.ShowLevelBackgroundColors = showLevelBackgroundColors;
+            HistoryLoggerConfig.ShowLevelBackgroundColors = showLevelBackgroundColors;
 
         ImGui.SameLine();
 
-        var allowSelectLinesSeparately = HistoryLoggerConfig.Instance.SelectLinesSeparately;
+        var allowSelectLinesSeparately = HistoryLoggerConfig.SelectLinesSeparately;
         if (ImGui.Checkbox("Split lines", ref allowSelectLinesSeparately))
         {
-            var previousMode = HistoryLoggerConfig.Instance.SelectLinesSeparately;
-            HistoryLoggerConfig.Instance.SelectLinesSeparately = allowSelectLinesSeparately;
+            var previousMode = HistoryLoggerConfig.SelectLinesSeparately;
+            HistoryLoggerConfig.SelectLinesSeparately = allowSelectLinesSeparately;
 
             // Synchronize selections when switching modes
             if (allowSelectLinesSeparately && !previousMode)
@@ -233,15 +233,15 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         }
 
         ImGui.SameLine();
-        var hideCategoryColumn = HistoryLoggerConfig.Instance.HideCategoryColumn;
+        var hideCategoryColumn = HistoryLoggerConfig.HideCategoryColumn;
         if (ImGui.Checkbox("Hide category", ref hideCategoryColumn))
-            HistoryLoggerConfig.Instance.HideCategoryColumn = hideCategoryColumn;
+            HistoryLoggerConfig.HideCategoryColumn = hideCategoryColumn;
 
         ImGui.SameLine();
 
-        var hideSourceColumn = HistoryLoggerConfig.Instance.HideSourceColumn;
+        var hideSourceColumn = HistoryLoggerConfig.HideSourceColumn;
         if (ImGui.Checkbox("Hide source", ref hideSourceColumn))
-            HistoryLoggerConfig.Instance.HideSourceColumn = hideSourceColumn;
+            HistoryLoggerConfig.HideSourceColumn = hideSourceColumn;
 
         ImGui.SameLine();
 
@@ -359,7 +359,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             selectedLines.RemoveWhere(line => !filteredSet.Contains(line.Entry));
         }
 
-        var itemsPerPage = Math.Max(1, HistoryLoggerConfig.Instance.ItemsPerPage);
+        var itemsPerPage = Math.Max(1, HistoryLoggerConfig.ItemsPerPage);
         var totalPages = Math.Max(1, (int)Math.Ceiling(filtered.Count / (double)itemsPerPage));
         currentPage = Math.Clamp(currentPage, 1, totalPages);
 
@@ -367,7 +367,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         var endIndex = Math.Min(startIndex + itemsPerPage, filtered.Count);
         var pagedEntries = filtered.Skip(startIndex).Take(itemsPerPage).ToList();
 
-        var isExpanded = HistoryLoggerConfig.Instance.IsHeaderPanelExpanded;
+        var isExpanded = HistoryLoggerConfig.IsHeaderPanelExpanded;
         if (!isExpanded)
         {
             DrawHeaderToggleButton();
@@ -385,8 +385,8 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             return;
 
         // Déterminer dynamiquement les colonnes à afficher
-        bool hideCategory = HistoryLoggerConfig.Instance.HideCategoryColumn;
-        bool hideSource = HistoryLoggerConfig.Instance.HideSourceColumn;
+        bool hideCategory = HistoryLoggerConfig.HideCategoryColumn;
+        bool hideSource = HistoryLoggerConfig.HideSourceColumn;
         int columnCount = 3 + (hideCategory ? 0 : 1) + (hideSource ? 0 : 1); // Time, Level, Message, [Category], [Source]
 
         using var table = ImRaii.Table("HistoryLoggerEntriesTable", columnCount, ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.Resizable | ImGuiTableFlags.SizingStretchProp | ImGuiTableFlags.ScrollY | ImGuiTableFlags.Sortable);
@@ -423,7 +423,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.TableSetColumnIndex(messageColIndex);
         var messageColumnWidth = ImGui.GetContentRegionAvail().X;
 
-        if (HistoryLoggerConfig.Instance.SelectLinesSeparately)
+        if (HistoryLoggerConfig.SelectLinesSeparately)
             DrawLogEntriesWithLineSeparation(pagedEntries, messageColumnWidth, hideCategory, hideSource);
         else
             DrawLogEntriesStandard(pagedEntries, messageColumnWidth, hideCategory, hideSource);
@@ -445,7 +445,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
             if (isSelected)
                 ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ColorHelper.HexToUint("#FFFFFF44"));
-            else if (HistoryLoggerConfig.Instance.ShowLevelBackgroundColors)
+            else if (HistoryLoggerConfig.ShowLevelBackgroundColors)
             {
                 var levelColor = GetLevelBackgroundColor(entry.Level);
                 if (levelColor.W > 0f)
@@ -537,7 +537,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                 {
                     ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ColorHelper.HexToUint("#FFFFFF44"));
                 }
-                else if (HistoryLoggerConfig.Instance.ShowLevelBackgroundColors)
+                else if (HistoryLoggerConfig.ShowLevelBackgroundColors)
                 {
                     var levelColor = GetLevelBackgroundColor(entry.Level);
                     if (levelColor.W > 0f)
@@ -672,7 +672,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         if (ImGui.Combo("##ItemsPerPage", ref selectedIndex, itemsPerPageOptions.Select(x => x.ToString()).ToArray(), itemsPerPageOptions.Length))
         {
-            HistoryLoggerConfig.Instance.ItemsPerPage = itemsPerPageOptions[selectedIndex];
+            HistoryLoggerConfig.ItemsPerPage = itemsPerPageOptions[selectedIndex];
             currentPage = 1;
         }
 
@@ -832,7 +832,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         string copyLabel;
 
         int selectionCount;
-        if (HistoryLoggerConfig.Instance.SelectLinesSeparately)
+        if (HistoryLoggerConfig.SelectLinesSeparately)
         {
             selectionCount = selectedLines.Select(l => l.Entry).Distinct().Count();
             var totalLines = selectedLines.Count;
@@ -876,7 +876,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             {
                 if (ImGui.MenuItem(deleteLabel, string.Empty, false, ctrlPressed) && ctrlPressed)
                 {
-                    var entriesToDelete = HistoryLoggerConfig.Instance.SelectLinesSeparately
+                    var entriesToDelete = HistoryLoggerConfig.SelectLinesSeparately
                         ? selectedLines.Select(l => l.Entry).Distinct().ToList()
                         : selectedEntries.ToList();
 
@@ -910,7 +910,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         // Show "Copy message only" button when:
         // - Not in line separation mode (always shown), OR
         // - In line separation mode AND first line (lineIndex == 0) is selected
-        var showMessageOnlyCopy = !HistoryLoggerConfig.Instance.SelectLinesSeparately ||
+        var showMessageOnlyCopy = !HistoryLoggerConfig.SelectLinesSeparately ||
             selectedLines.Any(l => l.LineIndex == 0);
 
         if (showMessageOnlyCopy)
@@ -927,7 +927,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     }
     private void CopyEntriesToClipboard(IEnumerable<HistoryLogEntry> entries)
     {
-        if (HistoryLoggerConfig.Instance.SelectLinesSeparately && selectedLines.Count > 0)
+        if (HistoryLoggerConfig.SelectLinesSeparately && selectedLines.Count > 0)
         {
             var selectedByEntry = selectedLines.GroupBy(l => l.Entry).ToDictionary(g => g.Key, g => g.Select(l => l.LineIndex).ToHashSet());
 
@@ -990,7 +990,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
     private void CopyMessagesOnlyToClipboard()
     {
-        if (HistoryLoggerConfig.Instance.SelectLinesSeparately && selectedLines.Count > 0)
+        if (HistoryLoggerConfig.SelectLinesSeparately && selectedLines.Count > 0)
         {
             var selectedByEntry = selectedLines.GroupBy(l => l.Entry).ToDictionary(g => g.Key, g => g.Select(l => l.LineIndex).ToHashSet());
 

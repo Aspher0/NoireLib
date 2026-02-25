@@ -1,4 +1,5 @@
 
+
 # NoireLib Documentation - NoireConfigManager
 
 You are reading the documentation for `NoireConfigManager`.
@@ -46,9 +47,10 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 
 ### Things to know and quick example
 
-Whatever way you create your configuration, you will need to either inherit from `NoireConfigBase` or `NoireConfigBase<T>`.<br/>
+Whichever way you create your configuration, you will need to either inherit from `NoireConfigBase` or `NoireConfigBase<T>`.<br/>
 You will also need to override the `GetConfigFileName` method to specify the name of the configuration file in the default dalamud config folder.<br/>
 You must also implement the `Version` property to track the configuration schema version.<br/>
+You can also override the `LoadFromDiskOnInitialization` field and set it to `false` to specify that the configuration should not be loaded from disk when NoireLib is initialized. By default, the configuration is loaded from disk when NoireLib initializes. This is the recommended behavior.<br/>
 In the example below, the configuration file will be named `MyPluginConfig.json` and we use the Source Generator.
 
 ```csharp
@@ -63,6 +65,7 @@ public class MyPluginConfigInstance : NoireConfigBase
 {
     public override int Version { get; set; } = 1;
     public override string GetConfigFileName() => "MyPluginConfig"; // Do not include the .json extension
+    public override bool LoadFromDiskOnInitialization => false; // Will not load from disk on initialization, not recommended!
 
     [AutoSave]
     public bool SomeBooleanProperty { get; set; } = true;
@@ -145,14 +148,14 @@ MyConfig.ClearCache();
 ```
 
 #### Pros
-- **No instance management needed** - You do not need to instanciate the configuration nor to initialize it, you can access properties and methods directly via static class
-- **Clean syntax** - No need to call `.Instance` for every access
-- **No virtual keyword required** - Properties and methods don't need to be virtual unlike the [Castle approach](#2-castle-dynamicproxy-approach)
+- **No instance management needed** - You do not need to instanciate the configuration nor to initialize it, you can access properties and methods directly via static class.
+- **Clean syntax** - No need to call `.Instance` for every access.
+- **No virtual keyword required** - Properties and methods don't need to be virtual unlike the [Castle approach](#2-with-castle-dynamicproxy).
+- **Faster loading times** - Unlike the [Castle approach](#2-with-castle-dynamicproxy), the source generator will not create a proxy of the configuration class, meaning configurations with [AutoSave] attributes will not get proxied, which can cut around +-150ms of loading time.
 
 #### Cons
-- **"Find All References" limitations** - IDE may not find all usages of the instance class since you use the generated static class
-- **Method-level AutoSave limitation** - Methods **not** marked with `[AutoSave]` but modifying `[AutoSave]` properties will not automatically save the config, instead you need to mark the method itself with `[AutoSave]`
-- **Class name limitation** - You cannot name the instance class the same as the generated static class (e.g., `MyConfig`), you must use a different name like `MyConfigInstance`
+- **"Find All References" limitations** - IDE may not find all usages of the instance class since you use the generated static class.
+- **Class name limitation** - You cannot name the instance class the same as the generated static class (e.g., `MyConfig`), you must use a different name like `MyConfigInstance`.
 
 ---
 
@@ -160,6 +163,7 @@ MyConfig.ClearCache();
 
 **Uses runtime proxying to intercept property and method calls for automatic saving.**<br/>
 With this approach, you define your configuration class inheriting from `NoireConfigBase<T>` and access the singleton instance via the static `Instance` property. Properties and methods that should trigger automatic saving must be marked with the `[AutoSave]` attribute and declared as `virtual`.
+This is not the recommended approach as it might significally impact the loading time the first time the configuration instance is accessed (roughly +-150ms added loading time on first load only).
 
 #### Example
 
@@ -229,15 +233,12 @@ MyConfigCastle.ClearCache();
 ```
 
 #### Pros
-- **"Find All References" works** - IDE can track all usages through the Instance property
-- **Smart AutoSave** - Methods automatically save when they modify `[AutoSave]` properties, even if the method itself isn't marked
-- **Built-in singleton** - Instance property ensures only one instance exists
-- **No source generator needed**
+- **"Find All References" works** - IDE can track all usages through the Instance property.
 
 #### Cons
-- **Requires `.Instance`** - Must always access through `ClassName.Instance`
-- **Virtual keyword required** - Properties and methods with `[AutoSave]` must be virtual
-- **Runtime overhead** - Slight performance cost from dynamic proxying
+- **Requires `.Instance`** - Must always access through `ClassName.Instance`.
+- **Virtual keyword required** - Properties and methods with `[AutoSave]` must be virtual.
+- **Runtime overhead** - Performance cost from dynamic proxying. Configuration classes with [AutoSave] attributes might take +-150ms to proxy, on top of the loading from disk time, which can add up to a total of +-300ms load time total the first time it is accessed.
 
 ---
 
@@ -902,6 +903,11 @@ NoireConfigManager.ClearMigrations();
 - Ensure the JSON format is valid
 - Try deleting the file and letting it regenerate
 - Check dalamud logs with `/xllog`
+
+### Loading a configuration freezes the game on first load
+- If you have overriden the `LoadFromDiskOnInitialization` field and set it to `false`, the configuration will not load on NoireLib initialization, but rather the first time you access any of its properties or methods, which can cause a freeze if the configuration is large or if you have many `[AutoSave]` properties/methods and are using the Castle DynamicProxy approach.
+We recommend that you do not change the `LoadFromDiskOnInitialization` field and let the configuration load on NoireLib initialization to avoid this issue.
+- If you need to load the configuration later or if the issue persists, consider using the Source Generator or Legacy approach which mitigates the loading time.
 
 ### Migration issues
 

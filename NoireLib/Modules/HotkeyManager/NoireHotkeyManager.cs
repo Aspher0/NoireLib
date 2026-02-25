@@ -16,7 +16,7 @@ namespace NoireLib.HotkeyManager;
 /// <summary>
 /// A module that manages editable hotkeys and triggers callbacks when they are activated.
 /// </summary>
-public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
+public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyManagerConfigInstance>
 {
     private readonly Dictionary<string, HotkeyEntry> hotkeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly object hotkeyLock = new();
@@ -37,7 +37,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     private (bool Ctrl, bool Shift, bool Alt)? listeningModifierState;
     private bool waitingForModifierRelease;
     private volatile int postListeningBlockKeyCode;
-    private HotkeyManagerConfig? hotkeyConfig;
 
     /// <summary>
     /// The associated EventBus instance for publishing hotkey events.
@@ -139,7 +138,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
 
             if (shouldSaveKeybinds)
             {
-                EnsureConfigLoaded();
+                EnsureConfigComparer();
                 SaveAllKeybinds();
             }
         }
@@ -454,7 +453,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
     private void StartUpdateTimer()
     {
         // We use a system timer instead of the framework update because framework update is bound to FPS.
-        // On low FPS, hotkeys are skipped
+        // On low FPS, hotkeys are skipped otherwise
         if (updateTimer != null)
             return;
 
@@ -869,15 +868,13 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         }
     }
 
-    private void EnsureConfigLoaded()
+    private void EnsureConfigComparer()
     {
-        hotkeyConfig ??= HotkeyManagerConfig.Instance;
-
-        if (hotkeyConfig == null)
-            return;
-
-        if (hotkeyConfig.Keybinds.Comparer != StringComparer.OrdinalIgnoreCase)
-            hotkeyConfig.Keybinds = new Dictionary<string, HotkeyBinding>(hotkeyConfig.Keybinds, StringComparer.OrdinalIgnoreCase);
+        if (HotkeyManagerConfig.Keybinds.Comparer != StringComparer.OrdinalIgnoreCase)
+        {
+            HotkeyManagerConfig.Keybinds = new Dictionary<string, HotkeyBinding>(HotkeyManagerConfig.Keybinds, StringComparer.OrdinalIgnoreCase);
+            HotkeyManagerConfig.Instance.Save();
+        }
     }
 
     private void ApplyPersistedBinding(HotkeyEntry entry)
@@ -885,11 +882,9 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         if (!shouldSaveKeybinds)
             return;
 
-        EnsureConfigLoaded();
-        if (hotkeyConfig == null)
-            return;
+        EnsureConfigComparer();
 
-        if (hotkeyConfig.Keybinds.TryGetValue(entry.Id, out var binding))
+        if (HotkeyManagerConfig.Keybinds.TryGetValue(entry.Id, out var binding))
             entry.Binding = binding;
     }
 
@@ -898,12 +893,10 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         if (!shouldSaveKeybinds)
             return;
 
-        EnsureConfigLoaded();
-        if (hotkeyConfig == null)
-            return;
+        EnsureConfigComparer();
 
-        hotkeyConfig.Keybinds[id] = binding;
-        hotkeyConfig.Save();
+        HotkeyManagerConfig.Keybinds[id] = binding;
+        HotkeyManagerConfig.Save();
     }
 
     private void RemoveHotkeyBinding(string id)
@@ -911,12 +904,10 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         if (!shouldSaveKeybinds)
             return;
 
-        EnsureConfigLoaded();
-        if (hotkeyConfig == null)
-            return;
+        EnsureConfigComparer();
 
-        if (hotkeyConfig.Keybinds.Remove(id))
-            hotkeyConfig.Save();
+        if (HotkeyManagerConfig.Keybinds.Remove(id))
+            HotkeyManagerConfig.Save();
     }
 
     private void SaveAllKeybinds()
@@ -924,16 +915,14 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager>
         if (!shouldSaveKeybinds)
             return;
 
-        EnsureConfigLoaded();
-        if (hotkeyConfig == null)
-            return;
+        EnsureConfigComparer();
 
         lock (hotkeyLock)
         {
-            hotkeyConfig.Keybinds = hotkeys.Values.ToDictionary(entry => entry.Id, entry => entry.Binding, StringComparer.OrdinalIgnoreCase);
+            HotkeyManagerConfig.Keybinds = hotkeys.Values.ToDictionary(entry => entry.Id, entry => entry.Binding, StringComparer.OrdinalIgnoreCase);
         }
 
-        hotkeyConfig.Save();
+        HotkeyManagerConfig.Save();
     }
 
     private bool GetIsDown(HotkeyEntry entry)

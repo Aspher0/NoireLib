@@ -14,6 +14,10 @@ internal static class NoireConfigAutoSaveProxy
 
     public static T Create<T>(T? instance) where T : NoireConfigBase
     {
+#if DEBUG
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+#endif
+
         if (instance == null)
             return null!;
 
@@ -25,6 +29,12 @@ internal static class NoireConfigAutoSaveProxy
         {
             var interceptor = new NoireConfigAutoSaveInterceptor(typeof(T));
             var proxy = ProxyGenerator.CreateClassProxy(typeof(T), interceptor);
+
+#if DEBUG
+            stopwatch.Stop();
+            NoireLogger.LogInfo($"Loaded config dynamic proxy {typeof(T).Name} in {stopwatch.ElapsedMilliseconds} ms");
+#endif
+
             return (T)proxy;
         }
         catch (Exception ex)

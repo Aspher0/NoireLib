@@ -1,3 +1,4 @@
+using NoireLib.Configuration;
 using System;
 using System.Collections.Generic;
 
@@ -8,7 +9,8 @@ namespace NoireLib.Core.Modules;
 /// Allows for multiple instances of the same module type with unique identifiers and instance counters.
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
-public abstract class NoireModuleBase<TModule> : INoireModule where TModule : NoireModuleBase<TModule>, new()
+public abstract class NoireModuleBase<TModule> : INoireModule
+    where TModule : NoireModuleBase<TModule>, new()
 {
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();
     private static readonly object CounterLock = new();
@@ -190,4 +192,41 @@ public abstract class NoireModuleBase<TModule> : INoireModule where TModule : No
     {
         DisposeInternal();
     }
+}
+
+/// <summary>
+/// Base class for modules within the NoireLib library.<br/>
+/// Allows for multiple instances of the same module type with unique identifiers and instance counters.<br/>
+/// Will initialize the configuration of type <typeparamref name="TConfiguration"/> on static constructor to make sure it's loaded on initialization of the module.
+/// </summary>
+/// <typeparam name="TModule">The type of the module.</typeparam>
+/// <typeparam name="TConfiguration">The type of the configuration associated with the module.</typeparam>
+public abstract class NoireModuleBase<TModule, TConfiguration> : NoireModuleBase<TModule>
+    where TModule : NoireModuleBase<TModule, TConfiguration>, new()
+    where TConfiguration : NoireConfigBase, new()
+{
+    static NoireModuleBase()
+    {
+        NoireConfigManager.GetConfig<TConfiguration>();
+    }
+
+    /// <summary>
+    /// Constructor for the module base class.
+    /// </summary>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="args">Arguments for module initialization.</param>
+    public NoireModuleBase(string? moduleId = null, bool active = true, bool enableLogging = true, params object?[] args)
+        : base(moduleId, active, enableLogging, args) { }
+
+    /// <summary>
+    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active, enableLogging)<br/>
+    /// Used in <see cref="NoireLibMain.AddModule{T}(string?)"/> to create modules with specific IDs.
+    /// </summary>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    public NoireModuleBase(ModuleId? moduleId = null, bool active = true, bool enableLogging = true)
+        : base(moduleId, active, enableLogging) { }
 }

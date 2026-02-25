@@ -1,4 +1,5 @@
 using Dalamud.Interface.Windowing;
+using NoireLib.Configuration;
 using System;
 using System.Collections.Generic;
 using static Dalamud.Interface.Windowing.Window;
@@ -11,7 +12,9 @@ namespace NoireLib.Core.Modules;
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
 /// <typeparam name="TWindow">The type of the window associated with the module.</typeparam>
-public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleBase<TModule>, INoireModuleWithWindow where TModule : NoireModuleWithWindowBase<TModule, TWindow>, new() where TWindow : Window, INoireModuleWindow
+public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleBase<TModule>, INoireModuleWithWindow
+    where TModule : NoireModuleWithWindowBase<TModule, TWindow>, new()
+    where TWindow : Window, INoireModuleWindow
 {
     /// <summary>
     /// The window associated with this module, if any.
@@ -290,4 +293,43 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         UnregisterWindow();
         DisposeInternal();
     }
+}
+
+/// <summary>
+/// Base class for modules that integrate a window within the NoireLib library.<br/>
+/// Inherits from <see cref="NoireModuleBase{TModule}"/>.<br/>
+/// Will initialize the configuration of type <typeparamref name="TConfiguration"/> on static constructor to make sure it's loaded on initialization of the module.
+/// </summary>
+/// <typeparam name="TModule">The type of the module.</typeparam>
+/// <typeparam name="TWindow">The type of the window associated with the module.</typeparam>
+/// <typeparam name="TConfiguration">The type of the configuration associated with the module.</typeparam>
+public abstract class NoireModuleWithWindowBase<TModule, TWindow, TConfiguration> : NoireModuleWithWindowBase<TModule, TWindow>
+    where TModule : NoireModuleWithWindowBase<TModule, TWindow, TConfiguration>, new()
+    where TWindow : Window, INoireModuleWindow
+    where TConfiguration : NoireConfigBase, new()
+{
+    static NoireModuleWithWindowBase()
+    {
+        NoireConfigManager.GetConfig<TConfiguration>();
+    }
+
+    /// <summary>
+    /// Constructor for the module base class.
+    /// </summary>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    /// <param name="args">Arguments for module initialization.</param>
+    public NoireModuleWithWindowBase(string? moduleId = null, bool active = true, bool enableLogging = true, params object?[] args)
+        : base(moduleId, active, enableLogging, args) { }
+
+    /// <summary>
+    /// Every derived class (module class) shall implement a constructor like this, calling base(moduleId, active, enableLogging)<br/>
+    /// Used in <see cref="NoireLibMain.AddModule{T}(string?)"/> to create modules with specific IDs.
+    /// </summary>
+    /// <param name="moduleId">The module ID.</param>
+    /// <param name="active">Whether to activate the module on creation.</param>
+    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    public NoireModuleWithWindowBase(ModuleId? moduleId = null, bool active = true, bool enableLogging = true)
+        : base(moduleId, active, enableLogging) { }
 }
