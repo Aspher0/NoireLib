@@ -278,6 +278,11 @@ public class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
     #region Queue Management
 
+    public TaskBuilder<NoireTaskQueue> CreateTask(string? customId = null, bool isBlocking = false)
+    {
+        return TaskBuilder<NoireTaskQueue>.Create(this, customId);
+    }
+
     /// <summary>
     /// Adds a task to the queue.
     /// </summary>

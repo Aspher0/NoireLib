@@ -49,7 +49,7 @@ public class NoireLibMain
     /// <typeparam name="T">The type of the module to add.</typeparam>
     /// <param name="moduleId">Optional module ID for the module instance, in case you want to create multiple instances of the same module and be able to retrieve a specific one later.</param>
     /// <returns>The instance of the module added.</returns>
-    public static T? AddModule<T>(string? moduleId = null) where T : class, INoireModule, new()
+    public static T AddModule<T>(string? moduleId = null) where T : class, INoireModule, new()
     {
         var moduleType = typeof(T);
 
@@ -83,7 +83,7 @@ public class NoireLibMain
     /// <typeparam name="T">The type of the module to add.</typeparam>
     /// <param name="instance">The instance of the module to add.</param>
     /// <returns>The instance of the module added.</returns>
-    public static T? AddModule<T>(T instance) where T : class, INoireModule
+    public static T AddModule<T>(T instance) where T : class, INoireModule
     {
         var moduleType = typeof(T);
 

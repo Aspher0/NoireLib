@@ -15,8 +15,8 @@ public class Debouncer : TimingHelperBase
     /// <summary>
     /// Creates a new debouncer with the specified delay.
     /// </summary>
-    /// <param name="delayMilliseconds">The delay in milliseconds to wait before executing the action.</param>
-    public Debouncer(int delayMilliseconds) : base(delayMilliseconds) { }
+    /// <param name="delay">The delay to wait before executing the action.</param>
+    public Debouncer(TimeSpan delay) : base(delay) { }
 
     /// <summary>
     /// Debounces the specified action. If called multiple times, only the last call will execute after the delay period.

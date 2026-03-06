@@ -17,7 +17,7 @@ public static class ThrottleHelper
     /// <summary>
     /// Throws an exception if the NoireLib is not initialized.
     /// </summary>
-    private static void EnsureInitialized()
+    static ThrottleHelper()
     {
         if (!NoireService.IsInitialized())
             throw new InvalidOperationException("NoireLib is not initialized. Please initialize NoireLib before using ThrottleHelper.");
@@ -29,22 +29,20 @@ public static class ThrottleHelper
     /// Gets or creates a throttler for the specified key with the given interval.
     /// </summary>
     /// <param name="key">The key to identify this throttle instance.</param>
-    /// <param name="intervalMilliseconds">The interval in milliseconds between executions for this key.</param>
+    /// <param name="interval">The interval between executions for this key.</param>
     /// <returns>The throttler instance for the specified key.</returns>
-    private static Throttler GetOrCreateThrottler(string key, int intervalMilliseconds)
+    private static Throttler GetOrCreateThrottler(string key, TimeSpan interval)
     {
-        EnsureInitialized();
-
         if (string.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key));
 
-        if (intervalMilliseconds <= 0)
-            throw new ArgumentException("Interval must be greater than zero.", nameof(intervalMilliseconds));
+        if (interval <= TimeSpan.Zero)
+            throw new ArgumentException("Interval must be greater than zero.", nameof(interval));
 
-        var throttler = _throttlers.GetOrAdd(key, _ => new Throttler(intervalMilliseconds));
+        var throttler = _throttlers.GetOrAdd(key, _ => new Throttler(interval));
 
-        if (throttler.GetInterval() != intervalMilliseconds)
-            throttler.SetInterval(intervalMilliseconds);
+        if (throttler.GetInterval() != interval)
+            throttler.SetInterval(interval);
 
         return throttler;
     }
@@ -54,13 +52,13 @@ public static class ThrottleHelper
     /// </summary>
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="key">The key to identify this throttle instance.</param>
+    /// <param name="interval">The interval between executions for this key.</param>
     /// <param name="func">The function to execute if the throttle interval has passed.</param>
-    /// <param name="intervalMilliseconds">The interval in milliseconds between executions for this key.</param>
     /// <param name="defaultValue">The default value to return if the function is throttled.</param>
     /// <returns>The function result if executed, or the default value if throttled.</returns>
-    public static T? Throttle<T>(string key, Func<T> func, int intervalMilliseconds, T? defaultValue = default)
+    public static T? Throttle<T>(string key, TimeSpan interval, Func<T> func, T? defaultValue = default)
     {
-        var throttler = GetOrCreateThrottler(key, intervalMilliseconds);
+        var throttler = GetOrCreateThrottler(key, interval);
         return throttler.Throttle(func, defaultValue);
     }
 
@@ -68,12 +66,12 @@ public static class ThrottleHelper
     /// Throttles the specified action for a given key. Each key has independent throttling.
     /// </summary>
     /// <param name="key">The key to identify this throttle instance.</param>
+    /// <param name="interval">The interval between executions for this key.</param>
     /// <param name="action">The action to execute if the throttle interval has passed.</param>
-    /// <param name="intervalMilliseconds">The interval in milliseconds between executions for this key.</param>
     /// <returns>True if the action was executed, false if it was throttled.</returns>
-    public static bool Throttle(string key, Action action, int intervalMilliseconds)
+    public static bool Throttle(string key, TimeSpan interval, Action action)
     {
-        var throttler = GetOrCreateThrottler(key, intervalMilliseconds);
+        var throttler = GetOrCreateThrottler(key, interval);
         return throttler.Throttle(action);
     }
 
@@ -81,11 +79,11 @@ public static class ThrottleHelper
     /// Checks if the throttler for the specified key is available to execute an action.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="intervalMilliseconds">The interval in milliseconds to check against.</param>
+    /// <param name="interval">The interval to check against.</param>
     /// <returns>True if the throttle interval has passed, false otherwise.</returns>
-    public static bool IsAvailable(string key, int intervalMilliseconds)
+    public static bool IsAvailable(string key, TimeSpan interval)
     {
-        var throttler = GetOrCreateThrottler(key, intervalMilliseconds);
+        var throttler = GetOrCreateThrottler(key, interval);
         return throttler.IsAvailable();
     }
 
@@ -93,12 +91,12 @@ public static class ThrottleHelper
     /// Gets the remaining time in milliseconds before the throttler for the specified key will be available again.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="intervalMilliseconds">The interval in milliseconds to check against.</param>
+    /// <param name="interval">The interval to check against.</param>
     /// <param name="allowNegative">If true, allows negative values indicating how long ago the throttler became available.</param>
     /// <returns>The remaining time in milliseconds, or 0 if the throttler is already available.</returns>
-    public static double GetRemainingTime(string key, int intervalMilliseconds, bool allowNegative = false)
+    public static double GetRemainingTime(string key, TimeSpan interval, bool allowNegative = false)
     {
-        var throttler = GetOrCreateThrottler(key, intervalMilliseconds);
+        var throttler = GetOrCreateThrottler(key, interval);
         return throttler.GetRemainingTime(allowNegative);
     }
 

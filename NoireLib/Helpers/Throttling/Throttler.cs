@@ -16,8 +16,8 @@ public class Throttler : TimingHelperBase
     /// <summary>
     /// Creates a new throttler with the specified interval.
     /// </summary>
-    /// <param name="intervalMilliseconds">The minimum interval in milliseconds between action executions.</param>
-    public Throttler(int intervalMilliseconds) : base(intervalMilliseconds) { }
+    /// <param name="interval">The minimum interval as a <see cref="TimeSpan"/> between action executions.</param>
+    public Throttler(TimeSpan interval) : base(interval) { }
 
     /// <summary>
     /// Throttles the specified action. If called multiple times within the interval, only the first call executes.
@@ -39,7 +39,7 @@ public class Throttler : TimingHelperBase
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
 
-            if (timeSinceLastExecution >= _delayMilliseconds)
+            if (timeSinceLastExecution >= _delay.TotalMilliseconds)
             {
                 _lastExecutionMs = now;
                 shouldExecute = true;
@@ -81,7 +81,7 @@ public class Throttler : TimingHelperBase
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
 
-            if (timeSinceLastExecution >= _delayMilliseconds)
+            if (timeSinceLastExecution >= _delay.TotalMilliseconds)
             {
                 _lastExecutionMs = now;
                 shouldExecute = true;
@@ -118,7 +118,7 @@ public class Throttler : TimingHelperBase
         {
             var now = Environment.TickCount64;
             var timeSinceLastExecution = now - _lastExecutionMs;
-            var remaining = _delayMilliseconds - timeSinceLastExecution;
+            var remaining = _delay.TotalMilliseconds - timeSinceLastExecution;
             return allowNegative ? remaining : Math.Max(0, remaining);
         }
         finally
@@ -130,8 +130,8 @@ public class Throttler : TimingHelperBase
     /// <summary>
     /// Gets the current interval in milliseconds.
     /// </summary>
-    /// <returns>The current throttle interval in milliseconds.</returns>
-    public int GetInterval()
+    /// <returns>The current throttle interval.</returns>
+    public TimeSpan GetInterval()
     {
         return GetDelay();
     }
@@ -139,11 +139,11 @@ public class Throttler : TimingHelperBase
     /// <summary>
     /// Sets a new interval for the throttler.
     /// </summary>
-    /// <param name="intervalMilliseconds">The new interval in milliseconds.</param>
+    /// <param name="interval">The new interval as a <see cref="TimeSpan"/>.</param>
     /// <exception cref="ArgumentException">Thrown when interval is less than or equal to zero.</exception>
-    public void SetInterval(int intervalMilliseconds)
+    public void SetInterval(TimeSpan interval)
     {
-        SetDelay(intervalMilliseconds);
+        SetDelay(interval);
     }
 
     /// <summary>

@@ -10,9 +10,9 @@ namespace NoireLib.Internal.Helpers;
 public abstract class TimingHelperBase : IDisposable
 {
     /// <summary>
-    /// The delay in milliseconds associated with the timing helper.
+    /// The TimeSpan delay associated with the timing helper.
     /// </summary>
-    protected int _delayMilliseconds;
+    protected TimeSpan _delay;
 
     /// <summary>
     /// A semaphore used for thread-safe operations.
@@ -37,28 +37,28 @@ public abstract class TimingHelperBase : IDisposable
     /// <summary>
     /// Initializes a new instance of the <see cref="TimingHelperBase"/> class.
     /// </summary>
-    /// <param name="delayMilliseconds">The delay in milliseconds.</param>
+    /// <param name="delay">The delay as a <see cref="TimeSpan"/>.</param>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    protected TimingHelperBase(int delayMilliseconds)
+    protected TimingHelperBase(TimeSpan delay)
     {
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
-        _delayMilliseconds = delayMilliseconds;
+        _delay = delay;
     }
 
     /// <summary>
-    /// Gets the current delay in milliseconds.
+    /// Gets the current delay.
     /// </summary>
-    /// <returns>The current delay in milliseconds.</returns>
-    public int GetDelay()
+    /// <returns>The current delay as a <see cref="TimeSpan"/>.</returns>
+    public TimeSpan GetDelay()
     {
         ThrowIfDisposed();
 
         _lock.Wait();
         try
         {
-            return _delayMilliseconds;
+            return _delay;
         }
         finally
         {
@@ -69,19 +69,19 @@ public abstract class TimingHelperBase : IDisposable
     /// <summary>
     /// Sets a new delay. This does not affect any currently running operation.
     /// </summary>
-    /// <param name="delayMilliseconds">The new delay in milliseconds.</param>
+    /// <param name="delay">The new delay as a <see cref="TimeSpan"/>.</param>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public void SetDelay(int delayMilliseconds)
+    public void SetDelay(TimeSpan delay)
     {
         ThrowIfDisposed();
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
         _lock.Wait();
         try
         {
-            _delayMilliseconds = delayMilliseconds;
+            _delay = delay;
         }
         finally
         {
@@ -108,7 +108,7 @@ public abstract class TimingHelperBase : IDisposable
         _cts?.Dispose();
 
         _cts = new CancellationTokenSource();
-        _scheduledExecutionMs = Environment.TickCount64 + _delayMilliseconds;
+        _scheduledExecutionMs = Environment.TickCount64 + (long)_delay.TotalMilliseconds;
         return _cts;
     }
 
@@ -148,7 +148,7 @@ public abstract class TimingHelperBase : IDisposable
     {
         try
         {
-            await Task.Delay(_delayMilliseconds, cts.Token);
+            await Task.Delay((int)_delay.TotalMilliseconds, cts.Token);
             return true;
         }
         catch (OperationCanceledException)

@@ -32,17 +32,17 @@ public class Delayer : IDisposable
     /// Starts a delayed trigger that will execute the action after the specified delay unless cancelled.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public DelayedTrigger StartAsync(Action action, int delayMilliseconds)
+    public DelayedTrigger StartAsync(TimeSpan delay, Action action)
     {
         ThrowIfDisposed();
         action.ThrowIfNull(nameof(action));
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
         _lock.Wait();
         try
@@ -50,7 +50,7 @@ public class Delayer : IDisposable
             var execution = new DelayedTrigger
             {
                 Action = action,
-                ScheduledExecutionMs = Environment.TickCount64 + delayMilliseconds,
+                ScheduledExecutionMs = Environment.TickCount64 + (long)delay.TotalMilliseconds,
                 ParentTrigger = this
             };
 
@@ -68,17 +68,17 @@ public class Delayer : IDisposable
     /// Starts a delayed trigger that will execute the asynchronous action after the specified delay unless cancelled.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public DelayedTrigger StartAsync(Func<Task> action, int delayMilliseconds)
+    public DelayedTrigger StartAsync(TimeSpan delay, Func<Task> action)
     {
         ThrowIfDisposed();
         action.ThrowIfNull(nameof(action));
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
         _lock.Wait();
         try
@@ -86,7 +86,7 @@ public class Delayer : IDisposable
             var execution = new DelayedTrigger
             {
                 AsyncAction = action,
-                ScheduledExecutionMs = Environment.TickCount64 + delayMilliseconds,
+                ScheduledExecutionMs = Environment.TickCount64 + (long)delay.TotalMilliseconds,
                 ParentTrigger = this
             };
 
@@ -105,20 +105,20 @@ public class Delayer : IDisposable
     /// The action will be cancelled if the condition returns true after the delay.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <param name="cancelCondition">A callback that determines if the action should cancel.</param>
     /// <param name="immediatelyCancelOnConditionMet">If true, continuously checks the condition and cancels immediately when it becomes true before the delay expires.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger, or null if cancelled immediately.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public DelayedTrigger? StartAsync(Action action, int delayMilliseconds, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
+    public DelayedTrigger? StartAsync(TimeSpan delay, Action action, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
     {
         ThrowIfDisposed();
         action.ThrowIfNull(nameof(action));
         cancelCondition.ThrowIfNull(nameof(cancelCondition));
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
         if (immediatelyCancelOnConditionMet && cancelCondition())
             return null;
@@ -131,7 +131,7 @@ public class Delayer : IDisposable
                 Action = action,
                 Condition = cancelCondition,
                 CheckConditionImmediately = immediatelyCancelOnConditionMet,
-                ScheduledExecutionMs = Environment.TickCount64 + delayMilliseconds,
+                ScheduledExecutionMs = Environment.TickCount64 + (long)delay.TotalMilliseconds,
                 ParentTrigger = this
             };
 
@@ -150,20 +150,20 @@ public class Delayer : IDisposable
     /// The action will be cancelled if the condition returns true after the delay.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <param name="cancelCondition">An asynchronous function that determines if the action should execute. Called after the delay period.</param>
     /// <param name="immediatelyCancelOnConditionMet">If true, continuously checks the condition and cancels immediately when it becomes true before the delay expires.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger, or null if cancelled immediately.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public async Task<DelayedTrigger?> StartAsync(Func<Task> action, int delayMilliseconds, Func<Task<bool>> cancelCondition, bool immediatelyCancelOnConditionMet = false)
+    public async Task<DelayedTrigger?> StartAsync(TimeSpan delay, Func<Task> action, Func<Task<bool>> cancelCondition, bool immediatelyCancelOnConditionMet = false)
     {
         ThrowIfDisposed();
         action.ThrowIfNull(nameof(action));
         cancelCondition.ThrowIfNull(nameof(cancelCondition));
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
         if (immediatelyCancelOnConditionMet && await cancelCondition())
             return null;
@@ -176,7 +176,7 @@ public class Delayer : IDisposable
                 AsyncAction = action,
                 AsyncCondition = cancelCondition,
                 CheckConditionImmediately = immediatelyCancelOnConditionMet,
-                ScheduledExecutionMs = Environment.TickCount64 + delayMilliseconds,
+                ScheduledExecutionMs = Environment.TickCount64 + (long)delay.TotalMilliseconds,
                 ParentTrigger = this
             };
 
@@ -335,13 +335,13 @@ public class Delayer : IDisposable
     /// Useful for fire-and-forget scenarios.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public DelayedTrigger Start(Action action, int delayMilliseconds)
+    public DelayedTrigger Start(TimeSpan delay, Action action)
     {
-        return StartAsync(action, delayMilliseconds);
+        return StartAsync(delay, action);
     }
 
     /// <summary>
@@ -349,15 +349,15 @@ public class Delayer : IDisposable
     /// Useful for fire-and-forget scenarios.
     /// Each trigger is independent and will execute after its own delay.
     /// </summary>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <param name="cancelCondition">A function that determines if the action should execute.</param>
     /// <param name="immediatelyCancelOnConditionMet">If true, continuously checks the condition and cancels immediately when it becomes true before the delay expires.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger, or null if cancelled immediately.</returns>
     /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public DelayedTrigger? Start(Action action, int delayMilliseconds, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
+    public DelayedTrigger? Start(TimeSpan delay, Action action, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
     {
-        return StartAsync(action, delayMilliseconds, cancelCondition, immediatelyCancelOnConditionMet);
+        return StartAsync(delay, action, cancelCondition, immediatelyCancelOnConditionMet);
     }
 
     /// <summary>

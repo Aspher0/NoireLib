@@ -18,10 +18,10 @@ public static class DebounceHelper
     /// <summary>
     /// Throws an exception if the NoireLib is not initialized.
     /// </summary>
-    private static void EnsureInitialized()
+    static DebounceHelper()
     {
         if (!NoireService.IsInitialized())
-            throw new InvalidOperationException("NoireLib is not initialized. Please initialize NoireLib before using ThrottleHelper.");
+            throw new InvalidOperationException("NoireLib is not initialized. Please initialize NoireLib before using DebounceHelper.");
 
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_DebounceHelper", Dispose);
     }
@@ -30,22 +30,20 @@ public static class DebounceHelper
     /// Gets or creates a debouncer for the specified key with the given delay.
     /// </summary>
     /// <param name="key">The key to identify this debounce instance.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds to wait before executing the action.</param>
+    /// <param name="delay">The delay to wait before executing the action.</param>
     /// <returns>The debouncer instance for the specified key.</returns>
-    private static Debouncer GetOrCreateDebouncer(string key, int delayMilliseconds)
+    private static Debouncer GetOrCreateDebouncer(string key, TimeSpan delay)
     {
-        EnsureInitialized();
-
         if (string.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key));
 
-        if (delayMilliseconds <= 0)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delayMilliseconds));
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
 
-        var debouncer = _debouncers.GetOrAdd(key, _ => new Debouncer(delayMilliseconds));
+        var debouncer = _debouncers.GetOrAdd(key, _ => new Debouncer(delay));
 
-        if (debouncer.GetDelay() != delayMilliseconds)
-            debouncer.SetDelay(delayMilliseconds);
+        if (debouncer.GetDelay() != delay)
+            debouncer.SetDelay(delay);
 
         return debouncer;
     }
@@ -55,11 +53,11 @@ public static class DebounceHelper
     /// If called multiple times, only the last call will execute after the delay period.
     /// </summary>
     /// <param name="key">The key to identify this debounce instance.</param>
+    /// <param name="delay">The delay to wait before executing the action.</param>
     /// <param name="action">The action to execute after the debounce delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds to wait before executing the action.</param>
-    public static async Task DebounceAsync(string key, Action action, int delayMilliseconds)
+    public static async Task DebounceAsync(string key, TimeSpan delay, Action action)
     {
-        var debouncer = GetOrCreateDebouncer(key, delayMilliseconds);
+        var debouncer = GetOrCreateDebouncer(key, delay);
         await debouncer.DebounceAsync(action);
     }
 
@@ -68,11 +66,11 @@ public static class DebounceHelper
     /// If called multiple times, only the last call will execute after the delay period.
     /// </summary>
     /// <param name="key">The key to identify this debounce instance.</param>
+    /// <param name="delay">The delay to wait before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the debounce delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds to wait before executing the action.</param>
-    public static async Task DebounceAsync(string key, Func<Task> action, int delayMilliseconds)
+    public static async Task DebounceAsync(string key, TimeSpan delay, Func<Task> action)
     {
-        var debouncer = GetOrCreateDebouncer(key, delayMilliseconds);
+        var debouncer = GetOrCreateDebouncer(key, delay);
         await debouncer.DebounceAsync(action);
     }
 
@@ -80,11 +78,11 @@ public static class DebounceHelper
     /// Checks if there is a pending debounced action for the specified key.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds to check against.</param>
+    /// <param name="delay">The delay to check against.</param>
     /// <returns>True if an action is currently waiting to be executed, false otherwise.</returns>
-    public static bool IsPending(string key, int delayMilliseconds)
+    public static bool IsPending(string key, TimeSpan delay)
     {
-        var debouncer = GetOrCreateDebouncer(key, delayMilliseconds);
+        var debouncer = GetOrCreateDebouncer(key, delay);
         return debouncer.IsPending();
     }
 
@@ -92,12 +90,12 @@ public static class DebounceHelper
     /// Gets the remaining time in milliseconds before the debounced action for the specified key will execute.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds to check against.</param>
+    /// <param name="delay">The delay to check against.</param>
     /// <param name="allowNegative">If true, allows negative values when the scheduled time has passed; otherwise returns 0.</param>
     /// <returns>The remaining time in milliseconds, or 0 if no action is pending (when allowNegative is false).</returns>
-    public static double GetRemainingTime(string key, int delayMilliseconds, bool allowNegative = false)
+    public static double GetRemainingTime(string key, TimeSpan delay, bool allowNegative = false)
     {
-        var debouncer = GetOrCreateDebouncer(key, delayMilliseconds);
+        var debouncer = GetOrCreateDebouncer(key, delay);
         return debouncer.GetRemainingTime(allowNegative);
     }
 

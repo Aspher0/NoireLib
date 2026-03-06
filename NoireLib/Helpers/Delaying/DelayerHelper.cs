@@ -19,10 +19,10 @@ public static class DelayerHelper
     /// <summary>
     /// Throws an exception if the NoireLib is not initialized.
     /// </summary>
-    private static void EnsureInitialized()
+    static DelayerHelper()
     {
         if (!NoireService.IsInitialized())
-            throw new InvalidOperationException("NoireLib is not initialized. Please initialize NoireLib before using ThrottleHelper.");
+            throw new InvalidOperationException("NoireLib is not initialized. Please initialize NoireLib before using DelayerHelper.");
 
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_DelayerHelper", Dispose);
     }
@@ -34,8 +34,6 @@ public static class DelayerHelper
     /// <returns>The Delayer instance for the specified key.</returns>
     private static Delayer GetOrCreateDelayer(string key)
     {
-        EnsureInitialized();
-
         if (string.IsNullOrEmpty(key))
             throw new ArgumentNullException(nameof(key));
 
@@ -46,56 +44,56 @@ public static class DelayerHelper
     /// Starts a delayed trigger for a given key that will execute the action after the specified delay unless cancelled.
     /// </summary>
     /// <param name="key">The key to identify this delayer instance.</param>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger.</returns>
-    public static DelayedTrigger Start(string key, Action action, int delayMilliseconds)
+    public static DelayedTrigger Start(string key, TimeSpan delay, Action action)
     {
         var delayer = GetOrCreateDelayer(key);
-        return delayer.Start(action, delayMilliseconds);
+        return delayer.Start(delay, action);
     }
 
     /// <summary>
     /// Starts a delayed trigger for a given key that will execute the asynchronous action after the specified delay unless cancelled.
     /// </summary>
     /// <param name="key">The key to identify this delayer instance.</param>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger.</returns>
-    public static DelayedTrigger StartAsync(string key, Func<Task> action, int delayMilliseconds)
+    public static DelayedTrigger StartAsync(string key, TimeSpan delay, Func<Task> action)
     {
         var delayer = GetOrCreateDelayer(key);
-        return delayer.StartAsync(action, delayMilliseconds);
+        return delayer.StartAsync(delay, action);
     }
 
     /// <summary>
     /// Starts a delayed trigger for a given key with a condition that will be checked before execution.
     /// </summary>
     /// <param name="key">The key to identify this delayer instance.</param>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <param name="cancelCondition">A callback that determines if the action should cancel.</param>
     /// <param name="immediatelyCancelOnConditionMet">If true, continuously checks the condition and cancels immediately when it becomes true before the delay expires.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger, or null if cancelled immediately.</returns>
-    public static DelayedTrigger? Start(string key, Action action, int delayMilliseconds, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
+    public static DelayedTrigger? Start(string key, TimeSpan delay, Action action, Func<bool> cancelCondition, bool immediatelyCancelOnConditionMet = false)
     {
         var delayer = GetOrCreateDelayer(key);
-        return delayer.Start(action, delayMilliseconds, cancelCondition, immediatelyCancelOnConditionMet);
+        return delayer.Start(delay, action, cancelCondition, immediatelyCancelOnConditionMet);
     }
 
     /// <summary>
     /// Starts a delayed trigger for a given key with an asynchronous condition that will be checked before execution.
     /// </summary>
     /// <param name="key">The key to identify this delayer instance.</param>
+    /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
-    /// <param name="delayMilliseconds">The delay in milliseconds before executing the action.</param>
     /// <param name="cancelCondition">An asynchronous function that determines if the action should execute.</param>
     /// <param name="immediatelyCancelOnConditionMet">If true, continuously checks the condition and cancels immediately when it becomes true before the delay expires.</param>
     /// <returns>A DelayedTrigger instance that can be used to cancel or check the status of this trigger, or null if cancelled immediately.</returns>
-    public static async Task<DelayedTrigger?> StartAsync(string key, Func<Task> action, int delayMilliseconds, Func<Task<bool>> cancelCondition, bool immediatelyCancelOnConditionMet = false)
+    public static async Task<DelayedTrigger?> StartAsync(string key, TimeSpan delay, Func<Task> action, Func<Task<bool>> cancelCondition, bool immediatelyCancelOnConditionMet = false)
     {
         var delayer = GetOrCreateDelayer(key);
-        return await delayer.StartAsync(action, delayMilliseconds, cancelCondition, immediatelyCancelOnConditionMet);
+        return await delayer.StartAsync(delay, action, cancelCondition, immediatelyCancelOnConditionMet);
     }
 
     /// <summary>
