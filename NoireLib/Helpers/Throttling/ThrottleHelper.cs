@@ -79,7 +79,19 @@ public static class ThrottleHelper
     /// Checks if the throttler for the specified key is available to execute an action.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="interval">The interval to check against.</param>
+    /// <returns>True if the throttle interval has passed, false otherwise.</returns>
+    public static bool IsAvailable(string key)
+    {
+        if (_throttlers.TryGetValue(key, out var throttler))
+            return throttler.IsAvailable();
+        return true;
+    }
+
+    /// <summary>
+    /// Checks if the throttler for the specified key is available to execute an action.
+    /// </summary>
+    /// <param name="key">The key to check.</param>
+    /// <param name="interval">The new interval to check against.</param>
     /// <returns>True if the throttle interval has passed, false otherwise.</returns>
     public static bool IsAvailable(string key, TimeSpan interval)
     {
@@ -91,7 +103,20 @@ public static class ThrottleHelper
     /// Gets the remaining time in milliseconds before the throttler for the specified key will be available again.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="interval">The interval to check against.</param>
+    /// <param name="allowNegative">If true, allows negative values indicating how long ago the throttler became available.</param>
+    /// <returns>The remaining time in milliseconds, or 0 if the throttler is already available.</returns>
+    public static double GetRemainingTime(string key, bool allowNegative = false)
+    {
+        if (_throttlers.TryGetValue(key, out var throttler))
+            return throttler.GetRemainingTime(allowNegative);
+        return 0;
+    }
+
+    /// <summary>
+    /// Gets the remaining time in milliseconds before the throttler for the specified key will be available again.
+    /// </summary>
+    /// <param name="key">The key to check.</param>
+    /// <param name="interval">The new interval to check against.</param>
     /// <param name="allowNegative">If true, allows negative values indicating how long ago the throttler became available.</param>
     /// <returns>The remaining time in milliseconds, or 0 if the throttler is already available.</returns>
     public static double GetRemainingTime(string key, TimeSpan interval, bool allowNegative = false)

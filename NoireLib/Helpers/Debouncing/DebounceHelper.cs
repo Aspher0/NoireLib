@@ -90,7 +90,20 @@ public static class DebounceHelper
     /// Gets the remaining time in milliseconds before the debounced action for the specified key will execute.
     /// </summary>
     /// <param name="key">The key to check.</param>
-    /// <param name="delay">The delay to check against.</param>
+    /// <param name="allowNegative">If true, allows negative values when the scheduled time has passed; otherwise returns 0.</param>
+    /// <returns>The remaining time in milliseconds, or 0 if no action is pending (when allowNegative is false).</returns>
+    public static double GetRemainingTime(string key, bool allowNegative = false)
+    {
+        if (_debouncers.TryGetValue(key, out var debouncer))
+            return debouncer.GetRemainingTime(allowNegative);
+        return 0;
+    }
+
+    /// <summary>
+    /// Gets the remaining time in milliseconds before the debounced action for the specified key will execute.
+    /// </summary>
+    /// <param name="key">The key to check.</param>
+    /// <param name="delay">The new delay to check against.</param>
     /// <param name="allowNegative">If true, allows negative values when the scheduled time has passed; otherwise returns 0.</param>
     /// <returns>The remaining time in milliseconds, or 0 if no action is pending (when allowNegative is false).</returns>
     public static double GetRemainingTime(string key, TimeSpan delay, bool allowNegative = false)
