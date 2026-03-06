@@ -1,3 +1,4 @@
+using FFXIVClientStructs.FFXIV.Client.System.Framework;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -99,19 +100,28 @@ public static class WindowHelper
     /// Makes the specified window borderless and resizes it to fill the current monitor.
     /// </summary>
     /// <param name="hWnd">The window handle.</param>
+    /// <param name="forceViaWindowsApi">Whether to force windowed mode using Windows API if the hWnd is the game window.</param>
     /// <returns><see langword="true"/> if the operation succeeds; otherwise <see langword="false"/>.</returns>
-    public static bool SetBorderless(nint hWnd)
+    public static bool SetBorderless(nint hWnd, bool forceViaWindowsApi = false)
     {
         if (!ValidateWindow(hWnd) || !TryGetMonitorRect(hWnd, out var rect))
             return false;
 
-        var style = GetWindowLongPtr(hWnd, GwlStyle).ToInt64();
-        style &= ~WsOverlappedWindow;
-        style |= WsPopup | WsVisible;
-        SetWindowLongPtr(hWnd, GwlStyle, new nint(style));
+        if (!forceViaWindowsApi && hWnd == GetGameWindowHandle())
+        {
+            SetScreenMode((short)rect.Width, (short)rect.Height, 2);
+            return true;
+        }
+        else
+        {
+            var style = GetWindowLongPtr(hWnd, GwlStyle).ToInt64();
+            style &= ~WsOverlappedWindow;
+            style |= WsPopup | WsVisible;
+            SetWindowLongPtr(hWnd, GwlStyle, new nint(style));
 
-        return SetWindowPos(hWnd, HwndTop, rect.Left, rect.Top, rect.Width, rect.Height,
-            SetWindowPosFlags.FrameChanged | SetWindowPosFlags.ShowWindow);
+            return SetWindowPos(hWnd, HwndTop, rect.Left, rect.Top, rect.Width, rect.Height,
+                SetWindowPosFlags.FrameChanged | SetWindowPosFlags.ShowWindow);
+        }
     }
 
     /// <summary>
@@ -122,8 +132,9 @@ public static class WindowHelper
     /// <param name="height">The desired window height.</param>
     /// <param name="centerOnMonitor">Whether to center the window on its monitor.</param>
     /// <param name="resizable">Whether the window should be resizable.</param>
+    /// <param name="forceViaWindowsApi">Whether to force windowed mode using Windows API if the hWnd is the game window.</param>
     /// <returns><see langword="true"/> if the operation succeeds; otherwise <see langword="false"/>.</returns>
-    public static bool SetWindowed(nint hWnd, int width, int height, bool centerOnMonitor = true, bool resizable = true)
+    public static bool SetWindowed(nint hWnd, int width, int height, bool centerOnMonitor = true, bool resizable = true, bool forceViaWindowsApi = false)
     {
         if (!ValidateWindow(hWnd))
             return false;
@@ -131,21 +142,40 @@ public static class WindowHelper
         if (centerOnMonitor && !TryGetMonitorRect(hWnd, out var rect, true))
             return false;
 
-        var style = GetWindowLongPtr(hWnd, GwlStyle).ToInt64();
-        style &= ~WsPopup;
-        style |= WsOverlappedWindow;
+        if (!forceViaWindowsApi && hWnd == GetGameWindowHandle())
+        {
+            SetScreenMode((short)width, (short)height, 0);
+            return true;
+        }
+        else
+        {
+            var style = GetWindowLongPtr(hWnd, GwlStyle).ToInt64();
+            style &= ~WsPopup;
+            style |= WsOverlappedWindow;
 
-        if (!resizable)
-            style &= ~WsThickFrame;
+            if (!resizable)
+                style &= ~WsThickFrame;
 
-        SetWindowLongPtr(hWnd, GwlStyle, new nint(style));
+            SetWindowLongPtr(hWnd, GwlStyle, new nint(style));
 
-        var position = centerOnMonitor && TryGetMonitorRect(hWnd, out var targetRect, true)
-            ? CenterIn(targetRect, width, height)
-            : (X: 0, Y: 0);
+            var position = centerOnMonitor && TryGetMonitorRect(hWnd, out var targetRect, true)
+                ? CenterIn(targetRect, width, height)
+                : (X: 0, Y: 0);
 
-        return SetWindowPos(hWnd, HwndTop, position.X, position.Y, width, height,
-            SetWindowPosFlags.FrameChanged | SetWindowPosFlags.ShowWindow);
+            return SetWindowPos(hWnd, HwndTop, position.X, position.Y, width, height,
+                SetWindowPosFlags.FrameChanged | SetWindowPosFlags.ShowWindow);
+        }
+    }
+
+    /// <summary>
+    /// Sets the game to be in exclusive fullscreen mode with the specified resolution and refresh rate, updating both the game's configuration and the actual window state.
+    /// </summary>
+    /// <param name="width">The desired width to use as resolution.</param>
+    /// <param name="height">The desired height to use as resolution.</param>
+    /// <param name="refreshRate">The desired refresh rate for fullscreen mode.</param>
+    public static void SetGameFullscreen(int width, int height, short refreshRate = 0)
+    {
+        SetScreenMode((short)width, (short)height, 1, refreshRate);
     }
 
     /// <summary>
@@ -195,6 +225,47 @@ public static class WindowHelper
     {
         var handle = GetGameWindowHandle();
         return handle != IntPtr.Zero && GetForegroundWindow() == handle;
+    }
+
+    /// <summary>
+    /// Sets the screen mode and resolution for the game, updating both the game's configuration and the actual window state.<br/>
+    /// </summary>
+    /// <param name="width">The desired screen width.</param>
+    /// <param name="height">The desired screen height.</param>
+    /// <param name="screenMode">The screen mode (0 = Windowed, 1 = Fullscreen, 2 = Borderless).</param>
+    /// <param name="refreshRate">The refresh rate for fullscreen mode.</param>
+    private static unsafe void SetScreenMode(short width, short height, int screenMode, short refreshRate = 0)
+    {
+        NoireService.GameConfig.System.Set("ScreenMode", screenMode);
+
+        if (screenMode == 0 || screenMode == 2) // Windowed / Borderless
+        {
+            NoireService.GameConfig.System.Set("ScreenWidth", width);
+            NoireService.GameConfig.System.Set("ScreenHeight", height);
+        }
+        else if (screenMode == 1) // Fullscreen
+        {
+            NoireService.GameConfig.System.Set("FullScreenWidth", width);
+            NoireService.GameConfig.System.Set("FullScreenHeight", height);
+        }
+
+        var envManager = Framework.Instance()->EnvironmentManager;
+
+        switch (screenMode)
+        {
+            case 0: // Windowed
+                envManager->SetWindowMode(0);
+                envManager->SetWindowModeWindowed(width, height);
+                break;
+
+            case 1: // Exclusive Fullscreen
+                envManager->SetWindowModeFullscreen(width, height, refreshRate);
+                break;
+
+            case 2: // Borderless
+                envManager->SetWindowMode(2);
+                break;
+        }
     }
 
     private static (int X, int Y) CenterIn(RECT rect, int width, int height)
