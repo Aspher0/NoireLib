@@ -230,7 +230,7 @@ public partial class NoireTaskQueue
     /// <param name="includeCurrentTask">If true, will mark the currently executing task for skipping if it exists.<br/>
     /// If true, argument <paramref name="count"/> will include the current task in the skip count.</param>
     /// <param name="boundaryType">Defines how context boundaries are checked.
-    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, StrictWithBoundaryCheck: no batch separation allowed.</param>
+    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.</param>
     /// <returns>The number of tasks that were actually skipped.</returns>
     public int SkipNextTasks(int count, bool includeCurrentTask = false, ContextDefinition boundaryType = ContextDefinition.CrossContext)
     {
@@ -304,12 +304,7 @@ public partial class NoireTaskQueue
     /// <returns>true if the current task was skipped; otherwise, false.</returns>
     public bool SkipCurrentTask()
     {
-        var wasRunning = QueueState == QueueState.Running;
-
-        if (wasRunning)
-            PauseQueue();
-
-        try
+        return ExecuteWithPauseResume(() =>
         {
             lock (queueLock)
             {
@@ -345,12 +340,7 @@ public partial class NoireTaskQueue
 
                 return true;
             }
-        }
-        finally
-        {
-            if (wasRunning)
-                ResumeQueue();
-        }
+        });
     }
 
     /// <summary>
@@ -359,12 +349,7 @@ public partial class NoireTaskQueue
     /// <returns>true if the current batch was skipped; otherwise, false.</returns>
     public bool SkipCurrentBatch()
     {
-        var wasRunning = QueueState == QueueState.Running;
-
-        if (wasRunning)
-            PauseQueue();
-
-        try
+        return ExecuteWithPauseResume(() =>
         {
             lock (queueLock)
             {
@@ -379,6 +364,22 @@ public partial class NoireTaskQueue
 
                 return true;
             }
+        });
+    }
+
+    /// <summary>
+    /// Executes an action with pause/resume pattern.
+    /// </summary>
+    private T ExecuteWithPauseResume<T>(Func<T> action)
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            return action();
         }
         finally
         {
@@ -467,6 +468,302 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
+    /// Jumps to a specific task by system ID within a specific batch, cancelling all queued items before it.
+    /// </summary>
+    /// <param name="batchSystemId">The system ID of the batch containing the task.</param>
+    /// <param name="taskSystemId">The system ID of the task to jump to.</param>
+    /// <returns>True if the jump was successful; false if the batch or task was not found or not in appropriate status.</returns>
+    public bool JumpToTaskInBatch(Guid batchSystemId, Guid taskSystemId)
+    {
+        return JumpToTaskInBatchInternal(
+            batchSystemId,
+            batch => batch.GetTaskBySystemId(taskSystemId),
+            $"{batchSystemId}/{taskSystemId}");
+    }
+
+    /// <summary>
+    /// Jumps to a specific task by custom ID within a specific batch, cancelling all queued items before it.
+    /// </summary>
+    /// <param name="batchCustomId">The custom ID of the batch containing the task.</param>
+    /// <param name="taskCustomId">The custom ID of the task to jump to.</param>
+    /// <returns>True if the jump was successful; false if the batch or task was not found or not in appropriate status.</returns>
+    public bool JumpToTaskInBatch(string batchCustomId, string taskCustomId)
+    {
+        return JumpToTaskInBatchInternal(
+            batchCustomId,
+            batch => batch.GetTaskByCustomId(taskCustomId),
+            $"{batchCustomId}/{taskCustomId}");
+    }
+
+    /// <summary>
+    /// Jumps to a specific task by system ID with context boundary checking.
+    /// </summary>
+    /// <param name="targetSystemId">The system ID of the task to jump to.</param>
+    /// <param name="boundaryType">Defines how context boundaries are checked.
+    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.</param>
+    /// <returns>True if the jump was successful; false if the target task was not found, not in Queued status, or context boundary was violated.</returns>
+    public bool JumpToTask(Guid targetSystemId, ContextDefinition boundaryType)
+    {
+        return JumpToTaskWithBoundaryInternal(
+            item => item.IsTask && item.AsTask().SystemId == targetSystemId,
+            targetSystemId.ToString(),
+            boundaryType);
+    }
+
+    /// <summary>
+    /// Jumps to a specific task by custom ID with context boundary checking.
+    /// </summary>
+    /// <param name="targetCustomId">The custom ID of the task to jump to.</param>
+    /// <param name="boundaryType">Defines how context boundaries are checked.
+    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.</param>
+    /// <returns>True if the jump was successful; false if the target task was not found, not in Queued status, or context boundary was violated.</returns>
+    public bool JumpToTask(string targetCustomId, ContextDefinition boundaryType)
+    {
+        return JumpToTaskWithBoundaryInternal(
+            item => item.IsTask && item.AsTask().CustomId == targetCustomId,
+            targetCustomId,
+            boundaryType);
+    }
+
+    /// <summary>
+    /// Internal method to jump to a task within a specific batch.
+    /// </summary>
+    private bool JumpToTaskInBatchInternal<TId>(TId batchId, Func<TaskBatch, QueuedTask?> taskFinder, string targetDescription)
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                var batch = batchId is Guid guid
+                    ? GetBatchBySystemId(guid)
+                    : GetBatchByCustomId(batchId?.ToString() ?? string.Empty);
+
+                if (batch == null)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - batch with ID {batchId} not found.");
+                    return false;
+                }
+
+                var targetTask = taskFinder(batch);
+                if (targetTask == null)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task with ID {targetDescription} not found in batch.");
+                    return false;
+                }
+
+                if (targetTask.Status != TaskStatus.Queued)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task {targetTask} is not in Queued status (Status: {targetTask.Status}).");
+                    return false;
+                }
+
+                var batchWrapper = QueueItemWrapper.FromBatch(batch);
+                var batchIndex = unifiedQueue.FindIndex(item => item.IsBatch && ReferenceEquals(item.AsBatch(), batch));
+
+                if (batchIndex == -1)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - batch not found in queue.");
+                    return false;
+                }
+
+                int cancelled = 0;
+
+                // Cancel all items before the batch
+                var itemsBeforeBatch = unifiedQueue.Take(batchIndex).ToList();
+                foreach (var item in itemsBeforeBatch)
+                {
+                    if (item.IsTask)
+                    {
+                        var task = item.AsTask();
+                        if (task.Status == TaskStatus.Queued ||
+                            task.Status == TaskStatus.Executing ||
+                            task.Status == TaskStatus.WaitingForCompletion ||
+                            task.Status == TaskStatus.WaitingForPostDelay)
+                        {
+                            if (CancelTaskInternal(task))
+                                cancelled++;
+                        }
+                    }
+                    else if (item.IsBatch)
+                    {
+                        var batchItem = item.AsBatch();
+                        if (batchItem.Status == BatchStatus.Queued || batchItem.Status == BatchStatus.Processing)
+                        {
+                            if (CancelBatchInternal(batchItem))
+                                cancelled++;
+                        }
+                    }
+                }
+
+                // Cancel all tasks in the batch before the target task
+                var tasksBeforeTarget = batch.Tasks.TakeWhile(t => !ReferenceEquals(t, targetTask)).ToList();
+                foreach (var task in tasksBeforeTarget)
+                {
+                    if (task.Status == TaskStatus.Queued ||
+                        task.Status == TaskStatus.Executing ||
+                        task.Status == TaskStatus.WaitingForCompletion ||
+                        task.Status == TaskStatus.WaitingForPostDelay)
+                    {
+                        if (CancelTaskInternal(task))
+                            cancelled++;
+                    }
+                }
+
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Jumped to task {targetTask} in batch {batch}, cancelled {cancelled} item(s) before it.");
+
+                return true;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+    /// <summary>
+    /// Internal method to jump to a task with context boundary checking.
+    /// </summary>
+    private bool JumpToTaskWithBoundaryInternal(Func<QueueItemWrapper, bool> predicate, string targetDescription, ContextDefinition boundaryType)
+    {
+        var wasRunning = QueueState == QueueState.Running;
+
+        if (wasRunning)
+            PauseQueue();
+
+        try
+        {
+            lock (queueLock)
+            {
+                var targetItem = unifiedQueue.FirstOrDefault(predicate);
+                if (targetItem == null)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task with ID {targetDescription} not found.");
+                    return false;
+                }
+
+                var targetTask = targetItem.AsTask();
+                if (targetTask.Status != TaskStatus.Queued)
+                {
+                    if (EnableLogging)
+                        NoireLogger.LogWarning(this, $"Cannot jump to task - task {targetTask} is not in Queued status (Status: {targetTask.Status}).");
+                    return false;
+                }
+
+                // Check context boundary
+                bool isInBatch = currentBatch != null;
+                bool targetIsInBatch = targetTask.ParentBatch != null;
+
+                if (boundaryType == ContextDefinition.SameContext)
+                {
+                    // SameContext: both must be in same batch, or both must be standalone
+                    if (isInBatch != targetIsInBatch)
+                    {
+                        if (EnableLogging)
+                            NoireLogger.LogWarning(this, $"Cannot jump to task - context boundary violation (SameContext). Current is {(isInBatch ? "in batch" : "standalone")}, target is {(targetIsInBatch ? "in batch" : "standalone")}.");
+                        return false;
+                    }
+
+                    if (isInBatch && currentBatch != null && !ReferenceEquals(targetTask.ParentBatch, currentBatch))
+                    {
+                        if (EnableLogging)
+                            NoireLogger.LogWarning(this, $"Cannot jump to task - target task is in a different batch.");
+                        return false;
+                    }
+                }
+                else if (boundaryType == ContextDefinition.SameContextStrict)
+                {
+                    // SameContextStrict: same as SameContext, but for standalone tasks, no batch can separate them
+                    if (isInBatch != targetIsInBatch)
+                    {
+                        if (EnableLogging)
+                            NoireLogger.LogWarning(this, $"Cannot jump to task - context boundary violation (SameContextStrict). Current is {(isInBatch ? "in batch" : "standalone")}, target is {(targetIsInBatch ? "in batch" : "standalone")}.");
+                        return false;
+                    }
+
+                    if (isInBatch && currentBatch != null && !ReferenceEquals(targetTask.ParentBatch, currentBatch))
+                    {
+                        if (EnableLogging)
+                            NoireLogger.LogWarning(this, $"Cannot jump to task - target task is in a different batch.");
+                        return false;
+                    }
+
+                    if (!isInBatch)
+                    {
+                        // Check if there's a batch between current position and target
+                        var currentIndex = currentTask != null
+                            ? unifiedQueue.FindIndex(item => item.IsTask && ReferenceEquals(item.AsTask(), currentTask))
+                            : -1;
+                        var targetTaskIndex = unifiedQueue.FindIndex(item => item.IsTask && ReferenceEquals(item.AsTask(), targetTask));
+
+                        if (currentIndex >= 0 && targetTaskIndex > currentIndex)
+                        {
+                            var itemsBetween = unifiedQueue.Skip(currentIndex + 1).Take(targetTaskIndex - currentIndex - 1);
+                            if (itemsBetween.Any(item => item.IsBatch))
+                            {
+                                if (EnableLogging)
+                                    NoireLogger.LogWarning(this, $"Cannot jump to task - batch boundary found between current and target task (SameContextStrict).");
+                                return false;
+                            }
+                        }
+                    }
+                }
+
+                var targetIndex = unifiedQueue.IndexOf(targetItem);
+                var itemsToCancel = unifiedQueue.Take(targetIndex).ToList();
+                int cancelled = 0;
+
+                foreach (var item in itemsToCancel)
+                {
+                    if (item.IsTask)
+                    {
+                        var task = item.AsTask();
+                        if (task.Status == TaskStatus.Queued ||
+                            task.Status == TaskStatus.Executing ||
+                            task.Status == TaskStatus.WaitingForCompletion ||
+                            task.Status == TaskStatus.WaitingForPostDelay)
+                        {
+                            if (CancelTaskInternal(task))
+                                cancelled++;
+                        }
+                    }
+                    else if (item.IsBatch)
+                    {
+                        var batch = item.AsBatch();
+                        if (batch.Status == BatchStatus.Queued || batch.Status == BatchStatus.Processing)
+                        {
+                            if (CancelBatchInternal(batch))
+                                cancelled++;
+                        }
+                    }
+                }
+
+                var boundaryInfo = boundaryType != ContextDefinition.CrossContext ? $" (boundary: {boundaryType})" : "";
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Jumped to task {targetTask}, cancelled {cancelled} item(s) before it{boundaryInfo}.");
+
+                return true;
+            }
+        }
+        finally
+        {
+            if (wasRunning)
+                ResumeQueue();
+        }
+    }
+
+    /// <summary>
     /// Internal method to jump to a task matching a predicate.
     /// </summary>
     private bool JumpToTaskInternal(Func<QueueItemWrapper, bool> predicate, string targetDescription)
@@ -542,27 +839,25 @@ public partial class NoireTaskQueue
     /// Gets a task by its system ID.
     /// </summary>
     public QueuedTask? GetTaskBySystemId(Guid systemId)
-    {
-        lock (queueLock)
-        {
-            return unifiedQueue
-                .Where(item => item.IsTask)
-                .Select(item => item.AsTask())
-                .FirstOrDefault(t => t.SystemId == systemId);
-        }
-    }
+        => GetTaskInternal(t => t.SystemId == systemId);
 
     /// <summary>
     /// Gets a task by its custom ID.
     /// </summary>
     public QueuedTask? GetTaskByCustomId(string customId)
+        => GetTaskInternal(t => t.CustomId == customId);
+
+    /// <summary>
+    /// Internal method to get a task matching a predicate.
+    /// </summary>
+    private QueuedTask? GetTaskInternal(Func<QueuedTask, bool> predicate)
     {
         lock (queueLock)
         {
             return unifiedQueue
                 .Where(item => item.IsTask)
                 .Select(item => item.AsTask())
-                .FirstOrDefault(t => t.CustomId == customId);
+                .FirstOrDefault(predicate);
         }
     }
 
@@ -585,27 +880,25 @@ public partial class NoireTaskQueue
     /// Gets a batch by its system ID.
     /// </summary>
     public TaskBatch? GetBatchBySystemId(Guid systemId)
-    {
-        lock (queueLock)
-        {
-            return unifiedQueue
-                .Where(item => item.IsBatch)
-                .Select(item => item.AsBatch())
-                .FirstOrDefault(b => b.SystemId == systemId);
-        }
-    }
+        => GetBatchInternal(b => b.SystemId == systemId);
 
     /// <summary>
     /// Gets a batch by its custom ID.
     /// </summary>
     public TaskBatch? GetBatchByCustomId(string customId)
+        => GetBatchInternal(b => b.CustomId == customId);
+
+    /// <summary>
+    /// Internal method to get a batch matching a predicate.
+    /// </summary>
+    private TaskBatch? GetBatchInternal(Func<TaskBatch, bool> predicate)
     {
         lock (queueLock)
         {
             return unifiedQueue
                 .Where(item => item.IsBatch)
                 .Select(item => item.AsBatch())
-                .FirstOrDefault(b => b.CustomId == customId);
+                .FirstOrDefault(predicate);
         }
     }
 
@@ -701,6 +994,18 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
+    /// Gets the current queue item wrapper (task or batch) being processed, if any.
+    /// </summary>
+    /// <returns>The current <see cref="QueueItemWrapper"/>, or null if no item is currently being processed.</returns>
+    public QueueItemWrapper? GetCurrentQueueItem()
+    {
+        lock (queueLock)
+        {
+            return currentItem;
+        }
+    }
+
+    /// <summary>
     /// Gets the currently executing task.
     /// </summary>
     public QueuedTask? GetCurrentTask()
@@ -726,31 +1031,25 @@ public partial class NoireTaskQueue
     /// Cancels a task by its system ID.
     /// </summary>
     public bool CancelTask(Guid systemId)
-    {
-        lock (queueLock)
-        {
-            var task = unifiedQueue
-                .Where(item => item.IsTask)
-                .Select(item => item.AsTask())
-                .FirstOrDefault(t => t.SystemId == systemId);
-            if (task == null)
-                return false;
-
-            return CancelTaskInternal(task);
-        }
-    }
+        => CancelTaskByIdInternal(t => t.SystemId == systemId);
 
     /// <summary>
     /// Cancels a task by its custom ID.
     /// </summary>
     public bool CancelTask(string customId)
+        => CancelTaskByIdInternal(t => t.CustomId == customId);
+
+    /// <summary>
+    /// Internal method to cancel a task found by predicate.
+    /// </summary>
+    private bool CancelTaskByIdInternal(Func<QueuedTask, bool> predicate)
     {
         lock (queueLock)
         {
             var task = unifiedQueue
                 .Where(item => item.IsTask)
                 .Select(item => item.AsTask())
-                .FirstOrDefault(t => t.CustomId == customId);
+                .FirstOrDefault(predicate);
             if (task == null)
                 return false;
 
@@ -763,65 +1062,35 @@ public partial class NoireTaskQueue
     /// </summary>
     public int CancelAllTasks(string customId)
     {
-        var wasRunning = QueueState == QueueState.Running;
-
-        if (wasRunning)
-            PauseQueue();
-
-        try
-        {
-            lock (queueLock)
-            {
-                var tasks = unifiedQueue
-                    .Where(item => item.IsTask)
-                    .Select(item => item.AsTask())
-                    .Where(t => t.CustomId == customId)
-                    .ToList();
-                int cancelled = 0;
-
-                foreach (var task in tasks)
-                    if (CancelTaskInternal(task))
-                        cancelled++;
-
-                return cancelled;
-            }
-        }
-        finally
-        {
-            if (wasRunning)
-                ResumeQueue();
-        }
+        return CancelAllItemsInternal(
+            item => item.IsTask && item.AsTask().CustomId == customId,
+            item => CancelTaskInternal(item.AsTask())
+        );
     }
 
     /// <summary>
     /// Cancels a batch by its system ID, cancelling all its tasks.
     /// </summary>
     public bool CancelBatch(Guid systemId)
-    {
-        lock (queueLock)
-        {
-            var batch = unifiedQueue
-                .Where(item => item.IsBatch)
-                .Select(item => item.AsBatch())
-                .FirstOrDefault(b => b.SystemId == systemId);
-            if (batch == null)
-                return false;
-
-            return CancelBatchInternal(batch);
-        }
-    }
+        => CancelBatchByIdInternal(b => b.SystemId == systemId);
 
     /// <summary>
     /// Cancels a batch by its custom ID, cancelling all its tasks.
     /// </summary>
     public bool CancelBatch(string customId)
+        => CancelBatchByIdInternal(b => b.CustomId == customId);
+
+    /// <summary>
+    /// Internal method to cancel a batch found by predicate.
+    /// </summary>
+    private bool CancelBatchByIdInternal(Func<TaskBatch, bool> predicate)
     {
         lock (queueLock)
         {
             var batch = unifiedQueue
                 .Where(item => item.IsBatch)
                 .Select(item => item.AsBatch())
-                .FirstOrDefault(b => b.CustomId == customId);
+                .FirstOrDefault(predicate);
             if (batch == null)
                 return false;
 
@@ -834,6 +1103,17 @@ public partial class NoireTaskQueue
     /// </summary>
     public int CancelAllBatches(string customId)
     {
+        return CancelAllItemsInternal(
+            item => item.IsBatch && item.AsBatch().CustomId == customId,
+            item => CancelBatchInternal(item.AsBatch())
+        );
+    }
+
+    /// <summary>
+    /// Internal method to cancel all items matching a predicate.
+    /// </summary>
+    private int CancelAllItemsInternal(Func<QueueItemWrapper, bool> predicate, Func<QueueItemWrapper, bool> cancelAction)
+    {
         var wasRunning = QueueState == QueueState.Running;
 
         if (wasRunning)
@@ -843,15 +1123,13 @@ public partial class NoireTaskQueue
         {
             lock (queueLock)
             {
-                var batches = unifiedQueue
-                    .Where(item => item.IsBatch)
-                    .Select(item => item.AsBatch())
-                    .Where(b => b.CustomId == customId)
+                var items = unifiedQueue
+                    .Where(predicate)
                     .ToList();
                 int cancelled = 0;
 
-                foreach (var batch in batches)
-                    if (CancelBatchInternal(batch))
+                foreach (var item in items)
+                    if (cancelAction(item))
                         cancelled++;
 
                 return cancelled;
@@ -912,7 +1190,11 @@ public partial class NoireTaskQueue
         tasksCancelled++;
 
         if (ReferenceEquals(currentTask, task))
+        {
             currentTask = null;
+            if (currentBatch == null)
+                currentItem = null;
+        }
 
         if (task.FailParentBatchOnCancel && task.ParentBatch != null)
         {
@@ -997,7 +1279,10 @@ public partial class NoireTaskQueue
         batchesCancelled++;
 
         if (ReferenceEquals(currentBatch, batch))
+        {
             currentBatch = null;
+            currentItem = null;
+        }
 
         if (batch.StopQueueOnCancel)
         {
@@ -1037,6 +1322,7 @@ public partial class NoireTaskQueue
                 unifiedQueue.Clear();
                 currentTask = null;
                 currentBatch = null;
+                currentItem = null;
             }
         }
         finally
@@ -1087,7 +1373,11 @@ public partial class NoireTaskQueue
             unifiedQueue.RemoveAll(item => item.IsTask && toRemove.Contains(item.AsTask()));
 
             if (currentTask != null && toRemove.Contains(currentTask))
+            {
                 currentTask = null;
+                if (currentBatch == null)
+                    currentItem = null;
+            }
         }
 
         foreach (var task in toRemove)
@@ -1120,7 +1410,10 @@ public partial class NoireTaskQueue
             unifiedQueue.RemoveAll(item => item.IsBatch && toRemove.Contains(item.AsBatch()));
 
             if (currentBatch != null && toRemove.Contains(currentBatch))
+            {
                 currentBatch = null;
+                currentItem = null;
+            }
         }
 
         if (EnableLogging && toRemove.Count > 0)
@@ -1142,7 +1435,7 @@ public partial class NoireTaskQueue
         {
             ContextDefinition.CrossContext => SkipTasksNoBoundary(count, isInBatch),
             ContextDefinition.SameContext => SkipTasksSameContext(count, isInBatch),
-            ContextDefinition.StrictWithBoundaryCheck => SkipTasksStrictBoundary(count, isInBatch),
+            ContextDefinition.SameContextStrict => SkipTasksStrictBoundary(count, isInBatch),
             _ => 0
         };
     }
@@ -1152,21 +1445,7 @@ public partial class NoireTaskQueue
     /// </summary>
     private int SkipTasksNoBoundary(int count, bool isInBatch)
     {
-        int skipped = 0;
-
-        if (isInBatch && currentBatch != null)
-        {
-            var remainingTasksInBatch = currentBatch.Tasks
-                .Where(t => t.Status == TaskStatus.Queued)
-                .Take(count)
-                .ToList();
-
-            foreach (var task in remainingTasksInBatch)
-            {
-                if (CancelTaskInternal(task))
-                    skipped++;
-            }
-        }
+        int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch);
 
         if (skipped >= count)
             return skipped;
@@ -1209,36 +1488,23 @@ public partial class NoireTaskQueue
     /// </summary>
     private int SkipTasksSameContext(int count, bool isInBatch)
     {
-        int skipped = 0;
+        int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch);
 
-        if (isInBatch && currentBatch != null)
+        if (isInBatch)
+            return skipped;
+
+        foreach (var item in unifiedQueue)
         {
-            var remainingTasksInBatch = currentBatch.Tasks
-                .Where(t => t.Status == TaskStatus.Queued)
-                .Take(count)
-                .ToList();
+            if (skipped >= count)
+                break;
 
-            foreach (var task in remainingTasksInBatch)
+            if (item.IsTask)
             {
-                if (CancelTaskInternal(task))
-                    skipped++;
-            }
-        }
-        else
-        {
-            foreach (var item in unifiedQueue)
-            {
-                if (skipped >= count)
-                    break;
-
-                if (item.IsTask)
+                var task = item.AsTask();
+                if (task.Status == TaskStatus.Queued)
                 {
-                    var task = item.AsTask();
-                    if (task.Status == TaskStatus.Queued)
-                    {
-                        if (CancelTaskInternal(task))
-                            skipped++;
-                    }
+                    if (CancelTaskInternal(task))
+                        skipped++;
                 }
             }
         }
@@ -1247,9 +1513,41 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
-    /// Skips tasks with StrictWithBoundaryCheck (same batch or standalone with no batch separation).
+    /// Skips tasks with SameContextStrict (same batch or standalone with no batch separation).
     /// </summary>
     private int SkipTasksStrictBoundary(int count, bool isInBatch)
+    {
+        int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch);
+
+        if (isInBatch)
+            return skipped;
+
+        foreach (var item in unifiedQueue)
+        {
+            if (skipped >= count)
+                break;
+
+            if (item.IsBatch)
+                break;
+
+            if (item.IsTask)
+            {
+                var task = item.AsTask();
+                if (task.Status == TaskStatus.Queued)
+                {
+                    if (CancelTaskInternal(task))
+                        skipped++;
+                }
+            }
+        }
+
+        return skipped;
+    }
+
+    /// <summary>
+    /// Helper method to skip remaining queued tasks in the current batch.
+    /// </summary>
+    private int SkipRemainingTasksInCurrentBatch(int count, bool isInBatch)
     {
         int skipped = 0;
 
@@ -1264,27 +1562,6 @@ public partial class NoireTaskQueue
             {
                 if (CancelTaskInternal(task))
                     skipped++;
-            }
-        }
-        else
-        {
-            foreach (var item in unifiedQueue)
-            {
-                if (skipped >= count)
-                    break;
-
-                if (item.IsBatch)
-                    break;
-
-                if (item.IsTask)
-                {
-                    var task = item.AsTask();
-                    if (task.Status == TaskStatus.Queued)
-                    {
-                        if (CancelTaskInternal(task))
-                            skipped++;
-                    }
-                }
             }
         }
 

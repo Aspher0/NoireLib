@@ -17,7 +17,6 @@ public enum BatchTaskFailureMode
 
     /// <summary>
     /// When a task fails, continue processing the remaining tasks in the batch.
-    /// The batch will only be marked as failed after all tasks are processed.
     /// </summary>
     ContinueRemaining
 }

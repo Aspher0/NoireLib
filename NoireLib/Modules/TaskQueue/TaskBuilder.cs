@@ -119,7 +119,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// </param>
     /// <param name="boundaryType">
     /// Defines how context boundaries are checked for depth calculation. <br/>
-    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, StrictWithBoundaryCheck: no batch separation allowed.
+    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.
     /// </param>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf WaitForEvent<TEvent>(

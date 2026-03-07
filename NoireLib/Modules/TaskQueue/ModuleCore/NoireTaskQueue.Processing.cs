@@ -40,100 +40,27 @@ public partial class NoireTaskQueue
                 }
                 else if (currentTask.Status == TaskStatus.WaitingForCompletion)
                 {
-                    bool conditionMet = currentTask.CompletionCondition?.IsMet() == true;
-
-                    if (conditionMet)
+                    bool earlyReturnTask = ProcessWaitingTaskStatus(currentTask, out bool complete, out bool fail);
+                    if (complete)
                     {
-                        if (!currentTask.PostDelayStartTicks.HasValue)
-                        {
-                            if (currentTask.PostCompletionDelayProvider != null)
-                                currentTask.PostCompletionDelay = currentTask.PostCompletionDelayProvider(currentTask);
-
-                            if (currentTask.PostCompletionDelay.HasValue)
-                            {
-                                currentTask.PostDelayStartTicks = Environment.TickCount64;
-                                currentTask.Status = TaskStatus.WaitingForPostDelay;
-
-                                if (currentTask.Timeout.HasValue)
-                                    currentTask.PauseTimeout();
-
-                                if (EnableLogging)
-                                    NoireLogger.LogDebug(this, $"Task entering post-completion delay: {currentTask}");
-                            }
-                            else
-                            {
-                                CompleteTask(currentTask);
-                                earlyReturn = true;
-                            }
-                        }
-                    }
-                    else if (currentTask.HasTimedOut())
-                    {
-                        FailTask(currentTask, new TimeoutException("Task timed out."));
+                        CompleteTask(currentTask);
                         earlyReturn = true;
                     }
-                    else if (currentTask.HasConditionStalled())
+                    else if (fail)
                     {
-                        if (!earlyReturn && TryRetryTask(currentTask))
+                        if (HandleWaitingTaskFinalization(currentTask, true))
                         {
-                            // Retry was initiated, continue processing
-                        }
-                        else if (!currentTask.RetryConfiguration!.MaxAttempts.HasValue ||
-                            currentTask.CurrentRetryAttempt < currentTask.RetryConfiguration.MaxAttempts.Value)
-                        {
-                            currentTask.ResetStallTracking();
+                            earlyReturn = true;
                         }
                         else
                         {
-                            // Max retries exceeded
-                            try
-                            {
-                                currentTask.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(currentTask);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
-                            }
-
-                            if (currentTask.FailParentBatchOnMaxRetries && currentTask.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Failing parent batch due to max retries exceeded: {currentTask}");
-
-                                var maxRetryException = new MaxRetryAttemptsExceededException(
-                                    $"Task exceeded maximum retry attempts ({currentTask.RetryConfiguration?.MaxAttempts.ToString() ?? "Unknown"})");
-
-                                FailTask(currentTask, maxRetryException);
-                                FailBatch(currentTask.ParentBatch, new Exception($"Batch failed by task max retries exceeded: {currentTask}", maxRetryException));
-                            }
-                            else if (currentTask.CancelParentBatchOnMaxRetries && currentTask.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to max retries exceeded: {currentTask}");
-
-                                var maxRetryException = new MaxRetryAttemptsExceededException(
-                                    $"Task exceeded maximum retry attempts ({currentTask.RetryConfiguration?.MaxAttempts.ToString() ?? "Unknown"})");
-
-                                FailTask(currentTask, maxRetryException);
-                                CancelBatchInternal(currentTask.ParentBatch);
-                            }
-                            else
-                            {
-                                FailTask(currentTask, new MaxRetryAttemptsExceededException(
-                                    $"Task exceeded maximum retry attempts ({currentTask.RetryConfiguration?.MaxAttempts.ToString() ?? "Unknown"})"));
-                            }
-
+                            FailTask(currentTask, CreateTaskTimeoutOrRetryException(currentTask));
                             earlyReturn = true;
                         }
                     }
-                    else
+                    else if (earlyReturnTask)
                     {
-                        if (currentTask.RetryConfiguration != null && currentTask.CompletionCondition?.Type == CompletionConditionType.Predicate)
-                        {
-                            if (!currentTask.LastConditionCheckTicks.HasValue)
-                                currentTask.ResetStallTracking();
-                        }
+                        earlyReturn = true;
                     }
                 }
                 else if (currentTask.Status == TaskStatus.WaitingForPostDelay)
@@ -181,101 +108,9 @@ public partial class NoireTaskQueue
 
             foreach (var wt in allWaitingTasks)
             {
-                if (wt.Status == TaskStatus.WaitingForPostDelay)
-                {
-                    if (wt.HasPostDelayCompleted())
-                    {
-                        waitingTasksToComplete.Add(wt);
-                    }
-                }
-                else
-                {
-                    bool conditionMet = wt.CompletionCondition?.IsMet() == true;
-
-                    if (conditionMet)
-                    {
-                        if (!wt.PostDelayStartTicks.HasValue)
-                        {
-                            if (wt.PostCompletionDelayProvider != null)
-                                wt.PostCompletionDelay = wt.PostCompletionDelayProvider(wt);
-
-                            if (wt.PostCompletionDelay.HasValue)
-                            {
-                                wt.PostDelayStartTicks = Environment.TickCount64;
-                                wt.Status = TaskStatus.WaitingForPostDelay;
-
-                                if (wt.Timeout.HasValue)
-                                    wt.PauseTimeout();
-
-                                if (EnableLogging)
-                                    NoireLogger.LogDebug(this, $"Task entering post-completion delay: {wt}");
-                            }
-                            else
-                            {
-                                waitingTasksToComplete.Add(wt);
-                            }
-                        }
-                        else
-                        {
-                            waitingTasksToComplete.Add(wt);
-                        }
-                    }
-                    else if (wt.HasTimedOut())
-                    {
-                        waitingTasksToFail.Add(wt);
-                    }
-                    else if (wt.HasConditionStalled())
-                    {
-                        if (TryRetryTask(wt))
-                        {
-                            // Retry initiated
-                        }
-                        else if (!wt.RetryConfiguration!.MaxAttempts.HasValue ||
-                                 wt.CurrentRetryAttempt < wt.RetryConfiguration.MaxAttempts.Value)
-                        {
-                            wt.ResetStallTracking();
-                        }
-                        else
-                        {
-                            try
-                            {
-                                wt.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(wt);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
-                            }
-
-                            if (wt.FailParentBatchOnMaxRetries && wt.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Failing parent batch due to max retries exceeded: {wt}");
-
-                                waitingTasksToFail.Add(wt);
-                            }
-                            else if (wt.CancelParentBatchOnMaxRetries && wt.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to max retries exceeded: {wt}");
-
-                                waitingTasksToFail.Add(wt);
-                            }
-                            else
-                            {
-                                waitingTasksToFail.Add(wt);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (wt.RetryConfiguration != null && wt.CompletionCondition?.Type == CompletionConditionType.Predicate)
-                        {
-                            if (!wt.LastConditionCheckTicks.HasValue)
-                                wt.ResetStallTracking();
-                        }
-                    }
-                }
+                ProcessWaitingTaskStatus(wt, out bool complete, out bool fail);
+                if (complete) waitingTasksToComplete.Add(wt);
+                if (fail) waitingTasksToFail.Add(wt);
             }
 
             if (!shouldWaitForBlocking && !earlyReturn && taskToProcess == null)
@@ -290,6 +125,7 @@ public partial class NoireTaskQueue
                     {
                         taskToProcess = nextItem.AsTask();
                         currentTask = taskToProcess;
+                        currentItem = nextItem;
                         taskToProcess.Status = TaskStatus.Executing;
                         taskToProcess.StartedAtTicks = Environment.TickCount64;
                     }
@@ -297,6 +133,7 @@ public partial class NoireTaskQueue
                     {
                         batchToProcess = nextItem.AsBatch();
                         currentBatch = batchToProcess;
+                        currentItem = nextItem;
                         batchToProcess.Status = BatchStatus.Processing;
                         batchToProcess.StartedAtTicks = Environment.TickCount64;
 
@@ -330,7 +167,10 @@ public partial class NoireTaskQueue
                                 t.Status == TaskStatus.WaitingForCompletion ||
                                 t.Status == TaskStatus.WaitingForPostDelay);
                         if (firstWaitingTask != null)
+                        {
                             currentTask = firstWaitingTask;
+                            currentItem = unifiedQueue.FirstOrDefault(item => item.IsTask && ReferenceEquals(item.AsTask(), firstWaitingTask));
+                        }
                         else
                             shouldCheckCompletion = true;
                     }
@@ -360,31 +200,10 @@ public partial class NoireTaskQueue
         }
         foreach (var wt in waitingTasksToFail)
         {
-            Exception exception;
-            bool isMaxRetryFailure = wt.RetryConfiguration != null && wt.CurrentRetryAttempt >= (wt.RetryConfiguration.MaxAttempts ?? int.MaxValue);
+            if (HandleWaitingTaskFinalization(wt, true))
+                continue;
 
-            if (isMaxRetryFailure)
-                exception = new MaxRetryAttemptsExceededException($"Task exceeded maximum retry attempts ({wt.RetryConfiguration!.MaxAttempts})");
-            else
-                exception = new TimeoutException("Task timed out.");
-
-            if (isMaxRetryFailure && wt.ParentBatch != null)
-            {
-                if (wt.FailParentBatchOnMaxRetries)
-                {
-                    FailTask(wt, exception);
-                    FailBatch(wt.ParentBatch, new Exception($"Batch failed by task max retries exceeded: {wt}", exception));
-                    continue; // Skip normal FailTask since we already called it
-                }
-                else if (wt.CancelParentBatchOnMaxRetries)
-                {
-                    FailTask(wt, exception);
-                    CancelBatchInternal(wt.ParentBatch);
-                    continue; // Skip normal FailTask since we already called it
-                }
-            }
-
-            FailTask(wt, exception);
+            FailTask(wt, CreateTaskTimeoutOrRetryException(wt));
         }
 
         if (taskToProcess != null)
@@ -405,6 +224,7 @@ public partial class NoireTaskQueue
         if (batch.Status == BatchStatus.Cancelled || batch.Status == BatchStatus.Failed || batch.Status == BatchStatus.Completed)
         {
             currentBatch = null;
+            currentItem = null;
             return;
         }
 
@@ -419,6 +239,7 @@ public partial class NoireTaskQueue
                     batchesFailed++;
 
                     currentBatch = null;
+                    currentItem = null;
 
                     if (batch.StopQueueOnFail)
                     {
@@ -438,6 +259,7 @@ public partial class NoireTaskQueue
                     batchesCancelled++;
 
                     currentBatch = null;
+                    currentItem = null;
 
                     if (batch.StopQueueOnCancel)
                     {
@@ -468,6 +290,7 @@ public partial class NoireTaskQueue
                     PublishEvent(new BatchCompletedEvent(batch));
 
                     currentBatch = null;
+                    currentItem = null;
 
                     if (EnableLogging)
                         NoireLogger.LogDebug(this, $"Batch completed after post-completion delay: {batch} (Duration: {batch.GetExecutionTime()})");
@@ -508,73 +331,20 @@ public partial class NoireTaskQueue
                 }
                 else if (batchCurrentTask.Status == TaskStatus.WaitingForCompletion)
                 {
-                    bool conditionMet = batchCurrentTask.CompletionCondition?.IsMet() == true;
-
-                    if (conditionMet)
+                    bool earlyReturnTask = ProcessWaitingTaskStatus(batchCurrentTask, out bool complete, out bool fail);
+                    if (complete)
                     {
-                        if (!batchCurrentTask.PostDelayStartTicks.HasValue)
-                        {
-                            if (batchCurrentTask.PostCompletionDelayProvider != null)
-                                batchCurrentTask.PostCompletionDelay = batchCurrentTask.PostCompletionDelayProvider(batchCurrentTask);
-
-                            if (batchCurrentTask.PostCompletionDelay.HasValue)
-                            {
-                                batchCurrentTask.PostDelayStartTicks = Environment.TickCount64;
-                                batchCurrentTask.Status = TaskStatus.WaitingForPostDelay;
-
-                                if (batchCurrentTask.Timeout.HasValue)
-                                    batchCurrentTask.PauseTimeout();
-
-                                if (EnableLogging)
-                                    NoireLogger.LogDebug(this, $"Batch task entering post-completion delay: {batchCurrentTask}");
-                            }
-                            else
-                            {
-                                CompleteTask(batchCurrentTask);
-                                earlyReturn = true;
-                            }
-                        }
-                    }
-                    else if (batchCurrentTask.HasTimedOut())
-                    {
-                        FailBatchTask(batch, batchCurrentTask, new TimeoutException("Task timed out."));
+                        CompleteTask(batchCurrentTask);
                         earlyReturn = true;
                     }
-                    else if (batchCurrentTask.HasConditionStalled())
+                    else if (fail)
                     {
-                        if (!earlyReturn && TryRetryTask(batchCurrentTask))
-                        {
-                            // Retry initiated
-                        }
-                        else if (!batchCurrentTask.RetryConfiguration!.MaxAttempts.HasValue ||
-                            batchCurrentTask.CurrentRetryAttempt < batchCurrentTask.RetryConfiguration.MaxAttempts.Value)
-                        {
-                            batchCurrentTask.ResetStallTracking();
-                        }
-                        else
-                        {
-                            try
-                            {
-                                batchCurrentTask.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(batchCurrentTask);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
-                            }
-
-                            FailBatchTask(batch, batchCurrentTask, new MaxRetryAttemptsExceededException(
-                                $"Task exceeded maximum retry attempts ({batchCurrentTask.RetryConfiguration?.MaxAttempts.ToString() ?? "Unknown"})"));
-                            earlyReturn = true;
-                        }
+                        FailBatchTask(batch, batchCurrentTask, CreateTaskTimeoutOrRetryException(batchCurrentTask));
+                        earlyReturn = true;
                     }
-                    else
+                    else if (earlyReturnTask)
                     {
-                        if (batchCurrentTask.RetryConfiguration != null && batchCurrentTask.CompletionCondition?.Type == CompletionConditionType.Predicate)
-                        {
-                            if (!batchCurrentTask.LastConditionCheckTicks.HasValue)
-                                batchCurrentTask.ResetStallTracking();
-                        }
+                        earlyReturn = true;
                     }
                 }
                 else if (batchCurrentTask.Status == TaskStatus.WaitingForPostDelay)
@@ -612,101 +382,9 @@ public partial class NoireTaskQueue
                 (t.Status == TaskStatus.WaitingForCompletion || t.Status == TaskStatus.WaitingForPostDelay) &&
                 !ReferenceEquals(t, batchCurrentTask)))
             {
-                if (wt.Status == TaskStatus.WaitingForPostDelay)
-                {
-                    if (wt.HasPostDelayCompleted())
-                    {
-                        waitingTasksToComplete.Add(wt);
-                    }
-                }
-                else
-                {
-                    bool conditionMet = wt.CompletionCondition?.IsMet() == true;
-
-                    if (conditionMet)
-                    {
-                        if (!wt.PostDelayStartTicks.HasValue)
-                        {
-                            if (wt.PostCompletionDelayProvider != null)
-                                wt.PostCompletionDelay = wt.PostCompletionDelayProvider(wt);
-
-                            if (wt.PostCompletionDelay.HasValue)
-                            {
-                                wt.PostDelayStartTicks = Environment.TickCount64;
-                                wt.Status = TaskStatus.WaitingForPostDelay;
-
-                                if (wt.Timeout.HasValue)
-                                    wt.PauseTimeout();
-
-                                if (EnableLogging)
-                                    NoireLogger.LogDebug(this, $"Batch task entering post-completion delay: {wt}");
-                            }
-                            else
-                            {
-                                waitingTasksToComplete.Add(wt);
-                            }
-                        }
-                        else
-                        {
-                            waitingTasksToComplete.Add(wt);
-                        }
-                    }
-                    else if (wt.HasTimedOut())
-                    {
-                        waitingTasksToFail.Add(wt);
-                    }
-                    else if (wt.HasConditionStalled())
-                    {
-                        if (TryRetryTask(wt))
-                        {
-                            // Retry initiated
-                        }
-                        else if (!wt.RetryConfiguration!.MaxAttempts.HasValue ||
-                                 wt.CurrentRetryAttempt < wt.RetryConfiguration.MaxAttempts.Value)
-                        {
-                            wt.ResetStallTracking();
-                        }
-                        else
-                        {
-                            try
-                            {
-                                wt.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(wt);
-                            }
-                            catch (Exception ex)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
-                            }
-
-                            if (wt.FailParentBatchOnMaxRetries && wt.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Failing parent batch due to max retries exceeded: {wt}");
-
-                                waitingTasksToFail.Add(wt);
-                            }
-                            else if (wt.CancelParentBatchOnMaxRetries && wt.ParentBatch != null)
-                            {
-                                if (EnableLogging)
-                                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to max retries exceeded: {wt}");
-
-                                waitingTasksToFail.Add(wt);
-                            }
-                            else
-                            {
-                                waitingTasksToFail.Add(wt);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        if (wt.RetryConfiguration != null && wt.CompletionCondition?.Type == CompletionConditionType.Predicate)
-                        {
-                            if (!wt.LastConditionCheckTicks.HasValue)
-                                wt.ResetStallTracking();
-                        }
-                    }
-                }
+                ProcessWaitingTaskStatus(wt, out bool complete, out bool fail);
+                if (complete) waitingTasksToComplete.Add(wt);
+                if (fail) waitingTasksToFail.Add(wt);
             }
 
             if (!shouldWaitForBlocking && !earlyReturn && taskToProcess == null)
@@ -756,13 +434,7 @@ public partial class NoireTaskQueue
 
         foreach (var wt in waitingTasksToFail)
         {
-            Exception exception;
-            if (wt.RetryConfiguration != null && wt.CurrentRetryAttempt >= (wt.RetryConfiguration.MaxAttempts ?? int.MaxValue))
-                exception = new MaxRetryAttemptsExceededException($"Task exceeded maximum retry attempts ({wt.RetryConfiguration.MaxAttempts})");
-            else
-                exception = new TimeoutException("Task timed out.");
-
-            FailBatchTask(batch, wt, exception);
+            FailBatchTask(batch, wt, CreateTaskTimeoutOrRetryException(wt));
         }
 
         if (taskToProcess != null)
@@ -785,7 +457,11 @@ public partial class NoireTaskQueue
             if (ReferenceEquals(currentTask, task))
                 lock (queueLock)
                     if (ReferenceEquals(currentTask, task))
+                    {
                         currentTask = null;
+                        if (currentBatch == null)
+                            currentItem = null;
+                    }
 
             if (EnableLogging)
                 NoireLogger.LogDebug(this, $"Skipping execution for task no longer executing: {task} (Status: {task.Status})");
@@ -876,6 +552,140 @@ public partial class NoireTaskQueue
             lock (queueLock)
                 FailTask(task, ex);
         }
+    }
+
+    /// <summary>
+    /// Processes a waiting task's status and determines if it should complete, fail, or continue waiting.
+    /// </summary>
+    /// <param name="task">The task to process.</param>
+    /// <param name="shouldComplete">Set to true if the task should be added to completion list.</param>
+    /// <param name="shouldFail">Set to true if the task should be added to failure list.</param>
+    /// <returns>True if early return is needed (task was completed or failed immediately).</returns>
+    private bool ProcessWaitingTaskStatus(QueuedTask task, out bool shouldComplete, out bool shouldFail)
+    {
+        shouldComplete = false;
+        shouldFail = false;
+
+        if (task.Status == TaskStatus.WaitingForPostDelay)
+        {
+            if (task.HasPostDelayCompleted())
+            {
+                shouldComplete = true;
+            }
+            return false;
+        }
+
+        if (task.Status == TaskStatus.WaitingForCompletion)
+        {
+            bool conditionMet = task.CompletionCondition?.IsMet() == true;
+
+            if (conditionMet)
+            {
+                if (!task.PostDelayStartTicks.HasValue)
+                {
+                    if (task.PostCompletionDelayProvider != null)
+                        task.PostCompletionDelay = task.PostCompletionDelayProvider(task);
+
+                    if (task.PostCompletionDelay.HasValue)
+                    {
+                        task.PostDelayStartTicks = Environment.TickCount64;
+                        task.Status = TaskStatus.WaitingForPostDelay;
+
+                        if (task.Timeout.HasValue)
+                            task.PauseTimeout();
+
+                        if (EnableLogging)
+                            NoireLogger.LogDebug(this, $"Task entering post-completion delay: {task}");
+                    }
+                    else
+                    {
+                        shouldComplete = true;
+                    }
+                }
+            }
+            else if (task.HasTimedOut())
+            {
+                shouldFail = true;
+            }
+            else if (task.HasConditionStalled())
+            {
+                if (TryRetryTask(task))
+                {
+                    // Retry was initiated
+                }
+                else if (!task.RetryConfiguration!.MaxAttempts.HasValue ||
+                    task.CurrentRetryAttempt < task.RetryConfiguration.MaxAttempts.Value)
+                {
+                    task.ResetStallTracking();
+                }
+                else
+                {
+                    try
+                    {
+                        task.RetryConfiguration?.OnMaxRetriesExceeded?.Invoke(task);
+                    }
+                    catch (Exception ex)
+                    {
+                        if (EnableLogging)
+                            NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
+                    }
+
+                    shouldFail = true;
+                }
+            }
+            else
+            {
+                if (task.RetryConfiguration != null && task.CompletionCondition?.Type == CompletionConditionType.Predicate)
+                {
+                    if (!task.LastConditionCheckTicks.HasValue)
+                        task.ResetStallTracking();
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Handles the completion or failure of a waiting task, respecting parent batch policies for max retries.
+    /// </summary>
+    /// <param name="task">The task to finalize.</param>
+    /// <param name="isFailing">True if the task is failing.</param>
+    /// <returns>True if parent batch was failed/cancelled and task was handled, false if normal processing should continue.</returns>
+    private bool HandleWaitingTaskFinalization(QueuedTask task, bool isFailing)
+    {
+        if (!isFailing)
+            return false;
+
+        bool isMaxRetryFailure = task.RetryConfiguration != null &&
+            task.CurrentRetryAttempt >= (task.RetryConfiguration.MaxAttempts ?? int.MaxValue);
+
+        if (isMaxRetryFailure && task.ParentBatch != null)
+        {
+            var exception = new MaxRetryAttemptsExceededException(
+                $"Task exceeded maximum retry attempts ({task.RetryConfiguration!.MaxAttempts})");
+
+            if (task.FailParentBatchOnMaxRetries)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Failing parent batch due to max retries exceeded: {task}");
+
+                FailTask(task, exception);
+                FailBatch(task.ParentBatch, new Exception($"Batch failed by task max retries exceeded: {task}", exception));
+                return true;
+            }
+            else if (task.CancelParentBatchOnMaxRetries)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to max retries exceeded: {task}");
+
+                FailTask(task, exception);
+                CancelBatchInternal(task.ParentBatch);
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -1000,8 +810,7 @@ public partial class NoireTaskQueue
 
         PublishEvent(new TaskCompletedEvent(task));
 
-        if (ReferenceEquals(currentTask, task))
-            currentTask = null;
+        ClearCurrentTaskReference(task);
 
         if (EnableLogging)
             NoireLogger.LogDebug(this, $"Task completed: {task} (Duration: {task.GetExecutionTime()})");
@@ -1052,23 +861,11 @@ public partial class NoireTaskQueue
         task.FinishedAtTicks = Environment.TickCount64;
         tasksFailed++;
 
-        if (ReferenceEquals(currentTask, task))
-            currentTask = null;
+        ClearCurrentTaskReference(task);
 
-        if (task.FailParentBatchOnFail && task.ParentBatch != null)
+        if (HandleTaskParentBatchPolicies(task, isFailure: true, isCancellation: false))
         {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Failing parent batch due to task failure: {task}");
-
-            FailBatch(task.ParentBatch, new Exception($"Batch failed by task failure: {task}", exception));
-        }
-
-        if (task.CancelParentBatchOnFail && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cancelling parent batch due to task failure: {task}");
-
-            CancelBatchInternal(task.ParentBatch);
+            // Parent batch was affected, already logged
         }
 
         if (task.StopQueueOnFail)
@@ -1092,23 +889,11 @@ public partial class NoireTaskQueue
         task.FinishedAtTicks = Environment.TickCount64;
         tasksFailed++;
 
-        if (ReferenceEquals(currentTask, task))
-            currentTask = null;
+        ClearCurrentTaskReference(task);
 
-        if (task.FailParentBatchOnFail && task.ParentBatch != null)
+        if (HandleTaskParentBatchPolicies(task, isFailure: true, isCancellation: false))
         {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Failing parent batch due to task failure after delay: {task}");
-
-            FailBatch(task.ParentBatch, new Exception($"Batch failed by task failure: {task}", task.FailureException));
-        }
-
-        if (task.CancelParentBatchOnFail && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cancelling parent batch due to task failure after delay: {task}");
-
-            CancelBatchInternal(task.ParentBatch);
+            // Parent batch was affected, already logged
         }
 
         if (task.StopQueueOnFail)
@@ -1132,23 +917,11 @@ public partial class NoireTaskQueue
         task.FinishedAtTicks = Environment.TickCount64;
         tasksCancelled++;
 
-        if (ReferenceEquals(currentTask, task))
-            currentTask = null;
+        ClearCurrentTaskReference(task);
 
-        if (task.FailParentBatchOnFail && task.ParentBatch != null)
+        if (HandleTaskParentBatchPolicies(task, isFailure: false, isCancellation: true))
         {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Failing parent batch due to task cancellation after delay: {task}");
-
-            FailBatch(task.ParentBatch, new Exception($"Batch failed by task cancellation: {task}"));
-        }
-
-        if (task.CancelParentBatchOnFail && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cancelling parent batch due to task cancellation after delay: {task}");
-
-            CancelBatchInternal(task.ParentBatch);
+            // Parent batch was affected, already logged
         }
 
         if (task.StopQueueOnCancel)
@@ -1230,23 +1003,8 @@ public partial class NoireTaskQueue
         if (EnableLogging && task.FailureException != null)
             NoireLogger.LogError(this, task.FailureException, $"Batch task failed after post-failure delay: {task}");
 
-        if (task.FailParentBatchOnFail && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Failing parent batch due to batch task failure after delay: {task}");
-
-            FailBatch(task.ParentBatch, new Exception($"Batch failed by task failure: {task}", task.FailureException));
-            return; // Don't apply the batch's own failure mode if we're failing parent
-        }
-
-        if (task.CancelParentBatchOnFail && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cancelling parent batch due to batch task failure after delay: {task}");
-
-            CancelBatchInternal(task.ParentBatch);
-            return; // Don't apply the batch's own failure mode if we're cancelling parent
-        }
+        if (HandleTaskParentBatchPolicies(task, isFailure: true, isCancellation: false))
+            return; // Don't apply the batch's own failure mode if parent was affected
 
         switch (batch.TaskFailureMode)
         {
@@ -1282,23 +1040,8 @@ public partial class NoireTaskQueue
         if (EnableLogging)
             NoireLogger.LogDebug(this, $"Batch task cancelled after post-cancellation delay: {task}");
 
-        if (task.FailParentBatchOnCancel && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Failing parent batch due to batch task cancellation after delay: {task}");
-
-            FailBatch(task.ParentBatch, new Exception($"Batch failed by task cancellation: {task}"));
-            return; // Don't apply the batch's own cancellation mode if we're failing parent
-        }
-
-        if (task.CancelParentBatchOnCancel && task.ParentBatch != null)
-        {
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cancelling parent batch due to batch task cancellation after delay: {task}");
-
-            CancelBatchInternal(task.ParentBatch);
-            return; // Don't apply the batch's own cancellation mode if we're cancelling parent
-        }
+        if (HandleTaskParentBatchPolicies(task, isFailure: false, isCancellation: true))
+            return; // Don't apply the batch's own cancellation mode if parent was affected
 
         HandleBatchTaskCancellation(batch, task);
     }
@@ -1382,6 +1125,7 @@ public partial class NoireTaskQueue
         PublishEvent(new BatchCompletedEvent(batch));
 
         currentBatch = null;
+        currentItem = null;
 
         if (EnableLogging)
             NoireLogger.LogDebug(this, $"Batch completed: {batch} (Duration: {batch.GetExecutionTime()})");
@@ -1428,6 +1172,7 @@ public partial class NoireTaskQueue
         batchesFailed++;
 
         currentBatch = null;
+        currentItem = null;
 
         if (batch.StopQueueOnFail)
         {
@@ -1474,6 +1219,7 @@ public partial class NoireTaskQueue
                 queueEmpty = true;
                 currentTask = null;
                 currentBatch = null;
+                currentItem = null;
             }
         }
 
@@ -1496,6 +1242,83 @@ public partial class NoireTaskQueue
                 if (EnableLogging)
                     NoireLogger.LogInfo(this, "Queue processing completed (all items finished).");
             }
+        }
+    }
+
+    /// <summary>
+    /// Creates an exception for task timeout or max retry attempts exceeded.
+    /// </summary>
+    private static Exception CreateTaskTimeoutOrRetryException(QueuedTask task)
+    {
+        return task.RetryConfiguration != null &&
+               task.CurrentRetryAttempt >= (task.RetryConfiguration.MaxAttempts ?? int.MaxValue)
+            ? new MaxRetryAttemptsExceededException($"Task exceeded maximum retry attempts ({task.RetryConfiguration.MaxAttempts?.ToString() ?? "Unknown"})")
+            : new TimeoutException("Task timed out.");
+    }
+
+    /// <summary>
+    /// Handles parent batch policies (FailParentBatchOnFail, CancelParentBatchOnFail, etc.) for a task.
+    /// </summary>
+    /// <returns>True if parent batch was affected and processing should stop, false otherwise.</returns>
+    private bool HandleTaskParentBatchPolicies(QueuedTask task, bool isFailure, bool isCancellation)
+    {
+        if (task.ParentBatch == null)
+            return false;
+
+        if (isFailure)
+        {
+            if (task.FailParentBatchOnFail)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Failing parent batch due to task failure: {task}");
+
+                FailBatch(task.ParentBatch, new Exception($"Batch failed by task failure: {task}", task.FailureException));
+                return true;
+            }
+
+            if (task.CancelParentBatchOnFail)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to task failure: {task}");
+
+                CancelBatchInternal(task.ParentBatch);
+                return true;
+            }
+        }
+        else if (isCancellation)
+        {
+            if (task.FailParentBatchOnCancel)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Failing parent batch due to task cancellation: {task}");
+
+                FailBatch(task.ParentBatch, new Exception($"Batch failed by task cancellation: {task}"));
+                return true;
+            }
+
+            if (task.CancelParentBatchOnCancel)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogInfo(this, $"Cancelling parent batch due to task cancellation: {task}");
+
+                CancelBatchInternal(task.ParentBatch);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Clears the current task reference if it matches the specified task.
+    /// </summary>
+    private void ClearCurrentTaskReference(QueuedTask task)
+    {
+        if (ReferenceEquals(currentTask, task))
+        {
+            currentTask = null;
+            if (currentBatch == null)
+                currentItem = null;
         }
     }
 }

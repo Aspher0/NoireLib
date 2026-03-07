@@ -1,9 +1,9 @@
-
-
-
 # Module Documentation : NoireTaskQueue
 
 You are reading the documentation for the `NoireTaskQueue` module.
+
+WARNING: This is outdated and need a rewrite to include batch processing, new TaskBuilder API, and other new features.
+Please refer to the source code and comments for the most up-to-date information for now.
 
 ## Table of Contents
 - [Overview](#overview)

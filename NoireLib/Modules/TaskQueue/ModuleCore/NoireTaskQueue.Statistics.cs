@@ -21,8 +21,18 @@ public partial class NoireTaskQueue
                 currBatch = getCopyOfCurrentBatch ? currentBatch.Clone() : currentBatch;
 
             QueuedTask? currTask = null;
-            if (currentTask != null)
-                currTask = getCopyOfCurrentTask ? currentTask.Clone() : currentTask;
+            QueuedTask? actualCurrentTask = currentTask;
+
+            if (currentBatch != null)
+            {
+                actualCurrentTask = currentBatch.Tasks.FirstOrDefault(t =>
+                    t.Status == TaskStatus.Executing ||
+                    t.Status == TaskStatus.WaitingForCompletion ||
+                    t.Status == TaskStatus.WaitingForPostDelay);
+            }
+
+            if (actualCurrentTask != null)
+                currTask = getCopyOfCurrentTask ? actualCurrentTask.Clone() : actualCurrentTask;
 
             int totalTasks = 0;
             int completedTasks = 0;
@@ -99,6 +109,8 @@ public partial class NoireTaskQueue
                 BatchesFailed: batchesFailed,
                 CurrentBatchQueueSize: unifiedQueue.Count(item => item.IsBatch),
                 CurrentBatch: currBatch,
+                CurrentItem: currentItem,
+                CurrentTaskDescription: currentItem?.ToString() ?? string.Empty,
                 QueueState: QueueState,
                 CurrentQueueSize: unifiedQueue.Count,
                 ProgressPercentage: progressPercentage,
@@ -110,7 +122,7 @@ public partial class NoireTaskQueue
     /// Gets the number of pending (queued) tasks.
     /// </summary>
     /// <param name="boundaryType">Defines how context boundaries are checked.
-    /// CrossContext (default): counts all queued tasks across entire queue, SameContext: same batch or both standalone, StrictWithBoundaryCheck: no batch separation allowed.</param>
+    /// CrossContext (default): counts all queued tasks across entire queue, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.</param>
     /// <returns>The number of pending tasks.</returns>
     public int GetPendingTaskCount(ContextDefinition boundaryType = ContextDefinition.CrossContext)
     {

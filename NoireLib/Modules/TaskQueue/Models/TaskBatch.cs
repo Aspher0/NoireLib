@@ -291,7 +291,31 @@ public class TaskBatch
     public override string ToString()
     {
         var id = !string.IsNullOrEmpty(CustomId) ? $"'{CustomId}'" : SystemId.ToString();
-        return $"Batch[{id}, {Status}, {CompletedTaskCount}/{TaskCount} tasks, {(IsBlocking ? "Blocking" : "Non-Blocking")}]";
+        double remainingPostDelay = 0;
+
+        if (PostCompletionDelay.HasValue && PostDelayStartTicks.HasValue)
+        {
+            var elapsedMs = PostDelayPausedAtTicks.HasValue
+                ? AccumulatedPostDelayMillis
+                : AccumulatedPostDelayMillis + (Environment.TickCount64 - PostDelayStartTicks.Value);
+
+            remainingPostDelay = Math.Max(0, PostCompletionDelay.Value.TotalMilliseconds - elapsedMs);
+        }
+
+        return $"Batch[{id}, {Status}{(Status == BatchStatus.WaitingForPostDelay ? $"({remainingPostDelay}ms)" : "")}, {CompletedTaskCount}/{TaskCount} tasks, {(IsBlocking ? "Blocking" : "Non-Blocking")}]";
+    }
+
+    /// <summary>
+    /// Gets the string representation of this batch or its currently executing task.
+    /// </summary>
+    /// <returns>The batch identifier if no task is executing or batch is in post-delay, otherwise the executing task's identifier.</returns>
+    public string GetCurrentIdentifier()
+    {
+        if (Status == BatchStatus.WaitingForPostDelay || Status == BatchStatus.Completed || Status == BatchStatus.Cancelled || Status == BatchStatus.Failed)
+            return ToString();
+
+        var executingTask = Tasks.FirstOrDefault(t => t.Status == TaskStatus.Executing || t.Status == TaskStatus.WaitingForCompletion || t.Status == TaskStatus.WaitingForPostDelay);
+        return executingTask?.ToString() ?? ToString();
     }
 
     /// <summary>

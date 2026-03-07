@@ -522,9 +522,17 @@ public class QueuedTask
     public override string ToString()
     {
         var id = string.IsNullOrEmpty(CustomId) ? SystemId.ToString() : CustomId;
-        var remainingPostDelay = PostCompletionDelay != null && PostDelayStartTicks.HasValue
-            ? PostCompletionDelay.Value.TotalMilliseconds - (AccumulatedPostDelayMillis + (Environment.TickCount64 - PostDelayStartTicks.Value))
-            : 0;
+        double remainingPostDelay = 0;
+
+        if (PostCompletionDelay.HasValue && PostDelayStartTicks.HasValue)
+        {
+            var elapsedMs = PostDelayPausedAtTicks.HasValue
+                ? AccumulatedPostDelayMillis
+                : AccumulatedPostDelayMillis + (Environment.TickCount64 - PostDelayStartTicks.Value);
+
+            remainingPostDelay = Math.Max(0, PostCompletionDelay.Value.TotalMilliseconds - elapsedMs);
+        }
+
         return $"Task '{id}' - Status: {Status}{(Status == TaskStatus.WaitingForPostDelay ? $"({remainingPostDelay}ms)" : "")}, Blocking: {IsBlocking}";
     }
 }

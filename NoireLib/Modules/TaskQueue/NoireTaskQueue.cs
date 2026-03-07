@@ -20,6 +20,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 
     private QueuedTask? currentTask;
     private TaskBatch? currentBatch;
+    private QueueItemWrapper? currentItem;
 
     private int totalTasksQueued;
     private int tasksCompleted;

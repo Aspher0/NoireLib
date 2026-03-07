@@ -17,7 +17,7 @@ public partial class NoireTaskQueue
         {
             ContextDefinition.CrossContext => true,
             ContextDefinition.SameContext => AreTasksInSameContextFlexible(targetTask),
-            ContextDefinition.StrictWithBoundaryCheck => AreTasksInSameContextStrict(targetTask),
+            ContextDefinition.SameContextStrict => AreTasksInSameContextStrict(targetTask),
             _ => true
         };
     }
@@ -42,7 +42,7 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
-    /// Checks if tasks are in the same context with strict boundary checking (StrictWithBoundaryCheck).
+    /// Checks if tasks are in the same context with strict boundary checking (SameContextStrict).
     /// </summary>
     private bool AreTasksInSameContextStrict(QueuedTask targetTask)
     {
@@ -103,7 +103,7 @@ public partial class NoireTaskQueue
         {
             ContextDefinition.CrossContext => CountTasksNoBoundary(),
             ContextDefinition.SameContext => CountTasksSameContext(),
-            ContextDefinition.StrictWithBoundaryCheck => CountTasksStrictBoundary(),
+            ContextDefinition.SameContextStrict => CountTasksStrictBoundary(),
             _ => 0
         };
     }
@@ -135,32 +135,23 @@ public partial class NoireTaskQueue
     /// </summary>
     private int CountTasksSameContext()
     {
-        bool isInBatch = currentBatch != null;
-
-        if (isInBatch && currentBatch != null)
-        {
-            return currentBatch.Tasks.Count(t => t.Status == TaskStatus.Queued);
-        }
-        else
-        {
-            int count = 0;
-            foreach (var item in unifiedQueue)
-            {
-                if (item.IsTask && item.AsTask().Status == TaskStatus.Queued)
-                    count++;
-            }
-            return count;
-        }
+        return CountTasksInCurrentContext(stopAtBatch: false);
     }
 
     /// <summary>
-    /// Counts pending tasks with StrictWithBoundaryCheck.
+    /// Counts pending tasks with SameContextStrict.
     /// </summary>
     private int CountTasksStrictBoundary()
     {
-        bool isInBatch = currentBatch != null;
+        return CountTasksInCurrentContext(stopAtBatch: true);
+    }
 
-        if (isInBatch && currentBatch != null)
+    /// <summary>
+    /// Counts pending tasks in the current context (batch or standalone).
+    /// </summary>
+    private int CountTasksInCurrentContext(bool stopAtBatch)
+    {
+        if (currentBatch != null)
         {
             return currentBatch.Tasks.Count(t => t.Status == TaskStatus.Queued);
         }
@@ -169,7 +160,7 @@ public partial class NoireTaskQueue
             int count = 0;
             foreach (var item in unifiedQueue)
             {
-                if (item.IsBatch)
+                if (stopAtBatch && item.IsBatch)
                     break;
 
                 if (item.IsTask && item.AsTask().Status == TaskStatus.Queued)
@@ -191,7 +182,7 @@ public partial class NoireTaskQueue
         {
             ContextDefinition.CrossContext => GetTaskDepthNoBoundary(targetTask),
             ContextDefinition.SameContext => GetTaskDepthSameContext(targetTask),
-            ContextDefinition.StrictWithBoundaryCheck => GetTaskDepthStrictBoundary(targetTask),
+            ContextDefinition.SameContextStrict => GetTaskDepthStrictBoundary(targetTask),
             _ => null
         };
     }
@@ -342,145 +333,102 @@ public partial class NoireTaskQueue
     /// </summary>
     private int? GetTaskDepthSameContext(QueuedTask targetTask)
     {
-        bool isInBatch = currentBatch != null;
-
-        if (isInBatch && currentBatch != null)
+        if (currentBatch != null)
         {
-            if (targetTask.ParentBatch != currentBatch)
-                return null;
-
-            var currentTaskInBatch = currentBatch.Tasks.FirstOrDefault(t =>
-                t.Status == TaskStatus.Executing ||
-                t.Status == TaskStatus.WaitingForCompletion ||
-                t.Status == TaskStatus.WaitingForPostDelay);
-
-            if (currentTaskInBatch == null)
-            {
-                var queuedTasks = currentBatch.Tasks.Where(t => t.Status == TaskStatus.Queued).ToList();
-                var targetIndex = queuedTasks.IndexOf(targetTask);
-                return targetIndex >= 0 ? targetIndex : null;
-            }
-
-            var currentIndex = currentBatch.Tasks.IndexOf(currentTaskInBatch);
-            var targetIndex2 = currentBatch.Tasks.IndexOf(targetTask);
-
-            if (targetIndex2 <= currentIndex)
-                return null;
-
-            int depth = 0;
-            for (int i = currentIndex + 1; i < targetIndex2; i++)
-            {
-                if (currentBatch.Tasks[i].Status == TaskStatus.Queued)
-                    depth++;
-            }
-
-            return depth;
+            return GetTaskDepthInBatch(targetTask, currentBatch);
         }
         else
         {
-            if (targetTask.ParentBatch != null)
-                return null;
-
-            int depth = 0;
-            bool foundCurrent = currentTask == null;
-
-            foreach (var item in unifiedQueue)
-            {
-                if (item.IsTask)
-                {
-                    var task = item.AsTask();
-
-                    if (!foundCurrent)
-                    {
-                        if (ReferenceEquals(task, currentTask))
-                            foundCurrent = true;
-                        continue;
-                    }
-
-                    if (ReferenceEquals(task, targetTask))
-                        return depth;
-
-                    if (task.Status == TaskStatus.Queued)
-                        depth++;
-                }
-            }
-
-            return null;
+            return GetTaskDepthStandalone(targetTask, stopAtBatch: false);
         }
     }
 
     /// <summary>
-    /// Calculates task depth with StrictWithBoundaryCheck (same batch or standalone with no batch separation).
+    /// Calculates task depth with SameContextStrict (same batch or standalone with no batch separation).
     /// </summary>
     private int? GetTaskDepthStrictBoundary(QueuedTask targetTask)
     {
-        bool isInBatch = currentBatch != null;
-
-        if (isInBatch && currentBatch != null)
+        if (currentBatch != null)
         {
-            if (targetTask.ParentBatch != currentBatch)
-                return null;
-
-            var currentTaskInBatch = currentBatch.Tasks.FirstOrDefault(t =>
-                t.Status == TaskStatus.Executing ||
-                t.Status == TaskStatus.WaitingForCompletion ||
-                t.Status == TaskStatus.WaitingForPostDelay);
-
-            if (currentTaskInBatch == null)
-            {
-                var queuedTasks = currentBatch.Tasks.Where(t => t.Status == TaskStatus.Queued).ToList();
-                var targetIndex = queuedTasks.IndexOf(targetTask);
-                return targetIndex >= 0 ? targetIndex : null;
-            }
-
-            var currentIndex = currentBatch.Tasks.IndexOf(currentTaskInBatch);
-            var targetIndex2 = currentBatch.Tasks.IndexOf(targetTask);
-
-            if (targetIndex2 <= currentIndex)
-                return null;
-
-            int depth = 0;
-            for (int i = currentIndex + 1; i < targetIndex2; i++)
-            {
-                if (currentBatch.Tasks[i].Status == TaskStatus.Queued)
-                    depth++;
-            }
-
-            return depth;
+            return GetTaskDepthInBatch(targetTask, currentBatch);
         }
         else
         {
-            if (targetTask.ParentBatch != null)
-                return null;
-
-            int depth = 0;
-            bool foundCurrent = currentTask == null;
-
-            foreach (var item in unifiedQueue)
-            {
-                if (item.IsBatch)
-                    break;
-
-                if (item.IsTask)
-                {
-                    var task = item.AsTask();
-
-                    if (!foundCurrent)
-                    {
-                        if (ReferenceEquals(task, currentTask))
-                            foundCurrent = true;
-                        continue;
-                    }
-
-                    if (ReferenceEquals(task, targetTask))
-                        return depth;
-
-                    if (task.Status == TaskStatus.Queued)
-                        depth++;
-                }
-            }
-
-            return null;
+            return GetTaskDepthStandalone(targetTask, stopAtBatch: true);
         }
+    }
+
+    /// <summary>
+    /// Calculates task depth when the current context is inside a batch.
+    /// </summary>
+    private int? GetTaskDepthInBatch(QueuedTask targetTask, TaskBatch batch)
+    {
+        if (targetTask.ParentBatch != batch)
+            return null;
+
+        var currentTaskInBatch = batch.Tasks.FirstOrDefault(t =>
+            t.Status == TaskStatus.Executing ||
+            t.Status == TaskStatus.WaitingForCompletion ||
+            t.Status == TaskStatus.WaitingForPostDelay);
+
+        if (currentTaskInBatch == null)
+        {
+            var queuedTasks = batch.Tasks.Where(t => t.Status == TaskStatus.Queued).ToList();
+            var targetIndex = queuedTasks.IndexOf(targetTask);
+            return targetIndex >= 0 ? targetIndex : null;
+        }
+
+        var currentIndex = batch.Tasks.IndexOf(currentTaskInBatch);
+        var targetIndex2 = batch.Tasks.IndexOf(targetTask);
+
+        if (targetIndex2 <= currentIndex)
+            return null;
+
+        int depth = 0;
+        for (int i = currentIndex + 1; i < targetIndex2; i++)
+        {
+            if (batch.Tasks[i].Status == TaskStatus.Queued)
+                depth++;
+        }
+
+        return depth;
+    }
+
+    /// <summary>
+    /// Calculates task depth when the current context is standalone (not in a batch).
+    /// </summary>
+    private int? GetTaskDepthStandalone(QueuedTask targetTask, bool stopAtBatch)
+    {
+        if (targetTask.ParentBatch != null)
+            return null;
+
+        int depth = 0;
+        bool foundCurrent = currentTask == null;
+
+        foreach (var item in unifiedQueue)
+        {
+            if (stopAtBatch && item.IsBatch)
+                break;
+
+            if (item.IsTask)
+            {
+                var task = item.AsTask();
+
+                if (!foundCurrent)
+                {
+                    if (ReferenceEquals(task, currentTask))
+                        foundCurrent = true;
+                    continue;
+                }
+
+                if (ReferenceEquals(task, targetTask))
+                    return depth;
+
+                if (task.Status == TaskStatus.Queued)
+                    depth++;
+            }
+        }
+
+        return null;
     }
 }
