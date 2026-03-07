@@ -26,6 +26,10 @@ public static class NoireLogger
     public static void LogInfo<T>(string message, string? prefix = null) where T : class
         => WriteLog(LogLevel.Info, GetLogStringWithCaller<T>(message, prefix));
 
+    /// <inheritdoc cref="LogInfo{T}(string, string?)"/>
+    public static void LogInformation<T>(string message, string? prefix = null) where T : class
+        => LogInfo<T>(message, prefix);
+
     /// <summary>
     /// Writes an info log message including the caller instance and an optional prefix.
     /// </summary>
@@ -36,6 +40,10 @@ public static class NoireLogger
     public static void LogInfo<T>(T instance, string message, string? prefix = null) where T : class
         => WriteLog(LogLevel.Info, GetLogStringWithCaller(instance, message, prefix));
 
+    /// <inheritdoc cref="LogInfo{T}(T, string, string?)"/>
+    public static void LogInformation<T>(T instance, string message, string? prefix = null) where T : class
+        => LogInfo<T>(instance, message, prefix);
+
     /// <summary>
     /// Writes an info log message including an optional prefix.
     /// </summary>
@@ -43,6 +51,10 @@ public static class NoireLogger
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
     public static void LogInfo(string message, string? prefix = null)
         => WriteLog(LogLevel.Info, GetLogString(message, prefix));
+
+    /// <inheritdoc cref="LogInfo(string, string?)"/>
+    public static void LogInformation(string message, string? prefix = null)
+        => LogInfo(message, prefix);
 
     #endregion
 
@@ -82,7 +94,7 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogError<T>(Exception ex, string message, string? prefix = null) where T : class
+    public static void LogError<T>(Exception? ex, string message, string? prefix = null) where T : class
         => WriteLog(LogLevel.Error, GetLogStringWithCaller<T>(message, prefix), ex);
 
     /// <summary>
@@ -93,7 +105,7 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogError<T>(T instance, Exception ex, string message, string? prefix = null) where T : class
+    public static void LogError<T>(T instance, Exception? ex, string message, string? prefix = null) where T : class
         => WriteLog(LogLevel.Error, GetLogStringWithCaller(instance, message, prefix), ex);
 
     /// <summary>
@@ -102,7 +114,7 @@ public static class NoireLogger
     /// <param name="ex">The exception.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void LogError(Exception ex, string message, string? prefix = null)
+    public static void LogError(Exception? ex, string message, string? prefix = null)
         => WriteLog(LogLevel.Error, GetLogString(message, prefix), ex);
 
     #endregion

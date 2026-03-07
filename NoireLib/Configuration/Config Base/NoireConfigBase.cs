@@ -13,6 +13,9 @@ public abstract class NoireConfigBase : INoireConfig
 {
     internal static bool IsInternalCopying { get; set; } = false;
 
+    /// <summary>
+    /// Settings to serialize data.
+    /// </summary>
     protected static readonly JsonSerializerSettings JsonSettings = new()
     {
         Formatting = Formatting.Indented,

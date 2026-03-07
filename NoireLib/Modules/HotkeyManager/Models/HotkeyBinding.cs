@@ -89,6 +89,7 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
         GamepadButton = gamepadButton;
     }
 
+    /// <inheritdoc/>
     public readonly bool Equals(HotkeyBinding other)
     {
         return VkCode == other.VkCode
@@ -98,21 +99,27 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
             && GamepadButton == other.GamepadButton;
     }
 
+    /// <inheritdoc/>
     public override readonly bool Equals(object? obj)
     {
         return obj is HotkeyBinding other && Equals(other);
     }
 
+    /// <inheritdoc/>
     public override readonly int GetHashCode()
     {
         return HashCode.Combine(VkCode, Ctrl, Shift, Alt, GamepadButton);
     }
 
+    /// <inheritdoc/>
     public static bool operator ==(HotkeyBinding left, HotkeyBinding right) => left.Equals(right);
 
+    /// <inheritdoc/>
     public static bool operator !=(HotkeyBinding left, HotkeyBinding right) => !left.Equals(right);
 
+    /// <inheritdoc/>
     public static implicit operator HotkeyBinding(int vkCode) => new(vkCode);
 
+    /// <inheritdoc/>
     public static implicit operator HotkeyBinding(GamepadButtons gamepadButton) => new(gamepadButton);
 }

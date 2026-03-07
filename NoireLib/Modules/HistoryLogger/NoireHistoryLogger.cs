@@ -386,7 +386,6 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <summary>
     /// Clears stored log entries.
     /// </summary>
-    /// <param name="clearDatabase">Whether to also clear database logs.</param>
     public void ClearEntries()
     {
         lock (entryLock)

@@ -109,10 +109,26 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// For example, you may want the task to complete when a "PlayerEnterMap(int mapId)" is published, and only if the mapId matches your condition.<br/>
     /// You can also use parameterless events and you can also omit the filter.
     /// </summary>
+    /// <param name="filter">Optional filter to conditionally accept events.</param>
+    /// <param name="allowCaptureWhileQueued">If true, events can be captured while the task is still queued. If false (default), events can only be captured when the task is executing or waiting for completion.</param>
+    /// <param name="eventCaptureDepth">
+    /// Maximum depth (maximum number of tasks allowed between current and target tasks) from the current executing task where events can be captured.<br/>
+    /// Only applies when allowCaptureWhileQueued is true. Null (default) means no depth limit.<br/>
+    /// A value of 0 means only the current executing task can capture events.<br/>
+    /// A value of 5 means a maximum of 5 tasks can be between the current task and the target task (capturing events).
+    /// </param>
+    /// <param name="boundaryType">
+    /// Defines how context boundaries are checked for depth calculation. <br/>
+    /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, StrictWithBoundaryCheck: no batch separation allowed.
+    /// </param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf WaitForEvent<TEvent>(Func<TEvent, bool>? filter = null)
+    public TSelf WaitForEvent<TEvent>(
+        Func<TEvent, bool>? filter = null,
+        bool allowCaptureWhileQueued = false,
+        int? eventCaptureDepth = null,
+        ContextDefinition boundaryType = ContextDefinition.CrossContext)
     {
-        task.CompletionCondition = TaskCompletionCondition.FromEvent(filter);
+        task.CompletionCondition = TaskCompletionCondition.FromEvent(filter, allowCaptureWhileQueued, eventCaptureDepth, boundaryType);
         return (TSelf)this;
     }
 
@@ -120,10 +136,15 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// Sets a post-completion delay.<br/>
     /// Once the task completes, the queue will wait this amount of time before proceeding with the rest of the tasks.
     /// </summary>
+    /// <param name="delay">The delay duration.</param>
+    /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
+    /// <param name="applyOnCancellation">Whether to apply the delay when the task is cancelled (default: false).</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf WithDelay(TimeSpan? delay)
+    public TSelf WithDelay(TimeSpan? delay, bool applyOnFailure = false, bool applyOnCancellation = false)
     {
         task.PostCompletionDelay = delay;
+        task.ApplyPostDelayOnFailure = applyOnFailure;
+        task.ApplyPostDelayOnCancellation = applyOnCancellation;
         return (TSelf)this;
     }
 
@@ -132,10 +153,14 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation.
     /// </summary>
     /// <param name="delayPredicate">A function that returns the delay duration.</param>
+    /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
+    /// <param name="applyOnCancellation">Whether to apply the delay when the task is cancelled (default: false).</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf WithDelay(Func<TimeSpan?> delayPredicate)
+    public TSelf WithDelay(Func<TimeSpan?> delayPredicate, bool applyOnFailure = false, bool applyOnCancellation = false)
     {
         task.PostCompletionDelayProvider = _ => delayPredicate();
+        task.ApplyPostDelayOnFailure = applyOnFailure;
+        task.ApplyPostDelayOnCancellation = applyOnCancellation;
         return (TSelf)this;
     }
 
@@ -144,10 +169,14 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation based on task state.
     /// </summary>
     /// <param name="delayPredicate">A function that receives the task and returns the delay duration.</param>
+    /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
+    /// <param name="applyOnCancellation">Whether to apply the delay when the task is cancelled (default: false).</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf WithDelay(Func<QueuedTask, TimeSpan?> delayPredicate)
+    public TSelf WithDelay(Func<QueuedTask, TimeSpan?> delayPredicate, bool applyOnFailure = false, bool applyOnCancellation = false)
     {
         task.PostCompletionDelayProvider = delayPredicate;
+        task.ApplyPostDelayOnFailure = applyOnFailure;
+        task.ApplyPostDelayOnCancellation = applyOnCancellation;
         return (TSelf)this;
     }
 
@@ -199,6 +228,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 
     /// <summary>
     /// Sets the callback for when the task fails.<br/>
+    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.<br/>
     /// See <see cref="OnFailed(Action{QueuedTask, Exception}, bool)"/> for an overload that also allows stopping the queue on failure.<br/>
     /// For Cancellation handling, see <see cref="OnCancelled(Action{QueuedTask})"/> or <see cref="OnCancelled(Action{QueuedTask}, bool)"/>.
     /// </summary>
@@ -242,7 +272,91 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
+    /// Configures the parent batch (if exists) to fail when this task fails.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf FailParentBatchOnFail()
+    {
+        task.FailParentBatchOnFail = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to be cancelled when this task fails.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf CancelParentBatchOnFail()
+    {
+        task.CancelParentBatchOnFail = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to fail when this task is cancelled.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf FailParentBatchOnCancel()
+    {
+        task.FailParentBatchOnCancel = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to be cancelled when this task is cancelled.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf CancelParentBatchOnCancel()
+    {
+        task.CancelParentBatchOnCancel = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to fail when this task fails or is cancelled.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf FailParentBatchOnFailOrCancel()
+    {
+        task.FailParentBatchOnFail = true;
+        task.FailParentBatchOnCancel = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to be cancelled when this task fails or is cancelled.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf CancelParentBatchOnFailOrCancel()
+    {
+        task.CancelParentBatchOnFail = true;
+        task.CancelParentBatchOnCancel = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to fail when this task exceeds max retry attempts.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf FailParentBatchOnMaxRetries()
+    {
+        task.FailParentBatchOnMaxRetries = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Configures the parent batch (if exists) to be cancelled when this task exceeds max retry attempts.
+    /// </summary>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf CancelParentBatchOnMaxRetries()
+    {
+        task.CancelParentBatchOnMaxRetries = true;
+        return (TSelf)this;
+    }
+
+    /// <summary>
     /// Sets the callback for when the task fails and optionally stops the queue.
+    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.<br/>
+    /// For Cancellation handling, see <see cref="OnCancelled(Action{QueuedTask})"/> or <see cref="OnCancelled(Action{QueuedTask}, bool)"/>.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails.</param>
     /// <param name="stopQueue">Whether to stop the queue on task failure.</param>
@@ -269,6 +383,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 
     /// <summary>
     /// Sets the callback for when the task fails or is cancelled.<br/>
+    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
     /// This is a convenience method for handling both failure and cancellation with the same callback.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
@@ -282,6 +397,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 
     /// <summary>
     /// Sets the callback for when the task fails or is cancelled, and optionally stops the queue.<br/>
+    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
     /// This is a convenience method for handling both failure and cancellation with the same callback.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
@@ -376,20 +492,6 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a callback to invoke when max retry attempts are exhausted.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when retries are exhausted.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnMaxRetriesExceeded(Action<QueuedTask> callback)
-    {
-        if (task.RetryConfiguration == null)
-            task.RetryConfiguration = new TaskRetryConfiguration();
-
-        task.RetryConfiguration.OnMaxRetriesExceeded = callback;
-        return (TSelf)this;
-    }
-
-    /// <summary>
     /// Sets a custom retry configuration.
     /// </summary>
     /// <param name="configuration">The retry configuration.</param>
@@ -409,6 +511,21 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     public TSelf WithMetadata(object metadata)
     {
         task.Metadata = metadata;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Sets a callback to invoke when max retry attempts are exhausted.<br/>
+    /// If <see cref="OnFailed(Action{QueuedTask, Exception})"/> or <see cref="OnFailedOrCancelled(Action{QueuedTask, Exception?})"/> callbacks are set, this callback will be invoked **before them** when max retries are exceeded, allowing you to handle max retry exhaustion separately from other types of failure if desired.
+    /// </summary>
+    /// <param name="callback">The callback to invoke when retries are exhausted.</param>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf OnMaxRetriesExceeded(Action<QueuedTask> callback)
+    {
+        if (task.RetryConfiguration == null)
+            task.RetryConfiguration = new TaskRetryConfiguration();
+
+        task.RetryConfiguration.OnMaxRetriesExceeded = callback;
         return (TSelf)this;
     }
 
@@ -505,6 +622,72 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 
         // Fallback: check if it's stored as IntPtr directly
         if (previousTask?.Metadata is IntPtr intPtr)
+            return (T*)intPtr;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Retrieves a task from a specific batch in the queue by their custom IDs.
+    /// </summary>
+    /// <param name="queue">The task queue containing the batch and task.</param>
+    /// <param name="batchCustomId">The custom ID of the batch.</param>
+    /// <param name="taskCustomId">The custom ID of the task.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public static QueuedTask? GetTaskFromBatch(NoireTaskQueue queue, string batchCustomId, string taskCustomId)
+    {
+        return queue.GetTaskFromBatch(batchCustomId, taskCustomId);
+    }
+
+    /// <summary>
+    /// Retrieves a task from a specific batch in the queue by their system IDs.
+    /// </summary>
+    /// <param name="queue">The task queue containing the batch and task.</param>
+    /// <param name="batchSystemId">The system ID of the batch.</param>
+    /// <param name="taskSystemId">The system ID of the task.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public static QueuedTask? GetTaskFromBatch(NoireTaskQueue queue, Guid batchSystemId, Guid taskSystemId)
+    {
+        return queue.GetTaskFromBatch(batchSystemId, taskSystemId);
+    }
+
+    /// <summary>
+    /// Retrieves metadata from a task within a batch by their custom IDs.<br/>
+    /// This method should be called within <see cref="WithAction(Action{QueuedTask})"/> or <see cref="WithCondition(Func{QueuedTask, bool})"/>.
+    /// </summary>
+    /// <typeparam name="T">The type of metadata to retrieve.</typeparam>
+    /// <param name="queue">The task queue containing the batch and task.</param>
+    /// <param name="batchCustomId">The custom ID of the batch.</param>
+    /// <param name="taskCustomId">The custom ID of the task.</param>
+    /// <returns>The metadata from the task, or default(T) if not found.</returns>
+    public static T? GetMetadataFromBatchTask<T>(NoireTaskQueue queue, string batchCustomId, string taskCustomId)
+    {
+        var task = queue.GetTaskFromBatch(batchCustomId, taskCustomId);
+
+        if (task?.Metadata is T metadata)
+            return metadata;
+
+        return default;
+    }
+
+    /// <summary>
+    /// Retrieves a pointer from a task's metadata within a batch by their custom IDs.<br/>
+    /// This is a type-safe wrapper for retrieving pointers stored as <see cref="PointerMetadata{T}"/>.
+    /// </summary>
+    /// <typeparam name="T">The unmanaged pointer type.</typeparam>
+    /// <param name="queue">The task queue containing the batch and task.</param>
+    /// <param name="batchCustomId">The custom ID of the batch.</param>
+    /// <param name="taskCustomId">The custom ID of the task.</param>
+    /// <returns>The pointer from the task's metadata.</returns>
+    public static unsafe T* GetPointerMetadataFromBatchTask<T>(NoireTaskQueue queue, string batchCustomId, string taskCustomId) where T : unmanaged
+    {
+        var task = queue.GetTaskFromBatch(batchCustomId, taskCustomId);
+
+        if (task?.Metadata is PointerMetadata<T> pointerMetadata)
+            return pointerMetadata.GetPointer();
+
+        // Fallback: check if it's stored as IntPtr directly
+        if (task?.Metadata is IntPtr intPtr)
             return (T*)intPtr;
 
         return null;

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.HistoryLogger;
 
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 public sealed class HistoryLogEntryModel : NoireDbModelBase<HistoryLogEntryModel>
 {
     private static readonly System.Threading.AsyncLocal<string?> DatabaseNameContext = new();
@@ -105,3 +106,4 @@ public sealed class HistoryLogEntryModel : NoireDbModelBase<HistoryLogEntryModel
         });
     }
 }
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member

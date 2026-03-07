@@ -12,7 +12,7 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public class MigrationBuilder
 {
-    private readonly List<Action<JObject>> _orderedOperations = new();
+    private readonly List<Action<JObject>> orderedOperations = new();
     private MigrationBuilder() { }
 
     /// <summary>
@@ -29,7 +29,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder RenameProperty(string oldName, string newName)
     {
-        _orderedOperations.Add(root =>
+        orderedOperations.Add(root =>
         {
             if (root.ContainsKey(oldName))
             {
@@ -49,7 +49,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder DeleteProperty(string propertyName)
     {
-        _orderedOperations.Add(root => root.Remove(propertyName));
+        orderedOperations.Add(root => root.Remove(propertyName));
         return this;
     }
 
@@ -64,7 +64,7 @@ public class MigrationBuilder
     {
         foreach (var name in propertyNames)
         {
-            _orderedOperations.Add(root => root.Remove(name));
+            orderedOperations.Add(root => root.Remove(name));
         }
         return this;
     }
@@ -79,7 +79,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder ChangePropertyType<TFrom, TTo>(string propertyName, Func<TFrom, TTo> converter)
     {
-        _orderedOperations.Add(root =>
+        orderedOperations.Add(root =>
         {
             if (root.TryGetValue(propertyName, out JToken? value))
             {
@@ -112,7 +112,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder AddProperty<T>(string propertyName, T defaultValue)
     {
-        _orderedOperations.Add(root =>
+        orderedOperations.Add(root =>
         {
             if (!root.ContainsKey(propertyName))
                 root[propertyName] = JToken.FromObject(defaultValue);
@@ -129,7 +129,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder AddComputedProperty<T>(string propertyName, Func<JObject, T> computeValue)
     {
-        _orderedOperations.Add(root =>
+        orderedOperations.Add(root =>
         {
             var value = computeValue(root);
             root[propertyName] = JToken.FromObject(value);
@@ -146,7 +146,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder TransformProperty<T>(string propertyName, Func<T, T> transform)
     {
-        _orderedOperations.Add(root =>
+        orderedOperations.Add(root =>
         {
             if (root.TryGetValue(propertyName, out JToken? value))
             {
@@ -176,7 +176,7 @@ public class MigrationBuilder
     /// <returns>The MigrationBuilder instance for chaining.</returns>
     public MigrationBuilder WithCustomOperation(Action<JObject> operation)
     {
-        _orderedOperations.Add(operation);
+        orderedOperations.Add(operation);
         return this;
     }
 
@@ -189,7 +189,7 @@ public class MigrationBuilder
     public string Migrate(JObject document, int targetVersion)
     {
         var root = (JObject)document.DeepClone();
-        foreach (var op in _orderedOperations)
+        foreach (var op in orderedOperations)
         {
             op(root);
         }

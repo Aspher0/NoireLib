@@ -13,6 +13,7 @@ namespace NoireLib.EventBus;
 public class NoireEventBus : NoireModuleBase<NoireEventBus>
 {
     private readonly Dictionary<Type, List<SubscriptionEntry>> subscriptions = new();
+    private readonly Dictionary<string, (Type EventType, EventSubscriptionToken Token)> keyToSubscription = new();
     private readonly object subscriptionLock = new();
     private long totalEventsPublished;
     private long totalExceptionsCaught;
@@ -106,40 +107,25 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
-    {
-        if (handler == null)
-            throw new ArgumentNullException(nameof(handler));
+        => SubscribeInternal<TEvent>(null, handler, priority, filter, owner);
 
-        var eventType = typeof(TEvent);
-        var token = new EventSubscriptionToken(Guid.NewGuid());
-
-        Action<object> wrappedHandler = evt => handler((TEvent)evt);
-        Func<object, bool>? wrappedFilter = filter != null ? (evt => filter((TEvent)evt)) : null;
-
-        var entry = new SubscriptionEntry(
-            token,
-            wrappedHandler,
-            priority,
-            wrappedFilter,
-            owner,
-            isAsync: false);
-
-        lock (subscriptionLock)
-        {
-            if (!subscriptions.ContainsKey(eventType))
-                subscriptions[eventType] = new List<SubscriptionEntry>();
-
-            subscriptions[eventType].Add(entry);
-            subscriptions[eventType] = subscriptions[eventType]
-                .OrderByDescending(e => e.Priority)
-                .ToList();
-        }
-
-        if (EnableLogging)
-            NoireLogger.LogDebug(this, $"Subscribed to {eventType.Name} (Priority: {priority})");
-
-        return token;
-    }
+    /// <summary>
+    /// Subscribes to events of type <typeparamref name="TEvent"/> with a custom key for easy unsubscription.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
+    /// <param name="key">A unique string key to identify this subscription. If the key already exists, the previous subscription will be replaced.</param>
+    /// <param name="handler">The handler to invoke when the event is published.</param>
+    /// <param name="priority">The priority of this handler (higher values execute first).</param>
+    /// <param name="filter">Optional filter to conditionally invoke the handler.</param>
+    /// <param name="owner">Optional owner object for tracking subscriptions.</param>
+    /// <returns>An <see cref="EventSubscriptionToken"/> that can be used to unsubscribe.</returns>
+    public EventSubscriptionToken Subscribe<TEvent>(
+        string key,
+        Action<TEvent> handler,
+        int priority = 0,
+        Func<TEvent, bool>? filter = null,
+        object? owner = null)
+        => SubscribeInternal<TEvent>(key, handler, priority, filter, owner);
 
     /// <summary>
     /// Subscribes to events of type <typeparamref name="TEvent"/> with an async handler.
@@ -155,9 +141,100 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
+        => SubscribeAsyncInternal<TEvent>(null, handler, priority, filter, owner);
+
+    /// <summary>
+    /// Subscribes to events of type <typeparamref name="TEvent"/> with an async handler and a custom key for easy unsubscription.
+    /// </summary>
+    /// <typeparam name="TEvent">The event type to subscribe to.</typeparam>
+    /// <param name="key">A unique string key to identify this subscription. If the key already exists, the previous subscription will be replaced.</param>
+    /// <param name="handler">The async handler to invoke when the event is published.</param>
+    /// <param name="priority">The priority of this handler (higher values execute first).</param>
+    /// <param name="filter">Optional filter to conditionally invoke the handler.</param>
+    /// <param name="owner">Optional owner object for tracking subscriptions.</param>
+    /// <returns>An <see cref="EventSubscriptionToken"/> that can be used to unsubscribe.</returns>
+    public EventSubscriptionToken SubscribeAsync<TEvent>(
+        string key,
+        Func<TEvent, Task> handler,
+        int priority = 0,
+        Func<TEvent, bool>? filter = null,
+        object? owner = null)
+        => SubscribeAsyncInternal<TEvent>(key, handler, priority, filter, owner);
+
+    private EventSubscriptionToken SubscribeInternal<TEvent>(
+        string? key,
+        Action<TEvent> handler,
+        int priority,
+        Func<TEvent, bool>? filter,
+        object? owner)
     {
         if (handler == null)
             throw new ArgumentNullException(nameof(handler));
+
+        if (key != null && string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
+
+        var eventType = typeof(TEvent);
+        var token = new EventSubscriptionToken(Guid.NewGuid());
+
+        Action<object> wrappedHandler = evt => handler((TEvent)evt);
+        Func<object, bool>? wrappedFilter = filter != null ? (evt => filter((TEvent)evt)) : null;
+
+        var entry = new SubscriptionEntry(
+            token,
+            wrappedHandler,
+            priority,
+            wrappedFilter,
+            owner,
+            isAsync: false,
+            key: key);
+
+        lock (subscriptionLock)
+        {
+            if (key != null && keyToSubscription.TryGetValue(key, out var existingSubscription))
+            {
+                if (subscriptions.TryGetValue(existingSubscription.EventType, out var existingHandlers))
+                {
+                    existingHandlers.RemoveAll(e => e.Token.Equals(existingSubscription.Token));
+
+                    if (EnableLogging)
+                        NoireLogger.LogDebug(this, $"Replaced existing subscription with key '{key}'");
+                }
+            }
+
+            if (!subscriptions.ContainsKey(eventType))
+                subscriptions[eventType] = new List<SubscriptionEntry>();
+
+            subscriptions[eventType].Add(entry);
+            subscriptions[eventType] = subscriptions[eventType]
+                .OrderByDescending(e => e.Priority)
+                .ToList();
+
+            if (key != null)
+                keyToSubscription[key] = (eventType, token);
+        }
+
+        if (EnableLogging)
+        {
+            var keyInfo = key != null ? $" with key '{key}'" : "";
+            NoireLogger.LogDebug(this, $"Subscribed to {eventType.Name}{keyInfo} (Priority: {priority})");
+        }
+
+        return token;
+    }
+
+    private EventSubscriptionToken SubscribeAsyncInternal<TEvent>(
+        string? key,
+        Func<TEvent, Task> handler,
+        int priority,
+        Func<TEvent, bool>? filter,
+        object? owner)
+    {
+        if (handler == null)
+            throw new ArgumentNullException(nameof(handler));
+
+        if (key != null && string.IsNullOrWhiteSpace(key))
+            throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
 
         var eventType = typeof(TEvent);
         var token = new EventSubscriptionToken(Guid.NewGuid());
@@ -171,10 +248,22 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             priority,
             wrappedFilter,
             owner,
-            isAsync: true);
+            isAsync: true,
+            key: key);
 
         lock (subscriptionLock)
         {
+            if (key != null && keyToSubscription.TryGetValue(key, out var existingSubscription))
+            {
+                if (subscriptions.TryGetValue(existingSubscription.EventType, out var existingHandlers))
+                {
+                    existingHandlers.RemoveAll(e => e.Token.Equals(existingSubscription.Token));
+
+                    if (EnableLogging)
+                        NoireLogger.LogDebug(this, $"Replaced existing subscription with key '{key}'");
+                }
+            }
+
             if (!subscriptions.ContainsKey(eventType))
                 subscriptions[eventType] = new List<SubscriptionEntry>();
 
@@ -182,10 +271,16 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             subscriptions[eventType] = subscriptions[eventType]
                 .OrderByDescending(e => e.Priority)
                 .ToList();
+
+            if (key != null)
+                keyToSubscription[key] = (eventType, token);
         }
 
         if (EnableLogging)
-            NoireLogger.LogDebug(this, $"Subscribed async to {eventType.Name} (Priority: {priority})");
+        {
+            var keyInfo = key != null ? $" with key '{key}'" : "";
+            NoireLogger.LogDebug(this, $"Subscribed async to {eventType.Name}{keyInfo} (Priority: {priority})");
+        }
 
         return token;
     }
@@ -345,11 +440,48 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         {
             foreach (var kvp in subscriptions)
             {
-                var removed = kvp.Value.RemoveAll(e => e.Token.Equals(token));
+                var entry = kvp.Value.FirstOrDefault(e => e.Token.Equals(token));
+                if (entry != null)
+                {
+                    kvp.Value.Remove(entry);
+
+                    if (entry.Key != null)
+                        keyToSubscription.Remove(entry.Key);
+
+                    if (EnableLogging)
+                        NoireLogger.LogDebug(this, $"Unsubscribed from {kvp.Key.Name}");
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Unsubscribes a handler using its subscription key.
+    /// </summary>
+    /// <param name="key">The subscription key provided during Subscribe.</param>
+    /// <returns>True if the subscription was found and removed.</returns>
+    public bool Unsubscribe(string key)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return false;
+
+        lock (subscriptionLock)
+        {
+            if (!keyToSubscription.TryGetValue(key, out var subscriptionInfo))
+                return false;
+
+            keyToSubscription.Remove(key);
+
+            if (subscriptions.TryGetValue(subscriptionInfo.EventType, out var handlers))
+            {
+                var removed = handlers.RemoveAll(e => e.Token.Equals(subscriptionInfo.Token));
                 if (removed > 0)
                 {
                     if (EnableLogging)
-                        NoireLogger.LogDebug(this, $"Unsubscribed from {kvp.Key.Name}");
+                        NoireLogger.LogDebug(this, $"Unsubscribed from {subscriptionInfo.EventType.Name} using key '{key}'");
                     return true;
                 }
             }
@@ -375,6 +507,10 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             if (toRemove != null)
             {
                 handlers.Remove(toRemove);
+
+                if (toRemove.Key != null)
+                    keyToSubscription.Remove(toRemove.Key);
+
                 if (EnableLogging)
                     NoireLogger.LogDebug(this, $"Unsubscribed from {typeof(TEvent).Name}");
                 return true;
@@ -400,6 +536,14 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         {
             foreach (var kvp in subscriptions)
             {
+                var entriesToRemove = kvp.Value.Where(e => ReferenceEquals(e.Owner, owner)).ToList();
+
+                foreach (var entry in entriesToRemove)
+                {
+                    if (entry.Key != null)
+                        keyToSubscription.Remove(entry.Key);
+                }
+
                 var removed = kvp.Value.RemoveAll(e => ReferenceEquals(e.Owner, owner));
                 totalRemoved += removed;
             }
@@ -424,8 +568,20 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             if (!subscriptions.TryGetValue(typeof(TEvent), out var handlers))
                 return 0;
 
-            int removed;
+            List<SubscriptionEntry> entriesToRemove;
 
+            if (owner == null)
+                entriesToRemove = handlers.ToList();
+            else
+                entriesToRemove = handlers.Where(e => ReferenceEquals(e.Owner, owner)).ToList();
+
+            foreach (var entry in entriesToRemove)
+            {
+                if (entry.Key != null)
+                    keyToSubscription.Remove(entry.Key);
+            }
+
+            int removed;
             if (owner == null)
             {
                 removed = handlers.Count;
@@ -456,6 +612,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         {
             var totalCount = subscriptions.Values.Sum(list => list.Count);
             subscriptions.Clear();
+            keyToSubscription.Clear();
 
             if (EnableLogging)
                 NoireLogger.LogInfo(this, $"Cleared {totalCount} subscription(s).");
