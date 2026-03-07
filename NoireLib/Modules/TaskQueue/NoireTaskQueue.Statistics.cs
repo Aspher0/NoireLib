@@ -107,6 +107,73 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
+    /// Gets the number of pending (queued) tasks.
+    /// </summary>
+    /// <param name="boundaryType">Defines how context boundaries are checked.
+    /// CrossContext (default): counts all queued tasks across entire queue, SameContext: same batch or both standalone, StrictWithBoundaryCheck: no batch separation allowed.</param>
+    /// <returns>The number of pending tasks.</returns>
+    public int GetPendingTaskCount(ContextDefinition boundaryType = ContextDefinition.CrossContext)
+    {
+        lock (queueLock)
+        {
+            return CountTasksWithBoundary(boundaryType);
+        }
+    }
+
+    /// <summary>
+    /// Gets the number of pending (queued) batches.
+    /// </summary>
+    public int GetPendingBatchCount()
+    {
+        lock (queueLock)
+        {
+            return unifiedQueue
+                .Where(item => item.IsBatch)
+                .Count(item => item.AsBatch().Status == BatchStatus.Queued);
+        }
+    }
+
+    /// <summary>
+    /// Gets the total number of tasks remaining to be completed (including tasks within batches).
+    /// </summary>
+    public int GetRemainingTaskCount()
+    {
+        lock (queueLock)
+        {
+            int remaining = 0;
+
+            foreach (var item in unifiedQueue)
+            {
+                if (item.IsTask)
+                {
+                    var task = item.AsTask();
+                    if (task.Status != TaskStatus.Completed &&
+                        task.Status != TaskStatus.Failed &&
+                        task.Status != TaskStatus.Cancelled)
+                    {
+                        remaining++;
+                    }
+                }
+                else if (item.IsBatch)
+                {
+                    var batch = item.AsBatch();
+                    foreach (var task in batch.Tasks)
+                    {
+                        if (task.Status != TaskStatus.Completed &&
+                            task.Status != TaskStatus.Failed &&
+                            task.Status != TaskStatus.Cancelled)
+                        {
+                            remaining++;
+                        }
+                    }
+                }
+            }
+
+            return remaining;
+        }
+    }
+
+    /// <summary>
     /// Gets the progress of the queue as a percentage (0 to 100).
     /// </summary>
     public double GetQueueProgressPercentage(int decimals = 0)
