@@ -105,6 +105,13 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch starts.</param>
     /// <returns>The builder instance for chaining.</returns>
+    public TSelf OnStarted(Action callback)
+    {
+        batch.OnStarted = _ => callback();
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnStarted(Action)"/>
     public TSelf OnStarted(Action<TaskBatch> callback)
     {
         batch.OnStarted = callback;
@@ -116,6 +123,13 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch completes.</param>
     /// <returns>The builder instance for chaining.</returns>
+    public TSelf OnCompleted(Action callback)
+    {
+        batch.OnCompleted = _ => callback();
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnCompleted(Action)"/>
     public TSelf OnCompleted(Action<TaskBatch> callback)
     {
         batch.OnCompleted = callback;
@@ -123,13 +137,25 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the batch is cancelled.
+    /// Sets the callback for when the batch is cancelled, and optionnaly stops the queue.
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch is cancelled.</param>
+    /// <param name="stopQueue">Whether to stop the queue when the batch is cancelled. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnCancelled(Action<TaskBatch> callback)
+    public TSelf OnCancelled(Action callback, bool? stopQueue = null)
+    {
+        batch.OnCancelled = _ => callback();
+        if (stopQueue.HasValue)
+            batch.StopQueueOnCancel = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnCancelled(Action, bool?)"/>
+    public TSelf OnCancelled(Action<TaskBatch> callback, bool? stopQueue = null)
     {
         batch.OnCancelled = callback;
+        if (stopQueue.HasValue)
+            batch.StopQueueOnCancel = stopQueue.Value;
         return (TSelf)this;
     }
 
@@ -137,10 +163,31 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     /// Sets the callback for when the batch fails.
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch fails.</param>
+    /// <param name="stopQueue">Whether to stop the queue when the batch is cancelled. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailed(Action<TaskBatch, Exception?> callback)
+    public TSelf OnFailed(Action callback, bool? stopQueue = null)
+    {
+        batch.OnFailed = (_, _) => callback();
+        if (stopQueue.HasValue)
+            batch.StopQueueOnFail = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnFailed(Action, bool?)"/>
+    public TSelf OnFailed(Action<Exception?> callback, bool? stopQueue = null)
+    {
+        batch.OnFailed = (_, ex) => callback(ex);
+        if (stopQueue.HasValue)
+            batch.StopQueueOnFail = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnFailed(Action, bool?)"/>
+    public TSelf OnFailed(Action<TaskBatch, Exception?> callback, bool? stopQueue = null)
     {
         batch.OnFailed = callback;
+        if (stopQueue.HasValue)
+            batch.StopQueueOnFail = stopQueue.Value;
         return (TSelf)this;
     }
 
@@ -149,27 +196,17 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     /// This is a convenience method for handling both failure and cancellation with the same callback.
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch fails or is cancelled.</param>
+    /// <param name="stopQueue">Whether to stop the queue when the batch is cancelled. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailedOrCancelled(Action<TaskBatch, Exception?> callback)
+    public TSelf OnFailedOrCancelled(Action<TaskBatch, Exception?> callback, bool? stopQueue = null)
     {
         batch.OnFailed = callback;
         batch.OnCancelled = (b) => callback(b, null);
-        return (TSelf)this;
-    }
-
-    /// <summary>
-    /// Sets the callback for when the batch fails or is cancelled, and optionally stops the queue.<br/>
-    /// This is a convenience method for handling both failure and cancellation with the same callback.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when the batch fails or is cancelled.</param>
-    /// <param name="stopQueue">Whether to stop the queue on batch failure or cancellation.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailedOrCancelled(Action<TaskBatch, Exception?> callback, bool stopQueue)
-    {
-        batch.OnFailed = callback;
-        batch.OnCancelled = (b) => callback(b, null);
-        batch.StopQueueOnFail = stopQueue;
-        batch.StopQueueOnCancel = stopQueue;
+        if (stopQueue.HasValue)
+        {
+            batch.StopQueueOnFail = stopQueue.Value;
+            batch.StopQueueOnCancel = stopQueue.Value;
+        }
         return (TSelf)this;
     }
 

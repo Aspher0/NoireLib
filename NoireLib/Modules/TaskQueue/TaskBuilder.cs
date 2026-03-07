@@ -207,6 +207,13 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     /// </summary>
     /// <param name="callback">The callback to invoke when the task completes.</param>
     /// <returns>The builder instance for chaining.</returns>
+    public TSelf OnCompleted(Action callback)
+    {
+        task.OnCompleted = _ => callback();
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnCompleted(Action)"/>
     public TSelf OnCompleted(Action<QueuedTask> callback)
     {
         task.OnCompleted = callback;
@@ -214,29 +221,93 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the task is cancelled.<br/>
-    /// See <see cref="OnCancelled(Action{QueuedTask}, bool)"/> for an overload that also allows stopping the queue on cancelled.<br/>
-    /// For Failure handling, see <see cref="OnFailed(Action{QueuedTask, Exception})"/> or <see cref="OnFailed(Action{QueuedTask, Exception}, bool)"/>.
+    /// Sets the callback for when the task is cancelled and optionally stops the queue.<br/>
+    /// For Failure handling, see <see cref="OnFailed(Action{QueuedTask, Exception}, bool?)"/>.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task is cancelled.</param>
+    /// <param name="stopQueue">Whether to stop the queue on task cancellation. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnCancelled(Action<QueuedTask> callback)
+    public TSelf OnCancelled(Action callback, bool? stopQueue = null)
+    {
+        task.OnCancelled = _ => callback();
+        if (stopQueue.HasValue)
+            task.StopQueueOnCancel = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnCancelled(Action, bool?)"/>
+    public TSelf OnCancelled(Action<QueuedTask> callback, bool? stopQueue = null)
     {
         task.OnCancelled = callback;
+        if (stopQueue.HasValue)
+            task.StopQueueOnCancel = stopQueue.Value;
         return (TSelf)this;
     }
 
     /// <summary>
-    /// Sets the callback for when the task fails.<br/>
+    /// Sets the callback for when the task fails and optionally stops the queue.<br/>
     /// This callback will also be called when the task fails due maximum retry attempts being exhausted.<br/>
-    /// See <see cref="OnFailed(Action{QueuedTask, Exception}, bool)"/> for an overload that also allows stopping the queue on failure.<br/>
-    /// For Cancellation handling, see <see cref="OnCancelled(Action{QueuedTask})"/> or <see cref="OnCancelled(Action{QueuedTask}, bool)"/>.
+    /// For Cancellation handling, see <see cref="OnCancelled(Action, bool?)"/>.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails.</param>
+    /// <param name="stopQueue">Whether to stop the queue on task failure. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailed(Action<QueuedTask, Exception> callback)
+    public TSelf OnFailed(Action callback, bool? stopQueue = null)
+    {
+        task.OnFailed = (_, _) => callback();
+        if (stopQueue.HasValue)
+            task.StopQueueOnFail = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnFailed(Action, bool?)"/>
+    public TSelf OnFailed(Action<Exception> callback, bool? stopQueue = null)
+    {
+        task.OnFailed = (_, ex) => callback(ex);
+        if (stopQueue.HasValue)
+            task.StopQueueOnFail = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnFailed(Action, bool?)"/>
+    public TSelf OnFailed(Action<QueuedTask, Exception> callback, bool? stopQueue = null)
     {
         task.OnFailed = callback;
+        if (stopQueue.HasValue)
+            task.StopQueueOnFail = stopQueue.Value;
+        return (TSelf)this;
+    }
+
+    /// <summary>
+    /// Sets the callback for when the task fails or is cancelled, and optionally stops the queue.<br/>
+    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
+    /// This is a convenience method for handling both failure and cancellation with the same callback.
+    /// </summary>
+    /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
+    /// <param name="stopQueue">Whether to stop the queue on task failure or cancellation. A value of <see langword="null"/> means no change.</param>
+    /// <returns>The builder instance for chaining.</returns>
+    public TSelf OnFailedOrCancelled(Action callback, bool? stopQueue = null)
+    {
+        task.OnFailed = (_, _) => callback();
+        task.OnCancelled = _ => callback();
+        if (stopQueue.HasValue)
+        {
+            task.StopQueueOnFail = stopQueue.Value;
+            task.StopQueueOnCancel = stopQueue.Value;
+        }
+        return (TSelf)this;
+    }
+
+    /// <inheritdoc cref="OnFailedOrCancelled(Action, bool?)"/>
+    public TSelf OnFailedOrCancelled(Action<QueuedTask, Exception?> callback, bool? stopQueue = null)
+    {
+        task.OnFailed = (t, ex) => callback(t, ex);
+        task.OnCancelled = (t) => callback(t, null);
+        if (stopQueue.HasValue)
+        {
+            task.StopQueueOnFail = stopQueue.Value;
+            task.StopQueueOnCancel = stopQueue.Value;
+        }
         return (TSelf)this;
     }
 
@@ -354,65 +425,6 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the task fails and optionally stops the queue.
-    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.<br/>
-    /// For Cancellation handling, see <see cref="OnCancelled(Action{QueuedTask})"/> or <see cref="OnCancelled(Action{QueuedTask}, bool)"/>.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when the task fails.</param>
-    /// <param name="stopQueue">Whether to stop the queue on task failure.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailed(Action<QueuedTask, Exception> callback, bool stopQueue)
-    {
-        task.OnFailed = callback;
-        task.StopQueueOnFail = stopQueue;
-        return (TSelf)this;
-    }
-
-    /// <summary>
-    /// Sets the callback for when the task is cancelled and optionally stops the queue.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when the task is cancelled.</param>
-    /// <param name="stopQueue">Whether to stop the queue on task cancellation.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnCancelled(Action<QueuedTask> callback, bool stopQueue)
-    {
-        task.OnCancelled = callback;
-        task.StopQueueOnCancel = stopQueue;
-        return (TSelf)this;
-    }
-
-    /// <summary>
-    /// Sets the callback for when the task fails or is cancelled.<br/>
-    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
-    /// This is a convenience method for handling both failure and cancellation with the same callback.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailedOrCancelled(Action<QueuedTask, Exception?> callback)
-    {
-        task.OnFailed = (t, ex) => callback(t, ex);
-        task.OnCancelled = (t) => callback(t, null);
-        return (TSelf)this;
-    }
-
-    /// <summary>
-    /// Sets the callback for when the task fails or is cancelled, and optionally stops the queue.<br/>
-    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
-    /// This is a convenience method for handling both failure and cancellation with the same callback.
-    /// </summary>
-    /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
-    /// <param name="stopQueue">Whether to stop the queue on task failure or cancellation.</param>
-    /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnFailedOrCancelled(Action<QueuedTask, Exception?> callback, bool stopQueue)
-    {
-        task.OnFailed = (t, ex) => callback(t, ex);
-        task.OnCancelled = (t) => callback(t, null);
-        task.StopQueueOnFail = stopQueue;
-        task.StopQueueOnCancel = stopQueue;
-        return (TSelf)this;
-    }
-
-    /// <summary>
     /// Sets a timeout for the task.<br/>
     /// When the timeout is reached, the task will be marked as failed.<br/>
     /// Timeouts are based on processing time, meaning when you pause the queue, the timeout timer is also paused.
@@ -516,14 +528,18 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 
     /// <summary>
     /// Sets a callback to invoke when max retry attempts are exhausted.<br/>
-    /// If <see cref="OnFailed(Action{QueuedTask, Exception})"/> or <see cref="OnFailedOrCancelled(Action{QueuedTask, Exception?})"/> callbacks are set, this callback will be invoked **before them** when max retries are exceeded, allowing you to handle max retry exhaustion separately from other types of failure if desired.
+    /// If <see cref="OnFailed(Action{QueuedTask, Exception}, bool?)"/> or <see cref="OnFailedOrCancelled(Action{QueuedTask, Exception?}, bool?)"/> callbacks are set, this callback will be invoked **before them** when max retries are exceeded, allowing you to handle max retry exhaustion separately from other types of failure if desired.
     /// </summary>
     /// <param name="callback">The callback to invoke when retries are exhausted.</param>
+    /// <param name="stopQueue">Whether to stop the queue when max retries are exceeded. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
-    public TSelf OnMaxRetriesExceeded(Action<QueuedTask> callback)
+    public TSelf OnMaxRetriesExceeded(Action<QueuedTask> callback, bool? stopQueue = null)
     {
         if (task.RetryConfiguration == null)
             task.RetryConfiguration = new TaskRetryConfiguration();
+
+        if (stopQueue.HasValue)
+            task.StopQueueOnFail = stopQueue.Value;
 
         task.RetryConfiguration.OnMaxRetriesExceeded = callback;
         return (TSelf)this;
