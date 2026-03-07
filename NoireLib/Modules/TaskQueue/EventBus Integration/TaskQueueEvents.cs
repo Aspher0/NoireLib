@@ -61,3 +61,28 @@ public record QueueClearedEvent(int TasksCleared);
 /// Published when all tasks in the queue are completed.
 /// </summary>
 public record QueueCompletedEvent(int TasksCompleted);
+
+/// <summary>
+/// Published when a batch is added to the queue.
+/// </summary>
+public record BatchQueuedEvent(TaskBatch Batch);
+
+/// <summary>
+/// Published when a batch starts processing.
+/// </summary>
+public record BatchStartedEvent(TaskBatch Batch);
+
+/// <summary>
+/// Published when a batch completes successfully.
+/// </summary>
+public record BatchCompletedEvent(TaskBatch Batch);
+
+/// <summary>
+/// Published when a batch is cancelled.
+/// </summary>
+public record BatchCancelledEvent(TaskBatch Batch);
+
+/// <summary>
+/// Published when a batch fails.
+/// </summary>
+public record BatchFailedEvent(TaskBatch Batch, Exception Exception);

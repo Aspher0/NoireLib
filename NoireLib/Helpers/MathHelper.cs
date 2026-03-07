@@ -41,33 +41,6 @@ public static class MathHelper
     #region Clamping
 
     /// <summary>
-    /// Clamps a value between a minimum and maximum value.
-    /// </summary>
-    /// <param name="value">The value to clamp.</param>
-    /// <param name="min">The minimum value.</param>
-    /// <param name="max">The maximum value.</param>
-    /// <returns>The clamped value.</returns>
-    public static int Clamp(int value, int min, int max) => Math.Clamp(value, min, max);
-
-    /// <summary>
-    /// Clamps a value between a minimum and maximum value.
-    /// </summary>
-    /// <param name="value">The value to clamp.</param>
-    /// <param name="min">The minimum value.</param>
-    /// <param name="max">The maximum value.</param>
-    /// <returns>The clamped value.</returns>
-    public static float Clamp(float value, float min, float max) => Math.Clamp(value, min, max);
-
-    /// <summary>
-    /// Clamps a value between a minimum and maximum value.
-    /// </summary>
-    /// <param name="value">The value to clamp.</param>
-    /// <param name="min">The minimum value.</param>
-    /// <param name="max">The maximum value.</param>
-    /// <returns>The clamped value.</returns>
-    public static double Clamp(double value, double min, double max) => Math.Clamp(value, min, max);
-
-    /// <summary>
     /// Clamps a value between 0 and 1.
     /// </summary>
     /// <param name="value">The value to clamp.</param>
@@ -147,146 +120,6 @@ public static class MathHelper
 
     #endregion
 
-    #region Rounding
-
-    /// <summary>
-    /// Rounds a value to the nearest integer.
-    /// </summary>
-    /// <param name="value">The value to round.</param>
-    /// <returns>The rounded value.</returns>
-    public static float Round(float value) => MathF.Round(value);
-
-    /// <summary>
-    /// Rounds a value to the nearest multiple of a given number.
-    /// </summary>
-    /// <param name="value">The value to round.</param>
-    /// <param name="multiple">The multiple to round to.</param>
-    /// <returns>The rounded value.</returns>
-    public static float RoundToNearest(float value, float multiple)
-    {
-        if (Math.Abs(multiple) < Epsilon) return value;
-        return MathF.Round(value / multiple) * multiple;
-    }
-
-    /// <summary>
-    /// Rounds a value down to the nearest integer.
-    /// </summary>
-    /// <param name="value">The value to floor.</param>
-    /// <returns>The floored value.</returns>
-    public static float Floor(float value) => MathF.Floor(value);
-
-    /// <summary>
-    /// Rounds a value up to the nearest integer.
-    /// </summary>
-    /// <param name="value">The value to ceil.</param>
-    /// <returns>The ceiled value.</returns>
-    public static float Ceil(float value) => MathF.Ceiling(value);
-
-    /// <summary>
-    /// Converts a float to an integer by rounding.
-    /// </summary>
-    /// <param name="value">The value to convert.</param>
-    /// <returns>The integer value.</returns>
-    public static int RoundToInt(float value) => (int)MathF.Round(value);
-
-    /// <summary>
-    /// Converts a float to an integer by flooring.
-    /// </summary>
-    /// <param name="value">The value to convert.</param>
-    /// <returns>The integer value.</returns>
-    public static int FloorToInt(float value) => (int)MathF.Floor(value);
-
-    /// <summary>
-    /// Converts a float to an integer by ceiling.
-    /// </summary>
-    /// <param name="value">The value to convert.</param>
-    /// <returns>The integer value.</returns>
-    public static int CeilToInt(float value) => (int)MathF.Ceiling(value);
-
-    #endregion
-
-    #region Min/Max
-
-    /// <summary>
-    /// Returns the minimum of two values.
-    /// </summary>
-    public static int Min(int a, int b) => Math.Min(a, b);
-
-    /// <summary>
-    /// Returns the minimum of two values.
-    /// </summary>
-    public static float Min(float a, float b) => Math.Min(a, b);
-
-    /// <summary>
-    /// Returns the minimum of three values.
-    /// </summary>
-    public static float Min(float a, float b, float c) => Math.Min(Math.Min(a, b), c);
-
-    /// <summary>
-    /// Returns the maximum of two values.
-    /// </summary>
-    public static int Max(int a, int b) => Math.Max(a, b);
-
-    /// <summary>
-    /// Returns the maximum of two values.
-    /// </summary>
-    public static float Max(float a, float b) => Math.Max(a, b);
-
-    /// <summary>
-    /// Returns the maximum of three values.
-    /// </summary>
-    public static float Max(float a, float b, float c) => Math.Max(Math.Max(a, b), c);
-
-    #endregion
-
-    #region Sign and Absolute
-
-    /// <summary>
-    /// Returns the sign of a number (-1, 0, or 1).
-    /// </summary>
-    public static int Sign(float value) => Math.Sign(value);
-
-    /// <summary>
-    /// Returns the absolute value of a number.
-    /// </summary>
-    public static int Abs(int value) => Math.Abs(value);
-
-    /// <summary>
-    /// Returns the absolute value of a number.
-    /// </summary>
-    public static float Abs(float value) => Math.Abs(value);
-
-    /// <summary>
-    /// Returns the absolute value of a number.
-    /// </summary>
-    public static double Abs(double value) => Math.Abs(value);
-
-    #endregion
-
-    #region Power and Root
-
-    /// <summary>
-    /// Returns the value raised to the specified power.
-    /// </summary>
-    public static float Pow(float value, float power) => MathF.Pow(value, power);
-
-    /// <summary>
-    /// Returns the square root of a value.
-    /// </summary>
-    public static float Sqrt(float value) => MathF.Sqrt(value);
-
-    /// <summary>
-    /// Returns the square of a value.
-    /// </summary>
-    public static float Square(float value) => value * value;
-
-    /// <summary>
-    /// Returns the cube of a value.
-    /// </summary>
-    public static float Cube(float value) => value * value * value;
-
-    #endregion
-
     #region Trigonometry
 
     /// <summary>
@@ -298,41 +131,6 @@ public static class MathHelper
     /// Converts radians to degrees.
     /// </summary>
     public static float ToDegrees(float radians) => radians * RadToDeg;
-
-    /// <summary>
-    /// Returns the sine of the specified angle in radians.
-    /// </summary>
-    public static float Sin(float radians) => MathF.Sin(radians);
-
-    /// <summary>
-    /// Returns the cosine of the specified angle in radians.
-    /// </summary>
-    public static float Cos(float radians) => MathF.Cos(radians);
-
-    /// <summary>
-    /// Returns the tangent of the specified angle in radians.
-    /// </summary>
-    public static float Tan(float radians) => MathF.Tan(radians);
-
-    /// <summary>
-    /// Returns the arc sine of the specified value.
-    /// </summary>
-    public static float Asin(float value) => MathF.Asin(value);
-
-    /// <summary>
-    /// Returns the arc cosine of the specified value.
-    /// </summary>
-    public static float Acos(float value) => MathF.Acos(value);
-
-    /// <summary>
-    /// Returns the arc tangent of the specified value.
-    /// </summary>
-    public static float Atan(float value) => MathF.Atan(value);
-
-    /// <summary>
-    /// Returns the angle whose tangent is the quotient of two specified numbers.
-    /// </summary>
-    public static float Atan2(float y, float x) => MathF.Atan2(y, x);
 
     #endregion
 
@@ -389,27 +187,11 @@ public static class MathHelper
     }
 
     /// <summary>
-    /// Returns the distance between two points in 2D space.
-    /// </summary>
-    public static float Distance(Vector2 a, Vector2 b)
-    {
-        return Vector2.Distance(a, b);
-    }
-
-    /// <summary>
     /// Returns the squared distance between two points in 2D space (faster than Distance).
     /// </summary>
     public static float DistanceSquared(float x1, float y1, float x2, float y2)
     {
         return Vector2.DistanceSquared(new Vector2(x1, y1), new Vector2(x2, y2));
-    }
-
-    /// <summary>
-    /// Returns the squared distance between two points in 2D space (faster than Distance).
-    /// </summary>
-    public static float DistanceSquared(Vector2 a, Vector2 b)
-    {
-        return Vector2.DistanceSquared(a, b);
     }
 
     /// <summary>
@@ -421,27 +203,11 @@ public static class MathHelper
     }
 
     /// <summary>
-    /// Returns the distance between two points in 3D space.
-    /// </summary>
-    public static float Distance(Vector3 a, Vector3 b)
-    {
-        return Vector3.Distance(a, b);
-    }
-
-    /// <summary>
     /// Returns the squared distance between two points in 3D space (faster than Distance).
     /// </summary>
     public static float DistanceSquared(float x1, float y1, float z1, float x2, float y2, float z2)
     {
         return Vector3.DistanceSquared(new Vector3(x1, y1, z1), new Vector3(x2, y2, z2));
-    }
-
-    /// <summary>
-    /// Returns the squared distance between two points in 3D space (faster than Distance).
-    /// </summary>
-    public static float DistanceSquared(Vector3 a, Vector3 b)
-    {
-        return Vector3.DistanceSquared(a, b);
     }
 
     /// <summary>

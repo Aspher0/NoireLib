@@ -1,5 +1,6 @@
 using NoireLib.EventBus;
 using System;
+using System.Collections.Generic;
 
 namespace NoireLib.TaskQueue;
 
@@ -19,6 +20,11 @@ public class QueuedTask
     /// The queue that owns this task.
     /// </summary>
     public NoireTaskQueue? OwningQueue { get; internal set; }
+
+    /// <summary>
+    /// The parent batch that contains this task, if any.
+    /// </summary>
+    public TaskBatch? ParentBatch { get; internal set; }
 
     /// <summary>
     /// Optional user-defined identifier for this task.
@@ -118,6 +124,36 @@ public class QueuedTask
     public bool StopQueueOnCancel { get; set; }
 
     /// <summary>
+    /// Whether to fail the parent batch (if exists) when this task fails.
+    /// </summary>
+    public bool FailParentBatchOnFail { get; set; }
+
+    /// <summary>
+    /// Whether to cancel the parent batch (if exists) when this task fails.
+    /// </summary>
+    public bool CancelParentBatchOnFail { get; set; }
+
+    /// <summary>
+    /// Whether to fail the parent batch (if exists) when this task is cancelled.
+    /// </summary>
+    public bool FailParentBatchOnCancel { get; set; }
+
+    /// <summary>
+    /// Whether to cancel the parent batch (if exists) when this task is cancelled.
+    /// </summary>
+    public bool CancelParentBatchOnCancel { get; set; }
+
+    /// <summary>
+    /// Whether to fail the parent batch (if exists) when this task exceeds max retry attempts.
+    /// </summary>
+    public bool FailParentBatchOnMaxRetries { get; set; }
+
+    /// <summary>
+    /// Whether to cancel the parent batch (if exists) when this task exceeds max retry attempts.
+    /// </summary>
+    public bool CancelParentBatchOnMaxRetries { get; set; }
+
+    /// <summary>
     /// Internal token for unsubscribing from EventBus events when the task completes or is cancelled or failed if applicable.
     /// </summary>
     internal EventSubscriptionToken? EventSubscriptionToken { get; set; }
@@ -174,6 +210,16 @@ public class QueuedTask
     /// The tick count when the post-completion delay was last paused.
     /// </summary>
     internal long? PostDelayPausedAtTicks { get; set; }
+
+    /// <summary>
+    /// Whether to apply the post-completion delay when the task fails.
+    /// </summary>
+    public bool ApplyPostDelayOnFailure { get; set; }
+
+    /// <summary>
+    /// Whether to apply the post-completion delay when the task is cancelled.
+    /// </summary>
+    public bool ApplyPostDelayOnCancellation { get; set; }
 
     /// <summary>
     /// Cancels this task if it is still in the queue.
@@ -407,6 +453,66 @@ public class QueuedTask
             RetryConfiguration = RetryConfiguration,
             PostCompletionDelay = PostCompletionDelay
         };
+    }
+
+    /// <summary>
+    /// Gets another task from the same batch as this task by system ID.
+    /// </summary>
+    /// <param name="systemId">The system ID of the task to retrieve.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public QueuedTask? GetSiblingTaskBySystemId(Guid systemId)
+    {
+        return ParentBatch?.GetTaskBySystemId(systemId);
+    }
+
+    /// <summary>
+    /// Gets another task from the same batch as this task by custom ID.
+    /// </summary>
+    /// <param name="customId">The custom ID of the task to retrieve.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public QueuedTask? GetSiblingTaskByCustomId(string customId)
+    {
+        return ParentBatch?.GetTaskByCustomId(customId);
+    }
+
+    /// <summary>
+    /// Gets all tasks from the same batch with a specific custom ID.
+    /// </summary>
+    /// <param name="customId">The custom ID to search for.</param>
+    /// <returns>A read-only list of tasks with the specified custom ID, or an empty list if no parent batch.</returns>
+    public IReadOnlyList<QueuedTask> GetSiblingTasksByCustomId(string customId)
+    {
+        return ParentBatch?.GetTasksByCustomId(customId) ?? Array.Empty<QueuedTask>();
+    }
+
+    /// <summary>
+    /// Gets a task from a different batch using the owning queue.
+    /// </summary>
+    /// <param name="batchSystemId">The system ID of the batch containing the task.</param>
+    /// <param name="taskSystemId">The system ID of the task to retrieve.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public QueuedTask? GetTaskFromBatch(Guid batchSystemId, Guid taskSystemId)
+    {
+        if (OwningQueue == null)
+            return null;
+
+        var batch = OwningQueue.GetBatchBySystemId(batchSystemId);
+        return batch?.GetTaskBySystemId(taskSystemId);
+    }
+
+    /// <summary>
+    /// Gets a task from a different batch using the owning queue.
+    /// </summary>
+    /// <param name="batchCustomId">The custom ID of the batch containing the task.</param>
+    /// <param name="taskCustomId">The custom ID of the task to retrieve.</param>
+    /// <returns>The task if found; otherwise, null.</returns>
+    public QueuedTask? GetTaskFromBatch(string batchCustomId, string taskCustomId)
+    {
+        if (OwningQueue == null)
+            return null;
+
+        var batch = OwningQueue.GetBatchByCustomId(batchCustomId);
+        return batch?.GetTaskByCustomId(taskCustomId);
     }
 
     /// <summary>

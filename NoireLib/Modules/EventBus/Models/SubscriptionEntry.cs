@@ -5,6 +5,7 @@ namespace NoireLib.EventBus;
 internal class SubscriptionEntry
 {
     public EventSubscriptionToken Token { get; }
+    public string? Key { get; }
     public Delegate Handler { get; }
     public int Priority { get; }
     public Func<object, bool>? Filter { get; }
@@ -17,9 +18,11 @@ internal class SubscriptionEntry
         int priority,
         Func<object, bool>? filter,
         object? owner,
-        bool isAsync)
+        bool isAsync,
+        string? key = null)
     {
         Token = token;
+        Key = key;
         Handler = handler;
         Priority = priority;
         Filter = filter;
