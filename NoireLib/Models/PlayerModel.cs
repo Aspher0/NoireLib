@@ -1,10 +1,10 @@
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
+using Newtonsoft.Json;
 using NoireLib.Helpers;
 using System;
 using System.Linq;
 using System.Numerics;
-using System.Text.Json.Serialization;
 
 namespace NoireLib.Models;
 
@@ -18,7 +18,7 @@ public class PlayerModel
     /// <summary>
     /// A unique identifier for this PlayerModel instance.
     /// </summary>
-    public string UniqueId { get; set; } = RandomGenerator.GenerateGuidString();
+    public Guid UniqueId { get; set; } = Guid.NewGuid();
 
     /// <summary>
     /// The name of the player, without the homeWorld.
@@ -64,7 +64,7 @@ public class PlayerModel
     /// <param name="homeWorldId">The world ID of the player's homeWorld (optional).</param>
     /// <param name="currentWorldId">The world ID of the player's current world (optional).</param>
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
-    public PlayerModel(string playerName, string homeWorld, string? currentWorld, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
+    public PlayerModel(string playerName, string homeWorld, string? currentWorld = null, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
     {
         PlayerName = playerName;
         HomeWorld = homeWorld;
@@ -87,7 +87,7 @@ public class PlayerModel
     /// <param name="currentWorldId">The world ID of the player's current world (optional).</param>
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
     [JsonConstructor]
-    public PlayerModel(string uniqueId, string playerName, string homeWorld, string? currentWorld, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
+    public PlayerModel(Guid uniqueId, string playerName, string homeWorld, string? currentWorld = null, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
     {
         UniqueId = uniqueId;
         PlayerName = playerName;

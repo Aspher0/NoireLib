@@ -10,7 +10,7 @@ namespace NoireLib.Models;
 /// </summary>
 public class DelayedTrigger
 {
-    internal Guid Id { get; set; } = Guid.NewGuid();
+    internal Guid UniqueId { get; set; } = Guid.NewGuid();
     internal Action? Action { get; set; }
     internal Func<Task>? AsyncAction { get; set; }
     internal Func<bool>? Condition { get; set; }
@@ -56,5 +56,5 @@ public class DelayedTrigger
     /// <summary>
     /// Gets the unique identifier for this trigger.
     /// </summary>
-    public Guid GetId() => Id;
+    public Guid GetId() => UniqueId;
 }

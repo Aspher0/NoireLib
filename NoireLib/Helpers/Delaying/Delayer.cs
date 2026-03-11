@@ -370,7 +370,7 @@ public class Delayer : IDisposable
         if (trigger == null)
             return false;
 
-        return Cancel(trigger.Id);
+        return Cancel(trigger.UniqueId);
     }
 
     /// <summary>
@@ -390,7 +390,7 @@ public class Delayer : IDisposable
         {
             for (int i = 0; i < _executions.Count; i++)
             {
-                if (_executions[i].Id == triggerId)
+                if (_executions[i].UniqueId == triggerId)
                 {
                     _executions[i].Cts.Cancel();
                     _executions[i].Cts.Dispose();
@@ -439,7 +439,7 @@ public class Delayer : IDisposable
         if (trigger == null)
             return false;
 
-        return IsRunning(trigger.Id);
+        return IsRunning(trigger.UniqueId);
     }
 
     /// <summary>
@@ -457,7 +457,7 @@ public class Delayer : IDisposable
         _lock.Wait();
         try
         {
-            return _executions.Exists(e => e.Id == triggerId && !e.Cts.IsCancellationRequested);
+            return _executions.Exists(e => e.UniqueId == triggerId && !e.Cts.IsCancellationRequested);
         }
         finally
         {
@@ -514,7 +514,7 @@ public class Delayer : IDisposable
         if (trigger == null)
             return 0;
 
-        return GetRemainingTime(trigger.Id, allowNegative);
+        return GetRemainingTime(trigger.UniqueId, allowNegative);
     }
 
     /// <summary>
@@ -533,7 +533,7 @@ public class Delayer : IDisposable
         _lock.Wait();
         try
         {
-            var execution = _executions.Find(e => e.Id == triggerId);
+            var execution = _executions.Find(e => e.UniqueId == triggerId);
             if (execution == null)
                 return 0;
 
