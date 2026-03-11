@@ -10,7 +10,7 @@ namespace NoireLib.Models;
 
 /// <summary>
 /// A model representing a player character.<br/>
-/// Allows easy access to player-related information such as name, homeworld, world ID, and content ID.
+/// Allows easy access to player-related information such as name, homeWorld, world ID, and content ID.
 /// </summary>
 [Serializable]
 public class PlayerModel
@@ -21,19 +21,29 @@ public class PlayerModel
     public string UniqueId { get; set; } = RandomGenerator.GenerateGuidString();
 
     /// <summary>
-    /// The name of the player, without the homeworld.
+    /// The name of the player, without the homeWorld.
     /// </summary>
     public string PlayerName { get; set; }
 
     /// <summary>
-    /// The name of the player's homeworld.
+    /// The name of the player's homeWorld.
     /// </summary>
-    public string Homeworld { get; set; }
+    public string HomeWorld { get; set; }
 
     /// <summary>
-    /// The world ID of the player's homeworld.
+    /// The world ID of the player's homeWorld.
     /// </summary>
-    public uint? WorldId { get; set; } = null;
+    public uint? HomeWorldId { get; set; } = null;
+
+    /// <summary>
+    /// The name of the player's current world.
+    /// </summary>
+    public string? CurrentWorld { get; set; } = null;
+
+    /// <summary>
+    /// The world ID of the player's homeWorld.
+    /// </summary>
+    public uint? CurrentWorldId { get; set; } = null;
 
     /// <summary>
     /// The content ID (CID) of the player.
@@ -41,22 +51,26 @@ public class PlayerModel
     public ulong? ContentId { get; set; } = null;
 
     /// <summary>
-    /// Returns the full name of the player in the format "PlayerName@Homeworld".
+    /// Returns the full name of the player in the format "PlayerName@HomeWorld".
     /// </summary>
-    public string FullName => $"{PlayerName}@{Homeworld}";
+    public string FullName => $"{PlayerName}@{HomeWorld}";
 
     /// <summary>
     /// Constructs a new PlayerModel with the specified values.
     /// </summary>
     /// <param name="playerName">The name of the player.</param>
-    /// <param name="homeworld">The homeworld of the player.</param>
-    /// <param name="worldId">The world ID of the player's homeworld (optional).</param>
+    /// <param name="homeWorld">The homeWorld of the player.</param>
+    /// <param name="currentWorld">The current world of the player.</param>
+    /// <param name="homeWorldId">The world ID of the player's homeWorld (optional).</param>
+    /// <param name="currentWorldId">The world ID of the player's current world (optional).</param>
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
-    public PlayerModel(string playerName, string homeworld, uint? worldId = null, ulong? contentId = null)
+    public PlayerModel(string playerName, string homeWorld, string? currentWorld, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
     {
         PlayerName = playerName;
-        Homeworld = homeworld;
-        WorldId = worldId;
+        HomeWorld = homeWorld;
+        HomeWorldId = homeWorldId;
+        CurrentWorld = currentWorld;
+        CurrentWorldId = currentWorldId;
         ContentId = contentId;
 
         TryUpdateFromObjectTable();
@@ -67,16 +81,20 @@ public class PlayerModel
     /// </summary>
     /// <param name="uniqueId">A unique identifier for this PlayerModel instance.</param>
     /// <param name="playerName">The name of the player.</param>
-    /// <param name="homeworld">The homeworld of the player.</param>
-    /// <param name="worldId">The world ID of the player's homeworld (optional).</param>
+    /// <param name="homeWorld">The homeWorld of the player.</param>
+    /// <param name="currentWorld">The current world of the player.</param>
+    /// <param name="homeWorldId">The world ID of the player's homeWorld (optional).</param>
+    /// <param name="currentWorldId">The world ID of the player's current world (optional).</param>
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
     [JsonConstructor]
-    public PlayerModel(string uniqueId, string playerName, string homeworld, uint? worldId = null, ulong? contentId = null)
+    public PlayerModel(string uniqueId, string playerName, string homeWorld, string? currentWorld, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
     {
         UniqueId = uniqueId;
         PlayerName = playerName;
-        Homeworld = homeworld;
-        WorldId = worldId;
+        HomeWorld = homeWorld;
+        HomeWorldId = homeWorldId;
+        CurrentWorld = currentWorld;
+        CurrentWorldId = currentWorldId;
         ContentId = contentId;
 
         TryUpdateFromObjectTable();
@@ -89,8 +107,10 @@ public class PlayerModel
     public unsafe PlayerModel(IPlayerCharacter character)
     {
         PlayerName = character.Name.TextValue;
-        Homeworld = character.HomeWorld.Value.Name.ExtractText();
-        WorldId = character.HomeWorld.Value.RowId;
+        HomeWorld = character.HomeWorld.Value.Name.ExtractText();
+        HomeWorldId = character.HomeWorld.Value.RowId;
+        CurrentWorld = character.CurrentWorld.Value.Name.ExtractText();
+        CurrentWorldId = character.CurrentWorld.Value.RowId;
         ContentId = CharacterHelper.GetCIDFromPlayerCharacterAddress((nint)CharacterHelper.GetCharacterAddress(character));
     }
 
@@ -101,8 +121,10 @@ public class PlayerModel
     public unsafe void UpdateFromCharacter(IPlayerCharacter character)
     {
         PlayerName = character.Name.TextValue;
-        Homeworld = character.HomeWorld.Value.Name.ExtractText();
-        WorldId = character.HomeWorld.Value.RowId;
+        HomeWorld = character.HomeWorld.Value.Name.ExtractText();
+        HomeWorldId = character.HomeWorld.Value.RowId;
+        CurrentWorld = character.CurrentWorld.Value.Name.ExtractText();
+        CurrentWorldId = character.CurrentWorld.Value.RowId;
         ContentId = CharacterHelper.GetCIDFromPlayerCharacterAddress((nint)CharacterHelper.GetCharacterAddress(character));
     }
 
@@ -124,7 +146,7 @@ public class PlayerModel
     }
 
     /// <summary>
-    /// Tries to find the player character on the current map based on PlayerName and Homeworld.
+    /// Tries to find the player character on the current map based on PlayerName and HomeWorld.
     /// </summary>
     /// <returns></returns>
     public IPlayerCharacter? FindPlayerOnMap()
@@ -133,7 +155,7 @@ public class PlayerModel
             .OfType<IPlayerCharacter>()
             .FirstOrDefault(pc =>
                 pc.Name.TextValue == PlayerName &&
-                pc.HomeWorld.Value.Name.ExtractText() == Homeworld);
+                pc.HomeWorld.Value.Name.ExtractText() == HomeWorld);
 
         return matchingCharacter;
     }
@@ -166,7 +188,17 @@ public class PlayerModel
     }
 
     /// <summary>
-    /// Checks if this PlayerModel is equal to another PlayerModel based on PlayerName, Homeworld, WorldId, and ContentId.
+    /// Determines whether this character is currently in their home world.
+    /// </summary>
+    /// <returns>True if the character is in their home world; otherwise, false.</returns>
+    public bool IsInHomeWorld()
+    {
+        TryUpdateFromObjectTable();
+        return CurrentWorld == HomeWorld;
+    }
+
+    /// <summary>
+    /// Checks if this PlayerModel is equal to another PlayerModel based on PlayerName, HomeWorld, HomeWorldId, and ContentId.
     /// </summary>
     /// <param name="other">The other PlayerModel to compare with.</param>
     /// <returns>True if the models are equal; otherwise, false.</returns>
@@ -175,13 +207,13 @@ public class PlayerModel
         if (other == null)
             return false;
         return PlayerName == other.PlayerName &&
-               Homeworld == other.Homeworld &&
-               WorldId == other.WorldId &&
+               HomeWorld == other.HomeWorld &&
+               HomeWorldId == other.HomeWorldId &&
                ContentId == other.ContentId;
     }
 
     /// <summary>
-    /// Checks if this PlayerModel is equal to an IPlayerCharacter based on PlayerName, Homeworld, WorldId, and ContentId.
+    /// Checks if this PlayerModel is equal to an IPlayerCharacter based on PlayerName, HomeWorld, HomeWorldId, and ContentId.
     /// </summary>
     /// <param name="character">The IPlayerCharacter to compare with.</param>
     /// <returns>True if the character is equal to this model; otherwise, false.</returns>
@@ -190,8 +222,8 @@ public class PlayerModel
         if (character == null)
             return false;
         return PlayerName == character.Name.TextValue &&
-               Homeworld == character.HomeWorld.Value.Name.ExtractText() &&
-               WorldId == character.HomeWorld.Value.RowId &&
+               HomeWorld == character.HomeWorld.Value.Name.ExtractText() &&
+               HomeWorldId == character.HomeWorld.Value.RowId &&
                ContentId == CharacterHelper.GetCIDFromPlayerCharacterAddress((nint)CharacterHelper.GetCharacterAddress(character));
     }
 
@@ -201,6 +233,6 @@ public class PlayerModel
     /// <returns>The cloned PlayerModel.</returns>
     public PlayerModel Clone()
     {
-        return new PlayerModel(UniqueId, PlayerName, Homeworld, WorldId, ContentId);
+        return new PlayerModel(UniqueId, PlayerName, HomeWorld, CurrentWorld, HomeWorldId, CurrentWorldId, ContentId);
     }
 }

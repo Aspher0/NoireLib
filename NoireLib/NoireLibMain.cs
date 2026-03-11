@@ -19,7 +19,7 @@ public class NoireLibMain
     /// <summary>
     /// List of registered callbacks to be invoked on disposal.
     /// </summary>
-    private static readonly List<(string Key, Action Callback, int Priority)> _onDisposeCallbacks = new();
+    private static readonly List<(string Key, Action Callback, int Priority)> OnDisposeCallbacks = new();
 
     /// <summary>
     /// Initializes NoireLib services. Must be called in your plugin's constructor.
@@ -278,10 +278,10 @@ public class NoireLibMain
         if (callback == null)
             throw new ArgumentNullException(nameof(callback), "Callback cannot be null.");
 
-        if (_onDisposeCallbacks.Any(c => c.Key == key))
+        if (OnDisposeCallbacks.Any(c => c.Key == key))
             return false;
 
-        _onDisposeCallbacks.Add((key, callback, priority));
+        OnDisposeCallbacks.Add((key, callback, priority));
         return true;
     }
 
@@ -297,10 +297,10 @@ public class NoireLibMain
         if (key.IsNullOrWhitespace())
             throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
 
-        if (!_onDisposeCallbacks.Any(c => c.Key == key))
+        if (!OnDisposeCallbacks.Any(c => c.Key == key))
             return false;
 
-        _onDisposeCallbacks.RemoveAll(c => c.Key == key);
+        OnDisposeCallbacks.RemoveAll(c => c.Key == key);
         return true;
     }
 
@@ -315,7 +315,7 @@ public class NoireLibMain
     {
         if (key.IsNullOrWhitespace())
             throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
-        return _onDisposeCallbacks.Any(c => c.Key == key);
+        return OnDisposeCallbacks.Any(c => c.Key == key);
     }
 
     /// <summary>
@@ -325,7 +325,7 @@ public class NoireLibMain
     {
         ClearAllModules();
 
-        var orderedCallbacks = _onDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
+        var orderedCallbacks = OnDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
         foreach (var (_, callback, _) in orderedCallbacks)
             callback.Invoke();
 

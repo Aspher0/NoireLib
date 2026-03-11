@@ -35,7 +35,7 @@ public static class SeStringHelper
             var worldId = playerPayload.World.Value.RowId;
 
             if (!playerName.IsNullOrEmpty() && !worldName.IsNullOrEmpty())
-                return new(playerName, worldName, worldId);
+                return new(playerName, worldName, null, worldId, null);
         }
 
         var senderText = sender.TextValue;
@@ -47,8 +47,10 @@ public static class SeStringHelper
         {
             var worldName = NoireService.ObjectTable.LocalPlayer.HomeWorld.Value.Name.ExtractText();
             var worldId = NoireService.ObjectTable.LocalPlayer.HomeWorld.Value.RowId;
+            var currentWorldName = NoireService.ObjectTable.LocalPlayer.CurrentWorld.Value.Name.ExtractText();
+            var currentWorldId = NoireService.ObjectTable.LocalPlayer.CurrentWorld.Value.RowId;
             if (!worldName.IsNullOrEmpty())
-                return new(localPlayerName, worldName, worldId);
+                return new(localPlayerName, worldName, currentWorldName, worldId, currentWorldId);
         }
 
         return null;

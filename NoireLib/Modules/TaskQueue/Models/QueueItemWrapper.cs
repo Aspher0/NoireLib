@@ -11,6 +11,11 @@ public class QueueItemWrapper
     private readonly object item;
 
     /// <summary>
+    /// The queue that owns this batch.
+    /// </summary>
+    public NoireTaskQueue? OwningQueue { get; internal set; }
+
+    /// <summary>
     /// The system ID given to the task or batch when it was created. This is a unique identifier that can be used to track the item throughout its lifecycle.
     /// </summary>
     public Guid SystemId { get; }
@@ -35,9 +40,10 @@ public class QueueItemWrapper
     /// </summary>
     public long QueuedAtTicks { get; }
 
-    private QueueItemWrapper(object item, Guid systemId, string? customId, bool isBlocking, QueueItemType itemType, long queuedAtTicks)
+    private QueueItemWrapper(object item, NoireTaskQueue? owningQueue, Guid systemId, string? customId, bool isBlocking, QueueItemType itemType, long queuedAtTicks)
     {
         this.item = item;
+        OwningQueue = owningQueue;
         SystemId = systemId;
         CustomId = customId;
         IsBlocking = isBlocking;
@@ -51,7 +57,7 @@ public class QueueItemWrapper
     /// <param name="task">The QueuedTask instance containing the data to initialize the QueueItemWrapper. Must not be null.</param>
     /// <returns>A QueueItemWrapper that represents the provided QueuedTask, including its identifiers and state information.</returns>
     public static QueueItemWrapper FromTask(QueuedTask task)
-        => new(task, task.SystemId, task.CustomId, task.IsBlocking, QueueItemType.Task, Environment.TickCount64);
+        => new(task, task.OwningQueue, task.SystemId, task.CustomId, task.IsBlocking, QueueItemType.Task, Environment.TickCount64);
 
     /// <summary>
     /// Creates a new instance of the QueueItemWrapper class that encapsulates the properties of the specified
@@ -60,7 +66,7 @@ public class QueueItemWrapper
     /// <param name="batch">The TaskBatch instance containing the data to initialize the QueueItemWrapper. Must not be null.</param>
     /// <returns>A QueueItemWrapper that represents the provided TaskBatch, including its identifiers and state information.</returns>
     public static QueueItemWrapper FromBatch(TaskBatch batch)
-        => new(batch, batch.SystemId, batch.CustomId, batch.IsBlocking, QueueItemType.Batch, batch.QueuedAtTicks);
+        => new(batch, batch.OwningQueue, batch.SystemId, batch.CustomId, batch.IsBlocking, QueueItemType.Batch, batch.QueuedAtTicks);
 
     /// <summary>
     /// Gets the underlying item associated with this instance.

@@ -645,6 +645,61 @@ public class BatchTaskConfigurator
     /// <returns>A batch-bound task builder.</returns>
     public BatchTaskBuilder Create(string? customId = null)
         => new(batch, customId);
+
+    // ── Direct task addition ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Adds a task to the batch.
+    /// </summary>
+    /// <param name="task">The task to add.</param>
+    public void AddTask(QueuedTask task)
+    {
+        task.ParentBatch = batch;
+        batch.AddTask(task);
+    }
+
+    /// <summary>
+    /// Adds multiple tasks to the batch.
+    /// </summary>
+    /// <param name="tasks">The tasks to add.</param>
+    public void AddTasks(params QueuedTask[] tasks)
+    {
+        foreach (var task in tasks)
+        {
+            task.ParentBatch = batch;
+            batch.AddTask(task);
+        }
+    }
+
+    /// <summary>
+    /// Adds multiple tasks to the batch.
+    /// </summary>
+    /// <param name="tasks">The tasks to add.</param>
+    public void AddTasks(IEnumerable<QueuedTask> tasks)
+    {
+        foreach (var task in tasks)
+        {
+            task.ParentBatch = batch;
+            batch.AddTask(task);
+        }
+    }
+
+    // ── Batch management helpers ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Gets the parent batch this configurator is bound to.
+    /// </summary>
+    public TaskBatch ParentBatch => batch;
+
+    /// <summary>
+    /// Will fail the batch immediately, causing it to stop processing remaining tasks and trigger failure callbacks.
+    /// </summary>
+    public void FailBatch() => ParentBatch.Fail();
+
+    /// <summary>
+    /// Will cancel the batch immediately, causing it to stop processing remaining tasks and trigger cancellation callbacks.
+    /// </summary>
+    public void CancelBatch() => ParentBatch.Cancel();
 }
 
 /// <summary>

@@ -16,6 +16,11 @@ public class TaskBatch
     public Guid SystemId { get; } = Guid.NewGuid();
 
     /// <summary>
+    /// The queue that owns this batch.
+    /// </summary>
+    public NoireTaskQueue? OwningQueue { get; internal set; }
+
+    /// <summary>
     /// An optional custom identifier for this batch.
     /// </summary>
     public string? CustomId { get; set; }
@@ -346,5 +351,33 @@ public class TaskBatch
     public IReadOnlyList<QueuedTask> GetTasksByCustomId(string customId)
     {
         return Tasks.Where(t => t.CustomId == customId).ToList();
+    }
+
+    /// <summary>
+    /// Cancels this batch immediately if it is still in the queue.
+    /// </summary>
+    /// <returns>True if the batch was successfully cancelled; otherwise, false.</returns>
+    public bool Cancel()
+    {
+        return OwningQueue?.CancelBatch(SystemId) ?? false;
+    }
+
+    /// <summary>
+    /// Fails this batch immediately with the specified exception.
+    /// </summary>
+    /// <param name="exception">The exception that caused the batch to fail.</param>
+    /// <returns>True if the batch was successfully failed; otherwise, false.</returns>
+    public bool Fail(Exception exception)
+    {
+        return OwningQueue?.FailBatch(SystemId, exception) ?? false;
+    }
+
+    /// <summary>
+    /// Fails this batch immediately with a default exception message.
+    /// </summary>
+    /// <returns>True if the batch was successfully failed; otherwise, false.</returns>
+    public bool Fail()
+    {
+        return Fail(new Exception("Batch manually failed."));
     }
 }

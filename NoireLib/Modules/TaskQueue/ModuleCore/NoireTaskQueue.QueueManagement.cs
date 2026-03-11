@@ -80,6 +80,7 @@ public partial class NoireTaskQueue
         int subscribedCount = 0;
         lock (queueLock)
         {
+            batch.OwningQueue = this;
             unifiedQueue.Add(QueueItemWrapper.FromBatch(batch));
             totalBatchesQueued++;
             batch.QueuedAtTicks = Environment.TickCount64;
@@ -1079,6 +1080,46 @@ public partial class NoireTaskQueue
     /// </summary>
     public bool CancelBatch(string customId)
         => CancelBatchByIdInternal(b => b.CustomId == customId);
+
+    /// <summary>
+    /// Fails a batch by its system ID with the specified exception.
+    /// </summary>
+    /// <param name="systemId">The system ID of the batch to fail.</param>
+    /// <param name="exception">The exception that caused the batch to fail.</param>
+    /// <returns>True if the batch was found and failed; otherwise, false.</returns>
+    public bool FailBatch(Guid systemId, Exception exception)
+        => FailBatchByIdInternal(b => b.SystemId == systemId, exception);
+
+    /// <summary>
+    /// Fails a batch by its custom ID with the specified exception.
+    /// </summary>
+    /// <param name="customId">The custom ID of the batch to fail.</param>
+    /// <param name="exception">The exception that caused the batch to fail.</param>
+    /// <returns>True if the batch was found and failed; otherwise, false.</returns>
+    public bool FailBatch(string customId, Exception exception)
+        => FailBatchByIdInternal(b => b.CustomId == customId, exception);
+
+    /// <summary>
+    /// Internal method to fail a batch found by predicate.
+    /// </summary>
+    private bool FailBatchByIdInternal(Func<TaskBatch, bool> predicate, Exception exception)
+    {
+        lock (queueLock)
+        {
+            var batch = unifiedQueue
+                .Where(item => item.IsBatch)
+                .Select(item => item.AsBatch())
+                .FirstOrDefault(predicate);
+            if (batch == null)
+                return false;
+
+            if (batch.Status == BatchStatus.Completed || batch.Status == BatchStatus.Cancelled || batch.Status == BatchStatus.Failed)
+                return false;
+
+            FailBatch(batch, exception);
+            return true;
+        }
+    }
 
     /// <summary>
     /// Internal method to cancel a batch found by predicate.
