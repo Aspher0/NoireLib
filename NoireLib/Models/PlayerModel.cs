@@ -73,7 +73,7 @@ public class PlayerModel
         CurrentWorldId = currentWorldId;
         ContentId = contentId;
 
-        TryUpdateFromObjectTable();
+        NoireService.Framework.RunOnFrameworkThread(TryUpdateFromObjectTable);
     }
 
     /// <summary>
@@ -97,7 +97,7 @@ public class PlayerModel
         CurrentWorldId = currentWorldId;
         ContentId = contentId;
 
-        TryUpdateFromObjectTable();
+        NoireService.Framework.RunOnFrameworkThread(TryUpdateFromObjectTable);
     }
 
     /// <summary>
@@ -151,13 +151,11 @@ public class PlayerModel
     /// <returns></returns>
     public IPlayerCharacter? FindPlayerOnMap()
     {
-        var matchingCharacter = NoireService.ObjectTable
+        return NoireService.ObjectTable
             .OfType<IPlayerCharacter>()
             .FirstOrDefault(pc =>
                 pc.Name.TextValue == PlayerName &&
                 pc.HomeWorld.Value.Name.ExtractText() == HomeWorld);
-
-        return matchingCharacter;
     }
 
     /// <summary>
