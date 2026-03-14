@@ -229,4 +229,3 @@ NoireLogger.LogInfo($"Dispatched: {stats.TotalNotificationsDispatched}");
 
 - [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
 - [EventBus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
-- [Localizer Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/Localizer/README.md)
