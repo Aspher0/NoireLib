@@ -731,7 +731,7 @@ public static class NoireIPC
         ArgumentNullException.ThrowIfNull(fullName);
         ArgumentNullException.ThrowIfNull(wrapperType);
 
-        var unavailableMethod = wrapperType.GetMethod(nameof(NoireIpcConsumer<Action>.Unavailable), BindingFlags.Public | BindingFlags.Static, [typeof(string)])
+        var unavailableMethod = wrapperType.GetMethod(nameof(NoireIpcConsumer<Action>.Unavailable), BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static, [typeof(string)])
             ?? throw new InvalidOperationException($"Wrapper type '{wrapperType.FullName}' does not expose a compatible Unavailable factory.");
 
         return unavailableMethod.Invoke(null, [fullName])
