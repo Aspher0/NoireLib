@@ -141,12 +141,15 @@ For a list of modules, see the [Modules Section](#modules)
 
 - [Configuration System](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Configuration/README.md)
 - [Database System](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Database/README.md)
+- [IPC Manager](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/IPC/README.md)
 
 ## Modules
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
 - [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
+- [File Watcher Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/FileWatcher/README.md)
 - [History Logger Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HistoryLogger/README.md)
 - [Hotkey Manager Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HotkeyManager/README.md)
+- [Localizer Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/Localizer/README.md)
 - [Task Queue Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/TaskQueue/README.md)
 - [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)
