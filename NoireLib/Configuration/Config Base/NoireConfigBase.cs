@@ -216,7 +216,7 @@ public abstract class NoireConfigBase : INoireConfig
         {
 #if DEBUG
             stopwatch.Stop();
-            NoireLogger.LogInfo($"Loaded configuration \"{GetType().Name}\" in {stopwatch.ElapsedMilliseconds} ms");
+            NoireLogger.LogInfo(this, $"Loaded configuration \"{GetType().Name}\" in {stopwatch.ElapsedMilliseconds} ms");
 #endif
         }
     }

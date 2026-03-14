@@ -39,6 +39,7 @@
             <PackagePath>\</PackagePath>
         </None>
         <None Include="database\README.md" />
+        <None Include="ipc\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Configuration\README.md" />
         <None Include="Modules\EventBus\README.md" />
@@ -52,7 +53,6 @@
     </ItemGroup>
 
     <ItemGroup>
-        <Folder Include="Modules\GameEventManager\" />
         <Folder Include="Modules\TweaksManager\" />
     </ItemGroup>
 

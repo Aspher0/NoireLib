@@ -4,6 +4,7 @@ using NoireLib.Configuration;
 using NoireLib.Core.Modules;
 using NoireLib.Database.Migrations;
 using NoireLib.Helpers.ObjectExtensions;
+using NoireLib.IPC;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -34,6 +35,8 @@ public class NoireLibMain
             var preloadDatabases = Database.NoireDbModelBase.GetDatabasesToPreload(plugin.GetType().Assembly);
             foreach (var databaseName in preloadDatabases)
                 NoireDatabase.RegisterForInitialization(databaseName, true);
+
+            NoireIPC.RegisterAttributedTypes(plugin.GetType().Assembly);
 
             NoireDatabase.InitializeRegisteredDatabases();
             NoireConfigManager.LoadMarkedConfigsFromDisk();
