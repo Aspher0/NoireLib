@@ -259,4 +259,3 @@ NoireLogger.LogInfo($"Missing tracked keys: {missing.Count}");
 
 - [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
 - [EventBus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
-- [FileWatcher Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/FileWatcher/README.md)
