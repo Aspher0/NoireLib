@@ -13,11 +13,10 @@ You are reading the documentation for `NoireIPC`.
 - [Using Attributed IPC with Instances](#using-attributed-ipc-with-instances)
 - [Availability and Binding State](#availability-and-binding-state)
 - [Advanced APIs](#advanced-apis)
-  - [1. Direct `NoireIPC` Facade](#1-direct-noireipc-facade)
+  - [1. Direct `NoireIPC` Usage](#1-direct-noireipc-usage)
   - [2. `NoireIpcScope`](#2-noireipcscope)
   - [3. `NoireIpcChannel`](#3-noireipcchannel)
   - [4. Raw Dalamud Access](#4-raw-dalamud-access)
-- [Comparison Table](#comparison-table)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
 
