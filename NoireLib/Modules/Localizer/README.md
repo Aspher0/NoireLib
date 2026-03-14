@@ -91,9 +91,9 @@ Control the fallback strategy:
 
 ```csharp
 localizer
-    .SetAllowParentCultureFallback(true)      // fr-CA -> fr
-    .SetAllowDefaultLocaleFallback(true)      // fallback to default locale
-    .SetFallbackLocales("en-UK", "en-US");    // explicit fallback chain
+    .SetAllowParentCultureFallback(true)
+    .SetAllowDefaultLocaleFallback(true)
+    .SetFallbackLocales("en-UK", "en-US"); // explicit fallback chain, en-UK -> en-US
 ```
 
 ### Missing Translation Behavior
