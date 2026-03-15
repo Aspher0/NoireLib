@@ -371,17 +371,21 @@ public static class NoireIPC
         var fullName = BuildName(name, prefix, useDefaultPrefix);
         var finalReturnType = returnType ?? typeof(object);
         var callGateTypes = BuildCallGateTypes(parameterTypes, finalReturnType);
+        var expectsFunction = finalReturnType != typeof(object);
 
         try
         {
             var subscriber = GetCallGateFactoryResult(SubscriberFactoryMethods, fullName, callGateTypes);
-            var methodName = finalReturnType == typeof(object) ? "InvokeAction" : "InvokeFunc";
+            if (TryGetSubscriberAvailability(subscriber, expectsFunction, out var isAvailable))
+                return isAvailable;
+
+            var methodName = expectsFunction ? "InvokeFunc" : "InvokeAction";
             var method = subscriber.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public);
 
             if (method == null)
                 return false;
 
-            if (finalReturnType == typeof(object) || parameterTypes.Length > 0)
+            if (!expectsFunction || parameterTypes.Length > 0)
                 return true;
 
             InvokeInstanceMethod(subscriber, methodName, Array.Empty<object>());
@@ -1159,6 +1163,81 @@ public static class NoireIPC
             .ToArray();
 
         return candidates.FirstOrDefault();
+    }
+
+    private static bool TryGetSubscriberAvailability(object subscriber, bool expectsFunction, out bool isAvailable)
+    {
+        ArgumentNullException.ThrowIfNull(subscriber);
+
+        var availabilityPropertyName = expectsFunction ? "HasFunction" : "HasAction";
+        if (TryGetBooleanMemberValue(subscriber, availabilityPropertyName, out isAvailable))
+            return true;
+
+        if (TryGetObjectMemberValue(subscriber, "Channel", out var channel))
+        {
+            if (TryGetBooleanMemberValue(channel, availabilityPropertyName, out isAvailable))
+                return true;
+
+            var delegatePropertyName = expectsFunction ? "Func" : "Action";
+            if (TryGetObjectMemberValue(channel, delegatePropertyName, out var providerDelegate))
+            {
+                isAvailable = providerDelegate is Delegate;
+                return true;
+            }
+        }
+
+        isAvailable = false;
+        return false;
+    }
+
+    private static bool TryGetBooleanMemberValue(object target, string memberName, out bool value)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        var property = target.GetType().GetProperty(memberName, flags);
+        if (property is { PropertyType: not null } && property.PropertyType == typeof(bool) && property.GetIndexParameters().Length == 0)
+        {
+            value = (bool)(property.GetValue(target) ?? false);
+            return true;
+        }
+
+        var method = target.GetType().GetMethod(memberName, flags, null, Type.EmptyTypes, null);
+        if (method?.ReturnType == typeof(bool))
+        {
+            value = (bool)(method.Invoke(target, null) ?? false);
+            return true;
+        }
+
+        value = false;
+        return false;
+    }
+
+    private static bool TryGetObjectMemberValue(object target, string memberName, out object? value)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
+
+        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+        var property = target.GetType().GetProperty(memberName, flags);
+        if (property != null && property.GetIndexParameters().Length == 0)
+        {
+            value = property.GetValue(target);
+            return true;
+        }
+
+        var field = target.GetType().GetField(memberName, flags);
+        if (field != null)
+        {
+            value = field.GetValue(target);
+            return true;
+        }
+
+        value = null;
+        return false;
     }
 
     private static int ScoreMethod(MethodInfo method, object?[] arguments)
