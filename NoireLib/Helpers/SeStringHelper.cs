@@ -1,7 +1,12 @@
+using Dalamud.Game;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Utility;
+using FFXIVClientStructs.FFXIV.Client.System.String;
+using Lumina.Text.ReadOnly;
 using NoireLib.Models;
+using System;
+using System.Text;
 
 namespace NoireLib.Helpers;
 
@@ -55,4 +60,43 @@ public static class SeStringHelper
 
         return null;
     }
+
+    /// <summary>
+    /// Converts a pointer to a UTF-8 encoded string structure into plain text.
+    /// </summary>
+    /// <param name="utf8StringPtr">A pointer to a UTF-8 encoded string structure to convert. Must not be null.</param>
+    /// <returns>A string containing the plain text representation of the specified UTF-8 string.</returns>
+    public static unsafe string Utf8StringPtrToPlainText(Utf8String* utf8StringPtr)
+    {
+        var ut8Span = GetUtf8Span(utf8StringPtr);
+        var seString = SeString.Parse(ut8Span);
+        return SeStringToPlainText(seString);
+    }
+
+    /// <summary>
+    /// Gets the plain text representation of a <see cref="SeString"/> by concatenating the text from all TextPayloads and evaluating any AutoTranslatePayloads using the client's current language settings.
+    /// </summary>
+    /// <param name="seString">The <see cref="SeString"/> to convert to plain text.</param>
+    /// <param name="languageOverride">An optional language override for evaluating AutoTranslatePayloads.</param>
+    /// <returns>The plain text representation of the <see cref="SeString"/>.</returns>
+    public static string SeStringToPlainText(SeString seString, ClientLanguage? languageOverride = null)
+    {
+        var sb = new StringBuilder();
+        foreach (var p in seString.Payloads)
+        {
+            switch (p)
+            {
+                case TextPayload t:
+                    sb.Append(t.Text);
+                    break;
+                case AutoTranslatePayload a:
+                    sb.Append(NoireService.SeStringEvaluator.Evaluate(new ReadOnlySeString(a.Encode()), default, languageOverride ?? NoireService.ClientState.ClientLanguage).ToString());
+                    break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static unsafe ReadOnlySpan<byte> GetUtf8Span(Utf8String* str)
+        => str == null ? ReadOnlySpan<byte>.Empty : new ReadOnlySpan<byte>(str->StringPtr, str->Length);
 }
