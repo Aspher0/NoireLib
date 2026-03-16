@@ -136,7 +136,7 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
         string defaultChannel = "default",
         ExceptionBehavior exceptionHandling = ExceptionBehavior.LogAndContinue,
         NoireEventBus? eventBus = null)
-        : base(moduleId, active, enableLogging, eventBus, exceptionHandling, port, enableBroadcast, defaultChannel, autoAnnounceOnStart, enablePeerDiscovery, allowLoopbackMessages, enableReliableTransport, reliablePort, instanceId, displayName, selfActiveOnStart) { }
+        : base(moduleId, active, enableLogging, selfActiveOnStart, instanceId, displayName, port, enableReliableTransport, reliablePort, enableBroadcast, autoAnnounceOnStart, enablePeerDiscovery, allowLoopbackMessages, defaultChannel, exceptionHandling, eventBus) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>

@@ -41,6 +41,10 @@ public partial class NoireNetworkRelay
             UnregisterPeer(previousInstanceId);
 
         UpsertPeer(InstanceId, DisplayName, endPoint, reliableEndPoint, isDynamic: false);
+
+        if (activateSelf == true && IsActive && EnablePeerDiscovery)
+            SendPresenceAnnouncement(CreateHelloEnvelope());
+
         return this;
     }
 
@@ -54,6 +58,15 @@ public partial class NoireNetworkRelay
             throw new InvalidOperationException("RegisterSelf() must be called before activating self.");
 
         Volatile.Write(ref selfActivityEnabled, 1);
+
+        if (IsActive)
+        {
+            RegisterSelf();
+
+            if (EnablePeerDiscovery)
+                SendPresenceAnnouncement(CreateHelloEnvelope());
+        }
+
         return this;
     }
 
@@ -255,13 +268,7 @@ public partial class NoireNetworkRelay
 
         EnsureCanSend();
 
-        var envelope = CreateHelloEnvelope();
-
-        if (EnableBroadcast)
-            SendHelloEnvelope(envelope, GetBroadcastEndPoint());
-
-        foreach (var endPoint in GetKnownPeerAnnouncementEndpoints())
-            SendHelloEnvelope(envelope, endPoint);
+        SendPresenceAnnouncement(CreateHelloEnvelope());
 
         RegisterSelf();
 
@@ -417,6 +424,15 @@ public partial class NoireNetworkRelay
                 .Select(peer => new IPEndPoint(peer.EndPoint.Address, peer.EndPoint.Port))
                 .DistinctBy(endPoint => endPoint.ToString(), StringComparer.OrdinalIgnoreCase)
                 .ToList();
+    }
+
+    private void SendPresenceAnnouncement(RelayEnvelope envelope)
+    {
+        if (EnableBroadcast)
+            SendHelloEnvelope(envelope, GetBroadcastEndPoint());
+
+        foreach (var endPoint in GetKnownPeerAnnouncementEndpoints())
+            SendHelloEnvelope(envelope, endPoint);
     }
 
     private IPEndPoint GetBroadcastEndPoint()
