@@ -111,7 +111,7 @@ public partial class NoireNetworkRelay
     /// <summary>
     /// The UDP port used for listening and broadcast announcements.
     /// </summary>
-    public int Port { get; private set; } = DefaultPort;
+    public int Port { get; private set; } = DefaultPortUDP;
 
     /// <summary>
     /// Sets the UDP port used by the relay.
@@ -288,7 +288,7 @@ public partial class NoireNetworkRelay
     /// <summary>
     /// The TCP port used for reliable transport.
     /// </summary>
-    public int ReliablePort { get; private set; } = DefaultPort;
+    public int ReliablePort { get; private set; } = DefaultPortTCP;
 
     /// <summary>
     /// The timeout used when establishing outbound reliable TCP connections.

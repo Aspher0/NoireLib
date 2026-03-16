@@ -15,9 +15,12 @@ public partial class NoireNetworkRelay
     /// </summary>
     /// <param name="peerId">Optional peer identifier for the local relay instance. If not provided, the existing instance ID will be used, otherwise <see cref="InstanceId"/> will be updated.</param>
     /// <param name="displayName">Optional friendly display name for the local relay instance. If provided, <see cref="DisplayName"/> will be updated.</param>
+    /// <param name="activateSelf">Whether the local relay instance should also be marked active for self announcements. Null won't change the current state.</param>
     /// <returns>The module instance for chaining.</returns>
-    public NoireNetworkRelay RegisterSelf(string? peerId = null, string? displayName = null)
+    public NoireNetworkRelay RegisterSelf(string? peerId = null, string? displayName = null, bool? activateSelf = null)
     {
+        var previousInstanceId = InstanceId;
+
         if (!displayName.IsNullOrWhitespace())
             SetDisplayName(displayName);
 
@@ -29,7 +32,38 @@ public partial class NoireNetworkRelay
         if (!peerId.IsNullOrWhitespace())
             SetInstanceId(peerId);
 
+        Volatile.Write(ref selfRegistrationEnabled, 1);
+
+        if (activateSelf != null)
+            Volatile.Write(ref selfActivityEnabled, activateSelf.Value ? 1 : 0);
+
+        if (!string.Equals(previousInstanceId, InstanceId, StringComparison.OrdinalIgnoreCase))
+            UnregisterPeer(previousInstanceId);
+
         UpsertPeer(InstanceId, DisplayName, endPoint, reliableEndPoint, isDynamic: false);
+        return this;
+    }
+
+    /// <summary>
+    /// Marks the local relay instance active for self announcements.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireNetworkRelay ActivateSelf()
+    {
+        if (!IsSelfRegistered)
+            throw new InvalidOperationException("RegisterSelf() must be called before activating self.");
+
+        Volatile.Write(ref selfActivityEnabled, 1);
+        return this;
+    }
+
+    /// <summary>
+    /// Marks the local relay instance inactive for self announcements.
+    /// </summary>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireNetworkRelay DeactivateSelf()
+    {
+        Volatile.Write(ref selfActivityEnabled, 0);
         return this;
     }
 
@@ -112,6 +146,8 @@ public partial class NoireNetworkRelay
     /// <returns><see langword="true"/> if the local relay instance was removed; otherwise, <see langword="false"/>.</returns>
     public bool UnregisterSelf()
     {
+        Volatile.Write(ref selfActivityEnabled, 0);
+        Volatile.Write(ref selfRegistrationEnabled, 0);
         return UnregisterPeer(InstanceId);
     }
 
@@ -214,18 +250,20 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay AnnouncePresence()
     {
+        if (!IsSelfRegistered || !IsSelfActive)
+            return this;
+
         EnsureCanSend();
 
-        try
-        {
-            SendHelloEnvelope(CreateHelloEnvelope(), GetBroadcastEndPoint());
+        var envelope = CreateHelloEnvelope();
 
-            RegisterSelf();
-        }
-        catch (InvalidOperationException)
-        {
-            NoireLogger.LogWarning(this, "Failed to broadcast message: UDP Broadcast is not enabled. Consider enabling it.");
-        }
+        if (EnableBroadcast)
+            SendHelloEnvelope(envelope, GetBroadcastEndPoint());
+
+        foreach (var endPoint in GetKnownPeerAnnouncementEndpoints())
+            SendHelloEnvelope(envelope, endPoint);
+
+        RegisterSelf();
 
         return this;
     }
@@ -369,6 +407,16 @@ public partial class NoireNetworkRelay
 
         endPoint = null!;
         return false;
+    }
+
+    private IReadOnlyList<IPEndPoint> GetKnownPeerAnnouncementEndpoints()
+    {
+        lock (peerLock)
+            return peers.Values
+                .Where(peer => !string.Equals(peer.PeerId, InstanceId, StringComparison.OrdinalIgnoreCase))
+                .Select(peer => new IPEndPoint(peer.EndPoint.Address, peer.EndPoint.Port))
+                .DistinctBy(endPoint => endPoint.ToString(), StringComparer.OrdinalIgnoreCase)
+                .ToList();
     }
 
     private IPEndPoint GetBroadcastEndPoint()

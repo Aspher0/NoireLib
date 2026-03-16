@@ -1,3 +1,4 @@
+using Dalamud.Utility;
 using NoireLib.Core.Modules;
 using NoireLib.Enums;
 using NoireLib.EventBus;
@@ -25,7 +26,8 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     private const string EnvelopeKindMessage = "message";
     private const string EnvelopeKindHello = "hello";
     private const string EnvelopeKindAcknowledgement = "ack";
-    private const int DefaultPort = 53741;
+    private const int DefaultPortUDP = 53740;
+    private const int DefaultPortTCP = 53741;
     private const int DefaultMaxPayloadBytes = 60_000;
 
     private readonly Dictionary<string, RelayPeerRegistration> peers = new(StringComparer.OrdinalIgnoreCase);
@@ -48,6 +50,8 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     private Task? receiveLoopTask;
     private Task? tcpAcceptLoopTask;
     private Task? announcementLoopTask;
+    private int selfRegistrationEnabled;
+    private int selfActivityEnabled;
 
     private long totalMessagesSent;
     private long totalMessagesReceived;
@@ -82,6 +86,16 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     public NoireEventBus? EventBus { get; set; }
 
     /// <summary>
+    /// Whether the local relay instance is currently registered as a peer.
+    /// </summary>
+    public bool IsSelfRegistered => Volatile.Read(ref selfRegistrationEnabled) != 0;
+
+    /// <summary>
+    /// Whether the local relay instance is currently active for self announcements.
+    /// </summary>
+    public bool IsSelfActive => Volatile.Read(ref selfActivityEnabled) != 0;
+
+    /// <summary>
     /// The default constructor needed for internal purposes.
     /// </summary>
     public NoireNetworkRelay() : base() { }
@@ -92,31 +106,37 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     /// <param name="moduleId">Optional module ID for multiple relay instances.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
-    /// <param name="eventBus">Optional EventBus used to publish relay integration events and bridge application events.</param>
-    /// <param name="exceptionHandling">How relay exceptions should be handled.</param>
+    /// <param name="selfActiveOnStart">Whether the local relay instance should start registered and active for self announcements.</param>
+    /// <param name="instanceId">Optional relay instance identifier to use instead of the generated default.</param>
+    /// <param name="displayName">Optional relay display name to use instead of the default machine or module name.</param>
     /// <param name="port">The UDP port used by the relay.</param>
+    /// <param name="enableReliableTransport">Whether the reliable TCP transport listener should be enabled.</param>
+    /// <param name="reliablePort">Optional TCP port used for reliable delivery. If omitted, the UDP port value is reused.</param>
     /// <param name="enableBroadcast">Whether UDP broadcast sending is enabled.</param>
-    /// <param name="defaultChannel">The default logical channel used when none is specified.</param>
     /// <param name="autoAnnounceOnStart">Whether to broadcast a presence announcement when the relay is activated.</param>
     /// <param name="enablePeerDiscovery">Whether peer discovery should be enabled.</param>
     /// <param name="allowLoopbackMessages">Whether self-originated packets should be processed.</param>
-    /// <param name="enableReliableTransport">Whether the reliable TCP transport listener should be enabled.</param>
-    /// <param name="reliablePort">Optional TCP port used for reliable delivery. If omitted, the UDP port value is reused.</param>
+    /// <param name="defaultChannel">The default logical channel used when none is specified.</param>
+    /// <param name="exceptionHandling">How relay exceptions should be handled.</param>
+    /// <param name="eventBus">Optional EventBus used to publish relay integration events and bridge application events.</param>
     public NoireNetworkRelay(
         string? moduleId = null,
         bool active = true,
         bool enableLogging = true,
-        NoireEventBus? eventBus = null,
-        ExceptionBehavior exceptionHandling = ExceptionBehavior.LogAndContinue,
-        int port = DefaultPort,
+        bool selfActiveOnStart = false,
+        string? instanceId = null,
+        string? displayName = null,
+        int port = DefaultPortUDP,
+        bool enableReliableTransport = true,
+        int? reliablePort = DefaultPortTCP,
         bool enableBroadcast = true,
-        string defaultChannel = "default",
-        bool autoAnnounceOnStart = true,
+        bool autoAnnounceOnStart = false,
         bool enablePeerDiscovery = true,
         bool allowLoopbackMessages = false,
-        bool enableReliableTransport = true,
-        int? reliablePort = null)
-        : base(moduleId, active, enableLogging, eventBus, exceptionHandling, port, enableBroadcast, defaultChannel, autoAnnounceOnStart, enablePeerDiscovery, allowLoopbackMessages, enableReliableTransport, reliablePort) { }
+        string defaultChannel = "default",
+        ExceptionBehavior exceptionHandling = ExceptionBehavior.LogAndContinue,
+        NoireEventBus? eventBus = null)
+        : base(moduleId, active, enableLogging, eventBus, exceptionHandling, port, enableBroadcast, defaultChannel, autoAnnounceOnStart, enablePeerDiscovery, allowLoopbackMessages, enableReliableTransport, reliablePort, instanceId, displayName, selfActiveOnStart) { }
 
     /// <summary>
     /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
@@ -138,39 +158,48 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     /// <param name="args">The initialization parameters passed to the module constructor.</param>
     protected override void InitializeModule(params object?[] args)
     {
-        if (args.Length > 0 && args[0] is NoireEventBus eventBus)
-            EventBus = eventBus;
+        var selfActiveOnStart = args.Length > 0 && args[0] is bool selfActiveOnStartValue && selfActiveOnStartValue;
+        Volatile.Write(ref selfRegistrationEnabled, selfActiveOnStart ? 1 : 0);
+        Volatile.Write(ref selfActivityEnabled, selfActiveOnStart ? 1 : 0);
 
-        if (args.Length > 1 && args[1] is ExceptionBehavior exceptionHandling)
-            ExceptionHandling = exceptionHandling;
+        InstanceId = args.Length > 1 && args[1] is string instanceId && !instanceId.IsNullOrWhitespace()
+            ? instanceId.Trim()
+            : BuildDefaultInstanceId();
 
-        if (args.Length > 2 && args[2] is int port)
+        DisplayName = args.Length > 2 && args[2] is string displayName && !displayName.IsNullOrWhitespace()
+            ? displayName.Trim()
+            : ModuleId ?? Environment.MachineName;
+
+        if (args.Length > 3 && args[3] is int port)
             Port = ValidatePort(port);
 
-        if (args.Length > 3 && args[3] is bool enableBroadcast)
-            EnableBroadcast = enableBroadcast;
-
-        if (args.Length > 4 && args[4] is string defaultChannel && !string.IsNullOrWhiteSpace(defaultChannel))
-            DefaultChannel = defaultChannel.Trim();
-
-        if (args.Length > 5 && args[5] is bool autoAnnounceOnStart)
-            AutoAnnounceOnStart = autoAnnounceOnStart;
-
-        if (args.Length > 6 && args[6] is bool enablePeerDiscovery)
-            EnablePeerDiscovery = enablePeerDiscovery;
-
-        if (args.Length > 7 && args[7] is bool allowLoopbackMessages)
-            AllowLoopbackMessages = allowLoopbackMessages;
-
-        if (args.Length > 8 && args[8] is bool enableReliableTransport)
+        if (args.Length > 4 && args[4] is bool enableReliableTransport)
             EnableReliableTransport = enableReliableTransport;
 
-        ReliablePort = args.Length > 9 && args[9] is int reliablePort
+        ReliablePort = args.Length > 5 && args[5] is int reliablePort
             ? ValidatePort(reliablePort)
-            : Port;
+            : DefaultPortUDP;
 
-        InstanceId = BuildDefaultInstanceId();
-        DisplayName = ModuleId ?? Environment.MachineName;
+        if (args.Length > 6 && args[6] is bool enableBroadcast)
+            EnableBroadcast = enableBroadcast;
+
+        if (args.Length > 7 && args[7] is bool autoAnnounceOnStart)
+            AutoAnnounceOnStart = autoAnnounceOnStart;
+
+        if (args.Length > 8 && args[8] is bool enablePeerDiscovery)
+            EnablePeerDiscovery = enablePeerDiscovery;
+
+        if (args.Length > 9 && args[9] is bool allowLoopbackMessages)
+            AllowLoopbackMessages = allowLoopbackMessages;
+
+        if (args.Length > 10 && args[10] is string defaultChannel && !defaultChannel.IsNullOrWhitespace())
+            DefaultChannel = defaultChannel.Trim();
+
+        if (args.Length > 11 && args[11] is ExceptionBehavior exceptionHandling)
+            ExceptionHandling = exceptionHandling;
+
+        if (args.Length > 12 && args[12] is NoireEventBus eventBus)
+            EventBus = eventBus;
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, $"NetworkRelay module initialized on UDP {BindAddress}:{Port} and TCP {BindAddress}:{ReliablePort}.");
@@ -183,7 +212,10 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     {
         StartTransport();
 
-        if (AutoAnnounceOnStart && EnablePeerDiscovery)
+        if (IsSelfRegistered)
+            RegisterSelf();
+
+        if (IsSelfRegistered && IsSelfActive && AutoAnnounceOnStart && EnablePeerDiscovery)
             AnnouncePresence();
 
         if (EnableLogging)
