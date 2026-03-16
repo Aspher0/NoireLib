@@ -238,6 +238,8 @@ public class NoireNetworkRelayTests
 
         var sender = new NoireNetworkRelay(active: false, enableLogging: false, port: senderUdpPort, enablePeerDiscovery: false, allowLoopbackMessages: false, enableReliableTransport: true, reliablePort: senderTcpPort)
             .SetAutoActivateOnSend(false)
+            .RegisterSelf()
+            .ActivateSelf()
             .SetReliableTimeouts(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))
             .SetReliableAcknowledgementTimeout(TimeSpan.FromSeconds(1));
 

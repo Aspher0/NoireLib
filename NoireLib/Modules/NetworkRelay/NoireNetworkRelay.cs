@@ -91,7 +91,7 @@ public partial class NoireNetworkRelay : NoireModuleBase<NoireNetworkRelay>
     public bool IsSelfRegistered => Volatile.Read(ref selfRegistrationEnabled) != 0;
 
     /// <summary>
-    /// Whether the local relay instance is currently active for self announcements.
+    /// Whether the local relay instance is currently active for for sending data.
     /// </summary>
     public bool IsSelfActive => Volatile.Read(ref selfActivityEnabled) != 0;
 

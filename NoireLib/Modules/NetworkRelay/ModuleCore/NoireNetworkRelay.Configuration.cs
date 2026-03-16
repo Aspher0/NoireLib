@@ -697,6 +697,12 @@ public partial class NoireNetworkRelay
 
     private void EnsureCanSend()
     {
+        if (!IsSelfRegistered)
+            throw new InvalidOperationException("The local relay instance must be registered before sending. Call RegisterSelf() first.");
+
+        if (!IsSelfActive)
+            throw new InvalidOperationException("The local relay instance must be active before sending. Call ActivateSelf() or RegisterSelf() with activateSelf: true.");
+
         if (IsActive)
             return;
 
