@@ -54,7 +54,7 @@ In short:
 
 ## Getting Started
 
-***Important: We will assume you have already initialized NoireLib in your plugin, and know how to create/register modules.
+***❗ We will assume you have already initialized NoireLib in your plugin, and know how to create/register modules.
 If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md).***
 
 ### Important: Self Registration
