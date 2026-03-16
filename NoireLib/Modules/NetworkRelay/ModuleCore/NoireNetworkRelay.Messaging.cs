@@ -360,7 +360,15 @@ public partial class NoireNetworkRelay
         if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
             return SendToAllPeers(payload, channel, deliveryMode);
 
-        SendEnvelope(CreateMessageEnvelope(payload, channel, null, null), GetBroadcastEndPoint(), deliveryMode);
+        try
+        {
+            SendEnvelope(CreateMessageEnvelope(payload, channel, null, null), GetBroadcastEndPoint(), deliveryMode);
+        }
+        catch (InvalidOperationException)
+        {
+            NoireLogger.LogWarning(this, "Failed to broadcast message: UDP Broadcast is not enabled. Consider enabling it.");
+        }
+
         return this;
     }
 

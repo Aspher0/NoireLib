@@ -1,3 +1,4 @@
+using Dalamud.Utility;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
@@ -9,6 +10,27 @@ namespace NoireLib.NetworkRelay;
 
 public partial class NoireNetworkRelay
 {
+    /// <summary>
+    /// Registers or updates the local relay instance using the current relay configuration.
+    /// </summary>
+    /// <param name="peerId">Optional peer identifier for the local relay instance. If not provided, the existing instance ID will be used.</param>
+    /// <param name="displayName">Optional friendly display name for the local relay instance.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireNetworkRelay RegisterSelf(string? peerId = null, string? displayName = null)
+    {
+        var selfDisplayName = string.IsNullOrWhiteSpace(displayName) ? DisplayName : displayName.Trim();
+        var endPoint = new IPEndPoint(BindAddress, Port);
+        var reliableEndPoint = EnableReliableTransport
+            ? new IPEndPoint(BindAddress, ReliablePort)
+            : null;
+
+        if (!peerId.IsNullOrWhitespace())
+            SetInstanceId(peerId);
+
+        UpsertPeer(InstanceId, selfDisplayName, endPoint, reliableEndPoint, isDynamic: false);
+        return this;
+    }
+
     /// <summary>
     /// Registers or updates a known peer using a hostname or IP address.
     /// </summary>
@@ -182,7 +204,18 @@ public partial class NoireNetworkRelay
     public NoireNetworkRelay AnnouncePresence()
     {
         EnsureCanSend();
-        SendHelloEnvelope(CreateHelloEnvelope(), GetBroadcastEndPoint());
+
+        try
+        {
+            SendHelloEnvelope(CreateHelloEnvelope(), GetBroadcastEndPoint());
+
+            RegisterSelf();
+        }
+        catch (InvalidOperationException)
+        {
+            NoireLogger.LogWarning(this, "Failed to broadcast message: UDP Broadcast is not enabled. Consider enabling it.");
+        }
+
         return this;
     }
 
