@@ -685,6 +685,17 @@ public partial class NoireNetworkRelay
         return resolvedChannel;
     }
 
+    private IPAddress ResolveSelfAddress()
+    {
+        if (IPAddress.Any.Equals(BindAddress))
+            return IPAddress.Loopback;
+
+        if (IPAddress.IPv6Any.Equals(BindAddress))
+            return IPAddress.IPv6Loopback;
+
+        return BindAddress;
+    }
+
     private static string NormalizeSubscriptionChannel(string? channel)
     {
         var resolvedChannel = string.IsNullOrWhiteSpace(channel) ? WildcardChannel : channel.Trim();

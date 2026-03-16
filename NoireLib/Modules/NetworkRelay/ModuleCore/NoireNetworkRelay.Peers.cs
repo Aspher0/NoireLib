@@ -24,9 +24,10 @@ public partial class NoireNetworkRelay
         if (!displayName.IsNullOrWhitespace())
             SetDisplayName(displayName);
 
-        var endPoint = new IPEndPoint(BindAddress, Port);
+        var selfAddress = ResolveSelfAddress();
+        var endPoint = new IPEndPoint(selfAddress, Port);
         var reliableEndPoint = EnableReliableTransport
-            ? new IPEndPoint(BindAddress, ReliablePort)
+            ? new IPEndPoint(selfAddress, ReliablePort)
             : null;
 
         if (!peerId.IsNullOrWhitespace())

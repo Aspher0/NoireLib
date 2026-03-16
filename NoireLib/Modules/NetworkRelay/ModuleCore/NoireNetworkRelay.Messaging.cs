@@ -314,6 +314,9 @@ public partial class NoireNetworkRelay
         var peersSnapshot = GetPeers();
         foreach (var peer in peersSnapshot)
         {
+            if (!AllowLoopbackMessages && string.Equals(peer.PeerId, InstanceId, StringComparison.OrdinalIgnoreCase))
+                continue;
+
             var endPoint = deliveryMode == NetworkRelayDeliveryMode.Reliable
                 ? peer.ReliableEndPoint ?? new IPEndPoint(peer.EndPoint.Address, peer.EndPoint.Port)
                 : peer.EndPoint;
