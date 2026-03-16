@@ -22,7 +22,6 @@ You are reading the documentation for `NoireConfigManager`.
   - [Using MigrationBuilder](#using-migrationbuilder)
   - [Migration Best Practices](#migration-best-practices)
 - [Advanced Features](#advanced-features)
-- [Comparison Table](#comparison-table)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
 
