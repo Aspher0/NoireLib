@@ -13,12 +13,14 @@ public partial class NoireNetworkRelay
     /// <summary>
     /// Registers or updates the local relay instance using the current relay configuration.
     /// </summary>
-    /// <param name="peerId">Optional peer identifier for the local relay instance. If not provided, the existing instance ID will be used.</param>
-    /// <param name="displayName">Optional friendly display name for the local relay instance.</param>
+    /// <param name="peerId">Optional peer identifier for the local relay instance. If not provided, the existing instance ID will be used, otherwise <see cref="InstanceId"/> will be updated.</param>
+    /// <param name="displayName">Optional friendly display name for the local relay instance. If provided, <see cref="DisplayName"/> will be updated.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay RegisterSelf(string? peerId = null, string? displayName = null)
     {
-        var selfDisplayName = string.IsNullOrWhiteSpace(displayName) ? DisplayName : displayName.Trim();
+        if (!displayName.IsNullOrWhitespace())
+            SetDisplayName(displayName);
+
         var endPoint = new IPEndPoint(BindAddress, Port);
         var reliableEndPoint = EnableReliableTransport
             ? new IPEndPoint(BindAddress, ReliablePort)
@@ -27,7 +29,7 @@ public partial class NoireNetworkRelay
         if (!peerId.IsNullOrWhitespace())
             SetInstanceId(peerId);
 
-        UpsertPeer(InstanceId, selfDisplayName, endPoint, reliableEndPoint, isDynamic: false);
+        UpsertPeer(InstanceId, DisplayName, endPoint, reliableEndPoint, isDynamic: false);
         return this;
     }
 
@@ -102,6 +104,15 @@ public partial class NoireNetworkRelay
 
         UpsertPeer(peerId.Trim(), displayName?.Trim(), endPoint, reliableEndPoint, isDynamic: false);
         return this;
+    }
+
+    /// <summary>
+    /// Removes the local relay instance from the peer list.
+    /// </summary>
+    /// <returns><see langword="true"/> if the local relay instance was removed; otherwise, <see langword="false"/>.</returns>
+    public bool UnregisterSelf()
+    {
+        return UnregisterPeer(InstanceId);
     }
 
     /// <summary>
