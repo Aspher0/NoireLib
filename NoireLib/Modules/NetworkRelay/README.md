@@ -7,13 +7,14 @@ You are reading the documentation for the `NoireNetworkRelay` module.
 - [Getting Started](#getting-started)
 - [Transport Model](#transport-model)
 - [Lifecycle and Module Registration](#lifecycle-and-module-registration)
+- [Self Registration](#self-registration)
 - [Configuration](#configuration)
 - [Channels, Messages, and Payloads](#channels-messages-and-payloads)
 - [Sending Data](#sending-data)
 - [Receiving Data](#receiving-data)
 - [Peer Management](#peer-management)
 - [EventBus Integration](#eventbus-integration)
-- [Events and Diagnostics](#events-and-diagnostics)
+- [Statistics and Diagnostics](#statistics-and-diagnostics)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
 
@@ -22,20 +23,26 @@ You are reading the documentation for the `NoireNetworkRelay` module.
 ## Overview
 
 The `NoireNetworkRelay` module provides **hybrid local-network communication** for NoireLib modules and plugins.
-It keeps **UDP** for lightweight best-effort traffic and adds **TCP** for reliable delivery when you need stronger reliability.
+It keeps **UDP** for lightweight best-effort traffic and adds **TCP** for reliable delivery when you need stronger guarantees.
 
 The module includes:
 - **UDP best-effort delivery** for fast, lossy-acceptable traffic
 - **TCP reliable delivery** for controlled and reliable traffic
 - **Broadcast delivery** for LAN-wide UDP messages
 - **Direct peer delivery** for known endpoints
+- **Direct endpoint delivery** for arbitrary host/port targets
 - **Automatic peer discovery** through presence announcements
-- **Peer tracking** with expiration and manual registration support
+- **Peer tracking** with expiration, manual registration, and auto-registration support
 - **Reliable peer metadata** through tracked TCP endpoints
+- **Self registration** for the local relay instance with activation control
 - **Typed payload subscriptions** through `Subscribe<TPayload>(...)`, `On<TPayload>(...)`, and async variants
 - **Raw message subscriptions** when sender or transport metadata is required
+- **Keyed subscriptions** for named, replaceable handlers
+- **Owner-based subscription grouping** for bulk unsubscription
 - **EventBus bridge support** for relaying local events outward and republishing remote events locally
+- **Awaitable reliable sends** with built-in acknowledgement support
 - **Duplicate suppression** to reduce repeated packet processing
+- **Peer allow-list** for restricting accepted senders
 - **Runtime statistics** for monitoring both UDP and TCP activity
 - **Fluent configuration** for transport, discovery, filtering, and serializer settings
 
@@ -47,16 +54,25 @@ In short:
 
 ## Getting Started
 
-***❗ We will assume you have already initialized NoireLib in your plugin, and know how to create/register modules.
+***Important: We will assume you have already initialized NoireLib in your plugin, and know how to create/register modules.
 If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md).***
 
-### Minimal Best-Effort Usage
+### Important: Self Registration
 
-If all you want is **"send a value and receive it"**, the smallest usable setup looks like this:
+Before the relay can send any data, the local instance must be **registered** and **active** as a peer.
+The relay enforces this through `RegisterSelf()`, which advertises the local instance on the network.
+
+The simplest way is to pass `selfActiveOnStart: true` in the constructor, which automatically registers and activates the local instance.
+Alternatively, call `RegisterSelf()` and `ActivateSelf()` manually after creation.
+
+See the [Self Registration](#self-registration) section for full details.
+
+### Minimal Best-Effort Usage
 
 ```csharp
 var relay = NoireLibMain.AddModule(new NoireNetworkRelay(
     moduleId: "NetworkRelay",
+    selfActiveOnStart: true,
     port: 53741,
     enablePeerDiscovery: true));
 
@@ -70,16 +86,16 @@ relay.Send("Hello from another client!", channel: "chat");
 
 What this does:
 - registers a relay module listening on UDP port `53741`
+- registers and activates the local instance as a peer (`selfActiveOnStart: true`)
 - subscribes to incoming string payloads on the logical channel `chat`
 - broadcasts a best-effort UDP string payload on that same channel
 
 ### Minimal Reliable Usage
 
-If you want the relay to use the reliable TCP path for important messages:
-
 ```csharp
 var relay = NoireLibMain.AddModule(new NoireNetworkRelay(
     moduleId: "NetworkRelay",
+    selfActiveOnStart: true,
     port: 53741,
     enableReliableTransport: true,
     reliablePort: 53742,
@@ -123,6 +139,7 @@ var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus");
 
 var relay = NoireLibMain.AddModule(new NoireNetworkRelay(
     moduleId: "NetworkRelay",
+    selfActiveOnStart: true,
     eventBus: eventBus,
     port: 53741,
     enableReliableTransport: true,
@@ -150,7 +167,7 @@ Choose it for:
 - presence announcements
 - transient state updates
 - telemetry
-- periodic sync spam where another update is coming soon anyway
+- periodic sync where another update is coming soon anyway
 - messages where occasional loss is acceptable
 
 #### `NetworkRelayDeliveryMode.Reliable`
@@ -158,7 +175,7 @@ Choose it for:
 This uses **TCP**.
 
 Choose it for:
-- reliability
+- guaranteed delivery
 - control flows
 - request/response style coordination
 - important state transitions
@@ -174,20 +191,20 @@ Because of that:
 - `Broadcast(...)` with reliable delivery becomes **direct TCP fan-out to known peers**
 
 That means reliable fan-out requires peers to be known through:
-- manual registration
-- discovery plus auto-registration
+- manual registration via `RegisterPeer(...)`
+- discovery plus auto-registration via `SetPeerDiscovery(true, autoRegisterPeers: true)`
 
 ### Message Transport Metadata
 
 Every received `NetworkRelayMessage` carries transport information:
-- `TransportKind`
-- `IsReliable`
+- `TransportKind` (`NetworkRelayTransportKind.Udp` or `NetworkRelayTransportKind.Tcp`)
+- `IsReliable` (convenience boolean, `true` when `TransportKind` is `Tcp`)
 
 ### Peer Transport Metadata
 
 Each `NetworkRelayPeer` carries:
 - `EndPoint` for UDP
-- `ReliableEndPoint` for TCP
+- `ReliableEndPoint` for TCP (nullable, only present when the peer advertises a reliable port)
 
 Discovery announcements also advertise the reliable TCP port when enabled.
 
@@ -199,7 +216,7 @@ The relay separates the following transport-specific settings:
 - `UdpReceiveBufferSize` / `UdpSendBufferSize`
 - `ReliableReceiveBufferSize` / `ReliableSendBufferSize`
 - UDP-only settings like `EnableBroadcast` and `TimeToLive`
-- TCP-only settings like `ReliableConnectTimeout` and `ReliableOperationTimeout`
+- TCP-only settings like `ReliableConnectTimeout`, `ReliableOperationTimeout`, and `ReliableAcknowledgementTimeout`
 
 Compatibility helpers still exist:
 - `SetMaxPayloadBytes(...)` sets both UDP and TCP payload limits
@@ -226,16 +243,19 @@ var relay = NoireLibMain.AddModule(new NoireNetworkRelay(
     moduleId: "MyRelay",
     active: true,
     enableLogging: true,
-    eventBus: eventBus,
-    exceptionHandling: ExceptionBehavior.LogAndContinue,
+    selfActiveOnStart: true,
+    instanceId: "client-a",
+    displayName: "Client A",
     port: 53741,
+    enableReliableTransport: true,
+    reliablePort: 53742,
     enableBroadcast: true,
-    defaultChannel: "default",
     autoAnnounceOnStart: true,
     enablePeerDiscovery: true,
     allowLoopbackMessages: false,
-    enableReliableTransport: true,
-    reliablePort: 53742));
+    defaultChannel: "default",
+    exceptionHandling: ExceptionBehavior.LogAndContinue,
+    eventBus: eventBus));
 ```
 
 ### Activation and Deactivation
@@ -252,13 +272,81 @@ When activated, the relay:
 - starts the TCP listener when reliable transport is enabled
 - begins receiving datagrams and reliable framed payloads
 - starts periodic peer announcements if discovery is enabled and `AnnouncementInterval > TimeSpan.Zero`
-- optionally broadcasts presence immediately if `AutoAnnounceOnStart` is enabled
+- optionally broadcasts presence immediately if `AutoAnnounceOnStart` is enabled and the local instance is registered and active
 
 When deactivated, the relay:
 - stops the UDP transport
 - stops the TCP transport
 - stops background loops
 - disposes internal transport resources
+
+---
+
+## Self Registration
+
+The relay requires the local instance to be **registered** and **active** before it can send data.
+This is enforced internally and will throw an `InvalidOperationException` if a send is attempted without it.
+
+### Why Self Registration Exists
+
+Self registration serves two purposes:
+1. It ensures the local relay instance has a stable identity (`InstanceId`) and display name (`DisplayName`) for outbound envelopes
+2. It controls whether the local instance participates in presence announcements and peer discovery
+
+### Registering on Construction
+
+The simplest approach is to pass `selfActiveOnStart: true` to the constructor:
+
+```csharp
+var relay = new NoireNetworkRelay(
+    moduleId: "MyRelay",
+    selfActiveOnStart: true);
+```
+
+This automatically calls `RegisterSelf()` and marks the local instance as active when the module activates.
+
+### Manual Registration
+
+```csharp
+relay.RegisterSelf();
+relay.ActivateSelf();
+```
+
+`RegisterSelf()` accepts optional overrides:
+
+```csharp
+relay.RegisterSelf(
+    peerId: "client-a",
+    displayName: "Client A",
+    activateSelf: true);
+```
+
+Parameters:
+- `peerId`: Optional override for `InstanceId`. If provided, the instance ID is updated.
+- `displayName`: Optional override for `DisplayName`. If provided, the display name is updated.
+- `activateSelf`: Whether the local instance should also be marked active for self announcements. `null` preserves the current state.
+
+### Activation and Deactivation
+
+```csharp
+relay.ActivateSelf();   // Marks the local instance active for sending and announcements
+relay.DeactivateSelf();  // Marks the local instance inactive (stops sending and announcements)
+```
+
+`ActivateSelf()` requires `RegisterSelf()` to have been called first.
+
+### Unregistering
+
+```csharp
+relay.UnregisterSelf();
+```
+
+This removes the local instance from the peer table and marks it inactive.
+
+### Properties
+
+- `IsSelfRegistered`: Whether the local relay instance is currently registered as a peer
+- `IsSelfActive`: Whether the local relay instance is currently active for sending data
 
 ---
 
@@ -271,37 +359,43 @@ var relay = new NoireNetworkRelay(
     moduleId: "MyRelay",
     active: true,
     enableLogging: true,
-    eventBus: eventBus,
-    exceptionHandling: ExceptionBehavior.LogAndContinue,
+    selfActiveOnStart: true,
+    instanceId: "client-a",
+    displayName: "Client A",
     port: 53741,
+    enableReliableTransport: true,
+    reliablePort: 53742,
     enableBroadcast: true,
-    defaultChannel: "default",
     autoAnnounceOnStart: true,
     enablePeerDiscovery: true,
     allowLoopbackMessages: false,
-    enableReliableTransport: true,
-    reliablePort: 53742
-);
+    defaultChannel: "default",
+    exceptionHandling: ExceptionBehavior.LogAndContinue,
+    eventBus: eventBus);
 ```
 
 Parameter summary:
 - `moduleId`: Optional identifier for multiple relay instances
-- `active`: Whether the module starts active immediately
-- `enableLogging`: Enables module logging
+- `active`: Whether the module starts active immediately (default: `true`)
+- `enableLogging`: Enables module logging (default: `true`)
+- `selfActiveOnStart`: Whether the local relay instance should start registered and active for self announcements (default: `false`)
+- `instanceId`: Optional relay instance identifier to use instead of the generated default
+- `displayName`: Optional relay display name to use instead of the default machine or module name
+- `port`: UDP port used by the relay (default: `53740`)
+- `enableReliableTransport`: Enables the TCP reliable transport listener (default: `true`)
+- `reliablePort`: Optional TCP port used for reliable delivery (default: `53741`)
+- `enableBroadcast`: Enables LAN broadcast sending (default: `true`)
+- `autoAnnounceOnStart`: Sends a presence announcement on activation (default: `true`)
+- `enablePeerDiscovery`: Enables peer discovery behavior (default: `true`)
+- `allowLoopbackMessages`: Allows processing self-originated packets (default: `false`)
+- `defaultChannel`: Default channel used when none is specified (default: `"default"`)
+- `exceptionHandling`: Relay exception behavior (default: `ExceptionBehavior.LogAndContinue`)
 - `eventBus`: Optional `NoireEventBus` for integration and bridging
-- `exceptionHandling`: Relay exception behavior
-- `port`: UDP port used by the relay
-- `enableBroadcast`: Enables LAN broadcast sending
-- `defaultChannel`: Default channel used when none is specified
-- `autoAnnounceOnStart`: Sends a presence announcement on activation
-- `enablePeerDiscovery`: Enables peer discovery behavior
-- `allowLoopbackMessages`: Allows processing self-originated packets
-- `enableReliableTransport`: Enables the TCP reliable transport listener
-- `reliablePort`: Optional TCP port used for reliable delivery
 
 ### Fluent Configuration API
 
 The relay exposes a fluent configuration surface so the instance can be tuned after creation.
+All setter methods return the module instance for chaining.
 
 #### Identity
 
@@ -310,9 +404,16 @@ relay.SetInstanceId("client-a")
      .SetDisplayName("Craft Client A");
 ```
 
-Meaning:
 - `InstanceId` is the machine-readable identity used by message metadata and peer routing
 - `DisplayName` is a human-readable label primarily useful for discovery, logs, and debugging
+
+#### EventBus
+
+```csharp
+relay.SetEventBus(eventBus);
+```
+
+Attaches or detaches the `NoireEventBus` used for integration events and bridge registrations. Passing `null` detaches the bus.
 
 #### UDP Transport
 
@@ -322,28 +423,24 @@ relay.SetBindAddress(IPAddress.Any)
      .SetBroadcast(true)
      .SetUdpSocketBuffers(256 * 1024, 256 * 1024)
      .SetUdpMaxPayloadBytes(60_000)
-     .SetTimeToLive(1)
-     .SetMaxPayloadBytes(60_000);
+     .SetTimeToLive(1);
+```
+
+`SetBindAddress(...)` also accepts a string:
+
+```csharp
+relay.SetBindAddress("192.168.1.10");
 ```
 
 Relevant properties:
-- `BindAddress`
-- `Port`
-- `UdpMaxPayloadBytes`
-- `EnableBroadcast`
-- `UdpReceiveBufferSize`
-- `UdpSendBufferSize`
-- `TimeToLive`
-- `MaxPayloadBytes`
-
-Meaning:
-- `BindAddress` controls the local network interface the relay listens on
-- `Port` controls the UDP port for best-effort traffic
-- `UdpMaxPayloadBytes` controls the maximum payload size accepted and sent through UDP
-- `EnableBroadcast` allows sending UDP broadcast packets to the subnet
-- `UdpReceiveBufferSize` and `UdpSendBufferSize` control the underlying socket buffer sizes for UDP transport
-- `TimeToLive` controls the TTL for outgoing UDP packets
-- `MaxPayloadBytes` remains a shared compatibility view and returns the smaller of the UDP and TCP payload limits
+- `BindAddress`: The local IP address to bind the listeners to (default: `IPAddress.Any`)
+- `Port`: The UDP port for best-effort traffic (default: `53740`)
+- `UdpMaxPayloadBytes`: The maximum payload size accepted and sent through UDP (default: `60000`)
+- `EnableBroadcast`: Allows sending UDP broadcast packets to the subnet (default: `true`)
+- `UdpReceiveBufferSize`: The UDP receive socket buffer size in bytes (default: `262144`)
+- `UdpSendBufferSize`: The UDP send socket buffer size in bytes (default: `262144`)
+- `TimeToLive`: The TTL for outgoing UDP packets (default: `1`)
+- `MaxPayloadBytes`: Shared compatibility view, returns the smaller of the UDP and TCP payload limits
 
 #### Reliable TCP Transport
 
@@ -353,27 +450,21 @@ relay.SetReliableTransport(true, 53742)
      .SetReliableSocketBuffers(256 * 1024, 256 * 1024)
      .SetReliableTimeouts(
          connectTimeout: TimeSpan.FromSeconds(5),
-         operationTimeout: TimeSpan.FromSeconds(10));
+         operationTimeout: TimeSpan.FromSeconds(10))
+     .SetReliableAcknowledgementTimeout(TimeSpan.FromSeconds(10));
 ```
 
 Relevant properties:
-- `EnableReliableTransport`
-- `ReliablePort`
-- `ReliableMaxPayloadBytes`
-- `ReliableReceiveBufferSize`
-- `ReliableSendBufferSize`
-- `ReliableConnectTimeout`
-- `ReliableOperationTimeout`
+- `EnableReliableTransport`: Whether the relay starts a TCP listener (default: `true`)
+- `ReliablePort`: The TCP listening port used for reliable delivery (default: `53741`)
+- `ReliableMaxPayloadBytes`: The maximum payload size accepted and sent through TCP (default: `60000`)
+- `ReliableReceiveBufferSize`: The TCP receive socket buffer size in bytes (default: `262144`)
+- `ReliableSendBufferSize`: The TCP send socket buffer size in bytes (default: `262144`)
+- `ReliableConnectTimeout`: The timeout for outbound TCP connections (default: `5 seconds`)
+- `ReliableOperationTimeout`: The timeout for TCP read/write operations (default: `10 seconds`)
+- `ReliableAcknowledgementTimeout`: The timeout when waiting for an ACK from the receiver (default: `10 seconds`)
 
-Meaning:
-- `EnableReliableTransport` controls whether the relay starts a TCP listener
-- `ReliablePort` defines the TCP listening port used for reliable delivery
-- `ReliableMaxPayloadBytes` controls the maximum payload size accepted and sent through TCP
-- `ReliableReceiveBufferSize` and `ReliableSendBufferSize` control TCP socket buffer sizes
-- `ReliableConnectTimeout` controls outbound TCP connection timeout
-- `ReliableOperationTimeout` controls framed read/write timeout for reliable operations
-
-#### Shared Convenience Methods
+#### Shared Transport Convenience Methods
 
 If you want both transports to use the same limits and buffers:
 
@@ -404,11 +495,11 @@ relay.SetPeerDiscovery(true, autoRegisterPeers: true)
      .SetAnnouncementInterval(TimeSpan.FromSeconds(15));
 ```
 
-- discovery allows the relay to learn about other clients automatically
-- auto-registration means newly discovered peers are inserted into the peer table without manual registration
-- peer expiration removes stale dynamic peers that stop announcing themselves
-- the announcement interval controls how often presence packets are sent while active
-- presence announcements also advertise the reliable TCP port when reliable transport is enabled
+- `EnablePeerDiscovery`: Whether remote peer announcements are processed (default: `true`)
+- `AutoRegisterPeers`: Whether unknown discovered peers are automatically registered (default: `true`)
+- `AutoAnnounceOnStart`: Whether a presence announcement is sent on activation (default: `true`)
+- `PeerExpiration`: How long a dynamic peer remains without activity before being swept (default: `1 minute`). Set to `TimeSpan.Zero` to disable expiration.
+- `AnnouncementInterval`: How often periodic presence packets are sent while active (default: `15 seconds`). Set to `TimeSpan.Zero` to disable periodic announcements.
 
 #### Delivery Behavior
 
@@ -420,12 +511,12 @@ relay.SetDefaultChannel("chat")
      .SetDuplicateSuppression(true, TimeSpan.FromSeconds(10));
 ```
 
-Behavior summary:
-- `DefaultChannel` reduces repetitive channel arguments when you use the same traffic lane often
-- `AllowLoopbackMessages` controls whether a client can process its own outgoing messages if they come back through the network path
-- `AutoActivateOnSend` makes send operations lazily start the relay if it is not active
-- `AwaitAsyncHandlersOnReceive` controls whether async receive handlers are part of the receive pipeline or are detached continuations
-- duplicate suppression tracks message IDs and prevents re-processing the same message within a configured time window
+- `DefaultChannel`: The default logical channel used when none is specified (default: `"default"`)
+- `AllowLoopbackMessages`: Whether a client processes its own outgoing messages if they come back (default: `false`)
+- `AutoActivateOnSend`: Whether send operations lazily start the relay if inactive (default: `true`)
+- `AwaitAsyncHandlersOnReceive`: Whether async receive handlers are awaited or fire-and-forget (default: `true`)
+- `SuppressDuplicateMessages`: Whether duplicate message IDs are dropped (default: `true`)
+- `DuplicateMessageWindow`: The time window for duplicate suppression (default: `10 seconds`)
 
 #### Peer Allow-List
 
@@ -436,7 +527,8 @@ relay.SetAllowedPeerIds([
 ]);
 ```
 
-If the allow-list is empty, all peer IDs are accepted.
+If the allow-list is empty (default), all peer IDs are accepted.
+Pass `null` or an empty collection to clear the allow-list.
 
 #### Serializer Configuration
 
@@ -459,19 +551,26 @@ relay.SetSerializerSettings(new JsonSerializerSettings
 });
 ```
 
+The default serializer settings use:
+- `CamelCasePropertyNamesContractResolver`
+- `NullValueHandling.Ignore`
+- `Formatting.None`
+- `DateParseHandling.DateTimeOffset`
+- `TypeNameHandling.None`
+
 ### Exception Handling
 
-The relay uses `ExceptionBehavior`.
+The relay uses `ExceptionBehavior` to control how errors are handled.
 
 ```csharp
 relay.SetExceptionHandling(ExceptionBehavior.LogAndContinue);
 ```
 
 Modes:
-- `LogAndContinue`: Logs and continues execution
-- `LogAndThrow`: Logs and rethrows
-- `Suppress`: Suppresses exceptions
-- `Throw`: Rethrows without logging
+- `LogAndContinue`: Logs the exception and continues execution
+- `LogAndThrow`: Logs the exception and rethrows it
+- `Suppress`: Silently suppresses exceptions
+- `Throw`: Rethrows the exception without logging
 
 ---
 
@@ -479,7 +578,7 @@ Modes:
 
 ### Channels
 
-Relay routing is channel-based.
+Relay routing is channel-based. Channels are case-insensitive strings.
 
 Examples:
 - `action.start`
@@ -488,28 +587,32 @@ Examples:
 
 When no channel is specified, `DefaultChannel` is used.
 
-### Payload Shape
+### Message Shape
 
-A received relay message exposes:
-- `MessageId`
-- `Channel`
-- `SenderId`
-- `SenderDisplayName`
-- `MessageType`
-- `Payload`
-- `SentAtUtc`
-- `RemoteEndPoint`
-- `TargetPeerId`
-- `TargetPeerIds`
-- `TransportKind`
-- `IsReliable`
+A received `NetworkRelayMessage` exposes:
+- `MessageId`: The unique relay message identifier
+- `Channel`: The logical relay channel used for delivery
+- `SenderId`: The unique identifier of the sender
+- `SenderDisplayName`: The optional friendly display name of the sender
+- `MessageType`: The serialized payload type name
+- `Payload`: The raw payload content as a `JToken`
+- `SentAtUtc`: The UTC timestamp at which the message was sent
+- `RemoteEndPoint`: The remote endpoint from which the message was received
+- `TargetPeerId`: The optional single target peer identifier
+- `TargetPeerIds`: The optional collection of target peer identifiers
+- `TransportKind`: The transport used to deliver the message (`Udp` or `Tcp`)
+- `IsReliable`: Convenience boolean, `true` when `TransportKind` is `Tcp`
+
+A strongly typed `NetworkRelayMessage<TPayload>` has the same shape but `Payload` is the deserialized type instead of `JToken`.
 
 If you subscribe with typed handlers, the payload is deserialized automatically.
 If you subscribe with raw message handlers, you can inspect both payload and transport metadata.
 
+The raw message also exposes `GetPayload<TPayload>(...)` for on-demand deserialization and `ToTyped<TPayload>(...)` for converting to a strongly typed message.
+
 ### Wildcard Channel
 
-The wildcard channel is `"*"` and is used internally by subscription helpers to receive all channels.
+The wildcard channel is `"*"` and is used to receive messages from all channels.
 
 ```csharp
 relay.OnMessage(message =>
@@ -535,12 +638,16 @@ Use raw message subscriptions when:
 
 ## Sending Data
 
+All send methods require the local instance to be registered and active.
+See [Self Registration](#self-registration).
+
 ### Best-Effort Send
 
 ```csharp
 relay.Send("Hello everyone", channel: "chat");
 relay.SendBytes(bytes, channel: "bytes.demo");
 relay.Broadcast(payload, channel: "state.position");
+relay.BroadcastString("Simple text", channel: "chat");
 ```
 
 These methods use best-effort UDP by default.
@@ -552,7 +659,7 @@ relay.Send("Ping", "chat", NetworkRelayDeliveryMode.BestEffort);
 relay.Send("Start step", "control", NetworkRelayDeliveryMode.Reliable);
 ```
 
-The same pattern exists for:
+The same delivery mode parameter exists for:
 - `Send(...)`
 - `SendBytes(...)`
 - `Broadcast(...)`
@@ -562,7 +669,7 @@ The same pattern exists for:
 
 ### Reliable Shortcut Methods
 
-The relay also provides convenience methods for the reliable path:
+The relay provides convenience methods that default to reliable TCP delivery:
 
 ```csharp
 relay.SendReliable("Start step", channel: "control.start");
@@ -574,7 +681,7 @@ relay.SendReliableToAllPeers(payload, channel: "control.fanout");
 
 ### Awaitable Reliable Sends with Built-In ACK
 
-The relay also exposes awaitable reliable send methods for the TCP path.
+The relay exposes awaitable reliable send methods for the TCP path.
 These methods automatically request an acknowledgement from the receiver over the same reliable connection.
 
 ```csharp
@@ -585,8 +692,8 @@ var receipt = await relay.SendReliableToPeerAsync(
 ```
 
 Available async methods:
-- `SendReliableToPeerAsync(...)`
-- `SendReliableToAsync(...)`
+- `SendReliableToPeerAsync(...)`: Send to a registered peer by ID and await ACK
+- `SendReliableToAsync(...)`: Send to a specific host/port and await ACK
 
 Behavior:
 - the sender writes the reliable payload through TCP
@@ -595,7 +702,15 @@ Behavior:
 - the sender completes successfully only when that acknowledgement is received
 - transport failures, acknowledgement failures, and acknowledgement timeouts throw exceptions
 
-Optional callbacks can also be supplied:
+The returned `NetworkRelaySendReceipt` contains:
+- `MessageId`
+- `Channel`
+- `TargetPeerId`
+- `RemoteEndPoint`
+- `SentAtUtc`
+- `AcknowledgedAtUtc`
+
+Optional callbacks can be supplied:
 
 ```csharp
 await relay.SendReliableToAsync(
@@ -607,7 +722,18 @@ await relay.SendReliableToAsync(
     onFailure: ex => NoireLogger.LogError(ex, "Reliable send failed"));
 ```
 
-The acknowledgement wait duration defaults to `ReliableAcknowledgementTimeout` and can be changed with:
+Optional parameters also include `acknowledgementTimeout` and `cancellationToken`:
+
+```csharp
+var receipt = await relay.SendReliableToPeerAsync(
+    "client-b",
+    payload,
+    channel: "control.direct",
+    acknowledgementTimeout: TimeSpan.FromSeconds(5),
+    cancellationToken: cts.Token);
+```
+
+The default acknowledgement wait duration is controlled by `ReliableAcknowledgementTimeout`:
 
 ```csharp
 relay.SetReliableAcknowledgementTimeout(TimeSpan.FromSeconds(10));
@@ -645,6 +771,17 @@ relay.SendReliableTo(
     channel: "control.commit");
 ```
 
+Both methods accept an optional `targetPeerId` parameter for including a target peer ID in the envelope metadata:
+
+```csharp
+relay.SendTo(
+    hostOrAddress: "192.168.1.25",
+    port: 53741,
+    payload: new SyncPayload("Now"),
+    channel: "sync.request",
+    targetPeerId: "client-b");
+```
+
 ### Delivery to All Known Peers
 
 ```csharp
@@ -653,9 +790,11 @@ relay.SendReliableToAllPeers(new CommitPayload("Step2"), channel: "control.commi
 ```
 
 Important distinction:
-- UDP broadcast: one LAN-wide packet, listeners on the subnet may receive it
-- direct fan-out: one direct send per tracked peer
-- reliable fan-out: TCP send to each tracked peer individually
+- **UDP broadcast**: one LAN-wide packet, listeners on the subnet may receive it
+- **Direct fan-out**: one direct send per tracked peer
+- **Reliable fan-out**: TCP send to each tracked peer individually
+
+When using `SendToAllPeers(...)`, the local instance is excluded from the fan-out unless `AllowLoopbackMessages` is enabled.
 
 ### Presence Announcements
 
@@ -664,12 +803,15 @@ relay.AnnouncePresence();
 ```
 
 This sends a discovery announcement packet so other relay instances can register or refresh this peer.
-When reliable transport is enabled, the announcement also includes the reliable TCP port.
+The announcement is sent as a UDP broadcast (if enabled) and also directly to all known peer endpoints.
+When reliable transport is enabled, the announcement includes the reliable TCP port.
+
+Requires the local instance to be registered and active (`IsSelfRegistered` and `IsSelfActive`).
 
 ### Auto Activation on Send
 
-If `AutoActivateOnSend` is enabled, send calls automatically activate the module if it is inactive.
-If disabled, sending while inactive throws an exception.
+If `AutoActivateOnSend` is enabled (default), send calls automatically activate the module if it is inactive.
+If disabled, sending while inactive throws an `InvalidOperationException`.
 
 ---
 
@@ -679,6 +821,8 @@ If disabled, sending while inactive throws an exception.
 
 #### `On<TPayload>(...)`
 
+Registers a synchronous callback that receives just the deserialized payload:
+
 ```csharp
 relay.On<string>(message =>
 {
@@ -687,6 +831,8 @@ relay.On<string>(message =>
 ```
 
 #### `OnAsync<TPayload>(...)`
+
+Registers an asynchronous callback that receives just the deserialized payload:
 
 ```csharp
 relay.OnAsync<string>(async message =>
@@ -698,10 +844,18 @@ relay.OnAsync<string>(async message =>
 
 #### Keyed Subscriptions
 
+Using a key allows the subscription to be replaced if the same key is registered again, and enables unsubscription by key.
+All callback and subscription methods have keyed overloads:
+
 ```csharp
 relay.On<string>(
     key: "chat-listener",
     callback: message => NoireLogger.LogInfo(message),
+    channel: "chat");
+
+relay.OnAsync<string>(
+    key: "chat-async-listener",
+    callback: async message => { await Task.Delay(25); },
     channel: "chat");
 ```
 
@@ -723,11 +877,13 @@ relay.On<string>(
     owner: this);
 ```
 
+Owner references enable bulk unsubscription via `UnsubscribeAll(owner)`.
+
 ### Full Message Callbacks
 
 #### `OnMessage(...)`
 
-Use this when sender and transport metadata matter.
+Use this when sender and transport metadata matter:
 
 ```csharp
 relay.OnMessage(message =>
@@ -746,9 +902,38 @@ relay.OnMessageAsync(async message =>
 });
 ```
 
+#### Keyed Message Callbacks
+
+Both `OnMessage(...)` and `OnMessageAsync(...)` have keyed overloads:
+
+```csharp
+relay.OnMessage(
+    key: "raw-logger",
+    callback: message => NoireLogger.LogInfo($"{message.Channel}: {message.Payload}"),
+    channel: "*");
+
+relay.OnMessageAsync(
+    key: "async-raw-logger",
+    callback: async message =>
+    {
+        await Task.Delay(10);
+        NoireLogger.LogInfo($"{message.Channel}: {message.Payload}");
+    },
+    channel: "*");
+```
+
+#### Message Filters
+
+```csharp
+relay.OnMessage(
+    callback: message => NoireLogger.LogInfo(message.Payload.ToString()),
+    channel: "chat",
+    filter: message => message.IsReliable);
+```
+
 ### Full Typed Subscriptions
 
-For access to both metadata and typed payloads, use `Subscribe<TPayload>(...)`.
+For access to both metadata and typed payloads, use `Subscribe<TPayload>(...)`:
 
 ```csharp
 relay.Subscribe<PlayerPositionPayload>(message =>
@@ -767,9 +952,23 @@ relay.SubscribeAsync<PlayerPositionPayload>(async message =>
 }, channel: "player.position");
 ```
 
+Keyed versions:
+
+```csharp
+relay.Subscribe<PlayerPositionPayload>(
+    key: "position-handler",
+    handler: message => NoireLogger.LogInfo($"{message.Payload.X}"),
+    channel: "player.position");
+
+relay.SubscribeAsync<PlayerPositionPayload>(
+    key: "async-position-handler",
+    handler: async message => { await Task.Delay(10); },
+    channel: "player.position");
+```
+
 ### Priorities
 
-Higher priority handlers execute first.
+Higher priority handlers execute first:
 
 ```csharp
 relay.On<string>(message => NoireLogger.LogInfo("Low priority"), channel: "chat", priority: 0);
@@ -778,25 +977,43 @@ relay.On<string>(message => NoireLogger.LogInfo("High priority"), channel: "chat
 
 ### Async Awaiting Behavior
 
-`AwaitAsyncHandlersOnReceive` controls whether async handlers are awaited during receive dispatch.
+`AwaitAsyncHandlersOnReceive` controls whether async handlers are awaited during receive dispatch:
 
 ```csharp
 relay.SetAwaitAsyncHandlersOnReceive(true);
 ```
 
-- `true`: receive processing awaits async handlers
-- `false`: async handlers are fire-and-forget and exceptions are captured in the continuation path
-
+- `true`: receive processing awaits async handlers in order
+- `false`: async handlers are fire-and-forget, exceptions are captured in the continuation path
 ### Unsubscribing
 
 ```csharp
+// By token
 var token = relay.On<string>(message => NoireLogger.LogInfo(message), channel: "chat");
 relay.Unsubscribe(token);
+
+// By key
 relay.Unsubscribe("chat-listener");
+
+// First handler on a channel (optionally filtered by owner)
 relay.UnsubscribeFirst("chat", owner: this);
+
+// All handlers for an owner
 relay.UnsubscribeAll(this);
+
+// All handlers on a channel (optionally filtered by owner)
 relay.UnsubscribeAll("chat");
+relay.UnsubscribeAll("chat", owner: this);
+
+// Everything
 relay.ClearAllSubscriptions();
+```
+
+### Subscriber Count
+
+```csharp
+var count = relay.GetSubscriberCount("chat");
+var wildcardCount = relay.GetSubscriberCount("*");
 ```
 
 ---
@@ -817,9 +1034,14 @@ Register a peer with UDP and TCP:
 relay.RegisterPeer("client-b", "192.168.1.25", 53741, 53742, "Other Client");
 ```
 
-Or use explicit endpoints:
+Using explicit `IPEndPoint` objects:
 
 ```csharp
+relay.RegisterPeer(
+    peerId: "client-b",
+    endPoint: new IPEndPoint(IPAddress.Parse("192.168.1.25"), 53741),
+    displayName: "Other Client");
+
 relay.RegisterPeer(
     peerId: "client-b",
     endPoint: new IPEndPoint(IPAddress.Parse("192.168.1.25"), 53741),
@@ -827,11 +1049,21 @@ relay.RegisterPeer(
     displayName: "Other Client");
 ```
 
+When using the hostname/IP string overload without an explicit reliable port:
+- if `EnableReliableTransport` is `true`, the reliable endpoint defaults to the same port as the UDP port
+- if `EnableReliableTransport` is `false`, no reliable endpoint is registered
+
 ### Removal
 
 ```csharp
 relay.UnregisterPeer("client-b");
-relay.ClearPeers();
+```
+
+Clear all peers:
+
+```csharp
+relay.ClearPeers();                        // Removes all peers (dynamic and static)
+relay.ClearPeers(includeStaticPeers: false); // Removes only dynamic (discovered) peers
 ```
 
 ### Retrieval
@@ -843,8 +1075,18 @@ if (relay.TryGetPeer("client-b", out var peer))
 {
     NoireLogger.LogInfo($"UDP: {peer.EndPoint}");
     NoireLogger.LogInfo($"TCP: {peer.ReliableEndPoint}");
+    NoireLogger.LogInfo($"Last seen: {peer.LastSeenUtc}");
+    NoireLogger.LogInfo($"Dynamic: {peer.IsDynamic}");
 }
 ```
+
+The `NetworkRelayPeer` record exposes:
+- `PeerId`: The unique identifier of the peer
+- `DisplayName`: The friendly display name
+- `EndPoint`: The UDP endpoint
+- `ReliableEndPoint`: The optional TCP endpoint (nullable)
+- `LastSeenUtc`: The UTC timestamp when the peer was last seen
+- `IsDynamic`: `true` if discovered automatically, `false` if registered manually
 
 ### Discovery Behavior
 
@@ -852,8 +1094,11 @@ With discovery enabled, the relay automatically tracks peers based on presence p
 Discovered peers can accumulate both a UDP endpoint and a reliable TCP endpoint.
 
 Important distinction:
-- **dynamic peer**: discovered automatically, may expire
-- **static peer**: registered manually, remains until explicitly removed
+- **dynamic peer**: discovered automatically, may expire after `PeerExpiration`
+- **static peer**: registered manually via `RegisterPeer(...)`, remains until explicitly removed
+
+The `AutoRegisterPeers` property (default: `true`) controls whether newly discovered peers are automatically inserted into the peer table.
+When disabled, only manually registered peers and already known peers are updated from discovery announcements.
 
 ---
 
@@ -861,11 +1106,11 @@ Important distinction:
 
 ### Basic Integration Events
 
-When `EventBus` is assigned, the relay automatically publishes integration events such as:
-- `NetworkRelayMessageReceivedEvent`
-- `NetworkRelayPeerSeenEvent`
-- `NetworkRelayPeerRemovedEvent`
-- `NetworkRelayErrorEvent`
+When `EventBus` is assigned, the relay automatically publishes integration events into the bus:
+- `NetworkRelayMessageReceivedEvent(Message)`: Raised for every received relay message
+- `NetworkRelayPeerSeenEvent(Peer, IsNewPeer)`: Raised when a peer is registered or refreshed
+- `NetworkRelayPeerRemovedEvent(Peer, Expired)`: Raised when a peer is removed
+- `NetworkRelayErrorEvent(Error)`: Raised when the relay observes an error
 
 ### Relay Local EventBus Publishes Outward
 
@@ -874,19 +1119,37 @@ public record TestEvent(string Message);
 
 relay.RelayPublishedEvent<TestEvent>(channel: "events.test");
 
-eventBus.Publish(new TestEvent("Hello network")); // The event will be published through the relay
+eventBus.Publish(new TestEvent("Hello network"));
 ```
+
+The event will be serialized and sent over the relay on the specified channel.
+
+`RelayPublishedEvent<TEvent>(...)` accepts:
+- `channel`: Optional channel override. If omitted, the event type name is used.
+- `broadcast`: Whether to broadcast or send to known peers (default: `true`)
+- `targetPeerId`: Optional target peer ID for direct delivery
+- `filter`: Optional filter to skip specific local events
+- `owner`: Optional owner for the EventBus subscription
+- `key`: Optional EventBus subscription key
+- `deliveryMode`: The delivery mode for outbound relayed payloads (default: `BestEffort`)
 
 ### Republish Received Relay Events Locally
 
 ```csharp
-relay.PublishReceivedToEventBus<TestEvent>(channel: "events.test"); // The event bus will receive TestEvent events
+relay.PublishReceivedToEventBus<TestEvent>(channel: "events.test");
 
 eventBus.Subscribe<TestEvent>(evt =>
 {
     NoireLogger.LogInfo($"Republished locally: {evt.Message}");
 });
 ```
+
+`PublishReceivedToEventBus<TEvent>(...)` accepts:
+- `channel`: Optional channel override. If omitted, the event type name is used.
+- `priority`: The relay subscription priority (default: `0`)
+- `filter`: Optional filter for received relay events
+- `owner`: Optional owner for the relay subscription
+- `key`: Optional relay subscription key prefix
 
 ### Bridge Both Directions in One Call
 
@@ -895,6 +1158,8 @@ relay.BridgeEvent<TestEvent>(
     channel: "events.test",
     key: "test-event-bridge");
 ```
+
+This creates both an outbound relay subscription and an inbound relay-to-EventBus subscription.
 
 Optional one-way bridging:
 
@@ -905,11 +1170,32 @@ relay.BridgeEvent<TestEvent>(
     publishReceivedLocally: false);
 ```
 
+`BridgeEvent<TEvent>(...)` accepts:
+- `channel`: Optional channel override
+- `relayLocalPublishes`: Whether local EventBus publishes are relayed outward (default: `true`)
+- `publishReceivedLocally`: Whether received relay events are republished locally (default: `true`)
+- `broadcast`: Whether outbound events use broadcast delivery (default: `true`)
+- `targetPeerId`: Optional target peer ID for direct outbound delivery
+- `priority`: Inbound relay subscription priority (default: `0`)
+- `eventBusFilter`: Optional filter for outbound EventBus events
+- `relayFilter`: Optional filter for inbound relay events
+- `owner`: Optional owner for created subscriptions
+- `key`: Optional key for managing the bridge registration
+- `deliveryMode`: The delivery mode for outbound relayed payloads (default: `BestEffort`)
+
+The method returns a `NetworkRelayEventBridgeHandle` which tracks:
+- `Channel`: The relay channel used by the bridge
+- `EventBusSubscriptionToken`: The outbound EventBus subscription token
+- `RelaySubscriptionToken`: The inbound relay subscription token
+- `HasEventBusSubscription`: Whether an outbound subscription exists
+- `HasRelaySubscription`: Whether an inbound subscription exists
+
 ### Bridge Removal
 
 ```csharp
-relay.UnbridgeEvent("test-event-bridge");
-relay.ClearEventBridges();
+relay.UnbridgeEvent("test-event-bridge");   // By key
+relay.UnbridgeEvent(handle);                 // By handle
+relay.ClearEventBridges();                   // Remove all bridges
 ```
 
 ### Loop Suppression
@@ -919,31 +1205,71 @@ This prevents an inbound bridged event from being immediately re-relayed back ou
 
 ---
 
-## Events and Diagnostics
+## Statistics and Diagnostics
 
 ### Public Events
 
-The relay exposes these events:
-- `MessageReceived`
-- `PeerSeen`
-- `PeerRemoved`
-- `Error`
-
-Example:
+The relay exposes CLR events:
+- `MessageReceived`: Raised for every relay message successfully received and parsed
+- `PeerSeen`: Raised when a peer is registered or refreshed
+- `PeerRemoved`: Raised when a peer is removed or expired
+- `Error`: Raised when a relay error is observed
 
 ```csharp
 relay.MessageReceived += message =>
     NoireLogger.LogInfo($"Message: {message.Channel} via {message.TransportKind}");
 
 relay.PeerSeen += peer =>
-    NoireLogger.LogInfo($"Peer seen: {peer.DisplayName}");
+    NoireLogger.LogInfo($"Peer seen: {peer.DisplayName} at {peer.EndPoint}");
 
 relay.PeerRemoved += peer =>
     NoireLogger.LogInfo($"Peer removed: {peer.DisplayName}");
 
 relay.Error += error =>
-    NoireLogger.LogError(error.Exception, error.Operation);
+    NoireLogger.LogError(error.Exception, $"Relay error during: {error.Operation}");
 ```
+
+The `NetworkRelayError` record exposes:
+- `Operation`: The operation during which the error occurred
+- `Exception`: The exception that was observed
+- `TimestampUtc`: The UTC timestamp at which the error was captured
+
+### Runtime Statistics
+
+```csharp
+var stats = relay.GetStatistics();
+```
+
+The returned `NetworkRelayStatistics` record provides a snapshot of the relay state:
+
+**Current state:**
+- `ActivePeers`: Number of currently tracked peers
+- `ActiveSubscriptions`: Number of currently active relay subscriptions
+- `ActiveEventBridges`: Number of currently active EventBus bridge registrations
+- `ReliableTransportEnabled`: Whether the TCP transport listener is enabled
+
+**Aggregate counters:**
+- `TotalMessagesSent`: Total relay messages sent (UDP + TCP)
+- `TotalMessagesReceived`: Total relay messages received (UDP + TCP)
+- `TotalBestEffortMessagesSent`: Total best-effort UDP messages sent
+- `TotalBestEffortMessagesReceived`: Total best-effort UDP messages received
+- `TotalReliableMessagesSent`: Total reliable TCP messages sent
+- `TotalReliableMessagesReceived`: Total reliable TCP messages received
+- `TotalReliableConnectionsAccepted`: Total TCP client connections accepted
+- `TotalBytesSent`: Total bytes sent across both transports
+- `TotalBytesReceived`: Total bytes received across both transports
+- `TotalMessagesDropped`: Total dropped messages (size, targeting, filtering, duplicates)
+- `TotalDuplicateMessagesDropped`: Total dropped duplicate messages
+- `TotalPeerAnnouncementsReceived`: Total received peer announcements
+- `TotalSendFailures`: Total send failures
+- `TotalReceiveFailures`: Total receive failures
+- `TotalDispatchExceptionsCaught`: Total exceptions caught during callback/event dispatch
+- `TotalExceptionsCaught`: Total exceptions caught by the relay
+- `TotalEventBusEventsRelayed`: Total local EventBus events relayed over the network
+- `TotalEventBusEventsPublishedLocally`: Total received relay events republished locally
+- `TotalSubscriptionsCreated`: Total relay subscriptions created
+- `TotalPeersRegistered`: Total peers registered
+- `TotalPeersRemoved`: Total peers removed
 
 ---
 
@@ -952,10 +1278,16 @@ relay.Error += error =>
 ### Messages are not received
 - Ensure both clients use the same UDP `Port` for best-effort traffic.
 - Ensure both clients use compatible `ReliablePort` values for reliable TCP traffic.
-- Ensure the relay is active or `AutoActivateOnSend` is enabled.
+- Ensure the relay is active (`Start()`) or `AutoActivateOnSend` is enabled.
+- Ensure the local instance is registered and active (`RegisterSelf()` / `selfActiveOnStart: true`).
 - Ensure the same relay channel is used on both sender and receiver.
 - Check firewall rules for local UDP and TCP traffic.
 - Check `AllowLoopbackMessages` if testing on a single client instance.
+
+### Sends throw InvalidOperationException
+- Ensure `RegisterSelf()` has been called or `selfActiveOnStart: true` was passed to the constructor.
+- Ensure `ActivateSelf()` has been called if the instance was registered but not activated.
+- Ensure the relay module is active or `AutoActivateOnSend` is enabled.
 
 ### Reliable sends appear to do nothing
 - Ensure `EnableReliableTransport` is enabled on the receiving relay.
@@ -967,6 +1299,7 @@ relay.Error += error =>
 - Check the exception from `SendReliableToPeerAsync(...)` or `SendReliableToAsync(...)`.
 - Subscribe to `relay.Error` or listen for `NetworkRelayErrorEvent` for centralized error handling.
 - If the send timed out waiting for an acknowledgement, ensure the receiver is actually processing the message and not dropping it due to targeting, filtering, or duplicate suppression.
+- The acknowledgement timeout is controlled by `ReliableAcknowledgementTimeout`.
 - Remember that the async reliable APIs confirm relay-level acknowledgement, not arbitrary application work after the receive handler returns.
 
 ### Same-host UDP behaves strangely when both instances share the same port
@@ -977,28 +1310,29 @@ relay.Error += error =>
 
 ### Broadcast does not work
 - Ensure `EnableBroadcast` is enabled.
-- Broadcast is IPv4-only in this implementation.
+- Broadcast is IPv4-only in this implementation (`SetBindAddress(IPAddress.Any)`).
 - Reliable TCP does not broadcast; it fans out to known peers instead.
 
 ### Direct peer messaging fails
-- Make sure the peer is registered.
+- Make sure the peer is registered via `RegisterPeer(...)`.
 - Verify the peer IP address and UDP/TCP ports.
 - Use `TryGetPeer(...)` or `GetPeers()` to confirm the peer state.
-- Check whether you intended to use `EndPoint` or `ReliableEndPoint`.
+- Check whether you intended to use `EndPoint` (UDP) or `ReliableEndPoint` (TCP).
 
 ### Peer discovery is inconsistent
 - Ensure `EnablePeerDiscovery` is enabled on all clients.
+- Ensure `AutoRegisterPeers` is enabled if you want newly discovered peers to be automatically registered.
 - Ensure `AnnouncementInterval` is not zero if periodic announcements are expected.
 - Ensure `PeerExpiration` is not too aggressive for your update frequency.
 
 ### EventBus bridging appears to do nothing
-- Ensure `EventBus` is configured on the relay.
+- Ensure `EventBus` is configured on the relay (constructor or `SetEventBus(...)`).
 - Ensure all clients use the same bridge channel.
 - Ensure you called `RelayPublishedEvent<TEvent>()`, `PublishReceivedToEventBus<TEvent>()`, or `BridgeEvent<TEvent>()`.
 - Verify the bridged event type matches on both sides.
 
 ### Duplicate messages are observed
-- Enable duplicate suppression.
+- Enable duplicate suppression: `SetDuplicateSuppression(true)`.
 - Increase `DuplicateMessageWindow`.
 - Avoid re-sending identical messages in tight loops.
 
