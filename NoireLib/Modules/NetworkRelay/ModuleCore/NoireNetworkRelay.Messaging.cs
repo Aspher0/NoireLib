@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -113,33 +114,40 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SendToPeer<TPayload>(string peerId, TPayload payload, string? channel, NetworkRelayDeliveryMode deliveryMode)
     {
-        if (string.IsNullOrWhiteSpace(peerId))
-            throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
-
-        EnsureCanSend();
-
-        var trimmedPeerId = peerId.Trim();
-        IPEndPoint endPoint;
-
-        if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
+        try
         {
-            EnsureReliableTransportEnabled();
-            if (!TryGetReliablePeerEndpoint(trimmedPeerId, out endPoint))
+            if (string.IsNullOrWhiteSpace(peerId))
+                throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
+
+            EnsureCanSend();
+
+            var trimmedPeerId = peerId.Trim();
+            IPEndPoint endPoint;
+
+            if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
             {
-                if (!TryGetPeerEndpoint(trimmedPeerId, out var udpEndPoint))
-                    throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
+                EnsureReliableTransportEnabled();
+                if (!TryGetReliablePeerEndpoint(trimmedPeerId, out endPoint))
+                {
+                    if (!TryGetPeerEndpoint(trimmedPeerId, out var udpEndPoint))
+                        throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
 
-                endPoint = new IPEndPoint(udpEndPoint.Address, udpEndPoint.Port);
+                    endPoint = new IPEndPoint(udpEndPoint.Address, udpEndPoint.Port);
+                }
             }
-        }
-        else if (!TryGetPeerEndpoint(trimmedPeerId, out endPoint))
-        {
-            throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
-        }
+            else if (!TryGetPeerEndpoint(trimmedPeerId, out endPoint))
+            {
+                throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
+            }
 
-        var envelope = CreateMessageEnvelope(payload, channel, trimmedPeerId, null);
-        SendEnvelope(envelope, endPoint, deliveryMode);
-        return this;
+            var envelope = CreateMessageEnvelope(payload, channel, trimmedPeerId, null);
+            SendEnvelope(envelope, endPoint, deliveryMode);
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"sending relay payload to peer '{peerId}'", this);
+        }
     }
 
     /// <summary>
@@ -174,25 +182,38 @@ public partial class NoireNetworkRelay
         Action<Exception>? onFailure = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(peerId))
-            throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
-
-        EnsureCanSend();
-        EnsureReliableTransportEnabled();
-
-        var trimmedPeerId = peerId.Trim();
-        IPEndPoint endPoint;
-
-        if (!TryGetReliablePeerEndpoint(trimmedPeerId, out endPoint))
+        try
         {
-            if (!TryGetPeerEndpoint(trimmedPeerId, out var udpEndPoint))
-                throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
+            if (string.IsNullOrWhiteSpace(peerId))
+                throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
 
-            endPoint = new IPEndPoint(udpEndPoint.Address, udpEndPoint.Port);
+            EnsureCanSend();
+            EnsureReliableTransportEnabled();
+
+            var trimmedPeerId = peerId.Trim();
+            IPEndPoint endPoint;
+
+            if (!TryGetReliablePeerEndpoint(trimmedPeerId, out endPoint))
+            {
+                if (!TryGetPeerEndpoint(trimmedPeerId, out var udpEndPoint))
+                    throw new InvalidOperationException($"Peer '{peerId}' is not registered.");
+
+                endPoint = new IPEndPoint(udpEndPoint.Address, udpEndPoint.Port);
+            }
+
+            var envelope = CreateMessageEnvelope(payload, channel, trimmedPeerId, null, requiresAcknowledgement: true);
+            return SendReliableEnvelopeAwaitingAcknowledgementAsync(envelope, endPoint, acknowledgementTimeout, onSuccess, onFailure, cancellationToken);
         }
+        catch (Exception ex)
+        {
+            ReportError(ex, $"sending reliable relay payload to peer '{peerId}'");
+            InvokeReliableSendFailureCallback(onFailure, ex);
 
-        var envelope = CreateMessageEnvelope(payload, channel, trimmedPeerId, null, requiresAcknowledgement: true);
-        return SendReliableEnvelopeAwaitingAcknowledgementAsync(envelope, endPoint, acknowledgementTimeout, onSuccess, onFailure, cancellationToken);
+            if (ShouldRethrowException())
+                return Task.FromException<NetworkRelaySendReceipt>(ex);
+
+            return Task.FromResult<NetworkRelaySendReceipt>(default!);
+        }
     }
 
     /// <summary>
@@ -221,19 +242,26 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SendTo<TPayload>(string hostOrAddress, int port, TPayload payload, string? channel, string? targetPeerId, NetworkRelayDeliveryMode deliveryMode)
     {
-        if (string.IsNullOrWhiteSpace(hostOrAddress))
-            throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(hostOrAddress))
+                throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
 
-        EnsureCanSend();
+            EnsureCanSend();
 
-        if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
-            EnsureReliableTransportEnabled();
+            if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
+                EnsureReliableTransportEnabled();
 
-        var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
-        var endPoint = new IPEndPoint(address, ValidatePort(port));
-        var envelope = CreateMessageEnvelope(payload, channel, string.IsNullOrWhiteSpace(targetPeerId) ? null : targetPeerId.Trim(), null);
-        SendEnvelope(envelope, endPoint, deliveryMode);
-        return this;
+            var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
+            var endPoint = new IPEndPoint(address, ValidatePort(port));
+            var envelope = CreateMessageEnvelope(payload, channel, string.IsNullOrWhiteSpace(targetPeerId) ? null : targetPeerId.Trim(), null);
+            SendEnvelope(envelope, endPoint, deliveryMode);
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"sending relay payload to '{hostOrAddress}:{port}'", this);
+        }
     }
 
     /// <summary>
@@ -274,16 +302,29 @@ public partial class NoireNetworkRelay
         Action<Exception>? onFailure = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(hostOrAddress))
-            throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(hostOrAddress))
+                throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
 
-        EnsureCanSend();
-        EnsureReliableTransportEnabled();
+            EnsureCanSend();
+            EnsureReliableTransportEnabled();
 
-        var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
-        var endPoint = new IPEndPoint(address, ValidatePort(port));
-        var envelope = CreateMessageEnvelope(payload, channel, string.IsNullOrWhiteSpace(targetPeerId) ? null : targetPeerId.Trim(), null, requiresAcknowledgement: true);
-        return SendReliableEnvelopeAwaitingAcknowledgementAsync(envelope, endPoint, acknowledgementTimeout, onSuccess, onFailure, cancellationToken);
+            var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
+            var endPoint = new IPEndPoint(address, ValidatePort(port));
+            var envelope = CreateMessageEnvelope(payload, channel, string.IsNullOrWhiteSpace(targetPeerId) ? null : targetPeerId.Trim(), null, requiresAcknowledgement: true);
+            return SendReliableEnvelopeAwaitingAcknowledgementAsync(envelope, endPoint, acknowledgementTimeout, onSuccess, onFailure, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, $"sending reliable relay payload to '{hostOrAddress}:{port}'");
+            InvokeReliableSendFailureCallback(onFailure, ex);
+
+            if (ShouldRethrowException())
+                return Task.FromException<NetworkRelaySendReceipt>(ex);
+
+            return Task.FromResult<NetworkRelaySendReceipt>(default!);
+        }
     }
 
     /// <summary>
@@ -306,25 +347,32 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SendToAllPeers<TPayload>(TPayload payload, string? channel, NetworkRelayDeliveryMode deliveryMode)
     {
-        EnsureCanSend();
-
-        if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
-            EnsureReliableTransportEnabled();
-
-        var peersSnapshot = GetPeers();
-        foreach (var peer in peersSnapshot)
+        try
         {
-            if (!AllowLoopbackMessages && string.Equals(peer.PeerId, InstanceId, StringComparison.OrdinalIgnoreCase))
-                continue;
+            EnsureCanSend();
 
-            var endPoint = deliveryMode == NetworkRelayDeliveryMode.Reliable
-                ? peer.ReliableEndPoint ?? new IPEndPoint(peer.EndPoint.Address, peer.EndPoint.Port)
-                : peer.EndPoint;
+            if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
+                EnsureReliableTransportEnabled();
 
-            SendEnvelope(CreateMessageEnvelope(payload, channel, peer.PeerId, null), endPoint, deliveryMode);
+            var peersSnapshot = GetPeers();
+            foreach (var peer in peersSnapshot)
+            {
+                if (!AllowLoopbackMessages && string.Equals(peer.PeerId, InstanceId, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var endPoint = deliveryMode == NetworkRelayDeliveryMode.Reliable
+                    ? peer.ReliableEndPoint ?? new IPEndPoint(peer.EndPoint.Address, peer.EndPoint.Port)
+                    : peer.EndPoint;
+
+                SendEnvelope(CreateMessageEnvelope(payload, channel, peer.PeerId, null), endPoint, deliveryMode);
+            }
+
+            return this;
         }
-
-        return this;
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "sending relay payload to all peers", this);
+        }
     }
 
     /// <summary>
@@ -358,21 +406,20 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay Broadcast<TPayload>(TPayload payload, string? channel, NetworkRelayDeliveryMode deliveryMode)
     {
-        EnsureCanSend();
-
-        if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
-            return SendToAllPeers(payload, channel, deliveryMode);
-
         try
         {
-            SendEnvelope(CreateMessageEnvelope(payload, channel, null, null), GetBroadcastEndPoint(), deliveryMode);
-        }
-        catch (InvalidOperationException)
-        {
-            NoireLogger.LogWarning(this, "Failed to broadcast message: UDP Broadcast is not enabled. Consider enabling it.");
-        }
+            EnsureCanSend();
 
-        return this;
+            if (deliveryMode == NetworkRelayDeliveryMode.Reliable)
+                return SendToAllPeers(payload, channel, deliveryMode);
+
+            SendEnvelope(CreateMessageEnvelope(payload, channel, null, null), GetBroadcastEndPoint(), deliveryMode);
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "broadcasting relay payload", this);
+        }
     }
 
     /// <summary>
@@ -401,15 +448,22 @@ public partial class NoireNetworkRelay
         Func<TPayload, bool>? filter = null,
         object? owner = null)
     {
-        if (callback == null)
-            throw new ArgumentNullException(nameof(callback));
+        try
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
 
-        return Subscribe<TPayload>(
-            message => callback(message.Payload),
-            channel,
-            priority,
-            filter != null ? message => filter(message.Payload) : null,
-            owner);
+            return Subscribe<TPayload>(
+                message => callback(message.Payload),
+                channel,
+                priority,
+                filter != null ? message => filter(message.Payload) : null,
+                owner);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering relay payload callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -431,16 +485,23 @@ public partial class NoireNetworkRelay
         Func<TPayload, bool>? filter = null,
         object? owner = null)
     {
-        if (callback == null)
-            throw new ArgumentNullException(nameof(callback));
+        try
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
 
-        return Subscribe<TPayload>(
-            key,
-            message => callback(message.Payload),
-            channel,
-            priority,
-            filter != null ? message => filter(message.Payload) : null,
-            owner);
+            return Subscribe<TPayload>(
+                key,
+                message => callback(message.Payload),
+                channel,
+                priority,
+                filter != null ? message => filter(message.Payload) : null,
+                owner);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering keyed relay payload callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -460,15 +521,22 @@ public partial class NoireNetworkRelay
         Func<TPayload, bool>? filter = null,
         object? owner = null)
     {
-        if (callback == null)
-            throw new ArgumentNullException(nameof(callback));
+        try
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
 
-        return SubscribeAsync<TPayload>(
-            message => callback(message.Payload),
-            channel,
-            priority,
-            filter != null ? message => filter(message.Payload) : null,
-            owner);
+            return SubscribeAsync<TPayload>(
+                message => callback(message.Payload),
+                channel,
+                priority,
+                filter != null ? message => filter(message.Payload) : null,
+                owner);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering async relay payload callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -490,16 +558,23 @@ public partial class NoireNetworkRelay
         Func<TPayload, bool>? filter = null,
         object? owner = null)
     {
-        if (callback == null)
-            throw new ArgumentNullException(nameof(callback));
+        try
+        {
+            if (callback == null)
+                throw new ArgumentNullException(nameof(callback));
 
-        return SubscribeAsync<TPayload>(
-            key,
-            message => callback(message.Payload),
-            channel,
-            priority,
-            filter != null ? message => filter(message.Payload) : null,
-            owner);
+            return SubscribeAsync<TPayload>(
+                key,
+                message => callback(message.Payload),
+                channel,
+                priority,
+                filter != null ? message => filter(message.Payload) : null,
+                owner);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering keyed async relay payload callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -517,7 +592,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(null, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: false);
+    {
+        try
+        {
+            return SubscribeInternal(null, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: false);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering relay message callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Registers a keyed raw message callback for a relay channel.
@@ -536,7 +620,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(key, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: false);
+    {
+        try
+        {
+            return SubscribeInternal(key, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: false);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering keyed relay message callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Registers an async raw message callback for a relay channel.
@@ -553,7 +646,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(null, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: true);
+    {
+        try
+        {
+            return SubscribeInternal(null, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: true);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering async relay message callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Registers a keyed async raw message callback for a relay channel.
@@ -572,7 +674,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(key, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: true);
+    {
+        try
+        {
+            return SubscribeInternal(key, channel, callback ?? throw new ArgumentNullException(nameof(callback)), filter, priority, owner, isAsync: true);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"registering keyed async relay message callback for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Subscribes to a logical relay channel with a typed synchronous handler.
@@ -590,7 +701,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage<TPayload>, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(null, channel, WrapHandler(handler), WrapFilter(filter), priority, owner, isAsync: false);
+    {
+        try
+        {
+            return SubscribeInternal(null, channel, WrapHandler(handler), WrapFilter(filter), priority, owner, isAsync: false);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"subscribing typed relay handler for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Subscribes to a logical relay channel with a typed synchronous handler and custom key.
@@ -610,7 +730,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage<TPayload>, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(key, channel, WrapHandler(handler), WrapFilter(filter), priority, owner, isAsync: false);
+    {
+        try
+        {
+            return SubscribeInternal(key, channel, WrapHandler(handler), WrapFilter(filter), priority, owner, isAsync: false);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"subscribing keyed typed relay handler for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Subscribes to a logical relay channel with a typed asynchronous handler.
@@ -628,7 +757,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage<TPayload>, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(null, channel, WrapAsyncHandler(handler), WrapFilter(filter), priority, owner, isAsync: true);
+    {
+        try
+        {
+            return SubscribeInternal(null, channel, WrapAsyncHandler(handler), WrapFilter(filter), priority, owner, isAsync: true);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"subscribing async typed relay handler for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Subscribes to a logical relay channel with a typed asynchronous handler and custom key.
@@ -648,7 +786,16 @@ public partial class NoireNetworkRelay
         int priority = 0,
         Func<NetworkRelayMessage<TPayload>, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal(key, channel, WrapAsyncHandler(handler), WrapFilter(filter), priority, owner, isAsync: true);
+    {
+        try
+        {
+            return SubscribeInternal(key, channel, WrapAsyncHandler(handler), WrapFilter(filter), priority, owner, isAsync: true);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"subscribing keyed async typed relay handler for channel '{channel}'", default(NetworkRelaySubscriptionToken));
+        }
+    }
 
     /// <summary>
     /// Unsubscribes a relay subscription using its token.
@@ -719,26 +866,33 @@ public partial class NoireNetworkRelay
     /// <returns><see langword="true"/> if a subscription was removed; otherwise, <see langword="false"/>.</returns>
     public bool UnsubscribeFirst(string channel = WildcardChannel, object? owner = null)
     {
-        channel = NormalizeSubscriptionChannel(channel);
-
-        lock (subscriptionLock)
+        try
         {
-            if (!subscriptions.TryGetValue(channel, out var handlers))
-                return false;
+            channel = NormalizeSubscriptionChannel(channel);
 
-            var toRemove = handlers.FirstOrDefault(entry => owner == null || ReferenceEquals(entry.Owner, owner));
-            if (toRemove == null)
-                return false;
+            lock (subscriptionLock)
+            {
+                if (!subscriptions.TryGetValue(channel, out var handlers))
+                    return false;
 
-            handlers.Remove(toRemove);
+                var toRemove = handlers.FirstOrDefault(entry => owner == null || ReferenceEquals(entry.Owner, owner));
+                if (toRemove == null)
+                    return false;
 
-            if (handlers.Count == 0)
-                subscriptions.Remove(channel);
+                handlers.Remove(toRemove);
 
-            if (toRemove.Key != null)
-                keyToSubscription.Remove(toRemove.Key);
+                if (handlers.Count == 0)
+                    subscriptions.Remove(channel);
 
-            return true;
+                if (toRemove.Key != null)
+                    keyToSubscription.Remove(toRemove.Key);
+
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"unsubscribing first relay handler for channel '{channel}'", false);
         }
     }
 
@@ -749,30 +903,37 @@ public partial class NoireNetworkRelay
     /// <returns>The number of subscriptions removed.</returns>
     public int UnsubscribeAll(object owner)
     {
-        if (owner == null)
-            throw new ArgumentNullException(nameof(owner));
-
-        int totalRemoved = 0;
-
-        lock (subscriptionLock)
+        try
         {
-            foreach (var channel in subscriptions.Keys.ToList())
+            if (owner == null)
+                throw new ArgumentNullException(nameof(owner));
+
+            int totalRemoved = 0;
+
+            lock (subscriptionLock)
             {
-                var handlers = subscriptions[channel];
-                foreach (var entry in handlers.Where(entry => ReferenceEquals(entry.Owner, owner)).ToList())
+                foreach (var channel in subscriptions.Keys.ToList())
                 {
-                    if (entry.Key != null)
-                        keyToSubscription.Remove(entry.Key);
+                    var handlers = subscriptions[channel];
+                    foreach (var entry in handlers.Where(entry => ReferenceEquals(entry.Owner, owner)).ToList())
+                    {
+                        if (entry.Key != null)
+                            keyToSubscription.Remove(entry.Key);
+                    }
+
+                    totalRemoved += handlers.RemoveAll(entry => ReferenceEquals(entry.Owner, owner));
+
+                    if (handlers.Count == 0)
+                        subscriptions.Remove(channel);
                 }
-
-                totalRemoved += handlers.RemoveAll(entry => ReferenceEquals(entry.Owner, owner));
-
-                if (handlers.Count == 0)
-                    subscriptions.Remove(channel);
             }
-        }
 
-        return totalRemoved;
+            return totalRemoved;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "unsubscribing all relay handlers for owner", 0);
+        }
     }
 
     /// <summary>
@@ -783,38 +944,45 @@ public partial class NoireNetworkRelay
     /// <returns>The number of subscriptions removed.</returns>
     public int UnsubscribeAll(string channel, object? owner = null)
     {
-        channel = NormalizeSubscriptionChannel(channel);
-
-        lock (subscriptionLock)
+        try
         {
-            if (!subscriptions.TryGetValue(channel, out var handlers))
-                return 0;
+            channel = NormalizeSubscriptionChannel(channel);
 
-            var entriesToRemove = owner == null
-                ? handlers.ToList()
-                : handlers.Where(entry => ReferenceEquals(entry.Owner, owner)).ToList();
+            lock (subscriptionLock)
+            {
+                if (!subscriptions.TryGetValue(channel, out var handlers))
+                    return 0;
 
-            foreach (var entry in entriesToRemove)
-            {
-                if (entry.Key != null)
-                    keyToSubscription.Remove(entry.Key);
-            }
+                var entriesToRemove = owner == null
+                    ? handlers.ToList()
+                    : handlers.Where(entry => ReferenceEquals(entry.Owner, owner)).ToList();
 
-            int removed;
-            if (owner == null)
-            {
-                removed = handlers.Count;
-                handlers.Clear();
-                subscriptions.Remove(channel);
-            }
-            else
-            {
-                removed = handlers.RemoveAll(entry => ReferenceEquals(entry.Owner, owner));
-                if (handlers.Count == 0)
+                foreach (var entry in entriesToRemove)
+                {
+                    if (entry.Key != null)
+                        keyToSubscription.Remove(entry.Key);
+                }
+
+                int removed;
+                if (owner == null)
+                {
+                    removed = handlers.Count;
+                    handlers.Clear();
                     subscriptions.Remove(channel);
-            }
+                }
+                else
+                {
+                    removed = handlers.RemoveAll(entry => ReferenceEquals(entry.Owner, owner));
+                    if (handlers.Count == 0)
+                        subscriptions.Remove(channel);
+                }
 
-            return removed;
+                return removed;
+            }
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"unsubscribing relay handlers for channel '{channel}'", 0);
         }
     }
 
@@ -840,13 +1008,20 @@ public partial class NoireNetworkRelay
     /// <returns>The number of registered subscriptions for the specified channel.</returns>
     public int GetSubscriberCount(string channel = WildcardChannel)
     {
-        channel = NormalizeSubscriptionChannel(channel);
-
-        lock (subscriptionLock)
+        try
         {
-            return subscriptions.TryGetValue(channel, out var handlers)
-                ? handlers.Count
-                : 0;
+            channel = NormalizeSubscriptionChannel(channel);
+
+            lock (subscriptionLock)
+            {
+                return subscriptions.TryGetValue(channel, out var handlers)
+                    ? handlers.Count
+                    : 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"reading relay subscriber count for channel '{channel}'", 0);
         }
     }
 
@@ -930,7 +1105,11 @@ public partial class NoireNetworkRelay
         {
             ReportError(ex, $"awaiting reliable acknowledgement from {endPoint}");
             InvokeReliableSendFailureCallback(onFailure, ex);
-            throw;
+
+            if (ShouldRethrowException())
+                ExceptionDispatchInfo.Capture(ex).Throw();
+
+            return default!;
         }
     }
 
@@ -1030,51 +1209,58 @@ public partial class NoireNetworkRelay
         object? owner,
         bool isAsync)
     {
-        if (handler == null)
-            throw new ArgumentNullException(nameof(handler));
-
-        if (key != null && string.IsNullOrWhiteSpace(key))
-            throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
-
-        channel = NormalizeSubscriptionChannel(channel);
-
-        if (key != null)
-            Unsubscribe(key);
-
-        var token = new NetworkRelaySubscriptionToken(Guid.NewGuid());
-        var entry = new RelaySubscriptionEntry(token, handler, priority, filter, owner, isAsync, key, channel);
-
-        lock (subscriptionLock)
+        try
         {
-            if (!subscriptions.TryGetValue(channel, out var handlers))
-            {
-                handlers = [];
-                subscriptions[channel] = handlers;
-            }
+            if (handler == null)
+                throw new ArgumentNullException(nameof(handler));
 
-            handlers.Add(entry);
-            handlers.Sort((left, right) => right.Priority.CompareTo(left.Priority));
+            if (key != null && string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
+
+            channel = NormalizeSubscriptionChannel(channel);
 
             if (key != null)
-                keyToSubscription[key] = token;
+                Unsubscribe(key);
+
+            var token = new NetworkRelaySubscriptionToken(Guid.NewGuid());
+            var entry = new RelaySubscriptionEntry(token, handler, priority, filter, owner, isAsync, key, channel);
+
+            lock (subscriptionLock)
+            {
+                if (!subscriptions.TryGetValue(channel, out var handlers))
+                {
+                    handlers = [];
+                    subscriptions[channel] = handlers;
+                }
+
+                handlers.Add(entry);
+                handlers.Sort((left, right) => right.Priority.CompareTo(left.Priority));
+
+                if (key != null)
+                    keyToSubscription[key] = token;
+            }
+
+            Interlocked.Increment(ref totalSubscriptionsCreated);
+
+            if (EnableLogging)
+            {
+                var keyInfo = key != null ? $" with key '{key}'" : "";
+                var asyncInfo = isAsync ? " async" : "";
+                NoireLogger.LogDebug(this, $"Subscribed{asyncInfo} relay handler to channel '{channel}'{keyInfo} (Priority: {priority})");
+            }
+
+            return token;
         }
-
-        Interlocked.Increment(ref totalSubscriptionsCreated);
-
-        if (EnableLogging)
+        catch (Exception ex)
         {
-            var keyInfo = key != null ? $" with key '{key}'" : "";
-            var asyncInfo = isAsync ? " async" : "";
-            NoireLogger.LogDebug(this, $"Subscribed{asyncInfo} relay handler to channel '{channel}'{keyInfo} (Priority: {priority})");
+            return HandleExceptionOrReturn(ex, $"subscribing relay handler to channel '{channel}'", default(NetworkRelaySubscriptionToken));
         }
-
-        return token;
     }
 
     private Action<NetworkRelayMessage> WrapHandler<TPayload>(Action<NetworkRelayMessage<TPayload>> handler)
     {
         if (handler == null)
-            throw new ArgumentNullException(nameof(handler));
+            return HandleExceptionOrReturn<Action<NetworkRelayMessage>>(new ArgumentNullException(nameof(handler)), "creating typed relay handler", static _ => { });
 
         return message => handler(message.ToTyped<TPayload>(SerializerSettings));
     }
@@ -1082,7 +1268,7 @@ public partial class NoireNetworkRelay
     private Func<NetworkRelayMessage, Task> WrapAsyncHandler<TPayload>(Func<NetworkRelayMessage<TPayload>, Task> handler)
     {
         if (handler == null)
-            throw new ArgumentNullException(nameof(handler));
+            return HandleExceptionOrReturn<Func<NetworkRelayMessage, Task>>(new ArgumentNullException(nameof(handler)), "creating async typed relay handler", static _ => Task.CompletedTask);
 
         return message => handler(message.ToTyped<TPayload>(SerializerSettings));
     }

@@ -27,42 +27,49 @@ public partial class NoireNetworkRelay
 
     private void StartTransport()
     {
-        lock (transportLock)
+        try
         {
-            if (udpClient != null)
-                return;
-
-            if (EnableBroadcast && BindAddress.AddressFamily == AddressFamily.InterNetworkV6)
-                throw new NotSupportedException("UDP broadcast is only supported with IPv4 bind addresses.");
-
-            var client = new UdpClient(BindAddress.AddressFamily);
-            client.ExclusiveAddressUse = false;
-            client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-            client.Client.ReceiveBufferSize = UdpReceiveBufferSize;
-            client.Client.SendBufferSize = UdpSendBufferSize;
-            client.EnableBroadcast = EnableBroadcast;
-            client.Ttl = TimeToLive;
-            client.Client.Bind(new IPEndPoint(BindAddress, Port));
-
-            udpClient = client;
-            transportCts = new CancellationTokenSource();
-            receiveLoopTask = Task.Run(() => ReceiveLoopAsync(transportCts.Token), transportCts.Token);
-
-            if (EnableReliableTransport)
+            lock (transportLock)
             {
-                var listener = new TcpListener(BindAddress, ReliablePort);
-                listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-                listener.Server.ReceiveBufferSize = ReliableReceiveBufferSize;
-                listener.Server.SendBufferSize = ReliableSendBufferSize;
-                listener.Server.NoDelay = true;
-                listener.Start();
+                if (udpClient != null)
+                    return;
 
-                tcpListener = listener;
-                tcpAcceptLoopTask = Task.Run(() => AcceptReliableClientsAsync(transportCts.Token), transportCts.Token);
+                if (EnableBroadcast && BindAddress.AddressFamily == AddressFamily.InterNetworkV6)
+                    throw new NotSupportedException("UDP broadcast is only supported with IPv4 bind addresses.");
+
+                var client = new UdpClient(BindAddress.AddressFamily);
+                client.ExclusiveAddressUse = false;
+                client.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                client.Client.ReceiveBufferSize = UdpReceiveBufferSize;
+                client.Client.SendBufferSize = UdpSendBufferSize;
+                client.EnableBroadcast = EnableBroadcast;
+                client.Ttl = TimeToLive;
+                client.Client.Bind(new IPEndPoint(BindAddress, Port));
+
+                udpClient = client;
+                transportCts = new CancellationTokenSource();
+                receiveLoopTask = Task.Run(() => ReceiveLoopAsync(transportCts.Token), transportCts.Token);
+
+                if (EnableReliableTransport)
+                {
+                    var listener = new TcpListener(BindAddress, ReliablePort);
+                    listener.Server.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
+                    listener.Server.ReceiveBufferSize = ReliableReceiveBufferSize;
+                    listener.Server.SendBufferSize = ReliableSendBufferSize;
+                    listener.Server.NoDelay = true;
+                    listener.Start();
+
+                    tcpListener = listener;
+                    tcpAcceptLoopTask = Task.Run(() => AcceptReliableClientsAsync(transportCts.Token), transportCts.Token);
+                }
+
+                if (EnablePeerDiscovery && AnnouncementInterval > TimeSpan.Zero)
+                    announcementLoopTask = Task.Run(() => AnnouncementLoopAsync(transportCts.Token), transportCts.Token);
             }
-
-            if (EnablePeerDiscovery && AnnouncementInterval > TimeSpan.Zero)
-                announcementLoopTask = Task.Run(() => AnnouncementLoopAsync(transportCts.Token), transportCts.Token);
+        }
+        catch (Exception ex)
+        {
+            HandleException(ex, "starting relay transport");
         }
     }
 
@@ -379,7 +386,9 @@ public partial class NoireNetworkRelay
         catch (Exception ex)
         {
             await TrySendAcknowledgementAsync(acknowledgementStream, envelope, success: false, ex.Message, cancellationToken);
-            throw;
+
+            if (ShouldRethrowException())
+                ExceptionDispatchInfo.Capture(ex).Throw();
         }
     }
 
@@ -717,6 +726,15 @@ public partial class NoireNetworkRelay
                 break;
         }
     }
+
+    private T HandleExceptionOrReturn<T>(Exception ex, string operation, T fallback)
+    {
+        HandleException(ex, operation);
+        return fallback;
+    }
+
+    private bool ShouldRethrowException()
+        => ExceptionHandling is ExceptionBehavior.LogAndThrow or ExceptionBehavior.Throw;
 
     private static IPAddress ResolveAddress(string hostOrAddress, AddressFamily addressFamily)
     {

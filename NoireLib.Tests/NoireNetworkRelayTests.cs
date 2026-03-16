@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Newtonsoft.Json.Linq;
+using NoireLib.Enums;
 using NoireLib.NetworkRelay;
 using System;
 using System.Linq;
@@ -163,7 +164,8 @@ public class NoireNetworkRelayTests
     [Fact]
     public void SerializeEnvelope_ShouldUseUdpPayloadLimit()
     {
-        var relay = new NoireNetworkRelay(active: false, enableLogging: false);
+        var relay = new NoireNetworkRelay(active: false, enableLogging: false)
+            .SetExceptionHandling(ExceptionBehavior.Throw);
         relay.SetTransportPayloadLimits(1, 32000);
 
         var envelope = CreateMessageEnvelope(relay, "hello");
@@ -176,7 +178,8 @@ public class NoireNetworkRelayTests
     [Fact]
     public void SerializeEnvelope_ShouldUseReliablePayloadLimit()
     {
-        var relay = new NoireNetworkRelay(active: false, enableLogging: false);
+        var relay = new NoireNetworkRelay(active: false, enableLogging: false)
+            .SetExceptionHandling(ExceptionBehavior.Throw);
         relay.SetTransportPayloadLimits(32000, 1);
 
         var envelope = CreateMessageEnvelope(relay, "hello");
@@ -195,6 +198,7 @@ public class NoireNetworkRelayTests
         var receiverTcpPort = GetFreePort();
 
         var sender = new NoireNetworkRelay(active: false, enableLogging: false, port: senderUdpPort, enablePeerDiscovery: false, allowLoopbackMessages: false, enableReliableTransport: true, reliablePort: senderTcpPort)
+            .SetExceptionHandling(ExceptionBehavior.Throw)
             .SetAutoActivateOnSend(false)
             .RegisterSelf()
             .ActivateSelf()
@@ -236,7 +240,7 @@ public class NoireNetworkRelayTests
         var senderTcpPort = GetFreePort();
         var unusedTcpPort = GetFreePort();
 
-        var sender = new NoireNetworkRelay(active: false, enableLogging: false, port: senderUdpPort, enablePeerDiscovery: false, allowLoopbackMessages: false, enableReliableTransport: true, reliablePort: senderTcpPort)
+        var sender = new NoireNetworkRelay(active: false, enableLogging: false, port: senderUdpPort, enablePeerDiscovery: false, allowLoopbackMessages: false, enableReliableTransport: true, reliablePort: senderTcpPort, exceptionHandling: ExceptionBehavior.Throw)
             .SetAutoActivateOnSend(false)
             .RegisterSelf()
             .ActivateSelf()

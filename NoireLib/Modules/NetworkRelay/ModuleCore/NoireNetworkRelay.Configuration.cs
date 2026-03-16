@@ -52,11 +52,18 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetInstanceId(string instanceId)
     {
-        if (string.IsNullOrWhiteSpace(instanceId))
-            throw new ArgumentException("Instance ID cannot be empty.", nameof(instanceId));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(instanceId))
+                throw new ArgumentException("Instance ID cannot be empty.", nameof(instanceId));
 
-        InstanceId = instanceId.Trim();
-        return this;
+            InstanceId = instanceId.Trim();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay instance ID", this);
+        }
     }
 
     /// <summary>
@@ -71,11 +78,18 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetDisplayName(string displayName)
     {
-        if (string.IsNullOrWhiteSpace(displayName))
-            throw new ArgumentException("Display name cannot be empty.", nameof(displayName));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(displayName))
+                throw new ArgumentException("Display name cannot be empty.", nameof(displayName));
 
-        DisplayName = displayName.Trim();
-        return this;
+            DisplayName = displayName.Trim();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay display name", this);
+        }
     }
 
     /// <summary>
@@ -90,9 +104,16 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetBindAddress(IPAddress bindAddress)
     {
-        BindAddress = bindAddress ?? throw new ArgumentNullException(nameof(bindAddress));
-        RestartTransportIfRunning();
-        return this;
+        try
+        {
+            BindAddress = bindAddress ?? throw new ArgumentNullException(nameof(bindAddress));
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay bind address", this);
+        }
     }
 
     /// <summary>
@@ -102,10 +123,17 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetBindAddress(string bindAddress)
     {
-        if (!IPAddress.TryParse(bindAddress, out var address))
-            throw new ArgumentException("Bind address must be a valid IP address.", nameof(bindAddress));
+        try
+        {
+            if (!IPAddress.TryParse(bindAddress, out var address))
+                throw new ArgumentException("Bind address must be a valid IP address.", nameof(bindAddress));
 
-        return SetBindAddress(address);
+            return SetBindAddress(address);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay bind address", this);
+        }
     }
 
     /// <summary>
@@ -120,14 +148,21 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetPort(int port)
     {
-        var previousPort = Port;
-        Port = ValidatePort(port);
+        try
+        {
+            var previousPort = Port;
+            Port = ValidatePort(port);
 
-        if (ReliablePort == previousPort)
-            ReliablePort = Port;
+            if (ReliablePort == previousPort)
+                ReliablePort = Port;
 
-        RestartTransportIfRunning();
-        return this;
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay UDP port", this);
+        }
     }
 
     /// <summary>
@@ -276,8 +311,15 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetDefaultChannel(string channel)
     {
-        DefaultChannel = NormalizeChannel(channel);
-        return this;
+        try
+        {
+            DefaultChannel = NormalizeChannel(channel);
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay default channel", this);
+        }
     }
 
     /// <summary>
@@ -313,15 +355,22 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetReliableTransport(bool enableReliableTransport, int? reliablePort = null)
     {
-        EnableReliableTransport = enableReliableTransport;
+        try
+        {
+            EnableReliableTransport = enableReliableTransport;
 
-        if (reliablePort.HasValue)
-            ReliablePort = ValidatePort(reliablePort.Value);
-        else if (ReliablePort <= 0)
-            ReliablePort = Port;
+            if (reliablePort.HasValue)
+                ReliablePort = ValidatePort(reliablePort.Value);
+            else if (ReliablePort <= 0)
+                ReliablePort = Port;
 
-        RestartTransportIfRunning();
-        return this;
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "configuring reliable relay transport", this);
+        }
     }
 
     /// <summary>
@@ -332,15 +381,22 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetReliableTimeouts(TimeSpan connectTimeout, TimeSpan operationTimeout)
     {
-        if (connectTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(connectTimeout), "Reliable connect timeout must be greater than zero.");
+        try
+        {
+            if (connectTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(connectTimeout), "Reliable connect timeout must be greater than zero.");
 
-        if (operationTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(operationTimeout), "Reliable operation timeout must be greater than zero.");
+            if (operationTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(operationTimeout), "Reliable operation timeout must be greater than zero.");
 
-        ReliableConnectTimeout = connectTimeout;
-        ReliableOperationTimeout = operationTimeout;
-        return this;
+            ReliableConnectTimeout = connectTimeout;
+            ReliableOperationTimeout = operationTimeout;
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting reliable relay timeouts", this);
+        }
     }
 
     /// <summary>
@@ -350,11 +406,18 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetReliableAcknowledgementTimeout(TimeSpan acknowledgementTimeout)
     {
-        if (acknowledgementTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException(nameof(acknowledgementTimeout), "Reliable acknowledgement timeout must be greater than zero.");
+        try
+        {
+            if (acknowledgementTimeout <= TimeSpan.Zero)
+                throw new ArgumentOutOfRangeException(nameof(acknowledgementTimeout), "Reliable acknowledgement timeout must be greater than zero.");
 
-        ReliableAcknowledgementTimeout = acknowledgementTimeout;
-        return this;
+            ReliableAcknowledgementTimeout = acknowledgementTimeout;
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting reliable relay acknowledgement timeout", this);
+        }
     }
 
     /// <summary>
@@ -369,11 +432,18 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetSerializerSettings(JsonSerializerSettings serializerSettings)
     {
-        SerializerSettings = serializerSettings == null
-            ? throw new ArgumentNullException(nameof(serializerSettings))
-            : CloneSerializerSettings(serializerSettings);
+        try
+        {
+            SerializerSettings = serializerSettings == null
+                ? throw new ArgumentNullException(nameof(serializerSettings))
+                : CloneSerializerSettings(serializerSettings);
 
-        return this;
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay serializer settings", this);
+        }
     }
 
     /// <summary>
@@ -383,13 +453,20 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay ConfigureSerializer(Action<JsonSerializerSettings> configure)
     {
-        if (configure == null)
-            throw new ArgumentNullException(nameof(configure));
+        try
+        {
+            if (configure == null)
+                throw new ArgumentNullException(nameof(configure));
 
-        var serializerSettings = CloneSerializerSettings(SerializerSettings);
-        configure(serializerSettings);
-        SerializerSettings = serializerSettings;
-        return this;
+            var serializerSettings = CloneSerializerSettings(SerializerSettings);
+            configure(serializerSettings);
+            SerializerSettings = serializerSettings;
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "configuring relay serializer settings", this);
+        }
     }
 
     /// <summary>
@@ -423,8 +500,15 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetUdpMaxPayloadBytes(int maxPayloadBytes)
     {
-        UdpMaxPayloadBytes = ValidatePayloadLimit(maxPayloadBytes, nameof(maxPayloadBytes));
-        return this;
+        try
+        {
+            UdpMaxPayloadBytes = ValidatePayloadLimit(maxPayloadBytes, nameof(maxPayloadBytes));
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay UDP payload limit", this);
+        }
     }
 
     /// <summary>
@@ -434,8 +518,15 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetReliableMaxPayloadBytes(int maxPayloadBytes)
     {
-        ReliableMaxPayloadBytes = ValidatePayloadLimit(maxPayloadBytes, nameof(maxPayloadBytes));
-        return this;
+        try
+        {
+            ReliableMaxPayloadBytes = ValidatePayloadLimit(maxPayloadBytes, nameof(maxPayloadBytes));
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay TCP payload limit", this);
+        }
     }
 
     /// <summary>
@@ -446,9 +537,16 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetTransportPayloadLimits(int udpMaxPayloadBytes, int reliableMaxPayloadBytes)
     {
-        UdpMaxPayloadBytes = ValidatePayloadLimit(udpMaxPayloadBytes, nameof(udpMaxPayloadBytes));
-        ReliableMaxPayloadBytes = ValidatePayloadLimit(reliableMaxPayloadBytes, nameof(reliableMaxPayloadBytes));
-        return this;
+        try
+        {
+            UdpMaxPayloadBytes = ValidatePayloadLimit(udpMaxPayloadBytes, nameof(udpMaxPayloadBytes));
+            ReliableMaxPayloadBytes = ValidatePayloadLimit(reliableMaxPayloadBytes, nameof(reliableMaxPayloadBytes));
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay transport payload limits", this);
+        }
     }
 
     /// <summary>
@@ -488,10 +586,17 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetUdpSocketBuffers(int receiveBufferSize, int sendBufferSize)
     {
-        UdpReceiveBufferSize = ValidateBufferSize(receiveBufferSize, nameof(receiveBufferSize));
-        UdpSendBufferSize = ValidateBufferSize(sendBufferSize, nameof(sendBufferSize));
-        RestartTransportIfRunning();
-        return this;
+        try
+        {
+            UdpReceiveBufferSize = ValidateBufferSize(receiveBufferSize, nameof(receiveBufferSize));
+            UdpSendBufferSize = ValidateBufferSize(sendBufferSize, nameof(sendBufferSize));
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay UDP socket buffers", this);
+        }
     }
 
     /// <summary>
@@ -502,10 +607,17 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetReliableSocketBuffers(int receiveBufferSize, int sendBufferSize)
     {
-        ReliableReceiveBufferSize = ValidateBufferSize(receiveBufferSize, nameof(receiveBufferSize));
-        ReliableSendBufferSize = ValidateBufferSize(sendBufferSize, nameof(sendBufferSize));
-        RestartTransportIfRunning();
-        return this;
+        try
+        {
+            ReliableReceiveBufferSize = ValidateBufferSize(receiveBufferSize, nameof(receiveBufferSize));
+            ReliableSendBufferSize = ValidateBufferSize(sendBufferSize, nameof(sendBufferSize));
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay TCP socket buffers", this);
+        }
     }
 
     /// <summary>
@@ -518,12 +630,19 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetTransportSocketBuffers(int udpReceiveBufferSize, int udpSendBufferSize, int reliableReceiveBufferSize, int reliableSendBufferSize)
     {
-        UdpReceiveBufferSize = ValidateBufferSize(udpReceiveBufferSize, nameof(udpReceiveBufferSize));
-        UdpSendBufferSize = ValidateBufferSize(udpSendBufferSize, nameof(udpSendBufferSize));
-        ReliableReceiveBufferSize = ValidateBufferSize(reliableReceiveBufferSize, nameof(reliableReceiveBufferSize));
-        ReliableSendBufferSize = ValidateBufferSize(reliableSendBufferSize, nameof(reliableSendBufferSize));
-        RestartTransportIfRunning();
-        return this;
+        try
+        {
+            UdpReceiveBufferSize = ValidateBufferSize(udpReceiveBufferSize, nameof(udpReceiveBufferSize));
+            UdpSendBufferSize = ValidateBufferSize(udpSendBufferSize, nameof(udpSendBufferSize));
+            ReliableReceiveBufferSize = ValidateBufferSize(reliableReceiveBufferSize, nameof(reliableReceiveBufferSize));
+            ReliableSendBufferSize = ValidateBufferSize(reliableSendBufferSize, nameof(reliableSendBufferSize));
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay transport socket buffers", this);
+        }
     }
 
     /// <summary>
@@ -538,12 +657,19 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay SetTimeToLive(short timeToLive)
     {
-        if (timeToLive <= 0)
-            throw new ArgumentOutOfRangeException(nameof(timeToLive), "TTL must be greater than zero.");
+        try
+        {
+            if (timeToLive <= 0)
+                throw new ArgumentOutOfRangeException(nameof(timeToLive), "TTL must be greater than zero.");
 
-        TimeToLive = timeToLive;
-        RestartTransportIfRunning();
-        return this;
+            TimeToLive = timeToLive;
+            RestartTransportIfRunning();
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "setting relay TTL", this);
+        }
     }
 
     /// <summary>

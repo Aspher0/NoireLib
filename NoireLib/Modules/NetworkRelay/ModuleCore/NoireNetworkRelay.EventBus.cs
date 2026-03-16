@@ -1,4 +1,3 @@
-using Newtonsoft.Json.Linq;
 using NoireLib.Enums;
 using NoireLib.EventBus;
 using System;
@@ -32,39 +31,46 @@ public partial class NoireNetworkRelay
         string? key = null,
         NetworkRelayDeliveryMode deliveryMode = NetworkRelayDeliveryMode.BestEffort)
     {
-        EnsureEventBusConfigured();
-
-        var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
-        EventSubscriptionToken token;
-
-        Action<TEvent> handler = eventData =>
+        try
         {
-            if (IsEventBusRelaySuppressed())
-                return;
+            EnsureEventBusConfigured();
 
-            if (filter != null && !filter(eventData))
-                return;
+            var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
+            EventSubscriptionToken token;
 
-            var payload = CreateRelayedEventPayload(eventData);
-            Interlocked.Increment(ref totalEventBusEventsRelayed);
+            Action<TEvent> handler = eventData =>
+            {
+                if (IsEventBusRelaySuppressed())
+                    return;
 
-            if (!string.IsNullOrWhiteSpace(targetPeerId))
-                SendToPeer(targetPeerId, payload, bridgeChannel, deliveryMode);
-            else if (broadcast)
-                Broadcast(payload, bridgeChannel, deliveryMode);
+                if (filter != null && !filter(eventData))
+                    return;
+
+                var payload = CreateRelayedEventPayload(eventData);
+                Interlocked.Increment(ref totalEventBusEventsRelayed);
+
+                if (!string.IsNullOrWhiteSpace(targetPeerId))
+                    SendToPeer(targetPeerId, payload, bridgeChannel, deliveryMode);
+                else if (broadcast)
+                    Broadcast(payload, bridgeChannel, deliveryMode);
+                else
+                    SendToAllPeers(payload, bridgeChannel, deliveryMode);
+            };
+
+            if (string.IsNullOrWhiteSpace(key))
+                token = EventBus!.Subscribe(handler, owner: owner);
             else
-                SendToAllPeers(payload, bridgeChannel, deliveryMode);
-        };
+                token = EventBus!.Subscribe(key, handler, owner: owner);
 
-        if (string.IsNullOrWhiteSpace(key))
-            token = EventBus!.Subscribe(handler, owner: owner);
-        else
-            token = EventBus!.Subscribe(key, handler, owner: owner);
+            lock (eventBridgeLock)
+                eventBusBridgeRegistrations.Add(new EventBusBridgeRegistration(key?.Trim(), token));
 
-        lock (eventBridgeLock)
-            eventBusBridgeRegistrations.Add(new EventBusBridgeRegistration(key?.Trim(), token));
-
-        return token;
+            return token;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"creating outbound relay EventBus bridge for '{typeof(TEvent).Name}'", default(EventSubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -84,26 +90,33 @@ public partial class NoireNetworkRelay
         object? owner = null,
         string? key = null)
     {
-        EnsureEventBusConfigured();
-
-        var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
-        var subscriptionKey = string.IsNullOrWhiteSpace(key) ? null : $"{key.Trim()}:relay";
-
-        Action<NetworkRelayMessage<RelayedEventPayload>> handler = relayMessage =>
+        try
         {
-            if (!TryConvertRelayedEventMessage(relayMessage, out NetworkRelayMessage<TEvent>? typedMessage))
-                return;
+            EnsureEventBusConfigured();
 
-            if (filter != null && !filter(typedMessage))
-                return;
+            var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
+            var subscriptionKey = string.IsNullOrWhiteSpace(key) ? null : $"{key.Trim()}:relay";
 
-            RunWithSuppressedEventBusRelay(() => EventBus!.Publish(typedMessage.Payload));
-            Interlocked.Increment(ref totalEventBusEventsPublishedLocally);
-        };
+            Action<NetworkRelayMessage<RelayedEventPayload>> handler = relayMessage =>
+            {
+                if (!TryConvertRelayedEventMessage(relayMessage, out NetworkRelayMessage<TEvent>? typedMessage))
+                    return;
 
-        return subscriptionKey == null
-            ? Subscribe<RelayedEventPayload>(handler, bridgeChannel, priority, owner: owner)
-            : Subscribe<RelayedEventPayload>(subscriptionKey, handler, bridgeChannel, priority, owner: owner);
+                if (filter != null && !filter(typedMessage))
+                    return;
+
+                RunWithSuppressedEventBusRelay(() => EventBus!.Publish(typedMessage.Payload));
+                Interlocked.Increment(ref totalEventBusEventsPublishedLocally);
+            };
+
+            return subscriptionKey == null
+                ? Subscribe<RelayedEventPayload>(handler, bridgeChannel, priority, owner: owner)
+                : Subscribe<RelayedEventPayload>(subscriptionKey, handler, bridgeChannel, priority, owner: owner);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"creating inbound relay EventBus bridge for '{typeof(TEvent).Name}'", default(NetworkRelaySubscriptionToken));
+        }
     }
 
     /// <summary>
@@ -136,32 +149,39 @@ public partial class NoireNetworkRelay
         string? key = null,
         NetworkRelayDeliveryMode deliveryMode = NetworkRelayDeliveryMode.BestEffort)
     {
-        if (!relayLocalPublishes && !publishReceivedLocally)
-            throw new ArgumentException("At least one bridge direction must be enabled.", nameof(relayLocalPublishes));
-
-        var bridgeKey = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
-        if (bridgeKey != null)
-            UnbridgeEvent(bridgeKey);
-
-        var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
-        var eventBusToken = default(EventSubscriptionToken);
-        var relayToken = default(NetworkRelaySubscriptionToken);
-
-        if (relayLocalPublishes)
-            eventBusToken = RelayPublishedEvent(bridgeChannel, broadcast, targetPeerId, eventBusFilter, owner, bridgeKey == null ? null : $"{bridgeKey}:eventbus", deliveryMode);
-
-        if (publishReceivedLocally)
-            relayToken = PublishReceivedToEventBus(bridgeChannel, priority, relayFilter, owner, bridgeKey);
-
-        var handle = new NetworkRelayEventBridgeHandle(bridgeChannel, eventBusToken, relayToken);
-
-        if (bridgeKey != null)
+        try
         {
-            lock (eventBridgeLock)
-                keyToEventBridge[bridgeKey] = handle;
-        }
+            if (!relayLocalPublishes && !publishReceivedLocally)
+                throw new ArgumentException("At least one bridge direction must be enabled.", nameof(relayLocalPublishes));
 
-        return handle;
+            var bridgeKey = string.IsNullOrWhiteSpace(key) ? null : key.Trim();
+            if (bridgeKey != null)
+                UnbridgeEvent(bridgeKey);
+
+            var bridgeChannel = ResolveEventBridgeChannel<TEvent>(channel);
+            var eventBusToken = default(EventSubscriptionToken);
+            var relayToken = default(NetworkRelaySubscriptionToken);
+
+            if (relayLocalPublishes)
+                eventBusToken = RelayPublishedEvent(bridgeChannel, broadcast, targetPeerId, eventBusFilter, owner, bridgeKey == null ? null : $"{bridgeKey}:eventbus", deliveryMode);
+
+            if (publishReceivedLocally)
+                relayToken = PublishReceivedToEventBus(bridgeChannel, priority, relayFilter, owner, bridgeKey);
+
+            var handle = new NetworkRelayEventBridgeHandle(bridgeChannel, eventBusToken, relayToken);
+
+            if (bridgeKey != null)
+            {
+                lock (eventBridgeLock)
+                    keyToEventBridge[bridgeKey] = handle;
+            }
+
+            return handle;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, $"bridging relay EventBus event '{typeof(TEvent).Name}'", default(NetworkRelayEventBridgeHandle));
+        }
     }
 
     /// <summary>

@@ -55,20 +55,27 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay ActivateSelf()
     {
-        if (!IsSelfRegistered)
-            throw new InvalidOperationException("RegisterSelf() must be called before activating self.");
-
-        Volatile.Write(ref selfActivityEnabled, 1);
-
-        if (IsActive)
+        try
         {
-            RegisterSelf();
+            if (!IsSelfRegistered)
+                throw new InvalidOperationException("RegisterSelf() must be called before activating self.");
 
-            if (EnablePeerDiscovery)
-                SendPresenceAnnouncement(CreateHelloEnvelope());
+            Volatile.Write(ref selfActivityEnabled, 1);
+
+            if (IsActive)
+            {
+                RegisterSelf();
+
+                if (EnablePeerDiscovery)
+                    SendPresenceAnnouncement(CreateHelloEnvelope());
+            }
+
+            return this;
         }
-
-        return this;
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "activating relay self registration", this);
+        }
     }
 
     /// <summary>
@@ -106,16 +113,23 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay RegisterPeer(string peerId, string hostOrAddress, int port, int? reliablePort, string? displayName = null)
     {
-        if (string.IsNullOrWhiteSpace(peerId))
-            throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(peerId))
+                throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
 
-        if (string.IsNullOrWhiteSpace(hostOrAddress))
-            throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
+            if (string.IsNullOrWhiteSpace(hostOrAddress))
+                throw new ArgumentException("Host cannot be empty.", nameof(hostOrAddress));
 
-        var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
-        var endPoint = new IPEndPoint(address, ValidatePort(port));
-        var reliableEndPoint = reliablePort.HasValue ? new IPEndPoint(address, ValidatePort(reliablePort.Value)) : null;
-        return RegisterPeer(peerId, endPoint, reliableEndPoint, displayName);
+            var address = ResolveAddress(hostOrAddress.Trim(), BindAddress.AddressFamily);
+            var endPoint = new IPEndPoint(address, ValidatePort(port));
+            var reliableEndPoint = reliablePort.HasValue ? new IPEndPoint(address, ValidatePort(reliablePort.Value)) : null;
+            return RegisterPeer(peerId, endPoint, reliableEndPoint, displayName);
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "registering relay peer by address", this);
+        }
     }
 
     /// <summary>
@@ -144,14 +158,21 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay RegisterPeer(string peerId, IPEndPoint endPoint, IPEndPoint? reliableEndPoint, string? displayName = null)
     {
-        if (string.IsNullOrWhiteSpace(peerId))
-            throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
+        try
+        {
+            if (string.IsNullOrWhiteSpace(peerId))
+                throw new ArgumentException("Peer ID cannot be empty.", nameof(peerId));
 
-        if (endPoint == null)
-            throw new ArgumentNullException(nameof(endPoint));
+            if (endPoint == null)
+                throw new ArgumentNullException(nameof(endPoint));
 
-        UpsertPeer(peerId.Trim(), displayName?.Trim(), endPoint, reliableEndPoint, isDynamic: false);
-        return this;
+            UpsertPeer(peerId.Trim(), displayName?.Trim(), endPoint, reliableEndPoint, isDynamic: false);
+            return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "registering relay peer endpoint", this);
+        }
     }
 
     /// <summary>
@@ -264,16 +285,23 @@ public partial class NoireNetworkRelay
     /// <returns>The module instance for chaining.</returns>
     public NoireNetworkRelay AnnouncePresence()
     {
-        if (!IsSelfRegistered || !IsSelfActive)
+        try
+        {
+            if (!IsSelfRegistered || !IsSelfActive)
+                return this;
+
+            EnsureCanSend();
+
+            SendPresenceAnnouncement(CreateHelloEnvelope());
+
+            RegisterSelf();
+
             return this;
-
-        EnsureCanSend();
-
-        SendPresenceAnnouncement(CreateHelloEnvelope());
-
-        RegisterSelf();
-
-        return this;
+        }
+        catch (Exception ex)
+        {
+            return HandleExceptionOrReturn(ex, "announcing relay presence", this);
+        }
     }
 
     private void HandlePeerActivity(RelayEnvelope envelope, IPEndPoint remoteEndPoint, NetworkRelayTransportKind transportKind)
