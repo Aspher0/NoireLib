@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace NoireLib.Helpers;
 
@@ -217,6 +218,84 @@ public static class SystemHelper
         {
             NoireLogger.LogError(ex, $"Failed to run command: {command} {arguments}", "[SystemHelper] ");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Runs a command in the system shell asynchronously and returns the output.
+    /// </summary>
+    /// <param name="command">The command to run.</param>
+    /// <param name="arguments">The command arguments.</param>
+    /// <param name="workingDirectory">Optional working directory.</param>
+    /// <returns>The command output, or null if failed.</returns>
+    public static async Task<string?> RunCommandAsync(string command, string arguments = "", string? workingDirectory = null)
+    {
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            if (!string.IsNullOrEmpty(workingDirectory))
+                processInfo.WorkingDirectory = workingDirectory;
+
+            using var process = Process.Start(processInfo);
+            if (process == null)
+                return null;
+
+            var standardOutputTask = process.StandardOutput.ReadToEndAsync();
+            var standardErrorTask = process.StandardError.ReadToEndAsync();
+
+            await process.WaitForExitAsync();
+
+            var output = new StringBuilder();
+            output.Append(await standardOutputTask);
+            output.Append(await standardErrorTask);
+
+            return output.ToString();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to run command asynchronously: {command} {arguments}", "[SystemHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Starts a process without waiting for it to exit.
+    /// </summary>
+    /// <param name="command">The process to start.</param>
+    /// <param name="arguments">The process arguments.</param>
+    /// <param name="workingDirectory">Optional working directory.</param>
+    /// <returns><see langword="true"/> if the process was started; otherwise, <see langword="false"/>.</returns>
+    public static bool StartProcess(string command, string arguments = "", string? workingDirectory = null)
+    {
+        try
+        {
+            var processInfo = new ProcessStartInfo
+            {
+                FileName = command,
+                Arguments = arguments,
+                UseShellExecute = IsWindows,
+                CreateNoWindow = !IsWindows
+            };
+
+            if (!string.IsNullOrEmpty(workingDirectory))
+                processInfo.WorkingDirectory = workingDirectory;
+
+            using var process = Process.Start(processInfo);
+            return process != null;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to start process: {command} {arguments}", "[SystemHelper] ");
+            return false;
         }
     }
 
