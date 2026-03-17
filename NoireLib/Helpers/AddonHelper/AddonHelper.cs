@@ -49,6 +49,18 @@ public static class AddonHelper
     }
 
     /// <summary>
+    /// Tries to get an addon by name without checking whether it is ready.
+    /// </summary>
+    /// <param name="addonName">The name of the addon to get.</param>
+    /// <param name="addonPtr">The addon wrapper, if found.</param>
+    /// <returns>True if the addon was found; otherwise, false.</returns>
+    public static bool TryGetAddonWrapper(string addonName, out AtkUnitBasePtr addonPtr)
+    {
+        addonPtr = NoireService.GameGui.GetAddonByName(addonName);
+        return addonPtr != IntPtr.Zero;
+    }
+
+    /// <summary>
     /// Tries to get an addon by name, and checks if it's loaded and ready to be interacted with.
     /// </summary>
     /// <param name="addonName">The name of the addon to get.</param>
@@ -69,6 +81,18 @@ public static class AddonHelper
         addonPtr = (AtkUnitBase*)addonFromName.Address;
 
         return IsAddonLoaded(addonPtr);
+    }
+
+    /// <summary>
+    /// Tries to get an addon by name, and checks if it's loaded and ready to be interacted with.
+    /// </summary>
+    /// <param name="addonName">The name of the addon to get.</param>
+    /// <param name="addonPtr">The addon wrapper, if found.</param>
+    /// <returns>True if the addon is found and ready to be interacted with; otherwise, false.</returns>
+    public static unsafe bool TryGetReadyAddonWrapper(string addonName, out AtkUnitBasePtr addonPtr)
+    {
+        addonPtr = NoireService.GameGui.GetAddonByName(addonName);
+        return addonPtr != IntPtr.Zero && IsAddonLoaded((AtkUnitBase*)addonPtr.Address);
     }
 
     /// <summary>
@@ -397,6 +421,38 @@ public static class AddonHelper
     /// <returns>The resolved managed value, or null if it could not be read.</returns>
     public static unsafe object? ReadValueOrDefault(AtkValue* value)
         => TryReadValue(value, out var result) ? result : null;
+
+    /// <summary>
+    /// Formats a managed representation of an <see cref="AtkValue"/> for logging.
+    /// </summary>
+    /// <param name="value">The value to format.</param>
+    /// <returns>A readable string representation of the value.</returns>
+    public static unsafe string FormatValue(AtkValue* value)
+    {
+        if (value == null)
+            return "null";
+
+        return TryReadValue(value, out var result) ? FormatManagedValue(result) : $"<{value->Type}>";
+    }
+
+    /// <summary>
+    /// Formats a sequence of <see cref="AtkValue"/> entries for logging.
+    /// </summary>
+    /// <param name="values">The values to format.</param>
+    /// <param name="valueCount">The number of values to read.</param>
+    /// <returns>A readable string representation of the supplied values.</returns>
+    public static unsafe string FormatValues(AtkValue* values, uint valueCount)
+    {
+        if (values == null || valueCount == 0)
+            return "[]";
+
+        List<string> formattedValues = new((int)valueCount);
+
+        for (var index = 0; index < valueCount; index++)
+            formattedValues.Add($"[{index}]={FormatValue(&values[index])}");
+
+        return $"[{string.Join(", ", formattedValues)}]";
+    }
 
     /// <summary>
     /// Registers an addon lifecycle listener for multiple addon names.
@@ -1265,6 +1321,34 @@ public static class AddonHelper
         string? managedText = textValue.ToString();
         return managedText ?? string.Empty;
     }
+
+    private static string FormatManagedValue(object? value)
+    {
+        return value switch
+        {
+            null => "null",
+            string text => $"\"{EscapeLogText(text)}\"",
+            nint pointer => $"0x{pointer:X}",
+            IEnumerable enumerable and not string => FormatEnumerable(enumerable),
+            _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty,
+        };
+    }
+
+    private static string FormatEnumerable(IEnumerable values)
+    {
+        List<string> entries = new();
+
+        foreach (object? value in values)
+            entries.Add(FormatManagedValue(value));
+
+        return $"[{string.Join(", ", entries)}]";
+    }
+
+    private static string EscapeLogText(string text)
+        => text.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("\r", "\\r", StringComparison.Ordinal)
+            .Replace("\n", "\\n", StringComparison.Ordinal)
+            .Replace("\t", "\\t", StringComparison.Ordinal);
 
     private static unsafe string ReadCString(byte* textPointer)
         => textPointer == null ? string.Empty : Marshal.PtrToStringUTF8((nint)textPointer) ?? string.Empty;
