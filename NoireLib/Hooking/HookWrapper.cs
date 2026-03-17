@@ -337,7 +337,6 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
         if (IsDisposed)
             return;
 
-        hook.Disable();
         hook.Dispose();
         InvokeStateCallbacks(HookCallbackKind.Disposed);
         ClearCallbacks();
