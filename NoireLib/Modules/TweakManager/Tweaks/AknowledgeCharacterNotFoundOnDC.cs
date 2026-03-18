@@ -1,4 +1,3 @@
-using Dalamud.Game.NativeWrapper;
 using Dalamud.Plugin.Services;
 using Lumina.Excel.Sheets;
 using NoireLib.Events;
@@ -56,14 +55,14 @@ public class AknowledgeCharacterNotFoundOnDC : TweakBase
 
     private unsafe void ListenFrameworkUpdate(IFramework framework)
     {
-        if (!AddonHelper.TryGetReadyAddonWrapper("SelectOk", out AtkUnitBasePtr addon))
+        if (!AddonHelper.TryGetReadyAddonWrapper("SelectOk", out var addon))
             return;
 
         if (!addon.TryGetTextNode(out var textNode, 1, 2))
             return;
 
-        var seStringAddon = NormalizeText(SeStringHelper.Utf8StringPtrToPlainText(&textNode->NodeText));
-        var stringLobby = NormalizeText(lobbyAddonText.Text.ExtractText());
+        var seStringAddon = SeStringHelper.Utf8StringPtrToPlainText(&textNode->NodeText).RemoveNewlines();
+        var stringLobby = lobbyAddonText.Text.ExtractText().RemoveNewlines();
 
         if (seStringAddon == stringLobby)
         {
@@ -73,13 +72,5 @@ public class AknowledgeCharacterNotFoundOnDC : TweakBase
                 addon.SendCallback(true, 0);
             });
         }
-    }
-
-    private static string NormalizeText(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return string.Empty;
-
-        return text.ReplaceLineEndings(string.Empty);
     }
 }

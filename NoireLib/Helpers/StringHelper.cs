@@ -217,4 +217,53 @@ public static class StringHelper
 
         return stringBuilder.ToString().Normalize(NormalizationForm.FormC);
     }
+
+    /// <summary>
+    /// Removes all newline characters from a string.
+    /// </summary>
+    /// <param name="value">The string to process.</param>
+    /// <returns>The string with all newline characters removed.</returns>
+    public static string RemoveNewlines(this string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+        return value.ReplaceLineEndings(string.Empty);
+    }
+
+    /// <summary>
+    /// Determines whether the content of two strings is equal, optionally ignoring case differences.<br/>
+    /// The strings are stripped off of all whitespace characters before the comparison, so only the actual content of the strings is compared.
+    /// </summary>
+    /// <param name="value1">The first string to compare.</param>
+    /// <param name="value2">The second string to compare.</param>
+    /// <param name="ignoreCase">true to ignore case during the comparison; otherwise, false.</param>
+    /// <returns>true if the content of both strings is equal according to the specified case sensitivity; otherwise, false.</returns>
+    public static bool EqualsContentOnly(this string value1, string value2, bool ignoreCase = false)
+    {
+        var comparison = ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+
+        var content1 = GetContentOnly(value1);
+        var content2 = GetContentOnly(value2);
+
+        return string.Equals(content1, content2, comparison);
+    }
+
+    /// <summary>
+    /// Returns a new string containing only the non-whitespace characters from the input string.
+    /// </summary>
+    /// <param name="value">The string from which to remove all whitespace characters.</param>
+    /// <returns>A string consisting of the non-whitespace characters from the input string.<br/>
+    /// If the input is null or empty, the original value is returned.</returns>
+    public static string GetContentOnly(this string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+        var sb = new StringBuilder();
+        foreach (char c in value)
+        {
+            if (!char.IsWhiteSpace(c))
+                sb.Append(c);
+        }
+        return sb.ToString();
+    }
 }

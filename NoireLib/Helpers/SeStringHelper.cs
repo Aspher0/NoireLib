@@ -17,6 +17,7 @@ public static class SeStringHelper
 {
     /// <summary>
     /// Resolves the sender of a message represented by a SeString into a PlayerModel.<br/>
+    /// Run this on framework thread.
     /// </summary>
     /// <param name="sender">The SeString representing the sender of the message.</param>
     /// <returns>A <see cref="PlayerModel"/> if the sender could be resolved; otherwise, null.</returns>
@@ -72,6 +73,11 @@ public static class SeStringHelper
         var seString = SeString.Parse(ut8Span);
         return SeStringToPlainText(seString);
     }
+
+    /// <inheritdoc cref="Utf8StringPtrToPlainText(Utf8String*)"/>
+    /// <param name="utf8String">A UTF-8 encoded string structure to convert.</param>
+    public static unsafe string Utf8StringToPlainText(Utf8String utf8String)
+        => Utf8StringPtrToPlainText(&utf8String);
 
     /// <summary>
     /// Gets the plain text representation of a <see cref="SeString"/> by concatenating the text from all TextPayloads and evaluating any AutoTranslatePayloads using the client's current language settings.
