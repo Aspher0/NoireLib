@@ -10,9 +10,9 @@
       },
       "FluentAssertions": {
         "type": "Direct",
-        "requested": "[8.8.0, )",
-        "resolved": "8.8.0",
-        "contentHash": "m0kwcqBwvVel03FuMa7Ozo/oTaxYbjeNlcOhQFkyQpwX/8wks6RNl/Jnn58DCZVs6c2oG1RsCZw7HfKSaxLm3w=="
+        "requested": "[8.9.0, )",
+        "resolved": "8.9.0",
+        "contentHash": "Y5RDjxaVlxWX2yy0X/ay1tJjSKMOtjepSb83mmfngFS63hm3LsoZNj6nhmImzm1ifRmpF9ouvmHjx9nNwnkpDg=="
       },
       "Microsoft.NET.Test.Sdk": {
         "type": "Direct",
@@ -118,8 +118,8 @@
       },
       "System.Data.SQLite": {
         "type": "Transitive",
-        "resolved": "2.0.2",
-        "contentHash": "yAwxkraZf1PazyLg1sqMAlh4KEtaa2L8zieLicd9oWBybrb3SoPph+WVIyUTFWwtTVhNX/jNsDew6tbB8bw2xQ=="
+        "resolved": "2.0.3",
+        "contentHash": "5I9dVqmHp1v0dhco21btIRkUE47zHSy4t6bRLwIO6nGZ1mxGIL1f1yp1zWI/AAZFfdUz7n6RrH1hyi/6EhlIeQ=="
       },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
@@ -198,7 +198,7 @@
         "dependencies": {
           "Castle.Core": "[5.2.1, )",
           "Newtonsoft.Json": "[13.0.4, )",
-          "System.Data.SQLite": "[2.0.2, )"
+          "System.Data.SQLite": "[2.0.3, )"
         }
       }
     }

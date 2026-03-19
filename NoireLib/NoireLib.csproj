@@ -25,8 +25,8 @@
       <DebugType>none</DebugType>
     </PropertyGroup>
     <ItemGroup>
-      <Compile Remove="Database\PHPExample\**" />
-      <EmbeddedResource Remove="Database\PHPExample\**" />
+      <Compile Remove="Draw3D\**" />
+      <EmbeddedResource Remove="Draw3D\**" />
     </ItemGroup>
 
     <ItemGroup>
@@ -64,7 +64,8 @@
     <ItemGroup>
         <PackageReference Include="Castle.Core" Version="5.2.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
-        <PackageReference Include="System.Data.SQLite" Version="2.0.2" />
+        <PackageReference Include="System.Data.SQLite" Version="2.0.3" />
+        <!--<PackageReference Include="TerraFX.Interop.Windows" Version="10.0.26100.6" />-->
     </ItemGroup>
 
     <ItemGroup>

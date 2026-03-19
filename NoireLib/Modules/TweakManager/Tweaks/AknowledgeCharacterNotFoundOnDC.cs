@@ -37,7 +37,6 @@ public class AknowledgeCharacterNotFoundOnDC : TweakBase
     public AknowledgeCharacterNotFoundOnDC()
     {
         frameworkUpdateWrapper = new(NoireService.Framework, nameof(IFramework.Update), ListenFrameworkUpdate);
-        NoireLogger.LogDebug($"Tweak {InternalKey} initialized.");
         lobbyAddonText = ExcelSheetHelper.GetRow<Lobby>(1237)!.Value; // The character you last logged out with in this play environment...
     }
 
