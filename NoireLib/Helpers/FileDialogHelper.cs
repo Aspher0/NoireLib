@@ -17,7 +17,7 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class FileDialogHelper
 {
-    private const string LoggerPrefix = "[FileDialogHelper] ";
+    private const string LoggerPrefix = $"[{nameof(FileDialogHelper)}] ";
     private static readonly SemaphoreSlim DialogLock = new(1, 1);
     private static readonly object SavedPathSync = new();
     private static readonly WindowsDialogDispatcher WindowsDialogs = new();

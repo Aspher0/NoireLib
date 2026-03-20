@@ -34,11 +34,6 @@ public interface IHookWrapper : IDisposable
     bool IsDisposed { get; }
 
     /// <summary>
-    /// Gets the registered detour callback keys.
-    /// </summary>
-    IReadOnlyCollection<string> CallbackKeys { get; }
-
-    /// <summary>
     /// Gets the registered state callback keys.
     /// </summary>
     IReadOnlyCollection<string> StateCallbackKeys { get; }

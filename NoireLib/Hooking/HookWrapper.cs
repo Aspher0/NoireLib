@@ -15,7 +15,6 @@ using HookBackend = IGameInteropProvider.HookBackend;
 public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
     where TDelegate : Delegate
 {
-    private readonly Dictionary<string, TDelegate> callbacks = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Action<IHookWrapper, HookCallbackKind>> stateCallbacks = new(StringComparer.Ordinal);
     private readonly string disposeRegistrationKey;
     private readonly Hook<TDelegate> hook;
@@ -131,18 +130,6 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
     public string BackendName => hook.BackendName;
 
     /// <summary>
-    /// Gets the registered detour callback keys.
-    /// </summary>
-    public IReadOnlyCollection<string> CallbackKeys
-    {
-        get
-        {
-            lock (callbacks)
-                return callbacks.Keys.ToArray();
-        }
-    }
-
-    /// <summary>
     /// Gets the registered state callback keys.
     /// </summary>
     public IReadOnlyCollection<string> StateCallbackKeys
@@ -206,81 +193,6 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
     }
 
     /// <summary>
-    /// Registers or replaces a keyed detour callback.
-    /// </summary>
-    /// <param name="key">The unique key associated with the callback.</param>
-    /// <param name="callback">The detour callback to register.</param>
-    public void AddCallback(string key, TDelegate callback)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-        ArgumentNullException.ThrowIfNull(callback);
-
-        lock (callbacks)
-            callbacks[key] = callback;
-    }
-
-    /// <summary>
-    /// Determines whether a detour callback has been registered with the specified key.
-    /// </summary>
-    /// <param name="key">The detour callback key to look up.</param>
-    /// <returns>True if a detour callback exists for the key; otherwise, false.</returns>
-    public bool ContainsCallback(string key)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-        lock (callbacks)
-            return callbacks.ContainsKey(key);
-    }
-
-    /// <summary>
-    /// Removes the detour callback associated with the specified key.
-    /// </summary>
-    /// <param name="key">The detour callback key to remove.</param>
-    /// <returns>True if a detour callback was removed; otherwise, false.</returns>
-    public bool RemoveCallback(string key)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(key);
-
-        lock (callbacks)
-            return callbacks.Remove(key);
-    }
-
-    /// <summary>
-    /// Removes all registered detour callbacks.
-    /// </summary>
-    public void ClearCallbacks()
-    {
-        lock (callbacks)
-            callbacks.Clear();
-    }
-
-    /// <summary>
-    /// Invokes all registered detour callbacks using the provided invoker.
-    /// </summary>
-    /// <param name="invoker">The action used to invoke each registered callback.</param>
-    public void InvokeCallbacks(Action<TDelegate> invoker)
-    {
-        ArgumentNullException.ThrowIfNull(invoker);
-
-        TDelegate[] callbacksSnapshot;
-
-        lock (callbacks)
-            callbacksSnapshot = callbacks.Values.ToArray();
-
-        foreach (var callback in callbacksSnapshot)
-        {
-            try
-            {
-                invoker(callback);
-            }
-            catch (Exception ex)
-            {
-                NoireLogger.LogError<HookWrapper<TDelegate>>(ex, $"A detour callback failed for hook '{Name}'.");
-            }
-        }
-    }
-
-    /// <summary>
     /// Registers or replaces a keyed callback that is invoked when the hook state changes.
     /// </summary>
     /// <param name="key">The unique key associated with the callback.</param>
@@ -339,7 +251,6 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
 
         hook.Dispose();
         InvokeStateCallbacks(HookCallbackKind.Disposed);
-        ClearCallbacks();
         ClearStateCallbacks();
         GC.SuppressFinalize(this);
 
