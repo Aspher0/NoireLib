@@ -17,7 +17,7 @@ namespace NoireLib.Localizer;
 /// Supports locale fallback, runtime locale switching, fluent translation registration,
 /// JSON import/export, and optional EventBus integration.
 /// </summary>
-public class NoireLocalizer : NoireModuleBase<NoireLocalizer>
+public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigInstance>
 {
     #region Private Properties and Fields
 
@@ -244,7 +244,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer>
 
     /// <summary>
     /// Sets the missing translation format used when <see cref="ReturnKeyWhenMissing"/> is false.<br/>
-    /// Must include <c>{0}</c> for the missing key placeholder.
+    /// Must include {0} for the missing key placeholder.
     /// </summary>
     /// <param name="format">The missing-translation format string.</param>
     /// <returns>The module instance for chaining.</returns>

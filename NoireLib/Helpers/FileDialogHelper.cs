@@ -5,7 +5,6 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Runtime.ExceptionServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -42,7 +41,7 @@ public static class FileDialogHelper
     /// Opens the native folder picker and returns the selected folders.
     /// </summary>
     /// <param name="title">The dialog title.</param>
-    /// <param name="selectionCountMax">The maximum number of folders to keep from the selection. Use <c>0</c> for no limit.</param>
+    /// <param name="selectionCountMax">The maximum number of folders to keep from the selection. Use 0 for no limit.</param>
     /// <param name="startPath">The initial folder, or <see langword="null"/> to reuse the last successful location.</param>
     /// <param name="allowCreate">Whether the native dialog should allow creating a new folder when the platform supports it.</param>
     /// <param name="cancellationToken">A token used to cancel waiting for the dialog to open.</param>
@@ -72,7 +71,7 @@ public static class FileDialogHelper
     /// </summary>
     /// <param name="title">The dialog title.</param>
     /// <param name="filters">The file filters using a Dalamud-compatible extension format.</param>
-    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use <c>0</c> for no limit.</param>
+    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use 0 for no limit.</param>
     /// <param name="startPath">The initial folder, or <see langword="null"/> to reuse the last successful location.</param>
     /// <param name="cancellationToken">A token used to cancel waiting for the dialog to open.</param>
     /// <returns>A task that resolves to the selected file paths, or an empty collection if the dialog was cancelled.</returns>
@@ -118,7 +117,7 @@ public static class FileDialogHelper
     /// </summary>
     /// <param name="title">The dialog title.</param>
     /// <param name="callback">The callback that receives the dialog result.</param>
-    /// <param name="selectionCountMax">The maximum number of folders to keep from the selection. Use <c>0</c> for no limit.</param>
+    /// <param name="selectionCountMax">The maximum number of folders to keep from the selection. Use 0 for no limit.</param>
     /// <param name="startPath">The initial folder, or <see langword="null"/> to reuse the last successful location.</param>
     /// <param name="allowCreate">Whether the native dialog should allow creating a new folder when the platform supports it.</param>
     /// <param name="cancellationToken">A token used to cancel waiting for the dialog to open.</param>
@@ -150,7 +149,7 @@ public static class FileDialogHelper
     /// <param name="title">The dialog title.</param>
     /// <param name="filters">The file filters using a Dalamud-compatible extension format.</param>
     /// <param name="callback">The callback that receives the dialog result.</param>
-    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use <c>0</c> for no limit.</param>
+    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use 0 for no limit.</param>
     /// <param name="startPath">The initial folder, or <see langword="null"/> to reuse the last successful location.</param>
     /// <param name="cancellationToken">A token used to cancel waiting for the dialog to open.</param>
     /// <returns>A task that completes after the callback has been invoked.</returns>
@@ -220,7 +219,7 @@ public static class FileDialogHelper
     /// <param name="title">The dialog title.</param>
     /// <param name="filters">The file filters using a Dalamud-compatible extension format.</param>
     /// <param name="callback">The callback that receives the dialog result.</param>
-    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use <c>0</c> for no limit.</param>
+    /// <param name="selectionCountMax">The maximum number of files to keep from the selection. Use 0 for no limit.</param>
     /// <param name="startPath">The initial folder, or <see langword="null"/> to reuse the last successful location.</param>
     /// <param name="isModal">Retained for API compatibility. Native dialogs are already modal at the operating system level.</param>
     /// <returns>A task that completes after the callback has been invoked.</returns>

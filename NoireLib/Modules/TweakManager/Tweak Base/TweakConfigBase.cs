@@ -120,7 +120,7 @@ public abstract class TweakConfigBase : NoireConfigBase
     /// Extracts the version number from a JSON string.
     /// </summary>
     /// <param name="json">The JSON string to extract the version from.</param>
-    /// <returns>The version number if found; otherwise, <c>0</c>.</returns>
+    /// <returns>The version number if found; otherwise, 0.</returns>
     internal static int ExtractVersionFromJson(string json)
     {
         try
