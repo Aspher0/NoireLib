@@ -198,6 +198,7 @@ public partial class NoireTaskQueue
                 CompleteTask(wt);
             }
         }
+
         foreach (var wt in waitingTasksToFail)
         {
             if (HandleWaitingTaskFinalization(wt, true))
@@ -511,12 +512,20 @@ public partial class NoireTaskQueue
 
             lock (queueLock)
             {
-                if (task.CompletionCondition?.Type == CompletionConditionType.Immediate)
+                if (task.Status != TaskStatus.Executing)
+                {
+                    // Task status changed during execution (e.g., task.Cancel() called inside the action)
+                }
+                else if (task.CompletionCondition?.Type == CompletionConditionType.Immediate)
                 {
                     if (task.PostCompletionDelayProvider != null)
                         task.PostCompletionDelay = task.PostCompletionDelayProvider(task);
 
-                    if (task.PostCompletionDelay.HasValue)
+                    if (task.Status != TaskStatus.Executing)
+                    {
+                        // Task status changed during PostCompletionDelayProvider evaluation
+                    }
+                    else if (task.PostCompletionDelay.HasValue)
                     {
                         task.PostDelayStartTicks = Environment.TickCount64;
                         task.Status = TaskStatus.WaitingForPostDelay;
@@ -534,16 +543,13 @@ public partial class NoireTaskQueue
                 }
                 else
                 {
-                    if (task.Status == TaskStatus.Executing)
-                    {
-                        task.Status = TaskStatus.WaitingForCompletion;
+                    task.Status = TaskStatus.WaitingForCompletion;
 
-                        if (task.RetryConfiguration != null)
-                            task.ResetStallTracking();
+                    if (task.RetryConfiguration != null)
+                        task.ResetStallTracking();
 
-                        if (EnableLogging)
-                            NoireLogger.LogDebug(this, $"Task waiting for completion: {task}");
-                    }
+                    if (EnableLogging)
+                        NoireLogger.LogDebug(this, $"Task waiting for completion: {task}");
                 }
             }
         }
@@ -579,12 +585,20 @@ public partial class NoireTaskQueue
         {
             bool conditionMet = task.CompletionCondition?.IsMet() == true;
 
+            // Check if task status changed during condition evaluation (e.g., cancelled from predicate)
+            if (task.Status != TaskStatus.WaitingForCompletion)
+                return false;
+
             if (conditionMet)
             {
                 if (!task.PostDelayStartTicks.HasValue)
                 {
                     if (task.PostCompletionDelayProvider != null)
                         task.PostCompletionDelay = task.PostCompletionDelayProvider(task);
+
+                    // Check if task status changed during delay provider evaluation
+                    if (task.Status != TaskStatus.WaitingForCompletion)
+                        return false;
 
                     if (task.PostCompletionDelay.HasValue)
                     {
@@ -629,6 +643,10 @@ public partial class NoireTaskQueue
                         if (EnableLogging)
                             NoireLogger.LogError(this, ex, "OnMaxRetriesExceeded callback threw an exception.");
                     }
+
+                    // Check if task status changed during OnMaxRetriesExceeded callback
+                    if (task.Status != TaskStatus.WaitingForCompletion)
+                        return false;
 
                     shouldFail = true;
                 }
@@ -717,6 +735,10 @@ public partial class NoireTaskQueue
                 NoireLogger.LogError(this, ex, "OnBeforeRetry callback threw an exception.");
         }
 
+        // Check if task status changed during OnBeforeRetry callback
+        if (task.Status is TaskStatus.Cancelled or TaskStatus.Failed or TaskStatus.Completed or TaskStatus.WaitingForPostDelay)
+            return true;
+
         task.ResetStallTracking();
 
         if (task.RetryConfiguration.RetryDelay.HasValue)
@@ -756,6 +778,14 @@ public partial class NoireTaskQueue
             else if (task.ExecuteAction != null)
             {
                 task.ExecuteAction();
+            }
+
+            // Check if task status changed during retry action (e.g., cancelled/failed)
+            if (task.Status is TaskStatus.Cancelled or TaskStatus.Failed or TaskStatus.Completed or TaskStatus.WaitingForPostDelay)
+            {
+                if (EnableLogging)
+                    NoireLogger.LogDebug(this, $"Task status changed during retry action: {task}");
+                return true;
             }
 
             if (task.CompletionCondition?.Type == CompletionConditionType.EventBusEvent)
@@ -834,6 +864,10 @@ public partial class NoireTaskQueue
             if (EnableLogging)
                 NoireLogger.LogError(this, ex, "OnFailed callback threw an exception.");
         }
+
+        // Check if task status changed during OnFailed callback (e.g., cancelled by callback)
+        if (task.Status is TaskStatus.Cancelled or TaskStatus.Failed or TaskStatus.Completed or TaskStatus.WaitingForPostDelay)
+            return;
 
         PublishEvent(new TaskFailedEvent(task, exception));
 
@@ -1096,6 +1130,10 @@ public partial class NoireTaskQueue
             if (batch.PostCompletionDelayProvider != null)
                 batch.PostCompletionDelay = batch.PostCompletionDelayProvider(batch);
 
+            // Check if batch status changed during delay provider evaluation
+            if (batch.Status is BatchStatus.Cancelled or BatchStatus.Failed or BatchStatus.Completed or BatchStatus.WaitingForPostDelay)
+                return;
+
             if (batch.PostCompletionDelay.HasValue)
             {
                 batch.PostDelayStartTicks = Environment.TickCount64;
@@ -1148,12 +1186,20 @@ public partial class NoireTaskQueue
                 NoireLogger.LogError(this, ex, "Batch OnFailed callback threw an exception.");
         }
 
+        // Check if batch status changed during OnFailed callback
+        if (batch.Status is BatchStatus.Cancelled or BatchStatus.Failed or BatchStatus.Completed or BatchStatus.WaitingForPostDelay)
+            return;
+
         PublishEvent(new BatchFailedEvent(batch, exception));
 
         if (batch.ApplyPostDelayOnFailure && !batch.PostDelayStartTicks.HasValue)
         {
             if (batch.PostCompletionDelayProvider != null)
                 batch.PostCompletionDelay = batch.PostCompletionDelayProvider(batch);
+
+            // Check if batch status changed during delay provider evaluation
+            if (batch.Status is BatchStatus.Cancelled or BatchStatus.Failed or BatchStatus.Completed or BatchStatus.WaitingForPostDelay)
+                return;
 
             if (batch.PostCompletionDelay.HasValue)
             {

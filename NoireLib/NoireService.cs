@@ -33,7 +33,7 @@ public class NoireService
     /// <summary>
     /// Should not be called directly. Use <see cref="NoireLibMain.Initialize"/> instead.
     /// </summary>
-    public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
+    internal static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
         if (IsInitialized())
         {
@@ -70,7 +70,7 @@ public class NoireService
     /// <summary>
     /// Do not call this method directly. Use <see cref="NoireLibMain.Dispose"/> instead.
     /// </summary>
-    public static void Dispose()
+    internal static void Dispose()
     {
         if (NoireWindowSystem != null)
         {

@@ -1455,12 +1455,20 @@ public partial class NoireTaskQueue
                 NoireLogger.LogError(this, ex, "OnCancelled callback threw an exception.");
         }
 
+        // Check if task status changed during OnCancelled callback
+        if (task.Status is TaskStatus.Cancelled or TaskStatus.Failed or TaskStatus.Completed or TaskStatus.WaitingForPostDelay)
+            return true;
+
         PublishEvent(new TaskCancelledEvent(task));
 
         if (task.ApplyPostDelayOnCancellation && !task.PostDelayStartTicks.HasValue)
         {
             if (task.PostCompletionDelayProvider != null)
                 task.PostCompletionDelay = task.PostCompletionDelayProvider(task);
+
+            // Check if task status changed during delay provider evaluation
+            if (task.Status is TaskStatus.Cancelled or TaskStatus.Failed or TaskStatus.Completed or TaskStatus.WaitingForPostDelay)
+                return true;
 
             if (task.PostCompletionDelay.HasValue)
             {
@@ -1547,12 +1555,20 @@ public partial class NoireTaskQueue
                 NoireLogger.LogError(this, ex, "Batch OnCancelled callback threw an exception.");
         }
 
+        // Check if batch status changed during OnCancelled callback
+        if (batch.Status is BatchStatus.Cancelled or BatchStatus.Failed or BatchStatus.Completed or BatchStatus.WaitingForPostDelay)
+            return true;
+
         PublishEvent(new BatchCancelledEvent(batch));
 
         if (batch.ApplyPostDelayOnCancellation && !batch.PostDelayStartTicks.HasValue)
         {
             if (batch.PostCompletionDelayProvider != null)
                 batch.PostCompletionDelay = batch.PostCompletionDelayProvider(batch);
+
+            // Check if batch status changed during delay provider evaluation
+            if (batch.Status is BatchStatus.Cancelled or BatchStatus.Failed or BatchStatus.Completed or BatchStatus.WaitingForPostDelay)
+                return true;
 
             if (batch.PostCompletionDelay.HasValue)
             {
