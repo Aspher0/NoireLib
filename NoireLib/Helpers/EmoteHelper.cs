@@ -11,7 +11,7 @@ namespace NoireLib.Helpers;
 public static class EmoteHelper
 {
     /// <summary>
-    /// Retrieves an Emote by its command, searching through all client languages.
+    /// Retrieves an Emote by its command, searching through all client languages or just the specified <paramref name="clientLanguage"/> parameter.
     /// </summary>
     /// <param name="command">The emote command, in any supported game client language. With or without the "/".</param>
     /// <param name="clientLanguage">The client language to search in. If null, searches all languages.</param>

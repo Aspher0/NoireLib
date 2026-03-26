@@ -55,14 +55,39 @@ public static class ExcelSheetHelper
     /// <param name="rowId">The unique identifier of the row to retrieve.</param>
     /// <param name="lang">An optional client language to use when retrieving the row. If not specified, the default language is used.</param>
     /// <returns>An instance of type <typeparamref name="T"/> representing the requested row if found; otherwise, null.</returns>
-    public static T? GetRow<T>(uint rowId, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
+    public static T GetRow<T>(uint rowId, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
     {
         var sheet = GetSheet<T>(lang);
 
         if (sheet?.TryGetRow(rowId, out var row) ?? false)
             return row;
 
-        return null;
+        throw new IndexOutOfRangeException($"Row with ID {rowId} not found in sheet of type {typeof(T).Name} for language {lang ?? NoireService.ClientState.ClientLanguage}");
+    }
+
+    /// <summary>
+    /// Tries to retrieve a row of data from the specified Excel sheet by its unique identifier, returning a boolean indicating success or failure.
+    /// </summary>
+    /// <typeparam name="T">The type of the Excel row.</typeparam>
+    /// <param name="rowId">The unique identifier of the row to retrieve.</param>
+    /// <param name="row">When this method returns, contains the retrieved row if found; otherwise, null.</param>
+    /// <param name="lang">An optional client language to use when retrieving the row. If not specified, the default language is used.</param>
+    /// <returns>True if the row was found; otherwise, false.</returns>
+    public static bool TryGetRow<T>(uint rowId, out T? row, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
+    {
+        row = null;
+
+        var sheet = GetSheet<T>(lang);
+        if (sheet == null)
+            return false;
+
+        if (sheet.TryGetRow(rowId, out var tempRow))
+        {
+            row = tempRow;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

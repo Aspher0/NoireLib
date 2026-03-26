@@ -2,10 +2,10 @@ using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Utility;
 using NoireLib.Core.Modules;
-using NoireLib.Helpers;
 using NoireLib.Internal.Payloads;
-using NoireLib.Models;
 using System;
+using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 
 namespace NoireLib;
@@ -276,84 +276,163 @@ public static class NoireLogger
     #region PrintToChat
 
     /// <summary>
-    /// Prints a message to the in-game chat with optional RGB color formatting.
+    /// A builder for composing chat messages with per-segment colors.
     /// </summary>
-    /// <param name="chatType">The type of chat message.</param>
-    /// <param name="message">The message to display.</param>
-    /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <param name="sender">The sender of the message (optional).</param>
-    /// <param name="foregroundColor">The foreground RGB color of the message (Vector3 with values 0-1, optional).</param>
-    /// <param name="glowColor">The glow RGB color of the message (Vector3 with values 0-1, optional).</param>
-    private static void PrintToChatInternal(XivChatType chatType, string message, string? prefix = null, PlayerModel? sender = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    public sealed class ChatMessageBuilder
     {
-        var entry = new XivChatEntry
+        private readonly List<ChatMessageSegment> segments = [];
+
+        /// <summary>
+        /// Adds plain text to the chat message.
+        /// </summary>
+        /// <param name="text">The text to add.</param>
+        /// <returns>The current chat message builder.</returns>
+        public ChatMessageBuilder AddText(string text)
         {
-            Type = chatType,
-        };
-
-        if (sender != null)
-        {
-            var builderName = new SeStringBuilder();
-
-            if (foregroundColor.HasValue)
-                builderName.Add(new ColorPayload(foregroundColor.Value).AsRaw());
-
-            if (glowColor.HasValue)
-                builderName.Add(new GlowPayload(glowColor.Value).AsRaw());
-
-            // DO NOT add a player payload if the sender is the local player
-            // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world ID
-            builderName.AddText(sender.FullName);
-
-            if (glowColor.HasValue)
-                builderName.Add(new GlowEndPayload().AsRaw());
-
-            if (foregroundColor.HasValue)
-                builderName.Add(new ColorEndPayload().AsRaw());
-
-            entry.Name = builderName.Build();
+            AddChatMessageSegment(segments, text, default);
+            return this;
         }
 
-        var builderText = new SeStringBuilder();
+        /// <summary>
+        /// Adds colored text to the chat message using RGB colors.
+        /// </summary>
+        /// <param name="text">The text to add.</param>
+        /// <param name="foregroundColor">The foreground RGB color to apply.</param>
+        /// <param name="glowColor">The optional glow RGB color to apply.</param>
+        /// <returns>The current chat message builder.</returns>
+        public ChatMessageBuilder AddText(string text, Vector3 foregroundColor, Vector3? glowColor = null)
+        {
+            AddChatMessageSegment(segments, text, new ChatStyle(foregroundColor, glowColor));
+            return this;
+        }
 
-        prefix = GetPrefix(prefix);
-        var fullMessage = $"{prefix}{message}";
+        /// <summary>
+        /// Adds tagged text to the chat message.
+        /// </summary>
+        /// <param name="taggedText">The tagged text to add.</param>
+        /// <returns>The current chat message builder.</returns>
+        /// <remarks>
+        /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+        /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+        /// </remarks>
+        public ChatMessageBuilder AddTaggedText(string taggedText)
+        {
+            AppendTaggedTextSegments(segments, taggedText);
+            return this;
+        }
 
-        if (foregroundColor.HasValue)
-            builderText.Add(new ColorPayload(foregroundColor.Value).AsRaw());
+        internal SeString Build(string? leadingText = null)
+        {
+            var builder = new SeStringBuilder();
 
-        if (glowColor.HasValue)
-            builderText.Add(new GlowPayload(glowColor.Value).AsRaw());
+            if (!string.IsNullOrEmpty(leadingText))
+                builder.AddText(leadingText);
 
-        builderText.AddText(fullMessage);
+            foreach (var segment in segments)
+                AppendStyledText(builder, segment.Text, segment.ForegroundColor, segment.GlowColor);
 
-        if (glowColor.HasValue)
-            builderText.Add(new GlowEndPayload().AsRaw());
-
-        if (foregroundColor.HasValue)
-            builderText.Add(new ColorEndPayload().AsRaw());
-
-        entry.Message = builderText.Build();
-
-        NoireService.ChatGui.Print(entry);
+            return builder.Build();
+        }
     }
 
-    /// <inheritdoc cref="PrintToChatInternal"/>
-    [Obsolete("Will get replaced later, use PrintToChat() instead.")]
-    public static void PrintToChatAdvanced(XivChatType chatType, string message, string? prefix = null, PlayerModel? sender = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
-    {
-        PrintToChatInternal(chatType, message, prefix, sender, foregroundColor, glowColor);
-    }
+    /// <summary>
+    /// Creates a new chat message builder for composing styled messages.
+    /// </summary>
+    /// <returns>A new chat message builder.</returns>
+    public static ChatMessageBuilder CreateChatMessageBuilder()
+        => new();
+
+    /// <summary>
+    /// Parses tagged chat text into a chat message builder.
+    /// </summary>
+    /// <param name="taggedMessage">The tagged message to parse.</param>
+    /// <returns>A chat message builder containing the parsed message segments.</returns>
+    /// <remarks>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+    /// </remarks>
+    public static ChatMessageBuilder ParseTaggedChatMessage(string taggedMessage)
+        => new ChatMessageBuilder().AddTaggedText(taggedMessage);
+
+    /// <summary>
+    /// Prints a built chat message to the in-game chat as an echo message.
+    /// </summary>
+    /// <param name="messageBuilder">The message builder containing the message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat(ChatMessageBuilder messageBuilder, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChat(XivChatType.Echo, messageBuilder, prefix, senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a built chat message to the in-game chat with the caller instance prefix as an echo message.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="messageBuilder">The message builder containing the message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat<T>(T instance, ChatMessageBuilder messageBuilder, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChat(instance, XivChatType.Echo, messageBuilder, prefix, senderName, senderForegroundColor, senderGlowColor);
 
     /// <summary>
     /// Prints a message to the in-game chat as an echo message.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void PrintToChat(string message, string? prefix = null)
-    {
-        PrintToChatInternal(XivChatType.Echo, message, prefix);
-    }
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat(string message, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChatInternal(XivChatType.Echo, message, prefix, senderName, null, null, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a message to the in-game chat as an echo message with the caller instance prefix.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat<T>(T instance, string message, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChat(instance, XivChatType.Echo, message, prefix, senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a tagged message to the in-game chat as an echo message.
+    /// </summary>
+    /// <remarks>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+    /// </remarks>
+    /// <param name="taggedMessage">The tagged message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChatTagged(string taggedMessage, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChat(ParseTaggedChatMessage(taggedMessage), prefix, senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a tagged message to the in-game chat as an echo message with the caller instance prefix.
+    /// </summary>
+    /// <remarks>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+    /// </remarks>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="taggedMessage">The tagged message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChatTagged<T>(T instance, string taggedMessage, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChat(instance, ParseTaggedChatMessage(taggedMessage), prefix, senderName, senderForegroundColor, senderGlowColor);
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type.
@@ -361,45 +440,166 @@ public static class NoireLogger
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void PrintToChat(XivChatType chatType, string message, string? prefix = null)
-    {
-        PrintToChatInternal(chatType, message, prefix);
-    }
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat(XivChatType chatType, string message, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChatInternal(chatType, message, prefix, senderName, null, null, senderForegroundColor, senderGlowColor);
 
     /// <summary>
-    /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.<br/>
-    /// For using Vector4 colors, use <see cref="PrintToChat(XivChatType, string, Vector4, Vector4?, string?)"/>.
+    /// Prints a message to the in-game chat with specified chat type and the caller instance prefix.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat<T>(T instance, XivChatType chatType, string message, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChatInternal(chatType, GetLogStringWithCaller(instance, message, prefix), null, senderName, null, null, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a built chat message to the in-game chat with specified chat type.
+    /// </summary>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="messageBuilder">The message builder containing the message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat(XivChatType chatType, ChatMessageBuilder messageBuilder, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChatInternal(chatType, messageBuilder.Build(GetPrefix(prefix)), senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a built chat message to the in-game chat with specified chat type and the caller instance prefix.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="messageBuilder">The message builder containing the message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat<T>(T instance, XivChatType chatType, ChatMessageBuilder messageBuilder, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChatInternal(chatType, messageBuilder.Build(GetChatLeadingText(instance, prefix)), senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a tagged message to the in-game chat with specified chat type.
+    /// </summary>
+    /// <remarks>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+    /// </remarks>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="taggedMessage">The tagged message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChatTagged(XivChatType chatType, string taggedMessage, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChat(chatType, ParseTaggedChatMessage(taggedMessage), prefix, senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a tagged message to the in-game chat with specified chat type and the caller instance prefix.
+    /// </summary>
+    /// <remarks>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
+    /// </remarks>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="taggedMessage">The tagged message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChatTagged<T>(T instance, XivChatType chatType, string taggedMessage, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChat(instance, chatType, ParseTaggedChatMessage(taggedMessage), prefix, senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
     /// <param name="foregroundColor">The foreground RGB color of the message.</param>
     /// <param name="glowColor">The glow RGB color of the message.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    public static void PrintToChat(XivChatType chatType, string message, Vector3 foregroundColor, Vector3? glowColor = null, string? prefix = null)
-    {
-        PrintToChatInternal(chatType, message, prefix, null, foregroundColor, glowColor);
-    }
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat(XivChatType chatType, string message, Vector3 foregroundColor, Vector3? glowColor = null, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChatInternal(chatType, message, prefix, senderName, foregroundColor, glowColor, senderForegroundColor, senderGlowColor);
 
     /// <summary>
-    /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector4 values.<br/>
-    /// This method simply drops the Alpha channel from the Vector4 colors.<br/>
-    /// The result will be the same as with <see cref="PrintToChat(XivChatType, string, Vector3, Vector3?, string?)"/>.
+    /// Prints a message to the in-game chat with specified chat type, caller instance prefix, and RGB color formatting.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="foregroundColor">The foreground RGB color of the message.</param>
+    /// <param name="glowColor">The glow RGB color of the message.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    public static void PrintToChat<T>(T instance, XivChatType chatType, string message, Vector3 foregroundColor, Vector3? glowColor = null, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
+        => PrintToChatInternal(chatType, GetLogStringWithCaller(instance, message, prefix), null, senderName, foregroundColor, glowColor, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a message to the in-game chat with optional colors for both the message and sender name.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
-    /// <param name="foregroundColor">The foreground RGBA color of the message.</param>
-    /// <param name="glowColor"></param>
-    /// <param name="prefix"></param>
-    public static void PrintToChat(XivChatType chatType, string message, Vector4 foregroundColor, Vector4? glowColor = null, string? prefix = null)
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="messageForegroundColor">The optional foreground RGB color of the message.</param>
+    /// <param name="messageGlowColor">The optional glow RGB color of the message.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
+    private static void PrintToChatInternal(XivChatType chatType, string message, string? prefix = null, string? senderName = null, Vector3? messageForegroundColor = null, Vector3? messageGlowColor = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
+        => PrintToChatInternal(chatType, BuildChatMessage(message, prefix, messageForegroundColor, messageGlowColor), senderName, senderForegroundColor, senderGlowColor);
+
+    /// <summary>
+    /// Prints a message to the in-game chat.
+    /// </summary>
+    /// <param name="chatType">The type of chat message.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
+    /// <param name="senderForegroundColor">The optional foreground RGB color for the sender name.</param>
+    /// <param name="senderGlowColor">The optional glow RGB color for the sender name.</param>
+    private static void PrintToChatInternal(XivChatType chatType, SeString message, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
     {
-        Vector3 foregroundColorVector3 = ColorHelper.Vector4ToVector3(foregroundColor);
-        Vector3? glowColorVector3 = glowColor.HasValue ? ColorHelper.Vector4ToVector3(glowColor.Value) : null;
-        PrintToChatInternal(chatType, message, prefix, null, foregroundColorVector3, glowColorVector3);
+        if (message.Payloads.Count == 0)
+            message = BuildChatMessage(" ");
+
+        var entry = new XivChatEntry
+        {
+            Type = chatType,
+            Message = message,
+        };
+
+        if (!senderName.IsNullOrWhitespace())
+            entry.Name = BuildSenderName(senderName!, senderForegroundColor, senderGlowColor);
+
+        NoireService.ChatGui.Print(entry);
     }
 
     #endregion
 
     #region Helper Methods
+
+    private readonly record struct ChatMessageSegment(string Text, Vector3? ForegroundColor, Vector3? GlowColor);
+
+    private readonly record struct ChatStyle(Vector3? ForegroundColor, Vector3? GlowColor);
+
+    private readonly record struct ChatStyleFrame(string TagName, ChatStyle PreviousStyle);
+
+    private readonly record struct ChatTag(string Name, bool IsClosing, Vector3? ForegroundColor, Vector3? GlowColor);
 
     /// <summary>
     /// Enum representing the different log levels.
@@ -537,6 +737,306 @@ public static class NoireLogger
     {
         prefix = GetPrefix(prefix);
         return $"{prefix}{message}";
+    }
+
+    /// <summary>
+    /// Gets the leading text to prepend to chat messages for a caller instance.
+    /// </summary>
+    /// <typeparam name="T">The caller type.</typeparam>
+    /// <param name="instance">The caller instance.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <returns>The formatted leading text to use in chat messages.</returns>
+    private static string GetChatLeadingText<T>(T instance, string? prefix = null) where T : class
+        => GetLogStringWithCaller(instance, string.Empty, prefix);
+
+    /// <summary>
+    /// Builds a styled chat message from plain text.
+    /// </summary>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <param name="foregroundColor">The optional foreground RGB color of the message.</param>
+    /// <param name="glowColor">The optional glow RGB color of the message.</param>
+    /// <returns>The built chat message.</returns>
+    private static SeString BuildChatMessage(string message, string? prefix = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    {
+        var builder = new SeStringBuilder();
+        AppendStyledText(builder, GetLogString(message, prefix), foregroundColor, glowColor);
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Builds the sender name string for a chat entry.
+    /// </summary>
+    /// <param name="senderName">The sender name of the message.</param>
+    /// <param name="foregroundColor">The optional foreground RGB color of the sender name.</param>
+    /// <param name="glowColor">The optional glow RGB color of the sender name.</param>
+    /// <returns>The built sender name string.</returns>
+    private static SeString BuildSenderName(string senderName, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    {
+        var builder = new SeStringBuilder();
+
+        // DO NOT add a player payload if the sender is the local player
+        // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world ID
+        AppendStyledText(builder, senderName, foregroundColor, glowColor);
+
+        return builder.Build();
+    }
+
+    /// <summary>
+    /// Appends styled text to a chat string builder.
+    /// </summary>
+    /// <param name="builder">The chat string builder.</param>
+    /// <param name="text">The text to append.</param>
+    /// <param name="foregroundColor">The optional foreground RGB color of the text.</param>
+    /// <param name="glowColor">The optional glow RGB color of the text.</param>
+    private static void AppendStyledText(SeStringBuilder builder, string text, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        if (foregroundColor.HasValue)
+            builder.Add(new ColorPayload(foregroundColor.Value).AsRaw());
+
+        if (glowColor.HasValue)
+            builder.Add(new GlowPayload(glowColor.Value).AsRaw());
+
+        builder.AddText(text);
+
+        if (glowColor.HasValue)
+            builder.Add(new GlowEndPayload().AsRaw());
+
+        if (foregroundColor.HasValue)
+            builder.Add(new ColorEndPayload().AsRaw());
+    }
+
+    /// <summary>
+    /// Adds a chat message segment to the segment collection.
+    /// </summary>
+    /// <param name="segments">The target segment collection.</param>
+    /// <param name="text">The text to add.</param>
+    /// <param name="style">The style to apply to the text.</param>
+    private static void AddChatMessageSegment(List<ChatMessageSegment> segments, string text, ChatStyle style)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        segments.Add(new ChatMessageSegment(text, style.ForegroundColor, style.GlowColor));
+    }
+
+    /// <summary>
+    /// Appends tagged text as styled segments.
+    /// </summary>
+    /// <param name="segments">The target segment collection.</param>
+    /// <param name="taggedText">The tagged text to parse.</param>
+    private static void AppendTaggedTextSegments(List<ChatMessageSegment> segments, string taggedText)
+    {
+        if (string.IsNullOrEmpty(taggedText))
+            return;
+
+        var styleStack = new Stack<ChatStyleFrame>();
+        var currentStyle = default(ChatStyle);
+        var textStartIndex = 0;
+        var index = 0;
+
+        while (index < taggedText.Length)
+        {
+            if (taggedText[index] != '<')
+            {
+                index++;
+                continue;
+            }
+
+            var tagEndIndex = taggedText.IndexOf('>', index);
+            if (tagEndIndex < 0)
+                break;
+
+            var rawTag = taggedText[(index + 1)..tagEndIndex];
+            if (!TryParseChatTag(rawTag, out var tag))
+            {
+                index++;
+                continue;
+            }
+
+            AddChatMessageSegment(segments, taggedText[textStartIndex..index], currentStyle);
+
+            if (tag.IsClosing)
+            {
+                if (TryPopChatStyle(styleStack, tag.Name, out var previousStyle))
+                    currentStyle = previousStyle;
+                else
+                    AddChatMessageSegment(segments, taggedText[index..(tagEndIndex + 1)], currentStyle);
+            }
+            else
+            {
+                styleStack.Push(new ChatStyleFrame(tag.Name, currentStyle));
+                currentStyle = ApplyChatStyle(currentStyle, tag);
+            }
+
+            index = tagEndIndex + 1;
+            textStartIndex = index;
+        }
+
+        AddChatMessageSegment(segments, taggedText[textStartIndex..], currentStyle);
+    }
+
+    /// <summary>
+    /// Tries to parse a chat tag.
+    /// </summary>
+    /// <param name="rawTag">The raw tag content without angle brackets.</param>
+    /// <param name="tag">The parsed tag when successful.</param>
+    /// <returns><see langword="true"/> when the tag was parsed successfully; otherwise, <see langword="false"/>.</returns>
+    private static bool TryParseChatTag(string rawTag, out ChatTag tag)
+    {
+        rawTag = rawTag.Trim();
+
+        if (string.IsNullOrEmpty(rawTag))
+        {
+            tag = default;
+            return false;
+        }
+
+        if (rawTag[0] == '/')
+        {
+            var tagName = rawTag[1..].Trim();
+            if (IsSupportedChatTag(tagName))
+            {
+                tag = new ChatTag(tagName, true, null, null);
+                return true;
+            }
+
+            tag = default;
+            return false;
+        }
+
+        const string colorPrefix = "color=";
+        if (rawTag.StartsWith(colorPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryParseHexColor(rawTag[colorPrefix.Length..].Trim(), out var foregroundColor))
+            {
+                tag = new ChatTag("color", false, foregroundColor, null);
+                return true;
+            }
+
+            tag = default;
+            return false;
+        }
+
+        const string glowPrefix = "glow=";
+        if (rawTag.StartsWith(glowPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            if (TryParseHexColor(rawTag[glowPrefix.Length..].Trim(), out var glowColor))
+            {
+                tag = new ChatTag("glow", false, null, glowColor);
+                return true;
+            }
+
+            tag = default;
+            return false;
+        }
+
+        if (rawTag.StartsWith("style", StringComparison.OrdinalIgnoreCase))
+        {
+            var attributes = rawTag.Length > "style".Length ? rawTag["style".Length..].Trim() : string.Empty;
+            Vector3? foregroundColor = TryGetChatTagColorAttribute(attributes, "color", out var parsedForegroundColor) ? parsedForegroundColor : null;
+            Vector3? glowColor = TryGetChatTagColorAttribute(attributes, "glow", out var parsedGlowColor) ? parsedGlowColor : null;
+
+            if (foregroundColor.HasValue || glowColor.HasValue)
+            {
+                tag = new ChatTag("style", false, foregroundColor, glowColor);
+                return true;
+            }
+        }
+
+        tag = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Determines whether a tag name is supported by the chat parser.
+    /// </summary>
+    /// <param name="tagName">The tag name to check.</param>
+    /// <returns><see langword="true"/> when the tag is supported; otherwise, <see langword="false"/>.</returns>
+    private static bool IsSupportedChatTag(string tagName)
+        => tagName.Equals("color", StringComparison.OrdinalIgnoreCase)
+        || tagName.Equals("glow", StringComparison.OrdinalIgnoreCase)
+        || tagName.Equals("style", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Applies a parsed tag to the current chat style.
+    /// </summary>
+    /// <param name="currentStyle">The current chat style.</param>
+    /// <param name="tag">The parsed tag.</param>
+    /// <returns>The resulting chat style.</returns>
+    private static ChatStyle ApplyChatStyle(ChatStyle currentStyle, ChatTag tag)
+        => new(tag.ForegroundColor ?? currentStyle.ForegroundColor, tag.GlowColor ?? currentStyle.GlowColor);
+
+    /// <summary>
+    /// Tries to restore the previous chat style for a closing tag.
+    /// </summary>
+    /// <param name="styleStack">The style stack.</param>
+    /// <param name="tagName">The closing tag name.</param>
+    /// <param name="previousStyle">The restored previous style when successful.</param>
+    /// <returns><see langword="true"/> when a matching style was restored; otherwise, <see langword="false"/>.</returns>
+    private static bool TryPopChatStyle(Stack<ChatStyleFrame> styleStack, string tagName, out ChatStyle previousStyle)
+    {
+        if (styleStack.Count > 0 && styleStack.Peek().TagName.Equals(tagName, StringComparison.OrdinalIgnoreCase))
+        {
+            previousStyle = styleStack.Pop().PreviousStyle;
+            return true;
+        }
+
+        previousStyle = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to read a color attribute from a chat style tag.
+    /// </summary>
+    /// <param name="attributes">The attribute text to parse.</param>
+    /// <param name="attributeName">The attribute name to read.</param>
+    /// <param name="color">The parsed color when successful.</param>
+    /// <returns><see langword="true"/> when the attribute was found and parsed successfully; otherwise, <see langword="false"/>.</returns>
+    private static bool TryGetChatTagColorAttribute(string attributes, string attributeName, out Vector3 color)
+    {
+        var parts = attributes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var attributePrefix = $"{attributeName}=";
+
+        foreach (var part in parts)
+        {
+            if (!part.StartsWith(attributePrefix, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            return TryParseHexColor(part[attributePrefix.Length..].Trim(), out color);
+        }
+
+        color = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Tries to parse a hexadecimal color into an RGB vector.
+    /// </summary>
+    /// <param name="value">The color value to parse.</param>
+    /// <param name="color">The parsed RGB color when successful.</param>
+    /// <returns><see langword="true"/> when the color was parsed successfully; otherwise, <see langword="false"/>.</returns>
+    private static bool TryParseHexColor(string value, out Vector3 color)
+    {
+        value = value.Trim().Trim('"', '\'');
+
+        if (value.StartsWith('#'))
+            value = value[1..];
+
+        if (value.Length == 6
+            && byte.TryParse(value[..2], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var red)
+            && byte.TryParse(value[2..4], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var green)
+            && byte.TryParse(value[4..6], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var blue))
+        {
+            color = new Vector3(red / 255f, green / 255f, blue / 255f);
+            return true;
+        }
+
+        color = default;
+        return false;
     }
 
     #endregion
