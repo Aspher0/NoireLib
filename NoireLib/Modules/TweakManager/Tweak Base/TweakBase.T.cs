@@ -17,7 +17,23 @@ public abstract class TweakBase<TConfig> : TweakBase where TConfig : TweakConfig
     /// Modify properties on this object and call <see cref="TweakBase.MarkConfigDirty"/>
     /// to persist changes.
     /// </summary>
-    public TConfig Config { get; internal set; } = new();
+    private TConfig config = new();
+
+    /// <summary>
+    /// The typed configuration instance for this tweak.<br/>
+    /// Modify properties on this object and call <see cref="TweakBase.MarkConfigDirty"/>
+    /// to persist changes.
+    /// The parent reference on the config is populated automatically when this property is set.
+    /// </summary>
+    public TConfig Config
+    {
+        get => config;
+        internal set
+        {
+            config = value ?? new TConfig();
+            config.Parent = this;
+        }
+    }
 
     /// <inheritdoc/>
     public sealed override bool HasConfig => true;
@@ -38,5 +54,6 @@ public abstract class TweakBase<TConfig> : TweakBase where TConfig : TweakConfig
     internal sealed override void DeserializeConfig(string? json, int storedVersion)
     {
         Config = TweakConfigBase.DeserializeFromJson<TConfig>(json, storedVersion);
+        Config.Parent = this;
     }
 }

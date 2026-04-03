@@ -17,6 +17,13 @@ namespace NoireLib.TweakManager;
 [Serializable]
 public abstract class TweakConfigBase : NoireConfigBase
 {
+    /// <summary>
+    /// The owning tweak instance for this configuration, if any.
+    /// This is populated automatically by <see cref="TweakBase{TConfig}"/> when the tweak is created.
+    /// </summary>
+    [JsonIgnore]
+    public TweakBase? Parent { get; internal set; }
+
     /// <inheritdoc/>
     public sealed override string GetConfigFileName() => string.Empty;
 
@@ -28,14 +35,20 @@ public abstract class TweakConfigBase : NoireConfigBase
     public sealed override bool LoadFromDiskOnInitialization => false;
 
     /// <summary>
-    /// Saving is managed exclusively by <see cref="NoireTweakManager"/>.<br/>
-    /// Calling this method directly is not supported and will throw <see cref="InvalidOperationException"/>.
+    /// Signals that this tweak configuration has changed and requests the owning tweak to persist the change.
+    /// When a <see cref="TweakBase"/> parent is attached, this method will call <see cref="TweakBase.MarkConfigDirty"/>
+    /// on the parent which in turn asks the manager to save the configuration.
     /// </summary>
-    /// <returns>This method never returns normally.</returns>
-    /// <exception cref="InvalidOperationException">Always thrown. Use <see cref="TweakBase.MarkConfigDirty"/> instead.</exception>
+    /// <returns><see langword="true"/> when the parent tweak was notified; otherwise, this method throws when no parent is attached.</returns>
+    /// <exception cref="InvalidOperationException">Thrown when no parent tweak is attached to receive the save request.</exception>
     public sealed override bool Save()
-        => throw new InvalidOperationException(
-            "Tweak configs cannot be saved directly. Use MarkConfigDirty() on the tweak instead.");
+    {
+        if (Parent == null)
+            throw new InvalidOperationException("Tweak config has no parent tweak to notify. Use the TweakManager to persist configs or ensure the config is attached to its parent tweak.");
+
+        Parent.MarkConfigDirty();
+        return true;
+    }
 
     /// <summary>
     /// Loading is managed exclusively by <see cref="NoireTweakManager"/>.<br/>

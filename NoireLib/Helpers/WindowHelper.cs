@@ -109,7 +109,7 @@ public static class WindowHelper
 
         if (!forceViaWindowsApi && hWnd == GetGameWindowHandle())
         {
-            SetScreenMode((short)rect.Width, (short)rect.Height, 2);
+            SetGameScreenMode((short)rect.Width, (short)rect.Height, 2);
             return true;
         }
         else
@@ -144,7 +144,7 @@ public static class WindowHelper
 
         if (!forceViaWindowsApi && hWnd == GetGameWindowHandle())
         {
-            SetScreenMode((short)width, (short)height, 0);
+            SetGameScreenMode((short)width, (short)height, 0);
             return true;
         }
         else
@@ -175,7 +175,7 @@ public static class WindowHelper
     /// <param name="refreshRate">The desired refresh rate for fullscreen mode.</param>
     public static void SetGameFullscreen(int width, int height, short refreshRate = 0)
     {
-        SetScreenMode((short)width, (short)height, 1, refreshRate);
+        SetGameScreenMode((short)width, (short)height, 1, refreshRate);
     }
 
     /// <summary>
@@ -234,19 +234,19 @@ public static class WindowHelper
     /// <param name="height">The desired screen height.</param>
     /// <param name="screenMode">The screen mode (0 = Windowed, 1 = Fullscreen, 2 = Borderless).</param>
     /// <param name="refreshRate">The refresh rate for fullscreen mode.</param>
-    private static unsafe void SetScreenMode(short width, short height, int screenMode, short refreshRate = 0)
+    public static unsafe void SetGameScreenMode(short width, short height, short screenMode, short refreshRate = 0)
     {
-        NoireService.GameConfig.System.Set("ScreenMode", screenMode);
+        NoireService.GameConfig.System.Set("ScreenMode", (uint)screenMode);
 
-        if (screenMode == 0 || screenMode == 2) // Windowed / Borderless
+        if (screenMode == 0) // Windowed / Borderless
         {
-            NoireService.GameConfig.System.Set("ScreenWidth", width);
-            NoireService.GameConfig.System.Set("ScreenHeight", height);
+            NoireService.GameConfig.System.Set("ScreenWidth", (uint)width);
+            NoireService.GameConfig.System.Set("ScreenHeight", (uint)height);
         }
         else if (screenMode == 1) // Fullscreen
         {
-            NoireService.GameConfig.System.Set("FullScreenWidth", width);
-            NoireService.GameConfig.System.Set("FullScreenHeight", height);
+            NoireService.GameConfig.System.Set("FullScreenWidth", (uint)width);
+            NoireService.GameConfig.System.Set("FullScreenHeight", (uint)height);
         }
 
         var envManager = Framework.Instance()->EnvironmentManager;
