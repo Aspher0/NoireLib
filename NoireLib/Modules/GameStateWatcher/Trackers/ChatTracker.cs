@@ -1,5 +1,5 @@
+using Dalamud.Game.Chat;
 using Dalamud.Game.Text;
-using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Plugin.Services;
 using NoireLib.Events;
 using NoireLib.Helpers;
@@ -16,8 +16,6 @@ namespace NoireLib.GameStateWatcher;
 /// Maintains a bounded history of recent messages and exposes query, filter, pattern-matching,
 /// regex/wildcard subscription, per-channel history limits, duplicate suppression, spam coalescing,
 /// and higher-level chat rule matching APIs.<br/>
-/// Uses direct event subscription because <see cref="IChatGui.ChatMessage"/> uses <see langword="ref"/> parameters
-/// which are not compatible with <see cref="NoireLib.Events.EventWrapper"/>.
 /// </summary>
 public sealed class ChatTracker : GameStateSubTracker
 {
@@ -484,15 +482,15 @@ public sealed class ChatTracker : GameStateSubTracker
         onChatMessageEvent.Dispose();
     }
 
-    private void HandleChatMessage(XivChatType type, int timestamp, ref SeString sender, ref SeString message, ref bool isHandled)
+    private void HandleChatMessage(IChatMessage message)
     {
         totalMessagesObserved++;
 
-        var playerSender = SeStringHelper.ResolveSender(sender);
+        var playerSender = SeStringHelper.ResolveSender(message.Sender);
         var senderText = playerSender?.PlayerName ?? "Unknown";
-        var messageText = SeStringHelper.SeStringToPlainText(message);
+        var messageText = SeStringHelper.SeStringToPlainText(message.Message);
 
-        var entry = new ChatMessageEntry(type, timestamp, senderText, messageText, DateTimeOffset.UtcNow);
+        var entry = new ChatMessageEntry(message.LogKind, message.Timestamp, senderText, messageText, DateTimeOffset.UtcNow);
 
         if (enableDuplicateSuppression && IsDuplicate(entry))
             return;
@@ -508,9 +506,9 @@ public sealed class ChatTracker : GameStateSubTracker
                 messageHistory.RemoveLast();
         }
 
-        EnforcePerChannelLimits(type);
+        EnforcePerChannelLimits(message.LogKind);
 
-        var evt = new ChatMessageReceivedEvent(type, timestamp, senderText, messageText);
+        var evt = new ChatMessageReceivedEvent(message.LogKind, message.Timestamp, senderText, messageText);
 
         PublishEvent(OnChatMessageReceived, evt);
         EvaluateRules(entry);
