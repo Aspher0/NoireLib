@@ -18,9 +18,11 @@
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PublishDocumentationFile>true</PublishDocumentationFile>
     </PropertyGroup>
+    
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
       <DebugType>none</DebugType>
     </PropertyGroup>
+    
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       <DebugType>none</DebugType>
     </PropertyGroup>
@@ -30,22 +32,25 @@
           <Pack>True</Pack>
           <PackagePath>\</PackagePath>
         </None>
+        
         <None Include="..\Nuget_README.md">
             <Pack>True</Pack>
             <PackagePath>\</PackagePath>
         </None>
+        
+        <None Include="README.md" />
         <None Include="database\README.md" />
         <None Include="ipc\README.md" />
-        <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Configuration\README.md" />
+        <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
         <None Include="modules\filewatcher\README.md" />
+        <None Include="Modules\GameStateWatcher\README.md" />
         <None Include="modules\historylogger\README.md" />
         <None Include="modules\hotkeymanager\README.md" />
         <None Include="modules\localizer\README.md" />
         <None Include="modules\networkrelay\README.md" />
         <None Include="Modules\TaskQueue\README.md" />
-        <None Include="README.md" />
         <None Include="Modules\UpdateTracker\README.md" />
     </ItemGroup>
 
