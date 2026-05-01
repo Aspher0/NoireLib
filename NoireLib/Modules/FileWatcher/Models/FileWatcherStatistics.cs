@@ -6,7 +6,7 @@ namespace NoireLib.FileWatcher;
 /// <param name="RegisteredWatches">The current number of registered watches.</param>
 /// <param name="EnabledWatches">The current number of enabled watches.</param>
 /// <param name="TotalRegistrations">The total number of watch registrations created since the watcher's creation.</param>
-/// <param name="TotalRemoved">The total number of watch registrations removed since the watcher's
+/// <param name="TotalRemoved">The total number of watch registrations removed since the watcher's creation.</param>
 /// <param name="TotalNotificationsObserved">The total number of notifications observed from the underlying filesystem watchers since the watcher's creation.</param>
 /// <param name="TotalNotificationsDispatched">The total number of notifications dispatched to user callbacks since the watcher's creation.</param>
 /// <param name="TotalErrors">The total number of errors observed from the underlying filesystem watchers since the watcher's creation.</param>

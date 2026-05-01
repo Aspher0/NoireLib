@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Windowing;
 using NoireLib.Core.Modules;
 using NoireLib.Helpers;
 using System;

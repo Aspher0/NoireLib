@@ -1,5 +1,5 @@
+using Dalamud.Interface.Windowing;
 using System.Collections.Generic;
-using static Dalamud.Interface.Windowing.Window;
 
 namespace NoireLib.Core.Modules;
 

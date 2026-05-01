@@ -2,7 +2,6 @@ using Dalamud.Interface.Windowing;
 using NoireLib.Configuration;
 using System;
 using System.Collections.Generic;
-using static Dalamud.Interface.Windowing.Window;
 
 namespace NoireLib.Core.Modules;
 

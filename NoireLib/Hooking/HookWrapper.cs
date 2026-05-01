@@ -146,7 +146,7 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
     /// </summary>
     public void Enable()
     {
-        ThrowIfDisposed();
+        ThrowIfDisposed("Cannot enable a disposed hook.");
 
         if (IsEnabled)
             return;
@@ -160,7 +160,7 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
     /// </summary>
     public void Disable()
     {
-        ThrowIfDisposed();
+        ThrowIfDisposed("Cannot disable a disposed hook.");
 
         if (!IsEnabled)
             return;
@@ -257,10 +257,10 @@ public sealed class HookWrapper<TDelegate> : IHookWrapper<TDelegate>
         NoireLogger.LogInfo(this, $"Hook '{Name}' disposed ({typeof(TDelegate).Name}).");
     }
 
-    private void ThrowIfDisposed()
+    private void ThrowIfDisposed(string? message = null)
     {
         if (IsDisposed)
-            throw new ObjectDisposedException(Name);
+            throw new ObjectDisposedException(Name, message);
     }
 
     private void InvokeStateCallbacks(HookCallbackKind callbackKind)

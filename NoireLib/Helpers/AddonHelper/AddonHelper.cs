@@ -20,7 +20,7 @@ using AddonLifecycleDelegate = IAddonLifecycle.AddonEventDelegate;
 using AddonLifecycleEvent = AddonEvent;
 using AddonNodeEventDelegate = IAddonEventManager.AddonEventDelegate;
 using AddonNodeEventType = AddonEventType;
-using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.ValueType;
+using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 /// <summary>
 /// A helper class to help with addon manipulation, such as finding addons, getting data, sending callbacks, etc.
@@ -1243,7 +1243,7 @@ public static class AddonHelper
             {
                 for (var index = 0; index < values.Length; index++)
                 {
-                    atkValuesPtr[index].Ctor();
+                    atkValuesPtr[index] = new();
                     TryWriteAtkValue(&atkValuesPtr[index], values[index]);
                 }
 
@@ -1504,7 +1504,7 @@ public static class AddonHelper
 
     private static unsafe void TryWriteVectorAtkValue(AtkValue* target, IEnumerable values)
     {
-        var entries = new System.Collections.Generic.List<object?>();
+        var entries = new List<object?>();
 
         foreach (var value in values)
             entries.Add(value);
@@ -1513,8 +1513,7 @@ public static class AddonHelper
 
         for (var index = 0; index < entries.Count; index++)
         {
-            AtkValue childValue = default;
-            childValue.Ctor();
+            AtkValue childValue = new();
 
             try
             {

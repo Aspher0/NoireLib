@@ -8,6 +8,7 @@ using NoireLib.IPC;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using static FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase;
 using NoireDatabase = NoireLib.Database.NoireDatabase;
 
 namespace NoireLib;
@@ -27,21 +28,25 @@ public class NoireLibMain
     /// </summary>
     /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
     /// <param name="plugin">The instance of your plugin.</param>
-    public static void Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
+    public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
-        if (NoireService.Initialize(dalamudPluginInterface, plugin))
+        var initialized = NoireService.Initialize(dalamudPluginInterface, plugin);
+
+        if (initialized)
         {
             DatabaseMigrationExecutor.RegisterMigrationsFromAssembly(plugin.GetType().Assembly);
             var preloadDatabases = Database.NoireDbModelBase.GetDatabasesToPreload(plugin.GetType().Assembly);
             foreach (var databaseName in preloadDatabases)
                 NoireDatabase.RegisterForInitialization(databaseName, true);
+            NoireDatabase.InitializeRegisteredDatabases();
 
             NoireIPC.RegisterAttributedTypes(plugin.GetType().Assembly);
-
-            NoireDatabase.InitializeRegisteredDatabases();
             NoireConfigManager.LoadMarkedConfigsFromDisk();
+
             NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
         }
+
+        return initialized;
     }
 
     /// <summary>
@@ -86,12 +91,17 @@ public class NoireLibMain
     /// <typeparam name="T">The type of the module to add.</typeparam>
     /// <param name="instance">The instance of the module to add.</param>
     /// <returns>The instance of the module added.</returns>
+    /// <exception cref="ArgumentNullException">Thrown if the module instance is null.</exception>
     public static T AddModule<T>(T instance) where T : class, INoireModule
     {
+        if (instance == null)
+            throw new ArgumentNullException(nameof(instance), "Module instance cannot be null.");
+
         var moduleType = typeof(T);
 
-        if (!instance.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId == instance.ModuleId))
-            NoireLogger.LogWarning($"A module of type {moduleType.Name} with id {instance.ModuleId} has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later. Adding the module anyway.");
+        if ((instance.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId.IsNullOrEmpty())) ||
+            (!instance.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId == instance.ModuleId)))
+            NoireLogger.LogWarning($"A module of type {moduleType.Name} with id '{instance.ModuleId}' has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later. Adding the module anyway.");
 
         NoireService.ActiveModules.Add((moduleType, instance));
 
@@ -111,6 +121,15 @@ public class NoireLibMain
 
         foreach (var module in modules)
         {
+            if (module == null)
+                continue;
+
+            var moduleType = module.GetType();
+
+            if ((module.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId.IsNullOrEmpty())) ||
+                (!module.ModuleId.IsNullOrEmpty() && NoireService.ActiveModules.Any(m => m.Type == moduleType && m.Module.ModuleId == module.ModuleId)))
+                NoireLogger.LogWarning($"A module of type {moduleType.Name} with id '{module.ModuleId}' has already been added. Adding another instance with the same id may cause issues when trying to retrieve it later. Adding the module anyway.");
+
             NoireService.ActiveModules.Add((module.GetType(), module));
             addedModules.Add(module);
         }
@@ -130,7 +149,7 @@ public class NoireLibMain
 
         if (moduleToRemove.IsDefault())
         {
-            NoireLogger.LogInfo($"No module of type {typeof(T).FullName}" + (moduleId.IsNullOrEmpty() ? string.Empty : " with id " + moduleId) + " found to remove.");
+            NoireLogger.LogInfo($"No module of type {typeof(T).FullName} {(moduleId.IsNullOrEmpty() ? "" : $" with id {moduleId}")} found to remove.");
             return false;
         }
 
@@ -140,7 +159,7 @@ public class NoireLibMain
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, $"Failed to dispose module of type {typeof(T).FullName}" + (moduleId.IsNullOrEmpty() ? string.Empty : " with id " + moduleId) + ".");
+            NoireLogger.LogError(ex, $"Failed to dispose module of type {typeof(T).FullName} {(moduleId.IsNullOrEmpty() ? "" : $" with id {moduleId}")}.");
             return false;
         }
 
@@ -156,6 +175,9 @@ public class NoireLibMain
     /// <returns>True if successfully removed, otherwise false if module not found or if module failed to dispose.</returns>
     public static bool RemoveModule<T>(T instance) where T : class, INoireModule
     {
+        if (instance == null)
+            throw new ArgumentNullException(nameof(instance), "Module instance cannot be null.");
+
         var moduleToRemove = NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && m.Module == instance);
         if (moduleToRemove.IsDefault())
         {
@@ -184,19 +206,21 @@ public class NoireLibMain
     public static bool ClearAllModules()
     {
         bool allDisposed = true;
-        foreach (var moduleEntry in NoireService.ActiveModules)
+        for (int i = NoireService.ActiveModules.Count - 1; i >= 0; i--)
         {
+            var moduleEntry = NoireService.ActiveModules[i];
+
             try
             {
                 moduleEntry.Module.Dispose();
+                NoireService.ActiveModules.RemoveAt(i);
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, $"Failed to dispose module of type {moduleEntry.Type.FullName}" + (moduleEntry.Module.ModuleId.IsNullOrEmpty() ? string.Empty : " with id " + moduleEntry.Module.ModuleId) + ".");
+                NoireLogger.LogError(ex, $"Failed to dispose module of type {moduleEntry.Type.FullName} {(moduleEntry.Module.ModuleId.IsNullOrEmpty() ? "" : $" with id {moduleEntry.Module.ModuleId}")}.");
                 allDisposed = false;
             }
         }
-        NoireService.ActiveModules.Clear();
         return allDisposed;
     }
 
@@ -208,9 +232,7 @@ public class NoireLibMain
     /// <param name="moduleId">The optional ID of the module to check.</param>
     /// <returns>True if the module is added, otherwise false.</returns>
     public static bool IsModuleAdded<T>(string? moduleId = null) where T : class, INoireModule
-    {
-        return !NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId)).IsDefault();
-    }
+        => !NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId)).IsDefault();
 
     /// <summary>
     /// Checks if a module has been added to your project and currently active.<br/>
@@ -282,7 +304,10 @@ public class NoireLibMain
             throw new ArgumentNullException(nameof(callback), "Callback cannot be null.");
 
         if (OnDisposeCallbacks.Any(c => c.Key == key))
+        {
+            NoireLogger.LogError($"A callback with the key '{key}' is already registered for disposal. Each callback must have a unique key.\nRegistration of the new callback failed.");
             return false;
+        }
 
         OnDisposeCallbacks.Add((key, callback, priority));
         return true;
@@ -318,6 +343,7 @@ public class NoireLibMain
     {
         if (key.IsNullOrWhitespace())
             throw new ArgumentNullException(nameof(key), "Key cannot be null or blank.");
+
         return OnDisposeCallbacks.Any(c => c.Key == key);
     }
 
@@ -326,7 +352,10 @@ public class NoireLibMain
     /// </summary>
     public static void Dispose()
     {
-        ClearAllModules();
+        var allModulesDisposed = ClearAllModules();
+
+        if (!allModulesDisposed)
+            NoireLogger.LogWarning("Some modules failed to dispose properly during NoireLib disposal. Please report this to the devs.");
 
         var orderedCallbacks = OnDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
         foreach (var (_, callback, _) in orderedCallbacks)

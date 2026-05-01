@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
+using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
 using NoireLib.Core.Modules;
 using System;
@@ -20,7 +21,6 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
     private string searchFilter = string.Empty;
     private bool showFavoritesOnly;
     private readonly HashSet<string> selectedTagFilters = [];
-    private bool tagFilterDropdownOpen;
 
     private static readonly Vector4 ErrorColor = new(0.9f, 0.2f, 0.2f, 1f);
     private static readonly Vector4 EnabledColor = new(0.1f, 0.8f, 0.1f, 1f);
@@ -137,7 +137,6 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         ImGui.SetNextItemWidth(width);
         if (ImGui.BeginCombo("##TagFilter", label))
         {
-            tagFilterDropdownOpen = true;
             foreach (var tag in allTags)
             {
                 var selected = selectedTagFilters.Contains(tag);
@@ -158,10 +157,6 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
             }
 
             ImGui.EndCombo();
-        }
-        else
-        {
-            tagFilterDropdownOpen = false;
         }
     }
 
