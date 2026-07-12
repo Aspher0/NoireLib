@@ -51,7 +51,6 @@
         <None Include="modules\historylogger\README.md" />
         <None Include="modules\hotkeymanager\README.md" />
         <None Include="modules\localizer\README.md" />
-        <None Include="modules\networkrelay\README.md" />
         <None Include="Modules\TaskQueue\README.md" />
         <None Include="Modules\UpdateTracker\README.md" />
     </ItemGroup>
