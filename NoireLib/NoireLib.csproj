@@ -42,6 +42,8 @@
         <None Include="database\README.md" />
         <None Include="ipc\README.md" />
         <None Include="Configuration\README.md" />
+        <None Include="Helpers\AddonHelper\README.md" />
+        <None Include="Helpers\EncryptionHelper\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
         <None Include="modules\filewatcher\README.md" />
@@ -62,7 +64,9 @@
     </ItemGroup>
 
     <ItemGroup>
+        <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
         <PackageReference Include="Castle.Core" Version="5.2.1" />
+        <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
         <PackageReference Include="System.Data.SQLite" Version="2.0.3" />
     </ItemGroup>
