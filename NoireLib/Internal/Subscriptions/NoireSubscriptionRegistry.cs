@@ -119,28 +119,18 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
             if (!entry.Token.IsActive)
                 continue;
 
-            if (entry.Once)
-            {
-                if (!entry.TryClaimOnce())
-                    continue;
-
-                RemoveEntry(key, entry, invalidateToken: true);
-            }
-
             if (entry.Delivery == SubscriptionDelivery.FrameworkThread
                 && NoireService.IsInitialized()
                 && !NoireService.Framework.IsInFrameworkUpdateThread)
             {
+                // Counted before filtering (per the return-value contract): the filter runs, and a one-shot is
+                // only claimed, later on the framework thread inside Deliver.
                 delivered++;
-                NoireService.Framework.RunOnFrameworkThread(() => InvokeEntry(entry, context, applyFilter: true));
+                NoireService.Framework.RunOnFrameworkThread(() => Deliver(key, entry, context));
             }
-            else
+            else if (Deliver(key, entry, context))
             {
-                if (entry.Filter != null && !SafeFilter(entry, context))
-                    continue;
-
                 delivered++;
-                InvokeEntry(entry, context, applyFilter: false);
             }
         }
 
@@ -352,6 +342,30 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
         }
     }
 
+    /// <summary>
+    /// Applies the entry's filter, then — for one-shot subscriptions — claims and removes it, and finally invokes
+    /// the handler. The filter is evaluated <b>before</b> the once-claim so a non-matching context never consumes a
+    /// filtered one-shot subscription. Runs on the caller's thread: inline for inline delivery, or on the framework
+    /// thread for marshaled delivery, so a FrameworkThread filter still sees game state from the framework thread.
+    /// </summary>
+    /// <returns>True if the handler was invoked; false if the filter rejected the context or the once-claim was lost.</returns>
+    private bool Deliver(TKey key, Entry entry, TContext context)
+    {
+        if (entry.Filter != null && !SafeFilter(entry, context))
+            return false;
+
+        if (entry.Once)
+        {
+            if (!entry.TryClaimOnce())
+                return false;
+
+            RemoveEntry(key, entry, invalidateToken: true);
+        }
+
+        InvokeEntry(entry, context);
+        return true;
+    }
+
     private bool SafeFilter(Entry entry, TContext context)
     {
         try
@@ -365,13 +379,10 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
         }
     }
 
-    private void InvokeEntry(Entry entry, TContext context, bool applyFilter)
+    private void InvokeEntry(Entry entry, TContext context)
     {
         try
         {
-            if (applyFilter && entry.Filter != null && !entry.Filter(context))
-                return;
-
             if (entry.IsAsync)
             {
                 var task = ((Func<TContext, Task>)entry.Handler)(context);

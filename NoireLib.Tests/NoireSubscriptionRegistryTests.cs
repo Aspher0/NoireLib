@@ -112,6 +112,62 @@ public class NoireSubscriptionRegistryTests
     }
 
     [Fact]
+    public void Filtered_Once_Survives_Non_Matching_Dispatches_And_Fires_On_First_Match()
+    {
+        var registry = new NoireSubscriptionRegistry<string, int>();
+        var received = new List<int>();
+
+        var token = registry.Subscribe(
+            "k",
+            value => received.Add(value),
+            new() { Once = true, Filter = value => value > 10 });
+
+        // Non-matching dispatches must not consume the one-shot.
+        registry.Dispatch("k", 5).Should().Be(0);
+        registry.Dispatch("k", 7).Should().Be(0);
+
+        token.IsActive.Should().BeTrue();
+        registry.Count("k").Should().Be(1);
+
+        // First match fires and consumes; anything after is ignored.
+        registry.Dispatch("k", 15).Should().Be(1);
+        registry.Dispatch("k", 20).Should().Be(0);
+        registry.Dispatch("k", 25).Should().Be(0);
+
+        received.Should().Equal(15);
+        token.IsActive.Should().BeFalse();
+        registry.Count("k").Should().Be(0);
+    }
+
+    [Fact]
+    public void Filtered_Once_A_Throwing_Filter_Does_Not_Consume_The_One_Shot()
+    {
+        Exception? reported = null;
+        var registry = new NoireSubscriptionRegistry<string, int>((ex, _) => reported = ex);
+        var calls = 0;
+        var throwOnFilter = true;
+
+        var token = registry.Subscribe(
+            "k",
+            _ => calls++,
+            new() { Once = true, Filter = _ => throwOnFilter ? throw new InvalidOperationException("filter boom") : true });
+
+        // A filter that throws is treated as non-matching and must not consume the one-shot.
+        registry.Dispatch("k", 0);
+        calls.Should().Be(0);
+        token.IsActive.Should().BeTrue();
+        reported.Should().BeOfType<InvalidOperationException>();
+
+        // Once the filter matches, the one-shot fires exactly once and is then removed.
+        throwOnFilter = false;
+        registry.Dispatch("k", 0);
+        registry.Dispatch("k", 0);
+
+        calls.Should().Be(1);
+        token.IsActive.Should().BeFalse();
+    }
+
+    [Fact]
     public void Owner_Bulk_Unsubscribe_Removes_All_Owned()
     {
         var registry = new NoireSubscriptionRegistry<string, int>();

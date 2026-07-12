@@ -108,9 +108,11 @@ public partial class NoireGameWatcher
         var typedFilter = userOptions.Filter;
         var once = userOptions.Once;
 
-        // Once is deliberately handled here, not by the registry: the registry claims once-entries before
-        // running their filter, which would let a non-matching event consume a filtered one-shot
-        // (breaking WaitFor and event latches). Removing after a real invocation gives once-on-match.
+        // Once is deliberately handled here, not by the registry. The registry only knows about the inner
+        // subscription, but a one-shot must tear down the whole ledger entry atomically on the matching
+        // invocation — releasing interest, running ExtraDispose and invalidating the outer token — which
+        // RemoveLedgerEntry does and the registry's own once cannot. (The registry now also claims once only
+        // after its filter passes, so either place gives correct once-on-match for filtered subscriptions.)
         var innerOptions = new NoireSubscriptionOptions<object>
         {
             Priority = userOptions.Priority,
