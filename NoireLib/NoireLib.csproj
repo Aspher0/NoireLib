@@ -46,6 +46,7 @@
         <None Include="Helpers\EncryptionHelper\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
+        <None Include="Modules\GameWatcher\README.md" />
         <None Include="modules\filewatcher\README.md" />
         <None Include="modules\historylogger\README.md" />
         <None Include="modules\hotkeymanager\README.md" />
