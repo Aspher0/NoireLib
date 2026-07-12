@@ -62,10 +62,10 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     public NoireNetworker(
         string networkName,
-        NetworkerOptions? options = null,
         string? moduleId = null,
         bool active = true,
-        bool enableLogging = true) : base(moduleId, false, enableLogging)
+        bool enableLogging = true,
+        NetworkerOptions? options = null) : base(moduleId, false, enableLogging)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(networkName);
 

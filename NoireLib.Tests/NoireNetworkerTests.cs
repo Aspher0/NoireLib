@@ -74,7 +74,7 @@ public class NoireNetworkerTests : IDisposable
 
     private NoireNetworker CreateNetworker(string network, NetworkerOptions? options = null)
     {
-        var networker = new NoireNetworker(network, options, enableLogging: false);
+        var networker = new NoireNetworker(network, enableLogging: false, options: options);
         networkersToClean.Add(networker);
         return networker;
     }
