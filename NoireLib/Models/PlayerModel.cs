@@ -1,29 +1,38 @@
+using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using Newtonsoft.Json;
 using NoireLib.Helpers;
 using System;
 using System.Linq;
-using System.Numerics;
 
 namespace NoireLib.Models;
 
 /// <summary>
 /// A model representing a player character.<br/>
-/// Allows easy access to player-related information such as name, homeWorld, world ID, and content ID.
+/// Inherits the generic object data and helpers from <see cref="ObjectModel"/>, and adds player-related information such as homeWorld, world ID, and content ID.
 /// </summary>
 [Serializable]
-public class PlayerModel
+public class PlayerModel : ObjectModel
 {
     /// <summary>
-    /// A unique identifier for this PlayerModel instance.
+    /// The name of the object. Ignored during serialization on player models: <see cref="PlayerName"/> is serialized instead.
     /// </summary>
-    public Guid UniqueId { get; set; } = Guid.NewGuid();
+    [JsonIgnore]
+    public override string Name
+    {
+        get => base.Name;
+        set => base.Name = value;
+    }
 
     /// <summary>
     /// The name of the player, without the homeWorld.
     /// </summary>
-    public string PlayerName { get; set; }
+    public string PlayerName
+    {
+        get => Name;
+        set => Name = value;
+    }
 
     /// <summary>
     /// The name of the player's homeWorld.
@@ -65,8 +74,8 @@ public class PlayerModel
     /// <param name="currentWorldId">The world ID of the player's current world (optional).</param>
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
     public PlayerModel(string playerName, string homeWorld, string? currentWorld = null, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
+        : base(null, playerName, ObjectKind.Pc)
     {
-        PlayerName = playerName;
         HomeWorld = homeWorld;
         HomeWorldId = homeWorldId;
         CurrentWorld = currentWorld;
@@ -88,9 +97,8 @@ public class PlayerModel
     /// <param name="contentId">The content ID (CID) of the player (optional).</param>
     [JsonConstructor]
     public PlayerModel(Guid uniqueId, string playerName, string homeWorld, string? currentWorld = null, uint? homeWorldId = null, uint? currentWorldId = null, ulong? contentId = null)
+        : base(uniqueId, playerName, ObjectKind.Pc)
     {
-        UniqueId = uniqueId;
-        PlayerName = playerName;
         HomeWorld = homeWorld;
         HomeWorldId = homeWorldId;
         CurrentWorld = currentWorld;
@@ -105,8 +113,8 @@ public class PlayerModel
     /// </summary>
     /// <param name="character">The IPlayerCharacter object to extract data from.</param>
     public unsafe PlayerModel(IPlayerCharacter character)
+        : base(character)
     {
-        PlayerName = character.Name.TextValue;
         HomeWorld = character.HomeWorld.Value.Name.ExtractText();
         HomeWorldId = character.HomeWorld.Value.RowId;
         CurrentWorld = character.CurrentWorld.Value.Name.ExtractText();
@@ -120,7 +128,8 @@ public class PlayerModel
     /// <param name="character">The IPlayerCharacter object to extract data from.</param>
     public unsafe void UpdateFromCharacter(IPlayerCharacter character)
     {
-        PlayerName = character.Name.TextValue;
+        base.UpdateFromObject(character);
+
         HomeWorld = character.HomeWorld.Value.Name.ExtractText();
         HomeWorldId = character.HomeWorld.Value.RowId;
         CurrentWorld = character.CurrentWorld.Value.Name.ExtractText();
@@ -129,26 +138,22 @@ public class PlayerModel
     }
 
     /// <summary>
-    /// Tries to update the PlayerModel's data by searching the Object Table for a matching player character.
+    /// Updates the PlayerModel's data from the given IGameObject instance.<br/>
+    /// Player-specific data is only updated when the object is an IPlayerCharacter.
     /// </summary>
-    /// <returns>True if a matching character was found and the model was updated; otherwise, false.</returns>
-    public bool TryUpdateFromObjectTable()
+    /// <param name="gameObject">The IGameObject instance to extract data from.</param>
+    public override void UpdateFromObject(IGameObject gameObject)
     {
-        var matchingCharacter = FindPlayerOnMap();
-
-        if (matchingCharacter != null)
-        {
-            UpdateFromCharacter(matchingCharacter);
-            return true;
-        }
-
-        return false;
+        if (gameObject is IPlayerCharacter character)
+            UpdateFromCharacter(character);
+        else
+            base.UpdateFromObject(gameObject);
     }
 
     /// <summary>
     /// Tries to find the player character on the current map based on PlayerName and HomeWorld.
     /// </summary>
-    /// <returns></returns>
+    /// <returns>The matching IPlayerCharacter instance, or null if not found.</returns>
     public IPlayerCharacter? FindPlayerOnMap()
     {
         return NoireService.ObjectTable
@@ -159,31 +164,10 @@ public class PlayerModel
     }
 
     /// <summary>
-    /// Gets the distance between the specified object and the character represented by this PlayerModel.
+    /// Tries to find the player character on the current map based on PlayerName and HomeWorld.
     /// </summary>
-    /// <param name="_object">The object to measure the distance from.</param>
-    /// <returns>The distance between the object and the character, or null if </returns>
-    public float? DistanceFromObject(IGameObject _object)
-    {
-        var objectPosition = _object.Position;
-        var character = FindPlayerOnMap();
-        if (character == null)
-            return null;
-        var characterPosition = character.Position;
-        return Vector3.Distance(objectPosition, characterPosition);
-    }
-
-    /// <summary>
-    /// Checks whether the character represented by this PlayerModel is currently interactable by the local player (i.e., is within a reach a 4 yalms).
-    /// </summary>
-    /// <returns>True if the character is in reach to be interacted with; otherwise false.</returns>
-    public bool IsInteractable()
-    {
-        var playerCharacter = FindPlayerOnMap();
-        if (playerCharacter == null || NoireService.ObjectTable.LocalPlayer == null)
-            return false;
-        return DistanceFromObject(NoireService.ObjectTable.LocalPlayer) <= 4.0f;
-    }
+    /// <returns>The matching IPlayerCharacter instance, or null if not found.</returns>
+    public override IGameObject? FindObjectOnMap() => FindPlayerOnMap();
 
     /// <summary>
     /// Determines whether this character is currently in their home world.
@@ -229,7 +213,7 @@ public class PlayerModel
     /// Clones this PlayerModel instance.
     /// </summary>
     /// <returns>The cloned PlayerModel.</returns>
-    public PlayerModel Clone()
+    public override PlayerModel Clone()
     {
         return new PlayerModel(UniqueId, PlayerName, HomeWorld, CurrentWorld, HomeWorldId, CurrentWorldId, ContentId);
     }

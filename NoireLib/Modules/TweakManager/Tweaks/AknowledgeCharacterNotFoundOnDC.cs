@@ -54,10 +54,14 @@ public class AknowledgeCharacterNotFoundOnDC : TweakBase
 
     private unsafe void ListenFrameworkUpdate(IFramework framework)
     {
-        if (!AddonHelper.TryGetReadyAddonWrapper("SelectOk", out var addon))
+        var addon = AddonHelper.GetReadyAddon("SelectOk");
+
+        if (!addon)
             return;
 
-        if (!addon.TryGetTextNode(out var textNode, 1, 2))
+        var textNode = addon.GetNode(1, 2).TextNodePointer;
+
+        if (textNode == null)
             return;
 
         var seStringAddon = SeStringHelper.Utf8StringPtrToPlainText(&textNode->NodeText).RemoveNewlines();
@@ -68,7 +72,7 @@ public class AknowledgeCharacterNotFoundOnDC : TweakBase
             ThrottleHelper.Throttle($"{InternalKey}_SendCallback", 200.Milliseconds(), () =>
             {
                 NoireLogger.LogDebug(this, "Sending callback to addon SelectOk.");
-                addon.SendCallback(true, 0);
+                addon.SendCallback(0);
             });
         }
     }

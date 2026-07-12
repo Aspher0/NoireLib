@@ -10,7 +10,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
-using System.Runtime.InteropServices;
 
 namespace NoireLib.Helpers;
 
@@ -23,9 +22,10 @@ using AddonNodeEventType = AddonEventType;
 using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 /// <summary>
-/// A helper class to help with addon manipulation, such as finding addons, getting data, sending callbacks, etc.
+/// A helper class to help with addon manipulation, such as finding addons, getting data, sending callbacks, etc.<br/>
+/// This static class exposes the pointer-level primitives; for everyday usage prefer the fluent wrappers <see cref="NoireAddon"/> and <see cref="NoireAddonNode"/>, obtained via <see cref="GetAddon(string)"/>.
 /// </summary>
-public static class AddonHelper
+public static partial class AddonHelper
 {
     private static readonly Dictionary<string, IDisposable> KeyedRegistrations = new(StringComparer.Ordinal);
 
@@ -49,18 +49,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to get an addon by name without checking whether it is ready.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to get.</param>
-    /// <param name="addonPtr">The addon wrapper, if found.</param>
-    /// <returns>True if the addon was found; otherwise, false.</returns>
-    public static bool TryGetAddonWrapper(string addonName, out AtkUnitBasePtr addonPtr)
-    {
-        addonPtr = NoireService.GameGui.GetAddonByName(addonName);
-        return addonPtr != IntPtr.Zero;
-    }
-
-    /// <summary>
     /// Tries to get an addon by name, and checks if it's loaded and ready to be interacted with.
     /// </summary>
     /// <param name="addonName">The name of the addon to get.</param>
@@ -70,30 +58,7 @@ public static class AddonHelper
     /// </param>
     /// <returns>True if the addon is found and ready to be interacted with; otherwise, false.</returns>
     public static unsafe bool TryGetReadyAddon(string addonName, out AtkUnitBase* addonPtr)
-    {
-        addonPtr = null;
-
-        AtkUnitBasePtr addonFromName = NoireService.GameGui.GetAddonByName(addonName);
-
-        if (addonFromName == IntPtr.Zero)
-            return false;
-
-        addonPtr = (AtkUnitBase*)addonFromName.Address;
-
-        return IsAddonLoaded(addonPtr);
-    }
-
-    /// <summary>
-    /// Tries to get an addon by name, and checks if it's loaded and ready to be interacted with.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to get.</param>
-    /// <param name="addonPtr">The addon wrapper, if found.</param>
-    /// <returns>True if the addon is found and ready to be interacted with; otherwise, false.</returns>
-    public static unsafe bool TryGetReadyAddonWrapper(string addonName, out AtkUnitBasePtr addonPtr)
-    {
-        addonPtr = NoireService.GameGui.GetAddonByName(addonName);
-        return addonPtr != IntPtr.Zero && IsAddonLoaded((AtkUnitBase*)addonPtr.Address);
-    }
+        => TryGetAddon(addonName, out addonPtr) && IsAddonLoaded(addonPtr);
 
     /// <summary>
     /// Determines if an addon is visible and loaded, and ready to be interacted with.
@@ -121,19 +86,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to get the root node of a ready addon by name.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to inspect.</param>
-    /// <param name="nodePtr">The root node pointer, if found.</param>
-    /// <returns>True if the addon was found, ready, and has a root node; otherwise, false.</returns>
-    public static unsafe bool TryGetRootNode(string addonName, out AtkResNode* nodePtr)
-    {
-        nodePtr = null;
-
-        return TryGetReadyAddon(addonName, out var addonPtr) && TryGetRootNode(addonPtr, out nodePtr);
-    }
-
-    /// <summary>
     /// Tries to get a node from a ready addon by node id.
     /// </summary>
     /// <param name="addon">The addon to inspect.</param>
@@ -149,20 +101,6 @@ public static class AddonHelper
 
         nodePtr = addon->GetNodeById(nodeId);
         return nodePtr != null;
-    }
-
-    /// <summary>
-    /// Tries to get a node from a ready addon by name and node id.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to inspect.</param>
-    /// <param name="nodeId">The node id to look up.</param>
-    /// <param name="nodePtr">The node pointer, if found.</param>
-    /// <returns>True if the addon was found, ready, and the node exists; otherwise, false.</returns>
-    public static unsafe bool TryGetNode(string addonName, uint nodeId, out AtkResNode* nodePtr)
-    {
-        nodePtr = null;
-
-        return TryGetReadyAddon(addonName, out var addonPtr) && TryGetNode(addonPtr, nodeId, out nodePtr);
     }
 
     /// <summary>
@@ -190,20 +128,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to get a node by traversing a chain of node ids inside a ready addon by name.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to inspect.</param>
-    /// <param name="nodePtr">The final node pointer, if found.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if the addon was found, ready, and every node in the chain was resolved; otherwise, false.</returns>
-    public static unsafe bool TryGetNode(string addonName, out AtkResNode* nodePtr, params int[] nodeIds)
-    {
-        nodePtr = null;
-
-        return TryGetReadyAddon(addonName, out var addonPtr) && TryGetNode(addonPtr, out nodePtr, nodeIds);
-    }
-
-    /// <summary>
     /// Tries to cast a node to a text node.
     /// </summary>
     /// <param name="node">The node to inspect.</param>
@@ -216,34 +140,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to resolve a text node from a ready addon by node id.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="nodeId">The node id to look up.</param>
-    /// <param name="textNodePtr">The text node pointer, if found.</param>
-    /// <returns>True if the addon is ready and the node exists as a text node; otherwise, false.</returns>
-    public static unsafe bool TryGetTextNode(AtkUnitBase* addon, uint nodeId, out AtkTextNode* textNodePtr)
-    {
-        textNodePtr = null;
-
-        return TryGetNode(addon, nodeId, out var nodePtr) && TryGetTextNode(nodePtr, out textNodePtr);
-    }
-
-    /// <summary>
-    /// Tries to resolve a text node from a ready addon by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="textNodePtr">The text node pointer, if found.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if the addon is ready and the resolved node is a text node; otherwise, false.</returns>
-    public static unsafe bool TryGetTextNode(AtkUnitBase* addon, out AtkTextNode* textNodePtr, params int[] nodeIds)
-    {
-        textNodePtr = null;
-
-        return TryGetNode(addon, out var nodePtr, nodeIds) && TryGetTextNode(nodePtr, out textNodePtr);
-    }
-
-    /// <summary>
     /// Tries to cast a node to a component node.
     /// </summary>
     /// <param name="node">The node to inspect.</param>
@@ -253,34 +149,6 @@ public static class AddonHelper
     {
         componentNodePtr = node == null ? null : node->GetAsAtkComponentNode();
         return componentNodePtr != null;
-    }
-
-    /// <summary>
-    /// Tries to resolve a component node from a ready addon by node id.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="nodeId">The node id to look up.</param>
-    /// <param name="componentNodePtr">The component node pointer, if found.</param>
-    /// <returns>True if the addon is ready and the node exists as a component node; otherwise, false.</returns>
-    public static unsafe bool TryGetComponentNode(AtkUnitBase* addon, uint nodeId, out AtkComponentNode* componentNodePtr)
-    {
-        componentNodePtr = null;
-
-        return TryGetNode(addon, nodeId, out var nodePtr) && TryGetComponentNode(nodePtr, out componentNodePtr);
-    }
-
-    /// <summary>
-    /// Tries to resolve a component node from a ready addon by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="componentNodePtr">The component node pointer, if found.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if the addon is ready and the resolved node is a component node; otherwise, false.</returns>
-    public static unsafe bool TryGetComponentNode(AtkUnitBase* addon, out AtkComponentNode* componentNodePtr, params int[] nodeIds)
-    {
-        componentNodePtr = null;
-
-        return TryGetNode(addon, out var nodePtr, nodeIds) && TryGetComponentNode(nodePtr, out componentNodePtr);
     }
 
     /// <summary>
@@ -314,50 +182,13 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to read the current text from a ready addon by node id.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="nodeId">The node id to read.</param>
-    /// <param name="text">The resolved managed text, if found.</param>
-    /// <returns>True if the addon is ready and the node text could be read; otherwise, false.</returns>
-    public static unsafe bool TryReadText(AtkUnitBase* addon, uint nodeId, out string text)
-    {
-        text = string.Empty;
-
-        return TryGetTextNode(addon, nodeId, out var textNodePtr) && TryReadText(textNodePtr, out text);
-    }
-
-    /// <summary>
-    /// Tries to read the current text from a ready addon by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon to inspect.</param>
-    /// <param name="text">The resolved managed text, if found.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if the addon is ready and the node text could be read; otherwise, false.</returns>
-    public static unsafe bool TryReadText(AtkUnitBase* addon, out string text, params int[] nodeIds)
-    {
-        text = string.Empty;
-
-        return TryGetTextNode(addon, out var textNodePtr, nodeIds) && TryReadText(textNodePtr, out text);
-    }
-
-    /// <summary>
     /// Reads the current text from a ready addon by a chain of node ids.
     /// </summary>
     /// <param name="addon">The addon to inspect.</param>
     /// <param name="nodeIds">The chain of node ids to resolve.</param>
     /// <returns>The resolved text, or <see cref="string.Empty"/> if it could not be read.</returns>
     public static unsafe string ReadTextOrEmpty(AtkUnitBase* addon, params int[] nodeIds)
-        => TryReadText(addon, out var text, nodeIds) ? text : string.Empty;
-
-    /// <summary>
-    /// Reads the current text from a ready addon by name and a chain of node ids.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to inspect.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The resolved text, or <see cref="string.Empty"/> if it could not be read.</returns>
-    public static unsafe string ReadTextOrEmpty(string addonName, params int[] nodeIds)
-        => TryGetReadyAddon(addonName, out var addonPtr) ? ReadTextOrEmpty(addonPtr, nodeIds) : string.Empty;
+        => TryGetNode(addon, out var nodePtr, nodeIds) && TryReadText(nodePtr, out var text) ? text : string.Empty;
 
     /// <summary>
     /// Tries to read a managed value from an <see cref="AtkValue"/>.
@@ -457,25 +288,10 @@ public static class AddonHelper
     /// <summary>
     /// Registers an addon lifecycle listener for multiple addon names.
     /// </summary>
-    /// <param name="key">The registration key used to unregister the listener later.</param>
     /// <param name="eventType">The lifecycle event type to listen for.</param>
     /// <param name="addonNames">The addon names to listen for.</param>
     /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
-    public static IDisposable RegisterLifecycleListener(string key, AddonLifecycleEvent eventType, IEnumerable<string> addonNames, AddonLifecycleDelegate handler)
-    {
-        IDisposable registration = RegisterLifecycleListener(eventType, addonNames, handler);
-        RegisterEvent(key, registration);
-        return registration;
-    }
-
-    /// <summary>
-    /// Registers an addon lifecycle listener for multiple addon names.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to listen for.</param>
-    /// <param name="addonNames">The addon names to listen for.</param>
-    /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
+    /// <returns>A disposable registration that unregisters the handler when disposed. Store it under a key with <see cref="RegisterEvent(string, IDisposable?)"/> if needed.</returns>
     public static IDisposable RegisterLifecycleListener(AddonLifecycleEvent eventType, IEnumerable<string> addonNames, AddonLifecycleDelegate handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
@@ -489,25 +305,10 @@ public static class AddonHelper
     /// <summary>
     /// Registers an addon lifecycle listener for a single addon name.
     /// </summary>
-    /// <param name="key">The registration key used to unregister the listener later.</param>
     /// <param name="eventType">The lifecycle event type to listen for.</param>
     /// <param name="addonName">The addon name to listen for.</param>
     /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
-    public static IDisposable RegisterLifecycleListener(string key, AddonLifecycleEvent eventType, string addonName, AddonLifecycleDelegate handler)
-    {
-        IDisposable registration = RegisterLifecycleListener(eventType, addonName, handler);
-        RegisterEvent(key, registration);
-        return registration;
-    }
-
-    /// <summary>
-    /// Registers an addon lifecycle listener for a single addon name.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to listen for.</param>
-    /// <param name="addonName">The addon name to listen for.</param>
-    /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
+    /// <returns>A disposable registration that unregisters the handler when disposed. Store it under a key with <see cref="RegisterEvent(string, IDisposable?)"/> if needed.</returns>
     public static IDisposable RegisterLifecycleListener(AddonLifecycleEvent eventType, string addonName, AddonLifecycleDelegate handler)
     {
         ValidateAddonName(addonName, nameof(addonName));
@@ -520,71 +321,15 @@ public static class AddonHelper
     /// <summary>
     /// Registers a global addon lifecycle listener for every addon.
     /// </summary>
-    /// <param name="key">The registration key used to unregister the listener later.</param>
     /// <param name="eventType">The lifecycle event type to listen for.</param>
     /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
-    public static IDisposable RegisterLifecycleListener(string key, AddonLifecycleEvent eventType, AddonLifecycleDelegate handler)
-    {
-        IDisposable registration = RegisterLifecycleListener(eventType, handler);
-        RegisterEvent(key, registration);
-        return registration;
-    }
-
-    /// <summary>
-    /// Registers a global addon lifecycle listener for every addon.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to listen for.</param>
-    /// <param name="handler">The lifecycle handler to invoke.</param>
-    /// <returns>A disposable registration that unregisters the handler when disposed.</returns>
+    /// <returns>A disposable registration that unregisters the handler when disposed. Store it under a key with <see cref="RegisterEvent(string, IDisposable?)"/> if needed.</returns>
     public static IDisposable RegisterLifecycleListener(AddonLifecycleEvent eventType, AddonLifecycleDelegate handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
 
         NoireService.AddonLifecycle.RegisterListener(eventType, handler);
         return new ActionDisposable(() => NoireService.AddonLifecycle.UnregisterListener(eventType, handler));
-    }
-
-    /// <summary>
-    /// Unregisters addon lifecycle listeners for multiple addon names.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to stop listening for.</param>
-    /// <param name="addonNames">The addon names to unregister.</param>
-    /// <param name="handler">The optional specific handler to remove.</param>
-    public static void UnregisterLifecycleListener(AddonLifecycleEvent eventType, IEnumerable<string> addonNames, AddonLifecycleDelegate? handler = null)
-    {
-        string[] materializedAddonNames = MaterializeAddonNames(addonNames);
-        NoireService.AddonLifecycle.UnregisterListener(eventType, materializedAddonNames, handler!);
-    }
-
-    /// <summary>
-    /// Unregisters addon lifecycle listeners for a single addon name.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to stop listening for.</param>
-    /// <param name="addonName">The addon name to unregister.</param>
-    /// <param name="handler">The optional specific handler to remove.</param>
-    public static void UnregisterLifecycleListener(AddonLifecycleEvent eventType, string addonName, AddonLifecycleDelegate? handler = null)
-    {
-        ValidateAddonName(addonName, nameof(addonName));
-        NoireService.AddonLifecycle.UnregisterListener(eventType, addonName, handler!);
-    }
-
-    /// <summary>
-    /// Unregisters global addon lifecycle listeners.
-    /// </summary>
-    /// <param name="eventType">The lifecycle event type to stop listening for.</param>
-    /// <param name="handler">The optional specific handler to remove.</param>
-    public static void UnregisterLifecycleListener(AddonLifecycleEvent eventType, AddonLifecycleDelegate? handler = null)
-        => NoireService.AddonLifecycle.UnregisterListener(eventType, handler!);
-
-    /// <summary>
-    /// Unregisters every lifecycle registration for the supplied handlers.
-    /// </summary>
-    /// <param name="handlers">The handlers to remove.</param>
-    public static void UnregisterLifecycleListener(params AddonLifecycleDelegate[] handlers)
-    {
-        ArgumentNullException.ThrowIfNull(handlers);
-        NoireService.AddonLifecycle.UnregisterListener(handlers);
     }
 
     /// <summary>
@@ -779,27 +524,11 @@ public static class AddonHelper
     /// <summary>
     /// Registers an addon event on the supplied addon node.
     /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
     /// <param name="addon">The addon that owns the node.</param>
     /// <param name="node">The node to bind the event to.</param>
     /// <param name="eventType">The event type to listen for.</param>
     /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, AtkUnitBase* addon, AtkResNode* node, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addon, node, eventType, eventDelegate);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
+    /// <returns>The registered event handle, or null if the addon or node was unavailable. Store it under a key with <see cref="RegisterEvent(string, AddonEventHandle?)"/> if needed.</returns>
     public static unsafe AddonEventHandle? AddEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
     {
         ArgumentNullException.ThrowIfNull(eventDelegate);
@@ -809,164 +538,6 @@ public static class AddonHelper
 
         return NoireService.AddonEventManager.AddEvent((nint)addon, (nint)node, eventType, eventDelegate);
     }
-
-    /// <summary>
-    /// Registers an addon event on the root node of a ready addon.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addon">The addon that owns the root node.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon root node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, AtkUnitBase* addon, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addon, eventType, eventDelegate);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on the root node of a ready addon.
-    /// </summary>
-    /// <param name="addon">The addon that owns the root node.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon root node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(AtkUnitBase* addon, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-        => TryGetRootNode(addon, out var nodePtr) ? AddEvent(addon, nodePtr, eventType, eventDelegate) : null;
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by node id.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to bind the event to.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, AtkUnitBase* addon, uint nodeId, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addon, nodeId, eventType, eventDelegate);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by node id.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to bind the event to.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(AtkUnitBase* addon, uint nodeId, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-        => TryGetNode(addon, nodeId, out var nodePtr) ? AddEvent(addon, nodePtr, eventType, eventDelegate) : null;
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, AtkUnitBase* addon, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate, params int[] nodeIds)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addon, eventType, eventDelegate, nodeIds);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(AtkUnitBase* addon, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate, params int[] nodeIds)
-        => TryGetNode(addon, out var nodePtr, nodeIds) ? AddEvent(addon, nodePtr, eventType, eventDelegate) : null;
-
-    /// <summary>
-    /// Registers an addon event on the root node of a ready addon by name.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon root node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, string addonName, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addonName, eventType, eventDelegate);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on the root node of a ready addon by name.
-    /// </summary>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon root node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string addonName, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-        => TryGetReadyAddon(addonName, out var addonPtr) ? AddEvent(addonPtr, eventType, eventDelegate) : null;
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by name and node id.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="nodeId">The node id to bind the event to.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, string addonName, uint nodeId, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addonName, nodeId, eventType, eventDelegate);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by name and node id.
-    /// </summary>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="nodeId">The node id to bind the event to.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string addonName, uint nodeId, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate)
-        => TryGetReadyAddon(addonName, out var addonPtr) ? AddEvent(addonPtr, nodeId, eventType, eventDelegate) : null;
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by addon name and a chain of node ids.
-    /// </summary>
-    /// <param name="key">The registration key used to unregister the event later.</param>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string key, string addonName, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate, params int[] nodeIds)
-    {
-        AddonEventHandle? eventHandle = AddEvent(addonName, eventType, eventDelegate, nodeIds);
-        RegisterEvent(key, eventHandle);
-        return eventHandle;
-    }
-
-    /// <summary>
-    /// Registers an addon event on a node resolved by addon name and a chain of node ids.
-    /// </summary>
-    /// <param name="addonName">The addon name to resolve.</param>
-    /// <param name="eventType">The event type to listen for.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddEvent(string addonName, AddonNodeEventType eventType, AddonNodeEventDelegate eventDelegate, params int[] nodeIds)
-        => TryGetReadyAddon(addonName, out var addonPtr) ? AddEvent(addonPtr, eventType, eventDelegate, nodeIds) : null;
 
     /// <summary>
     /// Removes a previously registered addon event.
@@ -1021,108 +592,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Tries to configure cursor hover flags on a node resolved by node id.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to resolve.</param>
-    /// <param name="clickableCursorOnHover">Whether the clickable cursor should be shown on hover.</param>
-    /// <param name="textInputCursorOnHover">Whether the text input cursor should be shown on hover.</param>
-    /// <returns>True if the node was resolved and updated; otherwise, false.</returns>
-    public static unsafe bool TrySetNodeCursor(AtkUnitBase* addon, uint nodeId, bool clickableCursorOnHover = true, bool textInputCursorOnHover = false)
-        => TryGetNode(addon, nodeId, out var nodePtr) && TrySetNodeCursor(nodePtr, clickableCursorOnHover, textInputCursorOnHover);
-
-    /// <summary>
-    /// Tries to configure cursor hover flags on a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="clickableCursorOnHover">Whether the clickable cursor should be shown on hover.</param>
-    /// <param name="textInputCursorOnHover">Whether the text input cursor should be shown on hover.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if the node was resolved and updated; otherwise, false.</returns>
-    public static unsafe bool TrySetNodeCursor(AtkUnitBase* addon, bool clickableCursorOnHover, bool textInputCursorOnHover, params int[] nodeIds)
-        => TryGetNode(addon, out var nodePtr, nodeIds) && TrySetNodeCursor(nodePtr, clickableCursorOnHover, textInputCursorOnHover);
-
-    /// <summary>
-    /// Registers a mouse click event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddClickEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.MouseClick, eventDelegate);
-
-    /// <summary>
-    /// Registers a mouse click event on a node resolved by node id.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddClickEvent(AtkUnitBase* addon, uint nodeId, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, nodeId, AddonNodeEventType.MouseClick, eventDelegate);
-
-    /// <summary>
-    /// Registers a mouse click event on a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddClickEvent(AtkUnitBase* addon, AddonNodeEventDelegate eventDelegate, params int[] nodeIds)
-        => AddEvent(addon, AddonNodeEventType.MouseClick, eventDelegate, nodeIds);
-
-    /// <summary>
-    /// Registers a button click event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddButtonClickEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.ButtonClick, eventDelegate);
-
-    /// <summary>
-    /// Registers a button press event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddButtonPressEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.ButtonPress, eventDelegate);
-
-    /// <summary>
-    /// Registers a button release event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddButtonReleaseEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.ButtonRelease, eventDelegate);
-
-    /// <summary>
-    /// Registers a double click event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddDoubleClickEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.MouseDoubleClick, eventDelegate);
-
-    /// <summary>
-    /// Registers an input received event on the supplied addon node.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="node">The node to bind the event to.</param>
-    /// <param name="eventDelegate">The event handler to invoke.</param>
-    /// <returns>The registered event handle, or null if the addon or node was unavailable.</returns>
-    public static unsafe AddonEventHandle? AddInputReceivedEvent(AtkUnitBase* addon, AtkResNode* node, AddonNodeEventDelegate eventDelegate)
-        => AddEvent(addon, node, AddonNodeEventType.InputReceived, eventDelegate);
-
-    /// <summary>
     /// Registers hover handlers on the supplied addon node.
     /// </summary>
     /// <param name="addon">The addon that owns the node.</param>
@@ -1141,28 +610,6 @@ public static class AddonHelper
     }
 
     /// <summary>
-    /// Registers hover handlers on a node resolved by node id.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to bind the hover events to.</param>
-    /// <param name="onMouseOver">The handler to invoke when the node is hovered.</param>
-    /// <param name="onMouseOut">The optional handler to invoke when the cursor leaves the node.</param>
-    /// <returns>A disposable registration that unregisters every created event, or null if nothing was registered.</returns>
-    public static unsafe IDisposable? AddHoverEvents(AtkUnitBase* addon, uint nodeId, AddonNodeEventDelegate onMouseOver, AddonNodeEventDelegate? onMouseOut = null)
-        => TryGetNode(addon, nodeId, out var nodePtr) ? AddHoverEvents(addon, nodePtr, onMouseOver, onMouseOut) : null;
-
-    /// <summary>
-    /// Registers hover handlers on a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="onMouseOver">The handler to invoke when the node is hovered.</param>
-    /// <param name="onMouseOut">The optional handler to invoke when the cursor leaves the node.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>A disposable registration that unregisters every created event, or null if nothing was registered.</returns>
-    public static unsafe IDisposable? AddHoverEvents(AtkUnitBase* addon, AddonNodeEventDelegate onMouseOver, AddonNodeEventDelegate? onMouseOut, params int[] nodeIds)
-        => TryGetNode(addon, out var nodePtr, nodeIds) ? AddHoverEvents(addon, nodePtr, onMouseOver, onMouseOut) : null;
-
-    /// <summary>
     /// Registers cursor behavior on hover for the supplied addon node.
     /// </summary>
     /// <param name="addon">The addon that owns the node.</param>
@@ -1179,43 +626,6 @@ public static class AddonHelper
         AddonEventHandle? mouseOutHandle = resetCursorOnMouseOut ? AddEvent(addon, node, AddonNodeEventType.MouseOut, static (_, _) => ResetCursor()) : null;
 
         return CreateEventRegistration(mouseOverHandle, mouseOutHandle);
-    }
-
-    /// <summary>
-    /// Registers cursor behavior on hover for a node resolved by node id.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="nodeId">The node id to bind the hover cursor behavior to.</param>
-    /// <param name="cursor">The cursor to show while hovered.</param>
-    /// <param name="resetCursorOnMouseOut">Whether the cursor should be reset when hover ends.</param>
-    /// <returns>A disposable registration that unregisters every created event, or null if nothing was registered.</returns>
-    public static unsafe IDisposable? AddCursorOnHover(AtkUnitBase* addon, uint nodeId, AddonCursorType cursor, bool resetCursorOnMouseOut = true)
-        => TryGetNode(addon, nodeId, out var nodePtr) ? AddCursorOnHover(addon, nodePtr, cursor, resetCursorOnMouseOut) : null;
-
-    /// <summary>
-    /// Registers cursor behavior on hover for a node resolved by a chain of node ids.
-    /// </summary>
-    /// <param name="addon">The addon that owns the node.</param>
-    /// <param name="cursor">The cursor to show while hovered.</param>
-    /// <param name="resetCursorOnMouseOut">Whether the cursor should be reset when hover ends.</param>
-    /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>A disposable registration that unregisters every created event, or null if nothing was registered.</returns>
-    public static unsafe IDisposable? AddCursorOnHover(AtkUnitBase* addon, AddonCursorType cursor, bool resetCursorOnMouseOut, params int[] nodeIds)
-        => TryGetNode(addon, out var nodePtr, nodeIds) ? AddCursorOnHover(addon, nodePtr, cursor, resetCursorOnMouseOut) : null;
-
-    /// <summary>
-    /// Tries to send callback values to a ready addon by name.
-    /// </summary>
-    /// <param name="addonName">The name of the addon to send callback values to.</param>
-    /// <param name="updateState">Whether the addon should update its internal state after the callback is fired.</param>
-    /// <param name="values">The callback values to marshal into <see cref="AtkValue"/> instances.</param>
-    /// <returns>True if the addon was found, ready, and the callback was sent successfully; otherwise, false.</returns>
-    public static unsafe bool SendCallback(string addonName, bool updateState, params object[] values)
-    {
-        if (!TryGetReadyAddon(addonName, out var addonPtr))
-            return false;
-
-        return SendCallback(addonPtr, updateState, values);
     }
 
     /// <summary>
@@ -1349,9 +759,6 @@ public static class AddonHelper
             .Replace("\r", "\\r", StringComparison.Ordinal)
             .Replace("\n", "\\n", StringComparison.Ordinal)
             .Replace("\t", "\\t", StringComparison.Ordinal);
-
-    private static unsafe string ReadCString(byte* textPointer)
-        => textPointer == null ? string.Empty : Marshal.PtrToStringUTF8((nint)textPointer) ?? string.Empty;
 
     private static unsafe void TryWriteAtkValue(AtkValue* target, object? value)
     {

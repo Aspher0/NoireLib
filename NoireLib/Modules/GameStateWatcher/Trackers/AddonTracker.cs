@@ -768,7 +768,8 @@ public sealed class AddonTracker : GameStateSubTracker
         text = string.Empty;
 
         return AddonHelper.TryGetReadyAddon(addonName, out var addonPtr)
-            && AddonHelper.TryReadText(addonPtr, out text, nodeIds);
+            && AddonHelper.TryGetNode(addonPtr, out var nodePtr, nodeIds)
+            && AddonHelper.TryReadText(nodePtr, out text);
     }
 
     private static unsafe bool TryReadNodeVisibility(string addonName, int[] nodeIds, out bool isVisible)
@@ -783,7 +784,8 @@ public sealed class AddonTracker : GameStateSubTracker
     private static unsafe (bool Exists, bool Visible) ReadComponentNodeState(string addonName, int[] nodeIds)
     {
         if (!AddonHelper.TryGetReadyAddon(addonName, out var addonPtr)
-            || !AddonHelper.TryGetComponentNode(addonPtr, out var componentNodePtr, nodeIds))
+            || !AddonHelper.TryGetNode(addonPtr, out var nodePtr, nodeIds)
+            || !AddonHelper.TryGetComponentNode(nodePtr, out var componentNodePtr))
             return (false, false);
 
         return (true, componentNodePtr->AtkResNode.IsVisible());
