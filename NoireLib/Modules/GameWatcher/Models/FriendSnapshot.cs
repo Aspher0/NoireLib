@@ -4,8 +4,8 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// An immutable snapshot of a friend-list entry — remote presence through the game's social data.<br/>
-/// Friend data is refreshed on a slow cadence (see <see cref="GameWatcherOptions.FriendsRefreshInterval"/>):
-/// values are seconds-grained, not frame-grained, and can lag reality between refreshes.
+/// Backed by the game's social proxy, refreshed on a slow cadence (see <see cref="FriendWatcher"/>): values
+/// are seconds-grained, not frame-grained, and can lag reality between refreshes.
 /// </summary>
 public sealed record FriendSnapshot
 {

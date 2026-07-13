@@ -27,7 +27,7 @@ public sealed class GameWatcherOptions
     /// <summary>
     /// Per-source poll cadence overrides for polling sources. Unlisted sources use their defaults:
     /// every tick for the hot sources (Characters, Objects, Targets, Statuses, Party),
-    /// 1 second for Fate/Weather/EorzeaTime, and <see cref="FriendsRefreshInterval"/> for Friends.<br/>
+    /// and 1 second for Fate/Weather/EorzeaTime/Friends.<br/>
     /// Dial a source down (e.g. Statuses to 100 ms) when watching wide scopes in crowded areas.
     /// </summary>
     public Dictionary<SourceKind, TimeSpan> PollCadences { get; set; } = new();
@@ -45,10 +45,13 @@ public sealed class GameWatcherOptions
     public TimeSpan AddonSafetyPollInterval { get; set; } = TimeSpan.FromMilliseconds(250);
 
     /// <summary>
-    /// How often the Friends source re-requests the friend list from the server. Default: 30 seconds.
-    /// Friend data is seconds-grained by nature; lower values increase server chatter for little gain.
+    /// How often the Friends source refreshes the game's social proxy in the background (via
+    /// <c>InfoProxyFriendList.RequestData</c>) so friend online/offline/location updates without the friend
+    /// list being open. Default: a jittered 30–40 seconds (floored at 30) so the request timing is not a
+    /// detectable fixed beat. The refresh is <b>skipped while the friend-list window is open</b> so it never
+    /// re-sorts or scrolls the addon; the game keeps the list live while it is open anyway.
     /// </summary>
-    public TimeSpan FriendsRefreshInterval { get; set; } = TimeSpan.FromSeconds(30);
+    public JitteredInterval FriendsRefreshCadence { get; set; } = JitteredInterval.Default;
 
     /// <summary>
     /// The extra distance (in yalms) added to a distance watcher's leave threshold so a subject oscillating
@@ -73,7 +76,7 @@ public sealed class GameWatcherOptions
         Chat = Chat.Clone(),
         Combat = Combat.Clone(),
         AddonSafetyPollInterval = AddonSafetyPollInterval,
-        FriendsRefreshInterval = FriendsRefreshInterval,
+        FriendsRefreshCadence = FriendsRefreshCadence,
         DistanceHysteresis = DistanceHysteresis,
         DiagnosticsEventLogCapacity = DiagnosticsEventLogCapacity,
     };

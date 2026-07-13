@@ -110,7 +110,7 @@ await watcher.WaitFor<SomethingObservedEvent>(timeout: TimeSpan.FromSeconds(10))
 
 - **Same area**: the object table is the client's entire view — `watcher.Characters.OnSpawned(..., scope)` *is* the presence event (zones, housing wards and plots alike).
 - **Sub-areas**: `watcher.Objects.WatchRegion(territoryId, RegionShape.Circle(center, r), onEntered, onLeft)` — territory-bound shapes with hysteresis. `WatchDistance(radius, ...)` for proximity around you.
-- **Remote**: `watcher.Party.OnMemberTerritoryChanged(...)` (party members anywhere, server-synced) and `watcher.Friends.OnTerritoryChanged(...)` (friends anywhere, refresh-cadence). Beyond party and social lists the client has no data — that boundary is documented, never silently absorbed.
+- **Remote**: `watcher.Party.OnMemberTerritoryChanged(...)` (party members anywhere, server-synced) and `watcher.Friends.OnTerritoryChanged(...)` (friends anywhere, refresh-cadence). The friend proxy refreshes in the background on a **jittered** cadence (`FriendsRefreshCadence`, floored at 30s) so the requests are not a detectable fixed beat, and the refresh is skipped while the friend-list window is open so it never disturbs it. Beyond party and social lists the client has no data — that boundary is documented, never silently absorbed.
 
 ## Cost model
 
