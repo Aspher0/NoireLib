@@ -116,7 +116,7 @@ public sealed unsafe class Draw3DDiagnostics
             var box = scene.CreateNode($"Smoke.Box{i}");
             box.LocalPosition = center + new Vector3(3.5f, 0.5f + i * 1.05f, -3.5f);
             box.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, i * 0.4f);
-            box.SetMesh(boxMesh, Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)));
+            box.SetMesh(boxMesh, Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None });
             smokeNodes.Add(box);
         }
 
