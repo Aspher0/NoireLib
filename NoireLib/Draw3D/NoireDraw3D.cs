@@ -80,7 +80,7 @@ public static unsafe class NoireDraw3D
     private static volatile bool frameworkCameraValid;
     private static bool frameworkHooked;
 
-    private static bool keepDrawingWhenUiHidden;
+    private static bool keepDrawingWhenUiHidden = true;
     private static bool forcedAutoHide, forcedUserHide, forcedCutsceneHide, forcedGposeHide;
 
     private static int passFailStreak;
@@ -184,10 +184,12 @@ public static unsafe class NoireDraw3D
     }
 
     /// <summary>
-    /// Keep the 3D layer rendering when the plugin's UI is hidden (cutscenes, GPose, user UI-hide).<br/>
-    /// <b>Plugin-wide side effect:</b> the switch lives on the shared UiBuilder, so enabling it keeps the
-    /// host plugin's entire UI drawing in those states; windows that should still hide must check
-    /// cutscene/GPose state themselves.
+    /// Keep the 3D layer rendering when the plugin's UI is hidden (cutscenes, GPose, user UI-hide).
+    /// <b>Default true</b>: a world overlay should survive the UI-hide toggle — otherwise the whole scene
+    /// vanishes when the player hides the HUD.<br/>
+    /// <b>Plugin-wide side effect:</b> the switch lives on the shared UiBuilder, so it also keeps the host
+    /// plugin's own windows drawing in those states; set it false (or hide those windows yourself on
+    /// cutscene/GPose) if that isn't wanted.
     /// </summary>
     public static bool KeepDrawingWhenUiHidden
     {
@@ -346,6 +348,7 @@ public static unsafe class NoireDraw3D
             RegisterCommand();
             initialized = true;
             UpdateFrameworkHook(); // default camera source is FrameworkSnapshot — start the sim-thread sampler
+            RefreshUiHideOverrides(); // default KeepDrawingWhenUiHidden is true — the layer survives UI-hide
             NoireLogger.LogInfo("NoireDraw3D initialized (device objects deferred to first Present).", "Draw3D");
         }
     }
