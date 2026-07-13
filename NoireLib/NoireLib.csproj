@@ -17,6 +17,7 @@
         <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
         <GenerateDocumentationFile>true</GenerateDocumentationFile>
         <PublishDocumentationFile>true</PublishDocumentationFile>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -53,6 +54,20 @@
         <None Include="modules\localizer\README.md" />
         <None Include="Modules\TaskQueue\README.md" />
         <None Include="Modules\UpdateTracker\README.md" />
+        <None Include="UI\README.md" />
+        <None Include="Draw3D\README.md" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Draw3D\Shaders\*.hlsl*" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- Ships in the Dalamud dev folder; referenced like the other Dalamud-provided assemblies (zero package weight). -->
+        <Reference Include="TerraFX.Interop.Windows">
+            <HintPath>$(DalamudLibPath)TerraFX.Interop.Windows.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
     </ItemGroup>
 
     <ItemGroup>
@@ -68,6 +83,7 @@
         <PackageReference Include="Castle.Core" Version="5.2.1" />
         <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+        <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
         <PackageReference Include="System.Data.SQLite" Version="2.0.3" />
     </ItemGroup>
 

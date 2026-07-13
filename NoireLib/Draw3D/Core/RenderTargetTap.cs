@@ -1,0 +1,393 @@
+using NoireLib.Hooking;
+using System;
+using System.Runtime.InteropServices;
+using System.Text;
+using TerraFX.Interop.DirectX;
+using TerraFX.Interop.Windows;
+
+namespace NoireLib.Draw3D.Core;
+
+/// <summary>
+/// The render-thread hook on the game's D3D11 immediate context. It serves two jobs on the
+/// <c>ID3D11DeviceContext::OMSetRenderTargets</c> vtable slot:
+/// <list type="bullet">
+/// <item><b>Diagnostics</b> (<c>/noire3d rtlog</c>): records one frame's render-target bind sequence and
+/// the draw counts between binds, so the pre-UI injection point can be identified from real data.</item>
+/// <item><b>Pre-UI injection</b> (<c>/noire3d ontop</c>): the game composites the final world image into a
+/// "present buffer" and then draws its native UI (nameplates, HUD) into that same buffer before blitting
+/// to the swapchain. By learning that present buffer (the render target bound right before the swapchain
+/// backbuffer) and firing a callback at its 2nd bind of the frame — after the world copy, before the UI
+/// burst — Draw3D can composite its layer UNDER the native UI.</item>
+/// </list>
+/// Opt-in (installed only on first use); the OM hook stays disabled unless a capture is armed or injection
+/// is enabled; the four draw-count hooks are enabled only for the single frame of a capture.
+/// </summary>
+internal sealed unsafe class RenderTargetTap : IDisposable
+{
+    // ID3D11DeviceContext vtable slots.
+    private const int SlotDrawIndexed = 12;
+    private const int SlotDraw = 13;
+    private const int SlotDrawIndexedInstanced = 20;
+    private const int SlotDrawInstanced = 21;
+    private const int SlotOmSetRenderTargets = 33;
+    private const int MaxBinds = 640; // a full frame including the late UI stage
+    private const int CaptureWarmupFrames = 6; // let the swapchain flip through all its buffers first
+    private const int InjectOrdinal = 2; // present-buffer bind #: 1 = world copy, 2 = after world / before UI
+
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void OmSetRenderTargetsFn(nint context, uint numViews, nint ppRenderTargetViews, nint pDepthStencilView);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DrawIndexedFn(nint context, uint indexCount, uint startIndex, int baseVertex);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DrawFn(nint context, uint vertexCount, uint startVertex);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DrawIndexedInstancedFn(nint context, uint indexCountPerInstance, uint instanceCount, uint startIndex, int baseVertex, uint startInstance);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void DrawInstancedFn(nint context, uint vertexCountPerInstance, uint instanceCount, uint startVertex, uint startInstance);
+
+    private readonly record struct Bind(uint NumViews, nint Rtv0Resource, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
+
+    private HookWrapper<OmSetRenderTargetsFn>? omHook;
+    private HookWrapper<DrawIndexedFn>? drawIndexedHook;
+    private HookWrapper<DrawFn>? drawHook;
+    private HookWrapper<DrawIndexedInstancedFn>? drawIndexedInstancedHook;
+    private HookWrapper<DrawInstancedFn>? drawInstancedHook;
+    private OmSetRenderTargetsFn? omDetour;
+    private DrawIndexedFn? drawIndexedDetour;
+    private DrawFn? drawDetour;
+    private DrawIndexedInstancedFn? drawIndexedInstancedDetour;
+    private DrawInstancedFn? drawInstancedDetour;
+    private nint gameContext;
+
+    private readonly Bind[] binds = new Bind[MaxBinds];
+    private int bindCount;
+    private int drawCounter;
+    private volatile int state; // 0 = idle, 1 = warming up, 2 = capturing
+    private int warmupLeft;
+
+    // The swapchain rotates through several backbuffer textures (flip model); a bind is "to the
+    // backbuffer" if its target matches ANY of them. Accumulated from the per-present current buffer.
+    private readonly nint[] knownBackbuffers = new nint[8];
+    private int knownBackbufferCount;
+
+    // Injection state.
+    private nint presentBuffer;             // committed present-composition buffer (learned last frame)
+    private nint candidatePresentBuffer;    // RTV seen right before a swapchain bind this frame
+    private nint lastNonBackbufferRtv;      // running previous RTV (candidate source)
+    private int presentBufferBinds;         // present-buffer binds so far this frame
+    private volatile bool injecting;        // re-entrancy guard around the injection callback
+
+    /// <summary>When true the detour skips its work — set around Draw3D's OWN binds so they never interfere.</summary>
+    public bool SuppressSelf;
+
+    /// <summary>Enables the pre-UI injection path (the OM hook must be installed and stays enabled while set).</summary>
+    public bool InjectionEnabled { get; private set; }
+
+    /// <summary>Callback fired (render thread) at the injection point with the present-buffer resource. Returns true if it rendered.</summary>
+    public Func<nint, bool>? Injector { get; set; }
+
+    /// <summary>True once the hooks have been installed (they may still be disabled).</summary>
+    public bool Installed => omHook != null;
+
+    /// <summary>Installs the hooks (disabled) by reading the immediate context's vtable slots. One-time.</summary>
+    public bool Install(RenderDevice device)
+    {
+        if (omHook != null)
+            return true;
+
+        var ctx = device.Context;
+        if (ctx == null)
+            return false;
+
+        gameContext = (nint)ctx;
+        var vtable = *(void***)ctx;
+
+        try
+        {
+            omDetour = OmDetour;
+            omHook = new HookWrapper<OmSetRenderTargetsFn>((nint)vtable[SlotOmSetRenderTargets], omDetour, autoEnable: false, name: "Draw3D.OMSetRenderTargets");
+            drawIndexedDetour = DrawIndexedDetour;
+            drawIndexedHook = new HookWrapper<DrawIndexedFn>((nint)vtable[SlotDrawIndexed], drawIndexedDetour, autoEnable: false, name: "Draw3D.DrawIndexed");
+            drawDetour = DrawDetour;
+            drawHook = new HookWrapper<DrawFn>((nint)vtable[SlotDraw], drawDetour, autoEnable: false, name: "Draw3D.Draw");
+            drawIndexedInstancedDetour = DrawIndexedInstancedDetour;
+            drawIndexedInstancedHook = new HookWrapper<DrawIndexedInstancedFn>((nint)vtable[SlotDrawIndexedInstanced], drawIndexedInstancedDetour, autoEnable: false, name: "Draw3D.DrawIndexedInstanced");
+            drawInstancedDetour = DrawInstancedDetour;
+            drawInstancedHook = new HookWrapper<DrawInstancedFn>((nint)vtable[SlotDrawInstanced], drawInstancedDetour, autoEnable: false, name: "Draw3D.DrawInstanced");
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Draw3D: failed to install the render-thread hook (pre-UI features unavailable).", "Draw3D");
+            Dispose();
+            return false;
+        }
+
+        NoireLogger.LogInfo("Draw3D: render-thread hook installed (disabled until armed/enabled).", "Draw3D");
+        return true;
+    }
+
+    /// <summary>Turns the pre-UI injection path on or off. Keeps the OM hook enabled while on.</summary>
+    public void SetInjection(bool enabled)
+    {
+        InjectionEnabled = enabled;
+        RefreshOmHookState();
+    }
+
+    /// <summary>Arms a one-frame diagnostic capture after a short warm-up (so every swapchain buffer is learned first).</summary>
+    public void ArmCapture()
+    {
+        if (omHook == null)
+            return;
+
+        bindCount = 0;
+        warmupLeft = CaptureWarmupFrames;
+        state = 1;
+        RefreshOmHookState();
+    }
+
+    /// <summary>
+    /// Per-present bookkeeping (render thread): learns the swapchain backbuffers, commits the present buffer
+    /// learned this frame, resets per-frame counters, and drives the diagnostic-capture state machine.
+    /// </summary>
+    public void OnPresent(nint backbufferTexture)
+    {
+        RememberBackbuffer(backbufferTexture);
+
+        // Commit the present buffer observed this frame for next frame's injection; reset per-frame state.
+        if (candidatePresentBuffer != 0)
+            presentBuffer = candidatePresentBuffer;
+        candidatePresentBuffer = 0;
+        lastNonBackbufferRtv = 0;
+        presentBufferBinds = 0;
+
+        switch (state)
+        {
+            case 1:
+                if (--warmupLeft <= 0)
+                {
+                    bindCount = 0;
+                    drawCounter = 0;
+                    state = 2;
+                    SetDrawHooksEnabled(true);
+                    RefreshOmHookState();
+                }
+
+                break;
+            case 2:
+                Flush();
+                state = 0;
+                SetDrawHooksEnabled(false);
+                RefreshOmHookState();
+                break;
+        }
+    }
+
+    private void RefreshOmHookState()
+    {
+        var wanted = InjectionEnabled || state == 2;
+        if (omHook != null && omHook.IsEnabled != wanted)
+            omHook.SetEnabled(wanted);
+    }
+
+    private void SetDrawHooksEnabled(bool enabled)
+    {
+        drawIndexedHook?.SetEnabled(enabled);
+        drawHook?.SetEnabled(enabled);
+        drawIndexedInstancedHook?.SetEnabled(enabled);
+        drawInstancedHook?.SetEnabled(enabled);
+    }
+
+    private void RememberBackbuffer(nint texture)
+    {
+        if (texture == 0)
+            return;
+
+        for (var i = 0; i < knownBackbufferCount; i++)
+        {
+            if (knownBackbuffers[i] == texture)
+                return;
+        }
+
+        if (knownBackbufferCount < knownBackbuffers.Length)
+            knownBackbuffers[knownBackbufferCount++] = texture;
+    }
+
+    private bool IsBackbuffer(nint resource)
+    {
+        for (var i = 0; i < knownBackbufferCount; i++)
+        {
+            if (knownBackbuffers[i] == resource)
+                return true;
+        }
+
+        return false;
+    }
+
+    private bool Counting(nint context) => state == 2 && !SuppressSelf && !injecting && context == gameContext;
+
+    private void OmDetour(nint context, uint numViews, nint ppRtvs, nint pDsv)
+    {
+        omHook!.Original(context, numViews, ppRtvs, pDsv); // apply the game's bind first
+
+        if (injecting || SuppressSelf || context != gameContext)
+            return;
+
+        var rtv0 = ResolveRtv0Resource(numViews, ppRtvs);
+
+        // Learn the present-composition buffer: the RTV bound right before a swapchain backbuffer bind.
+        if (rtv0 != 0)
+        {
+            if (IsBackbuffer(rtv0))
+            {
+                if (lastNonBackbufferRtv != 0)
+                    candidatePresentBuffer = lastNonBackbufferRtv;
+            }
+            else
+            {
+                lastNonBackbufferRtv = rtv0;
+            }
+        }
+
+        if (state == 2 && bindCount < MaxBinds)
+            Record(numViews, rtv0, pDsv);
+
+        // Pre-UI injection: at the present buffer's Nth bind (after the world copy, before the UI burst).
+        if (InjectionEnabled && presentBuffer != 0 && rtv0 == presentBuffer && Injector != null)
+        {
+            presentBufferBinds++;
+            if (presentBufferBinds == InjectOrdinal)
+            {
+                injecting = true;
+                try
+                {
+                    Injector(presentBuffer);
+                }
+                catch (Exception ex)
+                {
+                    NoireLogger.LogError(ex, "Draw3D: native-UI injection callback threw.", "Draw3D");
+                }
+                finally
+                {
+                    injecting = false;
+                }
+            }
+        }
+    }
+
+    private void DrawIndexedDetour(nint context, uint indexCount, uint startIndex, int baseVertex)
+    {
+        if (Counting(context))
+            drawCounter++;
+
+        drawIndexedHook!.Original(context, indexCount, startIndex, baseVertex);
+    }
+
+    private void DrawDetour(nint context, uint vertexCount, uint startVertex)
+    {
+        if (Counting(context))
+            drawCounter++;
+
+        drawHook!.Original(context, vertexCount, startVertex);
+    }
+
+    private void DrawIndexedInstancedDetour(nint context, uint indexCountPerInstance, uint instanceCount, uint startIndex, int baseVertex, uint startInstance)
+    {
+        if (Counting(context))
+            drawCounter++;
+
+        drawIndexedInstancedHook!.Original(context, indexCountPerInstance, instanceCount, startIndex, baseVertex, startInstance);
+    }
+
+    private void DrawInstancedDetour(nint context, uint vertexCountPerInstance, uint instanceCount, uint startVertex, uint startInstance)
+    {
+        if (Counting(context))
+            drawCounter++;
+
+        drawInstancedHook!.Original(context, vertexCountPerInstance, instanceCount, startVertex, startInstance);
+    }
+
+    private nint ResolveRtv0Resource(uint numViews, nint ppRtvs)
+    {
+        if (numViews == 0 || ppRtvs == 0)
+            return 0;
+
+        var rtv = ((ID3D11RenderTargetView**)ppRtvs)[0];
+        if (rtv == null)
+            return 0;
+
+        ID3D11Resource* resource = null;
+        rtv->GetResource(&resource);
+        if (resource == null)
+            return 0;
+
+        var res = (nint)resource;
+        resource->Release(); // for-comparison only; the RTV keeps the resource alive
+        return res;
+    }
+
+    private void Record(uint numViews, nint rtv0, nint pDsv)
+    {
+        uint w = 0, h = 0;
+        if (rtv0 != 0 && ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)rtv0, out var tex))
+        {
+            D3D11_TEXTURE2D_DESC desc;
+            tex.Get()->GetDesc(&desc);
+            w = desc.Width;
+            h = desc.Height;
+            tex.Dispose();
+        }
+
+        binds[bindCount++] = new Bind(numViews, rtv0, w, h, pDsv != 0, IsBackbuffer(rtv0), drawCounter);
+    }
+
+    private void Flush()
+    {
+        var sb = new StringBuilder();
+        var bbList = new StringBuilder();
+        for (var i = 0; i < knownBackbufferCount; i++)
+            bbList.Append($"0x{knownBackbuffers[i]:X} ");
+        sb.AppendLine($"Draw3D RT-bind sequence, one frame ({bindCount} binds, {drawCounter} draws; {knownBackbufferCount} backbuffers: {bbList}; present buffer 0x{presentBuffer:X})");
+
+        var bbIdx = new StringBuilder();
+        for (var i = 0; i < bindCount; i++)
+        {
+            if (binds[i].IsBackbuffer)
+                bbIdx.Append(i).Append(binds[i].HasDsv ? "(+dsv) " : " ");
+        }
+
+        sb.AppendLine($"  backbuffer binds at idx: {(bbIdx.Length == 0 ? "(none learned — re-run)" : bbIdx.ToString())}");
+        sb.AppendLine("  'draws' = draw calls made into the PREVIOUS row's target (1 = a blit; a burst = a real pass, e.g. the UI).");
+        sb.AppendLine("  idx | draws | #rtv | backbuffer | dsv |  size    | rtv0 resource");
+        for (var i = 0; i < bindCount; i++)
+        {
+            var b = binds[i];
+            var draws = i == 0 ? b.DrawCount : b.DrawCount - binds[i - 1].DrawCount;
+            sb.AppendLine($"  {i,3} | {draws,5} |  {b.NumViews,2}  |    {(b.IsBackbuffer ? "YES" : " - ")}    | {(b.HasDsv ? "yes" : " - ")} | {b.Width,4}x{b.Height,-4} | 0x{b.Rtv0Resource:X}");
+        }
+
+        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+        NoireService.ChatGui.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame — paste the log (/xllog).");
+    }
+
+    /// <inheritdoc/>
+    public void Dispose()
+    {
+        InjectionEnabled = false;
+        Injector = null;
+        omHook?.Dispose();
+        drawIndexedHook?.Dispose();
+        drawHook?.Dispose();
+        drawIndexedInstancedHook?.Dispose();
+        drawInstancedHook?.Dispose();
+        omHook = null;
+        drawIndexedHook = null;
+        drawHook = null;
+        drawIndexedInstancedHook = null;
+        drawInstancedHook = null;
+        omDetour = null;
+        drawIndexedDetour = null;
+        drawDetour = null;
+        drawIndexedInstancedDetour = null;
+        drawInstancedDetour = null;
+    }
+}

@@ -143,6 +143,14 @@ For a list of modules, see the [Modules Section](#modules)
 - [Database System](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Database/README.md)
 - [IPC Manager](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/IPC/README.md)
 
+## UI Helpers
+
+- [NoireLib.UI](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md) - Overlay buttons, filterable combo boxes with wheel cycling, and custom tooltips
+
+## 3D Rendering
+
+- [NoireDraw3D](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Draw3D/README.md) - A real D3D11 world renderer: terrain-hugging telegraphs, shapes, meshes, glTF model import, render-to-texture and picking — glowless, hook-free, ImGui-free
+
 ## Modules
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
