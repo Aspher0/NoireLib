@@ -3,6 +3,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NoireLib.Core.Modules;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 

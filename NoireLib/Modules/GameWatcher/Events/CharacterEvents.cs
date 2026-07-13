@@ -112,16 +112,13 @@ public sealed record CharacterCastCompletedEvent(CharacterSnapshot Previous, Cha
 }
 
 /// <summary>
-/// Fired when a character's cast is interrupted or cancelled.
+/// Fired when a character's cast is interrupted or cancelled — inferred from polling: the cast disappeared
+/// well before its total time (as opposed to completing at the end of its cast bar).
 /// </summary>
 /// <param name="Previous">The snapshot with the cast in progress.</param>
 /// <param name="Current">The snapshot after the cast ended.</param>
 /// <param name="CastActionId">The action row id that was being cast.</param>
-/// <param name="IsAuthoritative">
-/// True when the interrupt was confirmed by the server's ActorControl packet;
-/// false when it was inferred from polling (the cast disappeared well before its total time).
-/// </param>
-public sealed record CharacterCastInterruptedEvent(CharacterSnapshot Previous, CharacterSnapshot Current, uint CastActionId, bool IsAuthoritative) : ICharacterScopedEvent
+public sealed record CharacterCastInterruptedEvent(CharacterSnapshot Previous, CharacterSnapshot Current, uint CastActionId) : ICharacterScopedEvent
 {
     /// <inheritdoc/>
     public CharacterSnapshot Subject => Current;
@@ -206,9 +203,10 @@ public sealed record CharacterEmoteLoopEndedEvent(CharacterSnapshot Previous, Ch
 }
 
 /// <summary>
-/// Fired when a character plays an emote — one-shot and looping alike, with the exact emote id.<br/>
-/// Produced by the ActorControl hook. A one-shot emote is a fired animation, not a state: it produces this
-/// single event and has no end signal. Start/end pairs exist only for looping emotes
+/// Fired when a character's played emote id changes — one-shot emotes, looping emotes and cposes alike, with
+/// the exact emote id (read from the character's emote controller, no hook involved).<br/>
+/// A one-shot emote is a fired animation, not a state: it produces this single event as the id becomes set and
+/// has no end signal. Looping-emote start/end pairs exist separately
 /// (<see cref="CharacterEmoteLoopStartedEvent"/>/<see cref="CharacterEmoteLoopEndedEvent"/>).
 /// </summary>
 /// <param name="Character">The snapshot of the character playing the emote.</param>

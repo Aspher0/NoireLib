@@ -38,9 +38,6 @@ public enum SourceKind
     /// <summary>Parsed action effects (damage, healing, crits, …) received from the server, via hook.</summary>
     ActionEffect,
 
-    /// <summary>The ActorControl packet family, via hook: one-shot emotes, authoritative cast interrupts and raw category taps.</summary>
-    ActorControl,
-
     /// <summary>Local action cooldowns/charges/GCD (exact) and other characters' cooldown estimates (inferred).</summary>
     Cooldowns,
 

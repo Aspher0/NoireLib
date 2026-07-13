@@ -38,6 +38,7 @@ public class NoireGameWatcherTests
         bool isDead = false,
         byte mode = 1,
         byte modeParam = 0,
+        ushort emoteId = 0,
         uint level = 90,
         uint classJobId = 1,
         uint onlineStatusId = 0)
@@ -74,6 +75,7 @@ public class NoireGameWatcherTests
             IsDead = isDead,
             Mode = mode,
             ModeParam = modeParam,
+            EmoteId = emoteId,
             OnlineStatusId = onlineStatusId,
             Position = Vector3.Zero,
             Rotation = 0,
@@ -193,6 +195,7 @@ public class NoireGameWatcherTests
     [InlineData(nameof(CharacterAspect.Combat))]
     [InlineData(nameof(CharacterAspect.Life))]
     [InlineData(nameof(CharacterAspect.Mode))]
+    [InlineData(nameof(CharacterAspect.Emote))]
     [InlineData(nameof(CharacterAspect.JobLevel))]
     [InlineData(nameof(CharacterAspect.Identity))]
     [InlineData(nameof(CharacterAspect.OnlineStatus))]
@@ -208,6 +211,7 @@ public class NoireGameWatcherTests
             CharacterAspect.Combat => CharacterFieldSet.FromSnapshot(MakeSnapshot(isInCombat: true)),
             CharacterAspect.Life => CharacterFieldSet.FromSnapshot(MakeSnapshot(isDead: true)),
             CharacterAspect.Mode => CharacterFieldSet.FromSnapshot(MakeSnapshot(mode: 3, modeParam: 12)),
+            CharacterAspect.Emote => CharacterFieldSet.FromSnapshot(MakeSnapshot(emoteId: 21)),
             CharacterAspect.JobLevel => CharacterFieldSet.FromSnapshot(MakeSnapshot(level: 91)),
             CharacterAspect.Identity => CharacterFieldSet.FromSnapshot(MakeSnapshot(contentId: 0x1234)),
             CharacterAspect.OnlineStatus => CharacterFieldSet.FromSnapshot(MakeSnapshot(onlineStatusId: 17)),

@@ -7,7 +7,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Combat facts: fully parsed action effects (damage/heal/crit/direct-hit/block/parry, per target), scoped by
-/// action source and by target, rolling statistics, opt-in bounded history, and the raw ActorControl tap.
+/// action source and by target, rolling statistics, and opt-in bounded history.
 /// </summary>
 public sealed class CombatWatcher : GameWatcherFacade
 {
@@ -65,21 +65,6 @@ public sealed class CombatWatcher : GameWatcherFacade
         var effectiveScope = scope ?? Scope.LocalPlayer;
         return On(null, handler, WithFilter(options, evt => MatchesAnyTarget(evt, effectiveScope)), $"{nameof(OnActionAgainst)} [{effectiveScope}]");
     }
-
-    /// <summary>
-    /// Subscribes to the raw ActorControl packet stream — tier 5 of the coverage doctrine.<br/>
-    /// <b>Advanced and unstable</b>: categories and argument meanings are reverse-engineered and can change
-    /// with game patches. Prefer the modeled events when they exist.
-    /// </summary>
-    /// <param name="handler">The handler.</param>
-    /// <param name="options">Optional subscription settings.</param>
-    /// <returns>A token that unsubscribes when disposed.</returns>
-    public NoireSubscriptionToken OnRawActorControl(Action<RawActorControlEvent> handler, NoireSubscriptionOptions<RawActorControlEvent>? options = null)
-        => On(handler, null, options, nameof(OnRawActorControl));
-
-    /// <inheritdoc cref="OnRawActorControl(Action{RawActorControlEvent}, NoireSubscriptionOptions{RawActorControlEvent}?)"/>
-    public NoireSubscriptionToken OnRawActorControlAsync(Func<RawActorControlEvent, Task> handler, NoireSubscriptionOptions<RawActorControlEvent>? options = null)
-        => On(null, handler, options, nameof(OnRawActorControl));
 
     /// <summary>Rolling statistics over every observed action effect since the source last activated.</summary>
     public ActionEffectStatistics Statistics

@@ -15,6 +15,7 @@ internal sealed class FriendSource : GameWatcherSource
     private readonly Dictionary<ulong, FriendSnapshot> friends = new();
     private DateTimeOffset nextRefreshRequest = DateTimeOffset.MinValue;
     private bool seeded;
+    private bool resyncPending;
 
     public FriendSource(NoireGameWatcher owner) : base(owner, SourceKind.Friends) { }
 
@@ -26,6 +27,7 @@ internal sealed class FriendSource : GameWatcherSource
     {
         friends.Clear();
         seeded = false;
+        resyncPending = false;
         nextRefreshRequest = DateTimeOffset.MinValue;
     }
 
@@ -34,6 +36,7 @@ internal sealed class FriendSource : GameWatcherSource
     {
         friends.Clear();
         seeded = false;
+        resyncPending = false;
     }
 
     /// <inheritdoc/>
@@ -53,10 +56,27 @@ internal sealed class FriendSource : GameWatcherSource
         if (current == null)
             return;
 
-        if (!seeded)
+        // The game only keeps the friend info-proxy fully populated while the friend list is open (or briefly
+        // after a RequestData). Between those windows CharDataSpan reads back empty, then repopulates wholesale.
+        // Diffing across those transitions would fire a remove-everyone storm on clear and an add-everyone storm
+        // on repopulate, so an empty read is treated as "data not live right now": keep the last-known baseline
+        // and mark a resync, and the next populated read re-seeds silently instead of emitting a storm. Real
+        // online/offline/territory changes still diff correctly while the data stays live (list open).
+        if (current.Count == 0)
         {
-            // Baseline seeding without events.
+            if (friends.Count > 0)
+                resyncPending = true;
+
+            return;
+        }
+
+        if (!seeded || resyncPending)
+        {
+            // Silent (re)seed — baseline refresh after activation or an empty/stale window, no events.
             seeded = true;
+            resyncPending = false;
+
+            friends.Clear();
 
             foreach (var (contentId, friend) in current)
                 friends[contentId] = friend;

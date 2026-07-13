@@ -41,6 +41,9 @@ public enum CharacterAspect
     /// <summary>Character mode transitions (looping emotes, mounts, crafting stance, …).</summary>
     Mode = 1 << 8,
 
+    /// <summary>The exact emote id currently played (from the character's emote controller) — one-shots, loops and cposes.</summary>
+    Emote = 1 << 13,
+
     /// <summary>Online status (AFK, busy, looking for party, …).</summary>
     OnlineStatus = 1 << 9,
 
@@ -57,5 +60,5 @@ public enum CharacterAspect
     Identity = 1 << 12,
 
     /// <summary>Every aspect.</summary>
-    All = Presence | Vitals | Shield | Cast | Combat | Target | Targetable | Life | Mode | OnlineStatus | JobLevel | Position | Identity,
+    All = Presence | Vitals | Shield | Cast | Combat | Target | Targetable | Life | Mode | Emote | OnlineStatus | JobLevel | Position | Identity,
 }

@@ -190,26 +190,26 @@ public sealed class CharacterWatcher : GameWatcherFacade
     /// <param name="options">Optional subscription settings.</param>
     /// <returns>A token that unsubscribes when disposed.</returns>
     public NoireSubscriptionToken OnCastCompleted(Action<CharacterCastCompletedEvent> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterCastCompletedEvent>? options = null)
-        => Scoped(CharacterAspect.Cast, handler, null, scope, options, nameof(OnCastCompleted), secondaryInterest: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Cast, handler, null, scope, options, nameof(OnCastCompleted));
 
     /// <inheritdoc cref="OnCastCompleted(Action{CharacterCastCompletedEvent}, Scope?, NoireSubscriptionOptions{CharacterCastCompletedEvent}?)"/>
     public NoireSubscriptionToken OnCastCompletedAsync(Func<CharacterCastCompletedEvent, Task> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterCastCompletedEvent>? options = null)
-        => Scoped(CharacterAspect.Cast, null, handler, scope, options, nameof(OnCastCompleted), secondaryInterest: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Cast, null, handler, scope, options, nameof(OnCastCompleted));
 
     /// <summary>
-    /// Subscribes to cast interruptions. The ActorControl hook is activated alongside so interrupts are
-    /// server-confirmed (<see cref="CharacterCastInterruptedEvent.IsAuthoritative"/>) whenever possible.
+    /// Subscribes to cast interruptions. Interrupts are inferred from polling — a cast that vanishes well before
+    /// its total cast time is treated as interrupted rather than completed.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
     /// <param name="options">Optional subscription settings.</param>
     /// <returns>A token that unsubscribes when disposed.</returns>
     public NoireSubscriptionToken OnCastInterrupted(Action<CharacterCastInterruptedEvent> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterCastInterruptedEvent>? options = null)
-        => Scoped(CharacterAspect.Cast, handler, null, scope, options, nameof(OnCastInterrupted), secondaryInterest: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Cast, handler, null, scope, options, nameof(OnCastInterrupted));
 
     /// <inheritdoc cref="OnCastInterrupted(Action{CharacterCastInterruptedEvent}, Scope?, NoireSubscriptionOptions{CharacterCastInterruptedEvent}?)"/>
     public NoireSubscriptionToken OnCastInterruptedAsync(Func<CharacterCastInterruptedEvent, Task> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterCastInterruptedEvent>? options = null)
-        => Scoped(CharacterAspect.Cast, null, handler, scope, options, nameof(OnCastInterrupted), secondaryInterest: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Cast, null, handler, scope, options, nameof(OnCastInterrupted));
 
     #endregion
 
@@ -319,20 +319,20 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.Mode, null, handler, scope, options, nameof(OnEmoteLoopEnded));
 
     /// <summary>
-    /// Subscribes to emote plays — one-shot and looping alike, with the exact emote id, for any character.
-    /// Produced by the ActorControl hook; one-shot emotes have no end signal (they are fired animations, not
-    /// states).
+    /// Subscribes to emote plays — one-shot emotes, looping emotes and cposes alike, with the exact emote id,
+    /// for any character. Read by polling the character's emote controller; one-shot emotes have no end signal
+    /// (they are fired animations, not states).
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
     /// <param name="options">Optional subscription settings.</param>
     /// <returns>A token that unsubscribes when disposed.</returns>
     public NoireSubscriptionToken OnEmotePlayed(Action<CharacterEmotePlayedEvent> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterEmotePlayedEvent>? options = null)
-        => Scoped(CharacterAspect.None, handler, null, scope, options, nameof(OnEmotePlayed), source: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Emote, handler, null, scope, options, nameof(OnEmotePlayed));
 
     /// <inheritdoc cref="OnEmotePlayed(Action{CharacterEmotePlayedEvent}, Scope?, NoireSubscriptionOptions{CharacterEmotePlayedEvent}?)"/>
     public NoireSubscriptionToken OnEmotePlayedAsync(Func<CharacterEmotePlayedEvent, Task> handler, Scope? scope = null, NoireSubscriptionOptions<CharacterEmotePlayedEvent>? options = null)
-        => Scoped(CharacterAspect.None, null, handler, scope, options, nameof(OnEmotePlayed), source: SourceKind.ActorControl);
+        => Scoped(CharacterAspect.Emote, null, handler, scope, options, nameof(OnEmotePlayed));
 
     #endregion
 

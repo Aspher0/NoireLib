@@ -188,13 +188,18 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
         }
     }
 
-    /// <summary>Computes the current Eorzea hour (0–23) from real time. Pure — unit-testable.</summary>
-    internal static int ComputeEorzeaHour(DateTimeOffset realTime)
+    /// <summary>
+    /// Computes the current Eorzea time of day (hour + minute + second within the 24-hour Eorzea day) from
+    /// real time. Pure — unit-testable. Eorzea time runs at 1440/70 the speed of real time.
+    /// </summary>
+    internal static TimeSpan ComputeEorzeaTimeOfDay(DateTimeOffset realTime)
     {
-        // Eorzea time runs at 1440/70 the speed of real time.
         var eorzeaSeconds = realTime.ToUnixTimeSeconds() * 1440L / 70L;
-        return (int)(eorzeaSeconds / 3600 % 24);
+        return TimeSpan.FromSeconds(eorzeaSeconds % 86400L);
     }
+
+    /// <summary>Computes the current Eorzea hour (0–23) from real time. Pure — unit-testable.</summary>
+    internal static int ComputeEorzeaHour(DateTimeOffset realTime) => ComputeEorzeaTimeOfDay(realTime).Hours;
 
     /// <summary>Whether an Eorzea hour is night (18:00–5:59 ET). Pure.</summary>
     internal static bool IsNight(int hour) => hour < 6 || hour >= 18;

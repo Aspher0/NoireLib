@@ -126,7 +126,7 @@ public sealed class ZoneWatcher : GameWatcherFacade
             NoireGameWatcher.EnsureFrameworkThread();
 
             var now = DateTimeOffset.UtcNow;
-            var hour = EorzeaTimeSource.ComputeEorzeaHour(now);
+            var eorzea = EorzeaTimeSource.ComputeEorzeaTimeOfDay(now);
 
             return new ZoneInfo
             {
@@ -135,7 +135,9 @@ public sealed class ZoneWatcher : GameWatcherFacade
                 Instance = NoireService.ClientState.Instance,
                 IsInHousingInterior = SessionSource.ReadIsInside(),
                 WeatherId = WeatherSource.ReadCurrentWeather(),
-                EorzeaHour = hour,
+                EorzeaHour = eorzea.Hours,
+                EorzeaMinute = eorzea.Minutes,
+                EorzeaSecond = eorzea.Seconds,
                 CapturedAt = now,
             };
         }

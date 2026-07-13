@@ -36,6 +36,7 @@ internal struct CharacterFieldSet
     public bool IsDead;
     public byte Mode;
     public byte ModeParam;
+    public ushort EmoteId;
     public uint OnlineStatusId;
     public SubjectFlags Flags;
 
@@ -64,6 +65,7 @@ internal struct CharacterFieldSet
         IsDead = snapshot.IsDead,
         Mode = snapshot.Mode,
         ModeParam = snapshot.ModeParam,
+        EmoteId = snapshot.EmoteId,
         OnlineStatusId = snapshot.OnlineStatusId,
         Flags = snapshot.Flags,
     };
@@ -111,6 +113,9 @@ internal static class CharacterDiffEngine
 
         if (prev.Mode != cur.Mode || prev.ModeParam != cur.ModeParam)
             changed |= CharacterAspect.Mode;
+
+        if (prev.EmoteId != cur.EmoteId)
+            changed |= CharacterAspect.Emote;
 
         if (prev.OnlineStatusId != cur.OnlineStatusId)
             changed |= CharacterAspect.OnlineStatus;
@@ -256,6 +261,7 @@ internal static class CharacterCapture
             IsDead = chara.IsDead,
             Mode = native != null ? (byte)native->Mode : (byte)0,
             ModeParam = native != null ? native->ModeParam : (byte)0,
+            EmoteId = native != null ? native->EmoteController.EmoteId : (ushort)0,
             OnlineStatusId = chara.OnlineStatus.RowId,
             Flags = flags,
         };
@@ -300,6 +306,7 @@ internal static class CharacterCapture
             IsDead = chara.IsDead,
             Mode = native != null ? (byte)native->Mode : (byte)0,
             ModeParam = native != null ? native->ModeParam : (byte)0,
+            EmoteId = native != null ? native->EmoteController.EmoteId : (ushort)0,
             OnlineStatusId = chara.OnlineStatus.RowId,
             Position = chara.Position,
             Rotation = chara.Rotation,

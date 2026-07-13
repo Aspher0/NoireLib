@@ -105,6 +105,13 @@ public sealed record CharacterSnapshot
     /// <summary>The mode-specific parameter (e.g. an emote index while in a looping emote).</summary>
     public required byte ModeParam { get; init; }
 
+    /// <summary>
+    /// The exact emote id currently played, read from the character's emote controller, or 0 when none.
+    /// Unlike <see cref="Mode"/> this resolves the precise emote — one-shots, looping emotes and cposes alike
+    /// (idle poses carry an id; the base pose is 0).
+    /// </summary>
+    public required ushort EmoteId { get; init; }
+
     /// <summary>The online-status row id (AFK, busy, looking for party, …).</summary>
     public required uint OnlineStatusId { get; init; }
 

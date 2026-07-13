@@ -431,7 +431,7 @@ public partial class NoireGameWatcher
             typeof(CharacterRevivedEvent), typeof(CharacterCastStartedEvent), typeof(CharacterCastCompletedEvent),
             typeof(CharacterCastInterruptedEvent), typeof(CharacterCombatEnteredEvent), typeof(CharacterCombatLeftEvent),
             typeof(CharacterTargetChangedEvent), typeof(CharacterTargetableChangedEvent), typeof(CharacterModeChangedEvent),
-            typeof(CharacterEmoteLoopStartedEvent), typeof(CharacterEmoteLoopEndedEvent),
+            typeof(CharacterEmoteLoopStartedEvent), typeof(CharacterEmoteLoopEndedEvent), typeof(CharacterEmotePlayedEvent),
             typeof(CharacterOnlineStatusChangedEvent), typeof(CharacterJobChangedEvent),
             typeof(CharacterLevelChangedEvent), typeof(CharacterIdentityChangedEvent));
 
@@ -457,8 +457,6 @@ public partial class NoireGameWatcher
         Add(SourceKind.Chat, typeof(ChatMessageEvent));
 
         Add(SourceKind.ActionEffect, typeof(ActionEffectEvent));
-
-        Add(SourceKind.ActorControl, typeof(RawActorControlEvent), typeof(CharacterEmotePlayedEvent));
 
         Add(SourceKind.Cooldowns,
             typeof(CooldownStartedEvent), typeof(CooldownEndedEvent), typeof(ChargesChangedEvent),

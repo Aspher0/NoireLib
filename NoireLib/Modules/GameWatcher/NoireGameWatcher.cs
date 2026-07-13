@@ -81,7 +81,6 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             [SourceKind.Duty] = new DutySource(this),
             [SourceKind.Chat] = new ChatSource(this),
             [SourceKind.ActionEffect] = new ActionEffectSource(this),
-            [SourceKind.ActorControl] = new ActorControlSource(this),
             [SourceKind.Cooldowns] = new CooldownSource(this),
             [SourceKind.Statuses] = new StatusSource(this),
             [SourceKind.Addons] = new AddonSource(this),

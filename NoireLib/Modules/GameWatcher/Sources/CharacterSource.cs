@@ -23,9 +23,6 @@ internal sealed class CharacterSource : GameWatcherSource
     private readonly List<InterestRegistration> interests = new();
     private readonly Dictionary<uint, CharacterSnapshot> baseline = new();
 
-    /// <summary>Entity ids whose next cast end is a server-confirmed interrupt (fed by the ActorControl source).</summary>
-    internal HashSet<uint> PendingCastInterrupts { get; } = new();
-
     private CharacterAspect unionMask = CharacterAspect.None;
     private Scope.IterationClass unionIteration = Scope.IterationClass.LocalOnly;
     private Scope[] unionScopes = Array.Empty<Scope>();
@@ -108,7 +105,6 @@ internal sealed class CharacterSource : GameWatcherSource
         // Baseline seeding: subjects already present seed the baseline without firing spawn events —
         // subscribers observe changes from now on, not a replay of the present.
         baseline.Clear();
-        PendingCastInterrupts.Clear();
         SeedBaseline();
     }
 
@@ -116,7 +112,6 @@ internal sealed class CharacterSource : GameWatcherSource
     protected override void OnDeactivate()
     {
         baseline.Clear();
-        PendingCastInterrupts.Clear();
     }
 
     private void SeedBaseline()
@@ -253,7 +248,6 @@ internal sealed class CharacterSource : GameWatcherSource
         {
             var last = baseline[entityId];
             baseline.Remove(entityId);
-            PendingCastInterrupts.Remove(entityId);
 
             if ((mask & CharacterAspect.Presence) != 0)
                 Owner.DispatchEvent(new CharacterDespawnedEvent(last, duringZoneChange));
@@ -313,6 +307,9 @@ internal sealed class CharacterSource : GameWatcherSource
                 Owner.DispatchEvent(new CharacterEmoteLoopEndedEvent(prev, cur));
         }
 
+        if ((relevant & CharacterAspect.Emote) != 0 && cur.EmoteId != 0)
+            Owner.DispatchEvent(new CharacterEmotePlayedEvent(cur, cur.EmoteId));
+
         if ((relevant & CharacterAspect.OnlineStatus) != 0)
             Owner.DispatchEvent(new CharacterOnlineStatusChangedEvent(prev, cur));
 
@@ -356,18 +353,12 @@ internal sealed class CharacterSource : GameWatcherSource
 
     private void EmitCastEnd(CharacterSnapshot prev, CharacterSnapshot cur)
     {
-        // Interrupt vs. complete: authoritative when ActorControl confirmed a cancel for this entity;
-        // otherwise inferred from how close the cast was to its total time (polling is ±1 frame).
-        if (PendingCastInterrupts.Remove(cur.EntityId))
-        {
-            Owner.DispatchEvent(new CharacterCastInterruptedEvent(prev, cur, prev.CastActionId, IsAuthoritative: true));
-            return;
-        }
-
+        // Interrupt vs. complete is inferred from how close the cast was to its total time when it vanished
+        // (polling resolution is ±1 frame): a cast that disappears well before its total time was interrupted.
         var remaining = prev.TotalCastTime - prev.CurrentCastTime;
 
         if (prev.TotalCastTime > 0 && remaining > 0.25f)
-            Owner.DispatchEvent(new CharacterCastInterruptedEvent(prev, cur, prev.CastActionId, IsAuthoritative: false));
+            Owner.DispatchEvent(new CharacterCastInterruptedEvent(prev, cur, prev.CastActionId));
         else
             Owner.DispatchEvent(new CharacterCastCompletedEvent(prev, cur, prev.CastActionId));
     }

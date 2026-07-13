@@ -102,9 +102,6 @@ myHook.OnDetected += id => watcher.Publish(new SomethingObservedEvent(id));
 // From here on it is indistinguishable from a library event:
 watcher.Subscribe<SomethingObservedEvent>(e => ...);
 await watcher.WaitFor<SomethingObservedEvent>(timeout: TimeSpan.FromSeconds(10));
-
-// Raw ActorControl tap (advanced, unstable across patches):
-watcher.Combat.OnRawActorControl(e => ...);
 ```
 
 `Publish` is also the test seam: simulated events reach only your handlers, so handler logic is testable without the game.
@@ -141,7 +138,7 @@ watcher.PublishToEventBus<CharacterDiedEvent>(e => e.Current.Flags.HasFlag(Subje
 
 ## Guarantees (and their honest limits)
 
-- **Source isolation**: a source that breaks after a game patch (moved signature, changed struct layout) disables *itself only* and reports in diagnostics; every other source keeps working.
+- **Source isolation**: a source that breaks after a game patch (changed struct layout, moved ClientStructs member) disables *itself only* and reports in diagnostics; every other source keeps working.
 - **Delivery**: every handler, filter, sampler and wait continuation runs inline on the framework thread.
 - **Frame quantization**: polled facts are accurate to ±1 frame; a value that changes and reverts within one frame is invisible. Native events and hooks are not quantized.
 - **Entity identity**: `EntityId` tracks the object-table *slot* (reusable); `ContentId`/`Name` track the *person*.
