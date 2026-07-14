@@ -345,7 +345,7 @@ internal sealed unsafe class ScenePass : IDisposable
 
         // Frame constants (transpose-on-upload — the One Convention, §7.2).
         // DepthUv.zw carries OUR projection's z map (deviceZ = z + w/clipW). It must match the reversed-Z
-        // Z column rebuilt in NoireDraw3D.RenderFrame (clip.z = near ⇒ deviceZ = 0 + near/clipW), NOT the
+        // Z column rebuilt in NoireDraw3D.RenderMainScene (clip.z = near ⇒ deviceZ = 0 + near/clipW), NOT the
         // game's exposed projection whose device-z we discard — so SceneWorldPos round-trips through
         // InvViewProj exactly.
         var frameData = new FrameCBData
@@ -624,6 +624,131 @@ internal sealed unsafe class ScenePass : IDisposable
 
         foreach (var tex in KeyedTextures)
             tex.ReleaseSync();
+    }
+
+    /// <summary>
+    /// Opt-in native-UI depth-write (<see cref="NoireDraw3D.NativeUiDepthWrite"/>): re-rasterizes this frame's
+    /// opaque, depth-casting mesh items into an external depth-stencil view — the game's scene depth — depth-only
+    /// (no colour), greater-equal tested so the world still occludes them. Run right AFTER <see cref="Execute"/>:
+    /// it reuses the already-collected, already-sorted items. The caller owns the StateGuard; this binds its own
+    /// target/states and restores nothing. Skips decals, transparents and dynamic markers — only solid geometry
+    /// should hide a nameplate.
+    /// </summary>
+    public void ProjectOpaqueDepth(
+        RenderDevice device,
+        ID3D11DeviceContext* ctx,
+        in FrameContext frame,
+        ID3D11DepthStencilView* externalDsv,
+        uint viewportWidth,
+        uint viewportHeight,
+        ShaderLibrary shaders,
+        StateCache cache,
+        RenderStats stats)
+    {
+        if (externalDsv == null || viewportWidth == 0 || viewportHeight == 0 || itemCount == 0)
+            return;
+
+        EnsureBuffers(device);
+
+        // Re-upload the frame VP (the composite rebound cbuffers after Execute). The rebuilt reversed-Z Z column
+        // makes SV_Position.z = near/clipW, which /noire3d probe confirmed matches the game's own depth buffer —
+        // so our writes are directly comparable to the world's.
+        var frameData = new FrameCBData
+        {
+            ViewProj = Matrix4x4.Transpose(frame.ViewProj),
+            InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
+            EyePosTime = new Vector4(frame.EyePos, frame.Time),
+            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
+            DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
+            DepthCal = Vector4.Zero,
+            Ambient = Vector4.Zero,
+            LightDirIntensity = new Vector4(0f, 1f, 0f, 0f),
+            LightColor = Vector4.Zero,
+        };
+        frameCb!.UpdateConstant(ctx, in frameData);
+
+        // Depth-only: no colour target, the game's scene depth as DSV, greater-equal test+write (reversed-Z),
+        // null pixel shader. Where the world is nearer the test fails and the world keeps the buffer (correct
+        // occlusion); where our object is nearer it writes our depth, and the later nameplate pass is occluded.
+        ctx->OMSetRenderTargets(0, null, externalDsv);
+
+        var viewport = new D3D11_VIEWPORT { Width = viewportWidth, Height = viewportHeight, MaxDepth = 1f };
+        ctx->RSSetViewports(1, &viewport);
+        var scissor = new TerraFX.Interop.Windows.RECT { right = (int)viewportWidth, bottom = (int)viewportHeight };
+        ctx->RSSetScissorRects(1, &scissor);
+
+        ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        var cb = frameCb.Buffer;
+        ctx->VSSetConstantBuffers(0, 1, &cb);
+        var ocb = objectCb!.Buffer;
+        ctx->VSSetConstantBuffers(1, 1, &ocb);
+
+        var blendFactor = stackalloc float[4];
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF);
+        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.WriteGE), 0);
+        ctx->PSSetShader(null, null, 0);
+
+        ID3D11RasterizerState* curRaster = null;
+        ShaderPipeline? curPipeline = null;
+        Mesh? curMesh = null;
+
+        for (var i = 0; i < itemCount; i++)
+        {
+            ref var item = ref items[i];
+            if (item.Mat.Bucket != 0 || !item.WritesPrivateDepth || item.Mesh == null)
+                continue;
+
+            var vb = item.Mesh.Vb;
+            if (vb == null)
+                continue;
+
+            // Any opaque VS emits SV_Position from World*ViewProj; one non-instanced unlit pipeline serves all.
+            var pipeline = shaders.GetStandard(device, MaterialDomain.Unlit, textured: false, instanced: false, opaqueDomain: true);
+            if (pipeline == null)
+                return;
+
+            if (!ReferenceEquals(pipeline, curPipeline))
+            {
+                ctx->IASetInputLayout(pipeline.Layout);
+                ctx->VSSetShader(pipeline.Vs, null, 0);
+                curPipeline = pipeline;
+                curMesh = null;
+            }
+
+            var rasterKey = item.Mat.Cull switch
+            {
+                CullMode.Front => RasterKey.CullFront,
+                CullMode.None => RasterKey.TwoSided,
+                _ => RasterKey.CullBack,
+            };
+            var raster = cache.GetRaster(device, rasterKey);
+            if (raster != curRaster)
+            {
+                ctx->RSSetState(raster);
+                curRaster = raster;
+            }
+
+            if (!ReferenceEquals(item.Mesh, curMesh))
+            {
+                uint stride = (uint)sizeof(Vertex3D), offset = 0;
+                ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+                ctx->IASetIndexBuffer(item.Mesh.Ib, item.Mesh.IndexFormat, 0);
+                curMesh = item.Mesh;
+            }
+
+            var objData = new ObjectCBData
+            {
+                World = Matrix4x4.Transpose(item.World),
+                InvWorld = Matrix4x4.Identity,
+                BaseColor = item.Color,
+                Params0 = item.Mat.Params0,
+                Params1 = item.Mat.Params1,
+            };
+            objectCb.UpdateConstant(ctx, in objData);
+
+            ctx->DrawIndexed((uint)item.Mesh.IndexCount, 0, 0);
+            stats.DrawCalls++;
+        }
     }
 
     private void EnsureBuffers(RenderDevice device)

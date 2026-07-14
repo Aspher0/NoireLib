@@ -60,6 +60,11 @@ public static unsafe class NoireDraw3D
     private static bool renderUnderNativeUi;
     private static volatile bool injectedSinceLastPresent;
 
+    // Opt-in native-UI depth-write: a writable DSV over the game's scene depth, so nameplates occlude against
+    // 3D objects standing in front of them (needs RenderUnderNativeUi; waives Law 5, hence off by default).
+    private static GameDepthTarget? gameDepthTarget;
+    private static bool nativeUiDepthWrite;
+
     private static Scene3D? mainScene;
     private static ImDraw3D? im;
     private static readonly List<Scene3D> Scenes = new();
@@ -181,6 +186,20 @@ public static unsafe class NoireDraw3D
                 renderTargetTap?.SetInjection(false);
             }
         }
+    }
+
+    /// <summary>
+    /// Experimental (default off; requires <see cref="RenderUnderNativeUi"/>): at pre-UI injection time, write the
+    /// 3D layer's opaque depth into the game's own scene depth buffer so the game's nameplate pass is occluded by
+    /// objects standing in front of a character — real depth-aware nameplates, not a rectangle approximation.<br/>
+    /// This deliberately waives Law 5 ("the game's depth is never written"): it is fail-soft (a no-op when the
+    /// depth buffer can't back a DSV) and only effective if the nameplate pass GPU-depth-tests against that buffer,
+    /// so treat it as a switch to verify in-game (<c>/noire3d platedepth</c>) rather than an always-on guarantee.
+    /// </summary>
+    public static bool NativeUiDepthWrite
+    {
+        get => nativeUiDepthWrite;
+        set => nativeUiDepthWrite = value;
     }
 
     /// <summary>
@@ -472,6 +491,8 @@ public static unsafe class NoireDraw3D
             renderStats = null;
             renderTargetTap?.Dispose();
             renderTargetTap = null;
+            gameDepthTarget?.Dispose();
+            gameDepthTarget = null;
             presentRtv.Dispose();
             presentRtv = default;
             presentRtvPtr = 0;
@@ -530,30 +551,46 @@ public static unsafe class NoireDraw3D
 
         try
         {
-            RenderFrame(stats);
+            PresentTimeFrame(stats);
         }
         catch (Exception ex)
         {
-            passFailStreak++;
-            if (!passFaultLogged)
-            {
-                passFaultLogged = true;
-                NoireLogger.LogError(ex, "Draw3D frame failed (self-disable ladder rung 4: layer skipped).", "Draw3D");
-                RaiseFault(Draw3DFaultKind.Pass, ex, "Scene pass failed; layer skipped this frame.");
-            }
-
-            if (passFailStreak >= 3)
-            {
-                enabled = false;
-                NoireLogger.LogError("Draw3D disabled after 3 consecutive frame failures (rung 5). Set NoireDraw3D.Enabled = true to re-arm.", "Draw3D");
-                RaiseFault(Draw3DFaultKind.Renderer, ex, "Renderer disabled after repeated failures.");
-            }
+            HandlePassFailure(ex);
         }
     }
 
-    private static void RenderFrame(RenderStats stats)
+    /// <summary>Advances the self-disable ladder (rungs 4–5) after a frame threw. Shared by both render entries.</summary>
+    private static void HandlePassFailure(Exception ex)
     {
-        // Device + backbuffer.
+        passFailStreak++;
+        if (!passFaultLogged)
+        {
+            passFaultLogged = true;
+            NoireLogger.LogError(ex, "Draw3D frame failed (self-disable ladder rung 4: layer skipped).", "Draw3D");
+            RaiseFault(Draw3DFaultKind.Pass, ex, "Scene pass failed; layer skipped this frame.");
+        }
+
+        if (passFailStreak >= 3)
+        {
+            enabled = false;
+            NoireLogger.LogError("Draw3D disabled after 3 consecutive frame failures (rung 5). Set NoireDraw3D.Enabled = true to re-arm.", "Draw3D");
+            RaiseFault(Draw3DFaultKind.Renderer, ex, "Renderer disabled after repeated failures.");
+        }
+    }
+
+    /// <summary>What <see cref="RenderMainScene"/> produced this frame: whether there is layer content to composite,
+    /// and how many nameplate/HUD policy rects were collected (for the present-time UI-mask composite).</summary>
+    private readonly record struct SceneRenderResult(bool HasContent, int RectCount);
+
+    /// <summary>
+    /// The present-time frame entry (Dalamud's Draw callback, end of frame). Always advances the render-target
+    /// tap's frame boundary. When the pre-UI injection already rendered and composited this frame's scene under
+    /// the native UI (zero-latency path), there is nothing left to do. Otherwise it renders the scene and
+    /// composites it over the backbuffer — the classic over-everything / UI-masked path, and the fallback that
+    /// keeps the layer visible on any frame the injection could not run.
+    /// </summary>
+    private static void PresentTimeFrame(RenderStats stats)
+    {
         RenderDevice device;
         try
         {
@@ -571,10 +608,58 @@ public static unsafe class NoireDraw3D
             return;
         }
 
-        // Frame boundary for the render-target tap (diagnostic; no-op unless an rtlog capture is armed).
+        // Frame boundary for the render-target tap: commits the present buffer learned this frame for next
+        // frame's injection and resets its per-frame counters. Must run every present — this is why the layer
+        // has to keep drawing while the UI is hidden (see KeepDrawingWhenUiHidden), or injection would stall.
         renderTargetTap?.OnPresent((nint)backBuffer.Texture);
 
-        // Camera snapshot — once, at a stable point (Law 2).
+        // The render-thread injection already rendered + composited this frame's scene under the native UI,
+        // with the same camera the world was drawn with (zero latency). Compositing again here would just paint
+        // the layer over the UI. The flag is set on the render thread by InjectComposite earlier this same
+        // frame; reset it for the next one and stop.
+        if (injectedSinceLastPresent)
+        {
+            injectedSinceLastPresent = false;
+            return;
+        }
+
+        // Classic / fallback path: render + composite over the backbuffer at present time.
+        var ctx = device.Context;
+        if (renderTargetTap != null)
+            renderTargetTap.SuppressSelf = true; // our own binds must not pollute an armed rtlog capture
+        stateGuard!.Capture(ctx);
+        try
+        {
+            var result = RenderMainScene(device, ctx, in backBuffer, stats);
+            if (result.HasContent)
+            {
+                CompositeOverBackbuffer(device, ctx, in backBuffer, result.RectCount);
+                stats.EndGpuTiming(ctx);
+                passFailStreak = 0;
+                passFaultLogged = false;
+            }
+        }
+        finally
+        {
+            stateGuard.Restore(ctx); // the context leaves exactly as it arrived — even on faults (Law 6)
+            if (renderTargetTap != null)
+                renderTargetTap.SuppressSelf = false;
+        }
+    }
+
+    /// <summary>
+    /// The shared render body used by both the present-time path and the pre-UI injection. Snapshots the camera,
+    /// builds the frame, fires per-frame user code + diagnostics, then renders render-to-texture views and the
+    /// main scene into the offscreen premultiplied target. The caller has captured the StateGuard and owns the
+    /// composite to whichever target (backbuffer or the game's present buffer), plus <see cref="RenderStats.EndGpuTiming"/>.<br/>
+    /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames — the caller must NOT
+    /// composite then, which is exactly what keeps a cleared scene from leaving stale content stamped on the
+    /// present buffer (the <c>/noire3d clear</c> "forged in place" bug).
+    /// </summary>
+    private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats)
+    {
+        // Camera snapshot — once, at a stable point (Law 2). At inject time this is the sim-thread camera for
+        // the very frame being composited, so the layer lines up with the world with zero latency.
         GameRenderSources.CameraData cam;
         if (cameraSource == CameraSourceMode.FrameworkSnapshot && frameworkCameraValid)
         {
@@ -583,7 +668,7 @@ public static unsafe class NoireDraw3D
         else if (!GameRenderSources.TryGetCamera(out cam))
         {
             stats.FramesSkippedNoCamera++;
-            return;
+            return default;
         }
 
         Matrix4x4 camView = Matrix4x4.Identity, camProj = Matrix4x4.Identity, viewProj;
@@ -602,7 +687,7 @@ public static unsafe class NoireDraw3D
         else
         {
             stats.FramesSkippedNoCamera++;
-            return;
+            return default;
         }
 
         // The game's exposed camera matrices reproduce screen X/Y/W exactly, but their device-Z does
@@ -622,7 +707,7 @@ public static unsafe class NoireDraw3D
         if (!Matrix4x4.Invert(viewProj, out var invViewProj))
         {
             stats.FramesSkippedNoCamera++;
-            return;
+            return default;
         }
 
         // Depth (per-frame; failure = depth-off mode, everything still renders). The buffer's value
@@ -679,7 +764,7 @@ public static unsafe class NoireDraw3D
         if (!anyScene && !anyView && !im!.HasPending)
         {
             stats.FramesSkippedEmpty++;
-            return;
+            return default; // nothing to draw — caller composites nothing, so a cleared scene leaves no residue
         }
 
         // GPU objects (lazy, amortized).
@@ -693,12 +778,11 @@ public static unsafe class NoireDraw3D
         if (!EnsureBackbufferRtv(device, backBuffer) || !sceneRt.EnsureSize(device, backBuffer.Width, backBuffer.Height))
         {
             stats.FramesSkippedZeroSize++;
-            return;
+            return default;
         }
 
-        var composite = shaderLibrary.GetComposite(device);
-        if (composite == null)
-            return; // compile failure already logged (rung 1); nothing can reach the screen
+        if (shaderLibrary.GetComposite(device) == null)
+            return default; // compile failure already logged (rung 1); nothing can reach the screen
 
         stats.BeginFrameCounters();
         stats.DepthAvailable = hasDepth;
@@ -721,98 +805,86 @@ public static unsafe class NoireDraw3D
 
         stats.ProtectRects = rectCount;
 
-        var ctx = device.Context;
-        if (renderTargetTap != null)
-            renderTargetTap.SuppressSelf = true; // our own binds must not pollute an armed rtlog capture
-        stateGuard!.Capture(ctx);
-        try
+        stats.BeginGpuTiming(device, ctx);
+
+        // Render-to-texture views first (own camera, no game-depth compare).
+        foreach (var view in views)
         {
-            stats.BeginGpuTiming(device, ctx);
+            if (!view.Enabled || view.IsDisposed || !view.Scene.Visible || !view.EnsureTarget(device))
+                continue;
 
-            // Render-to-texture views first (own camera, no game-depth compare).
-            foreach (var view in views)
-            {
-                if (!view.Enabled || view.IsDisposed || !view.Scene.Visible || !view.EnsureTarget(device))
-                    continue;
+            var vp = view.Camera.BuildViewProj(view.Width / (float)view.Height);
+            if (!Matrix4x4.Invert(vp, out var invVp))
+                continue;
 
-                var vp = view.Camera.BuildViewProj(view.Width / (float)view.Height);
-                if (!Matrix4x4.Invert(vp, out var invVp))
-                    continue;
+            var viewFrame = new FrameContext(
+                vp, invVp, Matrix4x4.Identity, Matrix4x4.Identity, view.Camera.Position,
+                frame.Time, new Vector2(view.Width, view.Height), Vector2.One,
+                reversedZ: true, view.Camera.NearPlane, hasDepth: false, usedFallbackCamera: false, frame.FrameId);
 
-                var viewFrame = new FrameContext(
-                    vp, invVp, Matrix4x4.Identity, Matrix4x4.Identity, view.Camera.Position,
-                    frame.Time, new Vector2(view.Width, view.Height), Vector2.One,
-                    reversedZ: true, view.Camera.NearPlane, hasDepth: false, usedFallbackCamera: false, frame.FrameId);
-
-                scenePass.BeginCollect(in viewFrame, mainPass: false);
-                scenePass.AddScene(view.Scene, stats, depthAvailable: false);
-                scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, Vector4.Zero, shaderLibrary, stateCache, stats, Wireframe, Lighting);
-            }
-
-            // Main pass.
-            scenePass.BeginCollect(in frame, mainPass: true);
-            im!.Consume(scenePass, in frame, stats, hasDepth);
-            foreach (var scene in scenes)
-                scenePass.AddScene(scene, stats, hasDepth);
-
-            scenePass.Execute(device, ctx, in frame, sceneRt, privateDepth, hasDepth ? sceneDepth.Srv : null,
-                depthMap, shaderLibrary, stateCache, stats, Wireframe, Lighting);
-            stats.MarkSceneDone(ctx);
-
-            // Nameplate visibility factors: 1 = letters on top, behindFactor = covered by your content.
-            var behindFactor = Math.Clamp(NativeUiProtectionDimFactor, 0f, 1f);
-            if (plateCount > 0)
-            {
-                if (NativeUiProtection == NativeUiProtectionMode.DepthAware)
-                    scenePass.ComputeRectOcclusion(in frame, ProtectRects, PlateDistances, ProtectFactors, plateCount, behindFactor);
-                else // Off: the layer always covers plates
-                    for (var i = 0; i < plateCount; i++)
-                        ProtectFactors[i] = behindFactor;
-            }
-
-            // HUD addon rects: the HUD keeps reading on top even inside covered plate regions.
-            for (var i = plateCount; i < rectCount; i++)
-                ProtectFactors[i] = 1f;
-
-            // If the pre-UI injection already composited this frame's scene under the native UI, the
-            // present-time swapchain composite would just paint over the UI again — skip it. The flag is
-            // set on the render thread by InjectComposite before this callback runs; reset it here.
-            var injectionActive = renderUnderNativeUi && injectedSinceLastPresent;
-            injectedSinceLastPresent = false;
-
-            if (!injectionActive)
-            {
-                // Per-pixel game-UI-on-top: copy the finished frame (its alpha = native-UI coverage) and
-                // let the composite mask the layer by it. Health check self-disables the mask when the
-                // alpha channel is unusable (some upscalers fill it) — fail-visible beats fail-invisible.
-                ID3D11ShaderResourceView* uiMaskSrv = null;
-                if (ProtectGameUi && !renderUnderNativeUi)
-                {
-                    uiMaskSource ??= new UiMaskSource();
-                    uiMaskHealth ??= new UiMaskHealth();
-                    if (uiMaskSource.EnsureAndCopy(device, ctx, (nint)backBuffer.Texture))
-                    {
-                        uiMaskHealth.Update(device, ctx, uiMaskSource, frame.FrameId);
-                        if (uiMaskHealth.AlphaUsable)
-                            uiMaskSrv = uiMaskSource.Srv;
-                    }
-                }
-
-                compositor.Blit(device, ctx, composite, stateCache, sceneRt.Srv, uiMaskSrv, backbufferRtv.Get(), backBuffer.Width, backBuffer.Height, LayerOpacity, ProtectRects, ProtectFactors, rectCount);
-            }
-
-            stats.EndGpuTiming(ctx);
+            scenePass!.BeginCollect(in viewFrame, mainPass: false);
+            scenePass.AddScene(view.Scene, stats, depthAvailable: false);
+            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
         }
-        finally
+
+        // Main pass.
+        scenePass!.BeginCollect(in frame, mainPass: true);
+        im!.Consume(scenePass, in frame, stats, hasDepth);
+        foreach (var scene in scenes)
+            scenePass.AddScene(scene, stats, hasDepth);
+
+        scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
+            depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+        stats.MarkSceneDone(ctx);
+
+        // Nameplate visibility factors: 1 = letters on top, behindFactor = covered by your content.
+        var behindFactor = Math.Clamp(NativeUiProtectionDimFactor, 0f, 1f);
+        if (plateCount > 0)
         {
-            stateGuard.Restore(ctx); // the context leaves exactly as it arrived — even on faults (Law 6)
-            if (renderTargetTap != null)
-                renderTargetTap.SuppressSelf = false;
+            if (NativeUiProtection == NativeUiProtectionMode.DepthAware)
+                scenePass.ComputeRectOcclusion(in frame, ProtectRects, PlateDistances, ProtectFactors, plateCount, behindFactor);
+            else // Off: the layer always covers plates
+                for (var i = 0; i < plateCount; i++)
+                    ProtectFactors[i] = behindFactor;
         }
+
+        // HUD addon rects: the HUD keeps reading on top even inside covered plate regions.
+        for (var i = plateCount; i < rectCount; i++)
+            ProtectFactors[i] = 1f;
 
         stats.FramesRendered++;
-        passFailStreak = 0;
-        passFaultLogged = false;
+        return new SceneRenderResult(true, rectCount);
+    }
+
+    /// <summary>
+    /// Present-time composite of the offscreen layer over the backbuffer: the classic over-everything path, or —
+    /// when <see cref="ProtectGameUi"/> is on — masked per-pixel by the finished frame's native-UI-coverage alpha
+    /// so the HUD reads on top. Also the fallback whenever the pre-UI injection could not run this frame.
+    /// Assumes <see cref="RenderMainScene"/> just rendered content into <see cref="sceneRt"/>.
+    /// </summary>
+    private static void CompositeOverBackbuffer(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, int rectCount)
+    {
+        var composite = shaderLibrary!.GetComposite(device);
+        if (composite == null)
+            return;
+
+        // Per-pixel game-UI-on-top: copy the finished frame (its alpha = native-UI coverage) and let the
+        // composite mask the layer by it. Health check self-disables the mask when the alpha channel is
+        // unusable (some upscalers fill it) — fail-visible beats fail-invisible.
+        ID3D11ShaderResourceView* uiMaskSrv = null;
+        if (ProtectGameUi)
+        {
+            uiMaskSource ??= new UiMaskSource();
+            uiMaskHealth ??= new UiMaskHealth();
+            if (uiMaskSource.EnsureAndCopy(device, ctx, (nint)backBuffer.Texture))
+            {
+                uiMaskHealth.Update(device, ctx, uiMaskSource, lastFrame.FrameId);
+                if (uiMaskHealth.AlphaUsable)
+                    uiMaskSrv = uiMaskSource.Srv;
+            }
+        }
+
+        compositor!.Blit(device, ctx, composite, stateCache!, sceneRt!.Srv, uiMaskSrv, backbufferRtv.Get(), backBuffer.Width, backBuffer.Height, LayerOpacity, ProtectRects, ProtectFactors, rectCount);
     }
 
     private static bool EnsureBackbufferRtv(RenderDevice device, in GameRenderSources.BackBufferInfo info)
@@ -840,43 +912,88 @@ public static unsafe class NoireDraw3D
     }
 
     /// <summary>
-    /// Render-thread injection callback (from <see cref="RenderTargetTap"/>): composites the offscreen scene
-    /// layer onto the game's present-composition buffer, after the world image lands there and before the
-    /// native UI is drawn — so HUD and nameplates read on top. State is saved/restored so the game's own
-    /// draws continue untouched (Law 6). Returns true when it rendered; false falls back to the present-time path.
+    /// Render-thread injection callback (from <see cref="RenderTargetTap"/>): renders THIS frame's scene and
+    /// composites it onto the game's present-composition buffer — after the world image lands there and before
+    /// the native UI is drawn, so HUD and nameplates read on top. Rendering here (instead of reusing the previous
+    /// frame's offscreen image) uses the exact camera the world was drawn with: zero latency, no swim. State is
+    /// saved/restored so the game's own draws continue untouched (Law 6). Returns true when it rendered; on
+    /// failure the flag stays clear and the present-time path composites this frame over the backbuffer instead.
     /// </summary>
     private static bool InjectComposite(nint presentBufferResource)
     {
-        if (disposed)
+        if (disposed || !renderUnderNativeUi || !enabled || !deviceObjectsReady)
             return false;
 
+        var stats = renderStats;
         var device = renderDevice;
-        var rt = sceneRt;
-        var comp = compositor;
-        var cache = stateCache;
-        var lib = shaderLibrary;
         var guard = stateGuard;
-        if (device == null || rt == null || rt.Srv == null || comp == null || cache == null || lib == null || guard == null)
+        if (stats == null || device == null || guard == null)
             return false;
 
-        var composite = lib.GetComposite(device);
-        if (composite == null || !EnsurePresentRtv(device, presentBufferResource))
+        if (!GameRenderSources.TryGetBackBuffer(out var backBuffer) || !EnsurePresentRtv(device, presentBufferResource))
             return false;
 
         var ctx = device.Context;
         guard.Capture(ctx);
         try
         {
-            // No UI mask and no protect rects here — the real native UI draws on top of us for real.
-            comp.Blit(device, ctx, composite, cache, rt.Srv, null, presentRtv.Get(), presentRtvWidth, presentRtvHeight, LayerOpacity, ProtectRects, ProtectFactors, 0);
+            // Render this frame's scene into the offscreen target with the current-frame camera, then blit it
+            // onto the present buffer. No UI mask and no protect rects — the real native UI draws on top for real.
+            var result = RenderMainScene(device, ctx, in backBuffer, stats);
+            if (result.HasContent)
+            {
+                var composite = shaderLibrary!.GetComposite(device);
+                if (composite != null && sceneRt!.Srv != null)
+                    compositor!.Blit(device, ctx, composite, stateCache!, sceneRt.Srv, null, presentRtv.Get(), presentRtvWidth, presentRtvHeight, LayerOpacity, ProtectRects, ProtectFactors, 0);
+
+                // Optional: stamp our opaque depth into the game buffer so the coming nameplate pass occludes
+                // against 3D objects in front of characters (real depth-aware nameplates under the native UI).
+                if (nativeUiDepthWrite)
+                    ProjectOpaqueDepthToGameBuffer(device, ctx);
+
+                stats.EndGpuTiming(ctx);
+            }
+
+            // The core ran this frame via injection (even on an empty frame, which simply skips the blit above
+            // so a cleared scene leaves nothing stamped). Tell the present-time path to stand down for this frame.
+            injectedSinceLastPresent = true;
+            passFailStreak = 0;
+            passFaultLogged = false;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Fail-soft: leave the flag clear so the present-time path renders this frame over the backbuffer.
+            if (!passFaultLogged)
+            {
+                passFaultLogged = true;
+                NoireLogger.LogError(ex, "Draw3D: inject render failed; falling back to the present-time composite.", "Draw3D");
+            }
+
+            return false;
         }
         finally
         {
             guard.Restore(ctx);
         }
+    }
 
-        injectedSinceLastPresent = true;
-        return true;
+    /// <summary>
+    /// Writes this frame's opaque 3D depth into the game's scene depth buffer (render thread, inside the inject
+    /// StateGuard) so the coming nameplate pass occludes against 3D objects in front of characters. Fail-soft:
+    /// a no-op when the depth buffer is unavailable or can't back a DSV. Reuses the items ScenePass just drew.
+    /// </summary>
+    private static void ProjectOpaqueDepthToGameBuffer(RenderDevice device, ID3D11DeviceContext* ctx)
+    {
+        if (scenePass == null || shaderLibrary == null || stateCache == null || renderStats == null)
+            return;
+
+        gameDepthTarget ??= new GameDepthTarget();
+        var dsv = gameDepthTarget.Ensure(device);
+        if (dsv == null)
+            return;
+
+        scenePass.ProjectOpaqueDepth(device, ctx, in lastFrame, dsv, gameDepthTarget.Width, gameDepthTarget.Height, shaderLibrary, stateCache, renderStats);
     }
 
     /// <summary>Creates and caches an RTV over the game's present-composition buffer (recreated when its pointer changes).</summary>
@@ -924,6 +1041,7 @@ public static unsafe class NoireDraw3D
         sceneRt?.Release();
         privateDepth?.Release();
         sceneDepth?.Invalidate();
+        gameDepthTarget?.Invalidate();
         uiMaskSource?.Release();
         // Depth calibration survives resizes: the value mapping is per-value, not per-texel.
     }
@@ -991,7 +1109,7 @@ public static unsafe class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | clear | reset | rtlog | cam | ontop",
+            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | clear | reset | rtlog | cam | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1047,6 +1165,12 @@ public static unsafe class NoireDraw3D
                 Print(RenderUnderNativeUi
                     ? "Draw3D: native-UI-on-top ON (experimental) — the layer now injects before the game UI; HUD/nameplates should read on top. '/noire3d ontop' again to turn off."
                     : "Draw3D: native-UI-on-top off — the layer composites over everything again (previous behaviour).");
+                break;
+            case "platedepth":
+                NativeUiDepthWrite = !NativeUiDepthWrite;
+                Print(NativeUiDepthWrite
+                    ? "Draw3D: native-UI depth-write ON (experimental) — 3D objects write into the game depth buffer so nameplates behind them get occluded. Needs '/noire3d ontop' on. '/noire3d platedepth' again to turn off."
+                    : "Draw3D: native-UI depth-write off.");
                 break;
             default:
                 Print(Diagnostics.GetStatsText());
