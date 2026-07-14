@@ -79,19 +79,17 @@ public static unsafe class NoireDraw3D
     private static bool lastFrameValid;
     private static GameRenderSources.CameraData lastCameraData;
 
-    // FrameworkSnapshot (camera sampled on the sim thread) matches the presented backbuffer far better
-    // than reading it at draw time, which lags a frame and made world content swim during camera motion.
+    // The present-time path samples the camera on the sim thread (FrameworkSnapshot), which matches the presented
+    // backbuffer more closely than a draw-time read of the live render camera.
     private static CameraSourceMode cameraSource = CameraSourceMode.FrameworkSnapshot;
     private static GameRenderSources.CameraData frameworkCamera;
     private static volatile bool frameworkCameraValid;
     private static bool frameworkHooked;
 
-    // Camera swim is a phase mismatch: the overlay must be projected with the SAME camera the game rasterized the
-    // world with. Reading the live render camera at inject time works only up to ~90fps — above it the render has
-    // run ahead of the world in the present buffer and the live camera leads it by a frame-rate-dependent amount,
-    // so the layer swims. Rather than estimating that lead (no constant is right at every fps), the render-thread
-    // tap snapshots the real world-pass camera at the frame's first depth pass and the inject path projects with
-    // exactly that (see TryGetInjectCamera / RenderTargetTap.TryGetWorldCamera): zero mismatch at any frame-rate.
+    // The injected layer must be projected with the same camera the game rasterized the world in the present buffer
+    // with, or it drifts relative to world geometry under camera motion. The render-thread tap snapshots that camera
+    // at the frame's first depth pass and the inject path projects with exactly it (see TryGetInjectCamera /
+    // RenderTargetTap.TryGetWorldCamera), so the layer stays locked to the world independent of frame-rate.
 
     private static bool keepDrawingWhenUiHidden = true;
     private static bool forcedAutoHide, forcedUserHide, forcedCutsceneHide, forcedGposeHide;
@@ -677,8 +675,7 @@ public static unsafe class NoireDraw3D
     /// matches the world already in the present buffer (see <see cref="TryGetInjectCamera"/>). The present-time
     /// fallback passes null and keeps the configured <see cref="CameraSourceMode"/> (FrameworkSnapshot).<br/>
     /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames — the caller must NOT
-    /// composite then, which is exactly what keeps a cleared scene from leaving stale content stamped on the
-    /// present buffer (the <c>/noire3d clear</c> "forged in place" bug).
+    /// composite then, so a cleared scene leaves no stale content stamped on the present buffer.
     /// </summary>
     private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride)
     {
@@ -1015,9 +1012,9 @@ public static unsafe class NoireDraw3D
 
     /// <summary>
     /// The camera to project the injected layer with: the render thread's world-pass snapshot — the exact camera
-    /// the world currently in the present buffer was rasterized with, captured at the frame's first depth pass. This
-    /// matches the world at any frame-rate with no timing estimation. Falls back to the live render camera only on a
-    /// frame where no world pass was seen (menu/loading), where there is no world-anchored content to swim anyway.
+    /// the world currently in the present buffer was rasterized with, captured at the frame's first depth pass, so
+    /// the layer matches the world independent of frame-rate. Falls back to the live render camera only on a frame
+    /// where no world pass was seen (e.g. menu/loading, which carries no world-anchored content).
     /// False only when no camera is available at all.
     /// </summary>
     private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam)
@@ -1208,7 +1205,7 @@ public static unsafe class NoireDraw3D
                 break;
             case "cam":
                 CameraSource = CameraSource == CameraSourceMode.FrameworkSnapshot ? CameraSourceMode.DrawTime : CameraSourceMode.FrameworkSnapshot;
-                Print($"Draw3D: camera source = {CameraSource}. Move the camera and tell me which one reduces the swim.");
+                Print($"Draw3D: present-time camera source = {CameraSource}.");
                 break;
             case "ontop":
                 RenderUnderNativeUi = !RenderUnderNativeUi;

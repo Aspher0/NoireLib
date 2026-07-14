@@ -77,12 +77,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private int presentBufferBinds;         // present-buffer binds so far this frame
     private volatile bool injecting;        // re-entrancy guard around the injection callback
 
-    // World-camera snapshot. The overlay must be projected with the SAME camera the game rasterized the world
-    // with — otherwise it swims under camera motion. Reading the live camera at inject time (present composition)
-    // fails above ~90fps because by then the render has run ahead of the world and the live camera leads it by a
-    // frame-rate-dependent amount. Instead we snapshot the player camera here on the render thread at the frame's
-    // first depth pass (≈ the main world pass, well before that divergence): the exact view/projection the world
-    // now in the present buffer was drawn with. Zero timing estimation, frame-rate independent by construction.
+    // World-camera snapshot. The injected overlay must be projected with the same camera the game rasterized the
+    // world with, or it drifts relative to world geometry under camera motion. The player camera is snapshotted
+    // here on the render thread at the frame's first depth pass (the main world pass) — the exact view/projection
+    // the world now in the present buffer was drawn with — and reused at the later injection bind in the same frame.
     private GameRenderSources.CameraData worldCamera;
     private volatile bool hasWorldCamera;
 
@@ -271,9 +269,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
 
         // Snapshot the world camera at the frame's first depth pass — the main world pass runs early with a
-        // depth-stencil bound, long before the present-composition binds where reading the live camera starts to
-        // lead the world. This captures the exact camera the world in the present buffer was drawn with, so the
-        // injected overlay locks to it at any frame-rate (no delay/timing estimation). One snapshot per frame.
+        // depth-stencil bound, before the present-composition binds. This captures the exact camera the world in
+        // the present buffer was drawn with, for the injection to project with later this frame. One per frame.
         if (InjectionEnabled && !hasWorldCamera && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0)
             && GameRenderSources.TryGetCamera(out var worldSnap))
         {

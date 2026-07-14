@@ -1,6 +1,6 @@
 # NoireDraw3D
 
-A real D3D11 world renderer for Dalamud plugins. It draws **after the game's frame is complete** — so its output is glowless and color-exact (post-processing already ran), hardware-clipped at the screen edges, always under your plugin windows, and it never hooks anything. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
+A real D3D11 world renderer for Dalamud plugins. It draws real 3D geometry into the game's frame — glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under your plugin windows. By default it composites **under the game's native UI** so HUD and nameplates read on top (this uses a render-thread hook on the present composition); set `RenderUnderNativeUi = false` to composite over everything with no hook at all. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
 
 Full design rationale, invariants and acceptance gates live in [`docs/Draw3D V2 Proposal.md`](https://github.com/Aspher0/NoireLib/blob/main/docs/Draw3D%20V2%20Proposal.md).
 
@@ -111,6 +111,8 @@ var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact tr
 |---|---|
 | `NoireDraw3D.Enabled` | Master switch (also re-arms the renderer after a fault). |
 | `NoireDraw3D.LayerOpacity` | 0–1 fade of the whole 3D layer. |
+| `NoireDraw3D.RenderUnderNativeUi` | **Default true.** Composite the layer under the game's native UI (HUD/nameplates read on top) via a render-thread hook on the present composition; falls back to the over-everything composite on any frame the injection can't run. Off = draw over everything, no hook. |
+| `NoireDraw3D.NativeUiDepthWrite` | **Default true** (needs `RenderUnderNativeUi`). Write the layer's opaque depth into the game's own scene-depth buffer so nameplates behind your 3D objects get occluded — real depth-aware nameplates. Fail-soft. |
 | `NoireDraw3D.ProtectGameUi` | The game's native UI always draws on top of the 3D layer — **per pixel** (nameplate letters, window drop shadows, chat transparency), via the backbuffer's UI-coverage alpha. Default true. Off = the layer sits above the game UI (still under plugin windows). |
 | `NoireDraw3D.NativeUiProtection` | Nameplate layering, always letter-exact: `DepthAware` (default — a plate in front of your shape reads on top, a plate behind it is covered, like real occlusion), `AlwaysVisible` (letters always on top), `Off` (the layer covers plates). |
 | `NoireDraw3D.NativeUiProtectionDimFactor` | How much a plate that is *behind* your content still shows through it: 0 (default) = fully covered, toward 1 = faintly readable. |
@@ -137,6 +139,10 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d wire` | Wireframe toggle. |
 | `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you. |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
+| `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |
+| `/noire3d platedepth` | Toggles `NativeUiDepthWrite` (depth-aware nameplates). |
+| `/noire3d cam` | A/B the present-time camera source (`FrameworkSnapshot`/`DrawTime`); does not affect the injection path. |
+| `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log (injection-point diagnostics). |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
 
