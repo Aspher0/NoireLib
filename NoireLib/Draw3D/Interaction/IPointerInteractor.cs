@@ -54,4 +54,33 @@ public interface IPointerInteractor
     /// <param name="frame">The current frame snapshot.</param>
     /// <param name="hovered">The element currently hovered (belongs to this interactor), or null.</param>
     void Draw(in FrameContext frame, object? hovered);
+
+    /// <summary>
+    /// Optional zero-latency draw, called on the <b>render thread</b> each frame with the current frame (not a frame
+    /// late like <see cref="Draw"/> from the UI thread). Emit <see cref="Im.ImDraw3D"/> geometry whose on-screen size
+    /// or placement must track the live camera without lag — the native gizmo draws its handles here so they don't
+    /// "swim" during a zoom. Read only atomically-simple state captured on the UI thread; do not run input logic here.
+    /// Default: no-op (interactors that don't need it keep drawing in <see cref="Draw"/>).
+    /// </summary>
+    /// <param name="frame">The current render-frame snapshot.</param>
+    void DrawOverlay(in FrameContext frame) { }
+
+    /// <summary>
+    /// True when this interactor reads ImGui IO itself and owns the mouse through its <b>own</b> ImGui window (the
+    /// ImGuizmo gizmo backend), instead of being ray-hit-tested by <see cref="NoireInteract"/>. A self-driven
+    /// interactor runs its input + draw in a pre-pass <i>before</i> scene hover resolution (via
+    /// <see cref="DrawSelfDriven"/>); while it reports it owns the mouse, the frame is a hard pass for scene picking
+    /// and NoireInteract shows no capture window of its own — the interactor's window is the single capture authority,
+    /// so the two never fight over the same click. Default <b>false</b> (an ordinary ray-hit-tested interactor).
+    /// </summary>
+    bool SelfDriven => false;
+
+    /// <summary>
+    /// For a <see cref="SelfDriven"/> interactor only: run its own input + draw for this frame and return whether it
+    /// owns the mouse right now (a handle is hovered or being dragged). Called in the pre-pass before scene hover
+    /// resolution, so the answer gates scene picking and the capture window <i>this</i> frame, not a frame late.
+    /// Never called when <see cref="SelfDriven"/> is false. Default: no-op.
+    /// </summary>
+    /// <param name="frame">The current frame snapshot.</param>
+    bool DrawSelfDriven(in FrameContext frame) => false;
 }

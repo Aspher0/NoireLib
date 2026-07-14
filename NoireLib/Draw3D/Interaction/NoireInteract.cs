@@ -35,6 +35,7 @@ public static class NoireInteract
     private static readonly DragContext DragScratch = new();
 
     private static bool drawHookRegistered;
+    private static bool overlayHookRegistered;
     private static int interactableCount;
     private static bool enabled = true;
     private static bool autoRun = true;
@@ -189,9 +190,11 @@ public static class NoireInteract
     public static bool ForeignUiHasMouse => foreignCapturing;
 
     /// <summary>
-    /// Ask NoireInteract to claim the mouse from the game for the remainder of this frame. For pointer clients (like
-    /// the gizmo's ImGuizmo backend) that handle their own input yet still need the game camera blocked while active.
+    /// Ask NoireInteract to claim the mouse from the game for the remainder of this frame. For pointer clients that
+    /// handle their own input yet still need the game camera blocked while active (a custom self-managed widget).
     /// Effective only during <see cref="Update"/> (call it from an interactor's <see cref="IPointerInteractor.Draw"/>).
+    /// The built-in ImGuizmo gizmo does not use this — it is <see cref="IPointerInteractor.SelfDriven"/> and blocks the
+    /// camera itself with <c>SetNextFrameWantCaptureMouse</c> (no window, so it never trips ImGuizmo's own hover-gate).
     /// </summary>
     public static void RequestCapture() => captureRequested = true;
 
@@ -243,6 +246,8 @@ public static class NoireInteract
         // Another ImGui surface (a different plugin's window — never our own capture window) owning the mouse. Reads last
         // frame's capture flag, discounting our own fullscreen capture window from the previous frame so we never mistake
         // ourselves for foreign: that miscount used to drop and re-acquire hover every frame (the highlight flicker).
+        // NB: the ImGuizmo gizmo's own SetNextFrameWantCaptureMouse is NOT discounted here — but it doesn't need to be,
+        // since the gizmo's ownership is decided purely by its own geometry, never by foreignImGui.
         var foreignImGui = io.WantCaptureMouse && !(showedCaptureLastFrame && captureWindowHovered);
 
         if (!NoireDraw3D.LastFrameValid)
@@ -258,7 +263,20 @@ public static class NoireInteract
         // so we neither hover nor pick a 3D object through it. Native addons are not ImGui, so WantCaptureMouse never
         // reflects them — it is a separate game-state test, OR-ed into the one "foreign owns the mouse" signal.
         var nativeUi = NoireDraw3D.IsCursorOverGameUi(mousePos, io.DisplaySize);
-        foreignCapturing = foreignImGui || nativeUi;
+        var otherUiOwnsMouse = foreignImGui || nativeUi;
+
+        // Self-driven pre-pass: interactors that read ImGui IO through their OWN window (the ImGuizmo gizmo backend) run
+        // BEFORE hover resolution, so their "owns the mouse now" is known this frame, not a frame late. While one owns
+        // the mouse (a handle hovered/dragged) the frame is a hard pass for scene picking; the interactor blocks the
+        // game camera itself (ImGuizmo via SetNextFrameWantCaptureMouse — no window, so its hover-gate never trips).
+        //
+        // Ownership is decided ENTIRELY by the interactor's own geometry (ImGuizmo's IsOver/IsUsing) — no game-UI or
+        // WantCaptureMouse term is fed in. Every earlier "gate" (foreignImGui, then nativeUi) created a feedback loop:
+        // the gizmo's own capture window sets WantCaptureMouse (→ foreignImGui), and IsPointOverVisibleAddon (→ nativeUi)
+        // flickers as HUD elements animate — either one, routed into the gate, toggled the gizmo on and off every frame
+        // (the grey + flicker). The gizmo is a pure overlay on top of everything; it is always live.
+        var selfDrivenOwnsMouse = DrawSelfDrivenInteractors();
+        foreignCapturing = otherUiOwnsMouse || selfDrivenOwnsMouse;
 
         rayValid = frame.TryScreenToRay(mousePos, out rayOrigin, out rayDirection);
 
@@ -301,7 +319,11 @@ public static class NoireInteract
 
         var wantCapture = Arbiter.Update(in sample, Sink);
 
-        DrawInteractors();                                 // interactors (e.g. the ImGuizmo gizmo) may RequestCapture here
+        DrawInteractors();                                 // ray-driven interactors' UI-thread pass (self-driven ones ran in the pre-pass)
+
+        // Native drags block the camera with the capture window. A self-driven interactor (ImGuizmo) does NOT get one —
+        // any hovered ImGui window trips ImGuizmo's "another window is hovered" hover-gate and flickers it. ImGuizmo
+        // blocks the game camera itself via SetNextFrameWantCaptureMouse (see DrawImGuizmo), which creates no window.
         DrawCaptureWindow(wantCapture || captureRequested);
     }
 
@@ -351,7 +373,7 @@ public static class NoireInteract
 
         // World-geometry occlusion: a wall / terrain in front of an object should block hovering (and thus clicking) it,
         // unless the consumer's click-through override is active. Interactors (gizmo handles) are exempt — resolved above,
-        // they stay grabbable through walls (AlwaysOnTop). wallDist = camera→nearest game surface under the cursor.
+        // they stay grabbable even where a wall visually occludes them. wallDist = camera→nearest game surface under the cursor.
         var occlude = WallOcclusionMode switch
         {
             WallOcclusion.Off => false,
@@ -419,8 +441,8 @@ public static class NoireInteract
 
         foreach (var it in snapshot)
         {
-            if (!it.Active)
-                continue;
+            if (!it.Active || it.SelfDriven)
+                continue; // self-driven interactors already drew in the pre-pass (DrawSelfDrivenInteractors)
 
             try
             {
@@ -433,6 +455,67 @@ public static class NoireInteract
         }
     }
 
+    /// <summary>
+    /// The self-driven pre-pass: runs each self-driven interactor's own input + draw (the ImGuizmo gizmo host window)
+    /// before scene hover resolution, and returns whether any of them owns the mouse right now.
+    /// </summary>
+    private static bool DrawSelfDrivenInteractors()
+    {
+        IPointerInteractor[] snapshot;
+        lock (SyncRoot)
+            snapshot = Interactors.ToArray();
+
+        var owns = false;
+        foreach (var it in snapshot)
+        {
+            if (!it.Active || !it.SelfDriven)
+                continue;
+
+            try
+            {
+                owns |= it.DrawSelfDriven(in frame);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw in its self-driven pre-pass.", "Draw3D");
+            }
+        }
+
+        return owns;
+    }
+
+    /// <summary>
+    /// Render-thread overlay (fired by <see cref="NoireDraw3D.OnRenderOverlay"/> with the live frame): draws each
+    /// ray-driven interactor's zero-latency geometry — the native gizmo handles — so their screen-constant sizing
+    /// tracks the camera instead of lagging a frame during zoom (the "swim"). Self-driven interactors (ImGuizmo) draw
+    /// themselves on the UI thread and are skipped. Runs on the render thread; it only reads hover/drag state and emits
+    /// <see cref="Im.ImDraw3D"/> geometry — no input logic, no capture.
+    /// </summary>
+    private static void DrawOverlayInteractors(FrameContext overlayFrame)
+    {
+        if (!enabled)
+            return;
+
+        IPointerInteractor[] snapshot;
+        lock (SyncRoot)
+            snapshot = Interactors.ToArray();
+
+        foreach (var it in snapshot)
+        {
+            if (!it.Active || it.SelfDriven)
+                continue;
+
+            try
+            {
+                it.DrawOverlay(in overlayFrame);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, $"An interactor {it.GetType().Name} threw while drawing its render overlay.", "Draw3D");
+            }
+        }
+    }
+
     // ---------------------------------------------------------------- capture window
 
     /// <summary>
@@ -441,7 +524,10 @@ public static class NoireInteract
     /// to withhold the input from the game — so the camera cannot pan and nothing is targeted. The window is only shown
     /// while interacting (and only when no foreign window already owns the cursor), so the game keeps the mouse the rest
     /// of the time. The InvisibleButton's active-id holds the capture through a fast drag even if the cursor outruns hover.
+    /// The self-driven ImGuizmo backend does NOT use this — a hovered window would trip its internal hover-gate and
+    /// flicker it; it blocks the camera with <c>SetNextFrameWantCaptureMouse</c> (no window) instead.
     /// </summary>
+    /// <param name="want">Whether the window should be shown this frame.</param>
     private static void DrawCaptureWindow(bool want)
     {
         if (!want)
@@ -472,7 +558,7 @@ public static class NoireInteract
         {
             ImGui.SetCursorPos(Vector2.Zero);
             ImGui.InvisibleButton("##NoireInteractHit", viewport.Size);
-            buttonActive = ImGui.IsItemActive();   // the active-id holds capture through a fast drag past the hover
+            buttonActive = ImGui.IsItemActive();        // the active-id holds capture through a fast drag past the hover
             hoveredNow = ImGui.IsWindowHovered();
         }
 
@@ -610,6 +696,14 @@ public static class NoireInteract
         // NoireInteract is the natural owner of the pick gate: nothing should pick while foreign UI holds the mouse.
         NoireDraw3D.PickInputGate = static () => !foreignCapturing;
 
+        // Subscribe once to the render-thread overlay so native gizmo handles draw zero-latency (no zoom "swim").
+        // Independent of AutoRun — the overlay is about drawing on the render thread, not how Update() is driven.
+        if (!overlayHookRegistered)
+        {
+            NoireDraw3D.OnRenderOverlay += DrawOverlayInteractors;
+            overlayHookRegistered = true;
+        }
+
         if (autoRun)
             EnsureDrawHook();
 
@@ -651,6 +745,12 @@ public static class NoireInteract
     private static void Cleanup()
     {
         RemoveDrawHook();
+        if (overlayHookRegistered)
+        {
+            NoireDraw3D.OnRenderOverlay -= DrawOverlayInteractors;
+            overlayHookRegistered = false;
+        }
+
         lock (SyncRoot)
         {
             Interactors.Clear();

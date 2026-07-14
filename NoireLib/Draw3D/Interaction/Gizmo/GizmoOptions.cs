@@ -25,11 +25,19 @@ public sealed class GizmoOptions
     public float ScaleSnap { get; set; }
 
     /// <summary>
-    /// Draw handles on top of everything — the game world <i>and</i> other 3D objects — so a handle is always grabbable,
-    /// never buried inside the object it edits or hidden behind terrain. Default true, the practical choice for an editor
-    /// gizmo. Turn off for physically-correct occlusion (a handle can then hide behind geometry, including its object).
+    /// How the native gizmo's handles are occluded. Default <see cref="GizmoDepth.OnTopOfObjects"/> — hidden behind the
+    /// game world (walls / terrain) but always on top of other 3D objects, so a handle is never buried inside the object
+    /// it edits yet still reads as in-world. <see cref="GizmoDepth.AlwaysOnTop"/> restores full x-ray;
+    /// <see cref="GizmoDepth.Occluded"/> is fully depth-tested. The ImGuizmo backend is flat-on-top regardless.
     /// </summary>
-    public bool AlwaysOnTop { get; set; } = true;
+    public GizmoDepth Depth { get; set; } = GizmoDepth.OnTopOfObjects;
+
+    /// <summary>
+    /// Optional hold-to-occlude override for the native gizmo: while it returns true the handles are occluded by the
+    /// game world (on top of objects), and while false they draw full x-ray — overriding <see cref="Depth"/>. Leave null
+    /// (default) to use the static <see cref="Depth"/>. e.g. <c>() =&gt; ImGui.GetIO().KeyAlt</c> for "occlude while Alt held".
+    /// </summary>
+    public System.Func<bool>? OcclusionHeld { get; set; }
 
     /// <summary>Handle arm length in screen pixels (kept constant regardless of distance). Default 90.</summary>
     public float HandlePixelLength { get; set; } = 90f;

@@ -87,6 +87,7 @@ public sealed unsafe class Draw3DDiagnostics
 
         // Log the click / hover / gizmo pipeline to /xllog while the QA scene is up (turned back off in ClearSmokeScene).
         NoireInteract.DebugLog = true;
+        NoireGizmo.ResetImGuizmoDiagnostics(); // re-arm the once-only [Gizmo] lines so each spawn logs fresh
 
         // Ground telegraphs (decal domain — hug the terrain). Interactable too: keep CPU data so the projection volume
         // picks triangle-exact, and wire hover/select so the gizmo can grab and move a decal like any other node.
@@ -154,6 +155,7 @@ public sealed unsafe class Draw3DDiagnostics
         // select it, then drag the handles — the camera stays put while you drag (NoireInteract owns the mouse).
         smokeGizmo = new NoireGizmo(GizmoOp.Universal);
         smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
+        smokeGizmo.Options.Depth = GizmoDepth.AlwaysOnTop;
         smokeGizmo.Options.Snap = new Vector3(0.5f);
         smokeGizmo.Options.RotateSnapDeg = 15f;
         smokeSelectionHandler = () =>

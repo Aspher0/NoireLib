@@ -10,8 +10,8 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// A move / rotate / scale gizmo for the V2 renderer: grab any <see cref="SceneNode"/> (or any world matrix) and
 /// transform it with axis / plane / screen handles, snapping and Local/World/Screen space. Handles are <b>real
 /// geometry</b> drawn through <see cref="ImDraw3D"/> and hit-tested with the render-time camera, so they never wobble
-/// under camera motion; with <see cref="GizmoOptions.AlwaysOnTop"/> (default) they draw over everything — game world
-/// and 3D objects alike — so a handle is always grabbable, never buried inside the object it edits.<br/>
+/// under camera motion; by default (<see cref="GizmoOptions.Depth"/>) they draw on top of other 3D objects but are
+/// occluded by the game world, so a handle is never buried inside the object it edits yet still hides behind a wall.<br/>
 /// The gizmo is a client of <see cref="NoireInteract"/>: it shares the one mouse-capture authority, so grabbing a
 /// handle takes the lead of input and the camera never pans underneath a drag. Construct one, <see cref="Attach"/> it
 /// to a node, and it draws and edits itself every frame until <see cref="Dispose"/>.
@@ -22,6 +22,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     /// <summary>Translate arrows end at this fraction of the handle length; scale knobs sit at the full length, past them, on the same axis.</summary>
     private const float ArmRatio = 0.78f;
+
+    /// <summary>Immediate-layer draw layer for the handles — high, so they paint over translucent scene objects instead of being blended under them.</summary>
+    private const int GizmoLayer = 100;
 
     private readonly GizmoHandleRef[] tokens = new GizmoHandleRef[HandleCount];
     private readonly List<Vector3> circleScratch = new(64);
@@ -438,16 +441,39 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     // ---------------------------------------------------------------- drawing
 
     /// <inheritdoc/>
+    /// <remarks>The ImGuizmo backend reads ImGui IO through its own host window, so it runs in the pre-pass (<see cref="DrawSelfDriven"/>), not here.</remarks>
+    public bool SelfDriven => !IsNative;
+
+    /// <inheritdoc/>
+    public bool DrawSelfDriven(in FrameContext frame)
+    {
+        if (!Active || IsNative || !TryGetWorld(out var world))
+            return false;
+
+        return DrawImGuizmo(in frame, in world);
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// UI-thread pass for the native backend: it only tracks which handle is hovered. The handles themselves are drawn
+    /// in <see cref="DrawOverlay"/> on the render thread with the CURRENT frame, so their screen-constant size tracks
+    /// the live camera instead of lagging it a frame during zoom (the handle "swim"). ImGuizmo is self-driven and
+    /// never reaches here.
+    /// </remarks>
     public void Draw(in FrameContext frame, object? hovered)
     {
-        if (!Active || !TryGetWorld(out var world))
+        if (!Active || !IsNative)
             return;
 
-        if (!IsNative)
-        {
-            DrawImGuizmo(in frame, in world);
+        if (!dragging)
+            hoveredHandle = TokenToHandle(hovered);
+    }
+
+    /// <inheritdoc/>
+    public void DrawOverlay(in FrameContext frame)
+    {
+        if (!Active || !IsNative || !TryGetWorld(out var world))
             return;
-        }
 
         // The ImGuizmo backend was asked for but native is drawing (binding failed or fallback camera) — say why, once.
         if (Options.Backend == GizmoBackend.ImGuizmo && NoireInteract.DebugLog && !imguizmoNativeFallbackLogged)
@@ -461,19 +487,23 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
                 "Draw3D");
         }
 
-        Basis b;
-        if (dragging)
-            // Follow the target's live position during the drag (so a translate carries the gizmo with the object),
-            // but keep the axes / size frozen from the press so the handles don't wobble mid-drag.
-            b = new Basis(world.Translation, dragAx, dragAy, dragAz, dragSx, dragSy, dragSz, dragViewDir, dragHandleLen);
-        else
-        {
-            b = ComputeBasis(in world, in frame);
-            hoveredHandle = TokenToHandle(hovered);
-        }
-
+        // Draw from a LIVE basis every frame — even mid-drag. It recomputes the origin (a translate carries the gizmo
+        // with the object), the on-screen size (screen-constant regardless of camera distance/zoom, so the handles
+        // never shrink/grow as the object moves nearer/farther) and, in Local space, the axes (translate arrows and the
+        // always-local scale knobs rotate with the object as you turn it). The drag SOLVER still reads the frozen
+        // press-time basis (dragOrigin/dragAx/dragSx/dragHandleLen), so the math stays stable and the grabbed handle
+        // never slips — a rotate drag's grabbed ring is its (fixed) rotation axis, which the live basis leaves in place.
+        var b = ComputeBasis(in world, in frame);
         var current = dragging ? activeHandle : hoveredHandle;
-        var style = new ImShapeStyle { IgnoreDepth = Options.AlwaysOnTop };
+        // Map the gizmo depth policy onto the immediate-layer style, and draw on a high layer so the handles paint over
+        // translucent scene objects (e.g. a fading ground plane) instead of being blended under them.
+        var depth = ResolveDepth();
+        var style = new ImShapeStyle
+        {
+            IgnoreDepth = depth == GizmoDepth.AlwaysOnTop,
+            OnTopOfObjects = depth == GizmoDepth.OnTopOfObjects,
+            Layer = GizmoLayer,
+        };
         var im = NoireDraw3D.Im;
         var thickness = GizmoMath.ScreenConstantLength(in frame, b.Origin, Options.HandlePixelThickness);
         var len = b.HandleLen;
@@ -572,6 +602,28 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private static Vector4 NeutralColor(bool highlighted)
         => highlighted ? new Vector4(1f, 0.9f, 0.35f, 1f) : new Vector4(0.85f, 0.85f, 0.85f, 1f);
 
+    /// <summary>
+    /// The effective occlusion for this frame: the static <see cref="GizmoOptions.Depth"/>, unless
+    /// <see cref="GizmoOptions.OcclusionHeld"/> is set — then the gizmo is world-occluded only while it returns true
+    /// (x-ray otherwise), for a hold-to-occlude key.
+    /// </summary>
+    private GizmoDepth ResolveDepth()
+    {
+        if (Options.OcclusionHeld is { } held)
+        {
+            try
+            {
+                return held() ? GizmoDepth.OnTopOfObjects : GizmoDepth.AlwaysOnTop;
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, "The gizmo OcclusionHeld predicate threw.", "Draw3D");
+            }
+        }
+
+        return Options.Depth;
+    }
+
     // ---------------------------------------------------------------- target & basis
 
     private bool TryGetWorld(out Matrix4x4 world)
@@ -642,12 +694,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
                 break;
         }
 
-        // Scale handles share the translate/rotate basis, so a scale axis is always the exact same line as its translate
-        // arrow (driven by Options.Space) instead of living in a different frame. In World space both follow the world
-        // axes; in Local space both track the object's own axes — either way, scale-Y sits on translate-Y.
-        var sx = ax;
-        var sy = ay;
-        var sz = az;
+        // Scale handles are always object-local — they rotate with the object so a scale axis follows the geometry it
+        // stretches (World-space translate/rotate arrows stay world-aligned; only scale tracks the object's own frame).
+        var sx = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, rot), Vector3.UnitX);
+        var sy = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, rot), Vector3.UnitY);
+        var sz = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitZ, rot), Vector3.UnitZ);
         var viewDir = InteractMath.SafeNormalize(frame.EyePos - origin, az);
         var handleLen = GizmoMath.ScreenConstantLength(in frame, origin, Options.HandlePixelLength);
 

@@ -383,7 +383,7 @@ public sealed class ImDraw3D
     {
         Domain = MaterialDomain.Unlit,
         Blend = style.Additive ? BlendMode.Additive : BlendMode.Premultiplied,
-        Depth = style.IgnoreDepth ? DepthMode.Ignore : DepthMode.TestOnly,
+        Depth = style.IgnoreDepth ? DepthMode.Ignore : style.OnTopOfObjects ? DepthMode.WorldOnly : DepthMode.TestOnly,
         WhenDepthUnavailable = DepthUnavailableBehavior.Ignore,
         Cull = cullNone ? CullMode.None : CullMode.Back,
         UnorderedBatching = true, // markers may draw in any order — lets identical shapes instance hard

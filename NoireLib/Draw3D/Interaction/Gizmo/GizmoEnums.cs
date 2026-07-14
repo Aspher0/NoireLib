@@ -35,6 +35,23 @@ public enum GizmoSpace
     Screen,
 }
 
+/// <summary>How the native gizmo's handles are occluded (the ImGuizmo backend is always flat-on-top, unaffected).</summary>
+public enum GizmoDepth
+{
+    /// <summary>
+    /// Occluded by the game world (walls / terrain) but always drawn on top of other 3D objects. The default and the
+    /// editor-friendly choice: the handle stays visible over the object it edits, yet hides behind a wall like real
+    /// geometry.
+    /// </summary>
+    OnTopOfObjects,
+
+    /// <summary>Drawn on top of absolutely everything — world and 3D objects alike (x-ray). A handle is never hidden.</summary>
+    AlwaysOnTop,
+
+    /// <summary>Fully depth-tested: occluded by the world <i>and</i> by other 3D objects (can be buried inside the object it edits).</summary>
+    Occluded,
+}
+
 /// <summary>Which gizmo implementation draws and solves the handles.</summary>
 public enum GizmoBackend
 {

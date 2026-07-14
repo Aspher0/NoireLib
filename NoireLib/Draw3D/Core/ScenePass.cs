@@ -484,11 +484,12 @@ internal sealed unsafe class ScenePass : IDisposable
                 1 => DepthKey.ReadGE,
                 _ => hasDepthWrites ? DepthKey.ReadGE : DepthKey.Disabled,
             };
-            // A transparent item that opted out of world depth (DepthMode.Ignore) is a genuine overlay: it must also
-            // skip the private V2↔V2 depth test, not only the world-depth SRV, so always-on-top handles/markers stay
-            // in front of 3D objects — the documented "draw on top of everything (x-ray)" contract. Opaque (must write
-            // depth) and decal (projects via device-z) buckets are unaffected.
-            if (bucket == 2 && item.Mat.Depth == DepthMode.Ignore)
+            // A transparent item that opts out of the private V2↔V2 depth test stays in front of other 3D objects:
+            //  • DepthMode.Ignore   — full x-ray: also skips the world-depth SRV below, so it draws over everything.
+            //  • DepthMode.WorldOnly — on top of objects but STILL world-occluded: it keeps the world-depth SRV, so a
+            //    wall/terrain hides it while a nearer 3D object does not (the editor-gizmo mix).
+            // Opaque (must write depth) and decal (projects via device-z) buckets are unaffected.
+            if (bucket == 2 && item.Mat.Depth is DepthMode.Ignore or DepthMode.WorldOnly)
                 depthKey = DepthKey.Disabled;
             if (dsv == null)
                 depthKey = DepthKey.Disabled;

@@ -809,6 +809,21 @@ public static unsafe class NoireDraw3D
         foreach (var scene in scenes)
             scene.FirePrepare(in frame);
 
+        // Render-thread overlay (native gizmo handles): same zero-latency point as FirePrepare, so its Im calls land
+        // this frame with the live camera. Guarded — a throwing subscriber must never fault the render.
+        var overlay = OnRenderOverlay;
+        if (overlay != null)
+        {
+            try
+            {
+                overlay(frame);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, "A NoireDraw3D render-overlay handler threw; overlay skipped this frame.", "Draw3D");
+            }
+        }
+
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
@@ -1346,6 +1361,16 @@ public static unsafe class NoireDraw3D
 
     internal static bool LastFrameValid => lastFrameValid;
 
+    /// <summary>
+    /// Render-thread overlay hook, fired each rendered frame right after the scene prepare phase with the CURRENT
+    /// frame — so <see cref="Im"/> calls made from it land this frame (zero-latency), unlike calls made from
+    /// <c>UiBuilder.Draw</c> which render a frame late. <see cref="Interaction.NoireInteract"/> subscribes once to
+    /// draw the native gizmo handles here, so their screen-constant sizing tracks the live camera instead of lagging
+    /// it by a frame during zoom (the handle "swim"). Interaction (hit-testing, drag solving) still runs on the UI
+    /// thread; only the drawing moves here.
+    /// </summary>
+    internal static event Action<FrameContext>? OnRenderOverlay;
+
     internal static GameRenderSources.CameraData LastCameraData => lastCameraData;
 
     private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, Vector3? groundSurface, List<PickHit> hits)
@@ -1400,17 +1425,45 @@ public static unsafe class NoireDraw3D
         if (!Matrix4x4.Invert(world, out var invWorld))
             return false;
 
-        Vector3 worldHit;
-        if (groundSurface is { } gs)
-            worldHit = gs;                                        // the real surface the decal is painted on
-        else if (!TryRayLocalGroundPlane(origin, direction, in world, out worldHit))
-            return false;                                        // flat-ground fallback when the game gives no surface
+        // A ground decal is a flat footprint projected vertically, so two candidate surface points can put the cursor
+        // "on" it, and a hit on EITHER counts (whichever is nearer along the ray wins):
+        //   1. The decal's own plane (ray ∩ node local +Y plane). View/zoom/angle independent and exact on flat ground —
+        //      this is what fixes "some camera angles/zoom don't catch": it never depends on the game's raycast landing.
+        //   2. The game's reported ground under the cursor (ScreenToWorld). Catches slope-projected decals where the
+        //      terrain sits off the node plane, at the cost of the game's raycast reliability.
+        var hit = false;
+        t = float.MaxValue;
+
+        if (TryRayLocalGroundPlane(origin, direction, in world, out var planeHit)
+            && TryDecalFootprint(renderer.Material, in invWorld, origin, direction, planeHit, out var tPlane))
+        {
+            hit = true;
+            t = tPlane;
+        }
+
+        if (groundSurface is { } gs
+            && TryDecalFootprint(renderer.Material, in invWorld, origin, direction, gs, out var tGround)
+            && tGround < t)
+        {
+            hit = true;
+            t = tGround;
+        }
+
+        return hit;
+    }
+
+    /// <summary>Transforms a world surface point into the decal's local frame and tests it against the footprint volume + shape, returning the ray parameter of the point.</summary>
+    private static bool TryDecalFootprint(Material material, in Matrix4x4 invWorld, Vector3 origin, Vector3 direction, Vector3 worldHit, out float t)
+    {
+        t = 0f;
 
         var lp = Vector3.Transform(worldHit, invWorld);
-        if (MathF.Abs(lp.X) > 0.5f || MathF.Abs(lp.Y) > 0.5f || MathF.Abs(lp.Z) > 0.5f)
-            return false;                                        // outside the decal volume — nothing rendered here
-        if (!InsideDecalShape(renderer.Material, lp))
-            return false;                                        // inside the box but outside the footprint shape
+        // XZ is the real footprint gate; the vertical band is generous (the volume height) so uneven ground / a
+        // collision surface reported off the rendered ground doesn't reject a spot the decal visibly covers.
+        if (MathF.Abs(lp.X) > 0.5f || MathF.Abs(lp.Z) > 0.5f || MathF.Abs(lp.Y) > 0.5f)
+            return false;
+        if (!InsideDecalShape(material, lp))
+            return false;
 
         var dd = Vector3.Dot(direction, direction);
         t = dd > 1e-12f ? Vector3.Dot(worldHit - origin, direction) / dd : 0f;

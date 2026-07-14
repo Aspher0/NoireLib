@@ -38,6 +38,13 @@ public readonly record struct ImShapeStyle
     /// <summary>Flat shapes only: ignore world geometry entirely (x-ray).</summary>
     public bool IgnoreDepth { get; init; }
 
+    /// <summary>
+    /// Flat shapes only: draw on top of other Draw3D objects while staying occluded by the game world (walls / terrain).
+    /// The editor-gizmo mix — visible over the objects it edits, still hidden behind a real wall. Ignored when
+    /// <see cref="IgnoreDepth"/> is set (full x-ray wins).
+    /// </summary>
+    public bool OnTopOfObjects { get; init; }
+
     /// <summary>Draw layer (orders decals; higher draws later).</summary>
     public int Layer { get; init; }
 
