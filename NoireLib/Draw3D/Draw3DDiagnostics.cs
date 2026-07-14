@@ -156,6 +156,7 @@ public sealed unsafe class Draw3DDiagnostics
         smokeGizmo = new NoireGizmo(GizmoOp.Universal);
         smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
         smokeGizmo.Options.Depth = GizmoDepth.AlwaysOnTop;
+        smokeGizmo.Options.ScaleSnap = 0.5f;
         smokeGizmo.Options.Snap = new Vector3(0.5f);
         smokeGizmo.Options.RotateSnapDeg = 15f;
         smokeSelectionHandler = () =>
