@@ -231,6 +231,19 @@ public static unsafe class NoireDraw3D
     }
 
     /// <summary>
+    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, stats, wire, smoke, clear, reset,
+    /// rtlog, ontop, platedepth). <b>Opt-in:</b> it is not registered automatically — call this once (e.g. in your
+    /// plugin constructor) to expose the command. No-op if it is already registered (by you or another plugin using
+    /// NoireLib). The full toolkit is also available programmatically via <see cref="Diagnostics"/> without it.
+    /// </summary>
+    public static void EnableDiagnosticsCommand()
+    {
+        EnsureInitialized();
+        if (!commandRegistered)
+            RegisterCommand();
+    }
+
+    /// <summary>
     /// Consumer-supplied input arbitration for <see cref="Pick"/>: return false when the mouse is already
     /// claimed by UI. Draw3D reads no input itself (Law 11) — NoireUI or the host plugin wires this.
     /// </summary>
@@ -363,7 +376,6 @@ public static unsafe class NoireDraw3D
             if (!NoireLibMain.IsRegisteredOnDispose(DisposeKey))
                 NoireLibMain.RegisterOnDispose(DisposeKey, Cleanup);
 
-            RegisterCommand();
             initialized = true;
             UpdateFrameworkHook(); // start the sim-thread camera sampler for the present-time path
             RefreshUiHideOverrides(); // default KeepDrawingWhenUiHidden is true — the layer survives UI-hide
