@@ -86,17 +86,12 @@ public static unsafe class NoireDraw3D
     private static volatile bool frameworkCameraValid;
     private static bool frameworkHooked;
 
-    // Swim vs frame-rate: at/under the sim-present rate (InjectSyncHz, ~90) the live render camera read at the
-    // inject point equals the world already in the present buffer, so projecting with it is exact. Above that
-    // rate the render outruns the world and the live camera leads it by max(0, fps/InjectSyncHz − 1) frames — a
-    // sub-frame amount that grows with fps. So the inject path keeps a short ring of live-camera samples and
-    // projects from the one delayed by that automatically-computed amount (interpolated). Zero delay ≤ sync rate.
-    private const int CameraHistoryLength = 8;
-    private static readonly GameRenderSources.CameraData[] cameraHistory = new GameRenderSources.CameraData[CameraHistoryLength];
-    private static int cameraHistoryCount;
-    private static double lastInjectClockSeconds = -1;
-    private static float smoothedInjectFps;
-    private static float injectSyncHz = 90f;
+    // Camera swim is a phase mismatch: the overlay must be projected with the SAME camera the game rasterized the
+    // world with. Reading the live render camera at inject time works only up to ~90fps — above it the render has
+    // run ahead of the world in the present buffer and the live camera leads it by a frame-rate-dependent amount,
+    // so the layer swims. Rather than estimating that lead (no constant is right at every fps), the render-thread
+    // tap snapshots the real world-pass camera at the frame's first depth pass and the inject path projects with
+    // exactly that (see TryGetInjectCamera / RenderTargetTap.TryGetWorldCamera): zero mismatch at any frame-rate.
 
     private static bool keepDrawingWhenUiHidden = true;
     private static bool forcedAutoHide, forcedUserHide, forcedCutsceneHide, forcedGposeHide;
@@ -218,19 +213,6 @@ public static unsafe class NoireDraw3D
     {
         get => nativeUiDepthWrite;
         set => nativeUiDepthWrite = value;
-    }
-
-    /// <summary>
-    /// The render frame-rate (Hz) at/under which the <see cref="RenderUnderNativeUi"/> injection projects with the
-    /// live camera (an exact match — no swim). Above it the render outruns the world in the present buffer, so the
-    /// layer is auto-projected from a camera delayed by <c>fps/InjectSyncHz − 1</c> frames to track it. Default 90
-    /// (the observed FFXIV sim/present rate); raise or lower it only if world-anchored content starts swimming
-    /// above a different frame-rate on your hardware. Fully automatic otherwise — there is nothing to tune per frame.
-    /// </summary>
-    public static float InjectSyncHz
-    {
-        get => injectSyncHz;
-        set => injectSyncHz = Math.Clamp(value, 30f, 1000f);
     }
 
     /// <summary>
@@ -691,8 +673,8 @@ public static unsafe class NoireDraw3D
     /// builds the frame, fires per-frame user code + diagnostics, then renders render-to-texture views and the
     /// main scene into the offscreen premultiplied target. The caller has captured the StateGuard and owns the
     /// composite to whichever target (backbuffer or the game's present buffer), plus <see cref="RenderStats.EndGpuTiming"/>.<br/>
-    /// <paramref name="cameraOverride"/> is supplied by the injection path — the auto-delayed live camera that
-    /// matches the world already in the present buffer (see <see cref="AcquireInjectCamera"/>). The present-time
+    /// <paramref name="cameraOverride"/> is supplied by the injection path — the world-pass camera snapshot that
+    /// matches the world already in the present buffer (see <see cref="TryGetInjectCamera"/>). The present-time
     /// fallback passes null and keeps the configured <see cref="CameraSourceMode"/> (FrameworkSnapshot).<br/>
     /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames — the caller must NOT
     /// composite then, which is exactly what keeps a cleared scene from leaving stale content stamped on the
@@ -961,9 +943,9 @@ public static unsafe class NoireDraw3D
     /// <summary>
     /// Render-thread injection callback (from <see cref="RenderTargetTap"/>): renders THIS frame's scene and
     /// composites it onto the game's present-composition buffer — after the world image lands there and before
-    /// the native UI is drawn, so HUD and nameplates read on top. Projects with the auto-delayed live camera
-    /// (<see cref="AcquireInjectCamera"/>) that matches the world already in the present buffer, so the layer
-    /// holds still under camera motion at any frame-rate. State is saved/restored (Law 6).
+    /// the native UI is drawn, so HUD and nameplates read on top. Projects with the world-pass camera snapshot
+    /// (<see cref="TryGetInjectCamera"/>) — the exact camera the world in the present buffer was drawn with — so
+    /// the layer holds still under camera motion at any frame-rate. State is saved/restored (Law 6).
     /// Returns true when it rendered; on failure the flag stays clear and the present-time path renders instead.
     /// </summary>
     private static bool InjectComposite(nint presentBufferResource)
@@ -980,18 +962,18 @@ public static unsafe class NoireDraw3D
         if (!GameRenderSources.TryGetBackBuffer(out var backBuffer) || !EnsurePresentRtv(device, presentBufferResource))
             return false;
 
-        // Project with the live camera auto-delayed to match the world already in the present buffer (see
-        // AcquireInjectCamera): zero delay at/under the sync rate, a small computed delay above it. Advances the
-        // ring and frame-time estimate once per frame, so it runs before the empty-frame checks inside.
-        if (!AcquireInjectCamera(out var injectCam))
+        // Project with the exact camera the world in the present buffer was rasterized with — the render-thread
+        // tap's world-pass snapshot (see TryGetInjectCamera). This locks the layer to the world at any frame-rate;
+        // there is no delay/timing estimation. Falls back to the live camera on a frame with no world pass.
+        if (!TryGetInjectCamera(out var injectCam))
             return false; // no camera available — let the present-time path handle this frame
 
         var ctx = device.Context;
         guard.Capture(ctx);
         try
         {
-            // Render this frame's scene into the offscreen target with the auto-delayed live camera (matches the
-            // world in the present buffer at any fps), then blit. No UI mask/rects — the real native UI draws on top.
+            // Render this frame's scene into the offscreen target with the world-pass camera (the exact camera the
+            // world in the present buffer used), then blit. No UI mask/rects — the real native UI draws on top.
             var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam);
             if (result.HasContent)
             {
@@ -1032,71 +1014,18 @@ public static unsafe class NoireDraw3D
     }
 
     /// <summary>
-    /// Reads the live render camera at the injection point, records it in the history ring, and returns the sample
-    /// auto-delayed to match the world already sitting in the present buffer. The delay is
-    /// <c>max(0, fps/InjectSyncHz − 1)</c> frames — zero at/under the sync rate (so it equals the live camera, the
-    /// exact-match case), a small growing amount above it where the render outruns the world. Fractional delays
-    /// interpolate two samples. Advances the ring + frame-time estimate exactly once per frame (call once per
-    /// inject). False only when no camera is available at all.
+    /// The camera to project the injected layer with: the render thread's world-pass snapshot — the exact camera
+    /// the world currently in the present buffer was rasterized with, captured at the frame's first depth pass. This
+    /// matches the world at any frame-rate with no timing estimation. Falls back to the live render camera only on a
+    /// frame where no world pass was seen (menu/loading), where there is no world-anchored content to swim anyway.
+    /// False only when no camera is available at all.
     /// </summary>
-    private static bool AcquireInjectCamera(out GameRenderSources.CameraData cam)
+    private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam)
     {
-        if (!GameRenderSources.TryGetCamera(out var live))
-        {
-            cam = default;
-            return false;
-        }
+        if (renderTargetTap != null && renderTargetTap.TryGetWorldCamera(out cam))
+            return true;
 
-        cameraHistory[cameraHistoryCount & (CameraHistoryLength - 1)] = live;
-        cameraHistoryCount++;
-        if (cameraHistoryCount >= CameraHistoryLength * 2)
-            cameraHistoryCount -= CameraHistoryLength; // keep it bounded forever; a whole-length step leaves every masked index unchanged
-
-        // Smoothed render fps from the inject-to-inject interval (inject runs once per frame).
-        var nowS = Clock.Elapsed.TotalSeconds;
-        if (lastInjectClockSeconds >= 0)
-        {
-            var dt = nowS - lastInjectClockSeconds;
-            if (dt is > 1e-5 and < 1.0)
-            {
-                var instFps = (float)(1.0 / dt);
-                smoothedInjectFps = smoothedInjectFps <= 0f ? instFps : smoothedInjectFps + (instFps - smoothedInjectFps) * 0.1f;
-            }
-        }
-
-        lastInjectClockSeconds = nowS;
-
-        var delay = smoothedInjectFps > injectSyncHz
-            ? Math.Clamp(smoothedInjectFps / injectSyncHz - 1f, 0f, CameraHistoryLength - 1)
-            : 0f;
-        var whole = (int)MathF.Floor(delay);
-        var frac = delay - whole;
-        var newer = SampleCameraBack(whole);
-        cam = frac > 1e-4f ? LerpCamera(newer, SampleCameraBack(whole + 1), frac) : newer;
-        return true;
-    }
-
-    /// <summary>Returns the render-camera sample <paramref name="framesBack"/> frames back (clamped to the ring's fill).</summary>
-    private static GameRenderSources.CameraData SampleCameraBack(int framesBack)
-    {
-        var available = Math.Min(cameraHistoryCount, CameraHistoryLength);
-        var back = Math.Clamp(framesBack, 0, available - 1);
-        return cameraHistory[(cameraHistoryCount - 1 - back) & (CameraHistoryLength - 1)];
-    }
-
-    /// <summary>
-    /// Linear interpolation between two camera samples for the sub-frame delay. Matrices/origin are lerped
-    /// element-wise (adjacent-frame deltas are tiny, so this tracks screen position faithfully); the depth
-    /// convention flags and near/far/FoV — which don't move under pure camera motion — come from <paramref name="a"/>.
-    /// </summary>
-    private static GameRenderSources.CameraData LerpCamera(in GameRenderSources.CameraData a, in GameRenderSources.CameraData b, float t)
-    {
-        var r = a;
-        r.View = a.View + (b.View - a.View) * t;
-        r.Proj = a.Proj + (b.Proj - a.Proj) * t;
-        r.ControlViewProj = a.ControlViewProj + (b.ControlViewProj - a.ControlViewProj) * t;
-        r.Origin = Vector3.Lerp(a.Origin, b.Origin, t);
-        return r;
+        return GameRenderSources.TryGetCamera(out cam);
     }
 
     /// <summary>
