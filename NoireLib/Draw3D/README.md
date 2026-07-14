@@ -141,7 +141,6 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |
 | `/noire3d platedepth` | Toggles `NativeUiDepthWrite` (depth-aware nameplates). |
-| `/noire3d cam` | A/B the present-time camera source (`FrameworkSnapshot`/`DrawTime`); does not affect the injection path. |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log (injection-point diagnostics). |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.

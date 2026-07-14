@@ -79,9 +79,8 @@ public static unsafe class NoireDraw3D
     private static bool lastFrameValid;
     private static GameRenderSources.CameraData lastCameraData;
 
-    // The present-time path samples the camera on the sim thread (FrameworkSnapshot), which matches the presented
-    // backbuffer more closely than a draw-time read of the live render camera.
-    private static CameraSourceMode cameraSource = CameraSourceMode.FrameworkSnapshot;
+    // The present-time path projects with a camera sampled on the sim thread each Framework.Update, which matches
+    // the presented backbuffer more closely than a live read at present time.
     private static GameRenderSources.CameraData frameworkCamera;
     private static volatile bool frameworkCameraValid;
     private static bool frameworkHooked;
@@ -237,17 +236,6 @@ public static unsafe class NoireDraw3D
     /// </summary>
     public static Func<bool>? PickInputGate { get; set; }
 
-    /// <summary>When the camera matrices are sampled (A/B experiment — see the proposal §7.6).</summary>
-    public static CameraSourceMode CameraSource
-    {
-        get => cameraSource;
-        set
-        {
-            cameraSource = value;
-            UpdateFrameworkHook();
-        }
-    }
-
     /// <summary>Lighting parameters for <see cref="Materials.MaterialDomain.Lit"/> materials.</summary>
     public static Draw3DLighting Lighting { get; } = new();
 
@@ -377,7 +365,7 @@ public static unsafe class NoireDraw3D
 
             RegisterCommand();
             initialized = true;
-            UpdateFrameworkHook(); // default camera source is FrameworkSnapshot — start the sim-thread sampler
+            UpdateFrameworkHook(); // start the sim-thread camera sampler for the present-time path
             RefreshUiHideOverrides(); // default KeepDrawingWhenUiHidden is true — the layer survives UI-hide
             NoireLogger.LogInfo("NoireDraw3D initialized (device objects deferred to first Present).", "Draw3D");
         }
@@ -673,21 +661,21 @@ public static unsafe class NoireDraw3D
     /// composite to whichever target (backbuffer or the game's present buffer), plus <see cref="RenderStats.EndGpuTiming"/>.<br/>
     /// <paramref name="cameraOverride"/> is supplied by the injection path — the world-pass camera snapshot that
     /// matches the world already in the present buffer (see <see cref="TryGetInjectCamera"/>). The present-time
-    /// fallback passes null and keeps the configured <see cref="CameraSourceMode"/> (FrameworkSnapshot).<br/>
+    /// fallback passes null and uses the sim-thread framework snapshot, falling back to a live camera read.<br/>
     /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames — the caller must NOT
     /// composite then, so a cleared scene leaves no stale content stamped on the present buffer.
     /// </summary>
     private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride)
     {
         // Camera snapshot — once, at a stable point (Law 2). The injection path passes the delayed render camera
-        // that matches the world already in the present buffer; the present-time path honours the configured
-        // source (the sim-thread snapshot matches the shown backbuffer better than a live read at present time).
+        // that matches the world already in the present buffer; the present-time path uses the sim-thread snapshot
+        // (it matches the shown backbuffer better than a live read at present time), falling back to a live read.
         GameRenderSources.CameraData cam;
         if (cameraOverride.HasValue)
         {
             cam = cameraOverride.Value;
         }
-        else if (cameraSource == CameraSourceMode.FrameworkSnapshot && frameworkCameraValid)
+        else if (frameworkCameraValid)
         {
             cam = frameworkCamera;
         }
@@ -1100,9 +1088,9 @@ public static unsafe class NoireDraw3D
         return Math.Abs(p.W) > 1e-9f ? new Vector3(p.X, p.Y, p.Z) / p.W : Vector3.Zero;
     }
 
-    // ---------------------------------------------------------------- internals: camera A/B, UI-hide, command
+    // ---------------------------------------------------------------- internals: camera sampler, UI-hide, command
 
-    private static void UpdateFrameworkHook() => SetFrameworkHook(cameraSource == CameraSourceMode.FrameworkSnapshot && initialized && !disposed);
+    private static void UpdateFrameworkHook() => SetFrameworkHook(initialized && !disposed);
 
     private static void SetFrameworkHook(bool hook)
     {
@@ -1156,7 +1144,7 @@ public static unsafe class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | clear | reset | rtlog | cam | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | clear | reset | rtlog | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1202,10 +1190,6 @@ public static unsafe class NoireDraw3D
                     Print("Draw3D: the render-target tap could not be installed (see the log).");
                 }
 
-                break;
-            case "cam":
-                CameraSource = CameraSource == CameraSourceMode.FrameworkSnapshot ? CameraSourceMode.DrawTime : CameraSourceMode.FrameworkSnapshot;
-                Print($"Draw3D: present-time camera source = {CameraSource}.");
                 break;
             case "ontop":
                 RenderUnderNativeUi = !RenderUnderNativeUi;
