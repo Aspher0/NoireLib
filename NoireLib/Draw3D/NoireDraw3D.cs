@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
 using NoireLib.Draw3D.Core;
@@ -248,6 +249,22 @@ public static unsafe class NoireDraw3D
     /// claimed by UI. Draw3D reads no input itself (Law 11) — NoireUI or the host plugin wires this.
     /// </summary>
     public static Func<bool>? PickInputGate { get; set; }
+
+    /// <summary>
+    /// Convenience for <see cref="Im.ImShapeStyle.ExcludeVolumes"/>: nearby game objects as exclusion cylinders,
+    /// so "cut this decal around the characters standing in it" is one call. <paramref name="filter"/> null =
+    /// characters, monsters and NPCs (players, battle NPCs, event NPCs); <paramref name="radiusScale"/> widens
+    /// (&gt;1) or tightens (&lt;1) each cylinder. Reads the object table — call it on the framework/draw thread
+    /// (not from <see cref="Scene.Scene3D.OnPrepareFrame"/>), then hand the result to whichever decals should honor it.
+    /// </summary>
+    /// <param name="filter">Which objects to include; null uses the default character/monster/NPC set.</param>
+    /// <param name="radiusScale">Multiplier on each object's hitbox radius (default 1).</param>
+    public static IReadOnlyList<ExcludeVolume> GetActorExclusions(Func<IGameObject, bool>? filter = null, float radiusScale = 1f)
+    {
+        var list = new List<ExcludeVolume>();
+        GameRenderSources.CollectActorExclusions(list, ScenePass.MaxActorVolumes, filter, radiusScale <= 0f ? 1f : radiusScale);
+        return list;
+    }
 
     /// <summary>Lighting parameters for <see cref="Materials.MaterialDomain.Lit"/> materials.</summary>
     public static Draw3DLighting Lighting { get; } = new();

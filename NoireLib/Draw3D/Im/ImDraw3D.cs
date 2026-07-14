@@ -234,7 +234,9 @@ public sealed class ImDraw3D
             Params1 = new Vector4(0f, (float)shape, cmd.Style.OutlineWidth, 1f),
         };
 
-        pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable);
+        // Per-decal actor exclusion: the shader skips pixels standing above these actors' feet inside their
+        // radius, so a character in the decal is cut out without holing the ground around them.
+        pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable, cmd.Style.ExcludeVolumes);
     }
 
     private static void AddFlatShape(ScenePass pass, ref Command cmd, RenderStats stats, bool depthAvailable)

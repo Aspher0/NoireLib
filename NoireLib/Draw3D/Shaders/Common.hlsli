@@ -26,6 +26,17 @@ cbuffer ObjectCB : register(b1)
                                 // z = outlineWidth (0..1 of SDF units), w = heightFade (decal Y feather)
 }
 
+// ---- b2: per-decal excluded-actor volumes (ground-decal ExcludeVolumes) --
+// The actors THIS decal skips painting on, uploaded per decal draw. Each is a vertical cylinder:
+// xy = world XZ centre, z = radius, w = feet height (Y). ActorCount = 0 when the decal excludes nothing.
+#define MAX_DECAL_ACTORS 64
+cbuffer ActorCB : register(b2)
+{
+    uint   ActorCount;
+    uint3  _actorPad;
+    float4 Actors[MAX_DECAL_ACTORS];
+};
+
 Texture2D    SceneDepth : register(t0);
 Texture2D    BaseTex    : register(t1);
 SamplerState PointClamp : register(s0);

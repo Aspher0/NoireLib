@@ -1,5 +1,9 @@
+using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using GameControl = FFXIVClientStructs.FFXIV.Client.Game.Control.Control;
 using GameCameraManager = FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager;
@@ -309,4 +313,42 @@ internal static unsafe class GameRenderSources
             return 0;
         }
     }
+
+    /// <summary>
+    /// Appends nearby game objects to <paramref name="into"/> as <see cref="ExcludeVolume"/>s (position + hitbox
+    /// radius × <paramref name="radiusScale"/>) for a ground decal's <c>ExcludeVolumes</c>. Filtered by
+    /// <paramref name="include"/> (default: players, battle NPCs, event NPCs) and capped at <paramref name="max"/>.
+    /// Reads the object table, so call it on the framework thread. Fails soft (appends nothing) on error.
+    /// </summary>
+    public static void CollectActorExclusions(List<ExcludeVolume> into, int max, Func<IGameObject, bool>? include, float radiusScale)
+    {
+        if (into == null || max <= 0 || !NoireService.IsInitialized())
+            return;
+
+        try
+        {
+            var predicate = include ?? DefaultActorInclude;
+            var objects = NoireService.ObjectTable;
+            for (var i = 0; i < objects.Length && into.Count < max; i++)
+            {
+                var obj = objects[i];
+                if (obj == null || !predicate(obj))
+                    continue;
+
+                var radius = obj.HitboxRadius;
+                if (radius <= 0f)
+                    radius = 0.5f;
+
+                into.Add(new ExcludeVolume(obj.Position, radius * radiusScale));
+            }
+        }
+        catch (System.Exception)
+        {
+            // exclusion unavailable this call — the decal reads over actors rather than taking the frame down
+        }
+    }
+
+    /// <summary>Default <see cref="CollectActorExclusions"/> filter: characters (players), monsters and NPCs.</summary>
+    private static bool DefaultActorInclude(IGameObject o)
+        => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 }

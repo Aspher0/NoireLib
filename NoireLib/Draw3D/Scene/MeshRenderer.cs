@@ -1,5 +1,6 @@
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Materials;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
@@ -25,6 +26,14 @@ public sealed class MeshRenderer
 
     /// <summary>Per-node color multiplier on top of the material color (cheap variation without a new material).</summary>
     public Vector4 Tint { get; set; } = new(1f, 1f, 1f, 1f);
+
+    /// <summary>
+    /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
+    /// paint on — so a character / monster / NPC standing in it is cut out without holing the ground around
+    /// their feet. Settable per frame; null = paint over everything. Build from
+    /// <see cref="NoireDraw3D.GetActorExclusions"/> or by hand. Up to 64 volumes are honored.
+    /// </summary>
+    public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; set; }
 
     /// <summary>The mesh bounds transformed by the node's current world matrix.</summary>
     public BoundingSphere WorldBounds => Mesh.LocalBounds.Transform(node.WorldMatrix);

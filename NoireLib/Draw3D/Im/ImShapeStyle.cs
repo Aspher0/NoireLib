@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace NoireLib.Draw3D.Im;
 
 /// <summary>How an immediate-mode shape is placed in the world.</summary>
@@ -41,6 +43,15 @@ public readonly record struct ImShapeStyle
 
     /// <summary>Decal volume height in world units — how far above/below the anchor the projection reaches (default 4).</summary>
     public float DecalHeight { get; init; } = 4f;
+
+    /// <summary>
+    /// Grounded decals only: world-space cylinders (one per actor) the decal will <b>not</b> paint on — so a
+    /// character / monster / NPC standing in the decal is cut out of it, while the ground around their feet
+    /// keeps the decal (no hole). Object-aware and fully per-decal: pass exactly the actors this decal should
+    /// avoid (build them from the object table / <see cref="NoireDraw3D.GetActorExclusions"/>, or by hand).
+    /// null or empty = paint over everything. Up to 64 volumes per decal are honored. No effect on flat shapes.
+    /// </summary>
+    public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; init; }
 
     /// <summary>Segment count for flat curved shapes (default 64).</summary>
     public int Segments { get; init; } = 64;

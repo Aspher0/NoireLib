@@ -30,6 +30,8 @@ public sealed unsafe class Draw3DDiagnostics
 
     private readonly List<SceneNode> smokeNodes = new();
     private readonly List<Mesh> smokeMeshes = new();
+    private readonly List<MeshRenderer> smokeDecalRenderers = new();
+    private bool smokeExclusionHooked;
 
     internal Draw3DDiagnostics() { }
 
@@ -81,7 +83,7 @@ public sealed unsafe class Draw3DDiagnostics
         ring.LocalScale = new Vector3(8f, 4f, 8f);
         var ringMesh = new Mesh(MeshBuilder.Box(), name: "Smoke.RingVolume");
         smokeMeshes.Add(ringMesh);
-        ring.SetMesh(ringMesh, Material.Telegraph(DecalShape.Ring, new Vector4(1f, 0.55f, 0.1f, 0.9f), new Vector4(0.7f, 0f, 0f, 0.5f)));
+        smokeDecalRenderers.Add(ring.SetMesh(ringMesh, Material.Telegraph(DecalShape.Ring, new Vector4(1f, 0.55f, 0.1f, 0.9f), new Vector4(0.7f, 0f, 0f, 0.5f))));
         smokeNodes.Add(ring);
 
         var sector = scene.CreateNode("Smoke.Sector");
@@ -89,7 +91,7 @@ public sealed unsafe class Draw3DDiagnostics
         sector.LocalScale = new Vector3(10f, 4f, 10f);
         var sectorMesh = new Mesh(MeshBuilder.Box(), name: "Smoke.SectorVolume");
         smokeMeshes.Add(sectorMesh);
-        sector.SetMesh(sectorMesh, Material.Telegraph(DecalShape.Sector, new Vector4(0.9f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)));
+        smokeDecalRenderers.Add(sector.SetMesh(sectorMesh, Material.Telegraph(DecalShape.Sector, new Vector4(0.9f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f))));
         smokeNodes.Add(sector);
 
         // Lit torus (the donut) floating above the ring.
@@ -128,11 +130,38 @@ public sealed unsafe class Draw3DDiagnostics
         smokeMeshes.Add(quadMesh);
         quad.SetMesh(quadMesh, Material.Unlit(new Vector4(0.3f, 1f, 0.5f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None });
         smokeNodes.Add(quad);
+
+        // Demonstrate ground-decal actor exclusion: refresh the telegraph decals' exclusion cylinders from the
+        // nearby characters each tick so the ring/sector cut cleanly around anyone standing in them (no hole).
+        if (!smokeExclusionHooked)
+        {
+            NoireService.Framework.Update += RefreshSmokeExclusions;
+            smokeExclusionHooked = true;
+        }
+    }
+
+    /// <summary>Per-tick refresh of the smoke telegraphs' actor exclusions (framework thread — object-table reads belong here).</summary>
+    private void RefreshSmokeExclusions(Dalamud.Plugin.Services.IFramework framework)
+    {
+        if (smokeDecalRenderers.Count == 0)
+            return;
+
+        var exclusions = NoireDraw3D.GetActorExclusions();
+        foreach (var renderer in smokeDecalRenderers)
+            renderer.ExcludeVolumes = exclusions;
     }
 
     /// <summary>Removes the smoke scene and disposes its meshes.</summary>
     public void ClearSmokeScene()
     {
+        if (smokeExclusionHooked)
+        {
+            NoireService.Framework.Update -= RefreshSmokeExclusions;
+            smokeExclusionHooked = false;
+        }
+
+        smokeDecalRenderers.Clear();
+
         foreach (var node in smokeNodes)
             node.Destroy();
         smokeNodes.Clear();

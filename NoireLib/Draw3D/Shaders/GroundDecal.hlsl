@@ -37,6 +37,18 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     float3 lp  = mul(float4(wp, 1.0), InvWorld).xyz;      // into unit-box local space
     if (any(abs(lp) > 0.5)) return float4(0, 0, 0, 0);    // outside the decal volume
 
+    // ExcludeVolumes: skip pixels standing on a supplied actor's BODY — inside its XZ cylinder AND raised
+    // above its feet — so the decal cuts around a character/monster/NPC without holing the ground at their
+    // feet (the ground sits at ~feetY, so it stays painted). Actors[i] = (worldX, worldZ, radius, feetY).
+    for (uint ai = 0; ai < ActorCount; ai++)
+    {
+        float2 dxz = wp.xz - Actors[ai].xy;
+        float  rad = Actors[ai].z;
+        float  rel = wp.y - Actors[ai].w;                // height above the actor's feet
+        if (dot(dxz, dxz) < rad * rad && rel > 0.05 && rel < 3.0)
+            return float4(0, 0, 0, 0);
+    }
+
     float2 p = lp.xz * 2.0;                               // footprint space: edge at |p| = 1
     float heightFade = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w;
 

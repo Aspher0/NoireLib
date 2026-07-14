@@ -24,6 +24,7 @@ internal struct DrawItem
     public Vector3 BoundsCenter;
     public float BoundsRadius;
     public float EyeDistance;
+    public IReadOnlyList<ExcludeVolume>? ExcludeVolumes; // ground-decal per-actor exclusion (null = none)
 }
 
 /// <summary>Per-frame constants — must match FrameCB in Common.hlsli exactly (240 bytes).</summary>
@@ -53,6 +54,18 @@ internal struct ObjectCBData
 }
 
 /// <summary>
+/// A ground decal's per-actor exclusion volumes (<c>ExcludeVolumes</c>) — must match ActorCB in Common.hlsli
+/// exactly. Each actor is a vertical cylinder packed as (worldX, worldZ, radius, feetY).
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct ActorCBData
+{
+    public uint ActorCount;
+    public uint Pad0, Pad1, Pad2;
+    public fixed float Actors[ScenePass.MaxActorVolumes * 4];
+}
+
+/// <summary>
 /// The world pass: collects visible items (retained scenes + immediate layer), sorts them into
 /// opaque → decal → transparent buckets, batches identical runs into instanced draws, and renders
 /// into the offscreen premultiplied scene target.
@@ -61,8 +74,12 @@ internal sealed unsafe class ScenePass : IDisposable
 {
     private const int MaxDynamicVertices = 65535; // 16-bit dynamic index budget per frame
 
+    /// <summary>Max excluded-actor volumes carried to the decal shader per frame (matches MAX_DECAL_ACTORS in Common.hlsli).</summary>
+    internal const int MaxActorVolumes = 64;
+
     private GpuBuffer? frameCb;
     private GpuBuffer? objectCb;
+    private GpuBuffer? actorCb;
     private readonly DynamicRing instanceRing = new(D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER, 4096 * 80, "instance");
     private readonly DynamicRing dynVertexRing = new(D3D11_BIND_FLAG.D3D11_BIND_VERTEX_BUFFER, 16384 * 48, "dynamic-vertex");
     private readonly DynamicRing dynIndexRing = new(D3D11_BIND_FLAG.D3D11_BIND_INDEX_BUFFER, 49152 * 2, "dynamic-index");
@@ -140,7 +157,7 @@ internal sealed unsafe class ScenePass : IDisposable
             else
             {
                 var world = node.ResolveWorld();
-                AddMeshItem(mesh, mat, material.Texture, world, renderer.Tint * material.Color, node.Layer, renderer.CastsIntoPrivateDepth, stats, depthAvailable);
+                AddMeshItem(mesh, mat, material.Texture, world, renderer.Tint * material.Color, node.Layer, renderer.CastsIntoPrivateDepth, stats, depthAvailable, renderer.ExcludeVolumes);
             }
         }
 
@@ -149,7 +166,7 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>Adds one mesh item (retained or immediate) with culling, depth-off policy, and sort-key derivation.</summary>
-    public void AddMeshItem(Mesh mesh, in MaterialData mat, GpuTexture? texture, in Matrix4x4 world, Vector4 color, int layer, bool castsDepth, RenderStats stats, bool depthAvailable)
+    public void AddMeshItem(Mesh mesh, in MaterialData mat, GpuTexture? texture, in Matrix4x4 world, Vector4 color, int layer, bool castsDepth, RenderStats stats, bool depthAvailable, IReadOnlyList<ExcludeVolume>? excludeVolumes = null)
     {
         if (!depthAvailable && ShouldHideWithoutDepth(mat))
         {
@@ -179,6 +196,7 @@ internal sealed unsafe class ScenePass : IDisposable
             BoundsCenter = bounds.Center,
             BoundsRadius = bounds.Radius,
             EyeDistance = distance,
+            ExcludeVolumes = excludeVolumes,
         }, layer, distance);
         stats.VisibleItems++;
     }
@@ -399,6 +417,8 @@ internal sealed unsafe class ScenePass : IDisposable
         var ocb = objectCb!.Buffer;
         ctx->VSSetConstantBuffers(1, 1, &ocb);
         ctx->PSSetConstantBuffers(1, 1, &ocb);
+        var acb = actorCb!.Buffer;
+        ctx->PSSetConstantBuffers(2, 1, &acb); // b2: per-decal actor exclusion volumes (decal ExcludeVolumes)
         var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &pointClamp);
         var linearWrap = cache.GetSampler(device, SamplerKey.LinearWrap);
@@ -613,6 +633,11 @@ internal sealed unsafe class ScenePass : IDisposable
                 };
                 objectCb.UpdateConstant(ctx, in objData);
 
+                // Ground decals carry their own per-actor exclusion list; upload it (or clear to 0) before the
+                // draw so each decal cuts only around the actors it was given. Non-instanced by construction.
+                if (item.Mat.Domain == MaterialDomain.GroundDecal)
+                    UploadActorVolumes(ctx, item.ExcludeVolumes);
+
                 ctx->DrawIndexed(indexCount, (uint)startIndex, baseVertex);
                 stats.DrawCalls++;
                 stats.Batches++;
@@ -751,10 +776,32 @@ internal sealed unsafe class ScenePass : IDisposable
         }
     }
 
+    /// <summary>
+    /// Uploads a ground decal's per-actor exclusion cylinders into the decal shader's ActorCB (b2): each is
+    /// packed (worldX, worldZ, radius, feetY). ActorCount = 0 (empty/null) clears any previous decal's list.
+    /// </summary>
+    private void UploadActorVolumes(ID3D11DeviceContext* ctx, IReadOnlyList<ExcludeVolume>? vols)
+    {
+        var actorData = new ActorCBData();
+        var n = vols == null ? 0 : Math.Min(vols.Count, MaxActorVolumes);
+        for (var i = 0; i < n; i++)
+        {
+            var v = vols![i];
+            actorData.Actors[i * 4 + 0] = v.Position.X;
+            actorData.Actors[i * 4 + 1] = v.Position.Z;
+            actorData.Actors[i * 4 + 2] = v.Radius;
+            actorData.Actors[i * 4 + 3] = v.Position.Y; // feet height — separates the body from the ground
+        }
+
+        actorData.ActorCount = (uint)n;
+        actorCb!.UpdateConstant(ctx, in actorData);
+    }
+
     private void EnsureBuffers(RenderDevice device)
     {
         frameCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(FrameCBData));
         objectCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(ObjectCBData));
+        actorCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(ActorCBData));
     }
 
     /// <inheritdoc/>
@@ -764,6 +811,8 @@ internal sealed unsafe class ScenePass : IDisposable
         frameCb = null;
         objectCb?.Dispose();
         objectCb = null;
+        actorCb?.Dispose();
+        actorCb = null;
         instanceRing.Dispose();
         dynVertexRing.Dispose();
         dynIndexRing.Dispose();
