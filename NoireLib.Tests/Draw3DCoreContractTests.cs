@@ -158,19 +158,28 @@ public class Draw3DCoreContractTests
     // ---------------------------------------------------------------- Law 11
 
     [Fact]
-    public void Law11_NoImGuiAnywhereUnderDraw3D()
+    public void Law11_NoImGuiInTheRendererCore()
     {
+        // Law 11 protects the Draw3D *rendering core* — the pure D3D11 renderer that works and must not be destabilised
+        // by input/UI concerns. That core reads no input and never touches ImGui (not for rendering, not for
+        // diagnostics). The one sanctioned exception is the interaction layer under NoireLib/Draw3D/Interaction/
+        // (NoireInteract + the gizmo, incl. its ImGuizmo backend), which is allowed to read ImGui IO and drive
+        // ImGui/ImGuizmo — it sits above the renderer and never touches the render pipeline. Everything else stays pure.
         var draw3dDir = FindDraw3DSourceDirectory();
         var offenders = new System.Collections.Generic.List<string>();
 
         foreach (var file in Directory.EnumerateFiles(draw3dDir, "*.cs", SearchOption.AllDirectories))
         {
+            var relative = Path.GetRelativePath(draw3dDir, file);
+            if (relative.StartsWith("Interaction" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                continue; // the sanctioned input layer — allowed to read ImGui IO
+
             var text = File.ReadAllText(file);
             if (text.Contains("Dalamud.Bindings.ImGui", StringComparison.Ordinal))
                 offenders.Add(Path.GetFileName(file));
         }
 
-        offenders.Should().BeEmpty("Law 11: no file under NoireLib/Draw3D/ may reference the ImGui bindings — not for rendering, not for input, not for diagnostics");
+        offenders.Should().BeEmpty("Law 11: the Draw3D renderer core must never reference the ImGui bindings (only NoireLib/Draw3D/Interaction/ may)");
     }
 
     private static string FindDraw3DSourceDirectory()

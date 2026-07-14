@@ -11,7 +11,7 @@ namespace NoireLib.Draw3D.Scene;
 /// Thread-safe: all mutation goes through the shared scene-graph lock; the render thread snapshots
 /// resolved world matrices once per frame.
 /// </summary>
-public sealed class SceneNode
+public sealed partial class SceneNode
 {
     private Vector3 localPosition = Vector3.Zero;
     private Quaternion localRotation = Quaternion.Identity;
@@ -184,6 +184,7 @@ public sealed class SceneNode
     {
         Destroyed = true;
         Renderer = null;
+        ReleaseInteraction(); // drop this node from the interaction bookkeeping if it opted in
         SceneRef?.OnNodeRemoved();
         SceneRef = null;
         foreach (var child in Children)

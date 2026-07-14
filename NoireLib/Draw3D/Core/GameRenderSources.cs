@@ -315,6 +315,62 @@ internal static unsafe class GameRenderSources
     }
 
     /// <summary>
+    /// Whether a screen point (framebuffer pixels) lies inside any visible game addon's root rect — i.e. the cursor
+    /// is over native game UI (a HUD window, inventory, friend list, …). Uses the same root-node reads and the same
+    /// near-fullscreen skip as <see cref="CollectVisibleAddonRects"/>, so transparent overlay roots (nameplates,
+    /// fly-text, screen info) never blanket the whole viewport. Fails soft to false. Read on the main/draw thread.
+    /// </summary>
+    /// <param name="pointPx">The point to test, in framebuffer pixels (the ImGui mouse space Dalamud shares with the game).</param>
+    /// <param name="displaySize">The framebuffer size, for the near-fullscreen overlay skip.</param>
+    public static bool IsPointOverVisibleAddon(Vector2 pointPx, Vector2 displaySize)
+    {
+        if (displaySize.X <= 0 || displaySize.Y <= 0)
+            return false;
+
+        try
+        {
+            var manager = RaptureAtkUnitManager.Instance();
+            if (manager == null)
+                return false;
+
+            ref var list = ref manager->AllLoadedUnitsList;
+            var entries = list.Entries;
+            int loaded = list.Count;
+            for (var i = 0; i < loaded && i < entries.Length; i++)
+            {
+                var unit = entries[i].Value;
+                if (unit == null || !unit->IsVisible)
+                    continue;
+
+                var root = unit->RootNode;
+                if (root == null || !root->IsVisible())
+                    continue;
+
+                var w = root->Width * root->ScaleX * unit->Scale;
+                var h = root->Height * root->ScaleY * unit->Scale;
+                if (w <= 1 || h <= 1)
+                    continue;
+
+                // Skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info) — the same rule the
+                // composite UI mask uses, so a fullscreen overlay never blanket-blocks every pointer interaction.
+                if (w >= displaySize.X * 0.9f && h >= displaySize.Y * 0.9f)
+                    continue;
+
+                var x = root->ScreenX;
+                var y = root->ScreenY;
+                if (pointPx.X >= x && pointPx.X < x + w && pointPx.Y >= y && pointPx.Y < y + h)
+                    return true;
+            }
+
+            return false;
+        }
+        catch (System.Exception)
+        {
+            return false; // read faulted this frame — do not let a UI probe take the frame down
+        }
+    }
+
+    /// <summary>
     /// Appends nearby game objects to <paramref name="into"/> as <see cref="ExcludeVolume"/>s (position + hitbox
     /// radius × <paramref name="radiusScale"/>) for a ground decal's <c>ExcludeVolumes</c>. Filtered by
     /// <paramref name="include"/> (default: players, battle NPCs, event NPCs) and capped at <paramref name="max"/>.

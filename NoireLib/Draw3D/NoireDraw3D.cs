@@ -4,6 +4,7 @@ using Dalamud.Plugin.Services;
 using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Im;
+using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
 using System.Collections.Concurrent;
@@ -335,6 +336,12 @@ public static unsafe class NoireDraw3D
         if (!frame.TryScreenToRay(screenPx, out var origin, out var direction))
             return Array.Empty<PickHit>();
 
+        // The visible game surface under the cursor (terrain / wall), so ground decals pick against their real rendered
+        // footprint on that surface — a projected shape, not the fat volume box. Null when aiming at open sky.
+        Vector3? groundSurface = null;
+        if (NoireService.IsInitialized() && NoireService.GameGui.ScreenToWorld(screenPx, out var gw))
+            groundSurface = gw;
+
         var hits = new List<PickHit>();
         lock (Scene3D.GraphLock)
         {
@@ -346,7 +353,7 @@ public static unsafe class NoireDraw3D
                         continue;
 
                     foreach (var root in scene.Roots)
-                        PickNode(root, origin, direction, hits);
+                        PickNode(root, origin, direction, groundSurface, hits);
                 }
             }
         }
@@ -354,6 +361,19 @@ public static unsafe class NoireDraw3D
         hits.Sort(static (a, b) => a.Distance.CompareTo(b.Distance));
         return hits.ToArray();
     }
+
+    /// <summary>
+    /// Whether a screen point lies over visible native game UI (a HUD window, inventory, friend list, …). This is the
+    /// pointer test the interaction layer uses to treat game UI as a hard pass — it never hovers or picks a 3D object
+    /// through an addon the cursor is over. Native addons are not ImGui, so ImGui's <c>WantCaptureMouse</c> never
+    /// reflects them; this reads game state instead. Near-fullscreen transparent overlay roots (nameplates, fly-text)
+    /// are skipped so they never blanket-block. Returns false before the first frame or on any read fault.
+    /// Call on the draw/framework thread.
+    /// </summary>
+    /// <param name="screenPx">Cursor position in framebuffer pixels (ImGui mouse space).</param>
+    /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
+    public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize)
+        => GameRenderSources.IsPointOverVisibleAddon(screenPx, displaySize);
 
     // ---------------------------------------------------------------- internals: lifecycle
 
@@ -1173,7 +1193,7 @@ public static unsafe class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | clear | reset | rtlog | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | gizmo | clear | reset | rtlog | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1197,7 +1217,10 @@ public static unsafe class NoireDraw3D
                 break;
             case "smoke":
                 Diagnostics.SpawnSmokeScene();
-                Print("Draw3D: smoke scene spawned around you ('/noire3d clear' removes it).");
+                Print("Draw3D: smoke scene spawned around you — hover the solid objects, left-click one to select it, then drag the gizmo handles (the camera stays put). '/noire3d clear' removes it.");
+                break;
+            case "gizmo":
+                Print(Diagnostics.ToggleSmokeGizmoBackend());
                 break;
             case "clear":
                 Diagnostics.ClearSmokeScene();
@@ -1325,7 +1348,7 @@ public static unsafe class NoireDraw3D
 
     internal static GameRenderSources.CameraData LastCameraData => lastCameraData;
 
-    private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, List<PickHit> hits)
+    private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, Vector3? groundSurface, List<PickHit> hits)
     {
         if (!node.Visible || node.Destroyed)
             return;
@@ -1333,25 +1356,121 @@ public static unsafe class NoireDraw3D
         var renderer = node.Renderer;
         if (renderer != null && !renderer.Mesh.IsDisposed)
         {
-            var world = node.ResolveWorld();
-            var bounds = renderer.Mesh.LocalBounds.Transform(world);
-            if (RaySphere(origin, direction, bounds, out var sphereT))
+            if (renderer.Material.Domain == MaterialDomain.GroundDecal)
             {
-                var mesh = renderer.Mesh;
-                if (mesh.CpuVertices != null && (mesh.CpuIndices16 != null || mesh.CpuIndices32 != null))
+                // A decal is a projected footprint, not a solid — pick its actual shape on the ground surface, so
+                // hovering the hole of a ring or outside a sector's arc correctly misses (not the whole volume box).
+                if (TryPickDecal(node, renderer, origin, direction, groundSurface, out var dt))
+                    hits.Add(new PickHit(node, dt, null));
+            }
+            else
+            {
+                var world = node.ResolveWorld();
+                var bounds = renderer.Mesh.LocalBounds.Transform(world);
+                if (RaySphere(origin, direction, bounds, out var sphereT))
                 {
-                    if (RayMesh(origin, direction, mesh, world, out var t, out var tri))
-                        hits.Add(new PickHit(node, t, tri));
-                }
-                else
-                {
-                    hits.Add(new PickHit(node, sphereT, null));
+                    var mesh = renderer.Mesh;
+                    if (mesh.CpuVertices != null && (mesh.CpuIndices16 != null || mesh.CpuIndices32 != null))
+                    {
+                        if (RayMesh(origin, direction, mesh, world, out var t, out var tri))
+                            hits.Add(new PickHit(node, t, tri));
+                    }
+                    else
+                    {
+                        hits.Add(new PickHit(node, sphereT, null));
+                    }
                 }
             }
         }
 
         foreach (var child in node.Children)
-            PickNode(child, origin, direction, hits);
+            PickNode(child, origin, direction, groundSurface, hits);
+    }
+
+    /// <summary>
+    /// Picks a ground-decal node by its rendered footprint (matches <c>GroundDecal.hlsl</c>): find the world surface
+    /// point under the cursor (the real ground, else the ray meeting the decal's local ground plane), bring it into the
+    /// unit-box local space, and reject it unless it is inside both the volume and the shape SDF (ring / sector / …).
+    /// </summary>
+    private static bool TryPickDecal(SceneNode node, MeshRenderer renderer, Vector3 origin, Vector3 direction, Vector3? groundSurface, out float t)
+    {
+        t = 0f;
+
+        var world = node.ResolveWorld();
+        if (!Matrix4x4.Invert(world, out var invWorld))
+            return false;
+
+        Vector3 worldHit;
+        if (groundSurface is { } gs)
+            worldHit = gs;                                        // the real surface the decal is painted on
+        else if (!TryRayLocalGroundPlane(origin, direction, in world, out worldHit))
+            return false;                                        // flat-ground fallback when the game gives no surface
+
+        var lp = Vector3.Transform(worldHit, invWorld);
+        if (MathF.Abs(lp.X) > 0.5f || MathF.Abs(lp.Y) > 0.5f || MathF.Abs(lp.Z) > 0.5f)
+            return false;                                        // outside the decal volume — nothing rendered here
+        if (!InsideDecalShape(renderer.Material, lp))
+            return false;                                        // inside the box but outside the footprint shape
+
+        var dd = Vector3.Dot(direction, direction);
+        t = dd > 1e-12f ? Vector3.Dot(worldHit - origin, direction) / dd : 0f;
+        return t >= 0f;
+    }
+
+    /// <summary>Intersects the ray with the decal's local ground plane (its origin, local +Y as normal).</summary>
+    private static bool TryRayLocalGroundPlane(Vector3 origin, Vector3 direction, in Matrix4x4 world, out Vector3 worldHit)
+    {
+        worldHit = default;
+
+        var planePoint = world.Translation;
+        var planeNormal = Vector3.TransformNormal(Vector3.UnitY, world);
+        var len = planeNormal.Length();
+        if (len < 1e-6f)
+            return false;
+        planeNormal /= len;
+
+        var denom = Vector3.Dot(direction, planeNormal);
+        if (MathF.Abs(denom) < 1e-6f)
+            return false;
+
+        var tp = Vector3.Dot(planePoint - origin, planeNormal) / denom;
+        if (tp < 0f)
+            return false;
+
+        worldHit = origin + direction * tp;
+        return true;
+    }
+
+    /// <summary>The decal footprint SDF from <c>GroundDecal.hlsl</c> (footprint space p = lp.xz·2, edge at |p| = 1): inside when sd ≤ 0.</summary>
+    internal static bool InsideDecalShape(Material mat, Vector3 lp)
+    {
+        var p = new Vector2(lp.X, lp.Z) * 2f;
+        var sp = mat.ShapeParams;
+        float sd;
+        switch (mat.Shape)
+        {
+            case DecalShape.Circle:
+                sd = p.Length() - 1f;
+                break;
+            case DecalShape.Ring:
+            {
+                var r = p.Length();
+                sd = MathF.Max(r - 1f, sp.X - r);                // x = inner radius ratio
+                break;
+            }
+            case DecalShape.Sector:
+            {
+                var r = p.Length();
+                var an = MathF.Abs(MathF.Atan2(p.X, p.Y));       // 0 at local +Z
+                sd = MathF.Max(MathF.Max(r - 1f, sp.Y - r), (an - sp.X) * r); // x = half angle, y = inner ratio
+                break;
+            }
+            default:                                             // Rect / Texture — the footprint square
+                sd = MathF.Max(MathF.Abs(p.X), MathF.Abs(p.Y)) - 1f;
+                break;
+        }
+
+        return sd <= 0f;
     }
 
     private static bool RaySphere(Vector3 origin, Vector3 direction, in Geometry.BoundingSphere sphere, out float t)

@@ -56,6 +56,7 @@
         <None Include="Modules\UpdateTracker\README.md" />
         <None Include="UI\README.md" />
         <None Include="Draw3D\README.md" />
+        <None Include="Draw3D\Interaction\README.md" />
     </ItemGroup>
 
     <ItemGroup>
@@ -66,6 +67,18 @@
         <!-- Ships in the Dalamud dev folder; referenced like the other Dalamud-provided assemblies (zero package weight). -->
         <Reference Include="TerraFX.Interop.Windows">
             <HintPath>$(DalamudLibPath)TerraFX.Interop.Windows.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+
+        <!-- The ImGuizmo backend of NoireGizmo (the interaction layer above the renderer; the render core never touches it). -->
+        <Reference Include="Dalamud.Bindings.ImGuizmo">
+            <HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGuizmo.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
+
+        <!-- HexaGen native-binding runtime: the ImGuizmo binding's function table is bound through it (ImGuizmo.InitApi). -->
+        <Reference Include="HexaGen.Runtime">
+            <HintPath>$(DalamudLibPath)HexaGen.Runtime.dll</HintPath>
             <Private>false</Private>
         </Reference>
     </ItemGroup>

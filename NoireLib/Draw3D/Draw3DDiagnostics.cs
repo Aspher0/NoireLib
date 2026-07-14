@@ -1,6 +1,8 @@
 using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
+using NoireLib.Draw3D.Interaction;
+using NoireLib.Draw3D.Interaction.Gizmo;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
@@ -32,6 +34,8 @@ public sealed unsafe class Draw3DDiagnostics
     private readonly List<Mesh> smokeMeshes = new();
     private readonly List<MeshRenderer> smokeDecalRenderers = new();
     private bool smokeExclusionHooked;
+    private NoireGizmo? smokeGizmo;
+    private Action? smokeSelectionHandler;
 
     internal Draw3DDiagnostics() { }
 
@@ -66,7 +70,11 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>
     /// Spawns the reference QA scene around the player: telegraph decals (ring/sector/rect), a lit torus,
-    /// an additive orb, an opaque box stack and a flat quad. <see cref="ClearSmokeScene"/> removes it.
+    /// an additive orb, an opaque box stack and a flat quad. Every object — decals included — is wired for interaction:
+    /// hover highlights, left-click selects, and a <see cref="NoireGizmo"/> (in-world depth handles) attaches to the
+    /// selection so you can move/rotate/scale it — exercising the whole NoireInteract spine in-game. Hovering native
+    /// game UI (inventory, friend list, HUD) over an object is a hard pass — it never registers.
+    /// <see cref="ClearSmokeScene"/> removes it.
     /// </summary>
     public void SpawnSmokeScene()
     {
@@ -77,48 +85,59 @@ public sealed unsafe class Draw3DDiagnostics
 
         var scene = NoireDraw3D.MainScene;
 
-        // Ground telegraphs (decal domain — hug the terrain).
+        // Log the click / hover / gizmo pipeline to /xllog while the QA scene is up (turned back off in ClearSmokeScene).
+        NoireInteract.DebugLog = true;
+
+        // Ground telegraphs (decal domain — hug the terrain). Interactable too: keep CPU data so the projection volume
+        // picks triangle-exact, and wire hover/select so the gizmo can grab and move a decal like any other node.
+        // The volume is a generous vertical slab: shape-aware picking gates the XZ footprint precisely, so a tall volume
+        // no longer over-catches, and the height absorbs uneven ground / collision-vs-rendered-surface disagreement so
+        // every spot the decal visibly covers still picks.
         var ring = scene.CreateNode("Smoke.Ring");
         ring.LocalPosition = center;
         ring.LocalScale = new Vector3(8f, 4f, 8f);
-        var ringMesh = new Mesh(MeshBuilder.Box(), name: "Smoke.RingVolume");
+        var ringMesh = new Mesh(MeshBuilder.Box(), keepCpuData: true, name: "Smoke.RingVolume");
         smokeMeshes.Add(ringMesh);
-        smokeDecalRenderers.Add(ring.SetMesh(ringMesh, Material.Telegraph(DecalShape.Ring, new Vector4(1f, 0.55f, 0.1f, 0.9f), new Vector4(0.7f, 0f, 0f, 0.5f))));
+        var ringRenderer = ring.SetMesh(ringMesh, Material.Telegraph(DecalShape.Ring, new Vector4(1f, 0.55f, 0.1f, 0.9f), new Vector4(0.7f, 0f, 0f, 0.5f)));
+        smokeDecalRenderers.Add(ringRenderer);
+        MakeSmokeInteractable(ring, ringRenderer);
         smokeNodes.Add(ring);
 
         var sector = scene.CreateNode("Smoke.Sector");
         sector.LocalPosition = center + new Vector3(6f, 0f, 0f);
         sector.LocalScale = new Vector3(10f, 4f, 10f);
-        var sectorMesh = new Mesh(MeshBuilder.Box(), name: "Smoke.SectorVolume");
+        var sectorMesh = new Mesh(MeshBuilder.Box(), keepCpuData: true, name: "Smoke.SectorVolume");
         smokeMeshes.Add(sectorMesh);
-        smokeDecalRenderers.Add(sector.SetMesh(sectorMesh, Material.Telegraph(DecalShape.Sector, new Vector4(0.9f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f))));
+        var sectorRenderer = sector.SetMesh(sectorMesh, Material.Telegraph(DecalShape.Sector, new Vector4(0.9f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)));
+        smokeDecalRenderers.Add(sectorRenderer);
+        MakeSmokeInteractable(sector, sectorRenderer);
         smokeNodes.Add(sector);
 
-        // Lit torus (the donut) floating above the ring.
+        // Lit torus (the donut) floating above the ring. Interactable — keep CPU data so picking is triangle-exact.
         var torus = scene.CreateNode("Smoke.Torus");
         torus.LocalPosition = center + new Vector3(0f, 2f, 0f);
-        var torusMesh = new Mesh(MeshBuilder.Torus(1.6f, 0.35f), name: "Smoke.Torus");
+        var torusMesh = new Mesh(MeshBuilder.Torus(1.6f, 0.35f), keepCpuData: true, name: "Smoke.Torus");
         smokeMeshes.Add(torusMesh);
-        torus.SetMesh(torusMesh, Material.Lit(new Vector4(0.95f, 0.95f, 1f, 1f)));
+        MakeSmokeInteractable(torus, torus.SetMesh(torusMesh, Material.Lit(new Vector4(0.95f, 0.95f, 1f, 1f))));
         smokeNodes.Add(torus);
 
         // Additive energy orb.
         var orb = scene.CreateNode("Smoke.Orb");
         orb.LocalPosition = center + new Vector3(-4f, 1.5f, 2f);
-        var orbMesh = new Mesh(MeshBuilder.Sphere(0.75f, 32, 20), name: "Smoke.Orb");
+        var orbMesh = new Mesh(MeshBuilder.Sphere(0.75f, 32, 20), keepCpuData: true, name: "Smoke.Orb");
         smokeMeshes.Add(orbMesh);
-        orb.SetMesh(orbMesh, Material.Unlit(new Vector4(0.2f, 0.6f, 1f, 0.8f)) with { Blend = BlendMode.Additive });
+        MakeSmokeInteractable(orb, orb.SetMesh(orbMesh, Material.Unlit(new Vector4(0.2f, 0.6f, 1f, 0.8f)) with { Blend = BlendMode.Additive }));
         smokeNodes.Add(orb);
 
         // Opaque box stack (private-depth V2↔V2 occlusion).
-        var boxMesh = new Mesh(MeshBuilder.Box(), name: "Smoke.Box");
+        var boxMesh = new Mesh(MeshBuilder.Box(), keepCpuData: true, name: "Smoke.Box");
         smokeMeshes.Add(boxMesh);
         for (var i = 0; i < 3; i++)
         {
             var box = scene.CreateNode($"Smoke.Box{i}");
             box.LocalPosition = center + new Vector3(3.5f, 0.5f + i * 1.05f, -3.5f);
             box.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, i * 0.4f);
-            box.SetMesh(boxMesh, Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None });
+            MakeSmokeInteractable(box, box.SetMesh(boxMesh, Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None }));
             smokeNodes.Add(box);
         }
 
@@ -126,10 +145,26 @@ public sealed unsafe class Draw3DDiagnostics
         var quad = scene.CreateNode("Smoke.Quad");
         quad.LocalPosition = center + new Vector3(-3f, 0.05f, -4f);
         quad.LocalScale = new Vector3(4f, 1f, 4f);
-        var quadMesh = new Mesh(MeshBuilder.Quad(), name: "Smoke.Quad");
+        var quadMesh = new Mesh(MeshBuilder.Quad(), keepCpuData: true, name: "Smoke.Quad");
         smokeMeshes.Add(quadMesh);
-        quad.SetMesh(quadMesh, Material.Unlit(new Vector4(0.3f, 1f, 0.5f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None });
+        MakeSmokeInteractable(quad, quad.SetMesh(quadMesh, Material.Unlit(new Vector4(0.3f, 1f, 0.5f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None }));
         smokeNodes.Add(quad);
+
+        // A universal gizmo (native in-world depth handles) that follows the selection: left-click any solid object to
+        // select it, then drag the handles — the camera stays put while you drag (NoireInteract owns the mouse).
+        smokeGizmo = new NoireGizmo(GizmoOp.Universal);
+        smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
+        smokeGizmo.Options.Snap = new Vector3(0.5f);
+        smokeGizmo.Options.RotateSnapDeg = 15f;
+        smokeSelectionHandler = () =>
+        {
+            var primary = NoireInteract.Selection.Primary;
+            if (primary != null)
+                smokeGizmo.Attach(primary);
+            else
+                smokeGizmo.Detach();
+        };
+        NoireInteract.Selection.Changed += smokeSelectionHandler;
 
         // Demonstrate ground-decal actor exclusion: refresh the telegraph decals' exclusion cylinders from the
         // nearby characters each tick so the ring/sector cut cleanly around anyone standing in them (no hole).
@@ -138,6 +173,15 @@ public sealed unsafe class Draw3DDiagnostics
             NoireService.Framework.Update += RefreshSmokeExclusions;
             smokeExclusionHooked = true;
         }
+    }
+
+    /// <summary>Wires a smoke object for interaction: hover brightens its tint, left-click selects it (the gizmo then attaches).</summary>
+    private static void MakeSmokeInteractable(SceneNode node, MeshRenderer renderer)
+    {
+        var baseTint = renderer.Tint;
+        node.Interactable = true;
+        node.OnHoverEnter = _ => renderer.Tint = baseTint * new Vector4(1.5f, 1.5f, 1.5f, 1f);
+        node.OnHoverExit = _ => renderer.Tint = baseTint;
     }
 
     /// <summary>Per-tick refresh of the smoke telegraphs' actor exclusions (framework thread — object-table reads belong here).</summary>
@@ -151,14 +195,42 @@ public sealed unsafe class Draw3DDiagnostics
             renderer.ExcludeVolumes = exclusions;
     }
 
+    /// <summary>
+    /// Flips the smoke scene's gizmo between the native (in-world depth) and ImGuizmo (classic 2D) backends so both can
+    /// be compared in-game without a recompile. Select an object afterwards to see the switch; the ImGuizmo init/draw
+    /// diagnostics land in /xllog. No-op with a message when the smoke scene isn't up.
+    /// </summary>
+    public string ToggleSmokeGizmoBackend()
+    {
+        if (smokeGizmo == null)
+            return "Draw3D: no smoke scene — run '/noire3d smoke' first.";
+
+        smokeGizmo.Options.Backend = smokeGizmo.Options.Backend == GizmoBackend.ImGuizmo
+            ? GizmoBackend.Native
+            : GizmoBackend.ImGuizmo;
+        return $"Draw3D: smoke gizmo backend = {smokeGizmo.Options.Backend}. Select an object to see it — if ImGuizmo doesn't appear, check /xllog for the '[Gizmo]' lines.";
+    }
+
     /// <summary>Removes the smoke scene and disposes its meshes.</summary>
     public void ClearSmokeScene()
     {
+        NoireInteract.DebugLog = false;
+
         if (smokeExclusionHooked)
         {
             NoireService.Framework.Update -= RefreshSmokeExclusions;
             smokeExclusionHooked = false;
         }
+
+        if (smokeSelectionHandler != null)
+        {
+            NoireInteract.Selection.Changed -= smokeSelectionHandler;
+            smokeSelectionHandler = null;
+        }
+
+        smokeGizmo?.Dispose();
+        smokeGizmo = null;
+        NoireInteract.Selection.Clear();
 
         smokeDecalRenderers.Clear();
 
