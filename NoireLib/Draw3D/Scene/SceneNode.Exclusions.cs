@@ -18,7 +18,7 @@ public sealed partial class SceneNode
     internal Func<IReadOnlyList<ExcludeVolume>>? ExclusionCollector;
 
     /// <summary>
-    /// Excludes game objects the predicate accepts. You decide what counts (a player? a minion? furniture? by name,
+    /// Excludes game objects the predicate accepts. You decide what counts (a player? a minion? by name,
     /// owner, distance, sub-kind, …). Each accepted object contributes a cylinder at its position sized by its hitbox
     /// radius × <paramref name="radiusScale"/>. Refreshed by the library each frame on the framework thread. Fluent.
     /// </summary>

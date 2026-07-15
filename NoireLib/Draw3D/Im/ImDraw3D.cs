@@ -62,7 +62,7 @@ public sealed class ImDraw3D
     public void DrawCircle(Vector3 center, float radius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Circle, A = center, F0 = radius, Color = color, Style = style ?? default });
 
-    /// <summary>Draws a ground pie-slice telegraph. <paramref name="facingRad"/> is the slice center direction (radians around +Y, 0 = +Z).</summary>
+    /// <summary>Draws a ground pie-slice decal. <paramref name="facingRad"/> is the slice center direction (radians around +Y, 0 = +Z).</summary>
     public void DrawSector(Vector3 center, float facingRad, float halfAngleRad, float innerRadius, float outerRadius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Sector, A = center, F0 = facingRad, F1 = halfAngleRad, F2 = outerRadius, B = new Vector3(innerRadius, 0, 0), Color = color, Style = style ?? default });
 
@@ -151,13 +151,13 @@ public sealed class ImDraw3D
                         break;
 
                     case Kind.Sphere:
-                    {
-                        var mesh = unitSphere ??= new Mesh(MeshBuilder.Sphere(0.5f, 32, 20), name: "Im.UnitSphere");
-                        var world = Matrix4x4.CreateScale(cmd.F0 * 2f) * Matrix4x4.CreateTranslation(cmd.A);
-                        var mat = FlatData(cmd.Style, cullNone: false);
-                        pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable);
-                        break;
-                    }
+                        {
+                            var mesh = unitSphere ??= new Mesh(MeshBuilder.Sphere(0.5f, 32, 20), name: "Im.UnitSphere");
+                            var world = Matrix4x4.CreateScale(cmd.F0 * 2f) * Matrix4x4.CreateTranslation(cmd.A);
+                            var mat = FlatData(cmd.Style, cullNone: false);
+                            pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable);
+                            break;
+                        }
 
                     case Kind.Donut:
                     case Kind.Circle:

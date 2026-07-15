@@ -98,15 +98,6 @@ public sealed record Material
             Cull = CullMode.Front,
         };
 
-    /// <summary>Deprecated alias of <see cref="Decal"/> (the ground-decal material was renamed from "telegraph").</summary>
-    /// <param name="shape">Footprint shape.</param>
-    /// <param name="color">Base color, straight alpha.</param>
-    /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
-    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08).</param>
-    [System.Obsolete("Renamed to Material.Decal. This forwarder will be removed in a future major version.")]
-    public static Material Telegraph(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
-        => Decal(shape, color, shapeParams, outlineWidth);
-
     /// <summary>
     /// Creates a material rendered by a custom pipeline registered via <see cref="NoireDraw3D.RegisterPipeline"/>
     /// (the open shader floor), over the standard vertex layout. Falls back to the <see cref="Domain"/> shader if the

@@ -18,7 +18,7 @@ public class Draw3DDecalPickTests
     [Fact]
     public void Ring_MissesTheHole_HitsTheBand_MissesOutside()
     {
-        var ring = Material.Telegraph(DecalShape.Ring, Vector4.One, new Vector4(0.5f, 0f, 0f, 0.6f)); // inner ratio 0.5
+        var ring = Material.Decal(DecalShape.Ring, Vector4.One, new Vector4(0.5f, 0f, 0f, 0.6f)); // inner ratio 0.5
 
         NoireDraw3D.InsideDecalShape(ring, Vector3.Zero).Should().BeFalse("the centre is the ring's hole");
         NoireDraw3D.InsideDecalShape(ring, new Vector3(0.375f, 0f, 0f)).Should().BeTrue("r ≈ 0.75 is inside the band");
@@ -28,7 +28,7 @@ public class Draw3DDecalPickTests
     [Fact]
     public void Sector_HitsInsideTheArc_MissesOutsideTheArc()
     {
-        var sector = Material.Telegraph(DecalShape.Sector, Vector4.One, new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)); // ±45° about +Z
+        var sector = Material.Decal(DecalShape.Sector, Vector4.One, new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)); // ±45° about +Z
 
         NoireDraw3D.InsideDecalShape(sector, new Vector3(0f, 0f, 0.4f)).Should().BeTrue("along +Z, inside the wedge");
         NoireDraw3D.InsideDecalShape(sector, new Vector3(0.4f, 0f, 0f)).Should().BeFalse("along +X is 90° off centre, outside the 45° half-angle");
@@ -37,7 +37,7 @@ public class Draw3DDecalPickTests
     [Fact]
     public void Circle_HitsCentre_MissesCorner()
     {
-        var circle = Material.Telegraph(DecalShape.Circle, Vector4.One);
+        var circle = Material.Decal(DecalShape.Circle, Vector4.One);
 
         NoireDraw3D.InsideDecalShape(circle, Vector3.Zero).Should().BeTrue();
         NoireDraw3D.InsideDecalShape(circle, new Vector3(0.5f, 0f, 0.5f)).Should().BeFalse("the box corner (|p| = √2) is outside the inscribed disc");

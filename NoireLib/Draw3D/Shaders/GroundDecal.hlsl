@@ -75,7 +75,7 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
         : 0.0;
 
     float4 c = BaseColor;
-    c.a *= max(fill * Params0.w, outline) * heightFade;   // classic telegraph: strong rim, translucent fill (Params0.w = fill opacity)
+    c.a *= max(fill * Params0.w, outline) * heightFade;   // classic decal: strong rim, translucent fill (Params0.w = fill opacity)
     return float4(c.rgb * c.a, c.a);
 #endif
 }

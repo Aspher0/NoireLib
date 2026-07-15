@@ -10,7 +10,7 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Locks the Stage-5 surface that needs no GPU: the Material.Telegraph→Decal rename (+ obsolete forwarder) and
+/// Locks the Stage-5 surface that needs no GPU: the Material.Decal rename and
 /// Material.Custom, the dev-owned decal exclusion collector wiring, and the safe no-op of ShowOutline with no renderer.
 /// </summary>
 public class Draw3DMaterialExclusionTests
@@ -23,21 +23,6 @@ public class Draw3DMaterialExclusionTests
         mat.Shape.Should().Be(DecalShape.Ring);
         mat.OutlineWidth.Should().Be(0.1f);
         mat.Cull.Should().Be(CullMode.Front);
-    }
-
-    [Fact]
-    public void Telegraph_ObsoleteForwarder_MatchesDecal()
-    {
-        var color = new Vector4(0.2f, 0.4f, 0.6f, 1f);
-#pragma warning disable CS0618 // deliberately exercising the deprecated alias
-        var telegraph = Material.Telegraph(DecalShape.Sector, color);
-#pragma warning restore CS0618
-        var decal = Material.Decal(DecalShape.Sector, color);
-
-        telegraph.Domain.Should().Be(decal.Domain);
-        telegraph.Shape.Should().Be(decal.Shape);
-        telegraph.Color.Should().Be(decal.Color);
-        telegraph.OutlineWidth.Should().Be(decal.OutlineWidth);
     }
 
     [Fact]

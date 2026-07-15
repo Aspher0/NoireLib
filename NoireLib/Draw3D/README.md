@@ -67,7 +67,7 @@ var textured  = Material.UnlitTextured(myTexture) with { Cull = CullMode.None };
 var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // your HLSL via RegisterPipeline
 ```
 
-> `Material.Telegraph(...)` was renamed to `Material.Decal(...)` (the old name is a deprecated forwarder). A ground decal paints its shape onto the world surface; a surface inside an actor's `ExcludeObjects(...)` volume simply isn't painted on (the ground around it still is).
+> A ground decal paints its shape onto the world surface; a surface inside an actor's `ExcludeObjects(...)` volume simply isn't painted on (the ground around it still is).
 
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
