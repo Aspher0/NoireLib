@@ -55,9 +55,10 @@ public sealed class GizmoOptions
     public float GrabPixelTolerance { get; set; } = 10f;
 
     /// <summary>
-    /// Whether the native backend draws the drag preview overlay (a fixed anchor at the pre-drag center, a guide line
-    /// to the current center, and the live amount moved / rotated / scaled). Default <b>true</b>. No effect on the
-    /// ImGuizmo backend, which draws its own feedback.
+    /// Whether the gizmo draws the drag preview overlay (a fixed anchor at the pre-drag center, a guide line to the
+    /// current center, and the live amount moved / rotated / scaled). Default <b>true</b>. Both backends draw the same
+    /// overlay: the ImGuizmo backend uses it in place of ImGuizmo's built-in text, which is suppressed because it reports
+    /// a world-space delta that reads wrong in Local space. Set false to draw no drag readout on either backend.
     /// </summary>
     public bool ShowDragFeedback { get; set; } = true;
 }

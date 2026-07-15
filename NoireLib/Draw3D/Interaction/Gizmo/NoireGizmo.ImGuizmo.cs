@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGuizmo;
 using HexaGen.Runtime;
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Threading;
 
 namespace NoireLib.Draw3D.Interaction.Gizmo;
@@ -23,8 +24,11 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// snapping runs through ImGuizmo's own snap slot, including translation: ImGuizmo snaps the movement from the
 /// mouse-down origin, and in Local mode it snaps in the object's own frame, so a rotated object's translation lands
 /// cleanly on its local axes with no offset. Because ImGuizmo's result is stored verbatim and fed back next frame, the
-/// handles and the object are always the same matrix and cannot drift apart. This file is the only part of the gizmo
-/// that touches ImGui/ImGuizmo, kept out of the renderer core per Law 11.
+/// handles and the object are always the same matrix and cannot drift apart. The drag readout is <b>NoireGizmo's own</b>
+/// (the same overlay the native backend draws): ImGuizmo's built-in info text is a world-space delta that reads wrong in
+/// Local space, so it is hidden for the span of each manipulate call - its shared style restored immediately after, so
+/// any other ImGuizmo consumer is untouched - and the space-correct readout is drawn in its place. This file is the only
+/// part of the gizmo that touches ImGui/ImGuizmo, kept out of the renderer core per Law 11.
 /// </summary>
 public sealed partial class NoireGizmo
 {
@@ -37,11 +41,26 @@ public sealed partial class NoireGizmo
     private static bool imguizmoDrewOnce;
     private static bool imguizmoNativeFallbackLogged; // once-only diagnostic when ImGuizmo was requested but native drew instead
 
+    private static INativeContext? imguizmoContext; // the loaded cimguizmo module, kept to resolve ImGuizmo_GetStyle (the binding wraps no style accessor)
+    private static nint imguizmoStylePtr;            // cached &ImGuizmo::Style, or 0 when unavailable
+    private static bool imguizmoStyleResolved;
+
+    // ImGuizmo's Style is 8 leading floats then ImVec4 Colors[COUNT]; TEXT is colour index 13, TEXT_SHADOW 14. These
+    // byte offsets land on each colour's alpha (w), so writing 0f there hides ImGuizmo's built-in drag info text.
+    private const int ImGuizmoStyleTextAlpha = (8 + 13 * 4 + 3) * sizeof(float);
+    private const int ImGuizmoStyleTextShadowAlpha = (8 + 14 * 4 + 3) * sizeof(float);
+
     private readonly int imguizmoId = Interlocked.Increment(ref nextImguizmoId);
     private readonly float[] imguizmoSnap = new float[3];
     private bool imguizmoUsing;
     private SnapKind imguizmoSnapKind;
     private SnapKind imguizmoHoverKind; // which op's handle is under the cursor (from the last frame), so a drag snaps from its first frame
+    private int imguizmoSavedTextBits, imguizmoSavedShadowBits; // ImGuizmo TEXT / TEXT_SHADOW alpha saved across one Manipulate call
+    private bool imguizmoTextHidden;
+
+    /// <summary>Calls the native <c>ImGuizmo_GetStyle</c> (unwrapped by the binding); returns <c>&amp;ImGuizmo::Style</c>.</summary>
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate nint ImGuizmoGetStyleDelegate();
 
     /// <summary>
     /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend
@@ -73,6 +92,7 @@ public sealed partial class NoireGizmo
             var context = LibraryLoader.LoadLibraryEx(ImGuizmo.GetLibraryName, LibraryLoader.GetExtension);
             ImGuizmo.InitApi(context);
             ImGuizmo.SetImGuiContext(ImGui.GetCurrentContext());
+            imguizmoContext = context; // kept so the (unwrapped) ImGuizmo_GetStyle export can be resolved to hide the built-in drag text
             Volatile.Write(ref imguizmoApiState, 1);
             NoireLogger.LogInfo("ImGuizmo backend initialised.", "Draw3D");
             return true;
@@ -171,9 +191,20 @@ public sealed partial class NoireGizmo
                 : imguizmoHoverKind != SnapKind.None ? imguizmoHoverKind
                 : SingleOpKind();
 
+            // Hide ImGuizmo's built-in drag text just for this Manipulate call, restored immediately after so the shared
+            // native style is left exactly as found for every other plugin using the same ImGuizmo. Its text is a
+            // world-space delta that reads wrong in Local space (moving a rotated object's local axis prints the world
+            // projection, e.g. 0.353 for a 0.5 move at 45°); NoireGizmo draws its own space-correct readout below.
+            var hideBuiltInText = Options.ShowDragFeedback;
+            if (hideBuiltInText)
+                HideImGuizmoText();
+
             var changed = TryBuildSnap(snapKind, out var snap)
                 ? ImGuizmo.Manipulate(ref view, ref proj, op, mode, ref matrix, ref snap[0])
                 : ImGuizmo.Manipulate(ref view, ref proj, op, mode, ref matrix);
+
+            if (hideBuiltInText)
+                RestoreImGuizmoText();
 
             var isOver = ImGuizmo.IsOver();
             var isUsing = ImGuizmo.IsUsing();
@@ -184,6 +215,7 @@ public sealed partial class NoireGizmo
                 // Latch the driven op: the pre-drag hover normally has it (snapped from frame one); fall back to
                 // detecting the change only if the press somehow landed with no hover frame before it.
                 imguizmoSnapKind = snapKind != SnapKind.None ? snapKind : DetectChangedOp(in world, in matrix);
+                CaptureImGuizmoPress(in world); // freeze the press transform/basis for the drag readout (world is the target/group pivot at press)
                 if (groupNodes != null)
                     CaptureGroupPress(in world); // world is the group pivot at the moment the drag began
                 RaiseEditStart();
@@ -223,10 +255,20 @@ public sealed partial class NoireGizmo
             // cannot invert) would blank the object, so a garbage matrix is dropped rather than written to the target.
             // The single unsnapped frame at a snapping drag's start is dropped (see dropUnsnappedFirstFrame) so it never
             // shows before the snap takes over.
-            if (changed && !dropUnsnappedFirstFrame && IsUsableTransform(in matrix))
+            var applied = changed && !dropUnsnappedFirstFrame && IsUsableTransform(in matrix);
+            if (applied)
             {
                 SetWorld(in matrix);
                 RaiseEdit();
+            }
+
+            // NoireGizmo's own drag readout (space-correct, unlike ImGuizmo's hidden world-space text): the anchor, the
+            // guide line and the amount moved / rotated / scaled, measured along the frozen press axes. Read from the
+            // real object transform this frame - the applied result, or the unchanged world when this frame was dropped.
+            if (imguizmoUsing && Options.ShowDragFeedback)
+            {
+                UpdateImGuizmoFeedback(applied ? matrix : world);
+                DrawDragFeedback(in frame);
             }
 
             if (!isUsing && imguizmoUsing)
@@ -372,5 +414,123 @@ public sealed partial class NoireGizmo
         if ((op & GizmoOp.Scale) != 0)
             r |= ImGuizmoOperation.Scaleu; // universal-scale bits: object-local scale that does not force the gizmo local
         return r;
+    }
+
+    /// <summary>
+    /// Resolves <c>&amp;ImGuizmo::Style</c> once, straight from the native module's <c>ImGuizmo_GetStyle</c> export (the
+    /// Dalamud binding wraps no style accessor). Zeroing two alpha floats in that struct is how the built-in drag text is
+    /// hidden. Returns 0 when the export cannot be resolved, in which case the built-in text is simply left visible.
+    /// </summary>
+    private static nint ResolveImGuizmoStyle()
+    {
+        if (imguizmoStyleResolved)
+            return imguizmoStylePtr;
+
+        imguizmoStyleResolved = true;
+        try
+        {
+            if (imguizmoContext != null && imguizmoContext.TryGetProcAddress("ImGuizmo_GetStyle", out var fn) && fn != 0)
+            {
+                var getStyle = Marshal.GetDelegateForFunctionPointer<ImGuizmoGetStyleDelegate>(fn);
+                var style = getStyle();
+
+                // Guard the raw-offset writes: only trust the pointer when both target slots read back as a plausible
+                // alpha (a finite float in [0,1]). If a different ImGuizmo build shifted the Style layout, this reads
+                // some other field, fails the check, and the built-in text is left alone rather than memory corrupted.
+                if (style != 0 && IsAlpha(style, ImGuizmoStyleTextAlpha) && IsAlpha(style, ImGuizmoStyleTextShadowAlpha))
+                    imguizmoStylePtr = style;
+            }
+        }
+        catch (Exception ex)
+        {
+            imguizmoStylePtr = 0;
+            NoireLogger.LogError(ex, "Could not resolve ImGuizmo_GetStyle; the ImGuizmo backend keeps its own world-space drag text.", "Draw3D");
+        }
+
+        return imguizmoStylePtr;
+    }
+
+    /// <summary>Reads the float at <paramref name="offset"/> in the ImGuizmo Style and reports whether it looks like a colour alpha (finite, 0..1), used to sanity-check the struct layout before writing.</summary>
+    private static bool IsAlpha(nint style, int offset)
+    {
+        var value = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(style, offset));
+        return float.IsFinite(value) && value >= 0f && value <= 1f;
+    }
+
+    /// <summary>
+    /// Zeroes ImGuizmo's TEXT / TEXT_SHADOW alpha (saving the prior values) so its built-in drag info text is invisible
+    /// for the next Manipulate call. Paired with <see cref="RestoreImGuizmoText"/> so the change never outlives the call:
+    /// ImGuizmo's global style is shared with any other plugin using it, and is left exactly as found.
+    /// </summary>
+    private void HideImGuizmoText()
+    {
+        var style = ResolveImGuizmoStyle();
+        if (style == 0)
+            return;
+
+        imguizmoSavedTextBits = Marshal.ReadInt32(style, ImGuizmoStyleTextAlpha);
+        imguizmoSavedShadowBits = Marshal.ReadInt32(style, ImGuizmoStyleTextShadowAlpha);
+        Marshal.WriteInt32(style, ImGuizmoStyleTextAlpha, 0);       // TEXT.w = 0f (0x00000000)
+        Marshal.WriteInt32(style, ImGuizmoStyleTextShadowAlpha, 0); // TEXT_SHADOW.w = 0f
+        imguizmoTextHidden = true;
+    }
+
+    /// <summary>Restores the TEXT / TEXT_SHADOW alpha saved by <see cref="HideImGuizmoText"/>, undoing the frame-local hide.</summary>
+    private void RestoreImGuizmoText()
+    {
+        if (!imguizmoTextHidden)
+            return;
+
+        imguizmoTextHidden = false;
+        var style = ResolveImGuizmoStyle();
+        if (style == 0)
+            return;
+
+        Marshal.WriteInt32(style, ImGuizmoStyleTextAlpha, imguizmoSavedTextBits);
+        Marshal.WriteInt32(style, ImGuizmoStyleTextShadowAlpha, imguizmoSavedShadowBits);
+    }
+
+    /// <summary>
+    /// Freezes the press-time transform and readout basis for the ImGuizmo drag feedback: the origin, the rotation the
+    /// gesture is measured against, and the axes the translation readout projects onto - world axes in World space, the
+    /// object's own axes in Local space. Mirrors what the native backend captures in <c>OnDragStart</c>.
+    /// </summary>
+    private void CaptureImGuizmoPress(in Matrix4x4 world)
+    {
+        DecomposeSafe(in world, out _, out pressRot, out pressTrans);
+        dragOrigin = pressTrans;
+
+        if (Options.Space == GizmoSpace.Local)
+        {
+            dragAx = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, pressRot), Vector3.UnitX);
+            dragAy = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, pressRot), Vector3.UnitY);
+            dragAz = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitZ, pressRot), Vector3.UnitZ);
+        }
+        else
+        {
+            dragAx = Vector3.UnitX;
+            dragAy = Vector3.UnitY;
+            dragAz = Vector3.UnitZ;
+        }
+    }
+
+    /// <summary>
+    /// Refreshes the live drag readout from the current transform against the press transform: the movement (which the
+    /// translate readout projects onto the frozen press axes, so a Local-space axis drag reads its own distance rather
+    /// than a world projection), the angle swept and the scale relative to the base size. The representative handle
+    /// selects which of the three the overlay prints, matching the operation ImGuizmo is driving.
+    /// </summary>
+    private void UpdateImGuizmoFeedback(in Matrix4x4 current)
+    {
+        DecomposeSafe(in current, out var scale, out var rot, out var trans);
+        feedbackTranslate = trans - pressTrans;
+        feedbackAngleDeg = AngleBetweenDeg(pressRot, rot);
+        feedbackScale = new Vector3(scale.X / baseScale.X, scale.Y / baseScale.Y, scale.Z / baseScale.Z);
+        activeHandle = imguizmoSnapKind switch
+        {
+            SnapKind.Rotate => GizmoHandle.RotateScreen,
+            SnapKind.Scale => GizmoHandle.ScaleUniform,
+            _ => GizmoHandle.TranslateScreen,
+        };
     }
 }
