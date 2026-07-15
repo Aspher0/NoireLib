@@ -315,15 +315,25 @@ internal static unsafe class GameRenderSources
     }
 
     /// <summary>
-    /// Whether a screen point (framebuffer pixels) lies inside any visible game addon's root rect — i.e. the cursor
-    /// is over native game UI (a HUD window, inventory, friend list, …). Uses the same root-node reads and the same
-    /// near-fullscreen skip as <see cref="CollectVisibleAddonRects"/>, so transparent overlay roots (nameplates,
-    /// fly-text, screen info) never blanket the whole viewport. Fails soft to false. Read on the main/draw thread.
+    /// Whether a screen point (framebuffer pixels) lies over an interactive part of a visible game addon, i.e. the
+    /// cursor is over native game UI a click should belong to. The point must fall inside the addon's root rect (a quick
+    /// reject that keeps the near-fullscreen overlay skip) and over one of its visible <b>collision nodes</b>, the
+    /// regions the game itself hit-tests. Testing collision nodes rather than the padded root rect means the transparent
+    /// margins around HUD elements (the empty space beside action-bar slots, a window's padding) do not falsely block
+    /// picking a 3D object behind them. Fails soft to false. Read on the main/draw thread.
     /// </summary>
     /// <param name="pointPx">The point to test, in framebuffer pixels (the ImGui mouse space Dalamud shares with the game).</param>
     /// <param name="displaySize">The framebuffer size, for the near-fullscreen overlay skip.</param>
     public static bool IsPointOverVisibleAddon(Vector2 pointPx, Vector2 displaySize)
+        => IsPointOverVisibleAddon(pointPx, displaySize, out _);
+
+    /// <summary>
+    /// The diagnostic form of <see cref="IsPointOverVisibleAddon(Vector2, Vector2)"/>: also reports the name of the
+    /// addon whose collision node caught the point (null when the point is over no game UI).
+    /// </summary>
+    public static bool IsPointOverVisibleAddon(Vector2 pointPx, Vector2 displaySize, out string? addonName)
     {
+        addonName = null;
         if (displaySize.X <= 0 || displaySize.Y <= 0)
             return false;
 
@@ -351,22 +361,151 @@ internal static unsafe class GameRenderSources
                 if (w <= 1 || h <= 1)
                     continue;
 
-                // Skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info) — the same rule the
+                // Quick reject: the cursor must be inside the addon's root bounds before its nodes are worth walking.
+                var x = root->ScreenX;
+                var y = root->ScreenY;
+                if (pointPx.X < x || pointPx.X >= x + w || pointPx.Y < y || pointPx.Y >= y + h)
+                    continue;
+
+                // Skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info): the same rule the
                 // composite UI mask uses, so a fullscreen overlay never blanket-blocks every pointer interaction.
                 if (w >= displaySize.X * 0.9f && h >= displaySize.Y * 0.9f)
                     continue;
 
-                var x = root->ScreenX;
-                var y = root->ScreenY;
-                if (pointPx.X >= x && pointPx.X < x + w && pointPx.Y >= y && pointPx.Y < y + h)
+                // Block only over an actual collision node (the game's own hit region), not the addon's transparent padding.
+                if (PointOverCollisionNode(unit, pointPx))
+                {
+                    addonName = ReadAddonName(unit);
                     return true;
+                }
             }
 
             return false;
         }
         catch (System.Exception)
         {
-            return false; // read faulted this frame — do not let a UI probe take the frame down
+            addonName = null;
+            return false; // read faulted this frame: do not let a UI probe take the frame down
+        }
+    }
+
+    /// <summary>Whether the point falls inside a visible collision node of the addon (its own node list, recursing through component nodes).</summary>
+    private static bool PointOverCollisionNode(AtkUnitBase* unit, Vector2 pointPx)
+    {
+        // Action bars keep a badge's collision node live even when its content (the bar-number label and arrows) is
+        // switched off, so those addons get the extra "collision has visible content beside it" gate below.
+        var isActionBar = unit->Name.StartsWith("_ActionBar"u8);
+        return NodeListHit(unit->UldManager.NodeList, unit->UldManager.NodeListCount, unit->Scale, pointPx, isActionBar, depth: 0);
+    }
+
+    /// <summary>
+    /// Whether the point falls in a visible collision node reachable from this node list. Component nodes are recursed
+    /// into to any depth (their collision nodes live in their own list, so a component's inner controls, such as an
+    /// action-bar slot or a window button, are only found this way), and a collision node counts only when its whole
+    /// ancestor chain is visible. The game leaves a node's own visibility flag set while a hidden parent hides it on
+    /// screen, so the parent-chain check is what stops a switched-off element (a hidden hotbar-number badge) from
+    /// blocking. A display-only addon (a job gauge) carries no collision nodes, so it never blocks; interactive UI does.
+    /// </summary>
+    private static bool NodeListHit(AtkResNode** nodes, int nodeCount, float unitScale, Vector2 pointPx, bool isActionBar, int depth)
+    {
+        if (nodes == null || depth > 8)
+            return false;
+
+        for (var n = 0; n < nodeCount; n++)
+        {
+            var node = nodes[n];
+            if (node == null || !node->IsVisible())
+                continue;
+
+            if (node->Type == NodeType.Collision)
+            {
+                if (!NodeAncestorsVisible(node))
+                    continue;
+
+                // On action bars, a collision whose parent has no other visible child is a phantom badge (its label and
+                // arrows are switched off, only the always-visible collision remains); a real control keeps visible
+                // content beside its collision, so this only skips the empty badge, never a live button or slot.
+                if (isActionBar && CollisionLacksVisibleSibling(nodes, nodeCount, node))
+                    continue;
+
+                var w = node->Width * node->ScaleX * unitScale;
+                var h = node->Height * node->ScaleY * unitScale;
+                if (w > 1 && h > 1)
+                {
+                    var x = node->ScreenX;
+                    var y = node->ScreenY;
+                    if (pointPx.X >= x && pointPx.X < x + w && pointPx.Y >= y && pointPx.Y < y + h)
+                        return true;
+                }
+
+                continue;
+            }
+
+            var compNode = node->GetAsAtkComponentNode();
+            if (compNode != null && NodeAncestorsVisible(node))
+            {
+                var comp = compNode->Component;
+                if (comp != null && NodeListHit(comp->UldManager.NodeList, comp->UldManager.NodeListCount, unitScale, pointPx, isActionBar, depth + 1))
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether a visible collision node has no visible non-collision sibling under the same parent. True marks a phantom
+    /// hit region: a hotbar keeps the number-badge collision node visible while the label / arrows beside it are hidden,
+    /// so "nothing visible next to the collision" is the signal that the control is switched off and should not block.
+    /// </summary>
+    private static bool CollisionLacksVisibleSibling(AtkResNode** nodes, int nodeCount, AtkResNode* collision)
+    {
+        var parent = collision->ParentNode;
+        if (parent == null)
+            return false;
+
+        for (var i = 0; i < nodeCount; i++)
+        {
+            var node = nodes[i];
+            if (node == null || node == collision || node->ParentNode != parent)
+                continue;
+            if (node->Type != NodeType.Collision && node->IsVisible())
+                return false; // real content sits beside the collision
+        }
+
+        return true;
+    }
+
+    /// <summary>Whether every ancestor of the node (up to its list's root) is visible. The node's own flag is checked by the caller.</summary>
+    private static bool NodeAncestorsVisible(AtkResNode* node)
+    {
+        var parent = node->ParentNode;
+        var guard = 0;
+        while (parent != null && guard++ < 64)
+        {
+            if (!parent->IsVisible())
+                return false;
+
+            parent = parent->ParentNode;
+        }
+
+        return true;
+    }
+
+    /// <summary>Reads an addon's short name from its fixed name buffer, for diagnostics. Returns "?" on any fault.</summary>
+    private static string ReadAddonName(AtkUnitBase* unit)
+    {
+        try
+        {
+            var name = unit->Name; // Span over the fixed name buffer
+            var len = 0;
+            while (len < name.Length && name[len] != 0)
+                len++;
+            return len == 0 ? "?" : System.Text.Encoding.UTF8.GetString(name[..len]);
+        }
+        catch (System.Exception)
+        {
+            return "?";
         }
     }
 

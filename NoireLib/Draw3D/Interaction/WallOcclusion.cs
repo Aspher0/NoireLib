@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Interaction;
 /// </summary>
 public enum WallOcclusion
 {
-    /// <summary>Ignore obstacles — a 3D object is always hoverable/clickable, even straight through a wall (x-ray picking).</summary>
+    /// <summary>Ignore obstacles: a 3D object is always hoverable/clickable, even straight through a wall (x-ray picking).</summary>
     Off,
 
     /// <summary>A wall / terrain in front of an object always blocks picking it. No override.</summary>

@@ -16,7 +16,7 @@ public static class InteractMath
     /// <param name="direction">Ray direction (need not be normalized; <paramref name="t"/> is in its units).</param>
     /// <param name="planePoint">Any point on the plane.</param>
     /// <param name="planeNormal">Plane normal (need not be normalized).</param>
-    /// <param name="t">Receives the ray parameter of the hit (may be negative — the plane can be behind the origin).</param>
+    /// <param name="t">Receives the ray parameter of the hit (may be negative; the plane can be behind the origin).</param>
     /// <param name="hit">Receives the world-space hit point.</param>
     public static bool RayPlane(Vector3 origin, Vector3 direction, Vector3 planePoint, Vector3 planeNormal, out float t, out Vector3 hit)
     {
@@ -34,7 +34,7 @@ public static class InteractMath
     }
 
     /// <summary>
-    /// Finds the parameter along an axis line closest to a ray — the core of axis-constrained dragging
+    /// Finds the parameter along an axis line closest to a ray: the core of axis-constrained dragging
     /// (project the cursor ray onto the handle's axis). Returns false when the ray is (near) parallel to the axis,
     /// in which case <paramref name="axisParam"/> falls back to the projection of the ray origin onto the axis.
     /// </summary>
@@ -62,7 +62,7 @@ public static class InteractMath
     }
 
     /// <summary>
-    /// Shortest distance between a ray and a finite segment, plus the ray parameter of the closest approach —
+    /// Shortest distance between a ray and a finite segment, plus the ray parameter of the closest approach,
     /// used to hit-test axis/arrow handles (grab when the distance is under the handle's pick radius).
     /// </summary>
     /// <param name="rayOrigin">Ray origin.</param>
@@ -157,7 +157,7 @@ public static class InteractMath
 
     /// <summary>
     /// Screen-constant sizing: the world distance at <paramref name="worldPoint"/> that projects to one screen pixel,
-    /// plus the camera-aligned right/up world axes at that point — everything a gizmo needs to keep a fixed pixel size
+    /// plus the camera-aligned right/up world axes at that point: everything a gizmo needs to keep a fixed pixel size
     /// and to build a screen-space handle basis, derived purely from the view-projection pair (no camera struct).
     /// Returns false when the point is at/behind the camera.
     /// </summary>
@@ -172,39 +172,57 @@ public static class InteractMath
         rightWorld = Vector3.UnitX;
         upWorld = Vector3.UnitY;
 
-        var clip = Vector4.Transform(new Vector4(worldPoint, 1f), frame.ViewProj);
-        if (clip.W <= 1e-6f)
-            return false;
-
         var vp = frame.ViewportSize;
         if (vp.X <= 0f || vp.Y <= 0f)
             return false;
 
-        var ndcZ = clip.Z / clip.W;
-        var screen = new Vector2((clip.X / clip.W * 0.5f + 0.5f) * vp.X, (1f - (clip.Y / clip.W * 0.5f + 0.5f)) * vp.Y);
-
-        if (!UnprojectAtDepth(in frame, screen + new Vector2(1f, 0f), ndcZ, out var pr) ||
-            !UnprojectAtDepth(in frame, screen - new Vector2(0f, 1f), ndcZ, out var pu))
+        // Screen-parallel world axes at this point: perpendicular to the camera-to-point line. They are the sampling
+        // directions for the pixel scale below and the returned right/up.
+        var toPoint = worldPoint - frame.EyePos;
+        var dist = toPoint.Length();
+        if (dist < 1e-5f)
             return false;
 
-        rightWorld = SafeNormalize(pr - worldPoint, Vector3.UnitX);
-        upWorld = SafeNormalize(pu - worldPoint, Vector3.UnitY);
-        worldPerPixel = Vector3.Distance(pr, worldPoint);
+        toPoint /= dist;
+        var refUp = MathF.Abs(toPoint.Y) < 0.99f ? Vector3.UnitY : Vector3.UnitX;
+        rightWorld = SafeNormalize(Vector3.Cross(refUp, toPoint), Vector3.UnitX);
+        upWorld = SafeNormalize(Vector3.Cross(toPoint, rightWorld), Vector3.UnitY);
+
+        // Perspective denominator at the point, straight from the forward transform (well-conditioned everywhere in
+        // front of the camera). The pixel scale is then the exact analytic screen-space derivative of the projection
+        // along each axis. This never reconstructs depth from NDC, so it is immune to the reversed-Z precision collapse
+        // near the camera that made the round-trip estimate (and the handle size resting on it) jitter up close.
+        var vpMat = frame.ViewProj;
+        var clip = Vector4.Transform(new Vector4(worldPoint, 1f), vpMat);
+        if (clip.W <= 1e-4f)
+            return false;
+
+        var colX = new Vector3(vpMat.M11, vpMat.M21, vpMat.M31);
+        var colY = new Vector3(vpMat.M12, vpMat.M22, vpMat.M32);
+        var colW = new Vector3(vpMat.M14, vpMat.M24, vpMat.M34);
+        var ndcX = clip.X / clip.W;
+        var ndcY = clip.Y / clip.W;
+        var invW = 1f / clip.W;
+        var halfX = 0.5f * vp.X;
+        var halfY = 0.5f * vp.Y;
+
+        float PixelsPerWorld(Vector3 axis)
+        {
+            // d(screen)/d(world along axis): the derivative of screen = (clip.xy / clip.w) mapped to pixels.
+            var dNdcX = (Vector3.Dot(axis, colX) - ndcX * Vector3.Dot(axis, colW)) * invW;
+            var dNdcY = (Vector3.Dot(axis, colY) - ndcY * Vector3.Dot(axis, colW)) * invW;
+            var dPxX = halfX * dNdcX;
+            var dPxY = halfY * dNdcY;
+            return MathF.Sqrt(dPxX * dPxX + dPxY * dPxY);
+        }
+
+        var pxRight = PixelsPerWorld(rightWorld);
+        var pxUp = PixelsPerWorld(upWorld);
+        if (pxRight < 1e-6f || pxUp < 1e-6f)
+            return false;
+
+        worldPerPixel = 0.5f * (1f / pxRight + 1f / pxUp);
         return worldPerPixel > 0f;
-    }
-
-    /// <summary>Unprojects a pixel position at a given NDC depth back to world space, using the frame's inverse VP.</summary>
-    private static bool UnprojectAtDepth(in FrameContext frame, Vector2 screenPx, float ndcZ, out Vector3 world)
-    {
-        world = default;
-        var vp = frame.ViewportSize;
-        var ndc = new Vector4(screenPx.X / vp.X * 2f - 1f, 1f - screenPx.Y / vp.Y * 2f, ndcZ, 1f);
-        var c = Vector4.Transform(ndc, frame.InvViewProj);
-        if (MathF.Abs(c.W) < 1e-9f)
-            return false;
-
-        world = new Vector3(c.X, c.Y, c.Z) / c.W;
-        return true;
     }
 
     /// <summary>Normalizes <paramref name="v"/>, falling back to <paramref name="fallback"/> for a (near) zero vector.</summary>

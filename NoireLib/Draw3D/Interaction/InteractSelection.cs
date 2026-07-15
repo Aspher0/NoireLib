@@ -18,19 +18,19 @@ public enum SelectionMode
 [Flags]
 public enum SelectionModifiers
 {
-    /// <summary>No modifier — the pick replaces the selection.</summary>
+    /// <summary>No modifier: the pick replaces the selection.</summary>
     None = 0,
 
-    /// <summary>Ctrl — toggle the picked node in/out of the selection (Multi mode).</summary>
+    /// <summary>Ctrl: toggle the picked node in/out of the selection (Multi mode).</summary>
     Toggle = 1,
 
-    /// <summary>Shift — add the picked node to the selection (Multi mode).</summary>
+    /// <summary>Shift: add the picked node to the selection (Multi mode).</summary>
     Add = 2,
 }
 
 /// <summary>
 /// The selection the gizmo and editor read from: an ordered set of nodes with Single/Multi semantics and the
-/// familiar Ctrl-toggle / Shift-add rules. Pure and observable — <see cref="Changed"/> fires whenever the set moves.
+/// familiar Ctrl-toggle / Shift-add rules. Pure and observable: <see cref="Changed"/> fires whenever the set moves.
 /// </summary>
 public sealed class InteractSelection
 {
@@ -39,7 +39,13 @@ public sealed class InteractSelection
     /// <summary>Whether the selection holds one node or many.</summary>
     public SelectionMode Mode { get; set; } = SelectionMode.Single;
 
-    /// <summary>The current selection, in the order nodes were added. Do not mutate — use the methods.</summary>
+    /// <summary>
+    /// Maximum number of nodes the selection may hold in <see cref="SelectionMode.Multi"/> (0 or less means unlimited).
+    /// When an add would exceed it, the oldest node is dropped so the newest is always included. Default 0.
+    /// </summary>
+    public int MaxCount { get; set; }
+
+    /// <summary>The current selection, in the order nodes were added. Do not mutate; use the methods.</summary>
     public IReadOnlyList<SceneNode> Nodes => nodes;
 
     /// <summary>The number of selected nodes.</summary>
@@ -79,6 +85,7 @@ public sealed class InteractSelection
         {
             if (!nodes.Remove(node))
                 nodes.Add(node);
+            TrimToMax();
             RaiseChanged();
             return;
         }
@@ -86,6 +93,7 @@ public sealed class InteractSelection
         // Add (Shift): include without removing, move to primary if already present.
         nodes.Remove(node);
         nodes.Add(node);
+        TrimToMax();
         RaiseChanged();
     }
 
@@ -115,7 +123,18 @@ public sealed class InteractSelection
             return;
 
         nodes.Add(node);
+        TrimToMax();
         RaiseChanged();
+    }
+
+    /// <summary>Drops the oldest nodes until the count is within <see cref="MaxCount"/> (no-op when unlimited).</summary>
+    private void TrimToMax()
+    {
+        if (MaxCount <= 0)
+            return;
+
+        while (nodes.Count > MaxCount)
+            nodes.RemoveAt(0);
     }
 
     /// <summary>Removes <paramref name="node"/> from the selection. Returns whether it was present.</summary>

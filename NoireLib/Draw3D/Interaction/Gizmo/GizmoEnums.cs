@@ -28,11 +28,8 @@ public enum GizmoSpace
     /// <summary>Axis-aligned to the world.</summary>
     World,
 
-    /// <summary>Aligned to the target's own rotation.</summary>
+    /// <summary>Aligned to the target's own rotation (for a group, to the first selected node).</summary>
     Local,
-
-    /// <summary>Aligned to the camera (right / up / forward); rotate shows a single screen-facing ring.</summary>
-    Screen,
 }
 
 /// <summary>How the native gizmo's handles are occluded (the ImGuizmo backend is always flat-on-top, unaffected).</summary>
@@ -45,7 +42,7 @@ public enum GizmoDepth
     /// </summary>
     OnTopOfObjects,
 
-    /// <summary>Drawn on top of absolutely everything — world and 3D objects alike (x-ray). A handle is never hidden.</summary>
+    /// <summary>Drawn on top of absolutely everything: world and 3D objects alike (x-ray). A handle is never hidden.</summary>
     AlwaysOnTop,
 
     /// <summary>Fully depth-tested: occluded by the world <i>and</i> by other 3D objects (can be buried inside the object it edits).</summary>
@@ -57,15 +54,15 @@ public enum GizmoBackend
 {
     /// <summary>
     /// In-world depth gizmos: real depth-tested geometry drawn through <see cref="Im.ImDraw3D"/> and hit-tested with the
-    /// render-time camera — occludes correctly, never wobbles under camera motion, can render through walls, and supports
-    /// Screen space + per-axis universal snapping. The right backend for the V2 renderer, and the default.
+    /// render-time camera: occludes correctly, never wobbles under camera motion, can render through walls, and supports
+    /// per-axis universal snapping. The right backend for the V2 renderer, and the default.
     /// </summary>
     Native,
 
     /// <summary>
     /// The classic 2D-projected ImGui gizmo, drawn by <c>Dalamud.Bindings.ImGuizmo</c> and fed the render camera's
-    /// view/projection. Same API surface as <see cref="Native"/>. Familiar look, but flat (no depth occlusion), no
-    /// Screen space, and coarser universal snapping. Pick it when you want the ImGuizmo feel over depth-correctness.
+    /// view/projection. Same API surface as <see cref="Native"/>. Familiar look, but flat (no depth occlusion) and
+    /// coarser universal snapping. Pick it when you want the ImGuizmo feel over depth-correctness.
     /// </summary>
     ImGuizmo,
 }

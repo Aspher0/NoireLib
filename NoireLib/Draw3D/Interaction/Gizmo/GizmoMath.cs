@@ -6,11 +6,11 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// <summary>
 /// Pure drag solvers for the gizmo: given the cursor ray at press and now, each returns the transform delta a handle
 /// implies (axis distance, plane vector, rotation angle, scale factor) and the screen-constant handle size. No renderer
-/// or ImGui state, so every solver is unit-tested headlessly — the gizmo shell only wires these to the target transform.
+/// or ImGui state, so every solver is unit-tested headlessly; the gizmo shell only wires these to the target transform.
 /// </summary>
 public static class GizmoMath
 {
-    /// <summary>The world length that spans <paramref name="pixels"/> screen pixels at <paramref name="origin"/> — keeps a handle a constant on-screen size. Falls back to a distance-scaled estimate behind the camera.</summary>
+    /// <summary>The world length that spans <paramref name="pixels"/> screen pixels at <paramref name="origin"/>, keeping a handle a constant on-screen size. Falls back to a distance-scaled estimate behind the camera.</summary>
     public static float ScreenConstantLength(in FrameContext frame, Vector3 origin, float pixels)
     {
         if (InteractMath.WorldPerPixel(in frame, origin, out var worldPerPixel, out _, out _))

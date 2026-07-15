@@ -5,7 +5,7 @@ namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
 /// The context handed to a node's hover / click callbacks: which node, where the cursor ray met it, and the ray
-/// itself — enough for "which face did I click," decal-stamp-at-cursor, or spawning a child exactly where clicked.
+/// itself: enough for "which face did I click", decal-stamp-at-cursor, or spawning a child exactly where clicked.
 /// </summary>
 /// <param name="Node">The interacted node.</param>
 /// <param name="Button">The mouse button (meaningful for clicks; <see cref="MouseButton.Left"/> for hover).</param>

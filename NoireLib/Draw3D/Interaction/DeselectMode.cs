@@ -3,18 +3,18 @@ using System;
 namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
-/// How the shared <see cref="NoireInteract.Selection"/> is cleared. Flags — combine freely (e.g.
+/// How the shared <see cref="NoireInteract.Selection"/> is cleared. Flags: combine freely (for example
 /// <c>ClickEmpty | Key</c>). Selecting is separate (a left-click on an object, gated by
 /// <see cref="NoireInteract.SelectOnClick"/>); this only governs <i>de</i>selection.
 /// </summary>
 [Flags]
 public enum DeselectMode
 {
-    /// <summary>Never auto-deselect — the consumer clears the selection itself.</summary>
+    /// <summary>Never auto-deselect; the consumer clears the selection itself.</summary>
     None = 0,
 
     /// <summary>
-    /// A left click on empty world — no object under the cursor and not over game/plugin UI — that did not become a
+    /// A left click on empty world (no object under the cursor and not over game/plugin UI) that did not become a
     /// camera pan clears the selection. A click-and-drag (a camera pan) never deselects.
     /// </summary>
     ClickEmpty = 1,

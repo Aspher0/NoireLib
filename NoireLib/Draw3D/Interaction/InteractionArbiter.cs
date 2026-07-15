@@ -9,10 +9,10 @@ internal enum PointerOwner
     /// <summary>No button held for this slot.</summary>
     None,
 
-    /// <summary>The press began over an interactable target — this whole gesture is ours (blocks the game).</summary>
+    /// <summary>The press began over an interactable target: this whole gesture is ours (blocks the game).</summary>
     Interact,
 
-    /// <summary>The press began over empty world / while foreign UI held the mouse — the game owns it (camera pan, targeting).</summary>
+    /// <summary>The press began over empty world, or while foreign UI held the mouse: the game owns it (camera pan, targeting).</summary>
     Foreign,
 }
 
@@ -65,7 +65,7 @@ internal interface IArbiterSink
     /// <summary>A press+release on the same target without crossing the drag threshold.</summary>
     void Click(object token, MouseButton button);
 
-    /// <summary>A left press+release on empty world (no target, not over foreign UI) that never became a camera pan — a click on the background.</summary>
+    /// <summary>A left press+release on empty world (no target, not over foreign UI) that never became a camera pan: a click on the background.</summary>
     void BackgroundClick();
 
     /// <summary>A left-button press on a draggable target crossed the drag threshold.</summary>
@@ -85,9 +85,9 @@ internal interface IArbiterSink
 /// <list type="bullet">
 /// <item><b>Click vs. camera-pan.</b> A gesture is latched to its owner at press time. A press that begins over an
 /// interactable is ours; a press that begins over empty world is the game's (its camera pan), and it stays the game's
-/// even if it later drags across an interactable — so a pan is never mistaken for a click, and a click never fires
+/// even if it later drags across an interactable, so a pan is never mistaken for a click, and a click never fires
 /// after a pan. A left press that moves past <see cref="DragThresholdPx"/> is a drag, not a click.</item>
-/// <item><b>Drag takes the lead.</b> Pressing a draggable target (e.g. a gizmo handle) claims the mouse from the very
+/// <item><b>Drag takes the lead.</b> Pressing a draggable target (for example a gizmo handle) claims the mouse from the very
 /// first frame, so the game never pans the camera underneath the drag.</item>
 /// </list>
 /// Deliberately free of ImGui / renderer state so the whole decision table is unit-tested headlessly.
@@ -103,9 +103,9 @@ internal sealed class InteractionArbiter
         public object? Node;
         public Vector2 PressPos;
         public bool Dragging;       // left only: crossed the threshold on a draggable target
-        public bool Moved;          // crossed the threshold (any target) — disqualifies the click
+        public bool Moved;          // crossed the threshold (any target); disqualifies the click
         public bool Draggable;      // the pressed target accepts drags
-        public bool Background;     // left only: this Foreign press began over empty world (not UI) — a click here is a background click
+        public bool Background;     // left only: this Foreign press began over empty world (not UI); a click here is a background click
         public bool Down;           // previous-frame held state, for edge detection
     }
 
@@ -163,7 +163,7 @@ internal sealed class InteractionArbiter
 
         if (!wasDown && isDown)
         {
-            // Press edge — latch the owner for the whole gesture.
+            // Press edge: latch the owner for the whole gesture.
             if (s.ForeignCapturing || s.HoverToken == null)
             {
                 st.Owner = PointerOwner.Foreign;
@@ -188,7 +188,7 @@ internal sealed class InteractionArbiter
         }
         else if (wasDown && isDown)
         {
-            // Held — grow a drag once the cursor leaves the click tolerance.
+            // Held: grow a drag once the cursor leaves the click tolerance.
             if (st.Owner == PointerOwner.Interact)
             {
                 if (!st.Moved && Vector2.Distance(s.Position, st.PressPos) > DragThresholdPx)
@@ -207,7 +207,7 @@ internal sealed class InteractionArbiter
             else if (st.Owner == PointerOwner.Foreign && st.Background && !st.Moved
                      && Vector2.Distance(s.Position, st.PressPos) > DragThresholdPx)
             {
-                // The empty-world press has grown into a camera pan — it is no longer a background click.
+                // The empty-world press has grown into a camera pan: it is no longer a background click.
                 st.Moved = true;
             }
         }
@@ -223,7 +223,7 @@ internal sealed class InteractionArbiter
             }
             else if (st.Owner == PointerOwner.Foreign && st.Background && !st.Moved && !s.ForeignCapturing)
             {
-                // A left press+release on empty world that never became a pan — a click on the background (deselect).
+                // A left press+release on empty world that never became a pan: a click on the background (deselect).
                 sink.BackgroundClick();
             }
 
@@ -244,7 +244,7 @@ internal sealed class InteractionArbiter
         {
             if (b.Owner == PointerOwner.Interact)
             {
-                // A draggable press/drag is captured from frame one (a gizmo grab — the camera never moves under it).
+                // A draggable press/drag is captured from frame one (a gizmo grab, so the camera never moves under it).
                 // A plain press captures too while it could still be a click, so the click is delivered to us and the
                 // game doesn't pan/target under it; the moment that plain press crosses the drag threshold it is clearly
                 // a camera gesture, not a click, so we stop capturing and let the game have it.

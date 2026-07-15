@@ -3,9 +3,9 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
-/// A pointer client that lives above the scene graph: it hit-tests the cursor ray against its own geometry
+/// A pointer client that lives above the scene graph: it hit-tests the cursor against its own geometry
 /// (gizmo handles, invisible hotspots, custom widgets) and receives hover / click / drag through the same
-/// arbitration that governs clickable nodes — so it shares the one mouse-capture authority instead of fighting it.
+/// arbitration that governs clickable nodes, so it shares the one mouse-capture authority instead of fighting it.
 /// The built-in <see cref="NoireGizmo"/> is such a client; register your own with <see cref="NoireInteract.RegisterInteractor"/>.
 /// </summary>
 public interface IPointerInteractor
@@ -17,16 +17,16 @@ public interface IPointerInteractor
     bool Active { get; }
 
     /// <summary>
-    /// Tests the cursor ray against this interactor's grabbable geometry for the frame.
+    /// Tests the cursor against this interactor's grabbable geometry for the frame.
     /// </summary>
     /// <param name="rayOrigin">Cursor ray origin (world).</param>
     /// <param name="rayDirection">Cursor ray direction (world, normalized).</param>
     /// <param name="screen">Cursor position in screen pixels.</param>
     /// <param name="frame">The current frame (projection, viewport).</param>
-    /// <param name="token">Receives a stable identity for the hit element (same instance across frames — used for hover/press latching).</param>
-    /// <param name="distance">Receives the ray distance to the hit (nearer hits win ties within equal priority).</param>
-    /// <param name="hitPoint">Receives the world point grabbed, used as the drag anchor.</param>
-    /// <returns>True when the ray hits something grabbable.</returns>
+    /// <param name="token">Receives a stable identity for the hit element (same instance across frames, used for hover/press latching).</param>
+    /// <param name="distance">Receives the distance to the hit (nearer hits win ties within equal priority).</param>
+    /// <param name="hitPoint">Receives the world point grabbed, used as the drag anchor and for occlusion tests.</param>
+    /// <returns>True when the cursor hits something grabbable.</returns>
     bool HitTest(Vector3 rayOrigin, Vector3 rayDirection, Vector2 screen, in FrameContext frame, out object token, out float distance, out Vector3 hitPoint);
 
     /// <summary>Whether a token produced by <see cref="HitTest"/> belongs to this interactor (used to route events).</summary>
@@ -58,9 +58,9 @@ public interface IPointerInteractor
     /// <summary>
     /// Optional zero-latency draw, called on the <b>render thread</b> each frame with the current frame (not a frame
     /// late like <see cref="Draw"/> from the UI thread). Emit <see cref="Im.ImDraw3D"/> geometry whose on-screen size
-    /// or placement must track the live camera without lag — the native gizmo draws its handles here so they don't
-    /// "swim" during a zoom. Read only atomically-simple state captured on the UI thread; do not run input logic here.
-    /// Default: no-op (interactors that don't need it keep drawing in <see cref="Draw"/>).
+    /// or placement must track the live camera without lag; the native gizmo draws its handles here so they stay
+    /// phase-locked to the camera during a zoom. Read only atomically-simple state captured on the UI thread; do not
+    /// run input logic here. Default: no-op (interactors that do not need it keep drawing in <see cref="Draw"/>).
     /// </summary>
     /// <param name="frame">The current render-frame snapshot.</param>
     void DrawOverlay(in FrameContext frame) { }
@@ -68,19 +68,27 @@ public interface IPointerInteractor
     /// <summary>
     /// True when this interactor reads ImGui IO itself and owns the mouse through its <b>own</b> ImGui window (the
     /// ImGuizmo gizmo backend), instead of being ray-hit-tested by <see cref="NoireInteract"/>. A self-driven
-    /// interactor runs its input + draw in a pre-pass <i>before</i> scene hover resolution (via
+    /// interactor runs its input and draw in a pre-pass <i>before</i> scene hover resolution (via
     /// <see cref="DrawSelfDriven"/>); while it reports it owns the mouse, the frame is a hard pass for scene picking
-    /// and NoireInteract shows no capture window of its own — the interactor's window is the single capture authority,
-    /// so the two never fight over the same click. Default <b>false</b> (an ordinary ray-hit-tested interactor).
+    /// and NoireInteract shows no capture window of its own. Default <b>false</b> (an ordinary ray-hit-tested interactor).
     /// </summary>
     bool SelfDriven => false;
 
     /// <summary>
-    /// For a <see cref="SelfDriven"/> interactor only: run its own input + draw for this frame and return whether it
+    /// For a <see cref="SelfDriven"/> interactor only: run its own input and draw for this frame and return whether it
     /// owns the mouse right now (a handle is hovered or being dragged). Called in the pre-pass before scene hover
-    /// resolution, so the answer gates scene picking and the capture window <i>this</i> frame, not a frame late.
-    /// Never called when <see cref="SelfDriven"/> is false. Default: no-op.
+    /// resolution, so the answer gates scene picking and the capture window this frame, not a frame late. Never called
+    /// when <see cref="SelfDriven"/> is false. Default: no-op.
     /// </summary>
     /// <param name="frame">The current frame snapshot.</param>
     bool DrawSelfDriven(in FrameContext frame) => false;
+
+    /// <summary>
+    /// Whether a hit reported by <see cref="HitTest"/> should be blocked when game-world geometry (a wall, terrain)
+    /// is nearer to the camera than the hit point, under <see cref="NoireInteract.WallOcclusionMode"/>. Default
+    /// <b>false</b>: interactor geometry stays grabbable through walls. The native gizmo returns true when its handles
+    /// are world-occluded (its depth mode is not fully on top), so a handle behind a wall is not grabbable there.
+    /// </summary>
+    /// <param name="token">The hit element from <see cref="HitTest"/>.</param>
+    bool OccludesBehindWalls(object token) => false;
 }

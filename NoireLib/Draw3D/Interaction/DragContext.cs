@@ -37,14 +37,14 @@ public sealed class DragContext
     /// <summary>Cursor ray direction (world, normalized) this frame.</summary>
     public Vector3 RayDirection { get; internal set; }
 
-    /// <summary>The current frame, for projection helpers (world↔screen).</summary>
+    /// <summary>The current frame, for projection helpers (world to screen and back).</summary>
     public FrameContext Frame { get; internal set; }
 
     /// <summary>Total screen-pixel movement since press.</summary>
     public Vector2 ScreenDelta => ScreenNow - ScreenStart;
 
     /// <summary>
-    /// Intersects the current cursor ray with a world plane, giving the point the user is pointing at on it —
+    /// Intersects the current cursor ray with a world plane, giving the point the user is pointing at on it:
     /// the basis for free (plane-constrained) dragging. Returns false when the ray is parallel to the plane.
     /// </summary>
     /// <param name="planePoint">Any point on the plane (often <see cref="PressWorldPoint"/>).</param>
@@ -55,9 +55,9 @@ public sealed class DragContext
 
     /// <summary>
     /// World-space movement of the grabbed point across a plane through <see cref="PressWorldPoint"/> with the given
-    /// normal — i.e. how far the drag has moved on that plane since press. Returns false if either ray is parallel.
+    /// normal, that is how far the drag has moved on that plane since press. Returns false if either ray is parallel.
     /// </summary>
-    /// <param name="planeNormal">The plane normal (e.g. the camera-facing direction for free move, or an axis for a constrained plane).</param>
+    /// <param name="planeNormal">The plane normal (for example the camera-facing direction for free move, or an axis for a constrained plane).</param>
     /// <param name="delta">Receives the world-space movement on the plane.</param>
     public bool TryPlaneDelta(Vector3 planeNormal, out Vector3 delta)
     {
@@ -72,7 +72,7 @@ public sealed class DragContext
     }
 
     /// <summary>
-    /// Signed distance the drag has moved along a world axis through <see cref="PressWorldPoint"/> — the basis for
+    /// Signed distance the drag has moved along a world axis through <see cref="PressWorldPoint"/>: the basis for
     /// axis-constrained dragging (project the cursor ray onto the axis line). Returns false if the ray is parallel to the axis.
     /// </summary>
     /// <param name="axisDirection">The axis direction (need not be normalized).</param>

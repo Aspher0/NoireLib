@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using NoireLib.Draw3D.Im;
 using NoireLib.Draw3D.Scene;
 using System;
@@ -8,10 +9,11 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 
 /// <summary>
 /// A move / rotate / scale gizmo for the V2 renderer: grab any <see cref="SceneNode"/> (or any world matrix) and
-/// transform it with axis / plane / screen handles, snapping and Local/World/Screen space. Handles are <b>real
-/// geometry</b> drawn through <see cref="ImDraw3D"/> and hit-tested with the render-time camera, so they never wobble
-/// under camera motion; by default (<see cref="GizmoOptions.Depth"/>) they draw on top of other 3D objects but are
-/// occluded by the game world, so a handle is never buried inside the object it edits yet still hides behind a wall.<br/>
+/// transform it with axis / plane / center handles, snapping and Local/World space. Handles are <b>real
+/// geometry</b> drawn through <see cref="ImDraw3D"/> and hit-tested in screen space against the render-time camera, so
+/// detection stays reliable at any camera angle; by default (<see cref="GizmoOptions.Depth"/>) they draw on top of other
+/// 3D objects but are occluded by the game world, so a handle is never buried inside the object it edits yet still hides
+/// behind a wall.<br/>
 /// The gizmo is a client of <see cref="NoireInteract"/>: it shares the one mouse-capture authority, so grabbing a
 /// handle takes the lead of input and the camera never pans underneath a drag. Construct one, <see cref="Attach"/> it
 /// to a node, and it draws and edits itself every frame until <see cref="Dispose"/>.
@@ -20,22 +22,39 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 {
     private const int HandleCount = (int)GizmoHandle.ScaleUniform + 1;
 
-    /// <summary>Translate arrows end at this fraction of the handle length; scale knobs sit at the full length, past them, on the same axis.</summary>
+    /// <summary>Translate arrows end at this fraction of the handle length; scale knobs sit further out, past them, on the same axis.</summary>
     private const float ArmRatio = 0.78f;
 
-    /// <summary>Immediate-layer draw layer for the handles — high, so they paint over translucent scene objects instead of being blended under them.</summary>
+    /// <summary>Scale balls sit at this fraction of the handle length along their axis, well past the translate arrow tip with a clear gap and no connecting stem.</summary>
+    private const float ScaleKnobRatio = 1.1f;
+
+    /// <summary>Scale ball radius as a fraction of the handle length.</summary>
+    private const float ScaleKnobBallRatio = 0.09f;
+
+    /// <summary>Immediate-layer draw layer for the handles: high, so they paint over translucent scene objects instead of being blended under them.</summary>
     private const int GizmoLayer = 100;
 
+    /// <summary>Scaling never drives a component below this, so a matrix never decomposes to a zeroed (unrecoverable) basis.</summary>
+    private const float MinScale = 1e-3f;
+
     private readonly GizmoHandleRef[] tokens = new GizmoHandleRef[HandleCount];
-    private readonly List<Vector3> circleScratch = new(64);
+    private readonly List<Vector3> circleScratch = new(80);
     private readonly string disposeKey;
 
     private SceneNode? node;
     private Func<Matrix4x4>? matrixGetter;
     private Action<Matrix4x4>? matrixSetter;
+    private IReadOnlyList<SceneNode>? groupNodes;
+    private Matrix4x4[] groupPressWorlds = Array.Empty<Matrix4x4>();
+    private Matrix4x4 groupPressPivot = Matrix4x4.Identity;
+    private Matrix4x4 groupPivot = Matrix4x4.Identity;
     private bool disposed;
 
-    // Frozen drag state (captured at press so handles don't wobble as the target moves).
+    // The scale a scaling gesture is measured against: captured when a target is bound, so scaling is always relative
+    // to the original size and can recover from near-zero (multiplying the current size would lock a zeroed axis at zero).
+    private Vector3 baseScale = Vector3.One;
+
+    // Frozen drag state (captured at press so handles do not wobble as the target moves).
     private bool dragging;
     private GizmoHandle activeHandle = GizmoHandle.None;
     private GizmoHandle hoveredHandle = GizmoHandle.None;
@@ -47,6 +66,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private Vector3 pressScale, pressTrans;
     private Quaternion pressRot;
     private Vector2 originScreen;
+
+    // Live drag readout, for the on-screen preview overlay: how much this gesture has moved / rotated / scaled so far.
+    private Vector3 feedbackTranslate;
+    private float feedbackAngleDeg;
+    private Vector3 feedbackScale = Vector3.One;
 
     /// <summary>Creates a gizmo and registers it with <see cref="NoireInteract"/> (disposed automatically with NoireLib).</summary>
     /// <param name="op">Which operations to expose. Default <see cref="GizmoOp.Universal"/>.</param>
@@ -80,7 +104,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>The handle currently under the cursor (or being dragged).</summary>
     public GizmoHandle HoveredHandle => dragging ? activeHandle : hoveredHandle;
 
-    /// <summary>Raised when a drag begins (one edit transaction — pair with your undo system).</summary>
+    /// <summary>Raised when a drag begins (one edit transaction; pair with your undo system).</summary>
     public event Action<NoireGizmo>? OnEditStart;
 
     /// <summary>Raised on each frame the target is edited.</summary>
@@ -89,8 +113,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>Raised when a drag ends.</summary>
     public event Action<NoireGizmo>? OnEditEnd;
 
-    /// <summary>The node the gizmo currently edits (null when bound to a matrix or nothing).</summary>
+    /// <summary>The node the gizmo currently edits (null when bound to a matrix, a group, or nothing).</summary>
     public SceneNode? Target => node;
+
+    /// <summary>The nodes edited as a group (null unless bound with <see cref="AttachGroup"/>).</summary>
+    public IReadOnlyList<SceneNode>? TargetGroup => groupNodes;
 
     /// <summary>Binds the gizmo to a scene node; it edits the node's local TRS (converting through the parent as needed).</summary>
     /// <param name="target">The node to manipulate.</param>
@@ -100,6 +127,8 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         node = target;
         matrixGetter = null;
         matrixSetter = null;
+        groupNodes = null;
+        CaptureBaseScale();
         return this;
     }
 
@@ -113,6 +142,27 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         node = null;
         matrixGetter = getter;
         matrixSetter = setter;
+        groupNodes = null;
+        CaptureBaseScale();
+        return this;
+    }
+
+    /// <summary>
+    /// Binds the gizmo to several nodes at once. It shows a single gizmo centered on the group and moves / rotates /
+    /// scales every member together around that pivot. A group of one behaves like <see cref="Attach"/> on that node.
+    /// </summary>
+    /// <param name="targets">The nodes to manipulate together.</param>
+    public NoireGizmo AttachGroup(IReadOnlyList<SceneNode> targets)
+    {
+        ArgumentNullException.ThrowIfNull(targets);
+        if (targets.Count == 1)
+            return Attach(targets[0]);
+
+        node = null;
+        matrixGetter = null;
+        matrixSetter = null;
+        groupNodes = new List<SceneNode>(targets); // snapshot: the render thread iterates this while the caller's set may change
+        baseScale = Vector3.One; // the group pivot is unit-scaled; scaling grows/shrinks members around it
         return this;
     }
 
@@ -122,14 +172,43 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         node = null;
         matrixGetter = null;
         matrixSetter = null;
+        groupNodes = null;
     }
 
-    private bool HasTarget => (node != null && !node.Destroyed) || matrixGetter != null;
+    private bool HasTarget
+        => (node != null && !node.Destroyed) || matrixGetter != null || (groupNodes != null && groupNodes.Count > 0);
+
+    /// <summary>
+    /// Captures the current target scale as the reference a scaling gesture is measured against, so scaling stays
+    /// relative to the original size. An axis found essentially collapsed uses a reference of 1 instead, so re-binding
+    /// a zeroed object can still grow it back at a normal rate.
+    /// </summary>
+    private void CaptureBaseScale()
+    {
+        if (TryGetWorld(out var w))
+        {
+            DecomposeSafe(in w, out var s, out _, out _);
+            baseScale = new Vector3(BaseReference(s.X), BaseReference(s.Y), BaseReference(s.Z));
+        }
+        else
+        {
+            baseScale = Vector3.One;
+        }
+    }
+
+    private static float BaseReference(float scaleComponent)
+    {
+        var magnitude = MathF.Abs(scaleComponent);
+        return magnitude > 0.01f ? magnitude : 1f;
+    }
+
+    /// <summary>True while a drag is in progress on either backend (native ray drag or ImGuizmo), so the group pivot stays frozen to the gesture.</summary>
+    private bool IsGroupDragActive => dragging || imguizmoUsing;
 
     // ---------------------------------------------------------------- IPointerInteractor
 
     /// <inheritdoc/>
-    public int Priority => 1000; // above scene nodes — handles read on top
+    public int Priority => 1000; // above scene nodes: handles read on top
 
     /// <inheritdoc/>
     public bool Active => Enabled && Visible && Op != GizmoOp.None && HasTarget && !disposed;
@@ -140,11 +219,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private GizmoHandle TokenToHandle(object? token) => token is GizmoHandleRef r && ReferenceEquals(r.Gizmo, this) ? r.Handle : GizmoHandle.None;
 
     /// <summary>
-    /// Whether the native (in-world, ray-hit-tested) backend is active. The ImGuizmo backend handles its own input —
-    /// but we fall back to native so a gizmo still shows and stays grabbable (instead of silently vanishing) when either
-    /// its binding can't initialise (see <see cref="EnsureImGuizmoApi"/>) <b>or</b> the frame used the wholesale-VP
-    /// fallback camera, which exposes no separate view/proj for ImGuizmo to consume (<see cref="DrawImGuizmo"/> would
-    /// otherwise early-out and draw nothing — the "ImGuizmo never appears" symptom).
+    /// Whether the native (in-world, screen-hit-tested) backend is active. It is active whenever the ImGuizmo backend is
+    /// not selected, and also as an automatic fallback so a gizmo still shows and stays grabbable (instead of silently
+    /// vanishing) when the ImGuizmo backend cannot be used: a binding that failed to initialise (see
+    /// <see cref="EnsureImGuizmoApi"/>), or a frame that used the wholesale view-projection fallback camera (which
+    /// exposes no separate view/proj to feed ImGuizmo).
     /// </summary>
     private bool IsNative
         => Options.Backend != GizmoBackend.ImGuizmo
@@ -173,15 +252,19 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             return false;
 
         var basis = ComputeBasis(in world, in frame);
-        var best = PickHandle(rayOrigin, rayDirection, in frame, in basis, out var bestT, out var bestPoint);
+        var best = PickHandle(screen, in frame, in basis, out var bestDistance, out var bestPoint);
         if (best == GizmoHandle.None)
             return false;
 
         token = tokens[(int)best];
-        distance = bestT;
+        distance = bestDistance;
         hitPoint = bestPoint;
         return true;
     }
+
+    /// <inheritdoc/>
+    public bool OccludesBehindWalls(object token)
+        => IsNative && ResolveDepth() != GizmoDepth.AlwaysOnTop;
 
     /// <inheritdoc/>
     public void OnHoverEnter(object token) => hoveredHandle = TokenToHandle(token);
@@ -190,7 +273,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     public void OnHoverExit(object token) => hoveredHandle = GizmoHandle.None;
 
     /// <inheritdoc/>
-    public void OnClick(object token, MouseButton button) { /* a click that never became a drag — nothing to apply */ }
+    public void OnClick(object token, MouseButton button) { /* a click that never became a drag: nothing to apply */ }
 
     /// <inheritdoc/>
     public void OnDragStart(object token, DragContext context)
@@ -209,6 +292,13 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
         DecomposeSafe(in world, out pressScale, out pressRot, out pressTrans);
         originScreen = context.Frame.TryWorldToScreen(dragOrigin, out var s) ? s : context.ScreenStart;
+
+        if (groupNodes != null)
+            CaptureGroupPress(in world);
+
+        feedbackTranslate = Vector3.Zero;
+        feedbackAngleDeg = 0f;
+        feedbackScale = Vector3.One;
 
         dragging = true;
         RaiseEditStart();
@@ -231,6 +321,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         else if (GizmoHandleInfo.IsScale(activeHandle))
             newScale = SolveScale(context);
 
+        // Live readout for the preview overlay.
+        feedbackTranslate = newTrans - pressTrans;
+        feedbackScale = new Vector3(newScale.X / baseScale.X, newScale.Y / baseScale.Y, newScale.Z / baseScale.Z);
+        feedbackAngleDeg = AngleBetweenDeg(pressRot, newRot);
+
         var world = Matrix4x4.CreateScale(newScale)
                     * Matrix4x4.CreateFromQuaternion(newRot)
                     * Matrix4x4.CreateTranslation(newTrans);
@@ -246,7 +341,15 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
         dragging = false;
         activeHandle = GizmoHandle.None;
+        groupPressWorlds = Array.Empty<Matrix4x4>();
         RaiseEditEnd();
+    }
+
+    /// <summary>Unsigned angle in degrees between two orientations, for the rotation readout.</summary>
+    private static float AngleBetweenDeg(Quaternion a, Quaternion b)
+    {
+        var delta = Quaternion.Normalize(Quaternion.Concatenate(Quaternion.Inverse(a), b));
+        return MathF.Acos(Math.Clamp(MathF.Abs(delta.W), 0f, 1f)) * 2f * (180f / MathF.PI);
     }
 
     private void RaiseEditStart() => SafeRaise(OnEditStart, "OnEditStart");
@@ -274,28 +377,70 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     private Vector3 SolveTranslate(DragContext ctx)
     {
-        var axisIndex = GizmoHandleInfo.AxisIndex(activeHandle);
+        // The unsnapped world position first, from either an axis constraint or a plane / center-plane constraint.
+        Vector3 moved;
         if (activeHandle is GizmoHandle.TranslateX or GizmoHandle.TranslateY or GizmoHandle.TranslateZ)
         {
-            var axis = AxisByIndex(dragAx, dragAy, dragAz, axisIndex);
+            var axis = AxisByIndex(dragAx, dragAy, dragAz, GizmoHandleInfo.AxisIndex(activeHandle));
             var d = GizmoMath.AxisTranslationDelta(axis, dragOrigin, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
-            d = InteractMath.Snap(d, TranslateSnapScalar(axisIndex));
-            return pressTrans + axis * d;
+            moved = pressTrans + axis * d;
+        }
+        else
+        {
+            var normal = activeHandle switch
+            {
+                GizmoHandle.TranslateYZ => dragAx,
+                GizmoHandle.TranslateZX => dragAy,
+                GizmoHandle.TranslateXY => dragAz,
+                _ => dragViewDir, // TranslateScreen: free camera-facing plane
+            };
+            moved = pressTrans + GizmoMath.PlaneTranslationDelta(dragOrigin, normal, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
         }
 
-        // Plane / screen move.
-        var normal = activeHandle switch
-        {
-            GizmoHandle.TranslateYZ => dragAx,
-            GizmoHandle.TranslateZX => dragAy,
-            GizmoHandle.TranslateXY => dragAz,
-            _ => dragViewDir, // TranslateScreen
-        };
-
-        var delta = GizmoMath.PlaneTranslationDelta(dragOrigin, normal, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
-        var moved = pressTrans + delta;
-        return Options.Space == GizmoSpace.World ? GizmoMath.SnapTranslation(moved, Options.Snap) : moved;
+        return SnapTranslation(moved);
     }
+
+    /// <summary>
+    /// Snaps a translated position in the gizmo's own basis. Only the axes the active handle drives are snapped (an axis
+    /// handle snaps one, a plane handle its two in-plane axes, the center all three); the axes it does not drive are held
+    /// at the pressed value, so a constrained drag never nudges a perpendicular axis onto the grid. In World space the
+    /// snap is per-axis against the absolute world grid; in Local space it is a single-increment snap of the movement
+    /// along each local axis.
+    /// </summary>
+    private Vector3 SnapTranslation(Vector3 moved)
+    {
+        var (dx, dy, dz) = ActiveTranslateAxes();
+
+        if (Options.Space == GizmoSpace.World)
+        {
+            var result = pressTrans;
+            if (dx) result.X = InteractMath.Snap(moved.X, Options.Snap.X);
+            if (dy) result.Y = InteractMath.Snap(moved.Y, Options.Snap.Y);
+            if (dz) result.Z = InteractMath.Snap(moved.Z, Options.Snap.Z);
+            return result;
+        }
+
+        // Local space has no per-axis world grid, so snap the movement along each driven local axis by one increment.
+        var step = MathF.Max(Options.Snap.X, MathF.Max(Options.Snap.Y, Options.Snap.Z));
+        var delta = moved - pressTrans;
+        var local = pressTrans;
+        if (dx) local += dragAx * InteractMath.Snap(Vector3.Dot(delta, dragAx), step);
+        if (dy) local += dragAy * InteractMath.Snap(Vector3.Dot(delta, dragAy), step);
+        if (dz) local += dragAz * InteractMath.Snap(Vector3.Dot(delta, dragAz), step);
+        return local;
+    }
+
+    /// <summary>Which of the gizmo's three basis axes the active translate handle moves along.</summary>
+    private (bool X, bool Y, bool Z) ActiveTranslateAxes() => activeHandle switch
+    {
+        GizmoHandle.TranslateX => (true, false, false),
+        GizmoHandle.TranslateY => (false, true, false),
+        GizmoHandle.TranslateZ => (false, false, true),
+        GizmoHandle.TranslateYZ => (false, true, true),
+        GizmoHandle.TranslateZX => (true, false, true),
+        GizmoHandle.TranslateXY => (true, true, false),
+        _ => (true, true, true), // TranslateScreen: free move on all axes
+    };
 
     private Quaternion SolveRotate(DragContext ctx)
     {
@@ -310,46 +455,141 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     private Vector3 SolveScale(DragContext ctx)
     {
+        // Scaling adds base-scaled increments to the size at press, so a gesture is always measured against the original
+        // size and a component driven to near-zero can grow back (multiplying the current size would keep zero at zero).
         if (activeHandle == GizmoHandle.ScaleUniform)
         {
-            var f = GizmoMath.UniformScaleFactor(originScreen, ctx.ScreenStart, ctx.ScreenNow);
-            var s = pressScale * f;
-            return new Vector3(GizmoMath.SnapScale(s.X, Options.ScaleSnap), GizmoMath.SnapScale(s.Y, Options.ScaleSnap), GizmoMath.SnapScale(s.Z, Options.ScaleSnap));
+            var frac = GizmoMath.UniformScaleFactor(originScreen, ctx.ScreenStart, ctx.ScreenNow) - 1f;
+            return new Vector3(
+                ScaleComponent(pressScale.X, baseScale.X, frac),
+                ScaleComponent(pressScale.Y, baseScale.Y, frac),
+                ScaleComponent(pressScale.Z, baseScale.Z, frac));
         }
 
         var axisIndex = GizmoHandleInfo.AxisIndex(activeHandle);
         var axis = AxisByIndex(dragSx, dragSy, dragSz, axisIndex);
-        var factor = GizmoMath.AxisScaleFactor(axis, dragOrigin, dragHandleLen, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
+        var delta = GizmoMath.AxisTranslationDelta(axis, dragOrigin, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
+        var axisFrac = dragHandleLen > 1e-6f ? delta / dragHandleLen : 0f;
         var result = pressScale;
-        SetComponent(ref result, axisIndex, GizmoMath.SnapScale(GetComponent(pressScale, axisIndex) * factor, Options.ScaleSnap));
+        SetComponent(ref result, axisIndex, ScaleComponent(GetComponent(pressScale, axisIndex), GetComponent(baseScale, axisIndex), axisFrac));
         return result;
     }
 
-    private float TranslateSnapScalar(int axisIndex)
-        => Options.Space == GizmoSpace.World
-            ? GetComponent(Options.Snap, axisIndex)
-            : MathF.Max(Options.Snap.X, MathF.Max(Options.Snap.Y, Options.Snap.Z));
+    /// <summary>New scale for one component: the size at press plus the base size times the drag fraction, floored so it never degenerates, then snapped.</summary>
+    private float ScaleComponent(float pressValue, float baseValue, float frac)
+        => GizmoMath.SnapScale(MathF.Max(MinScale, pressValue + baseValue * frac), Options.ScaleSnap);
 
-    // ---------------------------------------------------------------- hit-testing
+    // ---------------------------------------------------------------- screen-space hit-testing
 
-    private GizmoHandle PickHandle(Vector3 ro, Vector3 rd, in FrameContext frame, in Basis b, out float bestT, out Vector3 bestPoint)
+    /// <summary>
+    /// Finds the handle nearest the cursor by projecting every handle into screen space and measuring pixel distance,
+    /// so detection is reliable at any camera angle (a world-space ray test degenerates on edge-on rings and grazing
+    /// planes). Ties are broken toward the handle nearer the camera. <paramref name="bestDistance"/> receives the
+    /// camera distance to the chosen handle; <paramref name="bestPoint"/> receives a representative world point on it.
+    /// </summary>
+    private GizmoHandle PickHandle(Vector2 cursor, in FrameContext frame, in Basis b, out float bestDistance, out Vector3 bestPoint)
     {
-        var best = GizmoHandle.None;
-        var closest = float.MaxValue;
-        var point = b.Origin;
-
-        var grab = GizmoMath.ScreenConstantLength(in frame, b.Origin, Options.GrabPixelTolerance);
+        var f = frame;                 // local functions cannot capture an 'in' parameter
+        var origin = b.Origin;
+        var eye = f.EyePos;
         var len = b.HandleLen;
-        var arm = len * ArmRatio;   // translate arrow ends here; the scale knob sits past it at len, on the same axis
+        var arm = len * ArmRatio;
+        var axisStart = len * 0.16f;   // leave the very center of the axis to the center handle
+        var tol = MathF.Max(4f, Options.GrabPixelTolerance + Options.HandlePixelThickness * 0.5f);
 
-        void Consider(GizmoHandle h, float t, Vector3 p)
+        var best = GizmoHandle.None;
+        var bestPixels = float.MaxValue;
+        var bestCam = float.MaxValue;
+        var bestWorld = origin;
+
+        void Consider(GizmoHandle h, float pixels, Vector3 world)
         {
-            if (t >= 0f && t < closest)
+            if (pixels > tol)
+                return;
+
+            var cam = Vector3.Distance(eye, world);
+            if (pixels < bestPixels - 0.5f || (pixels <= bestPixels + 0.5f && cam < bestCam))
             {
-                closest = t;
                 best = h;
-                point = p;
+                bestPixels = pixels;
+                bestCam = cam;
+                bestWorld = world;
             }
+        }
+
+        void ConsiderAxis(Vector3 axisDir, GizmoHandle h)
+        {
+            var tip = origin + axisDir * arm;
+            if (f.TryWorldToScreen(origin + axisDir * axisStart, out var a) && f.TryWorldToScreen(tip, out var t))
+                Consider(h, PixelPointToSegment(cursor, a, t), tip);
+        }
+
+        void ConsiderPlane(Vector3 a, Vector3 bAxis, GizmoHandle h)
+        {
+            var lo = len * 0.18f;
+            var hi = len * 0.45f;
+            var p0 = origin + a * lo + bAxis * lo;
+            var p1 = origin + a * hi + bAxis * lo;
+            var p2 = origin + a * hi + bAxis * hi;
+            var p3 = origin + a * lo + bAxis * hi;
+            if (!f.TryWorldToScreen(p0, out var s0) || !f.TryWorldToScreen(p1, out var s1) ||
+                !f.TryWorldToScreen(p2, out var s2) || !f.TryWorldToScreen(p3, out var s3))
+                return;
+
+            var center = origin + (a + bAxis) * ((lo + hi) * 0.5f);
+            var px = PointInQuad(cursor, s0, s1, s2, s3)
+                ? 0f
+                : Min4(PixelPointToSegment(cursor, s0, s1), PixelPointToSegment(cursor, s1, s2),
+                       PixelPointToSegment(cursor, s2, s3), PixelPointToSegment(cursor, s3, s0));
+            Consider(h, px, center);
+        }
+
+        void ConsiderRing(Vector3 axis, float radius, GizmoHandle h)
+        {
+            axis = InteractMath.SafeNormalize(axis, Vector3.UnitY);
+            var reference = MathF.Abs(axis.Y) < 0.9f ? Vector3.UnitY : Vector3.UnitX;
+            var u = InteractMath.SafeNormalize(Vector3.Cross(axis, reference), Vector3.UnitX);
+            var v = Vector3.Cross(axis, u);
+
+            const int seg = 48;
+            var prevValid = false;
+            var prevS = Vector2.Zero;
+            var prevW = origin;
+            var ringPixels = float.MaxValue;
+            var ringWorld = origin;
+            for (var k = 0; k <= seg; k++)
+            {
+                var (sin, cos) = MathF.SinCos(k * MathF.Tau / seg);
+                var w = origin + (u * cos + v * sin) * radius;
+                if (!f.TryWorldToScreen(w, out var s))
+                {
+                    prevValid = false;
+                    continue;
+                }
+
+                if (prevValid)
+                {
+                    var d = PixelPointToSegment(cursor, prevS, s);
+                    if (d < ringPixels)
+                    {
+                        ringPixels = d;
+                        ringWorld = (prevW + w) * 0.5f;
+                    }
+                }
+
+                prevS = s;
+                prevW = w;
+                prevValid = true;
+            }
+
+            if (ringPixels < float.MaxValue)
+                Consider(h, ringPixels, ringWorld);
+        }
+
+        void ConsiderPoint(Vector3 world, GizmoHandle h)
+        {
+            if (f.TryWorldToScreen(world, out var s))
+                Consider(h, Vector2.Distance(cursor, s), world);
         }
 
         var translate = (Op & GizmoOp.Translate) != 0;
@@ -358,85 +598,69 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
         if (translate)
         {
-            TestAxisSegment(ro, rd, b.Origin, b.Ax, arm, grab, GizmoHandle.TranslateX, Consider);
-            TestAxisSegment(ro, rd, b.Origin, b.Ay, arm, grab, GizmoHandle.TranslateY, Consider);
-            TestAxisSegment(ro, rd, b.Origin, b.Az, arm, grab, GizmoHandle.TranslateZ, Consider);
-            TestPlane(ro, rd, b.Origin, b.Ay, b.Az, b.Ax, len, GizmoHandle.TranslateYZ, Consider);
-            TestPlane(ro, rd, b.Origin, b.Az, b.Ax, b.Ay, len, GizmoHandle.TranslateZX, Consider);
-            TestPlane(ro, rd, b.Origin, b.Ax, b.Ay, b.Az, len, GizmoHandle.TranslateXY, Consider);
+            ConsiderAxis(b.Ax, GizmoHandle.TranslateX);
+            ConsiderAxis(b.Ay, GizmoHandle.TranslateY);
+            ConsiderAxis(b.Az, GizmoHandle.TranslateZ);
+            ConsiderPlane(b.Ay, b.Az, GizmoHandle.TranslateYZ);
+            ConsiderPlane(b.Az, b.Ax, GizmoHandle.TranslateZX);
+            ConsiderPlane(b.Ax, b.Ay, GizmoHandle.TranslateXY);
         }
 
         if (rotate)
         {
-            TestRing(ro, rd, b.Origin, b.Ax, len, grab, GizmoHandle.RotateX, Consider);
-            TestRing(ro, rd, b.Origin, b.Ay, len, grab, GizmoHandle.RotateY, Consider);
-            TestRing(ro, rd, b.Origin, b.Az, len, grab, GizmoHandle.RotateZ, Consider);
-            TestRing(ro, rd, b.Origin, b.ViewDir, len * 1.18f, grab, GizmoHandle.RotateScreen, Consider);
+            ConsiderRing(b.Ax, len, GizmoHandle.RotateX);
+            ConsiderRing(b.Ay, len, GizmoHandle.RotateY);
+            ConsiderRing(b.Az, len, GizmoHandle.RotateZ);
+            ConsiderRing(b.ViewDir, len * 1.18f, GizmoHandle.RotateScreen);
         }
 
         if (scale)
         {
-            // Scale knobs sit at len (past the translate arrows at arm), on the same axes — so they read as the same
-            // axis line without the shafts collapsing into each other.
-            TestAxisKnob(ro, rd, b.Origin, b.Sx, len, arm, grab, GizmoHandle.ScaleX, Consider);
-            TestAxisKnob(ro, rd, b.Origin, b.Sy, len, arm, grab, GizmoHandle.ScaleY, Consider);
-            TestAxisKnob(ro, rd, b.Origin, b.Sz, len, arm, grab, GizmoHandle.ScaleZ, Consider);
+            var scaleKnob = len * ScaleKnobRatio;
+            ConsiderPoint(origin + b.Sx * scaleKnob, GizmoHandle.ScaleX);
+            ConsiderPoint(origin + b.Sy * scaleKnob, GizmoHandle.ScaleY);
+            ConsiderPoint(origin + b.Sz * scaleKnob, GizmoHandle.ScaleZ);
         }
 
-        // Center handle: uniform scale wins the center when scale is enabled, else the screen-move handle.
-        if (scale && InteractMath.RaySphere(ro, rd, b.Origin, len * 0.13f, out var tc))
-            Consider(GizmoHandle.ScaleUniform, tc, b.Origin);
-        else if (translate && InteractMath.RaySphere(ro, rd, b.Origin, len * 0.12f, out var ts))
-            Consider(GizmoHandle.TranslateScreen, ts, b.Origin);
+        // The center handle is a screen-plane move whenever translate is available (it moves all three axes); it falls
+        // back to uniform scale only for a scale-only gizmo.
+        if (translate)
+            ConsiderPoint(origin, GizmoHandle.TranslateScreen);
+        else if (scale)
+            ConsiderPoint(origin, GizmoHandle.ScaleUniform);
 
-        bestT = closest;
-        bestPoint = point;
+        bestDistance = best == GizmoHandle.None ? 0f : bestCam;
+        bestPoint = bestWorld;
         return best;
     }
 
-    private static void TestAxisSegment(Vector3 ro, Vector3 rd, Vector3 origin, Vector3 axis, float len, float grab, GizmoHandle h, Action<GizmoHandle, float, Vector3> consider)
+    /// <summary>Pixel distance from a point to a finite screen-space segment.</summary>
+    private static float PixelPointToSegment(Vector2 p, Vector2 a, Vector2 b)
     {
-        var end = origin + axis * len;
-        var dist = InteractMath.RaySegmentDistance(ro, rd, origin + axis * (len * 0.12f), end, out var t);
-        if (dist <= grab)
-            consider(h, t, ro + rd * t);
+        var ab = b - a;
+        var lenSq = ab.LengthSquared();
+        if (lenSq < 1e-6f)
+            return Vector2.Distance(p, a);
+
+        var t = Math.Clamp(Vector2.Dot(p - a, ab) / lenSq, 0f, 1f);
+        return Vector2.Distance(p, a + ab * t);
     }
 
-    private static void TestAxisKnob(Vector3 ro, Vector3 rd, Vector3 origin, Vector3 axis, float knobLen, float stubStart, float grab, GizmoHandle h, Action<GizmoHandle, float, Vector3> consider)
+    /// <summary>Whether a screen point lies inside a convex quad given in order (winding-agnostic).</summary>
+    private static bool PointInQuad(Vector2 p, Vector2 a, Vector2 b, Vector2 c, Vector2 d)
     {
-        var knob = origin + axis * knobLen;
-        if (InteractMath.RaySphere(ro, rd, knob, MathF.Max(grab, knobLen * 0.10f), out var t))
-        {
-            consider(h, t, knob);
-            return;
-        }
-
-        // Only the short connector from the translate arrow tip out to the knob is grabbable — so it never overlaps the
-        // translate shaft's grab region below it.
-        var dist = InteractMath.RaySegmentDistance(ro, rd, origin + axis * stubStart, knob, out var ts);
-        if (dist <= grab)
-            consider(h, ts, ro + rd * ts);
+        var s0 = Cross(a, b, p);
+        var s1 = Cross(b, c, p);
+        var s2 = Cross(c, d, p);
+        var s3 = Cross(d, a, p);
+        var hasNeg = s0 < 0f || s1 < 0f || s2 < 0f || s3 < 0f;
+        var hasPos = s0 > 0f || s1 > 0f || s2 > 0f || s3 > 0f;
+        return !(hasNeg && hasPos);
     }
 
-    private static void TestPlane(Vector3 ro, Vector3 rd, Vector3 origin, Vector3 axisA, Vector3 axisB, Vector3 normal, float len, GizmoHandle h, Action<GizmoHandle, float, Vector3> consider)
-    {
-        if (!InteractMath.RayPlane(ro, rd, origin, normal, out var t, out var hit) || t < 0f)
-            return;
+    private static float Cross(Vector2 a, Vector2 b, Vector2 p) => (b.X - a.X) * (p.Y - a.Y) - (b.Y - a.Y) * (p.X - a.X);
 
-        var rel = hit - origin;
-        var u = Vector3.Dot(rel, axisA);
-        var v = Vector3.Dot(rel, axisB);
-        var lo = len * 0.18f;
-        var hi = len * 0.45f;
-        if (u >= lo && u <= hi && v >= lo && v <= hi)
-            consider(h, t, hit);
-    }
-
-    private static void TestRing(Vector3 ro, Vector3 rd, Vector3 origin, Vector3 axis, float radius, float grab, GizmoHandle h, Action<GizmoHandle, float, Vector3> consider)
-    {
-        if (InteractMath.RayRing(ro, rd, origin, axis, radius, grab, out var t))
-            consider(h, t, ro + rd * t);
-    }
+    private static float Min4(float a, float b, float c, float d) => MathF.Min(MathF.Min(a, b), MathF.Min(c, d));
 
     // ---------------------------------------------------------------- drawing
 
@@ -455,10 +679,10 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     /// <inheritdoc/>
     /// <remarks>
-    /// UI-thread pass for the native backend: it only tracks which handle is hovered. The handles themselves are drawn
-    /// in <see cref="DrawOverlay"/> on the render thread with the CURRENT frame, so their screen-constant size tracks
-    /// the live camera instead of lagging it a frame during zoom (the handle "swim"). ImGuizmo is self-driven and
-    /// never reaches here.
+    /// UI-thread pass for the native backend: it tracks which handle is hovered and, during a drag, draws the 2D
+    /// preview overlay (anchor, guide line, live values). The handles themselves are drawn in <see cref="DrawOverlay"/>
+    /// on the render thread with the current frame, so their screen-constant size tracks the live camera. ImGuizmo is
+    /// self-driven and never reaches here.
     /// </remarks>
     public void Draw(in FrameContext frame, object? hovered)
     {
@@ -466,8 +690,100 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             return;
 
         if (!dragging)
+        {
             hoveredHandle = TokenToHandle(hovered);
+            return;
+        }
+
+        if (Options.ShowDragFeedback)
+            DrawDragFeedback(in frame);
     }
+
+    /// <summary>
+    /// Draws the drag preview on the ImGui foreground list: a fixed anchor marking where the target's center was at
+    /// press (glued to that world point as the camera moves), a guide line to the current center, and the live amount
+    /// moved / rotated / scaled. Mirrors the feedback the ImGuizmo backend draws itself.
+    /// </summary>
+    private void DrawDragFeedback(in FrameContext frame)
+    {
+        var draw = ImGui.GetForegroundDrawList();
+        var haveAnchor = frame.TryWorldToScreen(dragOrigin, out var anchor);
+        var haveCurrent = frame.TryWorldToScreen(dragOrigin + feedbackTranslate, out var current);
+
+        var white = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 1f));
+        var whiteDim = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.65f));
+        var amber = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 0.84f, 0.30f, 1f));
+        var shadow = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.75f));
+
+        if (haveAnchor)
+            draw.AddCircle(anchor, 7f, white, 24, 1.6f);
+
+        string label;
+        if (GizmoHandleInfo.IsRotate(activeHandle))
+        {
+            if (haveAnchor)
+                draw.AddCircle(anchor, 22f, amber, 32, 1.5f);
+            label = $"{feedbackAngleDeg:0.0} deg";
+        }
+        else
+        {
+            if (haveAnchor && haveCurrent)
+            {
+                draw.AddLine(anchor, current, whiteDim, 1.5f);
+                draw.AddCircleFilled(current, 3.5f, amber);
+            }
+
+            if (GizmoHandleInfo.IsScale(activeHandle))
+            {
+                label = activeHandle == GizmoHandle.ScaleUniform
+                    ? $"x{feedbackScale.X:0.00}"
+                    : $"{"XYZ"[GizmoHandleInfo.AxisIndex(activeHandle)]} x{ScaleComponentReadout():0.00}";
+            }
+            else
+            {
+                label = TranslateReadout();
+            }
+        }
+
+        var anchorText = haveCurrent ? current : anchor;
+        var textPos = anchorText + new Vector2(12f, -6f);
+        draw.AddText(textPos + new Vector2(1f, 1f), shadow, label);
+        draw.AddText(textPos, white, label);
+    }
+
+    /// <summary>
+    /// The translation readout, measured along the axes the active handle drives, in the gizmo's own basis. A single-axis
+    /// drag reads that one axis, a plane drag its two; in Local space the components follow the object's local axes, so a
+    /// local-axis drag still reads a single value rather than its world decomposition.
+    /// </summary>
+    private string TranslateReadout()
+    {
+        const float eps = 0.005f;
+        var (dx, dy, dz) = ActiveTranslateAxes();
+        var text = string.Empty;
+        if (dx)
+            AppendReadoutAxis(ref text, 'X', Vector3.Dot(feedbackTranslate, dragAx), eps);
+        if (dy)
+            AppendReadoutAxis(ref text, 'Y', Vector3.Dot(feedbackTranslate, dragAy), eps);
+        if (dz)
+            AppendReadoutAxis(ref text, 'Z', Vector3.Dot(feedbackTranslate, dragAz), eps);
+        return text.Length > 0 ? text : "0.00";
+    }
+
+    private static void AppendReadoutAxis(ref string text, char axis, float value, float eps)
+    {
+        if (MathF.Abs(value) < eps)
+            return;
+
+        text += $"{(text.Length > 0 ? "  " : string.Empty)}{axis} {value:+0.00;-0.00}";
+    }
+
+    private float ScaleComponentReadout() => GizmoHandleInfo.AxisIndex(activeHandle) switch
+    {
+        0 => feedbackScale.X,
+        1 => feedbackScale.Y,
+        _ => feedbackScale.Z,
+    };
 
     /// <inheritdoc/>
     public void DrawOverlay(in FrameContext frame)
@@ -475,28 +791,25 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         if (!Active || !IsNative || !TryGetWorld(out var world))
             return;
 
-        // The ImGuizmo backend was asked for but native is drawing (binding failed or fallback camera) — say why, once.
+        // The ImGuizmo backend was asked for but native is drawing (binding failed or fallback camera).
         if (Options.Backend == GizmoBackend.ImGuizmo && NoireInteract.DebugLog && !imguizmoNativeFallbackLogged)
         {
             imguizmoNativeFallbackLogged = true;
             NoireLogger.LogInfo(
-                $"[Gizmo] ImGuizmo requested but drawing NATIVE: apiReady={EnsureImGuizmoApi()} " +
-                $"fallbackCamera={(NoireDraw3D.LastFrameValid && NoireDraw3D.LastFrame.UsedFallbackCamera)}. " +
-                "fallbackCamera=true → the renderer exposes no separate view/proj for ImGuizmo (native is correct); " +
-                "apiReady=false → the ImGuizmo binding failed to initialise.",
+                $"[Gizmo] ImGuizmo requested but drawing native: apiReady={EnsureImGuizmoApi()} " +
+                $"fallbackCamera={(NoireDraw3D.LastFrameValid && NoireDraw3D.LastFrame.UsedFallbackCamera)}.",
                 "Draw3D");
         }
 
-        // Draw from a LIVE basis every frame — even mid-drag. It recomputes the origin (a translate carries the gizmo
-        // with the object), the on-screen size (screen-constant regardless of camera distance/zoom, so the handles
-        // never shrink/grow as the object moves nearer/farther) and, in Local space, the axes (translate arrows and the
-        // always-local scale knobs rotate with the object as you turn it). The drag SOLVER still reads the frozen
-        // press-time basis (dragOrigin/dragAx/dragSx/dragHandleLen), so the math stays stable and the grabbed handle
-        // never slips — a rotate drag's grabbed ring is its (fixed) rotation axis, which the live basis leaves in place.
+        // Draw from a live basis every frame, even mid-drag: the origin follows the object, the on-screen size stays
+        // constant regardless of camera distance/zoom, and in Local space the axes rotate with the object. The drag
+        // solver reads the frozen press-time basis (dragOrigin/dragAx/dragSx/dragHandleLen), so the grabbed handle
+        // never slips even though this basis is recomputed under it.
         var b = ComputeBasis(in world, in frame);
         var current = dragging ? activeHandle : hoveredHandle;
-        // Map the gizmo depth policy onto the immediate-layer style, and draw on a high layer so the handles paint over
-        // translucent scene objects (e.g. a fading ground plane) instead of being blended under them.
+
+        // Map the depth policy onto the immediate-layer style, drawn on a high layer so the handles paint over
+        // translucent scene objects (a fading ground plane) instead of being blended under them.
         var depth = ResolveDepth();
         var style = new ImShapeStyle
         {
@@ -504,41 +817,67 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             OnTopOfObjects = depth == GizmoDepth.OnTopOfObjects,
             Layer = GizmoLayer,
         };
+
         var im = NoireDraw3D.Im;
         var thickness = GizmoMath.ScreenConstantLength(in frame, b.Origin, Options.HandlePixelThickness);
         var len = b.HandleLen;
-        var arm = len * ArmRatio;   // translate arrows stop here so the scale knobs past them don't overlap the shafts
+        var arm = len * ArmRatio;
+
+        // While a handle is being dragged, only that handle is drawn, so the gesture is uncluttered (as ImGuizmo does).
+        bool Show(GizmoHandle h) => !dragging || activeHandle == h;
 
         if ((Op & GizmoOp.Translate) != 0)
         {
-            im.DrawArrow(b.Origin, b.Origin + b.Ax * arm, thickness, AxisColor(0, current == GizmoHandle.TranslateX), style);
-            im.DrawArrow(b.Origin, b.Origin + b.Ay * arm, thickness, AxisColor(1, current == GizmoHandle.TranslateY), style);
-            im.DrawArrow(b.Origin, b.Origin + b.Az * arm, thickness, AxisColor(2, current == GizmoHandle.TranslateZ), style);
-            DrawPlane(im, b.Origin, b.Ay, b.Az, len, thickness, AxisColor(0, current == GizmoHandle.TranslateYZ), style);
-            DrawPlane(im, b.Origin, b.Az, b.Ax, len, thickness, AxisColor(1, current == GizmoHandle.TranslateZX), style);
-            DrawPlane(im, b.Origin, b.Ax, b.Ay, len, thickness, AxisColor(2, current == GizmoHandle.TranslateXY), style);
+            if (Show(GizmoHandle.TranslateX))
+                im.DrawArrow(b.Origin, b.Origin + b.Ax * arm, thickness, AxisColor(0, current == GizmoHandle.TranslateX), style);
+            if (Show(GizmoHandle.TranslateY))
+                im.DrawArrow(b.Origin, b.Origin + b.Ay * arm, thickness, AxisColor(1, current == GizmoHandle.TranslateY), style);
+            if (Show(GizmoHandle.TranslateZ))
+                im.DrawArrow(b.Origin, b.Origin + b.Az * arm, thickness, AxisColor(2, current == GizmoHandle.TranslateZ), style);
+            if (Show(GizmoHandle.TranslateYZ))
+                DrawPlane(im, b.Origin, b.Ay, b.Az, len, thickness, AxisColor(0, current == GizmoHandle.TranslateYZ), style);
+            if (Show(GizmoHandle.TranslateZX))
+                DrawPlane(im, b.Origin, b.Az, b.Ax, len, thickness, AxisColor(1, current == GizmoHandle.TranslateZX), style);
+            if (Show(GizmoHandle.TranslateXY))
+                DrawPlane(im, b.Origin, b.Ax, b.Ay, len, thickness, AxisColor(2, current == GizmoHandle.TranslateXY), style);
         }
 
         if ((Op & GizmoOp.Rotate) != 0)
         {
-            DrawRing(im, b.Origin, b.Ax, len, thickness, AxisColor(0, current == GizmoHandle.RotateX), style);
-            DrawRing(im, b.Origin, b.Ay, len, thickness, AxisColor(1, current == GizmoHandle.RotateY), style);
-            DrawRing(im, b.Origin, b.Az, len, thickness, AxisColor(2, current == GizmoHandle.RotateZ), style);
-            DrawRing(im, b.Origin, b.ViewDir, len * 1.18f, thickness, NeutralColor(current == GizmoHandle.RotateScreen), style);
+            if (Show(GizmoHandle.RotateX))
+                DrawRing(im, b.Origin, b.Ax, len, thickness, AxisColor(0, current == GizmoHandle.RotateX), style);
+            if (Show(GizmoHandle.RotateY))
+                DrawRing(im, b.Origin, b.Ay, len, thickness, AxisColor(1, current == GizmoHandle.RotateY), style);
+            if (Show(GizmoHandle.RotateZ))
+                DrawRing(im, b.Origin, b.Az, len, thickness, AxisColor(2, current == GizmoHandle.RotateZ), style);
+            if (Show(GizmoHandle.RotateScreen))
+                DrawRing(im, b.Origin, b.ViewDir, len * 1.18f, thickness, NeutralColor(current == GizmoHandle.RotateScreen), style);
         }
 
         if ((Op & GizmoOp.Scale) != 0)
         {
-            // Cube-tipped scale handles at len, connected to the origin by a thin stub that starts past the translate
-            // arrow tip — same axis line, clearly separated from the translate arrows.
-            DrawScaleArm(im, b.Origin, b.Sx, arm, len, thickness, AxisColor(0, current == GizmoHandle.ScaleX), style);
-            DrawScaleArm(im, b.Origin, b.Sy, arm, len, thickness, AxisColor(1, current == GizmoHandle.ScaleY), style);
-            DrawScaleArm(im, b.Origin, b.Sz, arm, len, thickness, AxisColor(2, current == GizmoHandle.ScaleZ), style);
-            im.DrawSphere(b.Origin, len * 0.11f, NeutralColor(current == GizmoHandle.ScaleUniform), style);
+            // Scale handles are a single ball on each axis, set well past the translate arrow tip with a clear gap and no
+            // connecting stem, so they read as distinct grab points rather than an extension of the translate arrows.
+            var scaleKnob = len * ScaleKnobRatio;
+            var scaleBall = len * ScaleKnobBallRatio;
+            if (Show(GizmoHandle.ScaleX))
+                im.DrawSphere(b.Origin + b.Sx * scaleKnob, scaleBall, AxisColor(0, current == GizmoHandle.ScaleX), style);
+            if (Show(GizmoHandle.ScaleY))
+                im.DrawSphere(b.Origin + b.Sy * scaleKnob, scaleBall, AxisColor(1, current == GizmoHandle.ScaleY), style);
+            if (Show(GizmoHandle.ScaleZ))
+                im.DrawSphere(b.Origin + b.Sz * scaleKnob, scaleBall, AxisColor(2, current == GizmoHandle.ScaleZ), style);
         }
-        else if ((Op & GizmoOp.Translate) != 0)
+
+        // Center handle: a screen-plane move whenever translate is available, else uniform scale (matches PickHandle).
+        if ((Op & GizmoOp.Translate) != 0)
         {
-            im.DrawSphere(b.Origin, len * 0.10f, NeutralColor(current == GizmoHandle.TranslateScreen), style);
+            if (Show(GizmoHandle.TranslateScreen))
+                im.DrawSphere(b.Origin, len * 0.10f, NeutralColor(current == GizmoHandle.TranslateScreen), style);
+        }
+        else if ((Op & GizmoOp.Scale) != 0)
+        {
+            if (Show(GizmoHandle.ScaleUniform))
+                im.DrawSphere(b.Origin, len * 0.10f, NeutralColor(current == GizmoHandle.ScaleUniform), style);
         }
     }
 
@@ -560,15 +899,8 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     private void DrawRing(ImDraw3D im, Vector3 origin, Vector3 axis, float radius, float thickness, Vector4 color, ImShapeStyle style)
     {
-        BuildCircle(origin, axis, radius, 48);
-        im.DrawPath(circleScratch, thickness, color, closed: true, style);
-    }
-
-    private static void DrawScaleArm(ImDraw3D im, Vector3 origin, Vector3 axis, float stubStart, float knobLen, float thickness, Vector4 color, ImShapeStyle style)
-    {
-        // Thin connector from just past the translate arrow tip out to the knob, then the knob itself.
-        im.DrawLine(origin + axis * stubStart, origin + axis * knobLen, thickness * 0.7f, color, style);
-        im.DrawSphere(origin + axis * knobLen, knobLen * 0.08f, color, style);
+        BuildCircle(origin, axis, radius, 64);
+        im.DrawPath(circleScratch, thickness * 0.85f, color, closed: true, style);
     }
 
     private void BuildCircle(Vector3 center, Vector3 axis, float radius, int segments)
@@ -589,23 +921,23 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private static Vector4 AxisColor(int axis, bool highlighted)
     {
         if (highlighted)
-            return new Vector4(1f, 0.9f, 0.35f, 1f);
+            return new Vector4(1f, 0.84f, 0.30f, 1f);
 
         return axis switch
         {
-            0 => new Vector4(0.90f, 0.25f, 0.25f, 1f),
-            1 => new Vector4(0.40f, 0.85f, 0.30f, 1f),
-            _ => new Vector4(0.30f, 0.55f, 0.95f, 1f),
+            0 => new Vector4(0.95f, 0.28f, 0.34f, 1f),
+            1 => new Vector4(0.44f, 0.86f, 0.32f, 1f),
+            _ => new Vector4(0.28f, 0.56f, 0.98f, 1f),
         };
     }
 
     private static Vector4 NeutralColor(bool highlighted)
-        => highlighted ? new Vector4(1f, 0.9f, 0.35f, 1f) : new Vector4(0.85f, 0.85f, 0.85f, 1f);
+        => highlighted ? new Vector4(1f, 0.84f, 0.30f, 1f) : new Vector4(0.88f, 0.88f, 0.90f, 1f);
 
     /// <summary>
     /// The effective occlusion for this frame: the static <see cref="GizmoOptions.Depth"/>, unless
-    /// <see cref="GizmoOptions.OcclusionHeld"/> is set — then the gizmo is world-occluded only while it returns true
-    /// (x-ray otherwise), for a hold-to-occlude key.
+    /// <see cref="GizmoOptions.OcclusionHeld"/> is set, in which case the gizmo is world-occluded only while it returns
+    /// true (x-ray otherwise), for a hold-to-occlude key.
     /// </summary>
     private GizmoDepth ResolveDepth()
     {
@@ -640,6 +972,17 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             return true;
         }
 
+        if (groupNodes != null && groupNodes.Count > 0)
+        {
+            // A group is edited around a unit-scaled pivot at its centroid. In Local space the pivot borrows the first
+            // node's orientation so the handles align to it; in World space it stays world-aligned. While idle the pivot
+            // follows the members; during a drag it is the value the backend produced, so the handles ride the gesture.
+            if (!IsGroupDragActive)
+                groupPivot = Matrix4x4.CreateFromQuaternion(GroupOrientation()) * Matrix4x4.CreateTranslation(GroupCentroid());
+            world = groupPivot;
+            return true;
+        }
+
         world = Matrix4x4.Identity;
         return false;
     }
@@ -648,20 +991,23 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     {
         if (node != null && !node.Destroyed)
         {
-            var parentWorld = node.Parent?.WorldMatrix ?? Matrix4x4.Identity;
-            if (!Matrix4x4.Invert(parentWorld, out var invParent))
-                invParent = Matrix4x4.Identity;
+            SetNodeWorld(node, in world);
+            return;
+        }
 
-            var local = world * invParent;
-            if (Matrix4x4.Decompose(local, out var scale, out var rot, out var trans))
+        if (groupNodes != null && groupNodes.Count > 0)
+        {
+            // Move each member rigidly by the pivot's change since press: newMember = pressMember * inv(pressPivot) * newPivot.
+            groupPivot = world;
+            if (!Matrix4x4.Invert(groupPressPivot, out var invPress))
+                invPress = Matrix4x4.Identity;
+
+            var delta = invPress * world;
+            for (var i = 0; i < groupNodes.Count && i < groupPressWorlds.Length; i++)
             {
-                node.LocalScale = scale;
-                node.LocalRotation = rot;
-                node.LocalPosition = trans;
-            }
-            else
-            {
-                node.LocalPosition = local.Translation;
+                var member = groupNodes[i];
+                if (member is { Destroyed: false })
+                    SetNodeWorld(member, groupPressWorlds[i] * delta);
             }
 
             return;
@@ -670,31 +1016,86 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         matrixSetter?.Invoke(world);
     }
 
+    private static void SetNodeWorld(SceneNode target, in Matrix4x4 world)
+    {
+        var parentWorld = target.Parent?.WorldMatrix ?? Matrix4x4.Identity;
+        if (!Matrix4x4.Invert(parentWorld, out var invParent))
+            invParent = Matrix4x4.Identity;
+
+        var local = world * invParent;
+        if (Matrix4x4.Decompose(local, out var scale, out var rot, out var trans))
+        {
+            target.LocalScale = scale;
+            target.LocalRotation = rot;
+            target.LocalPosition = trans;
+        }
+        else
+        {
+            target.LocalPosition = local.Translation;
+        }
+    }
+
+    private Vector3 GroupCentroid()
+    {
+        var sum = Vector3.Zero;
+        var count = 0;
+        foreach (var member in groupNodes!)
+        {
+            if (member is { Destroyed: false })
+            {
+                sum += member.WorldMatrix.Translation;
+                count++;
+            }
+        }
+
+        return count > 0 ? sum / count : Vector3.Zero;
+    }
+
+    /// <summary>The group pivot's orientation: the first live member's rotation in Local space, identity in World.</summary>
+    private Quaternion GroupOrientation()
+    {
+        if (Options.Space != GizmoSpace.Local || groupNodes == null)
+            return Quaternion.Identity;
+
+        foreach (var member in groupNodes)
+        {
+            if (member is { Destroyed: false })
+            {
+                DecomposeSafe(member.WorldMatrix, out _, out var rot, out _);
+                return rot;
+            }
+        }
+
+        return Quaternion.Identity;
+    }
+
+    private void CaptureGroupPress(in Matrix4x4 pivotWorld)
+    {
+        groupPressPivot = pivotWorld;
+        var list = groupNodes!;
+        groupPressWorlds = new Matrix4x4[list.Count];
+        for (var i = 0; i < list.Count; i++)
+            groupPressWorlds[i] = list[i] is { Destroyed: false } member ? member.WorldMatrix : Matrix4x4.Identity;
+    }
+
     private Basis ComputeBasis(in Matrix4x4 world, in FrameContext frame)
     {
         DecomposeSafe(in world, out _, out var rot, out var trans);
         var origin = trans;
 
         Vector3 ax, ay, az;
-        switch (Options.Space)
+        if (Options.Space == GizmoSpace.Local)
         {
-            case GizmoSpace.Local:
-                ax = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, rot), Vector3.UnitX);
-                ay = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, rot), Vector3.UnitY);
-                az = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitZ, rot), Vector3.UnitZ);
-                break;
-            case GizmoSpace.Screen:
-                InteractMath.WorldPerPixel(in frame, origin, out _, out var right, out var up);
-                ax = right;
-                ay = up;
-                az = InteractMath.SafeNormalize(Vector3.Cross(right, up), Vector3.UnitZ);
-                break;
-            default:
-                ax = Vector3.UnitX; ay = Vector3.UnitY; az = Vector3.UnitZ;
-                break;
+            ax = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, rot), Vector3.UnitX);
+            ay = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, rot), Vector3.UnitY);
+            az = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitZ, rot), Vector3.UnitZ);
+        }
+        else
+        {
+            ax = Vector3.UnitX; ay = Vector3.UnitY; az = Vector3.UnitZ;
         }
 
-        // Scale handles are always object-local — they rotate with the object so a scale axis follows the geometry it
+        // Scale handles are always object-local: they rotate with the object so a scale axis follows the geometry it
         // stretches (World-space translate/rotate arrows stay world-aligned; only scale tracks the object's own frame).
         var sx = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, rot), Vector3.UnitX);
         var sy = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, rot), Vector3.UnitY);

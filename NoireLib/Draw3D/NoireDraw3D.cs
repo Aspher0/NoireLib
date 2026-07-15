@@ -375,6 +375,58 @@ public static unsafe class NoireDraw3D
     public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize)
         => GameRenderSources.IsPointOverVisibleAddon(screenPx, displaySize);
 
+    /// <summary>
+    /// The diagnostic form of <see cref="IsCursorOverGameUi(Vector2, Vector2)"/>: also reports the name of the game
+    /// addon whose collision node is under the cursor (null when none), for interaction diagnostics.
+    /// </summary>
+    /// <param name="screenPx">Cursor position in framebuffer pixels (ImGui mouse space).</param>
+    /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
+    /// <param name="addonName">Receives the matching addon's name, or null.</param>
+    public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize, out string? addonName)
+        => GameRenderSources.IsPointOverVisibleAddon(screenPx, displaySize, out addonName);
+
+    /// <summary>
+    /// Reads the game depth buffer at a screen pixel and reconstructs the world-space point of the nearest rendered
+    /// surface there. Unlike the game's collision raycast, the depth buffer contains <b>every drawn surface</b> (static
+    /// meshes, fences, furniture, decorations), so this is the accurate "what is visibly in front of the cursor" source
+    /// for click occlusion. Returns false when depth is unreadable this frame (depth-off / fallback camera), when the
+    /// pixel is open sky, or on any fault. The depth resource is copied whole, so callers must throttle. Call on the
+    /// render/draw thread (the same thread <c>UiBuilder.Draw</c> runs on).
+    /// </summary>
+    /// <param name="screenPx">Screen position in framebuffer pixels.</param>
+    /// <param name="world">Receives the world-space surface point under the cursor.</param>
+    public static bool TryReadDepthWorld(Vector2 screenPx, out Vector3 world)
+    {
+        world = default;
+        if (!lastFrameValid)
+            return false;
+
+        var frame = lastFrame;
+        if (!frame.HasDepth || frame.UsedFallbackCamera || renderDevice == null)
+            return false;
+
+        if (!GameRenderSources.TryGetDepthTexture(out var info))
+            return false;
+
+        var samples = DepthReadback.TryReadAtPoints(renderDevice, in info, new[] { screenPx }, frame.ViewportSize, out _);
+        if (samples == null || samples.Length == 0 || float.IsNaN(samples[0]))
+            return false;
+
+        var vp = frame.ViewportSize;
+        if (vp.X <= 0f || vp.Y <= 0f)
+            return false;
+
+        // Depth-buffer value is the surface's NDC z; unproject (ndc.xy, ndc.z) straight through InvViewProj. The far /
+        // sky / unwritten value drives clip.w toward zero (infinite-far reversed-Z), which this rejects as "no surface".
+        var ndc = new Vector4(screenPx.X / vp.X * 2f - 1f, 1f - screenPx.Y / vp.Y * 2f, samples[0], 1f);
+        var c = Vector4.Transform(ndc, frame.InvViewProj);
+        if (!float.IsFinite(c.W) || MathF.Abs(c.W) < 1e-6f)
+            return false;
+
+        world = new Vector3(c.X, c.Y, c.Z) / c.W;
+        return float.IsFinite(world.X) && float.IsFinite(world.Y) && float.IsFinite(world.Z);
+    }
+
     // ---------------------------------------------------------------- internals: lifecycle
 
     /// <summary>Lazily initializes the hub (event wiring; GPU objects wait for the game's first Present).</summary>

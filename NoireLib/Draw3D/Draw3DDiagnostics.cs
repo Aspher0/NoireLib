@@ -152,20 +152,26 @@ public sealed unsafe class Draw3DDiagnostics
         smokeNodes.Add(quad);
 
         // A universal gizmo (native in-world depth handles) that follows the selection: left-click any solid object to
-        // select it, then drag the handles — the camera stays put while you drag (NoireInteract owns the mouse).
+        // select it, then drag the handles (the camera stays put while you drag, since NoireInteract owns the mouse).
         smokeGizmo = new NoireGizmo(GizmoOp.Universal);
-        smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
+        smokeGizmo.Options.Space = GizmoSpace.Local;
+        //smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
         smokeGizmo.Options.Depth = GizmoDepth.AlwaysOnTop;
-        smokeGizmo.Options.ScaleSnap = 0.5f;
         smokeGizmo.Options.Snap = new Vector3(0.5f);
         smokeGizmo.Options.RotateSnapDeg = 15f;
+
+        // Multi-select: Ctrl toggles a node in or out, Shift adds one; the gizmo binds the whole set and edits it as a
+        // group around one pivot. Selecting a single node binds just that node.
+        NoireInteract.Selection.Mode = SelectionMode.Multi;
         smokeSelectionHandler = () =>
         {
-            var primary = NoireInteract.Selection.Primary;
-            if (primary != null)
-                smokeGizmo.Attach(primary);
-            else
+            var selected = NoireInteract.Selection.Nodes;
+            if (selected.Count == 0)
                 smokeGizmo.Detach();
+            else if (selected.Count == 1)
+                smokeGizmo.Attach(selected[0]);
+            else
+                smokeGizmo.AttachGroup(selected);
         };
         NoireInteract.Selection.Changed += smokeSelectionHandler;
 
@@ -234,6 +240,7 @@ public sealed unsafe class Draw3DDiagnostics
         smokeGizmo?.Dispose();
         smokeGizmo = null;
         NoireInteract.Selection.Clear();
+        NoireInteract.Selection.Mode = SelectionMode.Single; // undo the multi-select the scene turned on
 
         smokeDecalRenderers.Clear();
 
