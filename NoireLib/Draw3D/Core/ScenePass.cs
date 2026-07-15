@@ -25,6 +25,8 @@ internal struct DrawItem
     public float BoundsRadius;
     public float EyeDistance;
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes; // ground-decal per-actor exclusion (null = none)
+    public Vector4 OutlineColor; // selection outline color (w > 0 = outlined); drives the outline coverage mask
+    public float OutlineWidth;   // outline thickness in screen pixels
 }
 
 /// <summary>Per-frame constants - must match FrameCB in Common.hlsli exactly (240 bytes).</summary>
@@ -92,6 +94,18 @@ internal sealed unsafe class ScenePass : IDisposable
     private FrustumPlanes frustum;
     private Vector3 eyePos;
     private bool collectingForMainPass;
+    private bool hasOutlined;
+    private float maxOutlineWidth;
+    private bool lastPrivateDepthWritten;
+
+    /// <summary>Whether any collected item this frame has a selection outline (drives the optional outline pass).</summary>
+    public bool HasOutlinedItems => hasOutlined;
+
+    /// <summary>Whether the last <see cref="Execute"/> populated the private depth buffer (opaque content) - so the outline mask can GE-test it for 3D-object occlusion. False means no private depth to read, so the mask falls back to world-only occlusion.</summary>
+    public bool LastPrivateDepthWritten => lastPrivateDepthWritten;
+
+    /// <summary>The largest outline width (screen pixels) collected this frame (the outline composite kernel size).</summary>
+    public float MaxOutlineWidthPixels => maxOutlineWidth;
 
     /// <summary>Per-frame dynamic geometry, uploaded once at execute (immediate-layer ribbons, flat shapes).</summary>
     public readonly List<Vertex3D> DynVertices = new(4096);
@@ -115,6 +129,8 @@ internal sealed unsafe class ScenePass : IDisposable
         frustum = FrustumPlanes.FromViewProj(frame.ViewProj);
         eyePos = frame.EyePos;
         collectingForMainPass = mainPass;
+        hasOutlined = false;
+        maxOutlineWidth = 0f;
         if (mainPass)
         {
             DynVertices.Clear();
@@ -157,7 +173,7 @@ internal sealed unsafe class ScenePass : IDisposable
             else
             {
                 var world = node.ResolveWorld();
-                AddMeshItem(mesh, mat, material.Texture, world, renderer.Tint * material.Color, node.Layer, renderer.CastsIntoPrivateDepth, stats, depthAvailable, renderer.ExcludeVolumes);
+                AddMeshItem(mesh, mat, material.Texture, world, renderer.Tint * material.Color, node.Layer, renderer.CastsIntoPrivateDepth, stats, depthAvailable, renderer.ExcludeVolumes, renderer.OutlineColor, renderer.OutlineWidthPixels);
             }
         }
 
@@ -166,7 +182,7 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>Adds one mesh item (retained or immediate) with culling, depth-off policy, and sort-key derivation.</summary>
-    public void AddMeshItem(Mesh mesh, in MaterialData mat, GpuTexture? texture, in Matrix4x4 world, Vector4 color, int layer, bool castsDepth, RenderStats stats, bool depthAvailable, IReadOnlyList<ExcludeVolume>? excludeVolumes = null)
+    public void AddMeshItem(Mesh mesh, in MaterialData mat, GpuTexture? texture, in Matrix4x4 world, Vector4 color, int layer, bool castsDepth, RenderStats stats, bool depthAvailable, IReadOnlyList<ExcludeVolume>? excludeVolumes = null, Vector4 outlineColor = default, float outlineWidth = 0f)
     {
         if (!depthAvailable && ShouldHideWithoutDepth(mat))
         {
@@ -185,6 +201,13 @@ internal sealed unsafe class ScenePass : IDisposable
         if (texture != null && texture.HasKeyedMutex && collectingForMainPass && !KeyedTextures.Contains(texture))
             KeyedTextures.Add(texture);
 
+        // Only solid meshes are outlined; a ground decal's OutlineColor is inert (decal outlining was removed).
+        if (outlineColor.W > 0f && mat.Domain != MaterialDomain.GroundDecal)
+        {
+            hasOutlined = true;
+            maxOutlineWidth = MathF.Max(maxOutlineWidth, outlineWidth);
+        }
+
         var distance = Vector3.Distance(bounds.Center, eyePos);
         Append(new DrawItem
         {
@@ -197,6 +220,8 @@ internal sealed unsafe class ScenePass : IDisposable
             BoundsRadius = bounds.Radius,
             EyeDistance = distance,
             ExcludeVolumes = excludeVolumes,
+            OutlineColor = outlineColor,
+            OutlineWidth = outlineWidth,
         }, layer, distance);
         stats.VisibleItems++;
     }
@@ -395,6 +420,7 @@ internal sealed unsafe class ScenePass : IDisposable
         var dsv = (ID3D11DepthStencilView*)null;
         if (hasOpaque && privateDepth.EnsureSize(device, sceneRt.Width, sceneRt.Height))
             dsv = privateDepth.Dsv;
+        lastPrivateDepthWritten = collectingForMainPass && dsv != null; // the outline mask may GE-test this depth afterwards
 
         var rtv = sceneRt.Rtv;
         ctx->OMSetRenderTargets(1, &rtv, dsv);
@@ -781,6 +807,166 @@ internal sealed unsafe class ScenePass : IDisposable
             ctx->DrawIndexed((uint)item.Mesh.IndexCount, 0, 0);
             stats.DrawCalls++;
         }
+    }
+
+    /// <summary>
+    /// Draws the outlined items into two targets, reusing the already-collected+sorted items:
+    /// <paramref name="maskRt"/> (rgb = outline colour, a = coverage) holds each object's <b>FULL silhouette, ignoring
+    /// occlusion</b>, so the composite outlines the whole object rather than every fragment poking through a fence;
+    /// <paramref name="visRt"/> (r = worldVisible) marks, per silhouette pixel, whether it is in front of the game world
+    /// - the composite then hides the finished outline wherever the nearest silhouette pixel is behind a wall/character.
+    /// Solid meshes draw their whole silhouette with no depth test; ground decals GE-test their emitted ground device-z
+    /// against the private depth (<paramref name="privateDepth"/>) so nearer 3D objects remove them, and their footprint
+    /// already excludes the caller's actors. Run right AFTER <see cref="Execute"/> (the private depth still holds this
+    /// frame's scene). Fail-soft.
+    /// </summary>
+    public void RenderOutlineMask(
+        RenderDevice device,
+        ID3D11DeviceContext* ctx,
+        in FrameContext frame,
+        RenderTarget maskRt,
+        RenderTarget visRt,
+        DepthTarget privateDepth,
+        bool privateDepthValid,
+        ID3D11ShaderResourceView* sceneDepthSrv,
+        Vector4 depthCal,
+        ShaderLibrary shaders,
+        StateCache cache,
+        RenderStats stats)
+    {
+        if (!hasOutlined || itemCount == 0 || maskRt.Rtv == null || visRt.Rtv == null)
+            return;
+
+        EnsureBuffers(device);
+
+        // Re-upload the frame constants (the composite/execute path may have rebound b0). Matches Execute's mapping.
+        var frameData = new FrameCBData
+        {
+            ViewProj = Matrix4x4.Transpose(frame.ViewProj),
+            InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
+            EyePosTime = new Vector4(frame.EyePos, frame.Time),
+            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
+            DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
+            DepthCal = depthCal,
+            Ambient = Vector4.Zero,
+            LightDirIntensity = new Vector4(0f, 1f, 0f, 0f),
+            LightColor = Vector4.Zero,
+        };
+        frameCb!.UpdateConstant(ctx, in frameData);
+
+        // Two colour targets (silhouette+coverage, worldVisible). The private depth is bound read-only for the decal
+        // GE-test only (meshes draw with no depth test); it is not cleared, so this frame's scene depth is preserved.
+        var dsv = privateDepthValid ? privateDepth.Dsv : null;
+        var rtvs = stackalloc ID3D11RenderTargetView*[2] { maskRt.Rtv, visRt.Rtv };
+        ctx->OMSetRenderTargets(2, rtvs, dsv);
+
+        var viewport = new D3D11_VIEWPORT { Width = maskRt.Width, Height = maskRt.Height, MaxDepth = 1f };
+        ctx->RSSetViewports(1, &viewport);
+        var scissor = new TerraFX.Interop.Windows.RECT { right = (int)maskRt.Width, bottom = (int)maskRt.Height };
+        ctx->RSSetScissorRects(1, &scissor);
+
+        var clear = stackalloc float[4];
+        ctx->ClearRenderTargetView(maskRt.Rtv, clear); // colour targets only - the depth is read, never cleared
+        ctx->ClearRenderTargetView(visRt.Rtv, clear);
+
+        ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        var cb = frameCb.Buffer;
+        ctx->VSSetConstantBuffers(0, 1, &cb);
+        ctx->PSSetConstantBuffers(0, 1, &cb);
+        var ocb = objectCb!.Buffer;
+        ctx->VSSetConstantBuffers(1, 1, &ocb);
+        ctx->PSSetConstantBuffers(1, 1, &ocb);
+        var acb = actorCb!.Buffer;
+        ctx->PSSetConstantBuffers(2, 1, &acb);
+        var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
+        ctx->PSSetSamplers(0, 1, &pointClamp);
+
+        var blendFactor = stackalloc float[4];
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF); // overwrite: mask stores (colour, coverage)
+
+        ID3D11RasterizerState* curRaster = null;
+        ID3D11DepthStencilState* curDepthState = null;
+        Mesh? curMesh = null;
+        nint curDepthSrv = -1;
+
+        var pipeline = shaders.GetOutlineMaskMesh(device);
+        if (pipeline != null)
+        {
+            ctx->IASetInputLayout(pipeline.Layout);
+            ctx->VSSetShader(pipeline.Vs, null, 0);
+            ctx->PSSetShader(pipeline.Ps, null, 0);
+        }
+
+        for (var i = 0; pipeline != null && i < itemCount; i++)
+        {
+            ref var item = ref items[i];
+            // Only solid meshes are outlined - ground decals are not (their projected footprint has no meaningful
+            // screen silhouette; a decal outline is being redesigned separately). Immediate markers are not outlined.
+            if (item.OutlineColor.W <= 0f || item.Mesh == null || item.Mat.Domain == MaterialDomain.GroundDecal)
+                continue;
+
+            // Meshes draw the FULL silhouette (no depth test) - occlusion is applied later from the worldVisible target
+            // the PS writes, so the outline stays whole instead of fragmenting behind a fence.
+            var depthState = cache.GetDepth(device, DepthKey.Disabled);
+            if (depthState != curDepthState)
+            {
+                ctx->OMSetDepthStencilState(depthState, 0);
+                curDepthState = depthState;
+            }
+
+            // t0: game depth for the worldVisible test. Null on an x-ray mesh, so DepthVisibility reports visible
+            // everywhere and its outline is never occluded.
+            var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore ? null : sceneDepthSrv;
+            if ((nint)wantDepthSrv != curDepthSrv)
+            {
+                ctx->PSSetShaderResources(0, 1, &wantDepthSrv);
+                curDepthSrv = (nint)wantDepthSrv;
+            }
+
+            var rasterKey = item.Mat.Cull switch
+            {
+                CullMode.Front => RasterKey.CullFront,
+                CullMode.None => RasterKey.TwoSided,
+                _ => RasterKey.CullBack,
+            };
+            var raster = cache.GetRaster(device, rasterKey);
+            if (raster != curRaster)
+            {
+                ctx->RSSetState(raster);
+                curRaster = raster;
+            }
+
+            var vb = item.Mesh.Vb;
+            if (vb == null)
+                continue;
+
+            if (!ReferenceEquals(item.Mesh, curMesh))
+            {
+                uint stride = (uint)sizeof(Vertex3D), offset = 0;
+                ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+                ctx->IASetIndexBuffer(item.Mesh.Ib, item.Mesh.IndexFormat, 0);
+                curMesh = item.Mesh;
+            }
+
+            var objData = new ObjectCBData
+            {
+                World = Matrix4x4.Transpose(item.World),
+                InvWorld = Matrix4x4.Identity,
+                BaseColor = item.OutlineColor, // outline colour drives the mask rgb + coverage-alpha
+                Params0 = item.Mat.Params0,
+                Params1 = item.Mat.Params1,
+            };
+            objectCb!.UpdateConstant(ctx, in objData);
+
+            ctx->DrawIndexed((uint)item.Mesh.IndexCount, 0, 0);
+            stats.DrawCalls++;
+        }
+
+        // Unbind the private depth (so it is free to serve as a render target again) and leave t0 clear so the mask
+        // textures the outline composite is about to read are never also an input here.
+        ctx->OMSetRenderTargets(2, rtvs, null);
+        ID3D11ShaderResourceView* nullSrv = null;
+        ctx->PSSetShaderResources(0, 1, &nullSrv);
     }
 
     /// <summary>

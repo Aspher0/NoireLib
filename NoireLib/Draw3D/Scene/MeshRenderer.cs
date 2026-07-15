@@ -28,6 +28,17 @@ public sealed class MeshRenderer
     public Vector4 Tint { get; set; } = new(1f, 1f, 1f, 1f);
 
     /// <summary>
+    /// Selection/highlight outline color, straight alpha. Alpha &gt; 0 draws a real screen-space silhouette outline
+    /// around this object (a post-process rim, computed from a coverage mask - works for solid meshes and ground
+    /// decals alike). Default transparent = no outline. Drive it via <see cref="SceneNode.ShowOutline"/> /
+    /// <see cref="SceneNode.HideOutline"/>.
+    /// </summary>
+    public Vector4 OutlineColor { get; set; }
+
+    /// <summary>Outline thickness in screen pixels (used when <see cref="OutlineColor"/>'s alpha &gt; 0). Default 4.</summary>
+    public float OutlineWidthPixels { get; set; } = 4f;
+
+    /// <summary>
     /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
     /// paint on - so a character / monster / NPC standing in it is excluded (not painted on) without holing the
     /// ground around their feet. Settable per frame; null = paint over everything. The easy path is

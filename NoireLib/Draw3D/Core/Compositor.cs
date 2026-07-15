@@ -14,6 +14,13 @@ internal unsafe struct CompositeCBData
     public fixed float Factors[128 * 4]; // x of each float4 = UI visibility inside the rect (1 = UI on top)
 }
 
+/// <summary>Outline composite constants - must match OutlineCB in Outline.hlsl exactly (16 bytes).</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct OutlineCBData
+{
+    public Vector4 OutlineParams; // x = width px, yz = 1/viewport, w unused
+}
+
 /// <summary>
 /// Blits the premultiplied scene layer onto the backbuffer with one fullscreen triangle - Law 11 at
 /// the pixel level: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
@@ -24,6 +31,7 @@ internal unsafe struct CompositeCBData
 internal sealed unsafe class Compositor : IDisposable
 {
     private GpuBuffer? compositeCb;
+    private GpuBuffer? outlineCb;
 
     /// <summary>
     /// Composites the scene layer onto the target. Bind order matters: the backbuffer RTV is set
@@ -89,10 +97,68 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->Draw(3, 0);
     }
 
+    /// <summary>
+    /// Dilates the outline coverage mask into a real silhouette rim and blends it (premultiplied) onto the scene
+    /// layer. Binds the target RTV before the mask SRV so the runtime never sees the mask on both ends.
+    /// </summary>
+    public void BlitOutline(
+        RenderDevice device,
+        ID3D11DeviceContext* ctx,
+        ShaderPipeline pipeline,
+        StateCache cache,
+        ID3D11ShaderResourceView* maskSrv,
+        ID3D11ShaderResourceView* visSrv,
+        ID3D11RenderTargetView* targetRtv,
+        uint width,
+        uint height,
+        float outlineWidthPx)
+    {
+        outlineCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(OutlineCBData));
+
+        var data = new OutlineCBData
+        {
+            OutlineParams = new Vector4(outlineWidthPx, 1f / width, 1f / height, 0f),
+        };
+        outlineCb.UpdateConstant(ctx, in data);
+
+        ctx->OMSetRenderTargets(1, &targetRtv, null);
+
+        var viewport = new D3D11_VIEWPORT { Width = width, Height = height, MaxDepth = 1f };
+        ctx->RSSetViewports(1, &viewport);
+        var scissor = new TerraFX.Interop.Windows.RECT { right = (int)width, bottom = (int)height };
+        ctx->RSSetScissorRects(1, &scissor);
+
+        var blendFactor = stackalloc float[4];
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Premultiplied), blendFactor, 0xFFFFFFFF);
+        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.Disabled), 0);
+        ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided));
+
+        ctx->IASetInputLayout(null); // SV_VertexID triangle - no vertex buffer
+        ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->VSSetShader(pipeline.Vs, null, 0);
+        ctx->PSSetShader(pipeline.Ps, null, 0);
+
+        var cb = outlineCb.Buffer;
+        ctx->VSSetConstantBuffers(0, 1, &cb);
+        ctx->PSSetConstantBuffers(0, 1, &cb);
+        var srvs = stackalloc ID3D11ShaderResourceView*[2] { maskSrv, visSrv }; // t0 = colour+coverage, t1 = worldVisible
+        ctx->PSSetShaderResources(0, 2, srvs);
+        var sampler = cache.GetSampler(device, SamplerKey.PointClamp);
+        ctx->PSSetSamplers(0, 1, &sampler);
+
+        ctx->Draw(3, 0);
+
+        // Unbind the mask SRVs so they can serve as RTVs again next frame with no read+write hazard.
+        var nullSrvs = stackalloc ID3D11ShaderResourceView*[2];
+        ctx->PSSetShaderResources(0, 2, nullSrvs);
+    }
+
     /// <inheritdoc/>
     public void Dispose()
     {
         compositeCb?.Dispose();
         compositeCb = null;
+        outlineCb?.Dispose();
+        outlineCb = null;
     }
 }

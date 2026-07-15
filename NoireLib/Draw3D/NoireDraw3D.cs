@@ -44,6 +44,8 @@ public static unsafe partial class NoireDraw3D
     private static ScenePass? scenePass;
     private static Compositor? compositor;
     private static RenderTarget? sceneRt;
+    private static RenderTarget? outlineMaskRt; // RGBA silhouette-coverage mask for the selection outline pass
+    private static RenderTarget? outlineVisRt;  // per-silhouette-pixel worldVisible flag (r) for occluding the outline
     private static DepthTarget? privateDepth;
     private static SceneDepth? sceneDepth;
     private static UiMaskSource? uiMaskSource;
@@ -623,6 +625,10 @@ public static unsafe partial class NoireDraw3D
             stateCache = null;
             sceneRt?.Dispose();
             sceneRt = null;
+            outlineMaskRt?.Dispose();
+            outlineMaskRt = null;
+            outlineVisRt?.Dispose();
+            outlineVisRt = null;
             privateDepth?.Dispose();
             privateDepth = null;
             sceneDepth?.Dispose();
@@ -1011,6 +1017,12 @@ public static unsafe partial class NoireDraw3D
 
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
             depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+
+        // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
+        // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
+        // Fail-soft: a mask/shader/target hiccup skips the outline this frame, never the scene.
+        RenderOutlinePass(device, ctx, in frame, hasDepth ? sceneDepth.Srv : null, depthMap, stats);
+
         stats.MarkSceneDone(ctx);
 
         // Nameplate visibility factors: 1 = letters on top, behindFactor = covered by your content.
@@ -1061,6 +1073,39 @@ public static unsafe partial class NoireDraw3D
         }
 
         compositor!.Blit(device, ctx, composite, stateCache!, sceneRt!.Srv, uiMaskSrv, backbufferRtv.Get(), backBuffer.Width, backBuffer.Height, LayerOpacity, ProtectRects, ProtectFactors, rectCount);
+    }
+
+    /// <summary>
+    /// The selection-outline post-process: renders the outlined items' silhouettes into a coverage mask, then dilates
+    /// that mask into a real screen-space rim blended onto the scene layer. Only runs when the scene pass collected an
+    /// outlined item, so the ordinary path pays nothing. Every step is guarded - a null pipeline / target skips the
+    /// outline this frame without disturbing the scene.
+    /// </summary>
+    private static void RenderOutlinePass(RenderDevice device, ID3D11DeviceContext* ctx, in FrameContext frame, ID3D11ShaderResourceView* sceneDepthSrv, Vector4 depthMap, RenderStats stats)
+    {
+        var pass = scenePass;
+        var scene = sceneRt;
+        var comp = compositor;
+        var shaders = shaderLibrary;
+        var cache = stateCache;
+        if (pass == null || scene == null || comp == null || shaders == null || cache == null || !pass.HasOutlinedItems)
+            return;
+
+        var outline = shaders.GetOutline(device);
+        if (outline == null || shaders.GetOutlineMaskMesh(device) == null)
+            return; // outline shaders self-disabled (rung 1) - no rim this frame
+
+        outlineMaskRt ??= new RenderTarget();
+        outlineVisRt ??= new RenderTarget();
+        if (!outlineMaskRt.EnsureSize(device, scene.Width, scene.Height) || !outlineVisRt.EnsureSize(device, scene.Width, scene.Height))
+            return;
+
+        // The mask holds each object's FULL silhouette (ignoring occlusion) plus a per-pixel worldVisible flag from the
+        // game depth; the composite outlines the whole shape and then hides the segments whose silhouette is behind a
+        // wall/character. Decals GE-test the private depth (this frame's scene) so nearer 3D objects remove them.
+        var privateDepthValid = privateDepth != null && pass.LastPrivateDepthWritten;
+        pass.RenderOutlineMask(device, ctx, in frame, outlineMaskRt, outlineVisRt, privateDepth!, privateDepthValid, sceneDepthSrv, depthMap, shaders, cache, stats);
+        comp.BlitOutline(device, ctx, outline, cache, outlineMaskRt.Srv, outlineVisRt.Srv, scene.Rtv, scene.Width, scene.Height, pass.MaxOutlineWidthPixels);
     }
 
     private static bool EnsureBackbufferRtv(RenderDevice device, in GameRenderSources.BackBufferInfo info)
@@ -1236,6 +1281,8 @@ public static unsafe partial class NoireDraw3D
 
         // Our own targets carry no such constraint; recreate on the next frame anyway.
         sceneRt?.Release();
+        outlineMaskRt?.Release();
+        outlineVisRt?.Release();
         privateDepth?.Release();
         sceneDepth?.Invalidate();
         gameDepthTarget?.Invalidate();

@@ -114,6 +114,30 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
+    /// <summary>Gets the outline coverage-mask pipeline for a solid mesh silhouette (non-instanced, standard vertex layout), or null on compile failure.</summary>
+    public ShaderPipeline? GetOutlineMaskMesh(RenderDevice device)
+    {
+        const string key = "OutlineMaskMesh";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var pipeline = Compile(device, key, GetSource("OutlineMaskMesh.hlsl"), null, instanced: false, createLayout: true);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
+    /// <summary>Gets the outline composite pipeline (fullscreen triangle dilating the coverage mask into a rim), or null on compile failure.</summary>
+    public ShaderPipeline? GetOutline(RenderDevice device)
+    {
+        const string key = "Outline";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var pipeline = Compile(device, key, GetSource("Outline.hlsl"), null, instanced: false, createLayout: false);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
     /// <summary>Registers a custom pipeline by name (the §14.2 seam). The source may include "Common.hlsli".</summary>
     public bool RegisterCustom(string name, string hlslSource)
     {

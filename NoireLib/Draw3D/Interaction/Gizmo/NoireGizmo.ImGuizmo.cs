@@ -53,6 +53,8 @@ public sealed partial class NoireGizmo
     private readonly int imguizmoId = Interlocked.Increment(ref nextImguizmoId);
     private readonly float[] imguizmoSnap = new float[3];
     private bool imguizmoUsing;
+    private Vector3 imguizmoScaleGuard = Vector3.One; // last accepted scale this drag; rejects a degenerate 1-frame collapse
+    private ImGuizmoOperation imguizmoDragOp;         // the single op locked for the current drag (disambiguates overlapping handles)
     private SnapKind imguizmoSnapKind;
     private SnapKind imguizmoHoverKind; // which op's handle is under the cursor (from the last frame), so a drag snaps from its first frame
     private int imguizmoSavedTextBits, imguizmoSavedShadowBits; // ImGuizmo TEXT / TEXT_SHADOW alpha saved across one Manipulate call
@@ -168,10 +170,23 @@ public sealed partial class NoireGizmo
             var proj = BuildImGuizmoProjection(in frame);
             var mode = Options.Space == GizmoSpace.Local ? ImGuizmoMode.Local : ImGuizmoMode.World;
 
-            // ImGuizmo is fed the target's own transform every frame and its result is stored back verbatim, so what it
-            // draws and what the object holds are always the same matrix, snapped or not: the handles can never drift
-            // away from the object.
-            var matrix = world;
+            // ImGuizmo scales *multiplicatively* (it multiplies the fed matrix's scale by a factor), so a component
+            // driven to zero can never grow back (0 x factor = 0) and the rate depends on the current size. The native
+            // backend is additive (pressScale + baseScale x frac). To match it, ImGuizmo is fed a PROXY whose scale is
+            // the non-zero baseScale reference (its position/rotation are the object's real ones, so the handles still
+            // overlay it pixel-for-pixel and translate/rotate are untouched); its multiplicative scale result is then
+            // converted back to an additive delta on the real object below (RebuildFromScaleProxy). ImGuizmo captures
+            // its own drag origin, so feeding a proxy never lets the handles drift from the gesture.
+            DecomposeSafe(in world, out var curScale, out var curRot, out var curTrans);
+            if (!imguizmoUsing)
+            {
+                pressScale = curScale;        // freeze the size at press; held for the whole drag (baseScale is the increment reference)
+                imguizmoScaleGuard = curScale; // and the collapse guard's reference (last accepted scale)
+            }
+            var proxyBefore = Matrix4x4.CreateScale(baseScale)
+                              * Matrix4x4.CreateFromQuaternion(curRot)
+                              * Matrix4x4.CreateTranslation(curTrans);
+            var matrix = proxyBefore;
 
             // One integrated call for every space. Scale maps to ImGuizmo's universal-scale operation (Scaleu), whose
             // bits are distinct from the plain-scale op that forces the whole gizmo local; so translate/rotate honour the
@@ -181,7 +196,24 @@ public sealed partial class NoireGizmo
             // cleanly along its local axes with no offset. Its one snap slot takes whichever op the drag drives, so the
             // matching increment is selected per operation below.
             ImGuizmo.SetID(imguizmoId);
-            var op = MapOperation(Op);
+
+            // The op fed to ImGuizmo. While NOT dragging, the full set - so every handle hit-tests and reports hover.
+            // On the frame the button goes down over a handle, and for the rest of that drag, ONLY the topmost hovered
+            // op (imguizmoHoverKind is Scale-first, matching ImGuizmo's own priority): where a scale ball overlaps the
+            // screen rotation ring, this makes ImGuizmo capture a clean single-op origin instead of an ambiguous one
+            // that collapsed the object. imguizmoDragOp is set every non-dragging frame, so the drag that begins this
+            // frame is already locked to it.
+            ImGuizmoOperation op;
+            if (imguizmoUsing)
+            {
+                op = imguizmoDragOp;
+            }
+            else
+            {
+                var pressing = ImGui.IsMouseClicked(ImGuiMouseButton.Left) && imguizmoHoverKind != SnapKind.None;
+                op = pressing ? SnapKindToOperation(imguizmoHoverKind) : MapOperation(Op);
+                imguizmoDragOp = op;
+            }
 
             // Choose this frame's snap increment BEFORE manipulating. During a drag the op is latched. Otherwise use the
             // handle the cursor is over (ImGuizmo reports it from the previous frame), so a drag snaps from its very
@@ -206,6 +238,13 @@ public sealed partial class NoireGizmo
             if (hideBuiltInText)
                 RestoreImGuizmoText();
 
+            // Convert ImGuizmo's proxy result back to the real object transform: translation/rotation pass through
+            // verbatim, scale becomes an ADDITIVE delta on the size at press (pressScale + (resultScale - baseScale)),
+            // floored so a component never degenerates - so a zeroed axis grows back at the base rate, exactly like the
+            // native backend. Op detection (below) compares proxyBefore vs the proxy result, never the real world (whose
+            // scale differs from baseScale), so a translate/rotate is not misread as a scale.
+            var realMatrix = RebuildFromScaleProxy(in matrix);
+
             var isOver = ImGuizmo.IsOver();
             var isUsing = ImGuizmo.IsUsing();
 
@@ -214,7 +253,7 @@ public sealed partial class NoireGizmo
                 imguizmoUsing = true;
                 // Latch the driven op: the pre-drag hover normally has it (snapped from frame one); fall back to
                 // detecting the change only if the press somehow landed with no hover frame before it.
-                imguizmoSnapKind = snapKind != SnapKind.None ? snapKind : DetectChangedOp(in world, in matrix);
+                imguizmoSnapKind = snapKind != SnapKind.None ? snapKind : DetectChangedOp(in proxyBefore, in matrix);
                 CaptureImGuizmoPress(in world); // freeze the press transform/basis for the drag readout (world is the target/group pivot at press)
                 if (groupNodes != null)
                     CaptureGroupPress(in world); // world is the group pivot at the moment the drag began
@@ -222,7 +261,7 @@ public sealed partial class NoireGizmo
             }
             else if (isUsing && imguizmoSnapKind == SnapKind.None && changed)
             {
-                imguizmoSnapKind = DetectChangedOp(in world, in matrix); // fallback: op was unknown at press
+                imguizmoSnapKind = DetectChangedOp(in proxyBefore, in matrix); // fallback: op was unknown at press
             }
 
             // Remember the hovered handle for next frame's pre-snap (only while not mid-drag).
@@ -255,10 +294,25 @@ public sealed partial class NoireGizmo
             // cannot invert) would blank the object, so a garbage matrix is dropped rather than written to the target.
             // The single unsnapped frame at a snapping drag's start is dropped (see dropUnsnappedFirstFrame) so it never
             // shows before the snap takes over.
-            var applied = changed && !dropUnsnappedFirstFrame && IsUsableTransform(in matrix);
+            var applied = changed && !dropUnsnappedFirstFrame && IsUsableTransform(in realMatrix);
+
+            // Reject a degenerate scale collapse: where a scale handle overlaps the screen rotation ring, ImGuizmo's
+            // ambiguous pick can drive the scale to ~0 in a single frame (the object vanishes on all axes). A real scale
+            // ramps gradually, so a > 4x shrink from the last accepted size is a bad pick and is dropped; growth (e.g.
+            // recovering a zeroed axis) and translate/rotate (scale unchanged) are never affected.
+            if (applied && Matrix4x4.Decompose(realMatrix, out var appliedScale, out _, out _))
+            {
+                if (appliedScale.X < imguizmoScaleGuard.X * 0.25f ||
+                    appliedScale.Y < imguizmoScaleGuard.Y * 0.25f ||
+                    appliedScale.Z < imguizmoScaleGuard.Z * 0.25f)
+                    applied = false;
+                else
+                    imguizmoScaleGuard = appliedScale;
+            }
+
             if (applied)
             {
-                SetWorld(in matrix);
+                SetWorld(in realMatrix);
                 RaiseEdit();
             }
 
@@ -267,7 +321,7 @@ public sealed partial class NoireGizmo
             // real object transform this frame - the applied result, or the unchanged world when this frame was dropped.
             if (imguizmoUsing && Options.ShowDragFeedback)
             {
-                UpdateImGuizmoFeedback(applied ? matrix : world);
+                UpdateImGuizmoFeedback(applied ? realMatrix : world);
                 DrawDragFeedback(in frame);
             }
 
@@ -297,18 +351,29 @@ public sealed partial class NoireGizmo
 
     /// <summary>
     /// The op whose handle is under the cursor right now (from ImGuizmo's last frame), so a drag that starts next frame
-    /// already knows which snap increment to feed and snaps from its first frame. None when the cursor is over no handle.
+    /// already knows which single op to lock and which snap increment to feed. None when the cursor is over no handle.
+    /// Priority is Scale &gt; Translate &gt; Rotate - the topmost handle where they overlap (a scale ball drawn over the
+    /// screen rotation ring), matching ImGuizmo's own hit priority, so the lock agrees with what ImGuizmo would pick.
     /// </summary>
     private SnapKind HoveredOpKind()
     {
+        if ((Op & GizmoOp.Scale) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Scaleu))
+            return SnapKind.Scale;
         if ((Op & GizmoOp.Translate) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Translate))
             return SnapKind.Translate;
         if ((Op & GizmoOp.Rotate) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Rotate))
             return SnapKind.Rotate;
-        if ((Op & GizmoOp.Scale) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Scaleu))
-            return SnapKind.Scale;
         return SnapKind.None;
     }
+
+    /// <summary>Maps a driven <see cref="SnapKind"/> to the single ImGuizmo operation to feed during that drag.</summary>
+    private static ImGuizmoOperation SnapKindToOperation(SnapKind kind) => kind switch
+    {
+        SnapKind.Translate => ImGuizmoOperation.Translate,
+        SnapKind.Rotate => ImGuizmoOperation.Rotate,
+        SnapKind.Scale => ImGuizmoOperation.Scaleu,
+        _ => (ImGuizmoOperation)0,
+    };
 
     /// <summary>Detects which operation changed between the pre- and post-manipulate matrices, so the right snap is fed next frame.</summary>
     private static SnapKind DetectChangedOp(in Matrix4x4 before, in Matrix4x4 after)
@@ -402,6 +467,29 @@ public sealed partial class NoireGizmo
         return !Matrix4x4.Decompose(m, out var scale, out _, out _)
             ? true // non-decomposable but finite (for example sheared); let SetWorld fall back to translation only
             : scale.LengthSquared() > 1e-12f;
+    }
+
+    /// <summary>
+    /// Turns ImGuizmo's proxy result (whose scale is <see cref="NoireGizmo.baseScale"/> multiplied by ImGuizmo's factor)
+    /// back into the real world transform: translation and rotation are taken verbatim, and scale becomes an additive
+    /// delta on the size at press - <c>pressScale + (resultScale - baseScale)</c>, floored at <see cref="MinScale"/> so a
+    /// component never collapses. That makes an axis that was zero (or any size) grow back at the base rate, matching the
+    /// native backend instead of ImGuizmo's multiply-the-current-size behaviour. Falls back to the raw result if it will
+    /// not decompose.
+    /// </summary>
+    private Matrix4x4 RebuildFromScaleProxy(in Matrix4x4 proxyResult)
+    {
+        if (!Matrix4x4.Decompose(proxyResult, out var s, out var rot, out var trans))
+            return proxyResult;
+
+        var newScale = new Vector3(
+            MathF.Max(MinScale, pressScale.X + (s.X - baseScale.X)),
+            MathF.Max(MinScale, pressScale.Y + (s.Y - baseScale.Y)),
+            MathF.Max(MinScale, pressScale.Z + (s.Z - baseScale.Z)));
+
+        return Matrix4x4.CreateScale(newScale)
+               * Matrix4x4.CreateFromQuaternion(rot)
+               * Matrix4x4.CreateTranslation(trans);
     }
 
     private static ImGuizmoOperation MapOperation(GizmoOp op)
@@ -529,8 +617,35 @@ public sealed partial class NoireGizmo
         activeHandle = imguizmoSnapKind switch
         {
             SnapKind.Rotate => GizmoHandle.RotateScreen,
-            SnapKind.Scale => GizmoHandle.ScaleUniform,
+            // ImGuizmo does not expose which scale sub-handle is driving, so pick it from the per-axis change since
+            // press: the readout then prints the axis that is actually moving (a Y or Z drag no longer reads the
+            // unchanged X ratio and shows a stuck x1.00).
+            SnapKind.Scale => ScaleHandleFromDelta(in scale),
             _ => GizmoHandle.TranslateScreen,
         };
+    }
+
+    /// <summary>
+    /// Which scale handle the readout should report, from the per-axis change since press (relative to
+    /// <see cref="NoireGizmo.baseScale"/> so the axes compare fairly). Near-equal change on all three reads as a uniform
+    /// scale (<see cref="GizmoHandle.ScaleUniform"/>, printed <c>xN.NN</c>); otherwise the axis that moved most (printed
+    /// <c>Y xN.NN</c>). Used because ImGuizmo's universal-scale op does not surface which sub-handle is driving.
+    /// </summary>
+    private GizmoHandle ScaleHandleFromDelta(in Vector3 currentScale)
+    {
+        var rx = MathF.Abs((currentScale.X - pressScale.X) / baseScale.X);
+        var ry = MathF.Abs((currentScale.Y - pressScale.Y) / baseScale.Y);
+        var rz = MathF.Abs((currentScale.Z - pressScale.Z) / baseScale.Z);
+        var max = MathF.Max(rx, MathF.Max(ry, rz));
+        if (max < 1e-4f)
+            return GizmoHandle.ScaleUniform; // nothing has moved yet this drag
+
+        // Uniform when the other two axes moved comparably to the strongest (within 25%).
+        if (rx > max * 0.75f && ry > max * 0.75f && rz > max * 0.75f)
+            return GizmoHandle.ScaleUniform;
+
+        return rx >= ry && rx >= rz ? GizmoHandle.ScaleX
+             : ry >= rz ? GizmoHandle.ScaleY
+             : GizmoHandle.ScaleZ;
     }
 }

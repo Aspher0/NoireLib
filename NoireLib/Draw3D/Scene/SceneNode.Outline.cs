@@ -1,30 +1,25 @@
-using NoireLib.Draw3D.Materials;
 using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// An opt-in selection/highlight outline for a node, built entirely from existing primitives (no renderer-core change):
-/// a child "hull" that re-draws the node's mesh slightly enlarged, front-face-culled and solid, so the object covers
-/// its own center while the hull's far shell reads as a rim around the silhouette. Sugar over a child node + an unlit
-/// material - fully inspectable, fully removable. The default <see cref="MakeSelectable"/> highlight stays a tint;
-/// outline is something you turn on (directly here, or via <c>editor.SelectionOutline</c>).
+/// An opt-in selection/highlight outline for a node: a <b>real screen-space silhouette outline</b> (a post-process
+/// rim drawn from a coverage mask, not a second mesh), so it traces the object's actual outline and works for solid
+/// meshes and ground decals alike. The default <see cref="MakeSelectable"/> highlight stays a tint; outline is
+/// something you turn on (directly here, or via <c>editor.SelectionOutline</c>).
 /// </summary>
 public sealed partial class SceneNode
 {
-    private SceneNode? outlineChild;
-
-    /// <summary>Whether an outline hull is currently attached.</summary>
-    public bool HasOutline => outlineChild is { Destroyed: false };
+    /// <summary>Whether an outline is currently enabled (its color's alpha &gt; 0).</summary>
+    public bool HasOutline => Renderer is { } renderer && renderer.OutlineColor.W > 0f;
 
     /// <summary>
-    /// Shows a solid outline around this node by attaching an enlarged front-culled hull of its mesh. No-op (logged)
-    /// when the node has no renderer; skipped for ground decals (they carry their own <c>OutlineWidth</c>). Calling it
-    /// again updates the color/scale. Fluent.
+    /// Shows a real silhouette outline around this node in the given color. No-op (logged) when the node has no
+    /// renderer. Calling it again updates the color/width. Fluent.
     /// </summary>
-    /// <param name="color">Outline color (straight alpha; drawn solid).</param>
-    /// <param name="scale">Hull scale relative to the node (default 1.06 - a thin rim; larger = thicker).</param>
-    public SceneNode ShowOutline(Vector4 color, float scale = 1.06f)
+    /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible).</param>
+    /// <param name="widthPixels">Outline thickness in screen pixels (default 4).</param>
+    public SceneNode ShowOutline(Vector4 color, float widthPixels = 4f)
     {
         var renderer = Renderer;
         if (renderer == null)
@@ -33,25 +28,16 @@ public sealed partial class SceneNode
             return this;
         }
 
-        if (renderer.Material.Domain == MaterialDomain.GroundDecal)
-            return this; // a decal already has a real outline band; an opaque hull would look wrong
-
-        if (outlineChild is null or { Destroyed: true })
-            outlineChild = CreateChild($"{Name ?? "node"}.Outline");
-
-        outlineChild.Selectable = false;
-        outlineChild.LocalScale = new Vector3(scale);
-        outlineChild.SetMesh(renderer.Mesh, Material.Unlit(color) with { Blend = BlendMode.Opaque, Cull = CullMode.Front });
+        renderer.OutlineColor = color;
+        renderer.OutlineWidthPixels = widthPixels > 0f ? widthPixels : 4f;
         return this;
     }
 
-    /// <summary>Removes the outline hull, if any. Fluent.</summary>
+    /// <summary>Removes the outline, if any. Fluent.</summary>
     public SceneNode HideOutline()
     {
-        var child = outlineChild;
-        outlineChild = null;
-        if (child is { Destroyed: false })
-            child.Destroy();
+        if (Renderer is { } renderer)
+            renderer.OutlineColor = default;
         return this;
     }
 }

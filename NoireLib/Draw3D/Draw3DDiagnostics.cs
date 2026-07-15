@@ -35,6 +35,8 @@ public sealed unsafe class Draw3DDiagnostics
 
     internal Draw3DDiagnostics() { }
 
+    private Material? viewTexture;
+
     /// <summary>Arms the projection parity validator for the next 10 rendered frames (results logged). Gate: max ≤ 1 px.</summary>
     public void RunValidate()
     {
@@ -92,31 +94,38 @@ public sealed unsafe class Draw3DDiagnostics
              .Scale(new Vector3(8f, 4f, 8f))
              .MakeSelectable()
              .ExcludeObjects(SmokeActorExclusion);
+        //.ShowOutline(new Vector4(1f, 1f, 1f, 1f));
 
         scene.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.9f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)), center + new Vector3(6f, 0f, 0f), "Smoke.Sector", keepCpuData: true)
              .Scale(new Vector3(10f, 4f, 10f))
              .MakeSelectable()
              .ExcludeObjects(SmokeActorExclusion);
+        //.ShowOutline(new Vector4(1f, 1f, 1f, 1f));
 
         // Lit torus (the donut) floating above the ring.
         scene.AddTorus(1.6f, 0.35f, Material.Lit(new Vector4(0.95f, 0.95f, 1f, 1f)), center + new Vector3(0f, 2f, 0f), "Smoke.Torus", keepCpuData: true)
-             .MakeSelectable();
+             .MakeSelectable()
+             .ShowOutline(new Vector4(1f, 1f, 1f, 1f));
 
         // Additive energy orb.
         scene.AddSphere(0.75f, Material.Unlit(new Vector4(0.2f, 0.6f, 1f, 0.8f)) with { Blend = BlendMode.Additive }, center + new Vector3(-4f, 1.5f, 2f), "Smoke.Orb", keepCpuData: true)
-             .MakeSelectable();
+             .MakeSelectable()
+             .ShowOutline(new Vector4(1f, 1f, 1f, 1f));
+
 
         // Opaque box stack (private-depth V2↔V2 occlusion).
         for (var i = 0; i < 3; i++)
         {
             scene.AddBox(Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None }, center + new Vector3(3.5f, 0.5f + i * 1.05f, -3.5f), $"Smoke.Box{i}", keepCpuData: true)
                  .RotateY(i * 0.4f)
-                 .MakeSelectable();
+                 .MakeSelectable()
+             .ShowOutline(new Vector4(1f, 1f, 1f, 1f));
         }
 
         // Flat translucent quad (world depth test + DepthFade seam).
         scene.AddQuad(4f, 4f, Material.Unlit(new Vector4(0.3f, 1f, 0.5f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None }, center + new Vector3(-3f, 0.05f, -4f), "Smoke.Quad", keepCpuData: true)
-             .MakeSelectable();
+             .MakeSelectable()
+            .ShowOutline(new Vector4(1f, 1f, 1f, 1f));
 
         // The editor follows the selection: left-click any object to select it, then drag the handles (the camera
         // stays put while you drag). Multi-select (Ctrl toggles, Shift adds) is scoped - restored when the scene is
@@ -126,7 +135,7 @@ public sealed unsafe class Draw3DDiagnostics
         editor.Gizmo.Space = GizmoSpace.Local;
         editor.Gizmo.Depth = GizmoDepth.AlwaysOnTop;
         editor.Gizmo.Snap = 0.5f;
-        editor.Gizmo.ScaleSnap = 0.5f;
+        editor.Gizmo.ScaleSnap = 0.05f;
         editor.Gizmo.RotateSnapDeg = 15f;
     }
 

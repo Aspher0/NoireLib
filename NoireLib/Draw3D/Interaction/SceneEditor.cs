@@ -65,9 +65,9 @@ public sealed class SceneEditor : IDisposable
     }
 
     /// <summary>
-    /// Optional: when set, selected nodes get a solid outline in this color (via <see cref="SceneNode.ShowOutline"/>),
-    /// removed on deselect. Off by default (the default selection feedback is the gizmo plus the per-node hover tint).
-    /// Set to null to turn outlines off.
+    /// Optional: when set, selected nodes get a real silhouette outline in this color (via
+    /// <see cref="SceneNode.ShowOutline"/>), removed on deselect. Off by default (the default selection feedback is
+    /// the gizmo plus the per-node hover tint). Set to null to turn outlines off.
     /// </summary>
     public Vector4? SelectionOutline
     {
@@ -79,8 +79,8 @@ public sealed class SceneEditor : IDisposable
         }
     }
 
-    /// <summary>Hull scale for <see cref="SelectionOutline"/> (default 1.06 - a thin rim). Set before enabling the outline.</summary>
-    public float OutlineScale { get; set; } = 1.06f;
+    /// <summary>Outline thickness in screen pixels for <see cref="SelectionOutline"/> (default 4). Set before enabling the outline.</summary>
+    public float OutlineWidth { get; set; } = 4f;
 
     /// <summary>True once disposed.</summary>
     public bool IsDisposed => disposed;
@@ -119,7 +119,7 @@ public sealed class SceneEditor : IDisposable
             {
                 if (!outlined.Contains(node))
                 {
-                    node.ShowOutline(color, OutlineScale);
+                    node.ShowOutline(color, OutlineWidth);
                     outlined.Add(node);
                 }
             }
