@@ -13,7 +13,7 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Locks the trap doors of the Draw3D core: constant-buffer packing sizes (a drive-by field addition
 /// must fail the build, not the visuals), scene-graph semantics (dirty flags, cycles, destruction),
-/// steady-state allocation, and Law 11 — zero ImGui anywhere under NoireLib/Draw3D (executable policy,
+/// steady-state allocation, and Law 11 - zero ImGui anywhere under NoireLib/Draw3D (executable policy,
 /// not convention).
 /// </summary>
 public class Draw3DCoreContractTests
@@ -160,11 +160,11 @@ public class Draw3DCoreContractTests
     [Fact]
     public void Law11_NoImGuiInTheRendererCore()
     {
-        // Law 11 protects the Draw3D *rendering core* — the pure D3D11 renderer that works and must not be destabilised
+        // Law 11 protects the Draw3D *rendering core* - the pure D3D11 renderer that works and must not be destabilised
         // by input/UI concerns. That core reads no input and never touches ImGui (not for rendering, not for
         // diagnostics). The one sanctioned exception is the interaction layer under NoireLib/Draw3D/Interaction/
         // (NoireInteract + the gizmo, incl. its ImGuizmo backend), which is allowed to read ImGui IO and drive
-        // ImGui/ImGuizmo — it sits above the renderer and never touches the render pipeline. Everything else stays pure.
+        // ImGui/ImGuizmo - it sits above the renderer and never touches the render pipeline. Everything else stays pure.
         var draw3dDir = FindDraw3DSourceDirectory();
         var offenders = new System.Collections.Generic.List<string>();
 
@@ -172,7 +172,7 @@ public class Draw3DCoreContractTests
         {
             var relative = Path.GetRelativePath(draw3dDir, file);
             if (relative.StartsWith("Interaction" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                continue; // the sanctioned input layer — allowed to read ImGui IO
+                continue; // the sanctioned input layer - allowed to read ImGui IO
 
             var text = File.ReadAllText(file);
             if (text.Contains("Dalamud.Bindings.ImGui", StringComparison.Ordinal))

@@ -20,7 +20,7 @@ public class Draw3DDepthCalibrationTests
     [Fact]
     public void TrySolve_ReversedZInfiniteFar_RecoversNearPlane()
     {
-        // z = near/w with near = 0.1 — the expected FFXIV convention.
+        // z = near/w with near = 0.1 - the expected FFXIV convention.
         var (xs, ys) = Synthesize(w => 0.1f / w);
 
         DepthCalibration.TrySolve(xs, ys, out var a, out var b, out var medianResidual, out var inliers).Should().BeTrue();
@@ -41,13 +41,13 @@ public class Draw3DDepthCalibrationTests
         DepthCalibration.TrySolve(xs, ys, out var a, out var b, out _, out _).Should().BeTrue();
         a.Should().BeApproximately(a0, 1e-4f);
         b.Should().BeApproximately(b0, 1e-4f);
-        b.Should().BeNegative("standard-Z slope is negative — the fit must carry the direction");
+        b.Should().BeNegative("standard-Z slope is negative - the fit must carry the direction");
     }
 
     [Fact]
     public void TrySolve_OutliersFromInvisibleWalls_AreRejected()
     {
-        // Collision raycasts can hit invisible barriers the depth buffer never saw — the robust
+        // Collision raycasts can hit invisible barriers the depth buffer never saw - the robust
         // refit must shrug those off.
         var (xs, ys) = Synthesize(w => 0.1f / w);
         ys[3] = 0.9f;  // wildly wrong
@@ -63,7 +63,7 @@ public class Draw3DDepthCalibrationTests
     [Fact]
     public void TrySolve_DegenerateFlatWall_IsRejected()
     {
-        // All samples at the same distance — the 2x2 system is singular.
+        // All samples at the same distance - the 2x2 system is singular.
         var xs = new float[10];
         var ys = new float[10];
         for (var i = 0; i < 10; i++)
@@ -80,7 +80,7 @@ public class Draw3DDepthCalibrationTests
     [Fact]
     public void AttemptDue_NeverAttempted_IsDueRegardlessOfFrameId()
     {
-        // The long.MinValue "never attempted" sentinel must always be due — the original bug subtracted
+        // The long.MinValue "never attempted" sentinel must always be due - the original bug subtracted
         // it (frameId - long.MinValue overflows negative), which wedged calibration off forever and left
         // every 3D shape drawing on top of all world geometry.
         DepthCalibration.AttemptDue(0, long.MinValue, 30).Should().BeTrue();
@@ -91,9 +91,9 @@ public class Draw3DDepthCalibrationTests
     [Fact]
     public void AttemptDue_ThrottlesWithinIntervalThenAllows()
     {
-        DepthCalibration.AttemptDue(100, 90, 30).Should().BeFalse();  // 10 frames since last — throttled
-        DepthCalibration.AttemptDue(119, 90, 30).Should().BeFalse();  // 29 frames — still throttled
-        DepthCalibration.AttemptDue(120, 90, 30).Should().BeTrue();   // 30 frames — due
+        DepthCalibration.AttemptDue(100, 90, 30).Should().BeFalse();  // 10 frames since last - throttled
+        DepthCalibration.AttemptDue(119, 90, 30).Should().BeFalse();  // 29 frames - still throttled
+        DepthCalibration.AttemptDue(120, 90, 30).Should().BeTrue();   // 30 frames - due
         DepthCalibration.AttemptDue(500, 90, 30).Should().BeTrue();
     }
 
@@ -140,17 +140,17 @@ public class Draw3DDepthCalibrationTests
 
         var rects = new[]
         {
-            new Vector4(0.4f, 0.4f, 0.6f, 0.6f), // covers screen center — overlaps the item
+            new Vector4(0.4f, 0.4f, 0.6f, 0.6f), // covers screen center - overlaps the item
             new Vector4(0.4f, 0.4f, 0.6f, 0.6f), // same rect, plate farther away
-            new Vector4(0.9f, 0.9f, 0.95f, 0.95f), // corner — no overlap
+            new Vector4(0.9f, 0.9f, 0.95f, 0.95f), // corner - no overlap
         };
         var distances = new[] { 5f, 20f, 20f };
         var factors = new float[3];
 
         pass.ComputeRectOcclusion(in frame, rects, distances, factors, 3, behindFactor: 0.25f);
 
-        factors[0].Should().Be(1f, "the plate is in front of the item — its letters keep reading on top");
-        factors[1].Should().Be(0.25f, "the plate is behind the item's farthest surface — the shape covers it");
-        factors[2].Should().Be(1f, "nothing overlaps this rect — the plate reads on top by default");
+        factors[0].Should().Be(1f, "the plate is in front of the item - its letters keep reading on top");
+        factors[1].Should().Be(0.25f, "the plate is behind the item's farthest surface - the shape covers it");
+        factors[2].Should().Be(1f, "nothing overlaps this rect - the plate reads on top by default");
     }
 }

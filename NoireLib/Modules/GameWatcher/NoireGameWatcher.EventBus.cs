@@ -9,7 +9,7 @@ public partial class NoireGameWatcher
     /// <summary>
     /// Opts an event type into EventBus mirroring: from now on, every dispatched <typeparamref name="TEvent"/>
     /// is also published on the bus configured in <see cref="GameWatcherOptions.EventBus"/>.<br/>
-    /// Nothing is published by default — a firehose of character diffs would flood a shared bus.
+    /// Nothing is published by default - a firehose of character diffs would flood a shared bus.
     /// Without an attached bus the call is inert (logged).
     /// </summary>
     /// <typeparam name="TEvent">The event type to mirror.</typeparam>
@@ -94,7 +94,7 @@ public partial class NoireGameWatcher
                 NoireLogger.LogError(this, ex, $"Mirroring {type.Name} to the EventBus threw.");
             }
 
-            // One matching mirror registration is enough — several matching filters must not duplicate
+            // One matching mirror registration is enough - several matching filters must not duplicate
             // the event on the bus.
             break;
         }

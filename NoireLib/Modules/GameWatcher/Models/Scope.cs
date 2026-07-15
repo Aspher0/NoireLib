@@ -13,7 +13,7 @@ namespace NoireLib.GameWatcher;
 /// </summary>
 public sealed class Scope
 {
-    /// <summary>The root kinds a scope can be built from. Internal — user code uses the static factories.</summary>
+    /// <summary>The root kinds a scope can be built from. Internal - user code uses the static factories.</summary>
     internal enum RootKind
     {
         /// <summary>Only the local player.</summary>
@@ -116,7 +116,7 @@ public sealed class Scope
     public static Scope Entity(uint entityId) => new(RootKind.Entity, entityId: entityId);
 
     /// <summary>
-    /// A single player identified by content id — survives despawn/respawn and entity-id reuse.
+    /// A single player identified by content id - survives despawn/respawn and entity-id reuse.
     /// </summary>
     /// <param name="contentId">The content id to watch.</param>
     /// <returns>The scope.</returns>
@@ -172,7 +172,7 @@ public sealed class Scope
 
     /// <summary>
     /// Determines whether a subject snapshot matches this scope, using the snapshot's precomputed
-    /// <see cref="CharacterSnapshot.Flags"/> and identity fields — never a re-query of game state.
+    /// <see cref="CharacterSnapshot.Flags"/> and identity fields - never a re-query of game state.
     /// </summary>
     /// <param name="subject">The subject snapshot to test.</param>
     /// <returns>True when the subject is in scope.</returns>
@@ -242,7 +242,7 @@ public sealed class Scope
 
     /// <summary>
     /// Cheap pre-capture root test used during iteration: decides whether a subject is worth diffing at all,
-    /// from data available without materializing a snapshot. Predicates are deliberately not applied here —
+    /// from data available without materializing a snapshot. Predicates are deliberately not applied here -
     /// they run at dispatch, against real snapshots.
     /// </summary>
     /// <param name="probe">The light-weight per-subject probe.</param>

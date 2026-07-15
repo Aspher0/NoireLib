@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Saves and restores exactly the pipeline slots Draw3D touches (Law 6). The slot list below is the
-/// exhaustive contract — touching a new slot anywhere in the renderer without adding it here is a bug.<br/>
+/// exhaustive contract - touching a new slot anywhere in the renderer without adding it here is a bug.<br/>
 /// Rules encoded: every XXGet AddRefs (each gets one Release); null is a value (restored, never skipped);
 /// viewport/scissor counts are captured and restored exactly.
 /// </summary>
@@ -202,7 +202,7 @@ internal sealed unsafe class StateGuard
 
     /// <summary>
     /// Debug-only: verifies stages Draw3D never touches (and therefore never saves) are clean at the
-    /// present-time callback — a null geometry shader and zero OM UAVs. If either assert ever fires,
+    /// present-time callback - a null geometry shader and zero OM UAVs. If either assert ever fires,
     /// the slot enters the save/restore contract above.
     /// </summary>
     [Conditional("DEBUG")]
@@ -210,14 +210,14 @@ internal sealed unsafe class StateGuard
     {
         ID3D11GeometryShader* gs = null;
         ctx->GSGetShader(&gs, null, null);
-        Debug.Assert(gs == null, "Draw3D: a geometry shader is bound at present time — add GS to the StateGuard slot contract.");
+        Debug.Assert(gs == null, "Draw3D: a geometry shader is bound at present time - add GS to the StateGuard slot contract.");
         ComPtrUtil.Release(ref gs);
 
         var uavs = stackalloc ID3D11UnorderedAccessView*[8];
         ctx->OMGetRenderTargetsAndUnorderedAccessViews(0, null, null, 0, 8, uavs);
         for (var i = 0; i < 8; i++)
         {
-            Debug.Assert(uavs[i] == null, "Draw3D: an OM UAV is bound at present time — add UAVs to the StateGuard slot contract.");
+            Debug.Assert(uavs[i] == null, "Draw3D: an OM UAV is bound at present time - add UAVs to the StateGuard slot contract.");
             ComPtrUtil.Release(ref uavs[i]);
         }
     }

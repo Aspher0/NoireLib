@@ -2,7 +2,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Identifies the internal sources of the <see cref="NoireGameWatcher"/> module.<br/>
-/// User code never interacts with sources directly — this enum only appears in
+/// User code never interacts with sources directly - this enum only appears in
 /// <see cref="GameWatcherOptions.Sources"/> and <see cref="GameWatcherOptions.PollCadences"/> overrides,
 /// and in the diagnostics window.
 /// </summary>
@@ -23,7 +23,7 @@ public enum SourceKind
     /// <summary>Party and alliance member diffing, leader changes, role composition and member territory changes.</summary>
     Party,
 
-    /// <summary>Friend-list snapshots (online state, location) through the game's social data — remote presence beyond the object table.</summary>
+    /// <summary>Friend-list snapshots (online state, location) through the game's social data - remote presence beyond the object table.</summary>
     Friends,
 
     /// <summary>Target, focus target, soft target and mouse-over target changes.</summary>

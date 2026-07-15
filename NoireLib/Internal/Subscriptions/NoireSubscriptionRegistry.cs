@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Core.Subscriptions;
 
 /// <summary>
-/// A thread-safe, generic subscription registry — the shared primitive behind NoireLib callback systems.<br/>
+/// A thread-safe, generic subscription registry - the shared primitive behind NoireLib callback systems.<br/>
 /// Supports priority ordering (higher first), keyed replacement, filters, one-shot subscriptions, async handlers,
 /// owner-based bulk unsubscription, and per-subscription delivery thread selection.
 /// </summary>
@@ -343,7 +343,7 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
     }
 
     /// <summary>
-    /// Applies the entry's filter, then — for one-shot subscriptions — claims and removes it, and finally invokes
+    /// Applies the entry's filter, then - for one-shot subscriptions - claims and removes it, and finally invokes
     /// the handler. The filter is evaluated <b>before</b> the once-claim so a non-matching context never consumes a
     /// filtered one-shot subscription. Runs on the caller's thread: inline for inline delivery, or on the framework
     /// thread for marshaled delivery, so a FrameworkThread filter still sees game state from the framework thread.

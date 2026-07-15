@@ -11,9 +11,9 @@ using static TerraFX.Interop.Windows.Windows;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// Produces <see cref="GpuTexture"/>s for Draw3D materials by bridging Dalamud's texture pipeline —
+/// Produces <see cref="GpuTexture"/>s for Draw3D materials by bridging Dalamud's texture pipeline -
 /// decoding, caching and lifetime stay Dalamud's problem.<br/>
-/// <b>Ownership:</b> every returned texture is owned by the caller — dispose it when done. The bridge
+/// <b>Ownership:</b> every returned texture is owned by the caller - dispose it when done. The bridge
 /// keeps its own reference to the underlying Dalamud resource, so the source wrap's lifetime stops mattering.
 /// </summary>
 public static class TextureLoader
@@ -21,7 +21,7 @@ public static class TextureLoader
     /// <summary>
     /// Bridges an existing Dalamud texture wrap into a material-ready texture.<br/>
     /// The wrap's low-level resource is shared (independent reference), then QueryInterface proves the
-    /// handle really is a shader resource view — never assumed (Law 8).
+    /// handle really is a shader resource view - never assumed (Law 8).
     /// </summary>
     /// <param name="wrap">The source wrap. It can be disposed freely after this call.</param>
     /// <returns>The bridged texture, or null when the handle is not a D3D11 SRV (logged once).</returns>
@@ -34,7 +34,7 @@ public static class TextureLoader
         if (!ComPtrUtil.TryQi<ID3D11ShaderResourceView>((IUnknown*)(nint)shared.Handle.Handle, out var srv))
         {
             shared.Dispose();
-            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView — cannot bridge.", "Draw3D");
+            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView - cannot bridge.", "Draw3D");
             return null;
         }
 
@@ -93,7 +93,7 @@ public static class TextureLoader
 }
 
 /// <summary>
-/// Opens textures rendered by another process via DXGI shared handles — the socket that makes external
+/// Opens textures rendered by another process via DXGI shared handles - the socket that makes external
 /// producers (e.g. an off-screen browser renderer) usable as ordinary material textures.
 /// If the producer uses a keyed mutex, it is acquired/released automatically around each frame's use.
 /// </summary>

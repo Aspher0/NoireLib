@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// The one vertex format of the Draw3D core: 48 bytes — position, normal, UV, straight-alpha color.
+/// The one vertex format of the Draw3D core: 48 bytes - position, normal, UV, straight-alpha color.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct Vertex3D
@@ -34,7 +34,7 @@ public struct Vertex3D
 /// <summary>
 /// Per-instance stream data (input slot 1): the world matrix as four UNtransposed rows plus an instance tint.<br/>
 /// Rows are untransposed because HLSL's <c>float4x4(r0..r3)</c> attribute constructor builds logical rows directly,
-/// bypassing constant-buffer packing — see the note in Unlit.hlsl.
+/// bypassing constant-buffer packing - see the note in Unlit.hlsl.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct InstanceData
@@ -101,7 +101,7 @@ public readonly struct BoundingSphere
         return new BoundingSphere(center, System.MathF.Sqrt(radiusSq));
     }
 
-    /// <summary>Transforms the sphere by a world matrix (radius scaled by the largest axis scale — conservative).</summary>
+    /// <summary>Transforms the sphere by a world matrix (radius scaled by the largest axis scale - conservative).</summary>
     /// <param name="world">The world matrix to apply.</param>
     public BoundingSphere Transform(in Matrix4x4 world)
     {

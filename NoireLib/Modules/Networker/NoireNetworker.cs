@@ -14,7 +14,7 @@ namespace NoireLib.Networker;
 /// One instance per machine is elected hub through a named kernel mutex (no well-known ports at all);
 /// everyone else connects to it over loopback TCP. LAN machines bridge hub-to-hub via UDP beacons.<br/>
 /// Handlers, request continuations, and peer events are all delivered on the framework thread.<br/>
-/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a networker task from the framework thread — always await.</b>
+/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a networker task from the framework thread - always await.</b>
 /// </summary>
 public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 {
@@ -120,7 +120,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
     public NetworkerState State => state;
 
     /// <summary>
-    /// Whether this instance currently is the machine's hub. Informational only — usage never differs.
+    /// Whether this instance currently is the machine's hub. Informational only - usage never differs.
     /// </summary>
     public bool IsHub => hubServer != null;
 
@@ -130,7 +130,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
     public NetworkerSelf Self => self ??= new NetworkerSelf(SelfId, OnSelfMetadataChanged);
 
     /// <summary>
-    /// Every other peer on the network — same-PC and LAN alike, one list. Excludes <see cref="Self"/>.
+    /// Every other peer on the network - same-PC and LAN alike, one list. Excludes <see cref="Self"/>.
     /// </summary>
     public IReadOnlyList<NetworkerPeer> OtherPeers
     {
@@ -307,7 +307,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             election?.Release();
         }
 
-        // The hub faulted (it only completes on its own when something went wrong) — brief pause, then re-elect.
+        // The hub faulted (it only completes on its own when something went wrong) - brief pause, then re-elect.
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
     }
 

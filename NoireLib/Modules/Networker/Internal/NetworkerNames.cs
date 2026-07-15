@@ -22,7 +22,7 @@ internal static class NetworkerNames
         => @"Local\NoireNetworker_" + HashHex(KernelSalt + networkName) + "_map";
 
     /// <summary>
-    /// The salted hash identifying the network inside LAN beacons — the plaintext name never crosses the wire.
+    /// The salted hash identifying the network inside LAN beacons - the plaintext name never crosses the wire.
     /// </summary>
     public static string BeaconNetworkHash(string networkName)
         => HashHex(BeaconSalt + networkName);

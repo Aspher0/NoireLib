@@ -7,9 +7,9 @@ using System.Threading.Tasks;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Character facts for <b>anyone</b> — the local player and every other character alike. One event stream per
+/// Character facts for <b>anyone</b> - the local player and every other character alike. One event stream per
 /// fact; a <see cref="Scope"/> decides who it fires for (default: <see cref="Scope.LocalPlayer"/>).<br/>
-/// Every helper has one shape — <c>(handler, scope, options)</c> — plus one async twin. Keyed replacement,
+/// Every helper has one shape - <c>(handler, scope, options)</c> - plus one async twin. Keyed replacement,
 /// priority, extra filtering and one-shot all come from <see cref="NoireSubscriptionOptions{TContext}"/>.
 /// </summary>
 public sealed class CharacterWatcher : GameWatcherFacade
@@ -57,7 +57,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
 
     /// <summary>
     /// Subscribes to characters appearing in the object table. The object table is the client's entire view of
-    /// the area, so with a scope this <i>is</i> the presence event — someone arriving where you are.
+    /// the area, so with a scope this <i>is</i> the presence event - someone arriving where you are.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
@@ -72,7 +72,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
 
     /// <summary>
     /// Subscribes to characters disappearing from the object table. During zone transitions the whole table
-    /// respawns — check <see cref="CharacterDespawnedEvent.DuringZoneChange"/> to tell "they left" from "we left".
+    /// respawns - check <see cref="CharacterDespawnedEvent.DuringZoneChange"/> to tell "they left" from "we left".
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
@@ -104,7 +104,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.Vitals, null, handler, scope, options, nameof(OnHpChanged));
 
     /// <summary>
-    /// Subscribes to MP changes (and GP/CP — the latter are only meaningful for the local player,
+    /// Subscribes to MP changes (and GP/CP - the latter are only meaningful for the local player,
     /// as the game does not synchronize them for others).
     /// </summary>
     /// <param name="handler">The handler.</param>
@@ -197,7 +197,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.Cast, null, handler, scope, options, nameof(OnCastCompleted));
 
     /// <summary>
-    /// Subscribes to cast interruptions. Interrupts are inferred from polling — a cast that vanishes well before
+    /// Subscribes to cast interruptions. Interrupts are inferred from polling - a cast that vanishes well before
     /// its total cast time is treated as interrupted rather than completed.
     /// </summary>
     /// <param name="handler">The handler.</param>
@@ -290,8 +290,8 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.Mode, null, handler, scope, options, nameof(OnModeChanged));
 
     /// <summary>
-    /// Subscribes to looping-emote starts (mode polling). For exact emote ids of any emote — one-shot
-    /// included — use <see cref="OnEmotePlayed"/>.
+    /// Subscribes to looping-emote starts (mode polling). For exact emote ids of any emote - one-shot
+    /// included - use <see cref="OnEmotePlayed"/>.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
@@ -319,7 +319,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.Mode, null, handler, scope, options, nameof(OnEmoteLoopEnded));
 
     /// <summary>
-    /// Subscribes to emote plays — one-shot emotes, looping emotes and cposes alike, with the exact emote id,
+    /// Subscribes to emote plays - one-shot emotes, looping emotes and cposes alike, with the exact emote id,
     /// for any character. Read by polling the character's emote controller; one-shot emotes have no end signal
     /// (they are fired animations, not states).
     /// </summary>
@@ -354,7 +354,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
 
     /// <summary>
     /// Subscribes to class/job changes. For the local player, the Session source also fires the native-backed
-    /// <see cref="LocalClassJobChangedEvent"/> — use whichever fits your code shape.
+    /// <see cref="LocalClassJobChangedEvent"/> - use whichever fits your code shape.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>
@@ -383,7 +383,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
         => Scoped(CharacterAspect.JobLevel, null, handler, scope, options, nameof(OnLevelChanged));
 
     /// <summary>
-    /// Subscribes to identity changes on the same entity slot (name, home world, content id) — usually a sign
+    /// Subscribes to identity changes on the same entity slot (name, home world, content id) - usually a sign
     /// the game reused the entity id for a different character.
     /// </summary>
     /// <param name="handler">The handler.</param>
@@ -405,7 +405,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
     /// Diffs any selected value per scoped subject: the selector runs against fresh snapshots of every subject
     /// in scope each tick, and the callback fires per subject when its value changes. The first sample per
     /// subject seeds silently.<br/>
-    /// This is independent of the interest-mask machinery — the cost (snapshot per subject per tick) is
+    /// This is independent of the interest-mask machinery - the cost (snapshot per subject per tick) is
     /// carried by this watcher alone.
     /// </summary>
     /// <typeparam name="T">The selected value type.</typeparam>

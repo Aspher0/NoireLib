@@ -6,10 +6,10 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// The per-pixel "game UI on top" source: a same-format copy of the backbuffer taken right before the
-/// layer composites. At that moment the game's frame — world, post-processing AND native UI — is
+/// layer composites. At that moment the game's frame - world, post-processing AND native UI - is
 /// complete, and the backbuffer's alpha channel holds the accumulated UI coverage (the game's UI
 /// alpha-blends over an alpha-0 scene). The composite multiplies the layer by (1 − uiAlpha), so
-/// nameplate letters, window shadows and chat transparency read on top at pixel granularity —
+/// nameplate letters, window shadows and chat transparency read on top at pixel granularity -
 /// no rectangles, no hooks, no added latency.
 /// </summary>
 internal sealed unsafe class UiMaskSource : IDisposable
@@ -36,7 +36,7 @@ internal sealed unsafe class UiMaskSource : IDisposable
 
     /// <summary>
     /// Ensures the copy target matches the backbuffer and copies this frame's content into it.
-    /// Returns false (mask off this frame) when anything is incompatible — never throws.
+    /// Returns false (mask off this frame) when anything is incompatible - never throws.
     /// </summary>
     public bool EnsureAndCopy(RenderDevice device, ID3D11DeviceContext* ctx, nint backbufferTexture)
     {
@@ -135,7 +135,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
         if (source.Texture == null || source.Width == 0 || source.Height == 0)
             return;
 
-        // Overflow-safe throttle: never subtract the long.MinValue "never checked" sentinel —
+        // Overflow-safe throttle: never subtract the long.MinValue "never checked" sentinel -
         // frameId - long.MinValue overflows negative and always reads as "throttled", which would
         // wedge the self-check off forever (Description stuck at "unchecked", auto-disable dead).
         if (lastCheckFrame != long.MinValue && frameId - lastCheckFrame < CheckIntervalFrames)
@@ -170,7 +170,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
             copyPending = false;
         }
 
-        // 1. Read the texels queued on the previous check — long done by now, so DO_NOT_WAIT never stalls.
+        // 1. Read the texels queued on the previous check - long done by now, so DO_NOT_WAIT never stalls.
         if (copyPending)
             TryEvaluate(ctx);
 
@@ -198,7 +198,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
         D3D11_MAPPED_SUBRESOURCE mapped;
         var hr = ctx->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, DoNotWait, &mapped);
         if (hr < 0)
-            return; // still in flight (essentially never) — evaluate on the next cycle
+            return; // still in flight (essentially never) - evaluate on the next cycle
 
         var samples = new float[SampleCount];
         try
@@ -226,7 +226,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
 
         if (readable < SampleCount / 2)
         {
-            Description = $"alpha unreadable for format {stagingFormat} — mask stays on, unverified";
+            Description = $"alpha unreadable for format {stagingFormat} - mask stays on, unverified";
             return;
         }
 
@@ -242,7 +242,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
                 {
                     disabledLogged = true;
                     NoireLogger.LogError(
-                        "Draw3D: the backbuffer alpha channel reads fully covered everywhere — per-pixel game-UI-on-top masking disabled " +
+                        "Draw3D: the backbuffer alpha channel reads fully covered everywhere - per-pixel game-UI-on-top masking disabled " +
                         "(known cause: 3D resolution scaling / upscalers filling alpha). The layer now draws over the game UI. " +
                         "Run '/noire3d probe' and report the log if this looks wrong.", "Draw3D");
                 }
@@ -255,7 +255,7 @@ internal sealed unsafe class UiMaskHealth : IDisposable
             if (!AlphaUsable)
             {
                 AlphaUsable = true;
-                NoireLogger.LogInfo("Draw3D: backbuffer alpha looks sane again — per-pixel UI masking re-enabled.", "Draw3D");
+                NoireLogger.LogInfo("Draw3D: backbuffer alpha looks sane again - per-pixel UI masking re-enabled.", "Draw3D");
             }
 
             Description = $"ok ({covered}/{readable} samples UI-covered)";

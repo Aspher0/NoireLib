@@ -156,7 +156,7 @@ internal static class Wire
     public const int ProtocolVersion = 1;
 
     /// <summary>
-    /// The serializer used for envelopes and payload conversion. TypeNameHandling stays None — never change this.
+    /// The serializer used for envelopes and payload conversion. TypeNameHandling stays None - never change this.
     /// </summary>
     public static readonly JsonSerializer Serializer = JsonSerializer.Create(new JsonSerializerSettings
     {

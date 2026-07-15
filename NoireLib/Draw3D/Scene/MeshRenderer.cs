@@ -12,10 +12,10 @@ public sealed class MeshRenderer
 {
     private readonly SceneNode node;
 
-    /// <summary>The mesh to draw. Referenced, never owned — dispose it wherever it was created.</summary>
+    /// <summary>The mesh to draw. Referenced, never owned - dispose it wherever it was created.</summary>
     public Mesh Mesh { get; set; }
 
-    /// <summary>The material to draw with. Immutable record — swap the reference to change appearance.</summary>
+    /// <summary>The material to draw with. Immutable record - swap the reference to change appearance.</summary>
     public Material Material { get; set; }
 
     /// <summary>
@@ -29,7 +29,7 @@ public sealed class MeshRenderer
 
     /// <summary>
     /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
-    /// paint on — so a character / monster / NPC standing in it is cut out without holing the ground around
+    /// paint on - so a character / monster / NPC standing in it is cut out without holing the ground around
     /// their feet. Settable per frame; null = paint over everything. Build from
     /// <see cref="NoireDraw3D.GetActorExclusions"/> or by hand. Up to 64 volumes are honored.
     /// </summary>

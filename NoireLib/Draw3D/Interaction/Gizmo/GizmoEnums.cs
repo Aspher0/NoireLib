@@ -55,14 +55,14 @@ public enum GizmoBackend
     /// <summary>
     /// In-world depth gizmos: real depth-tested geometry drawn through <see cref="Im.ImDraw3D"/> and hit-tested with the
     /// render-time camera: occludes correctly, never wobbles under camera motion, can render through walls, and supports
-    /// per-axis universal snapping. The right backend for the V2 renderer, and the default.
+    /// per-axis universal snapping. Pick it when you want depth-correct, in-world handles over the ImGuizmo look.
     /// </summary>
     Native,
 
     /// <summary>
     /// The classic 2D-projected ImGui gizmo, drawn by <c>Dalamud.Bindings.ImGuizmo</c> and fed the render camera's
-    /// view/projection. Same API surface as <see cref="Native"/>. Familiar look, but flat (no depth occlusion) and
-    /// coarser universal snapping. Pick it when you want the ImGuizmo feel over depth-correctness.
+    /// view/projection. Same API surface as <see cref="Native"/>. Familiar look, flat (always on top, no depth
+    /// occlusion), and it snaps translation in the gizmo's own frame to match the native backend. The default.
     /// </summary>
     ImGuizmo,
 }

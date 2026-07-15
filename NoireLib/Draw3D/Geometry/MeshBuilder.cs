@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
 /// Procedural mesh catalog. Every builder returns CPU data that is unit-sized around the origin,
-/// +Y up, clockwise-front winding, outward normals, UVs in [0,1] — scale and orient via the scene node.<br/>
+/// +Y up, clockwise-front winding, outward normals, UVs in [0,1] - scale and orient via the scene node.<br/>
 /// Vertex order is deterministic per shape so tests can assert exact counts and windings.
 /// </summary>
 public static class MeshBuilder
@@ -409,7 +409,7 @@ public static class MeshBuilder
     }
 
     /// <summary>Miter-to-bevel switch: when the miter would extend beyond this factor of the half-width (turn sharper than ~150°), a bevel joint is emitted instead.</summary>
-    internal const float MiterLimit = 3.8637f; // 1/sin(15°) — miter length at a 150° turn
+    internal const float MiterLimit = 3.8637f; // 1/sin(15°) - miter length at a 150° turn
 
     internal static void WriteExtrudePath(List<Vertex3D> verts, List<ushort> indices, IReadOnlyList<Vector3> points, float width, bool closed)
     {
@@ -450,7 +450,7 @@ public static class MeshBuilder
             Vector3 offset = default;
             if (miterLen < 1e-4f)
             {
-                bevel = true; // 180° turn — no miter direction exists
+                bevel = true; // 180° turn - no miter direction exists
             }
             else
             {

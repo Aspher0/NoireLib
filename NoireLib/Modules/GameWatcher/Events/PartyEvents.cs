@@ -22,7 +22,7 @@ public sealed record PartyMemberLeftEvent(PartyMemberSnapshot Member);
 public sealed record PartyMemberChangedEvent(PartyMemberSnapshot Previous, PartyMemberSnapshot Current);
 
 /// <summary>
-/// Fired when a party member's territory changes — remote presence for party members, even when they are
+/// Fired when a party member's territory changes - remote presence for party members, even when they are
 /// not in the local object table. Territory data is server-synchronized and seconds-grained.
 /// </summary>
 /// <param name="Member">The member's current snapshot.</param>

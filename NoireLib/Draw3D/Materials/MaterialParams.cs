@@ -38,7 +38,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         {
             srv = material.Texture.SrvPointer;
             if (srv == 0)
-                return false; // disposed texture — skip and count, never bind a stale pointer
+                return false; // disposed texture - skip and count, never bind a stale pointer
         }
 
         var domain = material.Domain;

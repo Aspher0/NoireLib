@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 /// The interest-masked polling source over every character in the object table.<br/>
 /// Each scoped subscription contributes its aspect bits and its scope; the source keeps the union mask and
 /// the union iteration class (recomputed on subscribe/unsubscribe, not per tick). Per tick it visits only
-/// subjects matched by the union scope and compares only fields under the union mask — compare first,
+/// subjects matched by the union scope and compares only fields under the union mask - compare first,
 /// materialize second: a new snapshot is allocated only when something changed.
 /// </summary>
 internal sealed class CharacterSource : GameWatcherSource
@@ -102,7 +102,7 @@ internal sealed class CharacterSource : GameWatcherSource
     /// <inheritdoc/>
     protected override void OnActivate()
     {
-        // Baseline seeding: subjects already present seed the baseline without firing spawn events —
+        // Baseline seeding: subjects already present seed the baseline without firing spawn events -
         // subscribers observe changes from now on, not a replay of the present.
         baseline.Clear();
         SeedBaseline();

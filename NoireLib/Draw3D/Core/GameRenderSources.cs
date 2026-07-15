@@ -30,9 +30,9 @@ internal static unsafe class GameRenderSources
     {
         /// <summary>Render camera view matrix (valid when <see cref="HasRenderCamera"/>).</summary>
         public Matrix4x4 View;
-        /// <summary>Render camera projection matrix — the game's exact reversed-Z, infinite-far projection.</summary>
+        /// <summary>Render camera projection matrix - the game's exact reversed-Z, infinite-far projection.</summary>
         public Matrix4x4 Proj;
-        /// <summary>The render camera's second projection matrix (role unknown) — diagnostics/probe only, never a render source.</summary>
+        /// <summary>The render camera's second projection matrix (role unknown) - diagnostics/probe only, never a render source.</summary>
         public Matrix4x4 Proj2;
         /// <summary>The game's own combined view-projection (world→screen path), used as cross-check and wholesale fallback.</summary>
         public Matrix4x4 ControlViewProj;
@@ -86,7 +86,7 @@ internal static unsafe class GameRenderSources
 
     /// <summary>
     /// Reads the game's scene depth texture ("Unscaled scene reverse-Z depth stencil") from RenderTargetManager.<br/>
-    /// False when unavailable — the frame runs in depth-off mode.
+    /// False when unavailable - the frame runs in depth-off mode.
     /// </summary>
     public static bool TryGetDepthTexture(out DepthTextureInfo info)
     {
@@ -114,7 +114,7 @@ internal static unsafe class GameRenderSources
     }
 
     /// <summary>
-    /// Reads the swapchain's depth texture — the probe's diagnostics alternate for answering
+    /// Reads the swapchain's depth texture - the probe's diagnostics alternate for answering
     /// "which buffer really holds this frame's scene depth at present time". Never a render source
     /// unless the probe proves it should be.
     /// </summary>
@@ -143,7 +143,7 @@ internal static unsafe class GameRenderSources
     /// <summary>
     /// Reads the camera once (Law 2: one snapshot per presented frame). The One-Camera-Object rule:
     /// view and projection come from the single active RenderCamera; the Control combined VP is the
-    /// wholesale fallback and validator cross-check — sources are never mixed.
+    /// wholesale fallback and validator cross-check - sources are never mixed.
     /// </summary>
     public static bool TryGetCamera(out CameraData data)
     {
@@ -188,7 +188,7 @@ internal static unsafe class GameRenderSources
     /// Collects the screen rects (display-UV space: xy = min, zw = max) of the currently visible
     /// nameplates plus each plate's world-space distance from the camera. The rects are invisible
     /// policy regions for the composite's per-pixel UI mask (depth-aware nameplate layering).
-    /// Fails soft: any inconsistency returns 0 rects — plates read on top for this frame only.
+    /// Fails soft: any inconsistency returns 0 rects - plates read on top for this frame only.
     /// </summary>
     public static int CollectNamePlateRects(Vector4[] rects, float[] distances, int max, Vector2 displaySize, Vector3 eyePos)
     {
@@ -226,7 +226,7 @@ internal static unsafe class GameRenderSources
                 if (!plate.IsVisible)
                     continue;
 
-                // The collision node hugs the interactable plate area — much tighter than the container.
+                // The collision node hugs the interactable plate area - much tighter than the container.
                 var node = (AtkResNode*)plate.NameplateCollision;
                 if (node == null || !node->IsVisible())
                     node = plate.NameContainer;
@@ -252,7 +252,7 @@ internal static unsafe class GameRenderSources
         }
         catch (System.Exception)
         {
-            return 0; // protection off this frame — never let nameplate reads take the frame down
+            return 0; // protection off this frame - never let nameplate reads take the frame down
         }
     }
 
@@ -260,7 +260,7 @@ internal static unsafe class GameRenderSources
     /// Collects the screen rects of every visible game addon (HUD windows). Used as force-on-top policy
     /// regions inside the composite: where a HUD window overlaps a "covered" nameplate region, the HUD
     /// still reads on top. Near-fullscreen roots (the NamePlate/fly-text style transparent overlays)
-    /// are skipped — they would swallow every plate region. Fails soft to 0 appended rects.
+    /// are skipped - they would swallow every plate region. Fails soft to 0 appended rects.
     /// </summary>
     /// <returns>The number of rects appended starting at <paramref name="startIndex"/>.</returns>
     public static int CollectVisibleAddonRects(Vector4[] rects, int startIndex, int max, Vector2 displaySize)
@@ -339,6 +339,13 @@ internal static unsafe class GameRenderSources
 
         try
         {
+            // When the player hides the native UI (the game's own hide-UI toggle), the addons stay loaded with their
+            // collision nodes live, so they would keep intercepting clicks on 3D objects even though nothing is drawn.
+            // Treat a hidden UI as "no addon under the cursor" so the whole interface stops blocking picks while hidden.
+            var atkModule = RaptureAtkModule.Instance();
+            if (atkModule != null && !atkModule->IsUiVisible)
+                return false;
+
             var manager = RaptureAtkUnitManager.Instance();
             if (manager == null)
                 return false;
@@ -539,7 +546,7 @@ internal static unsafe class GameRenderSources
         }
         catch (System.Exception)
         {
-            // exclusion unavailable this call — the decal reads over actors rather than taking the frame down
+            // exclusion unavailable this call - the decal reads over actors rather than taking the frame down
         }
     }
 

@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Status effect facts for any scoped character: gained/lost/stack-changed events, duration-threshold
-/// watchers and group queries. Wide scopes in crowds are the one legitimately heavy path — dial the Statuses
+/// watchers and group queries. Wide scopes in crowds are the one legitimately heavy path - dial the Statuses
 /// source cadence down via <see cref="GameWatcherOptions.PollCadences"/> when needed.
 /// </summary>
 public sealed class StatusWatcher : GameWatcherFacade

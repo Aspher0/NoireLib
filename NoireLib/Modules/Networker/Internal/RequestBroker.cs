@@ -30,7 +30,7 @@ internal sealed class RequestBroker
     public Task<Envelope> Track(Guid requestId, Guid targetPeerId, TimeSpan timeout)
     {
         // No RunContinuationsAsynchronously: completions are posted through the pump, so continuations
-        // run inline on the framework thread — that's the "await resumes on the framework thread" guarantee.
+        // run inline on the framework thread - that's the "await resumes on the framework thread" guarantee.
         var completion = new TaskCompletionSource<Envelope>();
         var timeoutSource = new CancellationTokenSource();
 

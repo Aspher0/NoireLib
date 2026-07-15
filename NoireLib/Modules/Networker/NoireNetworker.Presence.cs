@@ -50,7 +50,7 @@ public partial class NoireNetworker
     /// <summary>
     /// Subscribes a handler invoked when a peer's metadata or flags change. Runs on the framework thread.
     /// </summary>
-    /// <param name="handler">The handler, receiving the peer and the changed key — the metadata key, "flag:&lt;name&gt;" for flags, or "*" for full-state updates.</param>
+    /// <param name="handler">The handler, receiving the peer and the changed key - the metadata key, "flag:&lt;name&gt;" for flags, or "*" for full-state updates.</param>
     /// <param name="key">Optional subscription key; subscribing again with the same key replaces the previous subscription.</param>
     /// <returns>A token that unsubscribes the handler when disposed.</returns>
     public NoireSubscriptionToken OnPeerUpdated(Action<NetworkerPeer, string> handler, string? key = null)
@@ -117,7 +117,7 @@ public partial class NoireNetworker
     /// Waits until the local instance and every connected peer carry the given flag, with at least
     /// <paramref name="minimumOthers"/> other peers connected (guarding against trivially-true empty networks).<br/>
     /// Membership is evaluated live and evaluation pauses during re-election. The await resumes on the framework thread.<br/>
-    /// <b>Never sync-block on the returned task from the framework thread — always await.</b>
+    /// <b>Never sync-block on the returned task from the framework thread - always await.</b>
     /// </summary>
     /// <param name="flag">The flag name.</param>
     /// <param name="timeout">Optional timeout. When exceeded, the task completes with false.</param>

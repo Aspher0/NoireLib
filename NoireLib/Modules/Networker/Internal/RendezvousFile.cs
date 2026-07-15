@@ -81,7 +81,7 @@ internal static class RendezvousFile
         }
         catch
         {
-            // Missing map, permission issues, or torn/corrupt content — all mean "no usable rendezvous right now".
+            // Missing map, permission issues, or torn/corrupt content - all mean "no usable rendezvous right now".
             return null;
         }
     }

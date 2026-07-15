@@ -1,4 +1,4 @@
-// NoireLib Draw3D — shared shader header (see docs/Draw3D V2 Proposal.md §10.2).
+// NoireLib Draw3D - shared shader header (see docs/Draw3D V2 Proposal.md §10.2).
 // All matrices in cbuffers are pre-transposed on the CPU; consume with mul(v, M) only.
 
 // ---- b0: per frame -------------------------------------------------------
@@ -43,7 +43,7 @@ SamplerState PointClamp : register(s0);
 SamplerState BaseSamp   : register(s1);
 
 // ---- depth helpers (THE ONLY place depth convention lives) ----------------
-// All comparisons happen in clip-w space (w after v·ViewProj — the perspective view depth, world
+// All comparisons happen in clip-w space (w after v·ViewProj - the perspective view depth, world
 // units). The game buffer's value convention is NOT assumed: DepthCal (a, b) is fitted at runtime
 // from raycast ground truth (sample = a + b/w covers reversed/standard, finite/infinite alike).
 

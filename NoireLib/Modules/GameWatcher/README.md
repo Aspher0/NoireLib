@@ -1,12 +1,12 @@
 # NoireGameWatcher
 
-Watch **anything and anyone**: every character (local player *and* others), every object, party and alliance, zones, duties, conditions, chat, combat, cooldowns, statuses, UI addons and inventory — through one subscription model, one token type, one cost model, and one waiting primitive that plugs directly into `NoireTaskQueue`.
+Watch **anything and anyone**: every character (local player *and* others), every object, party and alliance, zones, duties, conditions, chat, combat, cooldowns, statuses, UI addons and inventory - through one subscription model, one token type, one cost model, and one waiting primitive that plugs directly into `NoireTaskQueue`.
 
 ```csharp
 var watcher = new NoireGameWatcher(new GameWatcherOptions());
 ```
 
-Everything works with zero configuration. There is nothing to enable manually: **sources activate on demand** — the first subscription touching a source spins it up, disposing the last token shuts it down.
+Everything works with zero configuration. There is nothing to enable manually: **sources activate on demand** - the first subscription touching a source spins it up, disposing the last token shuts it down.
 
 ## One event per fact, a Scope decides who it's about
 
@@ -23,20 +23,20 @@ watcher.Characters.OnDied(e => Alert(e.Current.Name), scope: Scope.AllPlayers);
 // A specific person, wherever they appear:
 watcher.Characters.OnCastStarted(e => ..., scope: Scope.Name("Some Player"));
 
-// Emotes from anyone nearby — one-shot and looping alike, exact emote id:
+// Emotes from anyone nearby - one-shot and looping alike, exact emote id:
 watcher.Characters.OnEmotePlayed(e => Log($"{e.Character.Name} used emote {e.EmoteId}"), scope: Scope.AllPlayers);
 ```
 
 Scopes: `LocalPlayer`, `Party`, `Alliance`, `Friends`, `AllPlayers`, `AllCharacters`, `Entity(id)`, `ContentId(cid)`, `Name(name, worldId)`, plus `.Where(predicate)` (narrowing modifier) and `.Union(other)`.
 
-Every subscription helper has one shape — `(handler, scope, options)` — plus an async twin. Keyed replacement, priority, filtering, one-shot and owner tagging come from `NoireSubscriptionOptions`:
+Every subscription helper has one shape - `(handler, scope, options)` - plus an async twin. Keyed replacement, priority, filtering, one-shot and owner tagging come from `NoireSubscriptionOptions`:
 
 ```csharp
 watcher.Characters.OnDied(e => Alert(e.Current.Name),
     scope: Scope.Party,
     options: new() { Key = "death-alert", Once = true });
 
-// Plugin teardown — one line for everything ever registered with an owner:
+// Plugin teardown - one line for everything ever registered with an owner:
 watcher.UnsubscribeOwner(this);
 ```
 
@@ -53,7 +53,7 @@ bool talkOpen = watcher.Addons.IsReady("Talk");
 PartyState state = watcher.Party.State;
 ```
 
-## Waiting — `GameCondition`
+## Waiting - `GameCondition`
 
 ```csharp
 // Level-triggered ("is it true now?"), composable, awaitable:
@@ -67,11 +67,11 @@ var evt = await watcher.WaitFor<CharacterDiedEvent>(e => e.Current.Flags.HasFlag
 
 Prebuilt vocabulary: `PlayerAvailable`, `ScreenReady`, `InCombat`/`NotInCombat`, `NotCasting`, `Mounted`/`NotMounted`, `TerritoryIs`, `InDuty`/`NotInDuty`, `AddonReady`/`AddonGone`, `PartySize`, `ActionReady`, `GcdReady`, `AnyCharacter`/`AllCharacters(scope, predicate)`, `FromPredicate`, `FromEvent<TEvent>` (one-shot latch with `Reset()`).
 
-**The one rule:** never sync-block (`.Wait()`/`.Result`) on a watcher task from the framework thread — always `await`.
+**The one rule:** never sync-block (`.Wait()`/`.Result`) on a watcher task from the framework thread - always `await`.
 
 ## TaskQueue pairing
 
-Additive extension methods — the queue's own API is untouched:
+Additive extension methods - the queue's own API is untouched:
 
 ```csharp
 new TaskBuilder("teleport-home")
@@ -84,7 +84,7 @@ builder.CompleteOnGameEvent<SomethingObservedEvent>(watcher, e => e.SourceId == 
 
 `CompleteOnGameEvent` builds a **fresh latch per call**, so retried/re-enqueued tasks never complete against a stale match. No EventBus required.
 
-## Watch anything — the escape hatches
+## Watch anything - the escape hatches
 
 The catalog can never be complete, so completeness is unnecessary:
 
@@ -95,7 +95,7 @@ watcher.WatchValue(() => ReadSomeGameCounter(), (prev, cur) => ..., interval: Ti
 // Diff any property of any scoped character:
 watcher.Characters.WatchValue(Scope.Party, s => s.Level, (subject, prev, cur) => ...);
 
-// Detect a fact with your own hook, then hand it to the watcher — full citizenship:
+// Detect a fact with your own hook, then hand it to the watcher - full citizenship:
 public sealed record SomethingObservedEvent(uint SourceId);
 myHook.OnDetected += id => watcher.Publish(new SomethingObservedEvent(id));
 
@@ -108,14 +108,14 @@ await watcher.WaitFor<SomethingObservedEvent>(timeout: TimeSpan.FromSeconds(10))
 
 ## Presence, at three ranges
 
-- **Same area**: the object table is the client's entire view — `watcher.Characters.OnSpawned(..., scope)` *is* the presence event (zones, housing wards and plots alike).
-- **Sub-areas**: `watcher.Objects.WatchRegion(territoryId, RegionShape.Circle(center, r), onEntered, onLeft)` — territory-bound shapes with hysteresis. `WatchDistance(radius, ...)` for proximity around you.
-- **Remote**: `watcher.Party.OnMemberTerritoryChanged(...)` (party members anywhere, server-synced) and `watcher.Friends.OnTerritoryChanged(...)` (friends anywhere, refresh-cadence). The friend proxy refreshes in the background on a **jittered** cadence (`FriendsRefreshCadence`, floored at 30s) so the requests are not a detectable fixed beat, and the refresh is skipped while the friend-list window is open so it never disturbs it. Beyond party and social lists the client has no data — that boundary is documented, never silently absorbed.
+- **Same area**: the object table is the client's entire view - `watcher.Characters.OnSpawned(..., scope)` *is* the presence event (zones, housing wards and plots alike).
+- **Sub-areas**: `watcher.Objects.WatchRegion(territoryId, RegionShape.Circle(center, r), onEntered, onLeft)` - territory-bound shapes with hysteresis. `WatchDistance(radius, ...)` for proximity around you.
+- **Remote**: `watcher.Party.OnMemberTerritoryChanged(...)` (party members anywhere, server-synced) and `watcher.Friends.OnTerritoryChanged(...)` (friends anywhere, refresh-cadence). The friend proxy refreshes in the background on a **jittered** cadence (`FriendsRefreshCadence`, floored at 30s) so the requests are not a detectable fixed beat, and the refresh is skipped while the friend-list window is open so it never disturbs it. Beyond party and social lists the client has no data - that boundary is documented, never silently absorbed.
 
 ## Cost model
 
 - **Interest-masked diffing**: the Characters source compares only fields somebody listens to, only for subjects in somebody's scope. Union mask and union scope are recomputed on subscribe/unsubscribe, not per tick.
-- **Compare first, materialize second**: snapshots are allocated only when something changed — a crowded-but-static scene costs field comparisons, not GC pressure.
+- **Compare first, materialize second**: snapshots are allocated only when something changed - a crowded-but-static scene costs field comparisons, not GC pressure.
 - Event-driven sources (chat, duty, inventory, conditions, addons, toasts) have **zero** tick cost.
 - The one heavy path is wide-scope status watching in crowds: dial it down with `options.PollCadences[SourceKind.Statuses] = TimeSpan.FromMilliseconds(100)`.
 
@@ -143,8 +143,8 @@ watcher.PublishToEventBus<CharacterDiedEvent>(e => e.Current.Flags.HasFlag(Subje
 - **Frame quantization**: polled facts are accurate to ±1 frame; a value that changes and reverts within one frame is invisible. Native events and hooks are not quantized.
 - **Entity identity**: `EntityId` tracks the object-table *slot* (reusable); `ContentId`/`Name` track the *person*.
 - **Zone transitions**: spawn/despawn events fired while loading carry `DuringZoneChange = true`.
-- **Baseline seeding**: activating a source never fires a synthetic event storm — subscribers observe changes from now on; current state is what queries are for.
-- **Estimates say so**: other characters' cooldowns are inferred (`IsEstimate = true`) and drift — never exact.
+- **Baseline seeding**: activating a source never fires a synthetic event storm - subscribers observe changes from now on; current state is what queries are for.
+- **Estimates say so**: other characters' cooldowns are inferred (`IsEstimate = true`) and drift - never exact.
 - **Module lifecycle**: deactivating suspends sources but keeps subscriptions; disposal invalidates every token.
 
 ## Diagnostics

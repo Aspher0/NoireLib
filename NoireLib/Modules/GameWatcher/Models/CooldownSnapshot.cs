@@ -5,7 +5,7 @@ namespace NoireLib.GameWatcher;
 /// <summary>
 /// The recast state of an action.<br/>
 /// For the local player this is exact (read from the game's action manager).
-/// For other characters it is an <b>estimate</b> inferred from observed action usage and sheet recast data —
+/// For other characters it is an <b>estimate</b> inferred from observed action usage and sheet recast data -
 /// <see cref="IsEstimate"/> is true, and the value drifts with skill/spell speed, haste effects and unseen
 /// charge usage. Never treat estimated values as exact.
 /// </summary>

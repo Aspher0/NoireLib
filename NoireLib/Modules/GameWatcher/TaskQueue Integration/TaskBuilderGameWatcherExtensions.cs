@@ -4,7 +4,7 @@ using System;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// The bridge between the game watcher and <see cref="NoireTaskQueue"/> — additive extension methods only,
+/// The bridge between the game watcher and <see cref="NoireTaskQueue"/> - additive extension methods only,
 /// the queue's own API stays untouched.<br/>
 /// <c>CompleteWhen</c> gates a task's completion on any <see cref="GameCondition"/>;
 /// <c>CompleteOnGameEvent</c> completes it on the next matching watcher event (library or custom).
@@ -13,7 +13,7 @@ namespace NoireLib.GameWatcher;
 public static class TaskBuilderGameWatcherExtensions
 {
     /// <summary>
-    /// Completes the task when a game condition holds — e.g.
+    /// Completes the task when a game condition holds - e.g.
     /// <c>.CompleteWhen(GameConditions.TerritoryIs(198).And(GameConditions.ScreenReady))</c>.
     /// The condition is evaluated by the queue on the framework thread.
     /// </summary>
@@ -31,12 +31,12 @@ public static class TaskBuilderGameWatcherExtensions
     }
 
     /// <summary>
-    /// Completes the task when the next matching watcher event fires — a fresh latch per call, so retried or
+    /// Completes the task when the next matching watcher event fires - a fresh latch per call, so retried or
     /// re-enqueued tasks never complete against a stale match.<br/>
     /// By default the latch arms when the queue first evaluates the completion condition; pass
     /// <paramref name="armImmediately"/> to start capturing at enqueue time (the event may then precede the
     /// task's execution). Works with custom events published via
-    /// <see cref="NoireGameWatcher.Publish{TEvent}"/> too — no EventBus involved.
+    /// <see cref="NoireGameWatcher.Publish{TEvent}"/> too - no EventBus involved.
     /// </summary>
     /// <typeparam name="TEvent">The watcher event type to wait for.</typeparam>
     /// <param name="builder">The task builder.</param>

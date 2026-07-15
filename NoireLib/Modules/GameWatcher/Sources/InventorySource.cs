@@ -22,7 +22,7 @@ internal sealed class InventorySource : GameWatcherSource
 
     // Granular item events are reported only for the player's own carried inventories. Transient staging
     // containers (trade hand-in, mail, examine, reconstruction buyback, …) and storage that is not the player's
-    // pockets (retainer, free company, housing, market) are excluded — otherwise a trade or retainer session
+    // pockets (retainer, free company, housing, market) are excluded - otherwise a trade or retainer session
     // spams add/remove/move churn as items shuffle through those containers. Gil (item id 1) is never reported
     // as an item either; it has its own GilChangedEvent.
     private static readonly HashSet<GameInventoryType> OwnedInventories = new()
@@ -141,7 +141,7 @@ internal sealed class InventorySource : GameWatcherSource
                 Owner.DispatchEvent(new ItemRemovedEvent(removed.Item.ItemId, removed.Item.Quantity, removed.Inventory, removed.Slot));
                 break;
 
-            // A move is only an "inventory" move when both endpoints are the player's own — a transfer to a
+            // A move is only an "inventory" move when both endpoints are the player's own - a transfer to a
             // staging container (trade, mail, retainer, …) is that container's business, not an inventory move.
             case InventoryItemMovedArgs moved when IsReportableItem(moved.Item.ItemId) && IsOwned(moved.SourceInventory) && IsOwned(moved.TargetInventory):
                 Owner.DispatchEvent(new ItemMovedEvent(moved.Item.ItemId, moved.SourceInventory, moved.SourceSlot, moved.TargetInventory, moved.TargetSlot));

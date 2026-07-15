@@ -187,7 +187,7 @@ internal sealed class ClientConnection : IDisposable
                 {
                     hubUnresponsiveReported = true;
 
-                    // The hub process is alive (its socket is open) but not pumping — most likely paused by a debugger.
+                    // The hub process is alive (its socket is open) but not pumping - most likely paused by a debugger.
                     // Its election mutex cannot be seized from a live process, so the group stalls until it resumes.
                     owner.InternalLogWarning("Hub is unresponsive (paused process?). The network will stall until it resumes.");
                 }

@@ -68,7 +68,7 @@ internal sealed class HubServer : IDisposable
         if (options.EnableLan)
         {
             if (options.LanSecret == null)
-                owner.InternalLogWarning("LAN is enabled without a secret — this network is open to any LAN peer.");
+                owner.InternalLogWarning("LAN is enabled without a secret - this network is open to any LAN peer.");
 
             lanDiscovery = new LanDiscovery(this, owner, lifetime.Token);
             lanDiscovery.Start();
@@ -404,7 +404,7 @@ internal sealed class HubServer : IDisposable
     }
 
     /// <summary>
-    /// Routes an envelope received from a hub link: local delivery only — never re-forwarded to other links (no multi-hop).
+    /// Routes an envelope received from a hub link: local delivery only - never re-forwarded to other links (no multi-hop).
     /// </summary>
     public void RouteFromRemote(Envelope envelope)
     {
@@ -782,7 +782,7 @@ internal sealed class HubServer : IDisposable
             }
             catch (Exception)
             {
-                // Transport failure — treated exactly like a departure below.
+                // Transport failure - treated exactly like a departure below.
             }
 
             Dispose();

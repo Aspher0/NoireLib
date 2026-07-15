@@ -4,7 +4,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Precomputed relationship flags carried by every <see cref="CharacterSnapshot"/>, captured once per tick
-/// per subject so scope filters are flag checks — never a re-query of game state inside a handler filter.
+/// per subject so scope filters are flag checks - never a re-query of game state inside a handler filter.
 /// </summary>
 [Flags]
 public enum SubjectFlags

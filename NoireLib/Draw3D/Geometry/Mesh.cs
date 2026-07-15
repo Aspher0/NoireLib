@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
 /// An immutable GPU mesh (vertex + index buffer) with a precomputed bounding sphere.<br/>
-/// <b>Creation is synchronous and safe from any thread</b> — D3D11 devices are free-threaded — so a
+/// <b>Creation is synchronous and safe from any thread</b> - D3D11 devices are free-threaded - so a
 /// background asset load produces ready-to-draw meshes directly.<br/>
 /// <b>Ownership:</b> the creator disposes it. Nodes and renderers only reference meshes; sharing one
 /// mesh across a thousand nodes is the intended usage.

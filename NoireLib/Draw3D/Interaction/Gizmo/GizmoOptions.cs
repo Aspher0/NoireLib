@@ -9,11 +9,11 @@ public sealed class GizmoOptions
     public GizmoSpace Space { get; set; } = GizmoSpace.World;
 
     /// <summary>
-    /// Which backend draws and drives the handles. <see cref="GizmoBackend.Native"/> (default) is in-world depth
-    /// handles, screen-hit-tested; <see cref="GizmoBackend.ImGuizmo"/> is the classic flat 2D handles, always on top.
-    /// Flip it without touching call sites.
+    /// Which backend draws and drives the handles. <see cref="GizmoBackend.ImGuizmo"/> (default) is the classic flat 2D
+    /// handles, always on top; <see cref="GizmoBackend.Native"/> is in-world depth handles, screen-hit-tested. Flip it
+    /// without touching call sites.
     /// </summary>
-    public GizmoBackend Backend { get; set; } = GizmoBackend.Native;
+    public GizmoBackend Backend { get; set; } = GizmoBackend.ImGuizmo;
 
     /// <summary>
     /// Per-axis translation snap in world units (a component of 0 or less means no snap on that axis). Translation is

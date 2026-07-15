@@ -150,7 +150,7 @@ public partial class NoireNetworker
 
     /// <summary>
     /// Sends a request to a peer and awaits its response. The await resumes on the framework thread.<br/>
-    /// <b>Never sync-block on the returned task from the framework thread — always await.</b>
+    /// <b>Never sync-block on the returned task from the framework thread - always await.</b>
     /// </summary>
     /// <typeparam name="TRequest">The request type.</typeparam>
     /// <typeparam name="TResponse">The expected response type.</typeparam>

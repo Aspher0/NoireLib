@@ -6,7 +6,7 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// A texture usable by Draw3D materials — a shader resource view plus optional owned resources.<br/>
+/// A texture usable by Draw3D materials - a shader resource view plus optional owned resources.<br/>
 /// <b>Ownership:</b> the creator disposes it. Materials and renderers only reference it; assigning one
 /// texture to many materials is free.<br/>
 /// Disposal is safe at any time from any thread: the wrapper is marked dead immediately (draws skip it)
@@ -91,7 +91,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    /// <summary>Wraps a shared-handle resource (external producer). Internal — see <see cref="ExternalTexture"/>.</summary>
+    /// <summary>Wraps a shared-handle resource (external producer). Internal - see <see cref="ExternalTexture"/>.</summary>
     internal static GpuTexture FromSharedResource(ID3D11Resource* sharedResource, ID3D11ShaderResourceView* srvPtr, int width, int height)
     {
         var tex = new GpuTexture(width, height);

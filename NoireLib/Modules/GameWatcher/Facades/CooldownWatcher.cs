@@ -6,7 +6,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Cooldown facts. Local player: exact recasts, charges and GCD read from the game.
-/// Other characters: <b>estimates</b> inferred from observed action usage + sheet recast data —
+/// Other characters: <b>estimates</b> inferred from observed action usage + sheet recast data -
 /// always flagged <see cref="CooldownSnapshot.IsEstimate"/>, never to be treated as exact.
 /// </summary>
 public sealed class CooldownWatcher : GameWatcherFacade
@@ -116,7 +116,7 @@ public sealed class CooldownWatcher : GameWatcherFacade
     }
 
     /// <summary>
-    /// Subscribes to estimated cooldown starts of <b>other characters</b> — inferred from observed action
+    /// Subscribes to estimated cooldown starts of <b>other characters</b> - inferred from observed action
     /// usage plus sheet recast data (doctrine tier 4). Estimates drift with skill/spell speed, haste effects
     /// and unseen charge usage; never treat them as exact.
     /// </summary>
@@ -131,7 +131,7 @@ public sealed class CooldownWatcher : GameWatcherFacade
         => Estimated(null, handler, options, nameof(OnEstimatedCooldownStarted));
 
     /// <summary>
-    /// Subscribes to estimated cooldown ends of other characters. <b>Estimate</b> — see
+    /// Subscribes to estimated cooldown ends of other characters. <b>Estimate</b> - see
     /// <see cref="OnEstimatedCooldownStarted"/>.
     /// </summary>
     /// <param name="handler">The handler.</param>

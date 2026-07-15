@@ -1,4 +1,4 @@
-// NoireLib Draw3D — unlit world-space shader (variants: UNLIT_TEXTURED, UNLIT_INSTANCED, OPAQUE_DOMAIN).
+// NoireLib Draw3D - unlit world-space shader (variants: UNLIT_TEXTURED, UNLIT_INSTANCED, OPAQUE_DOMAIN).
 #include "Common.hlsli"
 
 struct VsIn
@@ -49,7 +49,7 @@ float4 ps(PsIn i) : SV_Target
 #endif
     float vis = DepthVisibility(DisplayUv(i.svPos), i.clipZW.y, Params1.x);
 #ifdef OPAQUE_DOMAIN
-    // The Opaque bucket renders with blending DISABLED — modulating alpha would be a silent
+    // The Opaque bucket renders with blending DISABLED - modulating alpha would be a silent
     // no-op and a world-occluded pixel would still paint. Occlusion must kill the pixel.
     // (DepthFade therefore has no effect in this domain; it is a blended-domain feature.)
     if (vis < 0.5) discard;

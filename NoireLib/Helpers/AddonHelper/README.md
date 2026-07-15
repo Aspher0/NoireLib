@@ -29,9 +29,9 @@ addons (`AtkUnitBase`) and their nodes (`AtkResNode`). It covers:
 - **Node traversal** by id or by a chain of ids (including descending into component nodes).
 - **Reading** text and `AtkValue` data, with readable formatting for logging.
 - **Sending callbacks** with automatic marshalling of managed values into `AtkValue`.
-- **Events** — node events, hover handlers, cursor-on-hover, and addon lifecycle listeners.
-- **Ready-waiting** — run an action (or `await`) as soon as an addon is loaded and ready.
-- **Keyed registrations** — store disposable/event registrations under a key for bulk cleanup.
+- **Events** - node events, hover handlers, cursor-on-hover, and addon lifecycle listeners.
+- **Ready-waiting** - run an action (or `await`) as soon as an addon is loaded and ready.
+- **Keyed registrations** - store disposable/event registrations under a key for bulk cleanup.
 
 It ships as a set of partial files:
 
@@ -49,9 +49,9 @@ It ships as a set of partial files:
 
 `AddonHelper` exposes **two** ways to do the same thing:
 
-1. **Fluent wrappers** (`NoireAddon` / `NoireAddonNode`) — chainable, usable **without `unsafe`**, and safe
+1. **Fluent wrappers** (`NoireAddon` / `NoireAddonNode`) - chainable, usable **without `unsafe`**, and safe
    to call even when the addon/node is missing or not ready. **Prefer these for everyday usage.**
-2. **Pointer primitives** — the `unsafe` `Try*` methods on `AddonHelper` that hand you `AtkUnitBase*` /
+2. **Pointer primitives** - the `unsafe` `Try*` methods on `AddonHelper` that hand you `AtkUnitBase*` /
    `AtkResNode*` directly, for when you need low-level access.
 
 ```csharp
@@ -91,7 +91,7 @@ if (addon)
 }
 ```
 
-`GetAddon` always returns a wrapper — never null. Guard with `IsReady` (or use the wrapper in a boolean
+`GetAddon` always returns a wrapper - never null. Guard with `IsReady` (or use the wrapper in a boolean
 context) before interacting.
 
 ---
@@ -122,7 +122,7 @@ AddonHelper.TryGetAddon(eventData, out AtkUnitBase* fromEvent);
 
 ## Working with Nodes
 
-Nodes are resolved by a single id, or by a **chain** of ids that traverses children — descending into
+Nodes are resolved by a single id, or by a **chain** of ids that traverses children - descending into
 component nodes automatically.
 
 ```csharp
@@ -169,11 +169,11 @@ string many = AddonHelper.FormatValues(valuesPtr, count);  // e.g. "[[0]=42, [1]
 
 ## Sending Callbacks
 
-Callbacks marshal managed values into `AtkValue` for you — pass primitives, strings, enums, pointers, or
+Callbacks marshal managed values into `AtkValue` for you - pass primitives, strings, enums, pointers, or
 even enumerables (marshalled as vectors).
 
 ```csharp
-// Fluent — updates addon state by default
+// Fluent - updates addon state by default
 addon.SendCallback(0, "confirm", true);
 
 // Control the updateState flag explicitly
@@ -252,7 +252,7 @@ IDisposable wait = AddonHelper.RunWhenReady("SomeAddon", addon =>
     addon.GetNode(5u).TrySetText("Ready!");
 }, timeout: TimeSpan.FromSeconds(5));
 
-// Async style — returns false if the timeout elapses first
+// Async style - returns false if the timeout elapses first
 bool ready = await AddonHelper.WaitUntilReadyAsync("SomeAddon", TimeSpan.FromSeconds(5), cancellationToken);
 ```
 
@@ -263,7 +263,7 @@ Dispose the returned registration to cancel a pending `RunWhenReady`.
 ## Keyed Event Registrations
 
 Store any `IDisposable` (or `IAddonEventHandle`) registration under a string key so it can be unregistered in
-bulk later — handy for grouping everything a feature creates.
+bulk later - handy for grouping everything a feature creates.
 
 ```csharp
 AddonHelper.RegisterEvent("myFeature", addon.GetNode(5u).AddClickEvent(handler));
@@ -297,7 +297,7 @@ implicitly to `bool` (`NoireAddon` → `IsReady`, `NoireAddonNode` → `IsValid`
 
 ## Safety Model
 
-- `GetAddon` / `GetReadyAddon` **never return null** — they return a wrapper that may be invalid.
+- `GetAddon` / `GetReadyAddon` **never return null** - they return a wrapper that may be invalid.
 - Every wrapper member is safe on an invalid/not-ready target: getters return sensible defaults
   (`""`, `0`, `default`) and actions become no-ops returning `false`/`null`.
 - Pointer-level `Try*` methods follow the standard bool + `out` pattern and never dereference null.
@@ -307,20 +307,20 @@ implicitly to `bool` (`NoireAddon` → `IsReady`, `NoireAddonNode` → `IsValid`
 
 ## API Reference
 
-**`AddonHelper` (pointer primitives)** — `TryGetAddon`, `TryGetReadyAddon`, `IsAddonLoaded`,
+**`AddonHelper` (pointer primitives)** - `TryGetAddon`, `TryGetReadyAddon`, `IsAddonLoaded`,
 `TryGetRootNode`, `TryGetNode`, `TryGetTextNode`, `TryGetComponentNode`, `TryReadText`, `ReadTextOrEmpty`,
 `TryReadValue`, `ReadValueOrDefault`, `FormatValue`, `FormatValues`, `SendCallback`, `AddEvent`,
 `RemoveEvent`, `RemoveEvents`, `AddHoverEvents`, `AddCursorOnHover`, `TrySetNodeCursor`, `SetCursor`,
 `ResetCursor`, `TryPreventOriginal`, `GetOriginalVirtualTable`.
 
-**`AddonHelper` (convenience)** — `GetAddon`, `GetReadyAddon`, `IsAddonReady`, `TryGetAddon<T>`,
+**`AddonHelper` (convenience)** - `GetAddon`, `GetReadyAddon`, `IsAddonReady`, `TryGetAddon<T>`,
 `TryGetReadyAddon<T>`, `OnAddonSetup`, `OnAddonRefresh`, `OnAddonFinalize`, `RunWhenReady`,
 `WaitUntilReadyAsync`, `RegisterLifecycleListener`, `RegisterEvent`, `HasRegisteredEvents`,
 `UnregisterEvents`, `UnregisterAllEvents`.
 
-**`NoireAddon`** — `IsValid`, `IsReady`, `IsVisible`, `Name`, `X`, `Y`, `Scale`, `Width`, `Height`,
+**`NoireAddon`** - `IsValid`, `IsReady`, `IsVisible`, `Name`, `X`, `Y`, `Scale`, `Width`, `Height`,
 `RootNode`, `GetNode`, `ReadText`, `TryReadText`, `SendCallback`, `Show`, `Hide`, `Close`.
 
-**`NoireAddonNode`** — `IsValid`, `NodeId`, `IsTextNode`, `IsComponentNode`, `IsVisible`, `Width`, `Height`,
+**`NoireAddonNode`** - `IsValid`, `NodeId`, `IsTextNode`, `IsComponentNode`, `IsVisible`, `Width`, `Height`,
 `ScreenX`, `ScreenY`, `Text`, `TryReadText`, `TrySetText`, `SetVisible`, `Show`, `Hide`, `SetAlpha`,
 `AddEvent`, `AddClickEvent`, `AddHoverEvents`, `AddCursorOnHover`, `Addon`.

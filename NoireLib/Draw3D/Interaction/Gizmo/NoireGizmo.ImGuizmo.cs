@@ -19,10 +19,12 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// hovered", so a second window would flicker the highlight, while a windowless capture flag does not. It follows the
 /// gizmo's Local/World space and applies translate/rotate/scale snapping per operation. Scale maps to ImGuizmo's
 /// universal-scale operation (Scaleu), whose bits are distinct from the plain-scale op that forces the whole gizmo
-/// local, so a single integrated call keeps translate/rotate in the chosen space while scale stays object-local.
-/// Translation snap is applied afterwards in the gizmo's frame, because ImGuizmo's built-in translation snap misaligns
-/// along a rotated object's local axes. This file is the only part of the gizmo that touches ImGui/ImGuizmo, kept out of
-/// the renderer core per Law 11.
+/// local, so a single integrated call keeps translate/rotate in the chosen space while scale stays object-local. All
+/// snapping runs through ImGuizmo's own snap slot, including translation: ImGuizmo snaps the movement from the
+/// mouse-down origin, and in Local mode it snaps in the object's own frame, so a rotated object's translation lands
+/// cleanly on its local axes with no offset. Because ImGuizmo's result is stored verbatim and fed back next frame, the
+/// handles and the object are always the same matrix and cannot drift apart. This file is the only part of the gizmo
+/// that touches ImGui/ImGuizmo, kept out of the renderer core per Law 11.
 /// </summary>
 public sealed partial class NoireGizmo
 {
@@ -39,7 +41,7 @@ public sealed partial class NoireGizmo
     private readonly float[] imguizmoSnap = new float[3];
     private bool imguizmoUsing;
     private SnapKind imguizmoSnapKind;
-    private Vector3 imguizmoPressTrans; // object / group-pivot position at drag start, for gizmo-frame translation snapping
+    private SnapKind imguizmoHoverKind; // which op's handle is under the cursor (from the last frame), so a drag snaps from its first frame
 
     /// <summary>
     /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend
@@ -145,24 +147,59 @@ public sealed partial class NoireGizmo
             view.M44 = 1f;
             var proj = BuildImGuizmoProjection(in frame);
             var mode = Options.Space == GizmoSpace.Local ? ImGuizmoMode.Local : ImGuizmoMode.World;
+
+            // ImGuizmo is fed the target's own transform every frame and its result is stored back verbatim, so what it
+            // draws and what the object holds are always the same matrix, snapped or not: the handles can never drift
+            // away from the object.
             var matrix = world;
 
             // One integrated call for every space. Scale maps to ImGuizmo's universal-scale operation (Scaleu), whose
             // bits are distinct from the plain-scale op that forces the whole gizmo local; so translate/rotate honour the
-            // chosen space while scale stays object-local, with no split and no overlapping handles. Rotation and scale
-            // snap through ImGuizmo's own slot; translation snap is applied afterwards in the gizmo's frame (below),
-            // because ImGuizmo's built-in translation snap misaligns along a rotated object's local axes.
+            // chosen space while scale stays object-local, with no split and no overlapping handles. All three snaps run
+            // through ImGuizmo's own slot (translate included): ImGuizmo snaps the movement measured from the mouse-down
+            // origin, and in Local mode it does so in the object's own frame, so a rotated object's translation snaps
+            // cleanly along its local axes with no offset. Its one snap slot takes whichever op the drag drives, so the
+            // matching increment is selected per operation below.
             ImGuizmo.SetID(imguizmoId);
             var op = MapOperation(Op);
-            var snapKind = imguizmoSnapKind != SnapKind.None ? imguizmoSnapKind : SingleOpKind();
+
+            // Choose this frame's snap increment BEFORE manipulating. During a drag the op is latched. Otherwise use the
+            // handle the cursor is over (ImGuizmo reports it from the previous frame), so a drag snaps from its very
+            // first frame: no unsnapped nudge is ever applied, which is what left a scale/rotation drag with a small
+            // permanent offset when the op was only detected a frame late. A single-op gizmo knows its op up front.
+            var snapKind = imguizmoUsing ? imguizmoSnapKind
+                : imguizmoHoverKind != SnapKind.None ? imguizmoHoverKind
+                : SingleOpKind();
+
             var changed = TryBuildSnap(snapKind, out var snap)
                 ? ImGuizmo.Manipulate(ref view, ref proj, op, mode, ref matrix, ref snap[0])
                 : ImGuizmo.Manipulate(ref view, ref proj, op, mode, ref matrix);
 
             var isOver = ImGuizmo.IsOver();
             var isUsing = ImGuizmo.IsUsing();
-            if (isUsing && changed && imguizmoSnapKind == SnapKind.None)
-                imguizmoSnapKind = DetectChangedOp(in world, in matrix);
+
+            if (isUsing && !imguizmoUsing)
+            {
+                imguizmoUsing = true;
+                // Latch the driven op: the pre-drag hover normally has it (snapped from frame one); fall back to
+                // detecting the change only if the press somehow landed with no hover frame before it.
+                imguizmoSnapKind = snapKind != SnapKind.None ? snapKind : DetectChangedOp(in world, in matrix);
+                if (groupNodes != null)
+                    CaptureGroupPress(in world); // world is the group pivot at the moment the drag began
+                RaiseEditStart();
+            }
+            else if (isUsing && imguizmoSnapKind == SnapKind.None && changed)
+            {
+                imguizmoSnapKind = DetectChangedOp(in world, in matrix); // fallback: op was unknown at press
+            }
+
+            // Remember the hovered handle for next frame's pre-snap (only while not mid-drag).
+            if (!isUsing)
+                imguizmoHoverKind = HoveredOpKind();
+
+            // A first frame that still ran unsnapped (the rare press with no prior hover) is dropped rather than applied,
+            // so a sub-increment nudge never shows and snaps back. With pre-snap this is normally already false.
+            var dropUnsnappedFirstFrame = snapKind == SnapKind.None && OpHasSnap(imguizmoSnapKind);
 
             ownsMouse = isOver || isUsing;
 
@@ -170,15 +207,6 @@ public sealed partial class NoireGizmo
             // would be "another window hovered" to ImGuizmo and break its hover).
             if (ownsMouse)
                 ImGui.SetNextFrameWantCaptureMouse(true);
-
-            if (isUsing && !imguizmoUsing)
-            {
-                imguizmoUsing = true;
-                DecomposeSafe(in world, out _, out _, out imguizmoPressTrans); // position at drag start, for translation snap
-                if (groupNodes != null)
-                    CaptureGroupPress(in world); // world is the group pivot at the moment the drag began
-                RaiseEditStart();
-            }
 
             if (NoireInteract.DebugLog && !imguizmoDrewOnce)
             {
@@ -193,9 +221,11 @@ public sealed partial class NoireGizmo
 
             // Apply only a finite, non-degenerate result. A bad manipulate (for example a NaN from a projection ImGuizmo
             // cannot invert) would blank the object, so a garbage matrix is dropped rather than written to the target.
-            if (changed && IsUsableTransform(in matrix))
+            // The single unsnapped frame at a snapping drag's start is dropped (see dropUnsnappedFirstFrame) so it never
+            // shows before the snap takes over.
+            if (changed && !dropUnsnappedFirstFrame && IsUsableTransform(in matrix))
             {
-                SetWorld(SnapTranslationInFrame(in matrix));
+                SetWorld(in matrix);
                 RaiseEdit();
             }
 
@@ -223,6 +253,21 @@ public sealed partial class NoireGizmo
         _ => SnapKind.None,
     };
 
+    /// <summary>
+    /// The op whose handle is under the cursor right now (from ImGuizmo's last frame), so a drag that starts next frame
+    /// already knows which snap increment to feed and snaps from its first frame. None when the cursor is over no handle.
+    /// </summary>
+    private SnapKind HoveredOpKind()
+    {
+        if ((Op & GizmoOp.Translate) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Translate))
+            return SnapKind.Translate;
+        if ((Op & GizmoOp.Rotate) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Rotate))
+            return SnapKind.Rotate;
+        if ((Op & GizmoOp.Scale) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Scaleu))
+            return SnapKind.Scale;
+        return SnapKind.None;
+    }
+
     /// <summary>Detects which operation changed between the pre- and post-manipulate matrices, so the right snap is fed next frame.</summary>
     private static SnapKind DetectChangedOp(in Matrix4x4 before, in Matrix4x4 after)
     {
@@ -242,19 +287,27 @@ public sealed partial class NoireGizmo
     }
 
     /// <summary>
-    /// Builds ImGuizmo's snap array for a rotate or scale drag. Translation is deliberately excluded: ImGuizmo's own
-    /// translation snap misaligns along a rotated object's local axes, so it is snapped afterwards in the gizmo's frame
-    /// (see <see cref="SnapTranslationInFrame"/>). Returns false for translate, or when the operation has no snap set.
+    /// Builds ImGuizmo's snap array for the operation the drag is driving. Translation snaps per axis (World mode snaps
+    /// world axes, Local mode snaps the object's own axes, both handled inside ImGuizmo); rotation and scale snap by a
+    /// single increment. Returns false when the driven operation has no snap set, so the manipulation runs unsnapped.
     /// </summary>
     private bool TryBuildSnap(SnapKind kind, out float[] snap)
     {
         snap = imguizmoSnap;
+        if (!OpHasSnap(kind))
+            return false;
+
         switch (kind)
         {
-            case SnapKind.Rotate when Options.RotateSnapDeg > 0f:
+            case SnapKind.Translate:
+                snap[0] = Options.Snap.X;
+                snap[1] = Options.Snap.Y;
+                snap[2] = Options.Snap.Z;
+                return true;
+            case SnapKind.Rotate:
                 snap[0] = snap[1] = snap[2] = Options.RotateSnapDeg;
                 return true;
-            case SnapKind.Scale when Options.ScaleSnap > 0f:
+            case SnapKind.Scale:
                 snap[0] = snap[1] = snap[2] = Options.ScaleSnap;
                 return true;
             default:
@@ -262,40 +315,14 @@ public sealed partial class NoireGizmo
         }
     }
 
-    /// <summary>
-    /// Applies translation snapping to an ImGuizmo result in the gizmo's own frame: per world axis in World space, or
-    /// along the object's local axes in Local space, snapping the movement since the drag began (so an axis that has not
-    /// moved never drifts onto the grid). Rotation and scale are left untouched. A no-op when no translation snap is set.
-    /// </summary>
-    private Matrix4x4 SnapTranslationInFrame(in Matrix4x4 m)
+    /// <summary>Whether the given operation has a snap increment configured.</summary>
+    private bool OpHasSnap(SnapKind kind) => kind switch
     {
-        if (Options.Snap == Vector3.Zero || !Matrix4x4.Decompose(m, out var scale, out var rot, out var trans))
-            return m;
-
-        var delta = trans - imguizmoPressTrans;
-        Vector3 snapped;
-        if (Options.Space == GizmoSpace.Local)
-        {
-            var step = MathF.Max(Options.Snap.X, MathF.Max(Options.Snap.Y, Options.Snap.Z));
-            var lx = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitX, rot), Vector3.UnitX);
-            var ly = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitY, rot), Vector3.UnitY);
-            var lz = InteractMath.SafeNormalize(Vector3.Transform(Vector3.UnitZ, rot), Vector3.UnitZ);
-            snapped = lx * InteractMath.Snap(Vector3.Dot(delta, lx), step)
-                      + ly * InteractMath.Snap(Vector3.Dot(delta, ly), step)
-                      + lz * InteractMath.Snap(Vector3.Dot(delta, lz), step);
-        }
-        else
-        {
-            snapped = new Vector3(
-                InteractMath.Snap(delta.X, Options.Snap.X),
-                InteractMath.Snap(delta.Y, Options.Snap.Y),
-                InteractMath.Snap(delta.Z, Options.Snap.Z));
-        }
-
-        return Matrix4x4.CreateScale(scale)
-               * Matrix4x4.CreateFromQuaternion(rot)
-               * Matrix4x4.CreateTranslation(imguizmoPressTrans + snapped);
-    }
+        SnapKind.Translate => Options.Snap != Vector3.Zero,
+        SnapKind.Rotate => Options.RotateSnapDeg > 0f,
+        SnapKind.Scale => Options.ScaleSnap > 0f,
+        _ => false,
+    };
 
     /// <summary>
     /// A finite-far, non-reversed perspective projection for ImGuizmo, built from the game's projection but with a

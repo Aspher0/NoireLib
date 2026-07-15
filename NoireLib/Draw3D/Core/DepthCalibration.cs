@@ -9,7 +9,7 @@ namespace NoireLib.Draw3D.Core;
 /// Every perspective depth mapping is affine in 1/w (w = clip-space w after <c>v·ViewProj</c>):
 /// reversed-Z infinite far is <c>z = near/w</c>, reversed finite and standard finite are
 /// <c>z = a + b/w</c> with other constants. Instead of trusting any camera field to tell us which,
-/// this fits (a, b) from ground truth — the game's own collision raycasts vs. actual depth texels —
+/// this fits (a, b) from ground truth - the game's own collision raycasts vs. actual depth texels -
 /// and the shaders compare depths through the fitted mapping. A wrong near plane, a swapped
 /// projection matrix or an engine convention change degrade to one recalibration, not a visual bug.
 /// </summary>
@@ -17,7 +17,7 @@ internal sealed class DepthCalibration
 {
     private const int GridN = 5;                 // 5×5 sample grid across the screen interior
     private const int MinInliers = 8;
-    private const float MinSpread = 1.3f;        // max(w)/min(w) — a flat wall can't calibrate
+    private const float MinSpread = 1.3f;        // max(w)/min(w) - a flat wall can't calibrate
     private const float MaxMedianResidual = 5e-4f;
     private const int RetryIntervalFrames = 30;
     private const int BackoffIntervalFrames = 300;
@@ -30,7 +30,7 @@ internal sealed class DepthCalibration
     private int failStreak;
     private bool troubleLogged;
 
-    /// <summary>True when a fit is locked in — depth compares are trustworthy this frame.</summary>
+    /// <summary>True when a fit is locked in - depth compares are trustworthy this frame.</summary>
     public bool IsValid { get; private set; }
 
     /// <summary>Fitted intercept: <c>gameDepthSample = A + B / clipW</c>.</summary>
@@ -147,13 +147,13 @@ internal sealed class DepthCalibration
         calibratedStandardZ = cam.StandardZ;
         calibratedFiniteFar = cam.FiniteFarPlane;
         Description = $"z={a:E2}+{b:F5}/w ({(b > 0 ? "reversed" : "standard")}-Z, {inliers} pts, resid {medianResidual:E1})";
-        NoireLogger.LogInfo($"Draw3D depth calibrated: {Description} — camera NearPlane says {cam.NearPlane:F4}.", "Draw3D");
+        NoireLogger.LogInfo($"Draw3D depth calibrated: {Description} - camera NearPlane says {cam.NearPlane:F4}.", "Draw3D");
         return true;
     }
 
     /// <summary>
     /// True when a (re)calibration attempt is due this frame. Overflow-safe on purpose: the
-    /// <see cref="long.MinValue"/> "never attempted" sentinel must never reach the subtraction —
+    /// <see cref="long.MinValue"/> "never attempted" sentinel must never reach the subtraction -
     /// <c>frameId - long.MinValue</c> overflows to a large negative value that always compares as
     /// "still throttled", which wedges calibration off forever. Symptom of the bug it guards against:
     /// depth never becomes available, so every 3D shape sits on top of all world geometry. Exposed for tests.
@@ -169,7 +169,7 @@ internal sealed class DepthCalibration
     /// this matches the buffer exactly on surfaces the collision raycast agrees with.<br/>
     /// This is preferred over the raycast fit (<see cref="Update"/>) for rendering: it needs no readback,
     /// is available on the first frame, tracks a per-frame near-plane change, cannot be "lost", and carries
-    /// no fit bias — the raycast surface and the rendered depth texel are frequently DIFFERENT surfaces,
+    /// no fit bias - the raycast surface and the rendered depth texel are frequently DIFFERENT surfaces,
     /// which biased the fit and made ground decals slide under camera motion.
     /// </summary>
     /// <param name="near">Camera near-plane distance.</param>
@@ -202,7 +202,7 @@ internal sealed class DepthCalibration
         if (failStreak == FailuresBeforeBackoff && !troubleLogged)
         {
             troubleLogged = true;
-            NoireLogger.LogError($"Draw3D depth calibration keeps failing ({reason}) — depth-dependent features stay off. Run '/noire3d probe' and report the log.", "Draw3D");
+            NoireLogger.LogError($"Draw3D depth calibration keeps failing ({reason}) - depth-dependent features stay off. Run '/noire3d probe' and report the log.", "Draw3D");
         }
 
         return false;

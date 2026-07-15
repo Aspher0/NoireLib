@@ -15,7 +15,7 @@ namespace NoireLib.GameWatcher;
 public abstract class GameCondition
 {
     /// <summary>
-    /// Evaluates the condition now. Runs game reads — call on the framework thread
+    /// Evaluates the condition now. Runs game reads - call on the framework thread
     /// (waits evaluate it there automatically).
     /// </summary>
     /// <returns>True when the condition currently holds.</returns>
@@ -25,11 +25,11 @@ public abstract class GameCondition
     /// Waits until the condition holds, evaluating once per framework tick while any waiter is active.
     /// Completes immediately when already met (level-triggered).<br/>
     /// The returned task completes on the framework thread. <b>Never sync-block on it from the framework
-    /// thread — always await.</b>
+    /// thread - always await.</b>
     /// </summary>
     /// <param name="timeout">The maximum wait; null waits indefinitely.</param>
     /// <param name="ct">A cancellation token; cancellation throws <see cref="OperationCanceledException"/> (a cancelled wait is exceptional).</param>
-    /// <returns>True when the condition was met; false on timeout (timeouts are normal control flow in game automation — no exception to catch).</returns>
+    /// <returns>True when the condition was met; false on timeout (timeouts are normal control flow in game automation - no exception to catch).</returns>
     public Task<bool> WaitAsync(TimeSpan? timeout = null, CancellationToken ct = default)
     {
         if (ct.IsCancellationRequested)
@@ -153,7 +153,7 @@ internal sealed class PredicateGameCondition : GameCondition
 /// An event latch: a condition that becomes true when a matching event is dispatched by the watcher.<br/>
 /// The internal subscription arms on the first <see cref="GameCondition.IsMet"/> evaluation (or at creation
 /// with <c>armImmediately</c>) and self-unsubscribes on first match. Latches are <b>one-shot per instance</b>:
-/// once matched, <see cref="GameCondition.IsMet"/> stays true until an explicit <see cref="Reset"/> — this
+/// once matched, <see cref="GameCondition.IsMet"/> stays true until an explicit <see cref="Reset"/> - this
 /// matters for retried tasks, which would otherwise complete instantly on a stale match.<br/>
 /// The latch subscription is owner-tagged with this condition object, so abandoned latches are visible in
 /// diagnostics and reclaimable via <see cref="NoireGameWatcher.UnsubscribeOwner"/>.

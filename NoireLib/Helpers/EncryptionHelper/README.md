@@ -22,11 +22,11 @@ turning virtually anything (raw bytes, strings, files, or any serializable objec
 encrypted data.
 
 It covers:
-- **Encoding** — Base64, URL-safe Base64, and Hex (encode + decode).
-- **Hashing** — SHA-256/384/512, SHA-1, MD5, and keyed HMAC, plus streamed file hashing.
-- **Password hashing** — Argon2id and BCrypt (hash + verify), each producing a self-describing string.
-- **Symmetric encryption** — AES-256-GCM for in-memory payloads (password- or key-based).
-- **File encryption** — AES-256-CBC with HMAC-SHA256 (encrypt-then-MAC), fully streamed.
+- **Encoding** - Base64, URL-safe Base64, and Hex (encode + decode).
+- **Hashing** - SHA-256/384/512, SHA-1, MD5, and keyed HMAC, plus streamed file hashing.
+- **Password hashing** - Argon2id and BCrypt (hash + verify), each producing a self-describing string.
+- **Symmetric encryption** - AES-256-GCM for in-memory payloads (password- or key-based).
+- **File encryption** - AES-256-CBC with HMAC-SHA256 (encrypt-then-MAC), fully streamed.
 
 Password hashing relies on the `Konscious.Security.Cryptography.Argon2` and `BCrypt.Net-Next` packages;
 everything else is built on `System.Security.Cryptography`.
@@ -160,7 +160,7 @@ The PBKDF2 iteration count is stored in the payload, so a future change to the d
 
 ## Security Notes
 
-- MD5 and SHA-1 are provided for checksums/interop only — do **not** use them for security.
+- MD5 and SHA-1 are provided for checksums/interop only - do **not** use them for security.
 - Default PBKDF2 iterations are tuned for security; lower them only in tests where speed matters.
 - Argon2id defaults: 64 MiB memory, 3 iterations, parallelism 1, 32-byte hash.
 - AES keys and derived key material are zeroed (`CryptographicOperations.ZeroMemory`) after use.

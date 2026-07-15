@@ -5,7 +5,7 @@ using System.Linq;
 namespace NoireLib.Networker;
 
 /// <summary>
-/// Represents a peer on a <see cref="NoireNetworker"/> network — another game instance on this PC or on the LAN.<br/>
+/// Represents a peer on a <see cref="NoireNetworker"/> network - another game instance on this PC or on the LAN.<br/>
 /// Peer state is only ever mutated on the delivery thread, so anything read from inside a handler is coherent.
 /// </summary>
 public class NetworkerPeer
@@ -26,7 +26,7 @@ public class NetworkerPeer
     public Guid Id { get; }
 
     /// <summary>
-    /// Whether this peer runs on the same machine as the local instance. Diagnostic only — the API never behaves differently for LAN peers.
+    /// Whether this peer runs on the same machine as the local instance. Diagnostic only - the API never behaves differently for LAN peers.
     /// </summary>
     public bool IsSameMachine { get; internal set; } = true;
 

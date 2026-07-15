@@ -188,7 +188,7 @@ public class Draw3DMeshBuilderTests
     [Fact]
     public void ExtrudePath_GentleTurn_StaysMitered()
     {
-        // 90° turn — well below the ~150° bevel threshold.
+        // 90° turn - well below the ~150° bevel threshold.
         var mesh = MeshBuilder.ExtrudePath(new List<Vector3> { new(0, 0, 0), new(0, 0, 5), new(5, 0, 5) }, 0.5f);
         mesh.Vertices.Should().HaveCount(6);
         mesh.Indices.Should().HaveCount(12);
@@ -197,7 +197,7 @@ public class Draw3DMeshBuilderTests
     [Fact]
     public void ExtrudePath_SharpTurn_InsertsBevelStation()
     {
-        // 170° turn — beyond the bevel threshold: the corner emits two station pairs.
+        // 170° turn - beyond the bevel threshold: the corner emits two station pairs.
         var turn = MathF.PI * 170f / 180f;
         var dir2 = new Vector3(MathF.Sin(turn), 0, MathF.Cos(turn));
         var p1 = new Vector3(0, 0, 5);

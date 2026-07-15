@@ -5,7 +5,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// An immutable snapshot of a party or alliance member.<br/>
-/// Party data covers members anywhere — <see cref="TerritoryId"/> is server-synchronized and works even when
+/// Party data covers members anywhere - <see cref="TerritoryId"/> is server-synchronized and works even when
 /// the member is not in the local object table (remote presence for party members, seconds-grained).
 /// </summary>
 public sealed record PartyMemberSnapshot

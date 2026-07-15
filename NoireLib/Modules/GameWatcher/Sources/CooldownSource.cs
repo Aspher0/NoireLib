@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 /// <summary>
 /// Cooldown facts. Local player: exact recast/charge/GCD state read from the game's action manager, diffed
 /// per watched action id. Other characters: <b>estimates</b> inferred from observed action usage (via the
-/// ActionEffect source) plus sheet recast data — doctrine tier 4, always <see cref="CooldownSnapshot.IsEstimate"/>.
+/// ActionEffect source) plus sheet recast data - doctrine tier 4, always <see cref="CooldownSnapshot.IsEstimate"/>.
 /// </summary>
 internal sealed class CooldownSource : GameWatcherSource
 {

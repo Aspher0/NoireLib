@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Blend state catalog keys (see the state table in the proposal §9.4).<br/>
-/// <see cref="CompositeRgb"/> is premultiplied with the alpha write masked off — the backbuffer's
+/// <see cref="CompositeRgb"/> is premultiplied with the alpha write masked off - the backbuffer's
 /// alpha channel is the game's native-UI coverage (our per-pixel mask source, and other overlay
 /// libraries read it too), so the composite must never write into it.
 /// </summary>
@@ -22,7 +22,7 @@ internal enum RasterKey { CullBack = 0, CullFront = 1, TwoSided = 2, Wire = 3 }
 internal enum SamplerKey { PointClamp = 0, LinearWrap = 1, LinearClamp = 2 }
 
 /// <summary>
-/// Lazily-created, enum-keyed immutable pipeline state objects. Exact descriptor values are normative —
+/// Lazily-created, enum-keyed immutable pipeline state objects. Exact descriptor values are normative -
 /// premultiplied blending everywhere translucent (Law 4), zero depth bias (the SRV-compare design needs none).
 /// </summary>
 internal sealed unsafe class StateCache : IDisposable

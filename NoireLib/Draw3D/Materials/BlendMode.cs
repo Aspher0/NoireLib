@@ -12,6 +12,6 @@ public enum BlendMode
     /// <summary>Standard translucent "over" blending (premultiplied). The default for markers and translucent shapes.</summary>
     Premultiplied = 1,
 
-    /// <summary>Additive blending — adds light, contributes no occlusion to the layer's alpha. For emissive/energy effects.</summary>
+    /// <summary>Additive blending - adds light, contributes no occlusion to the layer's alpha. For emissive/energy effects.</summary>
     Additive = 2,
 }

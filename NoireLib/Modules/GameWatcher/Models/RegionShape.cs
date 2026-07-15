@@ -18,7 +18,7 @@ public abstract class RegionShape
     public abstract bool Contains(Vector3 position);
 
     /// <summary>
-    /// Determines whether a position is inside the shape expanded by a margin — used for exit hysteresis
+    /// Determines whether a position is inside the shape expanded by a margin - used for exit hysteresis
     /// so a subject oscillating on the boundary does not flap.
     /// </summary>
     /// <param name="position">The position to test.</param>

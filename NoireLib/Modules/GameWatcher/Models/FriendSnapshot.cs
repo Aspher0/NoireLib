@@ -3,7 +3,7 @@ using System;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// An immutable snapshot of a friend-list entry — remote presence through the game's social data.<br/>
+/// An immutable snapshot of a friend-list entry - remote presence through the game's social data.<br/>
 /// Backed by the game's social proxy, refreshed on a slow cadence (see <see cref="FriendWatcher"/>): values
 /// are seconds-grained, not frame-grained, and can lag reality between refreshes.
 /// </summary>

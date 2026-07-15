@@ -149,7 +149,7 @@ For a list of modules, see the [Modules Section](#modules)
 
 ## 3D Rendering
 
-- [NoireDraw3D](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Draw3D/README.md) - A real D3D11 world renderer: terrain-hugging telegraphs, shapes, meshes, glTF model import, render-to-texture and picking — glowless, hook-free, ImGui-free
+- [NoireDraw3D](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Draw3D/README.md) - A real D3D11 world renderer: terrain-hugging telegraphs, shapes, meshes, glTF model import, render-to-texture and picking - glowless, hook-free, ImGui-free
 
 ## Modules
 

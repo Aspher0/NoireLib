@@ -11,6 +11,6 @@ public enum CullMode
     /// <summary>Front faces are culled. Used internally for decal volume boxes; rarely useful otherwise.</summary>
     Front = 1,
 
-    /// <summary>No culling — both sides render. For ribbons and planes meant to be seen from both sides.</summary>
+    /// <summary>No culling - both sides render. For ribbons and planes meant to be seen from both sides.</summary>
     None = 2,
 }

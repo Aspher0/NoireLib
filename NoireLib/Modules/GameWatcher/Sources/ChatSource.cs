@@ -8,7 +8,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Wraps chat messages: SeStrings and payloads preserved, sender resolved (name/world) when payloads allow,
-/// opt-in duplicate suppression with coalescing, and an opt-in bounded history. Event-driven — zero tick cost.
+/// opt-in duplicate suppression with coalescing, and an opt-in bounded history. Event-driven - zero tick cost.
 /// </summary>
 internal sealed class ChatSource : GameWatcherSource
 {

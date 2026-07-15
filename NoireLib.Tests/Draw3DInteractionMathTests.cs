@@ -11,7 +11,7 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the pure interaction/gizmo math: ray solvers, screen-constant sizing, the drag solvers each handle relies on,
-/// snapping, and the selection model. All headless — no renderer, no ImGui.
+/// snapping, and the selection model. All headless - no renderer, no ImGui.
 /// </summary>
 public class Draw3DInteractionMathTests
 {
@@ -206,7 +206,7 @@ public class Draw3DInteractionMathTests
         sel.Changed += () => changes++;
 
         sel.Pick(a);
-        sel.Pick(a);   // same node — no change
+        sel.Pick(a);   // same node - no change
         changes.Should().Be(1);
     }
 }

@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Friend-list facts through the game's social data — remote presence beyond the object table: a friend
+/// Friend-list facts through the game's social data - remote presence beyond the object table: a friend
 /// coming online, going offline, or arriving somewhere, without them ever being near you.<br/>
 /// The proxy is refreshed in the background on <see cref="GameWatcherOptions.FriendsRefreshCadence"/> (a
-/// jittered cadence, floored at 30s) so facts stay current without the friend list being open — except while
+/// jittered cadence, floored at 30s) so facts stay current without the friend list being open - except while
 /// the friend-list window <i>is</i> open,
 /// when the refresh is held so it never re-sorts or scrolls the addon. Values are seconds-grained and can lag
 /// reality between refreshes.
@@ -46,7 +46,7 @@ public sealed class FriendWatcher : GameWatcherFacade
         => On(null, handler, options, nameof(OnOffline));
 
     /// <summary>
-    /// Subscribes to friend location (territory) changes — a friend arrives somewhere, without them being in
+    /// Subscribes to friend location (territory) changes - a friend arrives somewhere, without them being in
     /// your object table.
     /// </summary>
     /// <param name="handler">The handler.</param>
@@ -87,7 +87,7 @@ public sealed class FriendWatcher : GameWatcherFacade
 
     /// <summary>
     /// The friend list as currently known to the watcher. Returns the Friends source cache when it runs;
-    /// otherwise an empty list (the game only populates its social data after a refresh request — subscribe
+    /// otherwise an empty list (the game only populates its social data after a refresh request - subscribe
     /// to any friend event, or mark the source AlwaysOn, to keep the cache warm).
     /// Live read (framework thread only); never activates anything.
     /// </summary>

@@ -6,7 +6,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// The shared tick pump behind waits: while at least one waiter is active, it evaluates them once per
-/// framework tick, and detaches entirely when the last waiter completes — waits are demand-activated like
+/// framework tick, and detaches entirely when the last waiter completes - waits are demand-activated like
 /// everything else. All completions run inline on the framework thread.
 /// </summary>
 internal static class GameConditionPump

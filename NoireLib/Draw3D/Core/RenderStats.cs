@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Frame counters plus a 4-deep GPU timestamp-query ring (resolved oldest-first, never stalling).
-/// "Why is nothing drawing" must always be answerable without a debugger — every skip path increments a named counter.
+/// "Why is nothing drawing" must always be answerable without a debugger - every skip path increments a named counter.
 /// </summary>
 internal sealed unsafe class RenderStats : IDisposable
 {
@@ -80,7 +80,7 @@ internal sealed unsafe class RenderStats : IDisposable
             }
         }
 
-        // Resolve the oldest slot if its data is ready (query results arrive frames later — never block).
+        // Resolve the oldest slot if its data is ready (query results arrive frames later - never block).
         var readIndex = (writeIndex + 1) % RingDepth;
         if (inFlight[readIndex])
             TryResolve(ctx, readIndex);

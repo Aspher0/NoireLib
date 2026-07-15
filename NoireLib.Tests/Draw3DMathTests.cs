@@ -119,7 +119,7 @@ public class Draw3DMathTests
     public void DecalDeviceZ_FromCalibratedW_MatchesOwnProjection()
     {
         // The decal path converts the calibrated surface w back to OUR device z via
-        // deviceZ = M33 + M43/w — must equal clip.z/clip.w of the same projection.
+        // deviceZ = M33 + M43/w - must equal clip.z/clip.w of the same projection.
         var proj = Proj; // the C.2 worked-example projection
         const float viewZ = 17f;
         var clip = Vector4.Transform(new Vector4(3f, -2f, viewZ, 1f), proj);

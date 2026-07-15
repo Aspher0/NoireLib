@@ -5,14 +5,14 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// The prebuilt condition vocabulary: composable, awaitable game-state predicates covering the common cases.
-/// All conditions are level-triggered ("is it true now?") and read live game state — evaluate and await them
+/// All conditions are level-triggered ("is it true now?") and read live game state - evaluate and await them
 /// from the framework thread (waits do this automatically).<br/>
 /// Named <c>GameConditions</c> (not <c>Conditions</c>) because <c>watcher.Conditions</c> is the raw
 /// condition-flag facade.
 /// </summary>
 public static class GameConditions
 {
-    /// <summary>Logged in, not loading between areas, and not occupied — safe to act.</summary>
+    /// <summary>Logged in, not loading between areas, and not occupied - safe to act.</summary>
     public static GameCondition PlayerAvailable { get; } = GameCondition.FromPredicateInternal(
         () => NoireService.ClientState.IsLoggedIn
             && !NoireService.Condition.Any(
@@ -120,7 +120,7 @@ public static class GameConditions
 
     /// <summary>
     /// True while <b>any</b> character in the scope satisfies the snapshot predicate (live captures per
-    /// evaluation — pair wide scopes with generous poll intent).
+    /// evaluation - pair wide scopes with generous poll intent).
     /// </summary>
     /// <param name="scope">Who to inspect.</param>
     /// <param name="predicate">The snapshot predicate.</param>
@@ -201,12 +201,12 @@ public static class GameConditions
     }
 
     /// <summary>
-    /// An event latch: becomes (and stays) true when a matching watcher event is dispatched — edge-triggered
+    /// An event latch: becomes (and stays) true when a matching watcher event is dispatched - edge-triggered
     /// capture with level-triggered consumption. One-shot per instance; re-arm with
     /// <see cref="GameEventLatchCondition{TEvent}.Reset"/>.<br/>
     /// The subscription arms on the first <see cref="GameCondition.IsMet"/> evaluation, or immediately with
     /// <paramref name="armImmediately"/> (capture may then precede whatever work you gate on it).
-    /// Works for library and custom (<see cref="NoireGameWatcher.Publish{TEvent}"/>) events alike —
+    /// Works for library and custom (<see cref="NoireGameWatcher.Publish{TEvent}"/>) events alike -
     /// no EventBus involved.
     /// </summary>
     /// <typeparam name="TEvent">The event type to latch on.</typeparam>

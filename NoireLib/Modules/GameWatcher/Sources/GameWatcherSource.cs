@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 /// constructed cold (no game access in constructors) and only touch game state between
 /// <see cref="Activate"/> and <see cref="Deactivate"/>.<br/>
 /// Source isolation: any exception thrown from activation or a tick marks the source failed and shuts it
-/// down — every other source keeps working.
+/// down - every other source keeps working.
 /// </summary>
 internal abstract class GameWatcherSource
 {
@@ -51,7 +51,7 @@ internal abstract class GameWatcherSource
 
     /// <summary>
     /// Starts the source: install hooks, attach native events, seed baselines. Baseline seeding never fires
-    /// events — subscribers observe changes from now on, not a replay of the present.
+    /// events - subscribers observe changes from now on, not a replay of the present.
     /// </summary>
     /// <returns>True when the source started; false when it failed (already logged and marked).</returns>
     public bool Activate()

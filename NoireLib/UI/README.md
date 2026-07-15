@@ -16,15 +16,15 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 
 `NoireLib.UI` is a set of ImGui UI helpers:
 
-- **`NoireOverlayButton`** — A standalone button overlayed on the game screen, drawn independently from any window. Anchorable anywhere (nine anchors, absolute pixels or screen ratio), with click/scroll callbacks, a hover mouse cursor, tooltips, a visibility condition evaluated on draw, per-state draw conditions (cutscene / gpose / hidden UI / always), drag-to-reposition, optional manual drawing, and full styling. Auto-disposed with NoireLib.
-- **`NoireComboBox<T>`** — A combo box with an optional auto-focused filter input, wheel/arrow cycling of the highlighted option inside the dropdown, and an optional "hold key + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping).
-- **`NoireTooltip`** — A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content (text, FontAwesome icons, images).
+- **`NoireOverlayButton`** - A standalone button overlayed on the game screen, drawn independently from any window. Anchorable anywhere (nine anchors, absolute pixels or screen ratio), with click/scroll callbacks, a hover mouse cursor, tooltips, a visibility condition evaluated on draw, per-state draw conditions (cutscene / gpose / hidden UI / always), drag-to-reposition, optional manual drawing, and full styling. Auto-disposed with NoireLib.
+- **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input, wheel/arrow cycling of the highlighted option inside the dropdown, and an optional "hold key + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping).
+- **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content (text, FontAwesome icons, images).
 
 ---
 
 ## Overlay Buttons
 
-An overlay button lives on its own, on top of the game. Create it once and keep the instance — no per-frame call is needed on your side. It is disposed automatically when NoireLib is disposed; dispose it yourself earlier if you no longer need it (see [Lifetime & disposal](#lifetime--disposal)).
+An overlay button lives on its own, on top of the game. Create it once and keep the instance - no per-frame call is needed on your side. It is disposed automatically when NoireLib is disposed; dispose it yourself earlier if you no longer need it (see [Lifetime & disposal](#lifetime--disposal)).
 
 ### Quick start
 
@@ -151,7 +151,7 @@ button.DrawConditions = OverlayDrawConditions.DrawInCutscenes | OverlayDrawCondi
 button.DrawConditions = OverlayDrawConditions.AlwaysDraw;
 ```
 
-NoireLib enables the matching per-plugin `UiBuilder` switch automatically as soon as one button needs it, and reverts it when no button needs it anymore. Because those switches are **per-plugin** (a Dalamud limitation), enabling any of these flags on a single overlay button also prevents Dalamud from auto-hiding **the rest of your plugin's UI** in that state — other overlay buttons that don't carry the matching flag are still hidden individually, but your own windows drawn through the same `UiBuilder` will stay visible.
+NoireLib enables the matching per-plugin `UiBuilder` switch automatically as soon as one button needs it, and reverts it when no button needs it anymore. Because those switches are **per-plugin** (a Dalamud limitation), enabling any of these flags on a single overlay button also prevents Dalamud from auto-hiding **the rest of your plugin's UI** in that state - other overlay buttons that don't carry the matching flag are still hidden individually, but your own windows drawn through the same `UiBuilder` will stay visible.
 
 ### Manual drawing
 

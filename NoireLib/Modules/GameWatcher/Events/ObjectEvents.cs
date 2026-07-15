@@ -18,7 +18,7 @@ public sealed record ObjectDespawnedEvent(ObjectSnapshot Last, bool DuringZoneCh
 
 /// <summary>
 /// Fired when an observed property of a game object changes (name, targetability, owner, death state).
-/// Position changes deliberately do not fire this event — use distance or region watchers.
+/// Position changes deliberately do not fire this event - use distance or region watchers.
 /// </summary>
 /// <param name="Previous">The snapshot before the change.</param>
 /// <param name="Current">The snapshot after the change.</param>

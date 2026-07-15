@@ -4,7 +4,7 @@ namespace NoireLib.Draw3D;
 
 /// <summary>
 /// Stylized lighting parameters consumed by <see cref="Materials.MaterialDomain.Lit"/> materials
-/// (half-Lambert). Deliberately independent of the game's lighting — a clean stylized look beats an
+/// (half-Lambert). Deliberately independent of the game's lighting - a clean stylized look beats an
 /// uncanny mismatch we have no authority over.
 /// </summary>
 public sealed class Draw3DLighting

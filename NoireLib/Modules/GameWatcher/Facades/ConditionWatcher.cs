@@ -8,7 +8,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Raw condition-flag facts. The derived enter/leave pairs (combat, mounted, crafting, loading, …) are their
-/// own event types — subscribe to them with <see cref="NoireGameWatcher.Subscribe{TEvent}"/> (e.g.
+/// own event types - subscribe to them with <see cref="NoireGameWatcher.Subscribe{TEvent}"/> (e.g.
 /// <see cref="CombatEnteredEvent"/>, <see cref="LoadingEndedEvent"/>) or await them with
 /// <see cref="NoireGameWatcher.WaitFor{TEvent}"/>.
 /// </summary>

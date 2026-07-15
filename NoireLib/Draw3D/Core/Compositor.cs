@@ -5,7 +5,7 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>Composite constants — must match CompositeCB in Composite.hlsl exactly (4112 bytes).</summary>
+/// <summary>Composite constants - must match CompositeCB in Composite.hlsl exactly (4112 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct CompositeCBData
 {
@@ -15,10 +15,10 @@ internal unsafe struct CompositeCBData
 }
 
 /// <summary>
-/// Blits the premultiplied scene layer onto the backbuffer with one fullscreen triangle — Law 11 at
+/// Blits the premultiplied scene layer onto the backbuffer with one fullscreen triangle - Law 11 at
 /// the pixel level: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
 /// Applies per-pixel game-UI-on-top masking (backbuffer alpha) and the nameplate policy rects in the
-/// same pass. The blend writes RGB only — the backbuffer's alpha channel is the mask source and is
+/// same pass. The blend writes RGB only - the backbuffer's alpha channel is the mask source and is
 /// never polluted.
 /// </summary>
 internal sealed unsafe class Compositor : IDisposable
@@ -73,7 +73,7 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.Disabled), 0);
         ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided));
 
-        ctx->IASetInputLayout(null); // SV_VertexID triangle — no vertex buffer
+        ctx->IASetInputLayout(null); // SV_VertexID triangle - no vertex buffer
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(pipeline.Vs, null, 0);
         ctx->PSSetShader(pipeline.Ps, null, 0);

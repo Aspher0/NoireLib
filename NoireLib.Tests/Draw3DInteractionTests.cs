@@ -9,7 +9,7 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the interaction spine's decision table: the click-vs-camera-pan discipline, the drag-takes-the-lead
-/// capture policy, hover transitions and the selection model — all exercised through the pure state machine so the
+/// capture policy, hover transitions and the selection model - all exercised through the pure state machine so the
 /// behaviour is verified without ImGui or a running game.
 /// </summary>
 public class Draw3DInteractionTests
@@ -56,7 +56,7 @@ public class Draw3DInteractionTests
     public void PressOnEmptyWorld_ThenDrag_IsNeverAClick()
     {
         // The FFXIV camera pan: a press that begins over nothing belongs to the game and stays the game's,
-        // even when it later drags across an interactable — it must never fire a click or a drag on that object.
+        // even when it later drags across an interactable - it must never fire a click or a drag on that object.
         var arbiter = new InteractionArbiter();
         var sink = new RecordingSink();
         var a = new object();
@@ -103,7 +103,7 @@ public class Draw3DInteractionTests
     [Fact]
     public void LeftPressOnEmptyWorld_ThenPan_DoesNotFireBackgroundClick()
     {
-        // A click-and-drag on empty world is the FFXIV camera pan — it must never read as a deselect.
+        // A click-and-drag on empty world is the FFXIV camera pan - it must never read as a deselect.
         var arbiter = new InteractionArbiter();
         var sink = new RecordingSink();
 
@@ -117,7 +117,7 @@ public class Draw3DInteractionTests
     [Fact]
     public void LeftClickOverForeignUi_DoesNotFireBackgroundClick()
     {
-        // Clicking a plugin/HUD window is not a background click — the game/UI owns it, the selection stays.
+        // Clicking a plugin/HUD window is not a background click - the game/UI owns it, the selection stays.
         var arbiter = new InteractionArbiter();
         var sink = new RecordingSink();
 
@@ -178,7 +178,7 @@ public class Draw3DInteractionTests
     [Fact]
     public void PressingDraggable_ClaimsMouseFromTheFirstFrame()
     {
-        // A gizmo handle: pressing it must block the game immediately, so the camera never pans under the drag —
+        // A gizmo handle: pressing it must block the game immediately, so the camera never pans under the drag -
         // even before the drag threshold is crossed and even when the on-hover block policy is off.
         var arbiter = new InteractionArbiter();
         var sink = new RecordingSink();
@@ -218,7 +218,7 @@ public class Draw3DInteractionTests
     {
         // With on-hover blocking off, hovering a plain object must NOT claim the mouse (the camera/zoom/world stay
         // usable), but the moment it is pressed we claim it so the click is actually delivered to us rather than lost
-        // to the game — then we let go the instant the press turns into a drag, handing the camera gesture back.
+        // to the game - then we let go the instant the press turns into a drag, handing the camera gesture back.
         var arbiter = new InteractionArbiter();
         var sink = new RecordingSink();
         var a = new object();
@@ -228,7 +228,7 @@ public class Draw3DInteractionTests
         arbiter.Update(Sample(new Vector2(10, 10), left: true, a, draggable: false, blockOnHover: false), sink)
             .Should().BeTrue("a fresh press on an object is captured so its click is not lost to the game");
         arbiter.Update(Sample(new Vector2(40, 10), left: true, a, draggable: false, blockOnHover: false), sink)
-            .Should().BeFalse("once a plain press crosses the drag threshold it is a camera gesture — release it");
+            .Should().BeFalse("once a plain press crosses the drag threshold it is a camera gesture - release it");
     }
 
     [Fact]

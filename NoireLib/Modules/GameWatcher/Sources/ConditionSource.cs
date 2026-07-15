@@ -6,7 +6,7 @@ namespace NoireLib.GameWatcher;
 /// <summary>
 /// Wraps <see cref="Dalamud.Plugin.Services.ICondition.ConditionChange"/>: dispatches the raw
 /// <see cref="ConditionChangedEvent"/> and the derived enter/leave pairs generated from the declarative
-/// <see cref="ConditionPairTable"/>. Event-driven — zero tick cost.
+/// <see cref="ConditionPairTable"/>. Event-driven - zero tick cost.
 /// </summary>
 internal sealed class ConditionSource : GameWatcherSource
 {

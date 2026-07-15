@@ -58,13 +58,13 @@ It is designed to be flexible, safe, and easy to integrate into any plugin.
 **Features at a glance:**
 
 - **Locale-based translation storage** with thread-safe runtime lookup.
-- **Multi-level fallback chains** — requested locale → parent culture → explicit fallbacks → default locale.
+- **Multi-level fallback chains** - requested locale → parent culture → explicit fallbacks → default locale.
 - **Runtime locale switching** with CLR events and optional `NoireEventBus` integration.
 - **Fluent translation registration** via `ForLocale()` / `LocaleWriter` for clean setup code.
 - **Attribute-based registration** with automatic discovery from the plugin assembly.
 - **JSON import/export** to and from strings or files.
 - **Built-in ImGui combo box** for user-facing locale selection.
-- **Persistent configuration** — selected locale and default-locale strategy are saved to disk automatically.
+- **Persistent configuration** - selected locale and default-locale strategy are saved to disk automatically.
 - **Missing-translation tracking** with configurable behavior and statistics.
 
 ---
@@ -77,7 +77,7 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 ### 1. Register Translations
 
 ```csharp
-// Option A — attribute-based (auto-registered at startup)
+// Option A - attribute-based (auto-registered at startup)
 [NoireLocalizationLocale("en-US", RegisterAutomatically = true)]
 public class EnglishTranslations
 {
@@ -85,7 +85,7 @@ public class EnglishTranslations
     public static string Hello => "Hello";
 }
 
-// Option B — fluent API
+// Option B - fluent API
 localizer
     .ForLocale("en-US")
         .Add("UI.Hello", "Hello")
@@ -97,7 +97,7 @@ localizer
         .Add("UI.Hello", "Hallo")
     .Done();
 
-// Option C — direct registration
+// Option C - direct registration
 localizer
     .AddTranslation("en-US", "UI.Hello", "Hello")
     .AddTranslation("fr-FR", "UI.Hello", "Bonjour")
@@ -363,7 +363,7 @@ public sealed class FrenchTexts
     public static string Hello => "Bonjour";
 }
 
-// Both classes are registered automatically — no manual call needed.
+// Both classes are registered automatically - no manual call needed.
 ```
 
 ---
@@ -440,12 +440,12 @@ Check for existence without triggering missing-translation side effects (no even
 ```csharp
 if (localizer.TryGet("Window.Save", out var saveText))
 {
-    // Use saveText — found in current locale or fallback chain
+    // Use saveText - found in current locale or fallback chain
 }
 
 if (localizer.TryGet("fr-FR", "Window.Save", out var frSave))
 {
-    // Use frSave — found in fr-FR or its fallback chain
+    // Use frSave - found in fr-FR or its fallback chain
 }
 ```
 
@@ -529,12 +529,12 @@ localizer.RemoveKey("Deprecated.Key");
 
 When resolving a translation key, the module walks the following chain in order:
 
-1. **Requested locale** — e.g. `fr-CA`.
-2. **Parent culture** *(if `AllowParentCultureFallback` is `true`)* — e.g. `fr`.
-3. **Explicit fallback locales** — configured via `SetFallbackLocales()`.
+1. **Requested locale** - e.g. `fr-CA`.
+2. **Parent culture** *(if `AllowParentCultureFallback` is `true`)* - e.g. `fr`.
+3. **Explicit fallback locales** - configured via `SetFallbackLocales()`.
 4. For each explicit fallback, its parent cultures are also walked (if enabled).
-5. **Default locale** *(if `AllowDefaultLocaleFallback` is `true`)* — e.g. `en-US`.
-6. **Default locale's parent cultures** *(if both options are enabled)* — e.g. `en`.
+5. **Default locale** *(if `AllowDefaultLocaleFallback` is `true`)* - e.g. `en-US`.
+6. **Default locale's parent cultures** *(if both options are enabled)* - e.g. `en`.
 
 The first locale in this chain that contains the key wins. Circular references are detected and skipped.
 
@@ -709,7 +709,7 @@ public static string HelloFr => "ignored when Value is set";
 
 - Ensure the key exists in the requested locale or in one of its fallback locales.
 - Verify fallback options are enabled (`AllowParentCultureFallback`, `AllowDefaultLocaleFallback`).
-- Check for key typos — keys are case-insensitive but whitespace-sensitive.
+- Check for key typos - keys are case-insensitive but whitespace-sensitive.
 - Use `GetMissingTranslationCounts()` to see which keys are being missed.
 - Enable `AutoCreateMissingKeysInDefaultLocale` to auto-populate missing keys for later translation.
 

@@ -5,10 +5,10 @@ using System.Collections.Generic;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Observes the friend list through the game's social data (info proxy) — remote presence beyond the object
+/// Observes the friend list through the game's social data (info proxy) - remote presence beyond the object
 /// table: online state and location changes for friends anywhere.<br/>
 /// The proxy is refreshed in the background (<c>RequestData</c>) so friend facts stay current without the
-/// friend list being open — but the refresh is <b>skipped while the friend-list window is open</b>, because
+/// friend list being open - but the refresh is <b>skipped while the friend-list window is open</b>, because
 /// refreshing then re-sorts and scrolls the addon. While the window is open the game keeps the list live
 /// anyway, so the passive reads still see updates. Values are seconds-grained and can lag reality.
 /// </summary>
@@ -67,7 +67,7 @@ internal sealed class FriendSource : GameWatcherSource
 
         // The game repopulates the proxy over several frames (paged), so a single read can be a half-loaded
         // list. Diffing those partial reads is what produced the add/remove storm on friend-list open. Guard
-        // against it: only act once the set has settled — a read whose order-independent signature matches the
+        // against it: only act once the set has settled - a read whose order-independent signature matches the
         // previous read is treated as a complete, stable snapshot.
         var signature = ComputeSignature(current);
 
@@ -80,14 +80,14 @@ internal sealed class FriendSource : GameWatcherSource
 
         if (!seeded)
         {
-            // First stable snapshot seeds the baseline silently — subscribers observe changes from now on.
+            // First stable snapshot seeds the baseline silently - subscribers observe changes from now on.
             seeded = true;
             Replace(current);
             return;
         }
 
         // Diff against the last stable baseline (never a silent reseed): a change that happened while the list
-        // was closed/stale — a friend going offline, moving world — surfaces on the next settled load.
+        // was closed/stale - a friend going offline, moving world - surfaces on the next settled load.
         DiffAndReplace(current);
     }
 
@@ -136,7 +136,7 @@ internal sealed class FriendSource : GameWatcherSource
     }
 
     /// <summary>
-    /// Refreshes the social proxy on the configured interval — but only while the friend-list window is closed,
+    /// Refreshes the social proxy on the configured interval - but only while the friend-list window is closed,
     /// so a background refresh never re-sorts or scrolls the addon the player is looking at. While the window is
     /// open the timer is held (not advanced), so the first refresh fires as soon as it closes.
     /// </summary>

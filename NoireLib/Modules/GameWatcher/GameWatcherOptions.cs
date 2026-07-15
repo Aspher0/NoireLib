@@ -12,7 +12,7 @@ namespace NoireLib.GameWatcher;
 public sealed class GameWatcherOptions
 {
     /// <summary>
-    /// An optional EventBus to mirror events to. Nothing is published by default — opt in per event type
+    /// An optional EventBus to mirror events to. Nothing is published by default - opt in per event type
     /// with <see cref="NoireGameWatcher.PublishToEventBus{TEvent}"/>.
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
@@ -20,7 +20,7 @@ public sealed class GameWatcherOptions
     /// <summary>
     /// Per-source activation overrides. Sources not listed use demand-driven activation.<br/>
     /// <see cref="SourceOverride.Disabled"/> beats everything, including the always-on implied by a configured
-    /// history capacity — the contradiction is logged rather than guessed at.
+    /// history capacity - the contradiction is logged rather than guessed at.
     /// </summary>
     public Dictionary<SourceKind, SourceOverride> Sources { get; set; } = new();
 
@@ -89,7 +89,7 @@ public sealed class ChatSourceOptions
 {
     /// <summary>
     /// The number of chat messages retained in history. 0 (default) disables history.<br/>
-    /// Configuring a capacity marks the Chat source always-on — a capacity that silently collected nothing
+    /// Configuring a capacity marks the Chat source always-on - a capacity that silently collected nothing
     /// would be a footgun (unless the source is explicitly disabled, which wins and is logged).
     /// </summary>
     public int HistoryCapacity { get; set; }

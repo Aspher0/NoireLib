@@ -13,7 +13,7 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Integration tests for the NoireNetworker module. These run the real stack: kernel mutex election,
-/// memory-mapped rendezvous, and loopback TCP — multiple module instances inside this test process.
+/// memory-mapped rendezvous, and loopback TCP - multiple module instances inside this test process.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public class NoireNetworkerTests : IDisposable
@@ -329,7 +329,7 @@ public class NoireNetworkerTests : IDisposable
         (await WaitUntilAsync(() => Volatile.Read(ref receivedOnB) == 1)).Should().BeTrue();
         await Task.Delay(300);
 
-        // Exactly once on each side — no ping-pong between the bridges.
+        // Exactly once on each side - no ping-pong between the bridges.
         Volatile.Read(ref receivedOnA).Should().Be(1, "the local publish reaches local subscribers once");
         Volatile.Read(ref receivedOnB).Should().Be(1, "the bridged publish must not echo back and forth");
 

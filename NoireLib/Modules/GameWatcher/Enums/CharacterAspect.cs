@@ -17,7 +17,7 @@ public enum CharacterAspect
     /// <summary>Appearing in / leaving the object table (spawn and despawn).</summary>
     Presence = 1 << 0,
 
-    /// <summary>HP and MP (GP/CP are only meaningful for the local player — not synchronized for others).</summary>
+    /// <summary>HP and MP (GP/CP are only meaningful for the local player - not synchronized for others).</summary>
     Vitals = 1 << 1,
 
     /// <summary>Shield percentage.</summary>
@@ -41,7 +41,7 @@ public enum CharacterAspect
     /// <summary>Character mode transitions (looping emotes, mounts, crafting stance, …).</summary>
     Mode = 1 << 8,
 
-    /// <summary>The exact emote id currently played (from the character's emote controller) — one-shots, loops and cposes.</summary>
+    /// <summary>The exact emote id currently played (from the character's emote controller) - one-shots, loops and cposes.</summary>
     Emote = 1 << 13,
 
     /// <summary>Online status (AFK, busy, looking for party, …).</summary>

@@ -2,13 +2,13 @@ namespace NoireLib.Draw3D.Enums;
 
 /// <summary>
 /// How nameplates layer against Draw3D content. The visible mask is always the UI's own pixels
-/// (letter-exact, from the backbuffer's UI-coverage alpha) — these modes only decide, per plate,
+/// (letter-exact, from the backbuffer's UI-coverage alpha) - these modes only decide, per plate,
 /// whether those pixels read on top of your content or get covered by it.
 /// Requires <see cref="NoireDraw3D.ProtectGameUi"/> (on by default).
 /// </summary>
 public enum NativeUiProtectionMode
 {
-    /// <summary>Nameplates never punch through — the layer covers plate letters everywhere.</summary>
+    /// <summary>Nameplates never punch through - the layer covers plate letters everywhere.</summary>
     Off = 0,
 
     /// <summary>

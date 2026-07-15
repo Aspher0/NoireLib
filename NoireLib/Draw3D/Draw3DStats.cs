@@ -1,7 +1,7 @@
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// A point-in-time snapshot of the renderer's counters. Draw3D renders no stats UI itself (Law 11) —
+/// A point-in-time snapshot of the renderer's counters. Draw3D renders no stats UI itself (Law 11) -
 /// consumers may display this anywhere they like, and <c>/noire3d stats</c> prints it to the log.
 /// </summary>
 public readonly struct Draw3DStats
@@ -60,7 +60,7 @@ public readonly struct Draw3DStats
     /// <summary>Whether the game's depth buffer was readable last frame.</summary>
     public required bool DepthAvailable { get; init; }
 
-    /// <summary>The active depth source (route + format), the live depth-calibration fit, and the UI-mask health — the one line that answers "why does occlusion/UI layering look wrong".</summary>
+    /// <summary>The active depth source (route + format), the live depth-calibration fit, and the UI-mask health - the one line that answers "why does occlusion/UI layering look wrong".</summary>
     public required string DepthSource { get; init; }
 
     /// <summary>Whether the wholesale VP camera fallback was active last frame.</summary>

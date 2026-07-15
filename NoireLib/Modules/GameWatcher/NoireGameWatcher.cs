@@ -9,15 +9,15 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Watches <b>anything and anyone</b>: every character (local player and others), every object, party and
-/// alliance, zones, duties, conditions, chat, combat, cooldowns, statuses, UI addons and inventory — through
+/// alliance, zones, duties, conditions, chat, combat, cooldowns, statuses, UI addons and inventory - through
 /// one subscription model, one token type, one cost model, and one waiting primitive that plugs directly
 /// into <c>NoireTaskQueue</c>.<br/><br/>
 /// Subscribe through the domain facades (<see cref="Characters"/>, <see cref="Party"/>, <see cref="Zone"/>, …),
 /// query current state through the same facades, and await game state with <see cref="GameCondition"/> /
 /// <see cref="WaitFor{TEvent}"/>. Sources activate on demand: the first subscription touching a source spins
-/// it up, disposing the last token shuts it down — there is nothing to enable manually.<br/><br/>
+/// it up, disposing the last token shuts it down - there is nothing to enable manually.<br/><br/>
 /// Every handler, filter, sampler and wait continuation runs <b>inline on the framework thread</b>.
-/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a watcher task from the framework thread — always await.</b>
+/// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a watcher task from the framework thread - always await.</b>
 /// </summary>
 public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatcher, GameWatcherDiagnosticsWindow>
 {
@@ -139,7 +139,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     /// <summary>The options snapshot in effect since the last activation.</summary>
     internal GameWatcherOptions ActiveOptions => activeOptions ?? options;
 
-    /// <summary>Character facts for anyone: vitals, casts, death, modes, emotes, job/level — scoped by <see cref="Scope"/>.</summary>
+    /// <summary>Character facts for anyone: vitals, casts, death, modes, emotes, job/level - scoped by <see cref="Scope"/>.</summary>
     public CharacterWatcher Characters { get; private set; } = null!;
 
     /// <summary>Kind-agnostic object facts: spawn/despawn/changed for anything, distance and region watchers.</summary>
@@ -148,7 +148,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     /// <summary>Party and alliance facts: members, leader, roles, sizes, member territories.</summary>
     public PartyWatcher Party { get; private set; } = null!;
 
-    /// <summary>Friend-list facts: online state and location — remote presence beyond the object table.</summary>
+    /// <summary>Friend-list facts: online state and location - remote presence beyond the object table.</summary>
     public FriendWatcher Friends { get; private set; } = null!;
 
     /// <summary>Local player targeting facts: target, focus, soft and mouse-over targets.</summary>
@@ -258,7 +258,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
     /// <summary>
     /// Disposes the module completely. Overridden so a watcher created without the game (no window system,
-    /// e.g. in tests) can still be disposed — the base unconditionally unregisters its window.
+    /// e.g. in tests) can still be disposed - the base unconditionally unregisters its window.
     /// </summary>
     public override void Dispose()
     {
@@ -393,7 +393,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         => ActiveOptions.Sources.TryGetValue(kind, out var configured) ? configured : SourceOverride.Default;
 
     /// <summary>
-    /// Histories only collect while their source runs, so a configured history capacity implies AlwaysOn —
+    /// Histories only collect while their source runs, so a configured history capacity implies AlwaysOn -
     /// a capacity that silently collected nothing would be a footgun.
     /// </summary>
     private bool HasImpliedAlwaysOn(SourceKind kind) => kind switch
@@ -408,7 +408,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         foreach (var kind in new[] { SourceKind.Chat, SourceKind.ActionEffect })
         {
             if (GetSourceOverride(kind) == SourceOverride.Disabled && HasImpliedAlwaysOn(kind))
-                NoireLogger.LogWarning(this, $"Source {kind} has a configured history capacity but is Disabled — Disabled wins; the history will stay empty.");
+                NoireLogger.LogWarning(this, $"Source {kind} has a configured history capacity but is Disabled - Disabled wins; the history will stay empty.");
         }
     }
 

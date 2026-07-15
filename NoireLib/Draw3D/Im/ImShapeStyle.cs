@@ -40,7 +40,7 @@ public readonly record struct ImShapeStyle
 
     /// <summary>
     /// Flat shapes only: draw on top of other Draw3D objects while staying occluded by the game world (walls / terrain).
-    /// The editor-gizmo mix — visible over the objects it edits, still hidden behind a real wall. Ignored when
+    /// The editor-gizmo mix - visible over the objects it edits, still hidden behind a real wall. Ignored when
     /// <see cref="IgnoreDepth"/> is set (full x-ray wins).
     /// </summary>
     public bool OnTopOfObjects { get; init; }
@@ -48,11 +48,11 @@ public readonly record struct ImShapeStyle
     /// <summary>Draw layer (orders decals; higher draws later).</summary>
     public int Layer { get; init; }
 
-    /// <summary>Decal volume height in world units — how far above/below the anchor the projection reaches (default 4).</summary>
+    /// <summary>Decal volume height in world units - how far above/below the anchor the projection reaches (default 4).</summary>
     public float DecalHeight { get; init; } = 4f;
 
     /// <summary>
-    /// Grounded decals only: world-space cylinders (one per actor) the decal will <b>not</b> paint on — so a
+    /// Grounded decals only: world-space cylinders (one per actor) the decal will <b>not</b> paint on - so a
     /// character / monster / NPC standing in the decal is cut out of it, while the ground around their feet
     /// keeps the decal (no hole). Object-aware and fully per-decal: pass exactly the actors this decal should
     /// avoid (build them from the object table / <see cref="NoireDraw3D.GetActorExclusions"/>, or by hand).

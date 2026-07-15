@@ -137,7 +137,7 @@ internal sealed class ObjectSource : GameWatcherSource
                 continue;
             }
 
-            // Compare first (scalar fields only — position changes are covered by the watchers below).
+            // Compare first (scalar fields only - position changes are covered by the watchers below).
             if (prev.DataId != obj.DataId
                 || prev.OwnerId != obj.OwnerId
                 || prev.IsTargetable != obj.IsTargetable

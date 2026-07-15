@@ -10,11 +10,11 @@ namespace NoireLib.Draw3D.Im;
 
 /// <summary>
 /// The immediate-mode drawing layer: call <c>Draw*</c> every frame; anything not re-requested vanishes.<br/>
-/// "Im" means <i>immediate-mode pattern</i> — nothing to do with ImGui: every call becomes real meshes
+/// "Im" means <i>immediate-mode pattern</i> - nothing to do with ImGui: every call becomes real meshes
 /// through the same D3D scene pass as retained content (Law 11).<br/>
 /// <b>Timing contract:</b> calls made inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an
 /// <see cref="Scene.ISceneFeature"/> render <b>this frame, always</b>. Calls made anywhere else in a draw
-/// cycle render at most one frame late (buffered) — imperceptible for markers, documented so nobody
+/// cycle render at most one frame late (buffered) - imperceptible for markers, documented so nobody
 /// debugs it as a bug.
 /// </summary>
 public sealed class ImDraw3D
@@ -386,7 +386,7 @@ public sealed class ImDraw3D
         Depth = style.IgnoreDepth ? DepthMode.Ignore : style.OnTopOfObjects ? DepthMode.WorldOnly : DepthMode.TestOnly,
         WhenDepthUnavailable = DepthUnavailableBehavior.Ignore,
         Cull = cullNone ? CullMode.None : CullMode.Back,
-        UnorderedBatching = true, // markers may draw in any order — lets identical shapes instance hard
+        UnorderedBatching = true, // markers may draw in any order - lets identical shapes instance hard
         Params1 = new Vector4(style.DepthFade, 0f, 0f, 0f),
     };
 

@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 /// <summary>
 /// Kind-agnostic object facts: spawn/despawn/changed for anything in the object table (treasure, NPCs, event
 /// objects, …), plus distance-threshold and territory-bound region watchers.<br/>
-/// Characters are objects too — use <see cref="CharacterWatcher"/> for people, this facade for everything.
+/// Characters are objects too - use <see cref="CharacterWatcher"/> for people, this facade for everything.
 /// </summary>
 public sealed class ObjectWatcher : GameWatcherFacade
 {
@@ -61,7 +61,7 @@ public sealed class ObjectWatcher : GameWatcherFacade
         => On(null, handler, WithFilter(options, KindFilter<ObjectDespawnedEvent>(kinds, e => e.Last)), nameof(OnDespawned));
 
     /// <summary>
-    /// Subscribes to object property changes (name, owner, targetability, death state — not position;
+    /// Subscribes to object property changes (name, owner, targetability, death state - not position;
     /// use distance/region watchers for movement).
     /// </summary>
     /// <param name="handler">The handler.</param>

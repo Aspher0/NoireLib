@@ -20,10 +20,29 @@ public static class GizmoMath
         return MathF.Max(0.001f, Vector3.Distance(origin, frame.EyePos) * 0.001f) * pixels;
     }
 
-    /// <summary>Signed distance the cursor moved along a world axis between press and now (project each ray onto the axis line).</summary>
+    /// <summary>
+    /// Signed distance the cursor moved along an axis between press and now, tracking the cursor so the grabbed point
+    /// stays under it. Each ray is intersected with the plane that contains the axis and faces the camera most (its
+    /// normal is the eye-to-gizmo direction with the axis component removed), and the hit-point difference is projected
+    /// onto the axis. A closest-point-between-lines measure (the earlier approach) over-slid the object when the axis
+    /// ran oblique to the view, moving it farther than the cursor; this matches how ImGuizmo tracks an axis drag.
+    /// </summary>
     public static float AxisTranslationDelta(Vector3 axis, Vector3 origin, Vector3 pressRayO, Vector3 pressRayD, Vector3 curRayO, Vector3 curRayD)
     {
         axis = InteractMath.SafeNormalize(axis, Vector3.UnitX);
+
+        var viewDir = InteractMath.SafeNormalize(origin - curRayO, curRayD);
+        var normal = viewDir - axis * Vector3.Dot(viewDir, axis);
+        if (normal.LengthSquared() >= 1e-6f)
+        {
+            normal = Vector3.Normalize(normal);
+            if (InteractMath.RayPlane(pressRayO, pressRayD, origin, normal, out _, out var a) &&
+                InteractMath.RayPlane(curRayO, curRayD, origin, normal, out _, out var b))
+                return Vector3.Dot(b - a, axis);
+        }
+
+        // Axis nearly edge-on to the view (the tracking plane is ill-conditioned): fall back to projecting each ray
+        // onto the axis line, which stays finite when a facing plane cannot be built.
         InteractMath.ClosestAxisParam(pressRayO, pressRayD, origin, axis, out var p0);
         InteractMath.ClosestAxisParam(curRayO, curRayD, origin, axis, out var p1);
         return p1 - p0;

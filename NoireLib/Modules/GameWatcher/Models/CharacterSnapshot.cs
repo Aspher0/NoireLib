@@ -8,7 +8,7 @@ namespace NoireLib.GameWatcher;
 /// An immutable snapshot of a character's observed state at a point in time.<br/>
 /// Snapshots are captured once per tick per subject and shared by every event fired that tick.<br/>
 /// Event records may gain new members in future versions (appended, never reordered or removed within a major
-/// version) — consume snapshots by property, not by positional <c>Deconstruct</c>.
+/// version) - consume snapshots by property, not by positional <c>Deconstruct</c>.
 /// </summary>
 public sealed record CharacterSnapshot
 {
@@ -54,7 +54,7 @@ public sealed record CharacterSnapshot
     /// <summary>Maximum mana points.</summary>
     public required uint MaxMp { get; init; }
 
-    /// <summary>Current gathering points. Only meaningful for the local player — not synchronized for others.</summary>
+    /// <summary>Current gathering points. Only meaningful for the local player - not synchronized for others.</summary>
     public required uint CurrentGp { get; init; }
 
     /// <summary>Maximum gathering points. Only meaningful for the local player.</summary>
@@ -107,7 +107,7 @@ public sealed record CharacterSnapshot
 
     /// <summary>
     /// The exact emote id currently played, read from the character's emote controller, or 0 when none.
-    /// Unlike <see cref="Mode"/> this resolves the precise emote — one-shots, looping emotes and cposes alike
+    /// Unlike <see cref="Mode"/> this resolves the precise emote - one-shots, looping emotes and cposes alike
     /// (idle poses carry an id; the base pose is 0).
     /// </summary>
     public required ushort EmoteId { get; init; }

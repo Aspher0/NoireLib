@@ -44,7 +44,7 @@ public partial class NoireGameWatcher
 
             if (!hasBaseline)
             {
-                // Baseline seeding: the first sample never fires — subscribers observe changes from now on.
+                // Baseline seeding: the first sample never fires - subscribers observe changes from now on.
                 previous = current;
                 hasBaseline = true;
                 return true;
@@ -91,7 +91,7 @@ public partial class NoireGameWatcher
     private readonly List<ValueWatcherRegistration> valueWatchers = new();
 
     /// <summary>
-    /// Registers a raw per-tick callback on the value-watcher pump — the plumbing behind scoped value
+    /// Registers a raw per-tick callback on the value-watcher pump - the plumbing behind scoped value
     /// watchers. Internal.
     /// </summary>
     internal NoireSubscriptionToken WatchTick(Action onTick, TimeSpan? interval, object? owner, string description)
@@ -116,7 +116,7 @@ public partial class NoireGameWatcher
     }
 
     /// <summary>
-    /// Diffs <b>any</b> value you can read, polled per tick or at an interval — the permanent escape hatch:
+    /// Diffs <b>any</b> value you can read, polled per tick or at an interval - the permanent escape hatch:
     /// game state the library never modeled is still watchable with full semantics.<br/>
     /// The sampler and the comparison run on the framework thread. The first sample seeds the baseline
     /// without firing. Returns the same token type as every other subscription.

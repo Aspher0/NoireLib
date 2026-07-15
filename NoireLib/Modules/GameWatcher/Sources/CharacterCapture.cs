@@ -73,7 +73,7 @@ internal struct CharacterFieldSet
 
 /// <summary>
 /// The pure diff logic of the Characters source: which aspects changed between two field sets.
-/// No game access — unit-testable against fabricated values.
+/// No game access - unit-testable against fabricated values.
 /// </summary>
 internal static class CharacterDiffEngine
 {

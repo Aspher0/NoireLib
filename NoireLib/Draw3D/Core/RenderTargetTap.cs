@@ -16,8 +16,8 @@ namespace NoireLib.Draw3D.Core;
 /// <item><b>Pre-UI injection</b> (<c>/noire3d ontop</c>): the game composites the final world image into a
 /// "present buffer" and then draws its native UI (nameplates, HUD) into that same buffer before blitting
 /// to the swapchain. By learning that present buffer (the render target bound right before the swapchain
-/// backbuffer) and firing a callback at its 2nd bind of the frame — after the world copy, before the UI
-/// burst — Draw3D can composite its layer UNDER the native UI.</item>
+/// backbuffer) and firing a callback at its 2nd bind of the frame - after the world copy, before the UI
+/// burst - Draw3D can composite its layer UNDER the native UI.</item>
 /// </list>
 /// Opt-in (installed only on first use); the OM hook stays disabled unless a capture is armed or injection
 /// is enabled; the four draw-count hooks are enabled only for the single frame of a capture.
@@ -79,12 +79,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     // World-camera snapshot. The injected overlay must be projected with the same camera the game rasterized the
     // world with, or it drifts relative to world geometry under camera motion. The player camera is snapshotted
-    // here on the render thread at the frame's first depth pass (the main world pass) — the exact view/projection
-    // the world now in the present buffer was drawn with — and reused at the later injection bind in the same frame.
+    // here on the render thread at the frame's first depth pass (the main world pass) - the exact view/projection
+    // the world now in the present buffer was drawn with - and reused at the later injection bind in the same frame.
     private GameRenderSources.CameraData worldCamera;
     private volatile bool hasWorldCamera;
 
-    /// <summary>When true the detour skips its work — set around Draw3D's OWN binds so they never interfere.</summary>
+    /// <summary>When true the detour skips its work - set around Draw3D's OWN binds so they never interfere.</summary>
     public bool SuppressSelf;
 
     /// <summary>Enables the pre-UI injection path (the OM hook must be installed and stays enabled while set).</summary>
@@ -94,7 +94,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     public Func<nint, bool>? Injector { get; set; }
 
     /// <summary>
-    /// The player camera captured on the render thread at this frame's first depth pass — the exact view/projection
+    /// The player camera captured on the render thread at this frame's first depth pass - the exact view/projection
     /// the world currently in the present buffer was rasterized with. The inject callback projects the overlay with
     /// this so it stays locked to the world at any frame-rate. False until this frame's first depth pass is seen
     /// (e.g. a menu/loading frame with no world pass); the caller then falls back to the live camera.
@@ -268,7 +268,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             }
         }
 
-        // Snapshot the world camera at the frame's first depth pass — the main world pass runs early with a
+        // Snapshot the world camera at the frame's first depth pass - the main world pass runs early with a
         // depth-stencil bound, before the present-composition binds. This captures the exact camera the world in
         // the present buffer was drawn with, for the injection to project with later this frame. One per frame.
         if (InjectionEnabled && !hasWorldCamera && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0)
@@ -385,7 +385,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                 bbIdx.Append(i).Append(binds[i].HasDsv ? "(+dsv) " : " ");
         }
 
-        sb.AppendLine($"  backbuffer binds at idx: {(bbIdx.Length == 0 ? "(none learned — re-run)" : bbIdx.ToString())}");
+        sb.AppendLine($"  backbuffer binds at idx: {(bbIdx.Length == 0 ? "(none learned - re-run)" : bbIdx.ToString())}");
         sb.AppendLine("  'draws' = draw calls made into the PREVIOUS row's target (1 = a blit; a burst = a real pass, e.g. the UI).");
         sb.AppendLine("  idx | draws | #rtv | backbuffer | dsv |  size    | rtv0 resource");
         for (var i = 0; i < bindCount; i++)
@@ -396,7 +396,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
 
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
-        NoireService.ChatGui.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame — paste the log (/xllog).");
+        NoireService.ChatGui.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame - paste the log (/xllog).");
     }
 
     /// <inheritdoc/>

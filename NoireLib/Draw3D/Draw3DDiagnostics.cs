@@ -53,7 +53,7 @@ public sealed unsafe class Draw3DDiagnostics
     /// <summary>
     /// Arms the ground-truth depth probe for the next rendered frame (results logged): the analytic depth
     /// map rendering uses, a diagnostic-only raycast fit, a per-point depth table for both candidate
-    /// buffers, and the UI-mask alpha health. Read-only — it never disturbs the live depth state.
+    /// buffers, and the UI-mask alpha health. Read-only - it never disturbs the live depth state.
     /// Gate: ≥ 90 % of hit points within 1e-3.
     /// </summary>
     public void RunProbe()
@@ -70,10 +70,10 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>
     /// Spawns the reference QA scene around the player: telegraph decals (ring/sector/rect), a lit torus,
-    /// an additive orb, an opaque box stack and a flat quad. Every object — decals included — is wired for interaction:
-    /// hover highlights, left-click selects, and a <see cref="NoireGizmo"/> (in-world depth handles) attaches to the
-    /// selection so you can move/rotate/scale it — exercising the whole NoireInteract spine in-game. Hovering native
-    /// game UI (inventory, friend list, HUD) over an object is a hard pass — it never registers.
+    /// an additive orb, an opaque box stack and a flat quad. Every object - decals included - is wired for interaction:
+    /// hover highlights, left-click selects, and a <see cref="NoireGizmo"/> (the default ImGuizmo backend) attaches to the
+    /// selection so you can move/rotate/scale it - exercising the whole NoireInteract spine in-game. Hovering native
+    /// game UI (inventory, friend list, HUD) over an object is a hard pass - it never registers.
     /// <see cref="ClearSmokeScene"/> removes it.
     /// </summary>
     public void SpawnSmokeScene()
@@ -89,7 +89,7 @@ public sealed unsafe class Draw3DDiagnostics
         NoireInteract.DebugLog = true;
         NoireGizmo.ResetImGuizmoDiagnostics(); // re-arm the once-only [Gizmo] lines so each spawn logs fresh
 
-        // Ground telegraphs (decal domain — hug the terrain). Interactable too: keep CPU data so the projection volume
+        // Ground telegraphs (decal domain - hug the terrain). Interactable too: keep CPU data so the projection volume
         // picks triangle-exact, and wire hover/select so the gizmo can grab and move a decal like any other node.
         // The volume is a generous vertical slab: shape-aware picking gates the XZ footprint precisely, so a tall volume
         // no longer over-catches, and the height absorbs uneven ground / collision-vs-rendered-surface disagreement so
@@ -114,7 +114,7 @@ public sealed unsafe class Draw3DDiagnostics
         MakeSmokeInteractable(sector, sectorRenderer);
         smokeNodes.Add(sector);
 
-        // Lit torus (the donut) floating above the ring. Interactable — keep CPU data so picking is triangle-exact.
+        // Lit torus (the donut) floating above the ring. Interactable - keep CPU data so picking is triangle-exact.
         var torus = scene.CreateNode("Smoke.Torus");
         torus.LocalPosition = center + new Vector3(0f, 2f, 0f);
         var torusMesh = new Mesh(MeshBuilder.Torus(1.6f, 0.35f), keepCpuData: true, name: "Smoke.Torus");
@@ -151,13 +151,13 @@ public sealed unsafe class Draw3DDiagnostics
         MakeSmokeInteractable(quad, quad.SetMesh(quadMesh, Material.Unlit(new Vector4(0.3f, 1f, 0.5f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None }));
         smokeNodes.Add(quad);
 
-        // A universal gizmo (native in-world depth handles) that follows the selection: left-click any solid object to
+        // A universal gizmo (the default ImGuizmo backend) that follows the selection: left-click any solid object to
         // select it, then drag the handles (the camera stays put while you drag, since NoireInteract owns the mouse).
         smokeGizmo = new NoireGizmo(GizmoOp.Universal);
-        smokeGizmo.Options.Space = GizmoSpace.Local;
-        //smokeGizmo.Options.Backend = GizmoBackend.Native; // flip live with '/noire3d gizmo' to compare with ImGuizmo
+        smokeGizmo.Options.Space = GizmoSpace.World;
         smokeGizmo.Options.Depth = GizmoDepth.AlwaysOnTop;
-        smokeGizmo.Options.Snap = new Vector3(0.5f);
+        //smokeGizmo.Options.Snap = new Vector3(0.5f);
+        smokeGizmo.Options.ScaleSnap = 0.5f;
         smokeGizmo.Options.RotateSnapDeg = 15f;
 
         // Multi-select: Ctrl toggles a node in or out, Shift adds one; the gizmo binds the whole set and edits it as a
@@ -193,7 +193,7 @@ public sealed unsafe class Draw3DDiagnostics
         node.OnHoverExit = _ => renderer.Tint = baseTint;
     }
 
-    /// <summary>Per-tick refresh of the smoke telegraphs' actor exclusions (framework thread — object-table reads belong here).</summary>
+    /// <summary>Per-tick refresh of the smoke telegraphs' actor exclusions (framework thread - object-table reads belong here).</summary>
     private void RefreshSmokeExclusions(Dalamud.Plugin.Services.IFramework framework)
     {
         if (smokeDecalRenderers.Count == 0)
@@ -212,12 +212,12 @@ public sealed unsafe class Draw3DDiagnostics
     public string ToggleSmokeGizmoBackend()
     {
         if (smokeGizmo == null)
-            return "Draw3D: no smoke scene — run '/noire3d smoke' first.";
+            return "Draw3D: no smoke scene - run '/noire3d smoke' first.";
 
         smokeGizmo.Options.Backend = smokeGizmo.Options.Backend == GizmoBackend.ImGuizmo
             ? GizmoBackend.Native
             : GizmoBackend.ImGuizmo;
-        return $"Draw3D: smoke gizmo backend = {smokeGizmo.Options.Backend}. Select an object to see it — if ImGuizmo doesn't appear, check /xllog for the '[Gizmo]' lines.";
+        return $"Draw3D: smoke gizmo backend = {smokeGizmo.Options.Backend}. Select an object to see it - if ImGuizmo doesn't appear, check /xllog for the '[Gizmo]' lines.";
     }
 
     /// <summary>Removes the smoke scene and disposes its meshes.</summary>
@@ -318,10 +318,10 @@ public sealed unsafe class Draw3DDiagnostics
         {
             var mean = validateSamples > 0 ? validateDeltaSum / validateSamples : 0;
             var verdict = validateMaxDelta <= 1.0f ? "PASS" : "FAIL";
-            var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames — max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max ≤ 1 px). " +
+            var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames - max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max ≤ 1 px). " +
                          $"VP cross-check max element delta: {validateMaxMatrixDelta:E2}. Camera fallback active: {frame.UsedFallbackCamera}. " +
                          "Repeat in the §7.5 poses: orbit, side-on grazing, wall-collision camera, first-person, max zoom.";
-            NoireService.ChatGui.Print($"Draw3D validate: {verdict} — max {validateMaxDelta:F3} px (details in log).");
+            NoireService.ChatGui.Print($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
     }
@@ -391,7 +391,7 @@ public sealed unsafe class Draw3DDiagnostics
         if (GameRenderSources.TryGetSwapChainDepthTexture(out var swapInfo))
             actualSwap = DepthReadback.TryReadAtPoints(device, in swapInfo, screens, frame.ViewportSize, out swapDesc);
 
-        // An informational least-squares fit of the same raycast points (diagnostic ONLY — never used for
+        // An informational least-squares fit of the same raycast points (diagnostic ONLY - never used for
         // rendering). A gap between this and the analytic map is collision-vs-rendered-surface disagreement,
         // which is exactly why fitting was abandoned in favour of the analytic map.
         var fitXs = new List<float>(screens.Count);
@@ -436,11 +436,11 @@ public sealed unsafe class Draw3DDiagnostics
 
         var gate = (int)MathF.Ceiling(screens.Count * 0.9f);
         var verdict = mainVsMap >= gate ? "PASS"
-            : swapVsMap >= gate ? "FAIL — scene depth lives in the SwapChain buffer at present time (paste the log)"
-            : "FAIL — the analytic map does not match the RTM buffer; paste the point table "
+            : swapVsMap >= gate ? "FAIL - scene depth lives in the SwapChain buffer at present time (paste the log)"
+            : "FAIL - the analytic map does not match the RTM buffer; paste the point table "
               + "(mismatched rows are usually collision-vs-rendered-surface disagreement, harmless if few)";
 
-        Report($"Draw3D probe [{verdict.Split(' ')[0]}]: RTM×map {mainVsMap}/{screens.Count} (gate ≥ {gate}). {(verdict.Contains('—') ? verdict[(verdict.IndexOf('—') + 2)..] : "Analytic depth mapping confirmed against ground truth.")}");
+        Report($"Draw3D probe [{verdict.Split(' ')[0]}]: RTM×map {mainVsMap}/{screens.Count} (gate ≥ {gate}). {(verdict.Contains('-') ? verdict[(verdict.IndexOf('-') + 2)..] : "Analytic depth mapping confirmed against ground truth.")}");
         NoireLogger.LogInfo($"Draw3D probe details:\n{details}", "Draw3D");
     }
 

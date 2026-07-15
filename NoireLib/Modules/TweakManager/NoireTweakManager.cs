@@ -775,7 +775,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
 
     /// <summary>
     /// Gets a deserialized copy of a tweak's configuration.<br/>
-    /// The returned instance is a standalone copy — modifying it does not affect
+    /// The returned instance is a standalone copy - modifying it does not affect
     /// the live tweak config.
     /// </summary>
     /// <typeparam name="TConfig">The tweak config type.</typeparam>

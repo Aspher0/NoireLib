@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// The base of the public domain facades. Facades are thin: they expose three verbs per domain —
-/// subscribe (scoped helpers), query (current state) and wait (through <see cref="GameConditions"/>) —
+/// The base of the public domain facades. Facades are thin: they expose three verbs per domain -
+/// subscribe (scoped helpers), query (current state) and wait (through <see cref="GameConditions"/>) -
 /// and route everything through the module core. Power users can bypass them entirely with
 /// <see cref="NoireGameWatcher.Subscribe{TEvent}"/>.
 /// </summary>

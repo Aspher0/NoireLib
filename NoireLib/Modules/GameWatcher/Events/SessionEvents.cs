@@ -49,7 +49,7 @@ public sealed record CfPopEvent(uint ContentFinderConditionId, string ContentNam
 /// <summary>
 /// Fired when the local player's class/job changes.<br/>
 /// Facts pushed natively for the local player also fire the scoped <see cref="CharacterJobChangedEvent"/>
-/// in the same tick when the Characters source is active — use whichever fits your code shape.
+/// in the same tick when the Characters source is active - use whichever fits your code shape.
 /// </summary>
 /// <param name="PreviousClassJobId">The previous class/job row id (0 on the first observation).</param>
 /// <param name="ClassJobId">The new class/job row id.</param>

@@ -8,7 +8,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Diffs the party list (and the alliance through the native group manager): joins/leaves/changes,
-/// leader changes, size and role-composition changes, and member territory changes — the latter working
+/// leader changes, size and role-composition changes, and member territory changes - the latter working
 /// even for members outside the local object table (remote presence, server-synchronized).
 /// </summary>
 internal sealed class PartySource : GameWatcherSource

@@ -8,7 +8,7 @@ namespace NoireLib.Networker.Internal;
 /// <summary>
 /// The single ordered delivery queue of a networker: peer mutations, handler invocations, and request completions
 /// all pass through it, giving the "everything user-visible happens on the framework thread" guarantee.<br/>
-/// Bounded — a long-frozen instance drops its oldest deliveries with an error report instead of growing memory.<br/>
+/// Bounded - a long-frozen instance drops its oldest deliveries with an error report instead of growing memory.<br/>
 /// When NoireLib is not initialized (unit tests), actions run inline on the posting thread.
 /// </summary>
 internal sealed class DeliveryPump : IDisposable

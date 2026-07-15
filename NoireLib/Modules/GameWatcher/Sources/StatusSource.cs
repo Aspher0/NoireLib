@@ -9,7 +9,7 @@ namespace NoireLib.GameWatcher;
 /// Scope-unified status effect diffing: gained/lost/stack-changed for any scoped character, plus
 /// duration-threshold watchers. Statuses are kept separate from <see cref="CharacterSnapshot"/> so the hot
 /// character snapshot stays small.<br/>
-/// This is the one legitimately heavy path when watching wide scopes in crowds — dial its cadence down via
+/// This is the one legitimately heavy path when watching wide scopes in crowds - dial its cadence down via
 /// <see cref="GameWatcherOptions.PollCadences"/> when needed.
 /// </summary>
 internal sealed class StatusSource : GameWatcherSource
@@ -239,7 +239,7 @@ internal sealed class StatusSource : GameWatcherSource
             baseline[entityId] = current;
         }
 
-        // Forget despawned subjects (statuses ending with a despawn are not observable — honest limit).
+        // Forget despawned subjects (statuses ending with a despawn are not observable - honest limit).
         List<uint>? gone = null;
 
         foreach (var entityId in baseline.Keys)

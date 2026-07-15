@@ -6,7 +6,7 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for <see cref="JitteredInterval"/> — the shared anti-detection refresh cadence used by the
+/// Game-free tests for <see cref="JitteredInterval"/> - the shared anti-detection refresh cadence used by the
 /// friend and player-search sources.
 /// </summary>
 public class JitteredIntervalTests
@@ -38,7 +38,7 @@ public class JitteredIntervalTests
     [Fact]
     public void Next_DefaultStructYieldsFlooredWait()
     {
-        // default(JitteredInterval) has Min = Max = 0 — the floor must rescue it to a flat 30s.
+        // default(JitteredInterval) has Min = Max = 0 - the floor must rescue it to a flat 30s.
         var interval = default(JitteredInterval);
 
         interval.Next(new Random(7)).TotalSeconds.Should().Be(JitteredInterval.FloorSeconds);

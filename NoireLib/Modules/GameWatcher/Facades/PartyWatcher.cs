@@ -6,7 +6,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// Party and alliance facts: member joins/leaves/changes, leader changes, size and role composition, and
-/// member territory changes — the latter working even for members outside the local object table
+/// member territory changes - the latter working even for members outside the local object table
 /// (remote presence for party members, server-synchronized and seconds-grained).
 /// </summary>
 public sealed class PartyWatcher : GameWatcherFacade
@@ -53,7 +53,7 @@ public sealed class PartyWatcher : GameWatcherFacade
         => On(null, handler, options, nameof(OnMemberChanged));
 
     /// <summary>
-    /// Subscribes to party member territory changes — remote presence for party members anywhere.
+    /// Subscribes to party member territory changes - remote presence for party members anywhere.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="options">Optional subscription settings.</param>

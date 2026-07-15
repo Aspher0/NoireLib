@@ -10,7 +10,7 @@ public sealed record StatusSnapshot
     /// <summary>The status row id.</summary>
     public required uint StatusId { get; init; }
 
-    /// <summary>The status parameter — the stack count for stacking statuses.</summary>
+    /// <summary>The status parameter - the stack count for stacking statuses.</summary>
     public required ushort Param { get; init; }
 
     /// <summary>The remaining duration in seconds, or 0 for permanent statuses.</summary>

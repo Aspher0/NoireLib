@@ -10,7 +10,7 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the ground-decal footprint pick test (<c>NoireDraw3D.InsideDecalShape</c>) against the shape SDF in
-/// <c>GroundDecal.hlsl</c>: hovering must match the <i>rendered</i> shape — the hole of a ring and the gap outside a
+/// <c>GroundDecal.hlsl</c>: hovering must match the <i>rendered</i> shape - the hole of a ring and the gap outside a
 /// sector's arc must miss, not the whole volume box. Footprint space is <c>p = lp.xz · 2</c>, edge at |p| = 1.
 /// </summary>
 public class Draw3DDecalPickTests

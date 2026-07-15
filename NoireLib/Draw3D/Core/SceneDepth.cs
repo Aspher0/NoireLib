@@ -52,10 +52,10 @@ internal sealed unsafe class SceneDepth : IDisposable
             info.ActualWidth / (float)info.AllocatedWidth,
             info.ActualHeight / (float)info.AllocatedHeight);
 
-        // Route 1 (primary): create our own SRV from the typeless texture — WE control which plane it
+        // Route 1 (primary): create our own SRV from the typeless texture - WE control which plane it
         // reads. This deliberately comes before borrowing: the game's own pre-made SRV can legally be a
         // STENCIL view of the same resource, and sampling stencil as depth inverts occlusion everywhere
-        // geometry was drawn (sky = stencil 0 stays visible) — the "only draws against the sky" bug.
+        // geometry was drawn (sky = stencil 0 stays visible) - the "only draws against the sky" bug.
         if (!ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)info.Texture, out var texture))
             return false;
 
@@ -85,7 +85,7 @@ internal sealed unsafe class SceneDepth : IDisposable
                 }
             }
 
-            // Route 2 (fallback): borrow the game's own SRV — but only when it is a known depth-readable
+            // Route 2 (fallback): borrow the game's own SRV - but only when it is a known depth-readable
             // format (never a stencil or color view; Law 8: QI + desc prove it, never assume).
             if (info.GameSrv != 0 && ComPtrUtil.TryQi<ID3D11ShaderResourceView>((IUnknown*)info.GameSrv, out var borrowed))
             {
@@ -105,7 +105,7 @@ internal sealed unsafe class SceneDepth : IDisposable
             if (!loggedUnknownFormat)
             {
                 loggedUnknownFormat = true;
-                NoireLogger.LogError<SceneDepth>($"No depth-readable view possible for scene depth format {texDesc.Format} — running depth-off. Please report this so the format table can be extended.", "Draw3D");
+                NoireLogger.LogError<SceneDepth>($"No depth-readable view possible for scene depth format {texDesc.Format} - running depth-off. Please report this so the format table can be extended.", "Draw3D");
             }
 
             Description = $"unusable ({texDesc.Format})";

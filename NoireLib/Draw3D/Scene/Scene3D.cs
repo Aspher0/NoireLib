@@ -11,7 +11,7 @@ namespace NoireLib.Draw3D.Scene;
 /// </summary>
 public sealed class Scene3D
 {
-    /// <summary>The single scene-graph mutation lock shared by all scenes (kept coarse on purpose — held only briefly).</summary>
+    /// <summary>The single scene-graph mutation lock shared by all scenes (kept coarse on purpose - held only briefly).</summary>
     internal static readonly object GraphLock = new();
 
     internal readonly List<SceneNode> Roots = new();
@@ -28,7 +28,7 @@ public sealed class Scene3D
     public int NodeCount => nodeCount;
 
     /// <summary>
-    /// Fires once per frame on the render thread before culling — the place for per-frame procedural
+    /// Fires once per frame on the render thread before culling - the place for per-frame procedural
     /// updates (billboards, pulses) without touching Framework events. Mutations made here render this frame.
     /// </summary>
     public event Action<FrameContext>? OnPrepareFrame;
@@ -113,7 +113,7 @@ public sealed class Scene3D
 
     /// <summary>
     /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached
-    /// (self-disable rung 2) — logged once, everything else keeps running.
+    /// (self-disable rung 2) - logged once, everything else keeps running.
     /// </summary>
     internal void FirePrepare(in FrameContext frame)
     {

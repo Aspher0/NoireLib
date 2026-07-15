@@ -1,4 +1,4 @@
-// NoireLib Draw3D — terrain-hugging decal shader (unit-box volume, CullFront, depth Disabled, Premultiplied).
+// NoireLib Draw3D - terrain-hugging decal shader (unit-box volume, CullFront, depth Disabled, Premultiplied).
 // Reconstructs the world position under each covered pixel from the game's depth buffer and
 // evaluates an SDF shape in the decal's local footprint space. Variant: DECAL_TEXTURED.
 #include "Common.hlsli"
@@ -29,7 +29,7 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     outDepth = hasSurface ? DepthUv.z + DepthUv.w / max(w, 1e-6) : 0.0;
 
     // Why `return 0` instead of `discard`: this shader relies on fwidth(sd) for edge AA, and
-    // screen-space derivatives come from 2x2 pixel quads — discard before a derivative makes
+    // screen-space derivatives come from 2x2 pixel quads - discard before a derivative makes
     // neighboring lanes formally undefined. Under premultiplied blending, float4(0,0,0,0) is a
     // mathematically exact no-op pixel, so rejection costs nothing and keeps every quad alive.
     if (!hasSurface) return float4(0, 0, 0, 0);
@@ -37,8 +37,8 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     float3 lp  = mul(float4(wp, 1.0), InvWorld).xyz;      // into unit-box local space
     if (any(abs(lp) > 0.5)) return float4(0, 0, 0, 0);    // outside the decal volume
 
-    // ExcludeVolumes: skip pixels standing on a supplied actor's BODY — inside its XZ cylinder AND raised
-    // above its feet — so the decal cuts around a character/monster/NPC without holing the ground at their
+    // ExcludeVolumes: skip pixels standing on a supplied actor's BODY - inside its XZ cylinder AND raised
+    // above its feet - so the decal cuts around a character/monster/NPC without holing the ground at their
     // feet (the ground sits at ~feetY, so it stays painted). Actors[i] = (worldX, worldZ, radius, feetY).
     for (uint ai = 0; ai < ActorCount; ai++)
     {

@@ -8,17 +8,17 @@ namespace NoireLib.GameWatcher;
 public partial class NoireGameWatcher
 {
     /// <summary>
-    /// Waits for the next event of type <typeparamref name="TEvent"/> matching an optional filter —
+    /// Waits for the next event of type <typeparamref name="TEvent"/> matching an optional filter -
     /// edge-triggered ("the <i>next</i> time X happens"). For level-triggered intent ("is it true now?"),
     /// use a <see cref="GameCondition"/>.<br/>
     /// The returned task completes on the framework thread. <b>Never sync-block on it from the framework
-    /// thread — always await.</b>
+    /// thread - always await.</b>
     /// </summary>
     /// <typeparam name="TEvent">The event type to wait for (library or custom).</typeparam>
     /// <param name="filter">An optional filter the event must satisfy.</param>
     /// <param name="timeout">The maximum wait; null waits indefinitely.</param>
     /// <param name="ct">A cancellation token; cancellation throws <see cref="OperationCanceledException"/>.</param>
-    /// <returns>The matching event, or null on timeout (timeouts are normal control flow — no exception).</returns>
+    /// <returns>The matching event, or null on timeout (timeouts are normal control flow - no exception).</returns>
     public Task<TEvent?> WaitFor<TEvent>(Func<TEvent, bool>? filter = null, TimeSpan? timeout = null, CancellationToken ct = default)
         where TEvent : class
     {
@@ -45,7 +45,7 @@ public partial class NoireGameWatcher
     /// Waits until a predicate becomes true, evaluated once per framework tick (level-triggered:
     /// completes immediately when already true).<br/>
     /// The returned task completes on the framework thread. <b>Never sync-block on it from the framework
-    /// thread — always await.</b>
+    /// thread - always await.</b>
     /// </summary>
     /// <param name="predicate">The predicate, evaluated on the framework thread.</param>
     /// <param name="timeout">The maximum wait; null waits indefinitely.</param>

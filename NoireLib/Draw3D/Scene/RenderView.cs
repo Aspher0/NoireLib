@@ -38,7 +38,7 @@ public sealed class RenderView : IDisposable
 
     /// <summary>
     /// The rendered output as a material-ready texture. Null until the first frame rendered.
-    /// Owned by the view — do not dispose it separately.
+    /// Owned by the view - do not dispose it separately.
     /// </summary>
     public GpuTexture? Texture => texture;
 

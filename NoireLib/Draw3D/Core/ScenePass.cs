@@ -27,7 +27,7 @@ internal struct DrawItem
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes; // ground-decal per-actor exclusion (null = none)
 }
 
-/// <summary>Per-frame constants — must match FrameCB in Common.hlsli exactly (240 bytes).</summary>
+/// <summary>Per-frame constants - must match FrameCB in Common.hlsli exactly (240 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct FrameCBData
 {
@@ -42,7 +42,7 @@ internal struct FrameCBData
     public Vector4 LightColor;
 }
 
-/// <summary>Per-object constants — must match ObjectCB in Common.hlsli exactly (176 bytes).</summary>
+/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (176 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct ObjectCBData
 {
@@ -54,7 +54,7 @@ internal struct ObjectCBData
 }
 
 /// <summary>
-/// A ground decal's per-actor exclusion volumes (<c>ExcludeVolumes</c>) — must match ActorCB in Common.hlsli
+/// A ground decal's per-actor exclusion volumes (<c>ExcludeVolumes</c>) - must match ActorCB in Common.hlsli
 /// exactly. Each actor is a vertical cylinder packed as (worldX, worldZ, radius, feetY).
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
@@ -175,7 +175,7 @@ internal sealed unsafe class ScenePass : IDisposable
         }
 
         var bounds = mesh.LocalBounds.Transform(world);
-        // Ground decals reconstruct from depth across their whole volume box; the mesh bounds are the volume bounds — same test.
+        // Ground decals reconstruct from depth across their whole volume box; the mesh bounds are the volume bounds - same test.
         if (!frustum.Intersects(bounds))
         {
             stats.CulledItems++;
@@ -235,7 +235,7 @@ internal sealed unsafe class ScenePass : IDisposable
     /// inside the rect: 1 = the plate's letters keep reading on top (plate in front, or nothing covers
     /// it); <paramref name="behindFactor"/> = the plate is behind your shape, so the shape covers its
     /// letters (0 = fully, toward 1 = letters faintly showing through).<br/>
-    /// The rects are never visible — they only gate WHERE the per-pixel UI mask applies, so every
+    /// The rects are never visible - they only gate WHERE the per-pixel UI mask applies, so every
     /// boundary on screen is the letters' own shape.
     /// </summary>
     public void ComputeRectOcclusion(in FrameContext frame, Vector4[] rects, float[] plateDistances, float[] factors, int count, float behindFactor)
@@ -253,7 +253,7 @@ internal sealed unsafe class ScenePass : IDisposable
             ref var item = ref items[i];
             var clip = Vector4.Transform(new Vector4(item.BoundsCenter, 1f), frame.ViewProj);
             if (clip.W <= 0.05f)
-                continue; // behind the camera — cannot cover a visible plate
+                continue; // behind the camera - cannot cover a visible plate
 
             var uvX = clip.X / clip.W * 0.5f + 0.5f;
             var uvY = 0.5f - clip.Y / clip.W * 0.5f;
@@ -272,7 +272,7 @@ internal sealed unsafe class ScenePass : IDisposable
                     continue;
 
                 // The plate is covered only when it sits behind the item's farthest possible
-                // surface — ties go to the letters (readability beats strictness).
+                // surface - ties go to the letters (readability beats strictness).
                 if (plateDistances[r] >= item.EyeDistance + item.BoundsRadius)
                     factors[r] = behindFactor;
             }
@@ -297,9 +297,9 @@ internal sealed unsafe class ScenePass : IDisposable
         var materialId = (ushort)(item.Mat.GetHashCode() & 0xFFFF);
 
         // Key composition per bucket:
-        //  opaque      — state-grouped (pipeline/material above depth): depth order is only an early-z hint there.
-        //  decal       — layer then creation order (deterministic, decals never instance).
-        //  transparent — strict back-to-front, unless the material opted into unordered batching.
+        //  opaque      - state-grouped (pipeline/material above depth): depth order is only an early-z hint there.
+        //  decal       - layer then creation order (deterministic, decals never instance).
+        //  transparent - strict back-to-front, unless the material opted into unordered batching.
         ulong key = bucket switch
         {
             0 => SortKey.MakeGrouped(0, layer, pipelineId, materialId, depthQ, sequence),
@@ -317,7 +317,7 @@ internal sealed unsafe class ScenePass : IDisposable
 
     /// <summary>
     /// Renders the collected items into the scene target (§9.8 draw-call anatomy). The caller has
-    /// already captured the StateGuard and bound nothing — this method owns all bindings it makes.
+    /// already captured the StateGuard and bound nothing - this method owns all bindings it makes.
     /// </summary>
     public void Execute(
         RenderDevice device,
@@ -361,10 +361,10 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
-        // Frame constants (transpose-on-upload — the One Convention, §7.2).
+        // Frame constants (transpose-on-upload - the One Convention, §7.2).
         // DepthUv.zw carries OUR projection's z map (deviceZ = z + w/clipW). It must match the reversed-Z
         // Z column rebuilt in NoireDraw3D.RenderMainScene (clip.z = near ⇒ deviceZ = 0 + near/clipW), NOT the
-        // game's exposed projection whose device-z we discard — so SceneWorldPos round-trips through
+        // game's exposed projection whose device-z we discard - so SceneWorldPos round-trips through
         // InvViewProj exactly.
         var frameData = new FrameCBData
         {
@@ -464,7 +464,7 @@ internal sealed unsafe class ScenePass : IDisposable
             if (pipeline == null)
             {
                 i0 += run;
-                continue; // pipeline self-disabled (rung 1) — renders nothing
+                continue; // pipeline self-disabled (rung 1) - renders nothing
             }
 
             // States.
@@ -485,8 +485,8 @@ internal sealed unsafe class ScenePass : IDisposable
                 _ => hasDepthWrites ? DepthKey.ReadGE : DepthKey.Disabled,
             };
             // A transparent item that opts out of the private V2↔V2 depth test stays in front of other 3D objects:
-            //  • DepthMode.Ignore   — full x-ray: also skips the world-depth SRV below, so it draws over everything.
-            //  • DepthMode.WorldOnly — on top of objects but STILL world-occluded: it keeps the world-depth SRV, so a
+            //  • DepthMode.Ignore   - full x-ray: also skips the world-depth SRV below, so it draws over everything.
+            //  • DepthMode.WorldOnly - on top of objects but STILL world-occluded: it keeps the world-depth SRV, so a
             //    wall/terrain hides it while a nearer 3D object does not (the editor-gizmo mix).
             // Opaque (must write depth) and decal (projects via device-z) buckets are unaffected.
             if (bucket == 2 && item.Mat.Depth is DepthMode.Ignore or DepthMode.WorldOnly)
@@ -660,10 +660,10 @@ internal sealed unsafe class ScenePass : IDisposable
 
     /// <summary>
     /// Opt-in native-UI depth-write (<see cref="NoireDraw3D.NativeUiDepthWrite"/>): re-rasterizes this frame's
-    /// opaque, depth-casting mesh items into an external depth-stencil view — the game's scene depth — depth-only
+    /// opaque, depth-casting mesh items into an external depth-stencil view - the game's scene depth - depth-only
     /// (no colour), greater-equal tested so the world still occludes them. Run right AFTER <see cref="Execute"/>:
     /// it reuses the already-collected, already-sorted items. The caller owns the StateGuard; this binds its own
-    /// target/states and restores nothing. Skips decals, transparents and dynamic markers — only solid geometry
+    /// target/states and restores nothing. Skips decals, transparents and dynamic markers - only solid geometry
     /// should hide a nameplate.
     /// </summary>
     public void ProjectOpaqueDepth(
@@ -683,7 +683,7 @@ internal sealed unsafe class ScenePass : IDisposable
         EnsureBuffers(device);
 
         // Re-upload the frame VP (the composite rebound cbuffers after Execute). The rebuilt reversed-Z Z column
-        // makes SV_Position.z = near/clipW, which /noire3d probe confirmed matches the game's own depth buffer —
+        // makes SV_Position.z = near/clipW, which /noire3d probe confirmed matches the game's own depth buffer -
         // so our writes are directly comparable to the world's.
         var frameData = new FrameCBData
         {
@@ -797,7 +797,7 @@ internal sealed unsafe class ScenePass : IDisposable
             actorData.Actors[i * 4 + 0] = v.Position.X;
             actorData.Actors[i * 4 + 1] = v.Position.Z;
             actorData.Actors[i * 4 + 2] = v.Radius;
-            actorData.Actors[i * 4 + 3] = v.Position.Y; // feet height — separates the body from the ground
+            actorData.Actors[i * 4 + 3] = v.Position.Y; // feet height - separates the body from the ground
         }
 
         actorData.ActorCount = (uint)n;

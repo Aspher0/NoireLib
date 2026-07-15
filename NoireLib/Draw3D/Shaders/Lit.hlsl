@@ -1,5 +1,5 @@
-// NoireLib Draw3D — half-Lambert lit shader (variants: LIT_TEXTURED, LIT_INSTANCED, OPAQUE_DOMAIN).
-// Deliberately not trying to match the game's lighting — a clean stylized look beats an uncanny mismatch.
+// NoireLib Draw3D - half-Lambert lit shader (variants: LIT_TEXTURED, LIT_INSTANCED, OPAQUE_DOMAIN).
+// Deliberately not trying to match the game's lighting - a clean stylized look beats an uncanny mismatch.
 #include "Common.hlsli"
 
 struct VsIn

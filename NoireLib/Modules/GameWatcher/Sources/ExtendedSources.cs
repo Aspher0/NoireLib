@@ -190,7 +190,7 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
 
     /// <summary>
     /// Computes the current Eorzea time of day (hour + minute + second within the 24-hour Eorzea day) from
-    /// real time. Pure — unit-testable. Eorzea time runs at 1440/70 the speed of real time.
+    /// real time. Pure - unit-testable. Eorzea time runs at 1440/70 the speed of real time.
     /// </summary>
     internal static TimeSpan ComputeEorzeaTimeOfDay(DateTimeOffset realTime)
     {
@@ -198,7 +198,7 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
         return TimeSpan.FromSeconds(eorzeaSeconds % 86400L);
     }
 
-    /// <summary>Computes the current Eorzea hour (0–23) from real time. Pure — unit-testable.</summary>
+    /// <summary>Computes the current Eorzea hour (0–23) from real time. Pure - unit-testable.</summary>
     internal static int ComputeEorzeaHour(DateTimeOffset realTime) => ComputeEorzeaTimeOfDay(realTime).Hours;
 
     /// <summary>Whether an Eorzea hour is night (18:00–5:59 ET). Pure.</summary>
@@ -206,7 +206,7 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
 }
 
 /// <summary>
-/// Wraps the native toast events. Event-driven — zero tick cost.
+/// Wraps the native toast events. Event-driven - zero tick cost.
 /// </summary>
 internal sealed class ToastSource : GameWatcherSource
 {

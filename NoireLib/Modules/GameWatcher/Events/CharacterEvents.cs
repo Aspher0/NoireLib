@@ -15,7 +15,7 @@ public interface ICharacterScopedEvent
 /// event: someone entering the place you are in.
 /// </summary>
 /// <param name="Current">The subject's first snapshot.</param>
-/// <param name="DuringZoneChange">True when the spawn happened while the client was loading between areas — the whole table respawns on zone transitions.</param>
+/// <param name="DuringZoneChange">True when the spawn happened while the client was loading between areas - the whole table respawns on zone transitions.</param>
 public sealed record CharacterSpawnedEvent(CharacterSnapshot Current, bool DuringZoneChange) : ICharacterScopedEvent
 {
     /// <inheritdoc/>
@@ -112,7 +112,7 @@ public sealed record CharacterCastCompletedEvent(CharacterSnapshot Previous, Cha
 }
 
 /// <summary>
-/// Fired when a character's cast is interrupted or cancelled — inferred from polling: the cast disappeared
+/// Fired when a character's cast is interrupted or cancelled - inferred from polling: the cast disappeared
 /// well before its total time (as opposed to completing at the end of its cast bar).
 /// </summary>
 /// <param name="Previous">The snapshot with the cast in progress.</param>
@@ -181,7 +181,7 @@ public sealed record CharacterModeChangedEvent(CharacterSnapshot Previous, Chara
 
 /// <summary>
 /// Fired when a character starts a looping emote (detected by mode polling).<br/>
-/// For the exact emote id of any emote — including one-shot emotes — subscribe to <see cref="CharacterEmotePlayedEvent"/>.
+/// For the exact emote id of any emote - including one-shot emotes - subscribe to <see cref="CharacterEmotePlayedEvent"/>.
 /// </summary>
 /// <param name="Previous">The snapshot before the emote.</param>
 /// <param name="Current">The snapshot in the emote loop.</param>
@@ -203,7 +203,7 @@ public sealed record CharacterEmoteLoopEndedEvent(CharacterSnapshot Previous, Ch
 }
 
 /// <summary>
-/// Fired when a character's played emote id changes — one-shot emotes, looping emotes and cposes alike, with
+/// Fired when a character's played emote id changes - one-shot emotes, looping emotes and cposes alike, with
 /// the exact emote id (read from the character's emote controller, no hook involved).<br/>
 /// A one-shot emote is a fired animation, not a state: it produces this single event as the id becomes set and
 /// has no end signal. Looping-emote start/end pairs exist separately
@@ -251,7 +251,7 @@ public sealed record CharacterLevelChangedEvent(CharacterSnapshot Previous, Char
 }
 
 /// <summary>
-/// Fired when a character's identity data changes on the same entity slot (name, home world, content id) —
+/// Fired when a character's identity data changes on the same entity slot (name, home world, content id) -
 /// usually a sign the game reused the entity id for a different character.
 /// </summary>
 /// <param name="Previous">The snapshot before the change.</param>

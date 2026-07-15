@@ -1,7 +1,7 @@
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Fired when a friend comes online. Friend data follows the social-list refresh cadence — seconds-grained.
+/// Fired when a friend comes online. Friend data follows the social-list refresh cadence - seconds-grained.
 /// </summary>
 /// <param name="Friend">The friend's current snapshot.</param>
 public sealed record FriendOnlineEvent(FriendSnapshot Friend);
@@ -13,7 +13,7 @@ public sealed record FriendOnlineEvent(FriendSnapshot Friend);
 public sealed record FriendOfflineEvent(FriendSnapshot Friend);
 
 /// <summary>
-/// Fired when a friend's location (territory) changes — remote presence beyond the object table.
+/// Fired when a friend's location (territory) changes - remote presence beyond the object table.
 /// </summary>
 /// <param name="Friend">The friend's current snapshot.</param>
 /// <param name="PreviousTerritoryId">The previous territory row id.</param>

@@ -46,7 +46,7 @@ internal sealed class ElectionMutex : IDisposable
                 }
                 catch (AbandonedMutexException)
                 {
-                    // The previous hub died while holding the mutex — ownership transferred to us.
+                    // The previous hub died while holding the mutex - ownership transferred to us.
                     acquired = true;
                 }
 

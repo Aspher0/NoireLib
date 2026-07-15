@@ -8,7 +8,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// CPU readback of individual depth-texture texels (calibration + probe ground truth).
-/// Depth resources must be copied whole — a full staging copy per readback, so callers throttle.
+/// Depth resources must be copied whole - a full staging copy per readback, so callers throttle.
 /// </summary>
 internal static unsafe class DepthReadback
 {
@@ -68,7 +68,7 @@ internal static unsafe class DepthReadback
         }
     }
 
-    private static float? ReadDepthTexel(in D3D11_MAPPED_SUBRESOURCE mapped, DXGI_FORMAT format, int x, int y)
+    internal static float? ReadDepthTexel(in D3D11_MAPPED_SUBRESOURCE mapped, DXGI_FORMAT format, int x, int y)
     {
         var row = (byte*)mapped.pData + (nint)y * (nint)mapped.RowPitch;
         switch (format)

@@ -12,16 +12,16 @@ using System.Threading.Tasks;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// glTF 2.0 importer — the "FF14 Blender" on-ramp. Decoding runs on the thread pool; meshes and
+/// glTF 2.0 importer - the "FF14 Blender" on-ramp. Decoding runs on the thread pool; meshes and
 /// textures are created synchronously wherever decoding finishes (devices are free-threaded), so the
 /// returned <see cref="Model3D"/> is ready to attach.<br/>
 /// Mapping: node tree → <see cref="SceneNode"/> subtree; one mesh+renderer per primitive;
 /// baseColor factor/texture → material color/texture; alphaMode BLEND → translucent; doubleSided →
 /// no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
 /// are ignored (logged once per file so users know exactly what was dropped).<br/>
-/// Handedness: glTF is right-handed, this renderer is left-handed — the loader negates Z (positions,
+/// Handedness: glTF is right-handed, this renderer is left-handed - the loader negates Z (positions,
 /// normals, transforms) and flips triangle winding, one documented transform.<br/>
-/// <b>FBX:</b> never natively — convert once with FBX2glTF or Blender export; the result is a
+/// <b>FBX:</b> never natively - convert once with FBX2glTF or Blender export; the result is a
 /// better-specified asset.
 /// </summary>
 public static class GltfLoader
@@ -244,7 +244,7 @@ public static class GltfLoader
             var content = gltfTexture.PrimaryImage?.Content;
             if (content is { IsValid: true })
             {
-                // Dalamud decodes the PNG/JPG bytes; blocking here is fine — we are on the thread pool.
+                // Dalamud decodes the PNG/JPG bytes; blocking here is fine - we are on the thread pool.
                 using var wrap = NoireService.TextureProvider.CreateFromImageAsync(content.Value.Content.ToArray()).GetAwaiter().GetResult();
                 result = TextureLoader.FromWrap(wrap);
                 if (result != null)

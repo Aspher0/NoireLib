@@ -5,7 +5,7 @@ namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
 /// Interaction surface of a scene node: opt a node into hover / click / drag and it behaves like a button in the
-/// world. Off by default (Law 11 stays intact for non-interactive content — zero cost until asked). The events are
+/// world. Off by default (Law 11 stays intact for non-interactive content - zero cost until asked). The events are
 /// raised by <see cref="NoireInteract"/> on the UI thread; every callback is exception-wrapped there so a throwing
 /// handler never breaks the frame.
 /// </summary>
@@ -40,7 +40,7 @@ public sealed partial class SceneNode
     /// <summary>
     /// Whether a left press on this node begins a drag (rather than only a click). Default false. While true, a drag
     /// that starts on this node takes the mouse from the game the instant it is pressed, so the camera never pans
-    /// underneath it. Implies <see cref="Interactable"/> — set both.
+    /// underneath it. Implies <see cref="Interactable"/> - set both.
     /// </summary>
     public bool Draggable { get; set; }
 

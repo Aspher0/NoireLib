@@ -41,7 +41,7 @@ public partial class NoireGameWatcher
     #region Subscribe / Unsubscribe
 
     /// <summary>
-    /// Subscribes to any watcher event type — the facade-bypassing power path, also used for custom events
+    /// Subscribes to any watcher event type - the facade-bypassing power path, also used for custom events
     /// injected through <see cref="Publish{TEvent}"/>.<br/>
     /// Keyed replacement, priority, filtering, one-shot and owner tagging all come from
     /// <see cref="NoireSubscriptionOptions{TContext}"/>. Handlers run inline on the framework thread.
@@ -89,7 +89,7 @@ public partial class NoireGameWatcher
         userOptions ??= new NoireSubscriptionOptions<TEvent>();
 
         if (interest is { } kind && IsSourceDisabled(kind))
-            NoireLogger.LogWarning(this, $"Subscribing to {description}, but its source ({kind}) is Disabled by configuration — the subscription will never fire.");
+            NoireLogger.LogWarning(this, $"Subscribing to {description}, but its source ({kind}) is Disabled by configuration - the subscription will never fire.");
 
         var entry = new LedgerEntry
         {
@@ -110,7 +110,7 @@ public partial class NoireGameWatcher
 
         // Once is deliberately handled here, not by the registry. The registry only knows about the inner
         // subscription, but a one-shot must tear down the whole ledger entry atomically on the matching
-        // invocation — releasing interest, running ExtraDispose and invalidating the outer token — which
+        // invocation - releasing interest, running ExtraDispose and invalidating the outer token - which
         // RemoveLedgerEntry does and the registry's own once cannot. (The registry now also claims once only
         // after its filter passes, so either place gives correct once-on-match for filtered subscriptions.)
         var innerOptions = new NoireSubscriptionOptions<object>
@@ -288,7 +288,7 @@ public partial class NoireGameWatcher
     }
 
     /// <summary>
-    /// Removes every subscription, value watcher and wait registered with the given owner — one call for
+    /// Removes every subscription, value watcher and wait registered with the given owner - one call for
     /// plugin-wide teardown.
     /// </summary>
     /// <param name="owner">The owner object subscriptions were tagged with.</param>
@@ -325,12 +325,12 @@ public partial class NoireGameWatcher
     #region Dispatch & custom events
 
     /// <summary>
-    /// Injects an external event into the watcher — tier 5 of the coverage doctrine with full citizenship.<br/>
+    /// Injects an external event into the watcher - tier 5 of the coverage doctrine with full citizenship.<br/>
     /// Detect a fact however you like (your own hook, a network callback, anything), publish it here, and from
     /// then on it is indistinguishable from a library event: same subscriptions and options, same
     /// <see cref="WaitFor{TEvent}"/>, same <see cref="GameConditions.FromEvent{TEvent}"/>, same TaskQueue pairing.<br/>
     /// Dispatches inline when called on the framework thread and marshals to it otherwise. Library internals
-    /// never consume the public stream, so a simulated event reaches only your handlers — this is also the
+    /// never consume the public stream, so a simulated event reaches only your handlers - this is also the
     /// test seam for exercising handler logic without the game.
     /// </summary>
     /// <typeparam name="TEvent">Any user-defined event type.</typeparam>
@@ -362,7 +362,7 @@ public partial class NoireGameWatcher
         => DispatchUntyped(evt);
 
     /// <summary>
-    /// Dispatches an event by its runtime type — used by table-driven sources that create events from factories.
+    /// Dispatches an event by its runtime type - used by table-driven sources that create events from factories.
     /// </summary>
     internal void DispatchUntyped(object evt)
     {

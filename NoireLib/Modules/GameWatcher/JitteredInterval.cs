@@ -4,7 +4,7 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// A randomized refresh interval: each cycle waits a uniformly-random duration in <c>[Min, Max]</c>.<br/>
-/// Used for the background social-proxy refreshes (friends, player search) whose requests hit the server —
+/// Used for the background social-proxy refreshes (friends, player search) whose requests hit the server -
 /// a fixed beat is a detectable pattern, so the wait is jittered. An absolute floor
 /// (<see cref="FloorSeconds"/>) is enforced on every effective wait regardless of configuration, so the
 /// request rate can never be dialed into a hammer.

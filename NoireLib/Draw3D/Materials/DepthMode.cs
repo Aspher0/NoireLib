@@ -15,7 +15,7 @@ public enum DepthMode
 
     /// <summary>
     /// Occluded by the game world (walls / terrain) like <see cref="TestOnly"/>, but drawn on top of other Draw3D
-    /// objects — the transparent-bucket private depth test is skipped. The mix an editor gizmo wants: visible over the
+    /// objects - the transparent-bucket private depth test is skipped. The mix an editor gizmo wants: visible over the
     /// object it edits, yet still hidden behind a real wall. Only meaningful in the transparent bucket.
     /// </summary>
     WorldOnly = 2,

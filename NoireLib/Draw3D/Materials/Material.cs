@@ -7,7 +7,7 @@ namespace NoireLib.Draw3D.Materials;
 /// <summary>
 /// An immutable description of how a mesh is shaded. Share one material across as many renderers as you like;
 /// derive variations with <c>with</c>-mutation.<br/>
-/// A material owns nothing — its <see cref="Texture"/> is a reference whose lifetime belongs to whoever created it.
+/// A material owns nothing - its <see cref="Texture"/> is a reference whose lifetime belongs to whoever created it.
 /// </summary>
 public sealed record Material
 {
@@ -19,7 +19,7 @@ public sealed record Material
 
     /// <summary>
     /// Whether pixels are occluded by the game's world geometry.<br/>
-    /// Ignored by <see cref="MaterialDomain.GroundDecal"/> — projection <i>replaces</i> testing there.
+    /// Ignored by <see cref="MaterialDomain.GroundDecal"/> - projection <i>replaces</i> testing there.
     /// </summary>
     public DepthMode Depth { get; init; } = DepthMode.TestOnly;
 
@@ -37,7 +37,7 @@ public sealed record Material
 
     /// <summary>
     /// Soft-edge width, in world units, where the material meets world geometry. 0 = hard edge.<br/>
-    /// Blended domains only — <see cref="BlendMode.Opaque"/> occlusion is a hard pixel kill, so fade is ignored there.
+    /// Blended domains only - <see cref="BlendMode.Opaque"/> occlusion is a hard pixel kill, so fade is ignored there.
     /// </summary>
     public float DepthFade { get; init; }
 
@@ -86,7 +86,7 @@ public sealed record Material
     /// <param name="shape">Footprint shape.</param>
     /// <param name="color">Base color, straight alpha.</param>
     /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
-    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 — the classic strong-rim telegraph look).</param>
+    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 - the classic strong-rim telegraph look).</param>
     public static Material Telegraph(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
         => new()
         {

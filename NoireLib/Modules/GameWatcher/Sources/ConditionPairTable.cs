@@ -8,7 +8,7 @@ namespace NoireLib.GameWatcher;
 /// The declarative flag→event table behind the Condition source: one row per derived enter/leave pair,
 /// not twenty hand-written blocks. A derived state is "any of the row's flags is set"; transitions fire the
 /// row's enter/leave events.<br/>
-/// Pure data — unit-testable without the game.
+/// Pure data - unit-testable without the game.
 /// </summary>
 internal static class ConditionPairTable
 {

@@ -56,7 +56,7 @@ internal sealed class SessionSource : GameWatcherSource
     /// <inheritdoc/>
     protected override void OnTick(DateTimeOffset now)
     {
-        // Housing interior and gpose have no native events — polled (V1 parity).
+        // Housing interior and gpose have no native events - polled (V1 parity).
         var isInside = ReadIsInside();
 
         if (isInside != lastIsInside)
