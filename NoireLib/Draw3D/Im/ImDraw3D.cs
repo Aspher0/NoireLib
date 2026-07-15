@@ -331,13 +331,13 @@ public sealed class ImDraw3D
         foreach (var p in points)
             boundsRadius = MathF.Max(boundsRadius, Vector3.Distance(p, center) + cmd.F0);
 
-        WriteCameraRibbon(verts, indices, points, cmd.F0, frame.EyePos, cmd.Closed, cmd.Color);
+        WriteCameraRibbon(verts, indices, points, cmd.F0, frame.EyePos, cmd.Closed);
         var identity = Matrix4x4.Identity;
         var mat = FlatData(cmd.Style, cullNone: true);
         pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, cmd.Color, in identity, cmd.Style.Layer, center, boundsRadius, stats, depthAvailable);
     }
 
-    private static void WriteCameraRibbon(List<Vertex3D> verts, List<ushort> indices, ReadOnlySpan<Vector3> points, float width, Vector3 eye, bool closed, Vector4 color)
+    private static void WriteCameraRibbon(List<Vertex3D> verts, List<ushort> indices, ReadOnlySpan<Vector3> points, float width, Vector3 eye, bool closed)
     {
         var hw = width * 0.5f;
         var baseVertex = verts.Count;

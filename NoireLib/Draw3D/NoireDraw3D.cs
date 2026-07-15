@@ -1406,8 +1406,6 @@ public static unsafe class NoireDraw3D
         };
     }
 
-    internal static RenderStats? StatsInternal => renderStats;
-
     internal static UiMaskHealth? UiMaskHealthState => uiMaskHealth;
 
     /// <summary>One-line description of the active analytic depth mapping for stats/probe.</summary>
