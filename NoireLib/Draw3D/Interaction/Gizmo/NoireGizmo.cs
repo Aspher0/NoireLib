@@ -403,9 +403,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>
     /// Snaps a translated position in the gizmo's own basis. Only the axes the active handle drives are snapped (an axis
     /// handle snaps one, a plane handle its two in-plane axes, the center all three); the axes it does not drive are held
-    /// at the pressed value, so a constrained drag never nudges a perpendicular axis onto the grid. In World space the
-    /// snap is per-axis against the absolute world grid; in Local space it is a single-increment snap of the movement
-    /// along each local axis.
+    /// at the pressed value, so a constrained drag never nudges a perpendicular axis onto the grid. In both spaces the
+    /// snap quantizes the <b>movement since press</b> (as ImGuizmo does), not the absolute position: World space snaps it
+    /// per axis on the world axes, Local space by a single increment along each local axis. Snapping the movement rather
+    /// than the absolute coordinate keeps an object that started off-grid at its offset instead of jerking it onto the
+    /// grid on the first frame of a drag.
     /// </summary>
     private Vector3 SnapTranslation(Vector3 moved)
     {
@@ -414,9 +416,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         if (Options.Space == GizmoSpace.World)
         {
             var result = pressTrans;
-            if (dx) result.X = InteractMath.Snap(moved.X, Options.Snap.X);
-            if (dy) result.Y = InteractMath.Snap(moved.Y, Options.Snap.Y);
-            if (dz) result.Z = InteractMath.Snap(moved.Z, Options.Snap.Z);
+            if (dx) result.X = pressTrans.X + InteractMath.Snap(moved.X - pressTrans.X, Options.Snap.X);
+            if (dy) result.Y = pressTrans.Y + InteractMath.Snap(moved.Y - pressTrans.Y, Options.Snap.Y);
+            if (dz) result.Z = pressTrans.Z + InteractMath.Snap(moved.Z - pressTrans.Z, Options.Snap.Z);
             return result;
         }
 

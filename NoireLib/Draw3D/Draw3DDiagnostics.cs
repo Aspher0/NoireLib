@@ -154,9 +154,9 @@ public sealed unsafe class Draw3DDiagnostics
         // A universal gizmo (the default ImGuizmo backend) that follows the selection: left-click any solid object to
         // select it, then drag the handles (the camera stays put while you drag, since NoireInteract owns the mouse).
         smokeGizmo = new NoireGizmo(GizmoOp.Universal);
-        smokeGizmo.Options.Space = GizmoSpace.World;
+        smokeGizmo.Options.Space = GizmoSpace.Local;
         smokeGizmo.Options.Depth = GizmoDepth.AlwaysOnTop;
-        //smokeGizmo.Options.Snap = new Vector3(0.5f);
+        smokeGizmo.Options.Snap = new Vector3(0.5f);
         smokeGizmo.Options.ScaleSnap = 0.5f;
         smokeGizmo.Options.RotateSnapDeg = 15f;
 
