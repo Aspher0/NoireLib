@@ -212,9 +212,6 @@ public static class NoireInteract
     /// <summary>Slack (world units) added to the wall distance before an object counts as occluded, so a ground-hugging decal is not blocked by its own ground. Default 0.3.</summary>
     public static float WallOcclusionBias { get; set; } = 0.3f;
 
-    /// <summary>The shared selection the gizmo and editor read from.</summary>
-    public static InteractSelection Selection { get; } = new();
-
     /// <summary>The node currently under the cursor (null when none, or when the mouse is over other UI).</summary>
     public static SceneNode? HoveredNode { get; private set; }
 
@@ -348,8 +345,9 @@ public static class NoireInteract
             modifiers |= SelectionModifiers.Add;
 
         // Keybind deselect (edge-triggered), independent of where the cursor is (but not while it is outside the window).
-        if (insideWindow && (DeselectOn & DeselectMode.Key) != 0 && Selection.Count > 0 && SafeDeselectKey())
-            Selection.Clear();
+        // Clears every scene's selection - "deselect" is global to the pointer, selections are per-scene.
+        if (insideWindow && (DeselectOn & DeselectMode.Key) != 0 && SafeDeselectKey())
+            NoireDraw3D.ClearAllSelections();
 
         ResolveHover();
         HoveredNode = hoverNode;
@@ -890,7 +888,7 @@ public static class NoireInteract
         }
 
         Arbiter.Reset();
-        Selection.Clear();
+        NoireDraw3D.ClearAllSelections();
         HoveredNode = null;
         showedCaptureLastFrame = false;
         captureWindowHovered = false;
@@ -952,8 +950,10 @@ public static class NoireInteract
                 switch (button)
                 {
                     case MouseButton.Left:
-                        if (SelectOnClick)
-                            Selection.Pick(node, modifiers);
+                        // Route into the node's OWN scene selection (per-scene, no global). A node opts out of
+                        // selection via SceneNode.Selectable = false (MakeInteractable), staying hover/click-only.
+                        if (SelectOnClick && node.Selectable)
+                            node.Scene?.Selection.Pick(node, modifiers);
                         Raise(node.OnClick, hit, "OnClick");
                         break;
                     case MouseButton.Right:
@@ -976,7 +976,7 @@ public static class NoireInteract
                 NoireLogger.LogInfo("[Interact] BACKGROUND CLICK (empty world)", "Draw3D");
 
             if ((DeselectOn & DeselectMode.ClickEmpty) != 0)
-                Selection.Clear();
+                NoireDraw3D.ClearAllSelections();
         }
 
         public void DragStart(object token)

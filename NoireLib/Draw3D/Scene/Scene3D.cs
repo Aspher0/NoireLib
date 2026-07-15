@@ -9,7 +9,7 @@ namespace NoireLib.Draw3D.Scene;
 /// a snapshot once per frame. Get the main scene via <see cref="NoireDraw3D.MainScene"/> or create extra
 /// ones with <see cref="NoireDraw3D.CreateScene"/>.
 /// </summary>
-public sealed class Scene3D
+public sealed partial class Scene3D
 {
     /// <summary>The single scene-graph mutation lock shared by all scenes (kept coarse on purpose - held only briefly).</summary>
     internal static readonly object GraphLock = new();
@@ -41,6 +41,7 @@ public sealed class Scene3D
     {
         lock (GraphLock)
         {
+            ObjectDisposedException.ThrowIf(disposed, this);
             var node = new SceneNode(this, name);
             Roots.Add(node);
             OnNodeAdded();

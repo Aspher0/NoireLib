@@ -23,7 +23,7 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
     Placement = ImShapePlacement.Flat,  // flat mesh instead of terrain projection
     Additive = true,                    // energy-glow blending
     IgnoreDepth = true,                 // x-ray through walls (flat shapes only)
-    OutlineWidth = 0.12f,               // strong telegraph rim (decals)
+    OutlineWidth = 0.12f,               // strong decal rim (decals)
 });
 ```
 
@@ -31,38 +31,43 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
 
 ## Retained scenes - the "FF14 Blender"
 
-For long-lived content, build nodes once and mutate them:
+For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node → build mesh → attach → track for disposal" into one call - the node **owns** the mesh, so there is nothing to track:
 
 ```csharp
 var scene = NoireDraw3D.MainScene;
 
-var donut = scene.CreateNode("waymark");
-donut.LocalPosition = somePosition;
-var torusMesh = new Mesh(MeshBuilder.Torus(majorRadius: 2f, minorRadius: 0.3f));
-donut.SetMesh(torusMesh, Material.Lit(new Vector4(0.9f, 0.9f, 1f, 1f)));
+var donut = scene.AddTorus(2f, 0.3f, Material.Lit(new Vector4(0.9f, 0.9f, 1f, 1f)), somePosition, "waymark");
+// equivalently: scene.Spawn(MeshBuilder.Torus(2f, 0.3f), material, somePosition, "waymark");
+
+// Fluent transforms chain off the returned node:
+donut.At(somePosition).RotateY(angle).Scale(1.2f);
 
 // Later, from any thread:
 donut.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, angle);
 donut.Visible = someCondition;
 
-// When done: the node goes back to the scene, the mesh is YOURS to dispose (creator owns it).
+// When done: destroying the node frees its owned mesh; or dispose the whole scene at once.
 donut.Destroy();
-torusMesh.Dispose();
 ```
 
-`MeshBuilder` ships the full shape catalog - `Quad`, `Box`, `Disc`, `Ring`, `Sector`, `Sphere`, `Cylinder`, `Cone`, `Torus`, `Arrow`, `ExtrudePath` - all unit-sized, +Y up, ready to scale via the node. Identical mesh+material combinations are automatically instanced into single draw calls.
+**The scene is an ownership scope.** `Scene3D` is `IDisposable`: `scene.Dispose()` destroys every node (freeing owned meshes), disposes everything handed to `scene.Own(...)` (a shared mesh, a texture, an imported model, an editor) and removes the scene from the renderer - no parallel bookkeeping lists. Create extra scenes with `NoireDraw3D.CreateScene("name")`; `MainScene` is permanent. The manual model is intact for the power case - `scene.Spawn(sharedMesh, material, ...)` references a mesh you own (one mesh, many nodes - the instancing path).
+
+`MeshBuilder` ships the full shape catalog - `Quad`, `Box`, `Disc`, `Ring`, `Sector`, `Sphere`, `Cylinder`, `Cone`, `Torus`, `Arrow`, `ExtrudePath` - all unit-sized, +Y up, ready to scale via the node; there is also an appendable `new MeshBuilder()` instance form to mix primitives and raw geometry into one mesh, and raw-vertex `scene.Spawn(vertices, indices, ...)` for anything not in the catalog. Identical mesh+material combinations are automatically instanced into single draw calls.
 
 ### Materials
 
 Immutable records - share them freely, derive variants with `with`:
 
 ```csharp
-var telegraph = Material.Telegraph(DecalShape.Ring, new Vector4(1f, 0.5f, 0f, 0.9f),
-                                   shapeParams: new Vector4(0.7f, 0f, 0f, 0.6f)); // x = inner ratio, w = fill opacity
+var decal     = Material.Decal(DecalShape.Ring, new Vector4(1f, 0.5f, 0f, 0.9f),
+                               shapeParams: new Vector4(0.7f, 0f, 0f, 0.6f)); // x = inner ratio, w = fill opacity
 var glass     = Material.Unlit(new Vector4(0.4f, 0.8f, 1f, 0.35f), depthFade: 0.4f); // soft seam where it meets walls
 var solid     = Material.Lit(new Vector4(1f, 1f, 1f, 1f));                            // opaque, z-tested against other meshes
 var textured  = Material.UnlitTextured(myTexture) with { Cull = CullMode.None };
+var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // your HLSL via RegisterPipeline
 ```
+
+> `Material.Telegraph(...)` was renamed to `Material.Decal(...)` (the old name is a deprecated forwarder). A ground decal paints its shape onto the world surface; a surface inside an actor's `ExcludeObjects(...)` volume simply isn't painted on (the ground around it still is).
 
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.

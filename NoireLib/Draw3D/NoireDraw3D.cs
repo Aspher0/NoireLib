@@ -23,7 +23,7 @@ namespace NoireLib.Draw3D;
 /// <see cref="NoireLibMain.RegisterOnDispose"/> automatically.<br/>
 /// Draw retained content via <see cref="MainScene"/>, per-frame markers via <see cref="Im"/>.
 /// </summary>
-public static unsafe class NoireDraw3D
+public static unsafe partial class NoireDraw3D
 {
     private const string DisposeKey = "NoireLib.Draw3D.NoireDraw3D";
     private const string CommandName = "/noire3d";
@@ -68,6 +68,11 @@ public static unsafe class NoireDraw3D
     // standing in front of them (needs RenderUnderNativeUi; waives Law 5). On by default alongside the injection.
     private static GameDepthTarget? gameDepthTarget;
     private static bool nativeUiDepthWrite = true;
+
+    // Native-UI protection backing (grouped under the NativeUi config; the old flat properties are obsolete forwarders).
+    private static bool protectGameUi = true;
+    private static NativeUiProtectionMode nativeUiProtectionMode = NativeUiProtectionMode.DepthAware;
+    private static float nativeUiProtectionDimFactor;
 
     private static Scene3D? mainScene;
     private static ImDraw3D? im;
@@ -142,42 +147,43 @@ public static unsafe class NoireDraw3D
     /// <summary>0–1 opacity applied to the whole 3D layer at composite time (linear under premultiplication - true layer transparency).</summary>
     public static float LayerOpacity { get; set; } = 1f;
 
-    /// <summary>
-    /// How nameplates layer against your 3D content - always at letter granularity (the mask is the
-    /// UI's own pixels, never a rectangle). Default: <see cref="NativeUiProtectionMode.DepthAware"/> -
-    /// a plate in front of your shape reads on top; a plate behind it is covered, like real occlusion.
-    /// Only meaningful while <see cref="ProtectGameUi"/> is on.
-    /// </summary>
-    public static NativeUiProtectionMode NativeUiProtection { get; set; } = NativeUiProtectionMode.DepthAware;
+    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protection</c>.</summary>
+    [Obsolete("Grouped under NoireDraw3D.NativeUi.Protection.")]
+    public static NativeUiProtectionMode NativeUiProtection
+    {
+        get => nativeUiProtectionMode;
+        set => nativeUiProtectionMode = value;
+    }
 
-    /// <summary>
-    /// How much a nameplate that is <i>behind</i> your content still shows through it:
-    /// 0 (default) = fully covered, toward 1 = its letters stay faintly readable.
-    /// </summary>
-    public static float NativeUiProtectionDimFactor { get; set; }
+    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>DimFactor</c>.</summary>
+    [Obsolete("Grouped under NoireDraw3D.NativeUi.DimFactor.")]
+    public static float NativeUiProtectionDimFactor
+    {
+        get => nativeUiProtectionDimFactor;
+        set => nativeUiProtectionDimFactor = value;
+    }
 
-    /// <summary>
-    /// The game's native UI (HUD, windows, chat, nameplates…) always draws on top of the 3D layer -
-    /// per pixel, letter- and shadow-exact, via the backbuffer's UI-coverage alpha. Default true.
-    /// Turning this off puts the whole layer above the game UI (still under plugin windows).
-    /// </summary>
-    public static bool ProtectGameUi { get; set; } = true;
+    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protect</c>.</summary>
+    [Obsolete("Grouped under NoireDraw3D.NativeUi.Protect.")]
+    public static bool ProtectGameUi
+    {
+        get => protectGameUi;
+        set => protectGameUi = value;
+    }
 
-    /// <summary>
-    /// Experimental: composite the 3D layer <b>before</b> the game draws its native UI, so the HUD and
-    /// nameplates read on top per-pixel (the only way to achieve that in FFXIV - the backbuffer has no UI
-    /// alpha to mask with). This installs a render-thread hook and injects into the game's present-composition
-    /// buffer right after the world image lands there. <b>Default true.</b> Falls back to the over-everything
-    /// present-time composite on any frame the injection can't run, so it never leaves the layer invisible.
-    /// </summary>
+    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>RenderUnder</c>.</summary>
+    [Obsolete("Grouped under NoireDraw3D.NativeUi.RenderUnder.")]
     public static bool RenderUnderNativeUi
     {
         get => renderUnderNativeUi;
-        set
-        {
-            renderUnderNativeUi = value;
-            ApplyInjectionState();
-        }
+        set => SetRenderUnderNativeUi(value);
+    }
+
+    /// <summary>Applies the render-under-native-UI state (used by <see cref="NativeUi"/> and the obsolete flat property).</summary>
+    internal static void SetRenderUnderNativeUi(bool value)
+    {
+        renderUnderNativeUi = value;
+        ApplyInjectionState();
     }
 
     /// <summary>
@@ -202,13 +208,8 @@ public static unsafe class NoireDraw3D
         }
     }
 
-    /// <summary>
-    /// <b>Default true</b> (requires <see cref="RenderUnderNativeUi"/>): at pre-UI injection time, write the 3D
-    /// layer's opaque depth into the game's own scene depth buffer so the game's nameplate pass is occluded by
-    /// objects standing in front of a character - real depth-aware nameplates, not a rectangle approximation.<br/>
-    /// This deliberately waives Law 5 ("the game's depth is never written"): it is fail-soft (a no-op when the
-    /// depth buffer can't back a DSV). Toggle at runtime with <c>/noire3d platedepth</c>.
-    /// </summary>
+    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>DepthWrite</c>.</summary>
+    [Obsolete("Grouped under NoireDraw3D.NativeUi.DepthWrite.")]
     public static bool NativeUiDepthWrite
     {
         get => nativeUiDepthWrite;
@@ -247,6 +248,14 @@ public static unsafe class NoireDraw3D
     }
 
     /// <summary>
+    /// The single interaction front door: the genuinely-global input knobs (gestures, wall-occlusion, deselect,
+    /// multi-select modifiers, debug) grouped on the one class you already use. The everyday path never touches it -
+    /// hover / click / select live on <c>scene</c> / <c>node</c> / <c>editor</c>. This is the advanced surface for
+    /// tuning gestures or registering a custom interactor.
+    /// </summary>
+    public static Draw3DInteraction Interaction { get; } = new();
+
+    /// <summary>
     /// Consumer-supplied input arbitration for <see cref="Pick"/>: return false when the mouse is already
     /// claimed by UI. Draw3D reads no input itself (Law 11) - NoireUI or the host plugin wires this.
     /// </summary>
@@ -280,7 +289,11 @@ public static unsafe class NoireDraw3D
     /// <summary>Raised whenever the self-disable ladder trips (a pipeline, feature, depth, pass, or the renderer was disabled).</summary>
     public static event Action<Draw3DFault>? OnFault;
 
-    /// <summary>Creates an extra retained scene, rendered after <see cref="MainScene"/>.</summary>
+    /// <summary>
+    /// Creates an extra retained scene, rendered after <see cref="MainScene"/>. The returned scene is a self-contained
+    /// ownership unit (<see cref="Scene3D.Dispose"/> frees its nodes, owned meshes and editors, and removes it from the
+    /// renderer). Create as many as you like.
+    /// </summary>
     /// <param name="name">Optional scene name.</param>
     public static Scene3D CreateScene(string? name = null)
     {
@@ -289,6 +302,32 @@ public static unsafe class NoireDraw3D
         lock (Scenes)
             Scenes.Add(scene);
         return scene;
+    }
+
+    /// <summary>
+    /// Removes an extra scene from the renderer so it stops drawing. Prefer <see cref="Scene3D.Dispose"/>, which calls
+    /// this <i>and</i> frees the scene's owned content; this bare form only unregisters. No-op for <see cref="MainScene"/>
+    /// (permanent). Returns whether the scene was registered.
+    /// </summary>
+    /// <param name="scene">The scene to remove.</param>
+    public static bool RemoveScene(Scene3D scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (ReferenceEquals(scene, mainScene))
+            return false;
+
+        lock (Scenes)
+            return Scenes.Remove(scene);
+    }
+
+    /// <summary>Clears every scene's selection. The interaction layer's "deselect" is global to the pointer even though selections are per-scene.</summary>
+    internal static void ClearAllSelections()
+    {
+        lock (Scenes)
+        {
+            foreach (var scene in Scenes)
+                scene.Selection.Clear();
+        }
     }
 
     /// <summary>
@@ -447,7 +486,7 @@ public static unsafe class NoireDraw3D
             if (!NoireService.IsInitialized())
                 throw new InvalidOperationException("NoireLib must be initialized before using NoireDraw3D.");
 
-            mainScene = new Scene3D("Main");
+            mainScene = new Scene3D("Main") { IsHubOwned = true };
             Scenes.Add(mainScene);
             im = new ImDraw3D();
             stateGuard = new StateGuard();
@@ -552,12 +591,13 @@ public static unsafe class NoireDraw3D
                 commandRegistered = false;
             }
 
-            // 2. Scenes and views (releases references to user assets).
+            // 2. Scenes and views (releases references to user assets). DisposeContentsInternal frees each scene's
+            // owned meshes / textures / models / editors as well as its nodes - the ownership-scope teardown.
             Diagnostics.ClearSmokeScene();
             lock (Scenes)
             {
                 foreach (var scene in Scenes)
-                    scene.Clear();
+                    scene.DisposeContentsInternal();
                 Scenes.Clear();
             }
 
@@ -924,7 +964,7 @@ public static unsafe class NoireDraw3D
         stats.DepthAvailable = hasDepth;
         stats.UsedFallbackCamera = usedFallback;
         stats.DepthSourceDescription =
-            $"{sceneDepth.Description}; map: {DepthMapDescription(in depthMap, hasDepth)}; uiMask: {(ProtectGameUi ? uiMaskHealth?.Description ?? "pending" : "off")}";
+            $"{sceneDepth.Description}; map: {DepthMapDescription(in depthMap, hasDepth)}; uiMask: {(protectGameUi ? uiMaskHealth?.Description ?? "pending" : "off")}";
 
         // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible -
         // they only gate WHERE the per-pixel UI mask applies (composite shader), so plates can be
@@ -932,7 +972,7 @@ public static unsafe class NoireDraw3D
         // Layout: [0..plateCount) = nameplates (visibility factors decided after collection),
         //         [plateCount..rectCount) = HUD addon rects (factor 1: HUD wins inside plate regions).
         var plateCount = 0;
-        if (NativeUiProtection != NativeUiProtectionMode.AlwaysVisible && ProtectGameUi)
+        if (nativeUiProtectionMode != NativeUiProtectionMode.AlwaysVisible && protectGameUi)
             plateCount = GameRenderSources.CollectNamePlateRects(ProtectRects, PlateDistances, 64, frame.ViewportSize, frame.EyePos);
 
         var rectCount = plateCount;
@@ -974,10 +1014,10 @@ public static unsafe class NoireDraw3D
         stats.MarkSceneDone(ctx);
 
         // Nameplate visibility factors: 1 = letters on top, behindFactor = covered by your content.
-        var behindFactor = Math.Clamp(NativeUiProtectionDimFactor, 0f, 1f);
+        var behindFactor = Math.Clamp(nativeUiProtectionDimFactor, 0f, 1f);
         if (plateCount > 0)
         {
-            if (NativeUiProtection == NativeUiProtectionMode.DepthAware)
+            if (nativeUiProtectionMode == NativeUiProtectionMode.DepthAware)
                 scenePass.ComputeRectOcclusion(in frame, ProtectRects, PlateDistances, ProtectFactors, plateCount, behindFactor);
             else // Off: the layer always covers plates
                 for (var i = 0; i < plateCount; i++)
@@ -1008,7 +1048,7 @@ public static unsafe class NoireDraw3D
         // composite mask the layer by it. Health check self-disables the mask when the alpha channel is
         // unusable (some upscalers fill it) - fail-visible beats fail-invisible.
         ID3D11ShaderResourceView* uiMaskSrv = null;
-        if (ProtectGameUi)
+        if (protectGameUi)
         {
             uiMaskSource ??= new UiMaskSource();
             uiMaskHealth ??= new UiMaskHealth();
@@ -1318,14 +1358,14 @@ public static unsafe class NoireDraw3D
 
                 break;
             case "ontop":
-                RenderUnderNativeUi = !RenderUnderNativeUi;
-                Print(RenderUnderNativeUi
+                NativeUi.RenderUnder = !NativeUi.RenderUnder;
+                Print(NativeUi.RenderUnder
                     ? "Draw3D: native-UI-on-top ON (experimental) - the layer now injects before the game UI; HUD/nameplates should read on top. '/noire3d ontop' again to turn off."
                     : "Draw3D: native-UI-on-top off - the layer composites over everything again (previous behaviour).");
                 break;
             case "platedepth":
-                NativeUiDepthWrite = !NativeUiDepthWrite;
-                Print(NativeUiDepthWrite
+                NativeUi.DepthWrite = !NativeUi.DepthWrite;
+                Print(NativeUi.DepthWrite
                     ? "Draw3D: native-UI depth-write ON (experimental) - 3D objects write into the game depth buffer so nameplates behind them get occluded. Needs '/noire3d ontop' on. '/noire3d platedepth' again to turn off."
                     : "Draw3D: native-UI depth-write off.");
                 break;
@@ -1421,7 +1461,7 @@ public static unsafe class NoireDraw3D
     /// <summary>
     /// Render-thread overlay hook, fired each rendered frame right after the scene prepare phase with the CURRENT
     /// frame - so <see cref="Im"/> calls made from it land this frame (zero-latency), unlike calls made from
-    /// <c>UiBuilder.Draw</c> which render a frame late. <see cref="Interaction.NoireInteract"/> subscribes once to
+    /// <c>UiBuilder.Draw</c> which render a frame late. <see cref="NoireLib.Draw3D.Interaction.NoireInteract"/> subscribes once to
     /// draw the native gizmo handles here, so their screen-constant sizing tracks the live camera instead of lagging
     /// it by a frame during zoom (the handle "swim"). Interaction (hit-testing, drag solving) still runs on the UI
     /// thread; only the drawing moves here.

@@ -4,6 +4,8 @@ The interaction layer for [NoireDraw3D](../README.md). The renderer is **deaf by
 
 It is the single file group under `Draw3D/` allowed to touch ImGui; the renderer core stays ImGui-free, enforced by a contract test.
 
+**One front door.** You rarely name `NoireInteract` directly: hover / click / selection live on the objects they act on (`scene`, `node`, `editor`), and the genuinely-global input knobs are grouped on **`NoireDraw3D.Interaction`** (gestures, wall-occlusion, deselect rules, multi-select modifiers, debug, custom-interactor registration). `NoireInteract` remains the engine and an advanced alias; every `NoireDraw3D.Interaction.X` below forwards to it.
+
 ## The two problems it exists to solve
 
 **1. A click is a click, not a camera pan.** In FFXIV you move the camera by clicking and dragging. That must never register as a click on a 3D object. A gesture is bound to its owner **at press time**: press on an object makes it yours; press on empty world makes it the game's camera pan, and it *stays* the game's even if it later drags across your object. A left press that moves past the drag threshold is a drag, never a click.
@@ -14,13 +16,19 @@ Both are guaranteed regardless of frame-rate, and the whole decision table is un
 
 ## Clickable objects
 
-Opt a node in and give it callbacks; it behaves like a button in the world:
+The easy path: spawn a node and make it selectable in one call. `MakeSelectable` opts the node into interaction, adds a built-in hover highlight (brightens the tint ×1.2 by default), and routes a left-click into the node's **scene selection**. `MakeInteractable` is the hover/click-only variant (no selection). Both **compose** over any `OnHoverEnter` / `OnClick` you set, and never clobber them:
 
 ```csharp
-var node = NoireDraw3D.MainScene.CreateNode("switch");
-node.SetMesh(mesh, material);
+var node = scene.Spawn(MeshBuilder.Box(), material, pos, "switch")
+                .MakeSelectable();              // hover highlight + click-to-select
+node.OnClick = h => Toggle(h.Node);            // still yours; runs alongside select
+```
 
+The open path stays available - opt in by hand and give it callbacks; the node behaves like a button in the world:
+
+```csharp
 node.Interactable = true;                       // starts NoireInteract automatically
+node.Selectable   = false;                      // hover/click only, no selection (MakeInteractable does this)
 node.OnHoverEnter = h => Highlight(h.Node);
 node.OnClick      = h => Toggle(h.Node);        // h.WorldPoint / h.TriangleIndex tell you exactly where
 node.OnRightClick = h => radial.OpenAtMouse();
@@ -41,27 +49,27 @@ node.OnDrag      = ctx =>
 };
 ```
 
-## Selection
+## Selection is per-scene
 
-`NoireInteract.Selection` (an `InteractSelection`) is the public source of truth for what is selected, updated automatically on left-click (toggle with `SelectOnClick`). The gizmo and any editor read from it, and so can you: `Selection.Nodes` (ordered, read-only), `Selection.Primary`, `Selection.Count`, `Selection.Contains(node)`, the `Selection.Changed` event, and `SetSingle` / `Add` / `Remove` / `Clear`. This is the whole control surface for building your own behaviors, for example deleting the selection on a key with `NoireHotkeyManager`:
+Selection is a property of the **scene**, not a process-global: `scene.Selection` (an `InteractSelection`) is the source of truth for what is selected in that scene, updated automatically when a left-click lands on a selectable node in it (toggle globally with `NoireDraw3D.Interaction.SelectOnClick`, or per node with `node.Selectable`). Multiple scenes select independently; there is no global mode to set and reset. Read/drive it: `Selection.Nodes` (ordered, read-only), `Selection.Primary`, `Selection.Count`, `Selection.Contains(node)`, the `Selection.Changed` event, and `SetSingle` / `Add` / `Remove` / `Clear`:
 
 ```csharp
-NoireInteract.Selection.Mode = SelectionMode.Multi;   // allow more than one
-NoireInteract.Selection.MaxCount = 8;                 // cap it (0 = unlimited)
+scene.Selection.Mode = SelectionMode.Multi;   // allow more than one (or editor.MultiSelect - see below)
+scene.Selection.MaxCount = 8;                 // cap it (0 = unlimited)
 onDeletePressed = () =>
 {
-    foreach (var n in NoireInteract.Selection.Nodes.ToArray())
+    foreach (var n in scene.Selection.Nodes.ToArray())
         n.Destroy();
-    NoireInteract.Selection.Clear();
+    scene.Selection.Clear();
 };
 ```
 
-**Multi-select is configurable.** `Selection.Mode` (`Single` / `Multi`) decides whether more than one node can be held; `Selection.MaxCount` caps it (the oldest is dropped when a new add would exceed it). Which modifier extends the set is a predicate, so it can be any key or always-on:
+**Multi-select is configurable.** `Selection.Mode` (`Single` / `Multi`) decides whether more than one node can be held; `Selection.MaxCount` caps it (the oldest is dropped when a new add would exceed it). Which modifier extends the set is a predicate on `NoireDraw3D.Interaction`, so it can be any key or always-on:
 
-- `NoireInteract.ToggleSelectionHeld` (default **Ctrl**): while held, a click toggles the node in/out of the set.
-- `NoireInteract.AddSelectionHeld` (default **Shift**): while held, a click adds the node. Set it to `() => true` for add-on-every-click.
+- `NoireDraw3D.Interaction.ToggleSelectionHeld` (default **Ctrl**): while held, a click toggles the node in/out of the set.
+- `NoireDraw3D.Interaction.AddSelectionHeld` (default **Shift**): while held, a click adds the node. Set it to `() => true` for add-on-every-click.
 
-**Deselecting is configurable** (`NoireInteract.DeselectOn`, a `[Flags]` `DeselectMode`):
+**Deselecting is configurable** (`NoireDraw3D.Interaction.DeselectOn`, a `[Flags]` `DeselectMode`); "deselect" is global to the pointer (it clears every scene's selection), while the selections themselves stay per-scene:
 
 - `ClickEmpty` (default): a left click on empty world (no object under the cursor, not over UI) that *is not* a camera pan clears the selection. A click-and-drag (the FFXIV camera pan) never deselects; the arbiter tells the two apart by the drag threshold, so this is safe to leave on during normal play.
 - `Key`: clears on `DeselectKey` (default **Escape**; point it at any key). Off unless you add the flag.
@@ -69,25 +77,47 @@ onDeletePressed = () =>
 
 Combine them (`DeselectMode.ClickEmpty | DeselectMode.Key`). Clearing the selection raises `Selection.Changed`, so a bound gizmo detaches on its own.
 
+## SceneEditor: the packaged controller
+
+"Click to select, gizmo follows the selection" is one object, created from and **owned by** the scene:
+
+```csharp
+var editor = scene.CreateEditor(GizmoOp.Universal);
+editor.MultiSelect = true;                 // scoped: restored when the editor/scene is disposed
+editor.Gizmo.Space = GizmoSpace.Local;     // configure via the flattened gizmo surface
+editor.Gizmo.Snap  = 0.5f;
+editor.SelectionOutline = new Vector4(1f, 0.8f, 0.2f, 1f);   // optional: outline selected nodes
+foreach (var n in scene.Roots) n.MakeSelectable();
+// teardown: nothing - scene.Dispose() disposes the editor too (editor.Dispose() is optional early teardown).
+```
+
+The editor subscribes to its scene's `Selection.Changed` and attaches its `Gizmo` to the current pick - one node, or the whole group - so you never write the count-0/1/many follow branch. Because a scene's selection only holds that scene's nodes, an editor naturally reacts to picks in its own scene only (when scenes overlap on screen, the front-most hit across all scenes wins the pick, and only the owning scene's editor updates). `MultiSelect` drives the selection mode as a scoped setting, restored on dispose - no lingering global.
+
 ## NoireGizmo: move / rotate / scale
 
 Grab any node (or any world matrix) with axis / plane / center handles.
 
+The common knobs are surfaced directly on the gizmo (they delegate to `Options`), so object-initializers work and a scalar `Snap` covers the usual case; the full `Options` struct is there for everything else:
+
 ```csharp
-var gizmo = new NoireGizmo(GizmoOp.Universal);   // Translate | Rotate | Scale
+var gizmo = new NoireGizmo(GizmoOp.Universal)     // Translate | Rotate | Scale
+{
+    Space = GizmoSpace.World,                     // World | Local
+    Snap  = 0.5f,                                 // uniform translate snap (SnapPerAxis for a Vector3)
+    RotateSnapDeg = 15f,                          // rotation snap in degrees
+    ScaleSnap     = 0.5f,                          // scale snap increment
+};
 gizmo.Attach(node);
-gizmo.Options.Space  = GizmoSpace.World;         // World | Local
-gizmo.Options.Snap   = new Vector3(0.5f);        // per-axis translate snap
-gizmo.Options.RotateSnapDeg = 15f;               // rotation snap in degrees
-gizmo.Options.ScaleSnap     = 0.5f;              // scale snap increment
-gizmo.OnEditEnd     += g => Commit();            // one transaction per drag; pair with your undo
+gizmo.OnEditEnd += g => Commit();                 // one transaction per drag; pair with your undo
 
 // or bind to any matrix you own:
 gizmo.AttachMatrix(() => transform, m => transform = m);
 
 // or edit several nodes at once around one pivot:
-gizmo.AttachGroup(NoireInteract.Selection.Nodes);
+gizmo.AttachGroup(scene.Selection.Nodes);
 ```
+
+Most of the time you don't construct a gizmo directly - `scene.CreateEditor` makes one and follows the selection for you (see above). Reach for a bare `NoireGizmo` when you want to drive a matrix that isn't a scene node, or a fully custom controller.
 
 **Groups.** `AttachGroup` shows a single gizmo at the centroid of the set and moves / rotates / scales every member together around it (a group of one behaves like `Attach`). A common wiring is to follow the selection: bind a single node when one is selected, a group when several are.
 
@@ -114,17 +144,17 @@ Every frame `NoireInteract.Update()` (auto-driven from `UiBuilder.Draw`) runs th
 
 **Self-driven interactors run first.** An interactor may set `SelfDriven` (the ImGuizmo backend does): instead of being ray-hit-tested, it reads ImGui IO through its own always-passthrough window and reports, in a pre-pass *before* hover resolution, whether it owns the mouse this frame. While one does, the frame is a hard pass for scene picking. It blocks the game camera itself with `SetNextFrameWantCaptureMouse` rather than a capture window.
 
-**UI is a hard pass.** Whenever the cursor is over another UI surface, Draw3D neither hovers, picks, nor captures; the object *behind* the UI is never touched (`ForeignUiHasMouse`). Two surfaces count: a **foreign ImGui window** (another plugin's, detected from `WantCaptureMouse`, with our own capture window discounted so we never mistake ourselves for foreign), and **native game UI** (a HUD window, inventory, friend list, detected from the game via `NoireDraw3D.IsCursorOverGameUi`, since native addons are not ImGui and never set `WantCaptureMouse`). Game-UI detection tests the addon's **collision nodes** (the game's own hit regions), not its padded bounding box, so the transparent margin around a HUD element (the gaps beside action-bar slots, a window's padding) does not falsely block a 3D object behind it; near-fullscreen transparent overlay roots (nameplates, fly-text) are excluded so they never blanket the viewport. Turn game-UI blocking off entirely with `NoireInteract.GameUiBlocksInteraction = false`. With `NoireInteract.DebugLog` on, a `[Interact/Gate]` log line prints (on change) exactly why a spot is a hard pass, naming the game addon when it is the cause.
+**UI is a hard pass.** Whenever the cursor is over another UI surface, Draw3D neither hovers, picks, nor captures; the object *behind* the UI is never touched (`ForeignUiHasMouse`). Two surfaces count: a **foreign ImGui window** (another plugin's, detected from `WantCaptureMouse`, with our own capture window discounted so we never mistake ourselves for foreign), and **native game UI** (a HUD window, inventory, friend list, detected from the game via `NoireDraw3D.IsCursorOverGameUi`, since native addons are not ImGui and never set `WantCaptureMouse`). Game-UI detection tests the addon's **collision nodes** (the game's own hit regions), not its padded bounding box, so the transparent margin around a HUD element (the gaps beside action-bar slots, a window's padding) does not falsely block a 3D object behind it; near-fullscreen transparent overlay roots (nameplates, fly-text) are excluded so they never blanket the viewport. Turn game-UI blocking off entirely with `NoireDraw3D.Interaction.GameUiBlocksInteraction = false`. With `NoireDraw3D.Interaction.DebugLog` on, a `[Interact/Gate]` log line prints (on change) exactly why a spot is a hard pass, naming the game addon when it is the cause.
 
 **Walls can be a hard pass (`WallOcclusionMode`).** By default the mode is `Off`, so objects are always hoverable/clickable and picking is reliable at every camera angle. Opt into `HoldToClickThrough` to have a wall / house / terrain / **furnishing** in front of a 3D object block hovering and clicking it; hold the click-through key (`ClickThroughHeld`, default **Alt**; Ctrl/Shift are the selection modifiers) to reach objects behind geometry. `Always` never clicks through. The occluding surface is read from the **game depth buffer** (throttled, and cached between reads since the depth resource copies whole), so *every* rendered surface counts - static meshes, fences, decorations - not just the collision meshes the game's screen raycast would return; it falls back to that raycast only on frames where depth is unreadable. Note that once enabled, the ground an object rests on can occlude it at grazing camera angles. Native gizmo handles obey the same rule unless their depth mode is `AlwaysOnTop`, in which case they stay grabbable through walls.
 
 **Decals pick their shape, not their box.** A ground-decal node is hit-tested against its rendered footprint SDF (the ring's annulus, the sector's wedge, the rect) on the real ground surface (mirroring `GroundDecal.hlsl`), so hovering the hole of a ring or outside a sector's arc correctly misses.
 
 - `BlockGameMouseOnHover` (default **false**): the playable default. Hovering a plain object never claims the mouse, so the camera still pans/zooms and the world stays clickable straight through a highlighted object. A plain left-click still selects (fires `OnClick`) but coexists with the game (the click also reaches the world behind), and a **draggable** target (a gizmo handle) always still takes the lead of its drag so the camera cannot move under it. Set **true** for the aggressive, ImGui-consistent mode where hovering claims the mouse and consumes the click; tidy for a modal editor, but it blocks camera/zoom while the cursor rests on an object.
-- `DragThresholdPixels` (default 4): movement past this turns a left press into a drag.
-- Custom interactors: implement `IPointerInteractor` and `NoireInteract.RegisterInteractor` to add your own grabbable geometry (invisible hotspots, custom widgets) into the same arbitration.
+- `NoireDraw3D.Interaction.DragThresholdPixels` (default 4): movement past this turns a left press into a drag.
+- Custom interactors: implement `IPointerInteractor` and `NoireDraw3D.Interaction.RegisterInteractor` to add your own grabbable geometry (invisible hotspots, custom widgets) into the same arbitration.
 
 ## Extension points
 
-- **Custom interactors**: anything above the scene graph (the gizmo is one) via `IPointerInteractor`.
-- **Manual driving**: set `NoireInteract.AutoRun = false` and call `Update()` from your own ImGui draw code for explicit ordering.
+- **Custom interactors**: anything above the scene graph (the gizmo is one) via `IPointerInteractor` + `NoireDraw3D.Interaction.RegisterInteractor`.
+- **Manual driving**: set `NoireDraw3D.Interaction.AutoRun = false` and call `NoireDraw3D.Interaction.Update()` from your own ImGui draw code for explicit ordering.

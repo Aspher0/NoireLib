@@ -5,13 +5,141 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// Procedural mesh catalog. Every builder returns CPU data that is unit-sized around the origin,
+/// Procedural mesh catalog. Every static builder returns CPU data that is unit-sized around the origin,
 /// +Y up, clockwise-front winding, outward normals, UVs in [0,1] - scale and orient via the scene node.<br/>
-/// Vertex order is deterministic per shape so tests can assert exact counts and windings.
+/// Vertex order is deterministic per shape so tests can assert exact counts and windings.<br/>
+/// The <b>instance form</b> (<c>new MeshBuilder()</c>) is an appendable buffer: mix primitives and hand-built
+/// geometry into a single mesh with <see cref="AddBox(Vector3?, Vector3)"/> / <see cref="Add(Vertex3D[], ushort[])"/>
+/// etc., then read <see cref="ToMeshData"/> (or hand the builder straight to <c>scene.Spawn</c>).
 /// </summary>
-public static class MeshBuilder
+public class MeshBuilder
 {
     private static readonly Vector4 White = new(1f, 1f, 1f, 1f);
+
+    // ---------------------------------------------------------------- appendable instance form
+
+    private readonly List<Vertex3D> instanceVerts = new();
+    private readonly List<ushort> instanceIndices = new();
+
+    /// <summary>Creates an empty appendable builder. Add primitives / raw geometry, then read <see cref="ToMeshData"/>.</summary>
+    public MeshBuilder() { }
+
+    /// <summary>Number of vertices accumulated so far in the instance buffer.</summary>
+    public int VertexCount => instanceVerts.Count;
+
+    /// <summary>Number of indices accumulated so far in the instance buffer.</summary>
+    public int IndexCount => instanceIndices.Count;
+
+    /// <summary>Appends a box centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="size">Full extents per axis; null = unit cube.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    public MeshBuilder AddBox(Vector3? size = null, Vector3 offset = default)
+        => Append(offset, (v, i) => WriteBox(v, i, size ?? Vector3.One));
+
+    /// <summary>Appends a UV sphere centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="radius">Sphere radius.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    /// <param name="slices">Longitudinal segments (≥ 3).</param>
+    /// <param name="stacks">Latitudinal segments (≥ 2).</param>
+    public MeshBuilder AddSphere(float radius = 0.5f, Vector3 offset = default, int slices = 24, int stacks = 16)
+        => Append(offset, (v, i) => WriteSphere(v, i, radius, slices, stacks));
+
+    /// <summary>Appends a flat quad on the XZ plane centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="width">Extent along X.</param>
+    /// <param name="depth">Extent along Z.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    public MeshBuilder AddQuad(float width = 1f, float depth = 1f, Vector3 offset = default)
+        => Append(offset, (v, i) => WriteQuad(v, i, width, depth));
+
+    /// <summary>Appends a disc on the XZ plane centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="radius">Disc radius.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    /// <param name="segments">Number of outer segments (≥ 3).</param>
+    public MeshBuilder AddDisc(float radius = 0.5f, Vector3 offset = default, int segments = 48)
+        => Append(offset, (v, i) => WriteDisc(v, i, radius, segments));
+
+    /// <summary>Appends a cylinder along Y centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="radius">Cylinder radius.</param>
+    /// <param name="height">Cylinder height.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="caps">Whether to close the top and bottom.</param>
+    public MeshBuilder AddCylinder(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool caps = true)
+        => Append(offset, (v, i) => WriteCylinder(v, i, radius, height, segments, caps));
+
+    /// <summary>Appends a cone along Y centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="radius">Base radius.</param>
+    /// <param name="height">Cone height.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="cap">Whether to close the base.</param>
+    public MeshBuilder AddCone(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool cap = true)
+        => Append(offset, (v, i) => WriteCone(v, i, radius, height, segments, cap));
+
+    /// <summary>Appends a torus around the Y axis centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="majorRadius">Distance from the origin to the tube center.</param>
+    /// <param name="minorRadius">Tube radius.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    /// <param name="segMajor">Segments around the main ring (≥ 3).</param>
+    /// <param name="segMinor">Segments around the tube (≥ 3).</param>
+    public MeshBuilder AddTorus(float majorRadius, float minorRadius, Vector3 offset = default, int segMajor = 48, int segMinor = 16)
+        => Append(offset, (v, i) => WriteTorus(v, i, majorRadius, minorRadius, segMajor, segMinor));
+
+    /// <summary>Appends arbitrary triangle-list geometry, rebasing its indices onto the current buffer. Fluent.</summary>
+    /// <param name="vertices">Vertex array.</param>
+    /// <param name="indices">Index array (triangle list, clockwise front), relative to <paramref name="vertices"/>.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    public MeshBuilder Add(Vertex3D[] vertices, ushort[] indices, Vector3 offset = default)
+    {
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(indices);
+
+        int b = instanceVerts.Count;
+        foreach (var v in vertices)
+        {
+            var vv = v;
+            vv.Position += offset;
+            instanceVerts.Add(vv);
+        }
+
+        foreach (var idx in indices)
+            instanceIndices.Add(checked((ushort)(b + idx)));
+
+        return this;
+    }
+
+    /// <summary>Appends the output of a static builder (any <see cref="MeshData"/>), rebasing its indices. Fluent.</summary>
+    /// <param name="data">Mesh data to append.</param>
+    /// <param name="offset">World-local translation applied to the appended vertices.</param>
+    public MeshBuilder Add(MeshData data, Vector3 offset = default) => Add(data.Vertices, data.Indices, offset);
+
+    /// <summary>Snapshots the accumulated geometry into an immutable <see cref="MeshData"/> (safe to keep appending afterward).</summary>
+    public MeshData ToMeshData() => new(instanceVerts.ToArray(), instanceIndices.ToArray());
+
+    /// <summary>Empties the instance buffer so the builder can be reused. Fluent.</summary>
+    public MeshBuilder Clear()
+    {
+        instanceVerts.Clear();
+        instanceIndices.Clear();
+        return this;
+    }
+
+    private MeshBuilder Append(Vector3 offset, Action<List<Vertex3D>, List<ushort>> write)
+    {
+        int start = instanceVerts.Count;
+        write(instanceVerts, instanceIndices);
+        if (offset != Vector3.Zero)
+        {
+            for (int k = start; k < instanceVerts.Count; k++)
+            {
+                var vv = instanceVerts[k];
+                vv.Position += offset;
+                instanceVerts[k] = vv;
+            }
+        }
+
+        return this;
+    }
 
     /// <summary>Builds a flat quad on the XZ plane, normal +Y. 4 vertices / 6 indices.</summary>
     /// <param name="width">Extent along X.</param>

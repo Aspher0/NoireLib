@@ -29,7 +29,7 @@ public readonly record struct ImShapeStyle
     /// <summary>Decal outline band width in SDF units (0..1 of the footprint). 0 = no outline.</summary>
     public float OutlineWidth { get; init; } = 0.08f;
 
-    /// <summary>Decal fill opacity relative to the outline (the classic telegraph look uses ~0.6).</summary>
+    /// <summary>Decal fill opacity relative to the outline (the classic strong-rim decal look uses ~0.6).</summary>
     public float FillOpacity { get; init; } = 0.6f;
 
     /// <summary>Additive (glow-like, order-independent) instead of standard translucent blending.</summary>
@@ -53,8 +53,8 @@ public readonly record struct ImShapeStyle
 
     /// <summary>
     /// Grounded decals only: world-space cylinders (one per actor) the decal will <b>not</b> paint on - so a
-    /// character / monster / NPC standing in the decal is cut out of it, while the ground around their feet
-    /// keeps the decal (no hole). Object-aware and fully per-decal: pass exactly the actors this decal should
+    /// character / monster / NPC standing in the decal is excluded from it, while the ground around their feet
+    /// still gets the decal (no hole). Object-aware and fully per-decal: pass exactly the actors this decal should
     /// avoid (build them from the object table / <see cref="NoireDraw3D.GetActorExclusions"/>, or by hand).
     /// null or empty = paint over everything. Up to 64 volumes per decal are honored. No effect on flat shapes.
     /// </summary>

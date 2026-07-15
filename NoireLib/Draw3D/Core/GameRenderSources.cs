@@ -550,7 +550,39 @@ internal static unsafe class GameRenderSources
         }
     }
 
-    /// <summary>Default <see cref="CollectActorExclusions"/> filter: characters (players), monsters and NPCs.</summary>
+    /// <summary>
+    /// Appends exclusion volumes chosen by a per-object <paramref name="selector"/> (return null to skip an object) -
+    /// the full-control path where the caller decides the exact volume. Walks the whole object table (capped at
+    /// <paramref name="max"/>). Reads the object table, so call it on the framework thread. Fails soft on error.
+    /// </summary>
+    /// <param name="into">The list to append to.</param>
+    /// <param name="max">Cap on the number of volumes.</param>
+    /// <param name="selector">Per-object volume selector; null result skips the object.</param>
+    public static void CollectActorExclusions(List<ExcludeVolume> into, int max, Func<IGameObject, ExcludeVolume?> selector)
+    {
+        if (into == null || selector == null || max <= 0 || !NoireService.IsInitialized())
+            return;
+
+        try
+        {
+            var objects = NoireService.ObjectTable;
+            for (var i = 0; i < objects.Length && into.Count < max; i++)
+            {
+                var obj = objects[i];
+                if (obj == null)
+                    continue;
+
+                if (selector(obj) is { } volume)
+                    into.Add(volume);
+            }
+        }
+        catch (System.Exception)
+        {
+            // exclusion unavailable this call - the decal reads over actors rather than taking the frame down
+        }
+    }
+
+    /// <summary>Default <see cref="CollectActorExclusions(List{ExcludeVolume}, int, Func{IGameObject, bool}, float)"/> filter: characters (players), monsters and NPCs.</summary>
     private static bool DefaultActorInclude(IGameObject o)
         => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 }

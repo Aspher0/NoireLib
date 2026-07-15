@@ -89,8 +89,59 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>Which operations the gizmo exposes.</summary>
     public GizmoOp Op { get; set; }
 
-    /// <summary>Space / snapping / sizing options.</summary>
+    /// <summary>Space / snapping / sizing options. The common knobs are also surfaced directly on the gizmo (below) so object-initializers work; this is the full struct for everything else.</summary>
     public GizmoOptions Options { get; set; } = new();
+
+    // ---------------------------------------------------------------- flattened config (delegates to Options)
+
+    /// <summary>The frame translate/rotate handles align to (shortcut for <see cref="GizmoOptions.Space"/>).</summary>
+    public GizmoSpace Space
+    {
+        get => Options.Space;
+        set => Options.Space = value;
+    }
+
+    /// <summary>Which backend draws and drives the handles (shortcut for <see cref="GizmoOptions.Backend"/>).</summary>
+    public GizmoBackend Backend
+    {
+        get => Options.Backend;
+        set => Options.Backend = value;
+    }
+
+    /// <summary>Uniform translation snap in world units (shortcut for <see cref="GizmoOptions.Snap"/>). Getter returns the X component; setter applies the value to all three axes. 0 or less = no snap.</summary>
+    public float Snap
+    {
+        get => Options.Snap.X;
+        set => Options.Snap = new Vector3(value);
+    }
+
+    /// <summary>Per-axis translation snap in world units (shortcut for <see cref="GizmoOptions.Snap"/>) - full control when the grid differs along X/Y/Z.</summary>
+    public Vector3 SnapPerAxis
+    {
+        get => Options.Snap;
+        set => Options.Snap = value;
+    }
+
+    /// <summary>Rotation snap, in degrees (shortcut for <see cref="GizmoOptions.RotateSnapDeg"/>). 0 or less = free.</summary>
+    public float RotateSnapDeg
+    {
+        get => Options.RotateSnapDeg;
+        set => Options.RotateSnapDeg = value;
+    }
+
+    /// <summary>Scale snap increment (shortcut for <see cref="GizmoOptions.ScaleSnap"/>). 0 or less = free.</summary>
+    public float ScaleSnap
+    {
+        get => Options.ScaleSnap;
+        set => Options.ScaleSnap = value;
+    }
+
+    /// <summary>How the native gizmo's handles are occluded (shortcut for <see cref="GizmoOptions.Depth"/>).</summary>
+    public GizmoDepth Depth
+    {
+        get => Options.Depth;
+        set => Options.Depth = value;
+    }
 
     /// <summary>Master enable. When false the gizmo neither draws nor interacts.</summary>
     public bool Enabled { get; set; } = true;

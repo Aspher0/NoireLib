@@ -23,6 +23,9 @@ public sealed partial class SceneNode
     internal Scene3D? SceneRef;
     internal bool Destroyed;
 
+    /// <summary>The mesh this node created and owns (via a <see cref="MeshData"/> <see cref="SetMesh(MeshData, Material, bool)"/> / Spawn), freed on replace or destroy. Null when the node references a shared mesh instead.</summary>
+    private Mesh? ownedMesh;
+
     /// <summary>Optional debug/lookup name.</summary>
     public string? Name { get; set; }
 
@@ -113,9 +116,10 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Attaches (or replaces) a renderer drawing the given mesh with the given material. Fluent.</summary>
-    /// <param name="mesh">The mesh to draw. Referenced, never owned.</param>
+    /// <summary>Attaches (or replaces) a renderer drawing the given <b>shared</b> mesh with the given material. Fluent.</summary>
+    /// <param name="mesh">The mesh to draw. Referenced, never owned - you (or a <see cref="Scene3D.Own"/> scope) dispose it.</param>
     /// <param name="material">The material to draw with.</param>
+    /// <remarks>If this node previously owned a mesh (attached via the <see cref="MeshData"/> overload), that owned mesh is disposed; the shared <paramref name="mesh"/> is left untouched.</remarks>
     public MeshRenderer SetMesh(Mesh mesh, Material material)
     {
         ArgumentNullException.ThrowIfNull(mesh);
@@ -124,16 +128,55 @@ public sealed partial class SceneNode
         lock (Scene3D.GraphLock)
         {
             ThrowIfDestroyed();
+            DisposeOwnedMeshNoLock();
             Renderer = new MeshRenderer(this, mesh, material);
             return Renderer;
         }
     }
 
-    /// <summary>Removes the node's renderer, if any.</summary>
+    /// <summary>
+    /// Attaches (or replaces) a renderer drawing a mesh the node builds and <b>owns</b> from the given geometry data.
+    /// The node disposes the mesh when it is replaced, cleared or destroyed - no mesh bookkeeping. Fluent.
+    /// </summary>
+    /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>). A fresh <see cref="Mesh"/> is built from it and owned exclusively by this node.</param>
+    /// <param name="material">The material to draw with.</param>
+    /// <param name="keepCpuData">Retain the CPU arrays on the mesh for exact triangle picking.</param>
+    public MeshRenderer SetMesh(MeshData data, Material material, bool keepCpuData = false)
+    {
+        ArgumentNullException.ThrowIfNull(material);
+        var mesh = new Mesh(data, keepCpuData, Name);
+        return SetMeshOwnedInternal(mesh, material);
+    }
+
+    /// <summary>Attaches a renderer for a mesh this node should own (dispose on replace/destroy). The caller must not dispose or share <paramref name="mesh"/>.</summary>
+    internal MeshRenderer SetMeshOwnedInternal(Mesh mesh, Material material)
+    {
+        lock (Scene3D.GraphLock)
+        {
+            ThrowIfDestroyed();
+            DisposeOwnedMeshNoLock();
+            ownedMesh = mesh;
+            Renderer = new MeshRenderer(this, mesh, material);
+            return Renderer;
+        }
+    }
+
+    /// <summary>Removes the node's renderer, if any (disposing an owned mesh; a shared mesh is left untouched).</summary>
     public void ClearMesh()
     {
         lock (Scene3D.GraphLock)
+        {
+            DisposeOwnedMeshNoLock();
             Renderer = null;
+        }
+    }
+
+    /// <summary>Disposes the node's owned mesh (if any) and clears the reference. Caller holds <see cref="Scene3D.GraphLock"/>. Idempotent - <see cref="Mesh.Dispose"/> is render-thread-deferred and safe to call twice.</summary>
+    private void DisposeOwnedMeshNoLock()
+    {
+        var owned = ownedMesh;
+        ownedMesh = null;
+        owned?.Dispose();
     }
 
     /// <summary>
@@ -183,8 +226,10 @@ public sealed partial class SceneNode
     internal void DestroyRecursiveNoLock()
     {
         Destroyed = true;
+        DisposeOwnedMeshNoLock(); // free the mesh the node built for itself; a shared mesh stays with its owner
         Renderer = null;
         ReleaseInteraction(); // drop this node from the interaction bookkeeping if it opted in
+        ReleaseExclusions();  // stop any per-frame decal-exclusion refresh for this node
         SceneRef?.OnNodeRemoved();
         SceneRef = null;
         foreach (var child in Children)

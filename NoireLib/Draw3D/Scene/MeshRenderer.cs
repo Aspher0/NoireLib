@@ -29,9 +29,10 @@ public sealed class MeshRenderer
 
     /// <summary>
     /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
-    /// paint on - so a character / monster / NPC standing in it is cut out without holing the ground around
-    /// their feet. Settable per frame; null = paint over everything. Build from
-    /// <see cref="NoireDraw3D.GetActorExclusions"/> or by hand. Up to 64 volumes are honored.
+    /// paint on - so a character / monster / NPC standing in it is excluded (not painted on) without holing the
+    /// ground around their feet. Settable per frame; null = paint over everything. The easy path is
+    /// <see cref="SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
+    /// (library-threaded); this is the deepest floor. Up to 64 volumes are honored.
     /// </summary>
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; set; }
 

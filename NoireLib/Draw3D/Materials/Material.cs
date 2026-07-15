@@ -82,12 +82,12 @@ public sealed record Material
     public static Material Lit(Vector4 color, bool opaque = true)
         => new() { Domain = MaterialDomain.Lit, Color = color, Blend = opaque ? BlendMode.Opaque : BlendMode.Premultiplied };
 
-    /// <summary>Creates a terrain-hugging telegraph decal material.</summary>
+    /// <summary>Creates a terrain-hugging ground-decal material (paints its shape onto the world surface).</summary>
     /// <param name="shape">Footprint shape.</param>
     /// <param name="color">Base color, straight alpha.</param>
     /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
-    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 - the classic strong-rim telegraph look).</param>
-    public static Material Telegraph(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
+    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 - the classic strong-rim look).</param>
+    public static Material Decal(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
         => new()
         {
             Domain = MaterialDomain.GroundDecal,
@@ -97,4 +97,25 @@ public sealed record Material
             OutlineWidth = outlineWidth,
             Cull = CullMode.Front,
         };
+
+    /// <summary>Deprecated alias of <see cref="Decal"/> (the ground-decal material was renamed from "telegraph").</summary>
+    /// <param name="shape">Footprint shape.</param>
+    /// <param name="color">Base color, straight alpha.</param>
+    /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
+    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08).</param>
+    [System.Obsolete("Renamed to Material.Decal. This forwarder will be removed in a future major version.")]
+    public static Material Telegraph(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
+        => Decal(shape, color, shapeParams, outlineWidth);
+
+    /// <summary>
+    /// Creates a material rendered by a custom pipeline registered via <see cref="NoireDraw3D.RegisterPipeline"/>
+    /// (the open shader floor), over the standard vertex layout. Falls back to the <see cref="Domain"/> shader if the
+    /// named pipeline isn't registered.
+    /// </summary>
+    /// <param name="pipeline">The registered pipeline name (see <see cref="NoireDraw3D.RegisterPipeline"/>).</param>
+    /// <param name="color">Base color multiplier, straight alpha.</param>
+    /// <param name="blend">How pixels blend into the layer (default premultiplied translucent).</param>
+    /// <param name="texture">Optional texture for textured custom shaders. Referenced, never owned.</param>
+    public static Material Custom(string pipeline, Vector4 color, BlendMode blend = BlendMode.Premultiplied, GpuTexture? texture = null)
+        => new() { CustomPipeline = pipeline, Color = color, Blend = blend, Texture = texture };
 }
