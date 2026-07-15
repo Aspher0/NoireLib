@@ -39,6 +39,7 @@ cbuffer ActorCB : register(b2)
 
 Texture2D    SceneDepth : register(t0);
 Texture2D    BaseTex    : register(t1);
+Texture2D    WorldDepth : register(t2); // OUR-projection device-z of the collision world (ground decals; 0 = none)
 SamplerState PointClamp : register(s0);
 SamplerState BaseSamp   : register(s1);
 

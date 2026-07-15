@@ -67,7 +67,7 @@ var textured  = Material.UnlitTextured(myTexture) with { Cull = CullMode.None };
 var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // your HLSL via RegisterPipeline
 ```
 
-> A ground decal paints its shape onto the world surface; a surface inside an actor's `ExcludeObjects(...)` volume simply isn't painted on (the ground around it still is).
+> A ground decal paints its shape onto the world surface. By default (`NoireDraw3D.WorldOccludedDecals`) it also **skips anything standing in front of the real world** — a character in the decal is cut silhouette-exact (no cylinder, no slope gouge, no bleed onto the body), using the game's collision world, so you usually don't need `ExcludeObjects` at all. `ExcludeObjects(...)` remains for the legacy per-actor cylinder cut (used when world-occlusion is off).
 
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
@@ -104,6 +104,26 @@ Every returned `GpuTexture` is yours to dispose. External shared-handle textures
 var view = NoireDraw3D.CreateRenderView(scene, new Camera3D(camPos, lookAt), 512, 512);
 material = Material.UnlitTextured(view.Texture!); // minimap portals, mirrors, thumbnails
 ```
+
+> A render view re-renders **this scene** from a second camera - it shows your 3D objects, not the game world. There is no way to re-photograph the game world from a different angle (the world only exists as pixels already composited for the game camera). The closest is rendering the collision proxy below into the view.
+
+## World-projected decals (real collision)
+
+The screen-space `Material.Decal` projects onto whatever is in the depth buffer. When you want a decal that clips to the **actual world surface** - draping over terrain slopes, climbing onto walls and furniture, never "cut" by an actor standing in front - project it onto the game's real collision geometry instead. Everything here is **framework-thread only** (it reads the live collision scene) and fails soft (no surface ⇒ `null`):
+
+```csharp
+// A decal that conforms to the real ground/walls/furniture under `pos`, facing up:
+scene.SpawnWorldDecal(pos, Vector3.UnitY, width: 6f, height: 6f, Material.UnlitTextured(tex), depth: 3f);
+
+// The raw collision near a point, as a mesh (debug/preview, or feed your own logic):
+scene.SpawnWorldGeometry(pos, radius: 20f, Material.Lit(new Vector4(0.4f, 0.8f, 1f, 0.4f)) with { Cull = CullMode.None });
+
+// Or go lower: get the geometry / projected footprint yourself.
+var geo   = WorldGeometry.Collect(pos, radius: 20f);                       // terrain + models + furniture + dynamic objects
+var decal = WorldGeometry.ProjectDecal(pos, Vector3.UnitY, 6f, 6f);        // clipped, UV-mapped MeshData
+```
+
+The source is the same collision world a navmesh tool walks (streamed terrain, placed background models, housing furniture, and any dynamic object that registers a collider). `includeAnalytic: true` also pulls in box/cylinder/sphere/plane colliders (invisible walls, trigger volumes). `/noire3d worldgeo` toggles a live preview of it around you.
 
 ## Picking
 
@@ -144,7 +164,9 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). Also reports the UI-mask alpha health. |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. |
-| `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you - a gallery of (almost) every feature: all mesh primitives, all decal shapes, material families + a custom-pipeline pulse box, a game-icon textured quad, a render-to-texture mirror/portal, animated immediate-layer markers, and the selection/gizmo editor. |
+| `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you - a gallery of (almost) every feature: all mesh primitives, all decal shapes (incl. a **world-projected** decal that clips to the real ground/furniture), material families + a custom-pipeline pulse box, a game-icon textured quad, a render-to-texture mirror/portal, animated immediate-layer markers, and the selection/gizmo editor. |
+| `/noire3d worldgeo` | Toggles a preview of the game's real collision world (terrain, furniture, walls, dynamic objects) around you - the source world-occluded decals test against. |
+| `/noire3d worldocclude` | Toggles `WorldOccludedDecals` (ground decals skip characters via the collision world vs. the legacy `ExcludeVolumes` cylinder). |
 | `/noire3d model <path>` | Imports a glTF/glb from disk into the running smoke scene (in front of you). |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |

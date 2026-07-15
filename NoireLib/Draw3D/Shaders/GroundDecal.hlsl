@@ -63,7 +63,26 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
 
     float2 p = lp.xz * 2.0;                              // footprint space: edge at |p| = 1
     float vis = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w; // Y feather near the box top/bottom
-    vis *= 1.0 - ActorExclusion(wp);                     // registered actors removed (AA, tight, no bleed)
+
+    // Actor removal. Two mutually-exclusive modes:
+    //  * World-occlusion (DepthCal.w > 0, the new default): the collision world's device-z is in WorldDepth. Compare
+    //    the frontmost surface's view-depth (w) to the collision behind this pixel: if the frontmost is meaningfully
+    //    NEARER than the world, something (a character - actors aren't in the collision scene) is standing in front of
+    //    the ground here, so skip it. This is silhouette-exact: sloped ground still paints (it matches the world) and
+    //    only the actual body is cut - no cylinder, no "above-feet" gouge, no feet bleed. DepthCal.w is the threshold
+    //    in world units (covers coarse collision). No collision behind (czd ~ 0) => paint (fail-soft).
+    //  * Legacy cylinder list (DepthCal.w <= 0): the per-decal ExcludeVolumes, kept for when world-occlusion is off.
+    if (DepthCal.w > 0.0)
+    {
+        float czd    = WorldDepth.Sample(PointClamp, uv).r;              // OUR device-z of nearest collision (0 = none)
+        float worldW = czd > 1e-6 ? DepthUv.w / max(czd - DepthUv.z, 1e-6) : 1e30; // -> clip-w (world units)
+        if (worldW < 1e29 && w < worldW - DepthCal.w)
+            return float4(0, 0, 0, 0);                                   // occluder in front of the world -> don't paint
+    }
+    else
+    {
+        vis *= 1.0 - ActorExclusion(wp);                                // registered actors removed (AA, tight, no bleed)
+    }
 
 #ifdef DECAL_TEXTURED
     float4 t = BaseTex.Sample(BaseSamp, p * 0.5 + 0.5);

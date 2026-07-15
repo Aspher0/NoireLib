@@ -101,6 +101,15 @@ internal sealed unsafe class ScenePass : IDisposable
     /// <summary>Whether any collected item this frame has a selection outline (drives the optional outline pass).</summary>
     public bool HasOutlinedItems => hasOutlined;
 
+    /// <summary>Whether any collected item this frame is a ground decal (retained or immediate) - gates the world-occlusion depth pass so decal-less scenes pay nothing.</summary>
+    public bool AnyGroundDecals()
+    {
+        for (var i = 0; i < itemCount; i++)
+            if (items[i].Mat.Domain == MaterialDomain.GroundDecal)
+                return true;
+        return false;
+    }
+
     /// <summary>Whether the last <see cref="Execute"/> populated the private depth buffer (opaque content) - so the outline mask can GE-test it for 3D-object occlusion. False means no private depth to read, so the mask falls back to world-only occlusion.</summary>
     public bool LastPrivateDepthWritten => lastPrivateDepthWritten;
 
@@ -351,6 +360,8 @@ internal sealed unsafe class ScenePass : IDisposable
         RenderTarget sceneRt,
         DepthTarget privateDepth,
         ID3D11ShaderResourceView* sceneDepthSrv,
+        ID3D11ShaderResourceView* worldDepthSrv,
+        float worldOcclusionThreshold,
         Vector4 depthCal,
         ShaderLibrary shaders,
         StateCache cache,
@@ -398,7 +409,9 @@ internal sealed unsafe class ScenePass : IDisposable
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
             Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
-            DepthCal = depthCal,
+            // DepthCal.w carries the world-occlusion threshold (world units) for ground decals; 0 = feature off
+            // (decals fall back to the ExcludeVolumes cylinder). WorldDepth (t2) is only sampled when this is > 0.
+            DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldDepthSrv != null ? worldOcclusionThreshold : 0f),
             Ambient = new Vector4(lighting.AmbientColor, lighting.AmbientIntensity),
             LightDirIntensity = new Vector4(Vector3.Normalize(lighting.LightDirection), lighting.LightIntensity),
             LightColor = new Vector4(lighting.LightColor, 0f),
@@ -445,6 +458,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->PSSetConstantBuffers(1, 1, &ocb);
         var acb = actorCb!.Buffer;
         ctx->PSSetConstantBuffers(2, 1, &acb); // b2: per-decal actor exclusion volumes (decal ExcludeVolumes)
+        ctx->PSSetShaderResources(2, 1, &worldDepthSrv); // t2: collision-world device-z for world-occluded decals (null = off)
         var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &pointClamp);
         var linearWrap = cache.GetSampler(device, SamplerKey.LinearWrap);
@@ -807,6 +821,92 @@ internal sealed unsafe class ScenePass : IDisposable
             ctx->DrawIndexed((uint)item.Mesh.IndexCount, 0, 0);
             stats.DrawCalls++;
         }
+    }
+
+    /// <summary>
+    /// Renders the cached collision-world mesh into a shader-readable depth buffer (device-z only, reversed-Z GE test,
+    /// null pixel shader) from the current camera. Ground decals then sample it to skip any surface standing in front
+    /// of the real world (characters) - see the world-occlusion branch in GroundDecal.hlsl. Standalone (own target and
+    /// states), so it can run before <see cref="Execute"/>. The mesh's vertices are relative to <paramref name="meshCenter"/>.
+    /// </summary>
+    public void RenderWorldDepth(
+        RenderDevice device,
+        ID3D11DeviceContext* ctx,
+        in FrameContext frame,
+        Mesh collisionMesh,
+        Vector3 meshCenter,
+        DepthTargetSrv target,
+        ShaderLibrary shaders,
+        StateCache cache,
+        RenderStats stats)
+    {
+        if (collisionMesh == null || target.Dsv == null || target.Width == 0 || target.Height == 0)
+            return;
+
+        var vb = collisionMesh.Vb;
+        if (vb == null || collisionMesh.IndexCount == 0)
+            return;
+
+        var pipeline = shaders.GetStandard(device, MaterialDomain.Unlit, textured: false, instanced: false, opaqueDomain: true);
+        if (pipeline == null)
+            return;
+
+        EnsureBuffers(device);
+
+        // Same reversed-Z ViewProj as Execute, so the device-z we write is directly comparable to the game's calibrated
+        // depth in the decal shader (both map deviceZ = DepthUv.z + DepthUv.w/clipW).
+        var frameData = new FrameCBData
+        {
+            ViewProj = Matrix4x4.Transpose(frame.ViewProj),
+            InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
+            EyePosTime = new Vector4(frame.EyePos, frame.Time),
+            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
+            DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
+            DepthCal = Vector4.Zero,
+            Ambient = Vector4.Zero,
+            LightDirIntensity = new Vector4(0f, 1f, 0f, 0f),
+            LightColor = Vector4.Zero,
+        };
+        frameCb!.UpdateConstant(ctx, in frameData);
+
+        var objData = new ObjectCBData
+        {
+            World = Matrix4x4.Transpose(Matrix4x4.CreateTranslation(meshCenter)), // verts are relative to the region centre
+            InvWorld = Matrix4x4.Identity,
+            BaseColor = Vector4.One,
+            Params0 = Vector4.Zero,
+            Params1 = Vector4.Zero,
+        };
+        objectCb!.UpdateConstant(ctx, in objData);
+
+        ctx->OMSetRenderTargets(0, null, target.Dsv);
+        ctx->ClearDepthStencilView(target.Dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0.0f, 0); // reversed-Z far = 0 (no collision)
+
+        var viewport = new D3D11_VIEWPORT { Width = target.Width, Height = target.Height, MaxDepth = 1f };
+        ctx->RSSetViewports(1, &viewport);
+        var scissor = new TerraFX.Interop.Windows.RECT { right = (int)target.Width, bottom = (int)target.Height };
+        ctx->RSSetScissorRects(1, &scissor);
+
+        ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        var cb = frameCb.Buffer;
+        ctx->VSSetConstantBuffers(0, 1, &cb);
+        var ocb = objectCb.Buffer;
+        ctx->VSSetConstantBuffers(1, 1, &ocb);
+
+        ctx->IASetInputLayout(pipeline.Layout);
+        ctx->VSSetShader(pipeline.Vs, null, 0);
+        ctx->PSSetShader(null, null, 0); // depth-only
+
+        var blendFactor = stackalloc float[4];
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF);
+        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.WriteGE), 0);
+        ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided)); // collision winding is arbitrary - two-sided
+
+        uint stride = (uint)sizeof(Vertex3D), offset = 0;
+        ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+        ctx->IASetIndexBuffer(collisionMesh.Ib, collisionMesh.IndexFormat, 0);
+        ctx->DrawIndexed((uint)collisionMesh.IndexCount, 0, 0);
+        stats.DrawCalls++;
     }
 
     /// <summary>

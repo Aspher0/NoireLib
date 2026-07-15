@@ -150,3 +150,95 @@ internal sealed unsafe class DepthTarget : IDisposable
     /// <inheritdoc/>
     public void Dispose() => Release();
 }
+
+/// <summary>
+/// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV) - used to render
+/// the collision world's device-z so the ground decal can reconstruct "how far is the real world here" per pixel and
+/// skip anything (characters) standing in front of it. Cleared to 0.0 (reversed-Z "far" = no collision).
+/// </summary>
+internal sealed unsafe class DepthTargetSrv : IDisposable
+{
+    private ComPtr<ID3D11Texture2D> texture;
+    private ComPtr<ID3D11DepthStencilView> dsv;
+    private ComPtr<ID3D11ShaderResourceView> srv;
+
+    /// <summary>Current width in pixels (0 before first creation).</summary>
+    public uint Width { get; private set; }
+
+    /// <summary>Current height in pixels (0 before first creation).</summary>
+    public uint Height { get; private set; }
+
+    /// <summary>The depth-stencil view (null before first creation).</summary>
+    public ID3D11DepthStencilView* Dsv => dsv.Get();
+
+    /// <summary>The shader resource view over the depth (null before first creation).</summary>
+    public ID3D11ShaderResourceView* Srv => srv.Get();
+
+    /// <summary>Recreates the buffer when the requested size differs. Returns false when creation failed.</summary>
+    public bool EnsureSize(RenderDevice device, uint width, uint height)
+    {
+        if (width == 0 || height == 0)
+            return false;
+
+        if (Width == width && Height == height && dsv.Get() != null)
+            return true;
+
+        Release();
+
+        var desc = new D3D11_TEXTURE2D_DESC
+        {
+            Width = width,
+            Height = height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS, // typeless so we can view it as both depth (DSV) and float (SRV)
+            SampleDesc = new DXGI_SAMPLE_DESC { Count = 1 },
+            Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
+            BindFlags = (uint)(D3D11_BIND_FLAG.D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE),
+        };
+        if (device.Device->CreateTexture2D(&desc, null, texture.GetAddressOf()) < 0)
+            return false;
+
+        var dsvDesc = new D3D11_DEPTH_STENCIL_VIEW_DESC
+        {
+            Format = DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT,
+            ViewDimension = D3D11_DSV_DIMENSION.D3D11_DSV_DIMENSION_TEXTURE2D,
+        };
+        if (device.Device->CreateDepthStencilView((ID3D11Resource*)texture.Get(), &dsvDesc, dsv.GetAddressOf()) < 0)
+        {
+            Release();
+            return false;
+        }
+
+        var srvDesc = new D3D11_SHADER_RESOURCE_VIEW_DESC
+        {
+            Format = DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT,
+            ViewDimension = D3D_SRV_DIMENSION.D3D_SRV_DIMENSION_TEXTURE2D,
+        };
+        srvDesc.Anonymous.Texture2D.MipLevels = 1;
+        if (device.Device->CreateShaderResourceView((ID3D11Resource*)texture.Get(), &srvDesc, srv.GetAddressOf()) < 0)
+        {
+            Release();
+            return false;
+        }
+
+        Width = width;
+        Height = height;
+        return true;
+    }
+
+    /// <summary>Releases GPU objects (recreated by the next EnsureSize).</summary>
+    public void Release()
+    {
+        srv.Dispose();
+        srv = default;
+        dsv.Dispose();
+        dsv = default;
+        texture.Dispose();
+        texture = default;
+        Width = Height = 0;
+    }
+
+    /// <inheritdoc/>
+    public void Dispose() => Release();
+}

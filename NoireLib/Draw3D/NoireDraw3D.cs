@@ -47,7 +47,20 @@ public static unsafe partial class NoireDraw3D
     private static RenderTarget? outlineMaskRt; // RGBA silhouette-coverage mask for the selection outline pass
     private static RenderTarget? outlineVisRt;  // per-silhouette-pixel worldVisible flag (r) for occluding the outline
     private static DepthTarget? privateDepth;
+    private static DepthTargetSrv? worldDepthTarget; // collision-world device-z for world-occluded ground decals
     private static SceneDepth? sceneDepth;
+
+    // World-occluded ground decals: a cached mesh of the real collision world near the player, rebuilt on the framework
+    // thread when the player leaves the cached region, rendered each frame into worldDepthTarget so decals skip any
+    // surface (characters) in front of the world - see GroundDecal.hlsl. The holder is swapped atomically.
+    private sealed class WorldCollisionCache { public NoireLib.Draw3D.Geometry.Mesh Mesh = null!; public Vector3 Center; }
+    private static volatile WorldCollisionCache? worldCollision;
+    private static Vector3 worldCollisionBuiltAt;
+    private static bool worldCollisionEverBuilt;
+    private static volatile bool lastFrameHadDecals; // gates the framework-thread collision rebuild to decal-using scenes
+    private const float WorldCollisionRadius = 40f;         // half-size of the collected region
+    private const float WorldCollisionRebuildDistance = 8f; // rebuild once the player is this far from the region centre
+    private const int WorldCollisionMaxTriangles = 60000;
     private static UiMaskSource? uiMaskSource;
     private static UiMaskHealth? uiMaskHealth;
     private static RenderStats? renderStats;
@@ -148,6 +161,19 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>0–1 opacity applied to the whole 3D layer at composite time (linear under premultiplication - true layer transparency).</summary>
     public static float LayerOpacity { get; set; } = 1f;
+
+    /// <summary>
+    /// Ground decals skip surfaces standing in front of the real collision world (characters / mounts) instead of the
+    /// per-actor <c>ExcludeVolumes</c> cylinder - silhouette-exact, so a decal paints sloped ground cleanly up to a
+    /// character's feet with no gouge and no bleed onto the body, and needs no actor list. Default true; falls back to
+    /// the cylinder path (per decal) when off or when the collision world isn't available.
+    /// </summary>
+    public static bool WorldOccludedDecals { get; set; } = true;
+
+    /// <summary>How much nearer than the collision world a surface must be (world units) to count as "in front of it" and
+    /// be skipped by a world-occluded decal. Larger tolerates coarser collision but paints a touch more of a character's
+    /// base; smaller is tighter but can flicker where collision is offset from the visual ground. Default 0.2 m.</summary>
+    public static float WorldOcclusionThreshold { get; set; } = 0.2f;
 
     /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protection</c>.</summary>
     [Obsolete("Grouped under NoireDraw3D.NativeUi.Protection.")]
@@ -631,6 +657,11 @@ public static unsafe partial class NoireDraw3D
             outlineVisRt = null;
             privateDepth?.Dispose();
             privateDepth = null;
+            worldDepthTarget?.Dispose();
+            worldDepthTarget = null;
+            worldCollision?.Mesh?.Dispose();
+            worldCollision = null;
+            worldCollisionEverBuilt = false;
             sceneDepth?.Dispose();
             sceneDepth = null;
             uiMaskSource?.Dispose();
@@ -1006,7 +1037,7 @@ public static unsafe partial class NoireDraw3D
 
             scenePass!.BeginCollect(in viewFrame, mainPass: false);
             scenePass.AddScene(view.Scene, stats, depthAvailable: false);
-            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, 0f, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
         }
 
         // Main pass.
@@ -1015,8 +1046,25 @@ public static unsafe partial class NoireDraw3D
         foreach (var scene in scenes)
             scenePass.AddScene(scene, stats, hasDepth);
 
+        // World-occluded decals: render the cached collision world into a shader-readable depth buffer so ground decals
+        // can skip characters standing on them (see GroundDecal.hlsl). Needs the game depth (decals reconstruct from it)
+        // and only runs when the frame actually has decals, so decal-less scenes pay nothing. Fail-soft: no cache / no
+        // target -> null SRV -> decals use the legacy ExcludeVolumes cylinder.
+        ID3D11ShaderResourceView* worldDepthSrv = null;
+        var frameHasDecals = WorldOccludedDecals && scenePass.AnyGroundDecals();
+        lastFrameHadDecals = frameHasDecals;
+        if (frameHasDecals && hasDepth && worldCollision is { } wc && wc.Mesh is { } wcMesh)
+        {
+            worldDepthTarget ??= new DepthTargetSrv();
+            if (worldDepthTarget.EnsureSize(device, backBuffer.Width, backBuffer.Height))
+            {
+                scenePass.RenderWorldDepth(device, ctx, in frame, wcMesh, wc.Center, worldDepthTarget, shaderLibrary!, stateCache!, stats);
+                worldDepthSrv = worldDepthTarget.Srv;
+            }
+        }
+
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
-            depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            worldDepthSrv, WorldOcclusionThreshold, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
         // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
         // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
@@ -1284,6 +1332,7 @@ public static unsafe partial class NoireDraw3D
         outlineMaskRt?.Release();
         outlineVisRt?.Release();
         privateDepth?.Release();
+        worldDepthTarget?.Release();
         sceneDepth?.Invalidate();
         gameDepthTarget?.Invalidate();
         uiMaskSource?.Release();
@@ -1317,6 +1366,54 @@ public static unsafe partial class NoireDraw3D
     private static void OnFrameworkUpdate(IFramework framework)
     {
         frameworkCameraValid = GameRenderSources.TryGetCamera(out frameworkCamera);
+        UpdateWorldCollision();
+    }
+
+    /// <summary>
+    /// Framework-thread only: rebuilds the cached collision-world mesh near the player when they leave the cached region
+    /// (the collision scene is safe to read only here). Fail-soft - a fault leaves the last cache in place and decals
+    /// fall back to the cylinder path. Skipped entirely when <see cref="WorldOccludedDecals"/> is off.
+    /// </summary>
+    private static void UpdateWorldCollision()
+    {
+        if (!WorldOccludedDecals || !lastFrameHadDecals || !initialized || disposed || !NoireService.IsInitialized())
+            return;
+
+        Vector3 center;
+        var player = NoireService.ObjectTable.LocalPlayer;
+        if (player != null)
+            center = player.Position;
+        else if (frameworkCameraValid)
+            center = frameworkCamera.Origin;
+        else
+            return;
+
+        if (worldCollisionEverBuilt && Vector3.Distance(center, worldCollisionBuiltAt) < WorldCollisionRebuildDistance)
+            return; // still inside the cached region
+
+        try
+        {
+            worldCollisionBuiltAt = center;
+            worldCollisionEverBuilt = true;
+
+            var geo = World.WorldGeometry.Collect(center, WorldCollisionRadius, WorldCollisionMaxTriangles, includeAnalytic: false);
+            var old = worldCollision;
+            if (geo is { } g && g.Indices.Length > 0)
+            {
+                var mesh = new NoireLib.Draw3D.Geometry.Mesh(g.Vertices, g.Indices, keepCpuData: false, "worldcollision");
+                worldCollision = new WorldCollisionCache { Mesh = mesh, Center = g.Center };
+            }
+            else
+            {
+                worldCollision = null; // moved into an empty/collision-less area
+            }
+
+            old?.Mesh?.Dispose(); // safe to dispose in use: the render path null-checks the vertex buffer
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Draw3D: world-collision rebuild failed; decals fall back to the cylinder exclusion.", "Draw3D");
+        }
     }
 
     private static void RefreshUiHideOverrides()
@@ -1354,7 +1451,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | model <path> | gizmo | clear | reset | rtlog | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | worldgeo | worldocclude | model <path> | gizmo | clear | reset | rtlog | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1390,6 +1487,15 @@ public static unsafe partial class NoireDraw3D
                 break;
             case "gizmo":
                 Print(Diagnostics.ToggleSmokeGizmoBackend());
+                break;
+            case "worldgeo":
+                Print(Diagnostics.ToggleWorldGeometryPreview());
+                break;
+            case "worldocclude":
+                WorldOccludedDecals = !WorldOccludedDecals;
+                Print(WorldOccludedDecals
+                    ? "Draw3D: world-occluded decals ON - ground decals skip characters via the real collision world (silhouette-exact, no cylinder). '/noire3d worldocclude' again for the legacy ExcludeVolumes cut."
+                    : "Draw3D: world-occluded decals off - decals use the per-decal ExcludeVolumes cylinder again.");
                 break;
             case "clear":
                 Diagnostics.ClearSmokeScene();

@@ -44,6 +44,7 @@ public sealed unsafe class Draw3DDiagnostics
     private SceneNode? smokeIconDecal;   // a DecalShape.Texture decal (material swapped in once loaded)
     private GpuTexture? smokeIcon;       // the loaded game-icon texture, disposed with the scene
     private bool smokePortalReady;
+    private Scene3D? worldGeoScene;      // the '/noire3d worldgeo' collision-preview scene (toggled independently of smoke)
 
     /// <summary>The custom pipeline used by the smoke scene's "custom shader" station (registered once).</summary>
     private const string SmokePulsePipeline = "NoireSmokePulse";
@@ -193,7 +194,8 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>The smoke decals' actor-exclusion predicate: characters, monsters and NPCs (players, battle NPCs, event NPCs) are skipped.</summary>
     private static bool SmokeActorExclusion(IGameObject o)
-        => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
+        //=> o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
+        => false;
 
     /// <summary>
     /// Loads a game-icon texture off-thread, then swaps it onto the icon quad + textured decal (a material-reference
@@ -317,6 +319,40 @@ public sealed unsafe class Draw3DDiagnostics
         scene?.Dispose();
         smokeIcon?.Dispose();      // the game-icon texture is diagnostics-owned, not scene-owned
         smokeIcon = null;
+    }
+
+    /// <summary>
+    /// Toggles the <c>/noire3d worldgeo</c> preview: the game's real collision world near the player
+    /// (streamed terrain, background models, housing furniture and dynamic objects that register a collider),
+    /// pulled straight from <see cref="World.WorldGeometry"/> and drawn as translucent shaded shells so you can
+    /// see exactly what a world-projected decal has to conform to. Pair with <c>/noire3d wire</c> for a wireframe.
+    /// Runs on the framework thread (command dispatch), where the collision scene is safe to read.
+    /// </summary>
+    public string ToggleWorldGeometryPreview()
+    {
+        NoireDraw3D.EnsureInitialized();
+
+        if (worldGeoScene is { IsDisposed: false } existing)
+        {
+            existing.Dispose();
+            worldGeoScene = null;
+            return "Draw3D: world-geometry preview off.";
+        }
+
+        var center = NoireService.ObjectTable.LocalPlayer?.Position
+            ?? (NoireDraw3D.LastFrameValid ? NoireDraw3D.LastFrame.EyePos : Vector3.Zero);
+
+        var scene = worldGeoScene = NoireDraw3D.CreateScene("worldgeo");
+        var mat = Material.Lit(new Vector4(0.35f, 0.75f, 1f, 0.4f)) with { Cull = CullMode.None, Blend = BlendMode.Premultiplied };
+        var node = scene.SpawnWorldGeometry(center, 20f, mat, includeAnalytic: true, name: "WorldGeo");
+        if (node == null)
+        {
+            scene.Dispose();
+            worldGeoScene = null;
+            return "Draw3D: no collision found near you (open area / airborne, or the read faulted - see /xllog).";
+        }
+
+        return "Draw3D: world-geometry preview ON - the real collision (terrain, furniture, walls, dynamic objects) around you, translucent blue. '/noire3d worldgeo' again to remove, '/noire3d wire' for wireframe.";
     }
 
     /// <summary>
