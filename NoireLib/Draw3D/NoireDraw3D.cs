@@ -1354,7 +1354,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | gizmo | clear | reset | rtlog | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | model <path> | gizmo | clear | reset | rtlog | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1363,8 +1363,16 @@ public static unsafe partial class NoireDraw3D
 
     private static void HandleCommand(string command, string args)
     {
-        switch (args.Trim().ToLowerInvariant())
+        // Split the verb from the rest so a path argument (e.g. "model C:\...") keeps its case.
+        var trimmed = args.Trim();
+        var sp = trimmed.IndexOf(' ');
+        var verb = (sp < 0 ? trimmed : trimmed[..sp]).ToLowerInvariant();
+        var rest = sp < 0 ? string.Empty : trimmed[(sp + 1)..].Trim();
+        switch (verb)
         {
+            case "model":
+                Diagnostics.SpawnSmokeModel(rest);
+                break;
             case "validate":
                 Diagnostics.RunValidate();
                 Print("Draw3D: projection parity validator armed for the next 10 frames - results go to the log.");

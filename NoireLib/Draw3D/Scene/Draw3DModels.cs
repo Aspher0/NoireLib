@@ -41,10 +41,11 @@ public static class Draw3DModels
     /// <param name="position">Local position for the model root.</param>
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
-    public static Model3D LoadModel(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false)
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint. Off by default - FFXIV-derived exports store shader data there, not colors (see <see cref="GltfLoader"/>).</param>
+    public static Model3D LoadModel(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        var model = GltfLoader.LoadAsync(path, keepCpuData).GetAwaiter().GetResult();
+        var model = GltfLoader.LoadAsync(path, keepCpuData, importVertexColors).GetAwaiter().GetResult();
         scene.AddModel(model, position, name);
         return model;
     }
@@ -58,11 +59,12 @@ public static class Draw3DModels
     /// <param name="position">Local position for the model root.</param>
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint. Off by default (see <see cref="GltfLoader"/>).</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static async Task<Model3D> LoadModelAsync(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, CancellationToken ct = default)
+    public static async Task<Model3D> LoadModelAsync(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        var model = await GltfLoader.LoadAsync(path, keepCpuData, ct).ConfigureAwait(false);
+        var model = await GltfLoader.LoadAsync(path, keepCpuData, importVertexColors, ct).ConfigureAwait(false);
         scene.AddModel(model, position, name);
         return model;
     }

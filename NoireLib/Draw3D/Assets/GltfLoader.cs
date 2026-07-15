@@ -19,8 +19,14 @@ namespace NoireLib.Draw3D.Assets;
 /// baseColor factor/texture → material color/texture; alphaMode BLEND → translucent; doubleSided →
 /// no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
 /// are ignored (logged once per file so users know exactly what was dropped).<br/>
-/// Handedness: glTF is right-handed, this renderer is left-handed - the loader negates Z (positions,
-/// normals, transforms) and flips triangle winding, one documented transform.<br/>
+/// Handedness: glTF is right-handed (CCW-front), this renderer is left-handed (CW-front). The loader
+/// negates Z on positions, normals and transforms - <b>one</b> reflection, which by itself flips the
+/// effective winding onto this renderer's clockwise-front convention, so the triangle index order is
+/// kept as-is (a second index flip would cancel it and cull every front face).<br/>
+/// <b>Vertex colors:</b> glTF <c>COLOR_0</c> is <i>not</i> imported by default. FFXIV-derived character
+/// exports carry a per-vertex color channel that the game uses as shader <i>data</i> (wetness / wind /
+/// blend masks), not albedo; multiplying it into the base color paints the model in psychedelic tints.
+/// Pass <c>importVertexColors: true</c> for assets that genuinely author vertex colors.<br/>
 /// <b>FBX:</b> never natively - convert once with FBX2glTF or Blender export; the result is a
 /// better-specified asset.
 /// </summary>
@@ -29,18 +35,29 @@ public static class GltfLoader
     /// <summary>Loads a .gltf or .glb file into a detached, ready-to-attach model.</summary>
     /// <param name="path">Absolute file path.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default - FFXIV-derived exports store shader data there, not colors (see the type remarks).</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static Task<Model3D> LoadAsync(string path, bool keepCpuData = false, CancellationToken ct = default)
-        => Task.Run(() => Import(ModelRoot.Load(path), System.IO.Path.GetFileName(path), keepCpuData, ct), ct);
+    public static Task<Model3D> LoadAsync(string path, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
+        => Task.Run(() => Import(ModelRoot.Load(path), System.IO.Path.GetFileName(path), keepCpuData, importVertexColors, ct), ct);
 
     /// <summary>Loads a binary .glb from memory into a detached, ready-to-attach model.</summary>
     /// <param name="glbBytes">GLB file contents.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default (see the type remarks).</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, CancellationToken ct = default)
-        => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, ct), ct);
+    public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
+        => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, ct), ct);
 
-    private static Model3D Import(ModelRoot root, string sourceName, bool keepCpuData, CancellationToken ct)
+    /// <summary>Accumulates what the import actually did, so "the model looks wrong" is answerable from one log line.</summary>
+    private sealed class ImportStats
+    {
+        public int Primitives;
+        public int TexturedMaterials;
+        public int TextureDecodeFailures;
+        public bool SawVertexColors;
+    }
+
+    private static Model3D Import(ModelRoot root, string sourceName, bool keepCpuData, bool importVertexColors, CancellationToken ct)
     {
         NoireDraw3D.EnsureInitialized();
 
@@ -48,6 +65,7 @@ public static class GltfLoader
         var textures = new List<GpuTexture>();
         var textureCache = new Dictionary<SharpGLTF.Schema2.Texture, GpuTexture?>();
         var dropped = new HashSet<string>();
+        var stats = new ImportStats();
 
         var modelRoot = new SceneNode(null, sourceName);
 
@@ -57,7 +75,7 @@ public static class GltfLoader
             foreach (var child in scene.VisualChildren)
             {
                 ct.ThrowIfCancellationRequested();
-                ImportNode(child, modelRoot, meshes, textures, textureCache, dropped, keepCpuData, ct);
+                ImportNode(child, modelRoot, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, ct);
             }
         }
 
@@ -68,8 +86,16 @@ public static class GltfLoader
         if (root.LogicalCameras.Count > 0)
             dropped.Add("cameras");
 
+        // One summary line makes a wrong-looking import self-diagnosing: textured vs. flat materials, decode
+        // failures, and whether a vertex-color channel was present (the usual cause of psychedelic tints).
+        var summary = $"glTF '{sourceName}': {stats.Primitives} primitive(s), {stats.TexturedMaterials} textured / {stats.Primitives - stats.TexturedMaterials} flat.";
+        if (stats.TextureDecodeFailures > 0)
+            summary += $" {stats.TextureDecodeFailures} base texture(s) failed to decode (those render flat).";
+        if (stats.SawVertexColors && !importVertexColors)
+            summary += " COLOR_0 vertex colors present but ignored (treated as shader data; pass importVertexColors:true to apply).";
         if (dropped.Count > 0)
-            NoireLogger.LogInfo($"glTF '{sourceName}': imported without {string.Join(", ", dropped)} (unsupported by the Draw3D core).", "Draw3D");
+            summary += $" Dropped {string.Join(", ", dropped)} (unsupported by the Draw3D core).";
+        NoireLogger.LogInfo(summary, "Draw3D");
 
         return new Model3D(modelRoot, meshes, textures);
     }
@@ -81,7 +107,9 @@ public static class GltfLoader
         List<GpuTexture> textures,
         Dictionary<SharpGLTF.Schema2.Texture, GpuTexture?> textureCache,
         HashSet<string> dropped,
+        ImportStats stats,
         bool keepCpuData,
+        bool importVertexColors,
         CancellationToken ct)
     {
         var node = parent.CreateChild(gltfNode.Name);
@@ -92,12 +120,12 @@ public static class GltfLoader
             foreach (var primitive in gltfNode.Mesh.Primitives)
             {
                 ct.ThrowIfCancellationRequested();
-                ImportPrimitive(primitive, node, meshes, textures, textureCache, dropped, keepCpuData);
+                ImportPrimitive(primitive, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors);
             }
         }
 
         foreach (var child in gltfNode.VisualChildren)
-            ImportNode(child, node, meshes, textures, textureCache, dropped, keepCpuData, ct);
+            ImportNode(child, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, ct);
     }
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
@@ -129,7 +157,9 @@ public static class GltfLoader
         List<GpuTexture> textures,
         Dictionary<SharpGLTF.Schema2.Texture, GpuTexture?> textureCache,
         HashSet<string> dropped,
-        bool keepCpuData)
+        ImportStats stats,
+        bool keepCpuData,
+        bool importVertexColors)
     {
         var positions = primitive.GetVertexAccessor("POSITION")?.AsVector3Array();
         if (positions == null || positions.Count == 0)
@@ -137,7 +167,11 @@ public static class GltfLoader
 
         var normals = primitive.GetVertexAccessor("NORMAL")?.AsVector3Array();
         var uvs = primitive.GetVertexAccessor("TEXCOORD_0")?.AsVector2Array();
-        var colors = primitive.GetVertexAccessor("COLOR_0")?.AsColorArray();
+        var colors = primitive.GetVertexAccessor("COLOR_0") != null ? primitive.GetVertexAccessor("COLOR_0").AsColorArray() : null;
+        if (colors != null)
+            stats.SawVertexColors = true;
+        if (!importVertexColors)
+            colors = null; // COLOR_0 is shader data on FFXIV-derived models, not albedo - do not tint by default.
         if (primitive.GetVertexAccessor("JOINTS_0") != null)
             dropped.Add("skinning attributes");
 
@@ -153,13 +187,15 @@ public static class GltfLoader
                 colors != null && i < colors.Count ? colors[i] : new Vector4(1f, 1f, 1f, 1f));
         }
 
-        // Winding flips with the handedness change (a, c, b).
+        // The Z-negation above is a reflection, which already flips the effective winding onto this
+        // renderer's clockwise-front convention. Keep glTF's own index order (a, b, c) - flipping it here
+        // too would cancel the reflection and cull every front face (you would see only the backfaces).
         var triangles = new List<uint>();
         foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
             triangles.Add((uint)a);
-            triangles.Add((uint)c);
             triangles.Add((uint)b);
+            triangles.Add((uint)c);
         }
 
         if (triangles.Count == 0)
@@ -179,8 +215,9 @@ public static class GltfLoader
         }
 
         meshes.Add(mesh);
+        stats.Primitives++;
 
-        var material = BuildMaterial(primitive.Material, textures, textureCache, dropped);
+        var material = BuildMaterial(primitive.Material, textures, textureCache, dropped, stats);
         var renderNode = node.CreateChild($"{primitive.LogicalParent?.Name}#prim");
         renderNode.SetMesh(mesh, material);
     }
@@ -189,7 +226,8 @@ public static class GltfLoader
         SharpGLTF.Schema2.Material? gltfMaterial,
         List<GpuTexture> textures,
         Dictionary<SharpGLTF.Schema2.Texture, GpuTexture?> textureCache,
-        HashSet<string> dropped)
+        HashSet<string> dropped,
+        ImportStats stats)
     {
         var color = new Vector4(1f, 1f, 1f, 1f);
         GpuTexture? texture = null;
@@ -203,7 +241,11 @@ public static class GltfLoader
             {
                 color = baseColor.Value.Color;
                 if (baseColor.Value.Texture != null)
+                {
                     texture = ResolveTexture(baseColor.Value.Texture, textures, textureCache);
+                    if (texture == null)
+                        stats.TextureDecodeFailures++;
+                }
             }
 
             if (gltfMaterial.FindChannel("MetallicRoughness")?.Texture != null || gltfMaterial.FindChannel("Normal")?.Texture != null)
@@ -219,6 +261,9 @@ public static class GltfLoader
             if (gltfMaterial.DoubleSided)
                 cull = CullMode.None;
         }
+
+        if (texture != null)
+            stats.TexturedMaterials++;
 
         return new Materials.Material
         {

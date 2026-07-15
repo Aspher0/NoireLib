@@ -83,7 +83,9 @@ model.Root.LocalPosition = spawnPosition;
 model.Dispose();                            // detaches and releases its meshes/textures
 ```
 
-Blender → *File → Export → glTF 2.0* just works (base color + texture; PBR maps/skins/animations are skipped and logged). **FBX:** convert once with `FBX2glTF` or Blender - NoireLib will never ship the FBX SDK.
+Blender → *File → Export → glTF 2.0* just works (base color + texture; PBR maps/skins/animations are skipped and logged). The import logs one summary line - primitive count, textured vs. flat materials, decode failures - so a wrong-looking model is self-diagnosing. **FBX:** convert once with `FBX2glTF` or Blender - NoireLib will never ship the FBX SDK.
+
+> **Vertex colors are off by default.** FFXIV-derived character exports carry a per-vertex `COLOR_0` channel the game uses as shader *data* (wetness / wind / blend masks), not albedo - importing it as a tint paints the model in psychedelic colors. Pass `importVertexColors: true` (on `LoadAsync` / `scene.LoadModel`) only for assets that genuinely author vertex colors.
 
 ## Textures
 
@@ -142,7 +144,8 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). Also reports the UI-mask alpha health. |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. |
-| `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you. |
+| `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you - a gallery of (almost) every feature: all mesh primitives, all decal shapes, material families + a custom-pipeline pulse box, a game-icon textured quad, a render-to-texture mirror/portal, animated immediate-layer markers, and the selection/gizmo editor. |
+| `/noire3d model <path>` | Imports a glTF/glb from disk into the running smoke scene (in front of you). |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |
 | `/noire3d platedepth` | Toggles `NativeUiDepthWrite` (depth-aware nameplates). |
