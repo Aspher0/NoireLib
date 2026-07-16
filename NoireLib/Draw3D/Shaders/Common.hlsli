@@ -26,6 +26,7 @@ cbuffer ObjectCB : register(b1)
     float4   Params1;           // x = DepthFade (world units, 0 = hard), y = shapeKind,
                                 // z = outlineWidth (0..1 of SDF units), w = heightFade (decal Y feather)
     float4   Params2;           // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
+                                // y = decal box top world Y (world-occlusion vertical search bound)
 }
 
 // ---- b2: per-decal excluded-actor gate + stencil key (ground-decal ExcludeObjects) --

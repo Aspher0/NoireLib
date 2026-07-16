@@ -54,7 +54,7 @@ internal struct ObjectCBData
     public Vector4 BaseColor;
     public Vector4 Params0;
     public Vector4 Params1;
-    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
+    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only); y = box top world Y
 }
 
 /// <summary>

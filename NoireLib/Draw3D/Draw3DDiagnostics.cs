@@ -1,21 +1,8 @@
-using Dalamud.Game.ClientState.Objects.Enums;
-using Dalamud.Game.ClientState.Objects.Types;
-using NoireLib.Draw3D.Assets;
 using NoireLib.Draw3D.Core;
-using NoireLib.Draw3D.Enums;
-using NoireLib.Draw3D.Geometry;
-using NoireLib.Draw3D.Im;
-using NoireLib.Draw3D.Interaction;
-using NoireLib.Draw3D.Interaction.Gizmo;
-using NoireLib.Draw3D.Materials;
-using NoireLib.Draw3D.Scene;
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Numerics;
 using System.Text;
-using System.Threading.Tasks;
-using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D;
 
@@ -24,7 +11,9 @@ namespace NoireLib.Draw3D;
 /// run it even when another plugin owns the command name. Results go to the plugin log.<br/>
 /// <c>RunValidate</c>: projection parity vs the game's own WorldToScreen (the wobble-class killer).<br/>
 /// <c>RunProbe</c>: reads actual depth-buffer values back and compares them against expectation.<br/>
-/// <c>SpawnSmokeScene</c>: the reference QA scene from the regression matrix.
+/// <c>RunCameraPhaseTrace</c>: measures the overlay-vs-world camera drift under motion (the "swim" investigation).<br/>
+/// The visual showcase (smoke scene, world-geometry preview, glTF import) lives in the separate
+/// <c>NoireDraw3DDemoPlugin</c>, built entirely on the public Draw3D API.
 /// </summary>
 public sealed unsafe class Draw3DDiagnostics
 {
@@ -35,20 +24,16 @@ public sealed unsafe class Draw3DDiagnostics
     private float validateMaxMatrixDelta;
     private bool probePending;
 
-    private Scene3D? smokeScene;
-    private SceneEditor? smokeEditor;
-    private RenderView? smokeView;      // the render-to-texture mirror/portal source
-    private Vector3 smokeCenter;
-    private SceneNode? smokePortalNode;  // shows smokeView's texture (material swapped in once it exists)
-    private SceneNode? smokeIconQuad;    // shows a game-icon texture (material swapped in once loaded)
-    private SceneNode? smokeIconDecal;   // a DecalShape.Texture decal (material swapped in once loaded)
-    private GpuTexture? smokeIcon;       // the loaded game-icon texture, disposed with the scene
-    private bool smokePortalReady;
-    private Scene3D? worldGeoScene;      // the '/noire3d worldgeo' collision-preview scene (toggled independently of smoke)
-
-    /// <summary>The custom pipeline used by the smoke scene's "custom shader" station (registered once).</summary>
-    private const string SmokePulsePipeline = "NoireSmokePulse";
-    private static bool smokePulseRegistered;
+    // Camera-phase trace ("swim" investigation): compares the camera the overlay is projected with against a fresh live
+    // read taken later in the same frame, over an armed window (see RunCameraPhaseTrace / OnCameraTrace).
+    private int camTraceFramesRemaining;
+    private int camTraceInjectFrames;
+    private int camTraceFallbackFrames;
+    private int camTraceSnapshotFrames;
+    private float camTraceMaxScreenDelta;
+    private double camTraceScreenSum;
+    private int camTraceScreenSamples;
+    private float camTraceMaxMatrixDelta;
 
     internal Draw3DDiagnostics() { }
 
@@ -75,321 +60,39 @@ public sealed unsafe class Draw3DDiagnostics
         probePending = true;
     }
 
+    /// <summary>
+    /// Arms the camera-phase trace for the next <paramref name="frames"/> rendered frames (results logged): each frame it
+    /// compares the camera the overlay was projected with against a fresh live camera read taken later in the same frame,
+    /// and reports the resulting screen drift (the visible "swim" magnitude), the View·Proj element delta, and how many
+    /// frames went through the pre-UI inject path (world-pass snapshot) vs the present-time fallback. Read-only.<br/>
+    /// Run it while panning / zooming / orbiting the camera vigorously at high frame-rate to characterize the swim; the
+    /// numbers say whether the drift is intra-frame camera advance (large delta on inject frames) or a fallback-path
+    /// camera-source mismatch (many fallback frames). No projection behavior changes - this only measures.
+    /// </summary>
+    /// <param name="frames">How many rendered frames to trace (clamped to 1..6000; default 120 ≈ a couple seconds).</param>
+    public void RunCameraPhaseTrace(int frames = 120)
+    {
+        NoireDraw3D.EnsureInitialized();
+        camTraceFramesRemaining = Math.Clamp(frames, 1, 6000);
+        camTraceInjectFrames = 0;
+        camTraceFallbackFrames = 0;
+        camTraceSnapshotFrames = 0;
+        camTraceMaxScreenDelta = 0f;
+        camTraceScreenSum = 0;
+        camTraceScreenSamples = 0;
+        camTraceMaxMatrixDelta = 0f;
+    }
+
     /// <summary>Toggles wireframe rasterization of the scene pass. Returns the new state.</summary>
     public bool ToggleWireframe() => NoireDraw3D.Wireframe = !NoireDraw3D.Wireframe;
 
     /// <summary>Formats the current stats snapshot.</summary>
     public string GetStatsText() => NoireDraw3D.Stats.ToString();
 
-    /// <summary>
-    /// Spawns the reference QA scene around the player - a hands-on gallery of (almost) every Draw3D feature in one
-    /// disposable scene, so you can eyeball them all at once:
-    /// <list type="bullet">
-    /// <item>every <see cref="MeshBuilder"/> primitive (box, sphere, cylinder, cone, torus, disc, ring, arrow, sector,
-    /// extruded path, and an appendable-builder combined mesh), each a <see cref="Material.Lit"/> node;</item>
-    /// <item>every ground-decal footprint shape (circle, ring, sector, rect, and - once the icon loads - a textured
-    /// decal), each excluding actors that stand in it;</item>
-    /// <item>the material families: additive glow, a depth-faded translucent quad, an opaque box stack (V2↔V2 depth),
-    /// and a <b>custom-pipeline</b> pulsing box (<see cref="NoireDraw3D.RegisterPipeline"/>);</item>
-    /// <item>a game-icon <b>textured</b> quad, a render-to-texture <b>mirror/portal</b> quad (<see cref="RenderView"/>),
-    /// and a live <b>immediate-layer</b> marker set animated every frame;</item>
-    /// <item>the whole interaction spine: every node is <see cref="SceneNode.MakeSelectable"/>, and a
-    /// <see cref="SceneEditor"/> follows the selection so you can move/rotate/scale with the gizmo.</item>
-    /// </list>
-    /// glTF import is on-demand via <c>/noire3d model &lt;path&gt;</c> (needs a file); external/browser textures need a
-    /// shared handle you own (<see cref="ExternalTexture.FromSharedHandle"/>). One <see cref="Scene3D.Dispose"/> (via
-    /// <see cref="ClearSmokeScene"/> or <c>/noire3d clear</c>) frees the whole thing - nodes, owned meshes, view, editor.
-    /// </summary>
-    public void SpawnSmokeScene()
-    {
-        ClearSmokeScene();
-
-        var center = smokeCenter = NoireService.ObjectTable.LocalPlayer?.Position
-            ?? (NoireDraw3D.LastFrameValid ? NoireDraw3D.LastFrame.EyePos : Vector3.Zero);
-
-        var scene = smokeScene = NoireDraw3D.CreateScene("smoke");
-
-        // Register the custom pulse pipeline once (used by the custom-shader station); a compile failure disables only it.
-        if (!smokePulseRegistered)
-            smokePulseRegistered = NoireDraw3D.RegisterPipeline(SmokePulsePipeline, SmokePulseHlsl);
-
-        // ---- Station 1: every MeshBuilder primitive, one Lit node each, all selectable (a row to the north). --------
-        var pz = center.Z + 9f;
-        var x = center.X - 12f;
-        SceneNode Row(SceneNode n) { n.MakeSelectable(); x += 2.5f; return n; }
-        Row(scene.AddBox(new Vector3(1.4f, 1.4f, 1.4f), Material.Lit(new Vector4(0.90f, 0.50f, 0.40f, 1f)), new Vector3(x, center.Y + 0.9f, pz), "Prim.Box", keepCpuData: true));
-        Row(scene.AddSphere(0.8f, Material.Lit(new Vector4(0.50f, 0.80f, 0.55f, 1f)), new Vector3(x, center.Y + 1f, pz), "Prim.Sphere", keepCpuData: true));
-        Row(scene.AddCylinder(0.7f, 1.5f, Material.Lit(new Vector4(0.50f, 0.60f, 0.90f, 1f)), new Vector3(x, center.Y + 0.75f, pz), "Prim.Cylinder", keepCpuData: true));
-        Row(scene.AddCone(0.8f, 1.6f, Material.Lit(new Vector4(0.90f, 0.80f, 0.40f, 1f)), new Vector3(x, center.Y + 0.1f, pz), "Prim.Cone", keepCpuData: true));
-        Row(scene.AddTorus(0.8f, 0.30f, Material.Lit(new Vector4(0.80f, 0.50f, 0.90f, 1f)), new Vector3(x, center.Y + 1f, pz), "Prim.Torus", keepCpuData: true));
-        Row(scene.AddDisc(0.9f, Material.Lit(new Vector4(0.55f, 0.90f, 0.90f, 1f)) with { Cull = CullMode.None }, new Vector3(x, center.Y + 1f, pz), "Prim.Disc", keepCpuData: true));
-        Row(scene.AddRing(0.4f, 0.9f, Material.Lit(new Vector4(0.90f, 0.60f, 0.60f, 1f)) with { Cull = CullMode.None }, new Vector3(x, center.Y + 1f, pz), "Prim.Ring", keepCpuData: true));
-        Row(scene.AddArrow(1.6f, Material.Lit(new Vector4(0.90f, 0.90f, 0.50f, 1f)), new Vector3(x, center.Y + 0.2f, pz), "Prim.Arrow", keepCpuData: true));
-        Row(scene.Spawn(MeshBuilder.Sector(MathF.PI / 4f, 0.3f, 1f), Material.Lit(new Vector4(1f, 0.70f, 0.30f, 1f)) with { Cull = CullMode.None }, new Vector3(x, center.Y + 1f, pz), "Prim.Sector", keepCpuData: true));
-        var ribbon = new List<Vector3> { new(-1f, 0f, 0f), new(-0.3f, 0f, 0.6f), new(0.3f, 0f, -0.6f), new(1f, 0f, 0f) };
-        Row(scene.Spawn(MeshBuilder.ExtrudePath(ribbon, 0.25f), Material.Lit(new Vector4(0.70f, 1f, 0.70f, 1f)) with { Cull = CullMode.None }, new Vector3(x, center.Y + 1f, pz), "Prim.ExtrudePath", keepCpuData: true));
-        var combined = new MeshBuilder().AddBox(new Vector3(1f, 0.4f, 1f)).AddSphere(0.45f, new Vector3(0f, 0.6f, 0f)).ToMeshData();
-        Row(scene.Spawn(combined, Material.Lit(new Vector4(0.80f, 0.80f, 0.88f, 1f)), new Vector3(x, center.Y + 0.6f, pz), "Prim.Combined", keepCpuData: true));
-
-        // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadSmokeIconAsync).
-        var dz = center.Z - 7f;
-        scene.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)), new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
-             .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        scene.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)), new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
-             .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        scene.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)), new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
-             .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        scene.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f)), new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
-             .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-
-        // ---- Station 3: material families + blending + the custom pulse pipeline (a cluster to the west). -----------
-        scene.AddSphere(0.75f, Material.Unlit(new Vector4(0.20f, 0.60f, 1f, 0.8f)) with { Blend = BlendMode.Additive }, new Vector3(center.X - 9f, center.Y + 1.5f, center.Z + 1f), "Mat.Additive", keepCpuData: true).MakeSelectable();
-        scene.AddQuad(4f, 4f, Material.Unlit(new Vector4(0.30f, 1f, 0.50f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None }, new Vector3(center.X - 9f, center.Y + 0.05f, center.Z - 2f), "Mat.DepthFadeQuad", keepCpuData: true).MakeSelectable();
-        var pulseMat = smokePulseRegistered
-            ? Material.Custom(SmokePulsePipeline, new Vector4(1f, 0.40f, 0.80f, 1f))
-            : Material.Unlit(new Vector4(1f, 0.40f, 0.80f, 1f)); // fallback if the pipeline failed to compile
-        scene.AddBox(new Vector3(1.3f, 1.3f, 1.3f), pulseMat, new Vector3(center.X - 13f, center.Y + 1f, center.Z), "Mat.CustomPulse", keepCpuData: true).MakeSelectable();
-
-        // Opaque box stack (private-depth V2↔V2 occlusion), east.
-        for (var i = 0; i < 3; i++)
-            scene.AddBox(Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None }, new Vector3(center.X + 7f, center.Y + 0.5f + i * 1.05f, center.Z), $"Stack.Box{i}", keepCpuData: true)
-                 .RotateY(i * 0.4f).MakeSelectable();
-
-        // ---- Station 4: render-to-texture mirror/portal. The view renders THIS scene from a raised camera; its texture
-        // is swapped onto the quad once it exists (null on frame 0) in OnSmokeFrame. Feeding it back in is legal (1-frame
-        // latency), so you get a recursive "screen showing the room". The quad starts as a dark placeholder. ----------
-        smokeView = NoireDraw3D.CreateRenderView(scene, new Camera3D(center + new Vector3(0f, 7f, 15f), center + new Vector3(0f, 1f, 0f)), 512, 384);
-        scene.Own(smokeView);
-        smokePortalNode = scene.AddQuad(5f, 3.75f, Material.Unlit(new Vector4(0.05f, 0.05f, 0.08f, 1f)) with { Cull = CullMode.None }, new Vector3(center.X - 14f, center.Y + 2.5f, center.Z + 4f), "Portal", keepCpuData: true)
-             .RotateX(MathF.PI * 0.5f);
-        smokePortalNode.MakeSelectable();
-        smokePortalReady = false;
-
-        // ---- Station 5: a game-icon texture on a quad AND a DecalShape.Texture decal (loaded async; materials swapped
-        // in once ready in LoadSmokeIconAsync). They start as neutral placeholders. -------------------------------------
-        smokeIconQuad = scene.AddQuad(3f, 3f, Material.Unlit(new Vector4(0.25f, 0.25f, 0.28f, 1f)) with { Cull = CullMode.None }, new Vector3(center.X + 12f, center.Y + 1.6f, center.Z + 2f), "Tex.IconQuad", keepCpuData: true)
-             .RotateX(MathF.PI * 0.5f);
-        smokeIconQuad.MakeSelectable();
-        smokeIconDecal = scene.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.5f, 0.5f, 0.55f, 0.7f)), new Vector3(center.X + 12f, center.Y, dz), "Decal.Texture", keepCpuData: true)
-             .Scale(new Vector3(4f, 4f, 4f));
-        smokeIconDecal.MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        LoadSmokeIcon(scene, 60074u);
-
-        // The editor follows the selection: left-click any object to select it, then drag the handles (the camera stays
-        // put while you drag). Multi-select (Ctrl toggles, Shift adds) is scoped - restored when the scene is disposed.
-        var editor = smokeEditor = scene.CreateEditor(GizmoOp.Universal);
-        editor.MultiSelect = true;
-        editor.Gizmo.Space = GizmoSpace.Local;
-        editor.Gizmo.Depth = GizmoDepth.AlwaysOnTop;
-        editor.Gizmo.Snap = 0.05f;
-        editor.Gizmo.ScaleSnap = 0.05f;
-        editor.Gizmo.RotateSnapDeg = 1f;
-        editor.SelectionOutline = new Vector4(1f, 0.85f, 0.2f, 1f);
-        editor.OutlineWidth = 4f;
-    }
-
-    /// <summary>The smoke decals' actor-exclusion predicate: characters, monsters and NPCs (players, battle NPCs, event NPCs) are skipped.</summary>
-    private static bool SmokeActorExclusion(IGameObject o)
-        => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
-    //=> false;
-
-    /// <summary>
-    /// Loads a game-icon texture off-thread, then swaps it onto the icon quad + textured decal (a material-reference
-    /// assignment is atomic, so it is safe from any thread). The texture is owned by the diagnostics and freed in
-    /// <see cref="ClearSmokeScene"/>. Guarded against the scene being cleared/re-spawned mid-load. Uses a continuation
-    /// rather than <c>await</c> because this type is <c>unsafe</c> (async methods cannot be).
-    /// </summary>
-    private void LoadSmokeIcon(Scene3D scene, uint iconId)
-    {
-        TextureLoader.FromGameIconAsync(iconId).ContinueWith(task =>
-        {
-            if (task.IsFaulted)
-            {
-                NoireLogger.LogError(task.Exception!, "Draw3D smoke: game-icon texture load failed.", "Draw3D");
-                return;
-            }
-
-            var tex = task.Result;
-            if (tex == null)
-                return;
-
-            if (scene.IsDisposed || !ReferenceEquals(smokeScene, scene))
-            {
-                tex.Dispose(); // the scene went away (or was re-spawned) while loading
-                return;
-            }
-
-            smokeIcon = tex;
-            if (smokeIconQuad?.Renderer is { } quadRenderer)
-                quadRenderer.Material = Material.UnlitTextured(tex) with { Cull = CullMode.None };
-            if (smokeIconDecal?.Renderer is { } decalRenderer)
-                decalRenderer.Material = Material.Decal(DecalShape.Texture, new Vector4(1f, 1f, 1f, 0.95f)) with { Texture = tex };
-        }, TaskScheduler.Default);
-    }
-
-    /// <summary>
-    /// Loads a glTF/glb model from disk into the running smoke scene (spawned in front of the player, selectable). The
-    /// <c>/noire3d model &lt;path&gt;</c> hook - the one Draw3D feature that needs a file. FBX is not supported directly:
-    /// convert once with Blender or FBX2glTF. Loads off the framework thread; scene-graph mutation is thread-safe.
-    /// </summary>
-    public void SpawnSmokeModel(string path)
-    {
-        if (smokeScene is not { } scene || scene.IsDisposed)
-        {
-            Report("Draw3D: run '/noire3d smoke' first, then '/noire3d model <path>'.");
-            return;
-        }
-
-        path = path.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            Report($"Draw3D: model file not found: '{path}'. Pass an absolute path to a .gltf/.glb.");
-            return;
-        }
-
-        var spawnAt = smokeCenter + new Vector3(0f, 1f, 13f);
-        scene.LoadModelAsync(path, spawnAt, "Smoke.Model", keepCpuData: true).ContinueWith(task =>
-        {
-            if (task.IsFaulted)
-                NoireLogger.LogError(task.Exception!, $"Draw3D smoke: glTF import failed for '{path}'.", "Draw3D");
-        }, TaskScheduler.Default);
-        Report($"Draw3D: loading model '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).");
-    }
-
-    /// <summary>
-    /// Per-frame smoke-scene work: swaps the render view's texture onto the portal quad once it exists, and draws the
-    /// animated immediate-layer markers (grounded decals + a flat additive orb + a rotating line). Called from
-    /// <see cref="OnFrame"/> before the validator, so the <c>Im</c> calls land this frame.
-    /// </summary>
-    private void OnSmokeFrame(in FrameContext frame)
-    {
-        if (smokeScene is not { IsDisposed: false })
-            return;
-
-        // Deferred: the render view has no texture until it has rendered once. Swap it onto the portal quad then.
-        if (!smokePortalReady && smokeView?.Texture is { } viewTex && smokePortalNode?.Renderer is { } portalRenderer)
-        {
-            smokePortalReady = true;
-            portalRenderer.Material = Material.UnlitTextured(viewTex) with { Cull = CullMode.None };
-        }
-
-        // Immediate layer: redraws every frame. Two grounded decals (hug the terrain), a flat additive orbiting orb, and
-        // a rotating flat line - demonstrating ImShapeStyle placement/blending. Anything not re-requested vanishes.
-        var im = NoireDraw3D.Im;
-        var t = frame.Time;
-        var c = smokeCenter + new Vector3(0f, 0f, -13f);
-        var (s, co) = MathF.SinCos(t);
-        im.DrawDonut(c, 2.2f, 2.7f, new Vector4(1f, 0.6f, 0.1f, 0.85f));
-        im.DrawSector(c, t, MathF.PI / 5f, 0f, 6f, new Vector4(1f, 0.2f, 0.2f, 0.45f));
-        im.DrawSphere(c + new Vector3(co * 3f, 2f, s * 3f), 0.35f, new Vector4(0.3f, 0.85f, 1f, 1f), new ImShapeStyle { Additive = true });
-        im.DrawLine(c + new Vector3(co * 4f, 0.6f, s * 4f), c + new Vector3(-co * 4f, 0.6f, -s * 4f), 0.1f, new Vector4(0.6f, 1f, 0.7f, 0.9f), new ImShapeStyle { Placement = ImShapePlacement.Flat });
-    }
-
-    /// <summary>
-    /// Flips the smoke scene's gizmo between the native (in-world depth) and ImGuizmo (classic 2D) backends so both can
-    /// be compared in-game without a recompile. Select an object afterwards to see the switch; the ImGuizmo init/draw
-    /// diagnostics land in /xllog. No-op with a message when the smoke scene isn't up.
-    /// </summary>
-    public string ToggleSmokeGizmoBackend()
-    {
-        if (smokeEditor == null)
-            return "Draw3D: no smoke scene - run '/noire3d smoke' first.";
-
-        var gizmo = smokeEditor.Gizmo;
-        gizmo.Backend = gizmo.Backend == GizmoBackend.ImGuizmo ? GizmoBackend.Native : GizmoBackend.ImGuizmo;
-        return $"Draw3D: smoke gizmo backend = {gizmo.Backend}. Select an object to see it - if ImGuizmo doesn't appear, check /xllog for the '[Gizmo]' lines.";
-    }
-
-    /// <summary>Removes the smoke scene: one <see cref="Scene3D.Dispose"/> frees its nodes, owned meshes, view and editor.</summary>
-    public void ClearSmokeScene()
-    {
-        NoireDraw3D.Interaction.DebugLog = false;
-        smokeEditor = null;        // owned by the scene; disposed by scene.Dispose() below
-        smokeView = null;          // ditto (scene.Own)
-        smokePortalNode = null;
-        smokeIconQuad = null;
-        smokeIconDecal = null;
-        smokePortalReady = false;
-        var scene = smokeScene;
-        smokeScene = null;         // cleared first so any in-flight async load bails instead of touching it
-        scene?.Dispose();
-        smokeIcon?.Dispose();      // the game-icon texture is diagnostics-owned, not scene-owned
-        smokeIcon = null;
-    }
-
-    /// <summary>
-    /// Toggles the <c>/noire3d worldgeo</c> preview: the game's real collision world near the player
-    /// (streamed terrain, background models, housing furniture and dynamic objects that register a collider),
-    /// pulled straight from <see cref="World.WorldGeometry"/> and drawn as translucent shaded shells so you can
-    /// see exactly what a world-projected decal has to conform to. Pair with <c>/noire3d wire</c> for a wireframe.
-    /// Runs on the framework thread (command dispatch), where the collision scene is safe to read.
-    /// </summary>
-    public string ToggleWorldGeometryPreview()
-    {
-        NoireDraw3D.EnsureInitialized();
-
-        if (worldGeoScene is { IsDisposed: false } existing)
-        {
-            existing.Dispose();
-            worldGeoScene = null;
-            return "Draw3D: world-geometry preview off.";
-        }
-
-        var center = NoireService.ObjectTable.LocalPlayer?.Position
-            ?? (NoireDraw3D.LastFrameValid ? NoireDraw3D.LastFrame.EyePos : Vector3.Zero);
-
-        var scene = worldGeoScene = NoireDraw3D.CreateScene("worldgeo");
-        var mat = Material.Lit(new Vector4(0.35f, 0.75f, 1f, 0.4f)) with { Cull = CullMode.None, Blend = BlendMode.Premultiplied };
-        var node = scene.SpawnWorldGeometry(center, 20f, mat, includeAnalytic: true, name: "WorldGeo");
-        if (node == null)
-        {
-            scene.Dispose();
-            worldGeoScene = null;
-            return "Draw3D: no collision found near you (open area / airborne, or the read faulted - see /xllog).";
-        }
-
-        return "Draw3D: world-geometry preview ON - the real collision (terrain, furniture, walls, dynamic objects) around you, translucent blue. '/noire3d worldgeo' again to remove, '/noire3d wire' for wireframe.";
-    }
-
-    /// <summary>
-    /// The custom pipeline HLSL for the smoke scene's pulse box: an unlit shader whose brightness pulses with time
-    /// (<c>EyePosTime.w</c>), premultiplied and world-depth tested, over the standard vertex layout - the minimal shape
-    /// of a <see cref="NoireDraw3D.RegisterPipeline"/> shader (fxc-validated at ps_5_0 with warnings-as-errors).
-    /// </summary>
-    private const string SmokePulseHlsl = """
-        #include "Common.hlsli"
-
-        struct VsIn  { float3 pos : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; float4 color : COLOR0; };
-        struct PsIn  { float4 svPos : SV_Position; float4 color : COLOR0; float2 clipZW : TEXCOORD1; };
-
-        PsIn vs(VsIn v)
-        {
-            PsIn o;
-            float4 wp = mul(float4(v.pos, 1.0), World);
-            o.svPos  = mul(wp, ViewProj);
-            o.color  = v.color * BaseColor;
-            o.clipZW = o.svPos.zw;
-            return o;
-        }
-
-        float4 ps(PsIn i) : SV_Target
-        {
-            float pulse = 0.35 + 0.65 * (0.5 + 0.5 * sin(EyePosTime.w * 3.0));
-            float4 c = i.color;
-            c.rgb *= pulse;
-            float vis = DepthVisibility(DisplayUv(i.svPos), i.clipZW.y, 0.0);
-            c.a *= vis;
-            return float4(c.rgb * c.a, c.a);
-        }
-        """;
-
     // ---------------------------------------------------------------- frame hooks (called by the hub)
 
     internal void OnFrame(in FrameContext frame, in GameRenderSources.CameraData cam, bool hasDepth)
     {
-        if (smokeScene != null)
-            OnSmokeFrame(in frame); // portal-texture swap + animated immediate-layer markers while the QA scene is up
-
         if (validateFramesRemaining <= 0)
             return;
 
@@ -457,6 +160,97 @@ public sealed unsafe class Draw3DDiagnostics
             NoireService.ChatGui.Print($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
+    }
+
+    /// <summary>
+    /// Per-rendered-frame camera-phase sampling (called from the shared render body with the camera the overlay was
+    /// actually projected with). Compares it against a fresh live read taken now - later in the same frame than the
+    /// projection camera was captured - and accumulates the screen drift over the armed window. See <see cref="RunCameraPhaseTrace"/>.
+    /// </summary>
+    /// <param name="frame">This frame's context (viewport + projection cross-check).</param>
+    /// <param name="projCam">The camera the overlay was projected with (inject = world-pass snapshot; fallback = framework snapshot).</param>
+    /// <param name="viaInject">True when the frame rendered through the pre-UI inject path.</param>
+    /// <param name="usedWorldSnapshot">True when the inject path used the render-thread world-pass camera snapshot (vs a live fallback).</param>
+    internal void OnCameraTrace(in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot)
+    {
+        if (camTraceFramesRemaining <= 0)
+            return;
+
+        camTraceFramesRemaining--;
+        if (viaInject)
+        {
+            camTraceInjectFrames++;
+            if (usedWorldSnapshot)
+                camTraceSnapshotFrames++;
+        }
+        else
+        {
+            camTraceFallbackFrames++;
+        }
+
+        // A fresh live camera read, sampled now - later in the frame than projCam was captured. The delta between the two
+        // IS the phase error the overlay is projected with this frame.
+        if (projCam.HasRenderCamera && GameRenderSources.TryGetCamera(out var live) && live.HasRenderCamera)
+        {
+            var projVp = projCam.View * projCam.Proj;
+            var liveVp = live.View * live.Proj;
+
+            var md = 0f;
+            Span<float> pv = stackalloc float[16] { projVp.M11, projVp.M12, projVp.M13, projVp.M14, projVp.M21, projVp.M22, projVp.M23, projVp.M24, projVp.M31, projVp.M32, projVp.M33, projVp.M34, projVp.M41, projVp.M42, projVp.M43, projVp.M44 };
+            Span<float> lv = stackalloc float[16] { liveVp.M11, liveVp.M12, liveVp.M13, liveVp.M14, liveVp.M21, liveVp.M22, liveVp.M23, liveVp.M24, liveVp.M31, liveVp.M32, liveVp.M33, liveVp.M34, liveVp.M41, liveVp.M42, liveVp.M43, liveVp.M44 };
+            for (var i = 0; i < 16; i++)
+                md = MathF.Max(md, MathF.Abs(pv[i] - lv[i]));
+            camTraceMaxMatrixDelta = MathF.Max(camTraceMaxMatrixDelta, md);
+
+            // Screen drift: for a grid of world points the projection camera "sees" across the view, measure how far the
+            // live camera would place each one. That gap is exactly what the eye reads as swim.
+            for (var gy = 0; gy < 4; gy++)
+            {
+                for (var gx = 0; gx < 4; gx++)
+                {
+                    var screen = new Vector2(frame.ViewportSize.X * (0.15f + 0.2f * gx), frame.ViewportSize.Y * (0.15f + 0.2f * gy));
+                    if (!frame.TryScreenToRay(screen, out var origin, out var dir))
+                        continue;
+
+                    var wp = origin + dir * 20f;
+                    if (!TryProjectToScreen(in projVp, wp, frame.ViewportSize, out var s1))
+                        continue;
+                    if (!TryProjectToScreen(in liveVp, wp, frame.ViewportSize, out var s2))
+                        continue;
+
+                    var d = Vector2.Distance(s1, s2);
+                    camTraceMaxScreenDelta = MathF.Max(camTraceMaxScreenDelta, d);
+                    camTraceScreenSum += d;
+                    camTraceScreenSamples++;
+                }
+            }
+        }
+
+        if (camTraceFramesRemaining == 0)
+        {
+            var traced = camTraceInjectFrames + camTraceFallbackFrames;
+            var meanDrift = camTraceScreenSamples > 0 ? camTraceScreenSum / camTraceScreenSamples : 0;
+            var report =
+                $"Draw3D camtrace: {traced} frames - inject {camTraceInjectFrames} (world-snapshot {camTraceSnapshotFrames}), present-time fallback {camTraceFallbackFrames}. " +
+                $"Overlay-vs-world screen drift: max {camTraceMaxScreenDelta:F2} px, mean {meanDrift:F2} px over {camTraceScreenSamples} samples. " +
+                $"View·Proj max element delta: {camTraceMaxMatrixDelta:E2}. " +
+                "Read: near-zero drift = in phase; large drift on inject frames = intra-frame camera advance; many fallback frames = camera-source mismatch under load.";
+            NoireService.ChatGui.Print($"Draw3D camtrace: max drift {camTraceMaxScreenDelta:F2} px, fallback {camTraceFallbackFrames}/{traced} frames (details in log).");
+            NoireLogger.LogInfo(report, "Draw3D");
+        }
+    }
+
+    /// <summary>Projects a world point through a raw View·Proj to framebuffer-pixel screen space. False behind the camera.</summary>
+    private static bool TryProjectToScreen(in Matrix4x4 viewProj, Vector3 world, Vector2 viewport, out Vector2 screen)
+    {
+        screen = default;
+        var clip = Vector4.Transform(new Vector4(world, 1f), viewProj);
+        if (clip.W <= 1e-4f)
+            return false;
+
+        var ndc = new Vector2(clip.X / clip.W, clip.Y / clip.W);
+        screen = new Vector2((ndc.X * 0.5f + 0.5f) * viewport.X, (0.5f - ndc.Y * 0.5f) * viewport.Y);
+        return true;
     }
 
     internal void OnFrameRendered(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)

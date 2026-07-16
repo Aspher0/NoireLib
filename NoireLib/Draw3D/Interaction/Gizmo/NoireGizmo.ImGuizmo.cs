@@ -224,6 +224,11 @@ public sealed partial class NoireGizmo
             // screen rotation ring, this makes ImGuizmo capture a clean single-op origin instead of an ambiguous one
             // that collapsed the object. imguizmoDragOp is set every non-dragging frame, so the drag that begins this
             // frame is already locked to it.
+            // A plane-locked decal (Ground/Wall) exposes only its yaw ring: every other rotation is dead (the node
+            // re-constrains the box), so feeding ImGuizmo only the yaw operation hides the other rings on this backend too.
+            var yawOnly = IsOrientationLockedDecal;
+            var rotateFlag = yawOnly ? ConstrainedYawOperation(in curRot) : ImGuizmoOperation.Rotate;
+
             ImGuizmoOperation op;
             if (imguizmoUsing)
             {
@@ -232,7 +237,9 @@ public sealed partial class NoireGizmo
             else
             {
                 var pressing = ImGui.IsMouseClicked(ImGuiMouseButton.Left) && imguizmoHoverKind != SnapKind.None;
-                op = pressing ? SnapKindToOperation(imguizmoHoverKind) : MapOperation(Op);
+                op = pressing
+                    ? (imguizmoHoverKind == SnapKind.Rotate ? rotateFlag : SnapKindToOperation(imguizmoHoverKind))
+                    : MapOperationLocked(Op, rotateFlag);
                 imguizmoDragOp = op;
             }
 
@@ -528,16 +535,40 @@ public sealed partial class NoireGizmo
                * Matrix4x4.CreateTranslation(trans);
     }
 
-    private static ImGuizmoOperation MapOperation(GizmoOp op)
+    private static ImGuizmoOperation MapOperation(GizmoOp op) => MapOperationLocked(op, ImGuizmoOperation.Rotate);
+
+    /// <summary>Like <see cref="MapOperation"/>, but the rotation bit is <paramref name="rotateFlag"/> - a single-axis rotate for a plane-locked decal (so only its yaw ring is fed to ImGuizmo), or the full <c>Rotate</c> otherwise.</summary>
+    private static ImGuizmoOperation MapOperationLocked(GizmoOp op, ImGuizmoOperation rotateFlag)
     {
         ImGuizmoOperation r = 0;
         if ((op & GizmoOp.Translate) != 0)
             r |= ImGuizmoOperation.Translate;
         if ((op & GizmoOp.Rotate) != 0)
-            r |= ImGuizmoOperation.Rotate;
+            r |= rotateFlag;
         if ((op & GizmoOp.Scale) != 0)
             r |= ImGuizmoOperation.Scaleu; // universal-scale bits: object-local scale that does not force the gizmo local
         return r;
+    }
+
+    /// <summary>
+    /// The single ImGuizmo rotation operation a plane-locked decal allows: the yaw that re-aims it. In World space that
+    /// is <c>RotateY</c> (world up); in Local space it is the object's local axis most aligned with world up (Ground keeps
+    /// its box local Y up, Wall keeps local Z up), so the ring drawn is the one that actually rotates the decal.
+    /// </summary>
+    private ImGuizmoOperation ConstrainedYawOperation(in Quaternion rot)
+    {
+        if (Options.Space != GizmoSpace.Local)
+            return ImGuizmoOperation.RotateY;
+
+        var lx = Vector3.Transform(Vector3.UnitX, rot);
+        var ly = Vector3.Transform(Vector3.UnitY, rot);
+        var lz = Vector3.Transform(Vector3.UnitZ, rot);
+        return MostVerticalAxis(lx, ly, lz) switch
+        {
+            0 => ImGuizmoOperation.RotateX,
+            2 => ImGuizmoOperation.RotateZ,
+            _ => ImGuizmoOperation.RotateY,
+        };
     }
 
     /// <summary>

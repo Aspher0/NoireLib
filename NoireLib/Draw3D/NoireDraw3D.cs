@@ -678,7 +678,6 @@ public static unsafe partial class NoireDraw3D
 
             // 2. Scenes and views (releases references to user assets). DisposeContentsInternal frees each scene's
             // owned meshes / textures / models / editors as well as its nodes - the ownership-scope teardown.
-            Diagnostics.ClearSmokeScene();
             lock (Scenes)
             {
                 foreach (var scene in Scenes)
@@ -1025,6 +1024,7 @@ public static unsafe partial class NoireDraw3D
         }
 
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
+        Diagnostics.OnCameraTrace(in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot); // "swim" investigation (armed by /noire3d camtrace)
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
         // Anything to do at all?
@@ -1338,10 +1338,18 @@ public static unsafe partial class NoireDraw3D
     private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam)
     {
         if (renderTargetTap != null && renderTargetTap.TryGetWorldCamera(out cam))
+        {
+            injectUsedWorldSnapshot = true;
             return true;
+        }
 
+        injectUsedWorldSnapshot = false;
         return GameRenderSources.TryGetCamera(out cam);
     }
+
+    // camtrace diagnostic: whether the last inject frame projected with the render-thread world-pass snapshot (true) or
+    // fell back to a live camera read (false). Only meaningful on inject frames; read by Draw3DDiagnostics.OnCameraTrace.
+    private static bool injectUsedWorldSnapshot;
 
     /// <summary>
     /// Writes this frame's opaque 3D depth into the game's scene depth buffer (render thread, inside the inject
@@ -1541,7 +1549,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | stats | wire | smoke | worldgeo | worldocclude | model <path> | gizmo | clear | reset | rtlog | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | stats | wire | stencil | worldocclude | reset | rtlog | ontop | platedepth",
         });
 
         if (!commandRegistered)
@@ -1557,9 +1565,6 @@ public static unsafe partial class NoireDraw3D
         var rest = sp < 0 ? string.Empty : trimmed[(sp + 1)..].Trim();
         switch (verb)
         {
-            case "model":
-                Diagnostics.SpawnSmokeModel(rest);
-                break;
             case "validate":
                 Diagnostics.RunValidate();
                 Print("Draw3D: projection parity validator armed for the next 10 frames - results go to the log.");
@@ -1567,6 +1572,11 @@ public static unsafe partial class NoireDraw3D
             case "probe":
                 Diagnostics.RunProbe();
                 Print("Draw3D: depth probe armed for the next frame - results go to the log.");
+                break;
+            case "camtrace":
+                var camTraceFrames = int.TryParse(rest, out var parsedFrames) && parsedFrames > 0 ? parsedFrames : 120;
+                Diagnostics.RunCameraPhaseTrace(camTraceFrames);
+                Print($"Draw3D: camera-phase trace armed for {camTraceFrames} frames - pan/zoom/orbit the camera vigorously; the overlay-vs-world drift goes to the log.");
                 break;
             case "stencil":
                 stencilDebug = !stencilDebug;
@@ -1577,25 +1587,11 @@ public static unsafe partial class NoireDraw3D
             case "wire":
                 Print($"Draw3D: wireframe {(Diagnostics.ToggleWireframe() ? "on" : "off")}.");
                 break;
-            case "smoke":
-                Diagnostics.SpawnSmokeScene();
-                Print("Draw3D: smoke scene spawned around you - hover the solid objects, left-click one to select it, then drag the gizmo handles (the camera stays put). '/noire3d clear' removes it.");
-                break;
-            case "gizmo":
-                Print(Diagnostics.ToggleSmokeGizmoBackend());
-                break;
-            case "worldgeo":
-                Print(Diagnostics.ToggleWorldGeometryPreview());
-                break;
             case "worldocclude":
                 WorldOccludedDecals = !WorldOccludedDecals;
                 Print(WorldOccludedDecals
                     ? "Draw3D: world-occluded decals ON - ground decals skip characters via the real collision world (silhouette-exact, no cylinder). '/noire3d worldocclude' again for the legacy ExcludeVolumes cut."
                     : "Draw3D: world-occluded decals off - decals use the per-decal ExcludeVolumes cylinder again.");
-                break;
-            case "clear":
-                Diagnostics.ClearSmokeScene();
-                Print("Draw3D: smoke scene cleared.");
                 break;
             case "reset":
                 renderStats?.ResetCounters();

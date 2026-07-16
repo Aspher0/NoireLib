@@ -80,5 +80,5 @@ internal struct MaterialData : IEquatable<MaterialData>
 
     /// <inheritdoc/>
     public readonly override int GetHashCode()
-        => HashCode.Combine((int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12), TexSrv, Params0, Params1, CustomPipeline);
+        => HashCode.Combine((int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12), TexSrv, Params0, Params1, ProjectionMode, CustomPipeline);
 }

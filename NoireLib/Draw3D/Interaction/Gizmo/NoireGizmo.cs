@@ -1,5 +1,7 @@
 using Dalamud.Bindings.ImGui;
+using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Im;
+using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
 using System.Collections.Generic;
@@ -228,6 +230,21 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     private bool HasTarget
         => (node != null && !node.Destroyed) || matrixGetter != null || (groupNodes != null && groupNodes.Count > 0);
+
+    /// <summary>
+    /// True when the single target is a Ground/Wall decal, which its <see cref="DecalSurface"/> mode locks to a plane
+    /// (the node constrains the box to horizontal / vertical). Every rotation but the yaw that re-aims it is dead, so the
+    /// gizmo shows only the yaw ring and hides the other rotation handles on both backends.
+    /// </summary>
+    private bool IsOrientationLockedDecal
+        => node?.Renderer?.Material is { Domain: MaterialDomain.GroundDecal } decalMat && decalMat.Surface != DecalSurface.Both;
+
+    /// <summary>Index (0/1/2) of the axis most aligned with world up - the only meaningful (yaw) rotation for a plane-locked decal.</summary>
+    private static int MostVerticalAxis(Vector3 ax, Vector3 ay, Vector3 az)
+    {
+        float vx = MathF.Abs(ax.Y), vy = MathF.Abs(ay.Y), vz = MathF.Abs(az.Y);
+        return vy >= vx && vy >= vz ? 1 : vx >= vz ? 0 : 2;
+    }
 
     /// <summary>
     /// Captures the current target scale as the reference a scaling gesture is measured against, so scaling stays
@@ -661,10 +678,11 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
         if (rotate)
         {
-            ConsiderRing(b.Ax, len, GizmoHandle.RotateX);
-            ConsiderRing(b.Ay, len, GizmoHandle.RotateY);
-            ConsiderRing(b.Az, len, GizmoHandle.RotateZ);
-            ConsiderRing(b.ViewDir, len * 1.18f, GizmoHandle.RotateScreen);
+            var yaw = IsOrientationLockedDecal ? MostVerticalAxis(b.Ax, b.Ay, b.Az) : -1; // -1 = unrestricted (show all rings)
+            if (yaw is < 0 or 0) ConsiderRing(b.Ax, len, GizmoHandle.RotateX);
+            if (yaw is < 0 or 1) ConsiderRing(b.Ay, len, GizmoHandle.RotateY);
+            if (yaw is < 0 or 2) ConsiderRing(b.Az, len, GizmoHandle.RotateZ);
+            if (yaw < 0) ConsiderRing(b.ViewDir, len * 1.18f, GizmoHandle.RotateScreen);
         }
 
         if (scale)
@@ -897,13 +915,14 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
         if ((Op & GizmoOp.Rotate) != 0)
         {
-            if (Show(GizmoHandle.RotateX))
+            var yaw = IsOrientationLockedDecal ? MostVerticalAxis(b.Ax, b.Ay, b.Az) : -1; // -1 = unrestricted (draw all rings)
+            if (yaw is < 0 or 0 && Show(GizmoHandle.RotateX))
                 DrawRing(im, b.Origin, b.Ax, len, thickness, AxisColor(0, current == GizmoHandle.RotateX), style);
-            if (Show(GizmoHandle.RotateY))
+            if (yaw is < 0 or 1 && Show(GizmoHandle.RotateY))
                 DrawRing(im, b.Origin, b.Ay, len, thickness, AxisColor(1, current == GizmoHandle.RotateY), style);
-            if (Show(GizmoHandle.RotateZ))
+            if (yaw is < 0 or 2 && Show(GizmoHandle.RotateZ))
                 DrawRing(im, b.Origin, b.Az, len, thickness, AxisColor(2, current == GizmoHandle.RotateZ), style);
-            if (Show(GizmoHandle.RotateScreen))
+            if (yaw < 0 && Show(GizmoHandle.RotateScreen))
                 DrawRing(im, b.Origin, b.ViewDir, len * 1.18f, thickness, NeutralColor(current == GizmoHandle.RotateScreen), style);
         }
 

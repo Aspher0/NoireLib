@@ -69,7 +69,10 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
 
 > A ground decal paints its shape onto the world surface, hugging terrain, stairs and walls (reconstructed from the game depth). **Characters** you list with `ExcludeObjects(pred)` are cut out along their **exact game-stencil silhouette** — legs, feet and tail included — with no volume, no collision: the decal simply is not painted on them. The `ExcludeObjects` cylinders are only a coarse gate picking *which* characters (the stencil is the cut), so the radius is safe to widen (`radiusScale`) and never holes the ground. A character you *don't* list is painted over. The stencil value that marks characters is `NoireDraw3D.CharacterStencilValue` (default `0x08`, discoverable via `/noire3d stencil`; set 0 to disable). Non-character targets (furniture, terrain) share the world's stencil value, so this excludes characters only.
 
-- A decal node's **rotation** decides the surface it hugs: upright projects onto the ground, rotated 90° hugs a wall, any angle is a hybrid (it projects along the box's local Y).
+- `Surface` **locks the decal to a surface by constraining how its box may be oriented** (the projection itself is a single rule — the shape lives in the box's footprint and sweeps along the box's local Y; the box's orientation decides which surface it lands on). The mode just forbids rotating the box out of its plane, keeping heading (yaw), scale and position:
+  - `DecalSurface.Ground` (default): the box is kept **horizontal** — projects straight down onto the floor/terrain; rotating it toward vertical has no effect. The classic ground decal.
+  - `DecalSurface.Wall`: the box is kept **vertical** — projects horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
+  - `DecalSurface.Both`: **free** — rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
 - `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `WorldOccludedDecals` and the covering object to have collision.
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
@@ -166,16 +169,16 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). Also reports the UI-mask alpha health. |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. |
-| `/noire3d smoke` / `clear` | Spawns/removes the reference QA scene around you - a gallery of (almost) every feature: all mesh primitives, all decal shapes (incl. a **world-projected** decal that clips to the real ground/furniture), material families + a custom-pipeline pulse box, a game-icon textured quad, a render-to-texture mirror/portal, animated immediate-layer markers, and the selection/gizmo editor. |
-| `/noire3d worldgeo` | Toggles a preview of the game's real collision world (terrain, furniture, walls, dynamic objects) around you - the source world-occluded decals test against. |
+| `/noire3d camtrace [frames]` | Camera-phase "swim" trace: measures overlay-vs-world drift under camera motion, plus the inject-vs-fallback frame split (run it while panning/zooming hard). |
 | `/noire3d worldocclude` | Toggles `WorldOccludedDecals` (ground decals skip characters via the collision world vs. the legacy `ExcludeVolumes` cylinder). |
-| `/noire3d model <path>` | Imports a glTF/glb from disk into the running smoke scene (in front of you). |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |
 | `/noire3d platedepth` | Toggles `NativeUiDepthWrite` (depth-aware nameplates). |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log (injection-point diagnostics). |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
+
+The **visual showcase** - the smoke scene, the world-geometry collision preview, glTF import, and the gizmo-backend toggle - lives in the standalone **`NoireDraw3DDemoPlugin`** (in this repo's solution), an ImGui front-end built entirely on this public API. It also exposes a scenes/decals playground (including the wall/ground/both surface filter) and a live editor for every global knob.
 
 ## Rules of the road
 

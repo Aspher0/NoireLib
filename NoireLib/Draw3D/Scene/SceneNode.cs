@@ -1,3 +1,4 @@
+using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Materials;
 using System;
@@ -271,9 +272,72 @@ public sealed partial class SceneNode
         var local = Matrix4x4.CreateScale(localScale)
                     * Matrix4x4.CreateFromQuaternion(localRotation)
                     * Matrix4x4.CreateTranslation(localPosition);
-        worldMatrix = parent != null ? local * parent.ResolveWorld() : local;
+        var world = parent != null ? local * parent.ResolveWorld() : local;
+
+        // A Ground/Wall decal is locked to its plane: the mode re-orients the box (keeping heading + scale) so it can never
+        // be rotated out of horizontal (Ground) / vertical (Wall). The decal shader then always projects it onto the
+        // intended surface with no surface-mode branching. Both leaves the box free.
+        if (Renderer?.Material is { Domain: MaterialDomain.GroundDecal } decalMat && decalMat.Surface != DecalSurface.Both)
+            world = ConstrainDecalWorld(in world, decalMat.Surface);
+
+        worldMatrix = world;
         worldDirty = false;
         return worldMatrix;
+    }
+
+    /// <summary>
+    /// Re-orients a ground-decal's world matrix to its <see cref="DecalSurface"/> plane, keeping the box's horizontal
+    /// heading (yaw), scale and position but dropping any pitch/roll. <see cref="DecalSurface.Ground"/> forces the
+    /// footprint (local XZ) horizontal with the sweep (local Y) pointing down; <see cref="DecalSurface.Wall"/> stands the
+    /// footprint upright with the sweep pointing horizontally into the wall. The thin (local Y) axis is the projection
+    /// depth in both, so one box works for either mode.
+    /// </summary>
+    private static Matrix4x4 ConstrainDecalWorld(in Matrix4x4 world, DecalSurface surface)
+    {
+        // Row-vector basis: rows = local X/Y/Z in world, length = per-axis scale.
+        var xAxis = new Vector3(world.M11, world.M12, world.M13);
+        var yAxis = new Vector3(world.M21, world.M22, world.M23);
+        var zAxis = new Vector3(world.M31, world.M32, world.M33);
+        float sx = xAxis.Length(), sy = yAxis.Length(), sz = zAxis.Length();
+
+        // Horizontal heading from local Z (forward); if it is vertical, fall back to local X (which leads Z by 90 deg).
+        float yaw;
+        var hz = new Vector2(zAxis.X, zAxis.Z);
+        if (hz.LengthSquared() > 1e-8f)
+            yaw = MathF.Atan2(hz.X, hz.Y);
+        else
+        {
+            var hx = new Vector2(xAxis.X, xAxis.Z);
+            yaw = hx.LengthSquared() > 1e-8f ? MathF.Atan2(hx.X, hx.Y) - MathF.PI / 2f : 0f;
+        }
+
+        var (sin, cos) = MathF.SinCos(yaw);
+        var tangent = new Vector3(cos, 0f, -sin); // horizontal, perpendicular to the heading
+        var facing = new Vector3(sin, 0f, cos);   // horizontal heading
+        var up = new Vector3(0f, 1f, 0f);
+
+        Vector3 nx, ny, nz;
+        if (surface == DecalSurface.Wall)
+        {
+            // -facing (not +facing) keeps this a PROPER rotation (det +1) instead of a reflection - the box is symmetric
+            // along the sweep axis, so the projection is identical, but a reflection breaks Matrix4x4.Decompose (the gizmo
+            // decomposes the world matrix on drag, so a reflected wall decal collapses the moment it is moved/rotated/scaled).
+            nx = tangent * sx;  // footprint width  (horizontal along the wall)
+            ny = -facing * sy;  // sweep: horizontally through the wall (thin axis = depth); sign keeps det +1
+            nz = up * sz;       // footprint height (world up) -> the shape stands upright
+        }
+        else // Ground
+        {
+            nx = tangent * sx; // footprint width  (horizontal)
+            ny = up * sy;      // sweep: straight down (thin axis = depth)
+            nz = facing * sz;  // footprint depth  (horizontal, along the heading)
+        }
+
+        return new Matrix4x4(
+            nx.X, nx.Y, nx.Z, 0f,
+            ny.X, ny.Y, ny.Z, 0f,
+            nz.X, nz.Y, nz.Z, 0f,
+            world.M41, world.M42, world.M43, 1f);
     }
 
     internal void MarkDirty()

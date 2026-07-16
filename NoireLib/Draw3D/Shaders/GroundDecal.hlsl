@@ -56,12 +56,15 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     // premultiplied blending, float4(0,0,0,0) is a mathematically exact no-op pixel, so rejection costs nothing.
     if (!hasSurface) return float4(0, 0, 0, 0);
     float3 wp  = WorldFromDepth(uv, outDepth);           // depth -> world
-
     float3 lp  = mul(float4(wp, 1.0), InvWorld).xyz;     // into unit-box local space
     if (any(abs(lp) > 0.5)) return float4(0, 0, 0, 0);   // outside the decal volume
 
+    // One projection: the shape lives in the box's local XZ footprint, swept along local Y. Which surface it lands on
+    // (floor vs wall) is decided entirely by the box's orientation - and the DecalSurface mode CONSTRAINS that orientation
+    // on the CPU (SceneNode.ResolveWorld) so a Ground decal stays horizontal and a Wall decal stays vertical. The shader
+    // itself is surface-mode-agnostic.
     float2 p = lp.xz * 2.0;                              // footprint space: edge at |p| = 1
-    float vis = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w; // Y feather near the box top/bottom
+    float vis = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w; // feather near the box top/bottom (local Y = sweep)
 
     // Character removal: cut the decal along an excluded character's EXACT game-stencil silhouette (no volume, no
     // collision). The registered cylinders only pick which characters; the stencil supplies the cut, so legs/feet/tail

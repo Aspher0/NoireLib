@@ -1,0 +1,8 @@
+{
+    "Name": "NoireDraw3D Demo",
+    "Author": "Aspher0",
+    "Punchline": "Interactive showcase for the NoireLib Draw3D renderer.",
+    "Description": "A demo and worked reference for NoireLib's Draw3D world renderer: spawn the smoke showcase scene, tweak every global parameter, build scenes and decals, and run the render diagnostics - all through the public Draw3D API.",
+    "RepoUrl": "https://github.com/Aspher0/NoireLib",
+    "Tags": [ "draw3d", "noirelib", "demo", "rendering" ]
+}

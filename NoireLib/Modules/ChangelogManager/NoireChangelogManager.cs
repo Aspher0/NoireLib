@@ -140,34 +140,6 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     #endregion
 
     /// <summary>
-    /// Toggles the changelog window.
-    /// </summary>
-    /// <param name="show">Set to null to toggle the state, true to force show, false to force hide.</param>
-    /// <param name="version">The version to show in the changelog window. If null, shows the latest version.</param>
-    public NoireChangelogManager ShowWindow(bool? show = null, Version? version = null)
-    {
-        if (!IsActive)
-            return this;
-
-        if (show == false || (show == null && ModuleWindow!.IsOpen == true))
-            ModuleWindow!.CloseWindow();
-        else
-            ModuleWindow!.ShowChangelogForVersion(version);
-
-        return this;
-    }
-
-    // Just an override to use ShowWindow method
-    /// <inheritdoc cref="NoireModuleWithWindowBase{TModule, TWindow}.ToggleWindow"/>
-    public override NoireChangelogManager ToggleWindow()
-        => ShowWindow();
-
-    // Just an override to use ShowWindow method
-    /// <inheritdoc cref="ShowWindow(bool?, Version?)"/>
-    public override NoireChangelogManager ShowWindow()
-        => ShowWindow();
-
-    /// <summary>
     /// Internal method called by ChangelogWindow when the window is opened.
     /// </summary>
     internal void OnWindowOpened(Version version)

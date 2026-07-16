@@ -1,0 +1,20 @@
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+    <PropertyGroup>
+        <Version>1.0.0.0</Version>
+        <Authors>Aspher0</Authors>
+        <Company>Aspher0</Company>
+        <Title>NoireDraw3D Demo</Title>
+        <Description>Interactive showcase and worked reference for the NoireLib Draw3D renderer.</Description>
+        <Copyright>© 2026 Aspher0</Copyright>
+        <Nullable>enable</Nullable>
+        <LangVersion>latest</LangVersion>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Use_DalamudPackager>true</Use_DalamudPackager>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
+        <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    </ItemGroup>
+</Project>

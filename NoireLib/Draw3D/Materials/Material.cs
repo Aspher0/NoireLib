@@ -56,6 +56,9 @@ public sealed record Material
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how to resolve stacked surfaces in the footprint (paint all, or only the topmost). Needs <see cref="NoireDraw3D.WorldOccludedDecals"/>.</summary>
     public DecalProjection Projection { get; init; } = DecalProjection.AllSurfaces;
 
+    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: locks the decal to a surface by constraining the box's orientation - <see cref="DecalSurface.Ground"/> (kept horizontal, projects down onto the floor), <see cref="DecalSurface.Wall"/> (kept vertical, projects into the wall it faces), or <see cref="DecalSurface.Both"/> (free - orientation decides). Default <see cref="DecalSurface.Ground"/>.</summary>
+    public DecalSurface Surface { get; init; } = DecalSurface.Ground;
+
     /// <summary>Optional name of a custom pipeline registered via <see cref="NoireDraw3D.RegisterPipeline"/>. When set, it replaces the <see cref="Domain"/> shader.</summary>
     public string? CustomPipeline { get; init; }
 
@@ -90,7 +93,8 @@ public sealed record Material
     /// <param name="color">Base color, straight alpha.</param>
     /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
     /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 - the classic strong-rim look).</param>
-    public static Material Decal(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f)
+    /// <param name="surface">Locks the decal to a surface by constraining the box orientation: ground (kept horizontal), wall (kept vertical), or both (free). Default <see cref="DecalSurface.Ground"/>.</param>
+    public static Material Decal(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f, DecalSurface surface = DecalSurface.Ground)
         => new()
         {
             Domain = MaterialDomain.GroundDecal,
@@ -98,6 +102,7 @@ public sealed record Material
             Color = color,
             ShapeParams = shapeParams ?? new Vector4(0f, 0f, 0f, 0.6f),
             OutlineWidth = outlineWidth,
+            Surface = surface,
             Cull = CullMode.Front,
         };
 
