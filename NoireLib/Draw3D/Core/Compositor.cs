@@ -9,7 +9,7 @@ namespace NoireLib.Draw3D.Core;
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct CompositeCBData
 {
-    public Vector4 OpacityProtect; // x = layer opacity, y = ui mask enabled, z = rect count
+    public Vector4 OpacityProtect; // x = layer opacity, y = ui mask enabled, z = rect count, w = difference gain
     public fixed float Rects[128 * 4];
     public fixed float Factors[128 * 4]; // x of each float4 = UI visibility inside the rect (1 = UI on top)
 }
@@ -22,20 +22,33 @@ internal struct OutlineCBData
 }
 
 /// <summary>
-/// Blits the premultiplied scene layer onto the backbuffer with one fullscreen triangle - Law 11 at
-/// the pixel level: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
-/// Applies per-pixel game-UI-on-top masking (backbuffer alpha) and the nameplate policy rects in the
-/// same pass. The blend writes RGB only - the backbuffer's alpha channel is the mask source and is
-/// never polluted.
+/// Blits the premultiplied scene layer onto the target with one fullscreen triangle - Law 11 at the
+/// pixel level: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
+/// On the over-everything path it also applies per-pixel game-UI-on-top masking (the difference between the
+/// pre-UI and post-UI present-buffer snapshots) and the nameplate policy rects in the same pass. The blend
+/// writes RGB only, leaving the target's alpha channel untouched.
 /// </summary>
 internal sealed unsafe class Compositor : IDisposable
 {
+    /// <summary>
+    /// Scales the pre/post-UI colour difference into mask coverage, steeply enough that any pixel the UI touched at
+    /// all masks fully: one 8-bit step of change saturates.
+    /// <br/>
+    /// It can be this aggressive because the difference is not a noisy measurement. Both snapshots are copies of the
+    /// same texture taken either side of the game's UI pass, so every pixel the UI did not draw on is bit-identical
+    /// between them - there is no noise floor to stay above, and any difference whatsoever is the UI. A gentler gain
+    /// only under-reports: a semi-transparent HUD panel over dark scenery shifts the image by a few percent, which a
+    /// proportional mask would read as "partly UI" and let the layer bleed through at half strength.
+    /// </summary>
+    private const float UiDiffGain = 255f;
+
     private GpuBuffer? compositeCb;
     private GpuBuffer? outlineCb;
 
     /// <summary>
-    /// Composites the scene layer onto the target. Bind order matters: the backbuffer RTV is set
-    /// <i>before</i> the scene SRV so the runtime never sees the scene texture bound on both ends.
+    /// Composites the scene layer onto the target. Bind order matters: the target RTV is set
+    /// <i>before</i> the scene SRV so the runtime never sees the scene texture bound on both ends.<br/>
+    /// Pass null snapshots to composite unmasked (the under-UI path, where the game paints over the layer itself).
     /// </summary>
     public void Blit(
         RenderDevice device,
@@ -43,7 +56,8 @@ internal sealed unsafe class Compositor : IDisposable
         ShaderPipeline pipeline,
         StateCache cache,
         ID3D11ShaderResourceView* layerSrv,
-        ID3D11ShaderResourceView* uiMaskSrv,
+        ID3D11ShaderResourceView* uiBeforeSrv,
+        ID3D11ShaderResourceView* uiAfterSrv,
         ID3D11RenderTargetView* targetRtv,
         uint width,
         uint height,
@@ -54,11 +68,12 @@ internal sealed unsafe class Compositor : IDisposable
     {
         compositeCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(CompositeCBData));
 
+        var masked = uiBeforeSrv != null && uiAfterSrv != null;
         var data = new CompositeCBData
         {
-            OpacityProtect = new Vector4(layerOpacity, uiMaskSrv != null ? 1f : 0f, protectRectCount, 0f),
+            OpacityProtect = new Vector4(layerOpacity, masked ? 1f : 0f, masked ? protectRectCount : 0, UiDiffGain),
         };
-        for (var i = 0; i < protectRectCount && i < 128; i++)
+        for (var i = 0; i < protectRectCount && i < 128 && masked; i++)
         {
             data.Rects[i * 4 + 0] = protectRects[i].X;
             data.Rects[i * 4 + 1] = protectRects[i].Y;
@@ -89,8 +104,8 @@ internal sealed unsafe class Compositor : IDisposable
         var cb = compositeCb.Buffer;
         ctx->VSSetConstantBuffers(0, 1, &cb);
         ctx->PSSetConstantBuffers(0, 1, &cb);
-        var srvs = stackalloc ID3D11ShaderResourceView*[2] { layerSrv, uiMaskSrv };
-        ctx->PSSetShaderResources(0, 2, srvs);
+        var srvs = stackalloc ID3D11ShaderResourceView*[3] { layerSrv, uiBeforeSrv, uiAfterSrv };
+        ctx->PSSetShaderResources(0, 3, srvs);
         var sampler = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &sampler);
 

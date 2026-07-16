@@ -33,7 +33,7 @@ public sealed class GizmoOptions
     /// game world (walls / terrain) but always on top of other 3D objects, so a handle is never buried inside the object
     /// it edits yet still reads as in-world. <see cref="GizmoDepth.AlwaysOnTop"/> restores full x-ray;
     /// <see cref="GizmoDepth.Occluded"/> is fully depth-tested. Any mode other than <see cref="GizmoDepth.AlwaysOnTop"/>
-    /// also makes a handle behind a wall un-grabbable, under <see cref="NoireInteract.WallOcclusionMode"/>. The ImGuizmo
+    /// also makes a handle behind an obstacle un-grabbable, under <see cref="NoireInteract.ObstacleOcclusionMode"/>. The ImGuizmo
     /// backend is flat-on-top regardless.
     /// </summary>
     public GizmoDepth Depth { get; set; } = GizmoDepth.OnTopOfObjects;

@@ -1,4 +1,4 @@
-using NoireLib.Draw3D.Enums;
+﻿using NoireLib.Draw3D.Enums;
 using System;
 
 namespace NoireLib.Draw3D;
@@ -26,46 +26,73 @@ public static partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The grouped native-UI configuration, reached via <see cref="NoireDraw3D.NativeUi"/>. Every property forwards to
-    /// the same live setting the (now deprecated) flat <c>NoireDraw3D.*</c> properties used.
+    /// The grouped native-UI configuration, reached via <see cref="NoireDraw3D.NativeUi"/>.
+    /// <br/>
+    /// <see cref="Layering"/> picks where the layer lands; <see cref="KeepUiOnTop"/> and <see cref="NameplateDim"/>
+    /// configure what it does about the UI it finds there, and apply only under
+    /// <see cref="Draw3DLayering.OverEverything"/> (under the game UI the game paints over the layer itself, so keeping
+    /// the UI readable is inherent rather than optional). <see cref="Nameplates"/> applies to both, by different means.
     /// </summary>
     public sealed class NativeUiConfig
     {
         internal NativeUiConfig() { }
 
-        /// <summary>The game's native UI always draws on top of the 3D layer (per-pixel, letter-exact). Default true. Off puts the whole layer above the game UI.</summary>
-        public bool Protect
+        /// <summary>
+        /// Where the finished layer lands in the game's frame. Default <see cref="Draw3DLayering.UnderGameUi"/>.
+        /// Both modes are raw D3D blits; neither involves ImGui.
+        /// </summary>
+        public Draw3DLayering Layering
         {
-            get => protectGameUi;
-            set => protectGameUi = value;
+            get => layering;
+            set => SetLayering(value);
         }
 
-        /// <summary>How nameplates layer against 3D content (letter-granular). Default <see cref="NativeUiProtectionMode.DepthAware"/>. Only meaningful while <see cref="Protect"/> is on.</summary>
-        public NativeUiProtectionMode Protection
+        /// <summary>
+        /// Masks the layer per-pixel so the game's HUD, addons and nameplates read on top of it. Default true.
+        /// <br/>
+        /// <b>Only applies while <see cref="Layering"/> is <see cref="Draw3DLayering.OverEverything"/>.</b> Under the game
+        /// UI the game paints its own UI over the layer a moment after it composites, so this is neither needed nor
+        /// consulted there.
+        /// <br/>
+        /// The mask is letter-exact and carries no rectangles: Draw3D snapshots the game's present buffer before and after
+        /// the native UI is drawn into it, and wherever the two differ is where the UI painted. This needs the render-thread
+        /// hook armed, so on a frame where the injection point cannot fire there is no snapshot to difference and the layer
+        /// composites unmasked for that frame. <c>/noire3d uimask</c> reports whether the difference is working.
+        /// </summary>
+        public bool KeepUiOnTop
         {
-            get => nativeUiProtectionMode;
-            set => nativeUiProtectionMode = value;
+            get => keepUiOnTop;
+            set => SetKeepUiOnTop(value);
         }
 
-        /// <summary>How much a nameplate behind your content still shows through it: 0 (default) fully covered, toward 1 faintly readable.</summary>
-        public float DimFactor
+        /// <summary>
+        /// Whether the game's own nameplates are occluded by 3D objects standing in front of them.
+        /// Default <see cref="NameplateOcclusion.DepthAware"/>; fail-soft. Honoured under both layering modes.
+        /// <br/>
+        /// Under <see cref="Draw3DLayering.UnderGameUi"/> it works by stamping depth for the game's plate pass to test
+        /// against. Under <see cref="Draw3DLayering.OverEverything"/> it gates where the
+        /// <see cref="KeepUiOnTop"/> mask applies, so it needs that on, plus nameplates actually on screen.
+        /// <see cref="NameplateOcclusion.Covered"/> requires <see cref="Draw3DLayering.OverEverything"/>.
+        /// </summary>
+        public NameplateOcclusion Nameplates
         {
-            get => nativeUiProtectionDimFactor;
-            set => nativeUiProtectionDimFactor = value;
+            get => nameplateOcclusion;
+            set => nameplateOcclusion = value;
         }
 
-        /// <summary>Composite the 3D layer before the game draws its native UI, so HUD/nameplates read on top per-pixel (experimental). Default true; fail-soft.</summary>
-        public bool RenderUnder
+        /// <summary>
+        /// How much a nameplate that your content covers still shows through it: 0 (default) fully covered, toward 1
+        /// faintly readable.
+        /// <br/>
+        /// <b>Only applies while <see cref="Layering"/> is <see cref="Draw3DLayering.OverEverything"/></b>, with
+        /// <see cref="KeepUiOnTop"/> on, and only to a plate <see cref="Nameplates"/> decided is covered - so
+        /// <see cref="NameplateOcclusion.AlwaysVisible"/> never reaches it. Under the game UI a plate is drawn by the
+        /// game against a depth test, which can only occlude it or not, so there is no partial value to apply.
+        /// </summary>
+        public float NameplateDim
         {
-            get => renderUnderNativeUi;
-            set => SetRenderUnderNativeUi(value);
-        }
-
-        /// <summary>Write the layer's opaque depth into the game's scene depth so nameplates are occluded by 3D objects in front of characters (needs <see cref="RenderUnder"/>). Default true; fail-soft.</summary>
-        public bool DepthWrite
-        {
-            get => nativeUiDepthWrite;
-            set => nativeUiDepthWrite = value;
+            get => nameplateDimFactor;
+            set => nameplateDimFactor = value;
         }
     }
 

@@ -1,6 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Interface.Utility.Raii;
@@ -45,6 +47,13 @@ public sealed class ScenesSection : IDisposable
 
     // Per-scene gizmo/editor UI state.
     private Vector4 selectionOutlineColor = new(1f, 0.85f, 0.2f, 1f);
+
+    // World-geometry / glTF import controls.
+    private string modelPath = string.Empty;
+    private bool modelVertexColors;
+    private float worldRadius = 20f;
+    private bool worldAnalytic = true;
+    private string spawnStatus = string.Empty;
 
     /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
@@ -146,6 +155,9 @@ public sealed class ScenesSection : IDisposable
         if (ImGui.CollapsingHeader("Spawn", ImGuiTreeNodeFlags.DefaultOpen))
             DrawSpawnControls(demo);
 
+        if (ImGui.CollapsingHeader("World & models"))
+            DrawWorldAndModels(demo);
+
         if (ImGui.CollapsingHeader("Objects", ImGuiTreeNodeFlags.DefaultOpen))
             DrawObjectList(demo);
     }
@@ -170,15 +182,7 @@ public sealed class ScenesSection : IDisposable
 
         SectionUi.SeparatorText("Operations");
         ImGui.TextDisabled("Which transform handles the gizmo shows:");
-        var op = gizmo.Op;
-        var t = (op & GizmoOp.Translate) != 0;
-        var r = (op & GizmoOp.Rotate) != 0;
-        var s = (op & GizmoOp.Scale) != 0;
-        var changed = ImGui.Checkbox("Translate", ref t);
-        ImGui.SameLine(); changed |= ImGui.Checkbox("Rotate", ref r);
-        ImGui.SameLine(); changed |= ImGui.Checkbox("Scale", ref s);
-        if (changed)
-            gizmo.Op = (t ? GizmoOp.Translate : 0) | (r ? GizmoOp.Rotate : 0) | (s ? GizmoOp.Scale : 0);
+        SectionUi.Flags("##ops", () => gizmo.Op, v => gizmo.Op = v);
 
         SectionUi.SeparatorText("Handles");
         SectionUi.EnumComboChanged("Space", () => gizmo.Space, v => gizmo.Space = v,
@@ -216,8 +220,11 @@ public sealed class ScenesSection : IDisposable
 
     private void DrawSpawnControls(DemoScene demo)
     {
+        ImGui.TextDisabled("Spawned objects appear near you, are selectable, and open in the inspector below.");
         ImGui.ColorEdit4("Color##prim", ref primColor);
+        SectionUi.Hint("Base color of the next primitive (straight alpha; alpha < 1 makes it translucent).");
         ImGui.Checkbox("Lit (off = additive unlit)", ref primLit);
+        SectionUi.Hint("On = Material.Lit (opaque, stylized half-Lambert against the global Lighting settings). Off = Material.Unlit with additive blending (glowy).");
         if (ImGui.Button("Box")) SpawnPrimitive(demo, Primitive.Box);
         ImGui.SameLine(); if (ImGui.Button("Sphere")) SpawnPrimitive(demo, Primitive.Sphere);
         ImGui.SameLine(); if (ImGui.Button("Cylinder")) SpawnPrimitive(demo, Primitive.Cylinder);
@@ -227,16 +234,57 @@ public sealed class ScenesSection : IDisposable
         ImGui.SameLine(); if (ImGui.Button("Disc")) SpawnPrimitive(demo, Primitive.Disc);
         ImGui.SameLine(); if (ImGui.Button("Ring")) SpawnPrimitive(demo, Primitive.Ring);
         ImGui.SameLine(); if (ImGui.Button("Arrow")) SpawnPrimitive(demo, Primitive.Arrow);
+        SectionUi.Hint("Every MeshBuilder primitive, spawned as a scene-owned mesh (scene.AddBox / AddSphere / ...).");
 
         SectionUi.SeparatorText("Decal (wall / ground / both)");
-        SectionUi.EnumCombo<DecalShape>("Shape", ref decalShapeIdx);
-        SectionUi.EnumCombo<DecalSurface>("Surface", ref decalSurfaceIdx);
-        SectionUi.EnumCombo<DecalProjection>("Projection", ref decalProjIdx);
+        SectionUi.EnumCombo<DecalShape>("Shape", ref decalShapeIdx,
+            "The footprint the decal paints: Circle, Ring (ShapeParams.X = inner ratio), Sector (pie slice), Rect, or Texture (stamps the material's texture).");
+        SectionUi.EnumCombo<DecalSurface>("Surface", ref decalSurfaceIdx,
+            "Locks the decal box's orientation: Ground stays horizontal (projects down onto the floor), Wall stays vertical (projects into the wall it faces - grow it so it reaches), Both rotates freely and its orientation decides the surface. Select a decal and rotate it with the gizmo to feel the lock.");
+        SectionUi.EnumCombo<DecalProjection>("Projection", ref decalProjIdx,
+            "AllSurfaces paints every surface in the box; HighestOnly paints only the topmost per column (a tabletop, not the floor under it). HighestOnly needs 'Collision height-map' on and 'Top-surface threshold' above 0 in Global settings, plus real collision on the covering object.");
         ImGui.ColorEdit4("Color##decal", ref decalColor);
+        SectionUi.Hint("Decal color, straight alpha.");
         ImGui.SliderFloat("Footprint size (m)", ref decalSize, 1f, 12f);
+        SectionUi.Hint("Scale applied to the decal's projection box - its footprint width/depth and its vertical sweep.");
         ImGui.SliderFloat("Outline width", ref decalOutline, 0f, 0.3f);
+        SectionUi.Hint("Width of the decal's bright rim, in SDF units (0..1 of the footprint). 0 = no outline, flat fill.");
         if (ImGui.Button("Spawn decal at player"))
             SpawnDecal(demo);
+        SectionUi.Hint("Spawns the decal at your feet, excluding characters/NPCs so they aren't painted over.");
+    }
+
+    /// <summary>
+    /// The world-collision and imported-model spawns: <see cref="Draw3DWorld.SpawnWorldGeometry"/> /
+    /// <see cref="Draw3DWorld.SpawnWorldDecal"/> (framework-thread only) and the glTF importer.
+    /// </summary>
+    private void DrawWorldAndModels(DemoScene demo)
+    {
+        SectionUi.SeparatorText("glTF / glb model import");
+        ImGui.SetNextItemWidth(320f);
+        ImGui.InputTextWithHint("##modelPath", @"Absolute path to a .gltf / .glb", ref modelPath, 512);
+        SectionUi.Hint("Blender: File > Export > glTF 2.0. Base color + texture import; PBR maps / skins / animations are skipped and logged.");
+        ImGui.SameLine();
+        if (ImGui.Button("Load model"))
+            LoadModel(demo);
+        ImGui.Checkbox("Import vertex colors", ref modelVertexColors);
+        SectionUi.Hint("Off by default: FFXIV-derived exports store shader data (wetness / wind masks) in COLOR_0, not albedo - importing it as a tint paints the model in psychedelic colors.");
+
+        SectionUi.SeparatorText("World collision (framework thread)");
+        ImGui.SliderFloat("Query radius (m)", ref worldRadius, 5f, 60f);
+        SectionUi.Hint("Half-size of the cubic collision query around you.");
+        ImGui.Checkbox("Include analytic colliders", ref worldAnalytic);
+        SectionUi.Hint("Also collect box/cylinder/sphere/plane colliders (invisible walls and triggers), not just mesh models.");
+        if (ImGui.Button("Spawn world geometry"))
+            NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldGeometry(demo));
+        SectionUi.Hint("Turns the game's real collision around you into a translucent scene mesh - the same surface ground decals project onto. A debugging / preview aid.");
+        ImGui.SameLine();
+        if (ImGui.Button("Spawn world decal"))
+            NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldDecal(demo));
+        SectionUi.Hint("Projects a footprint onto the REAL collision surface (drapes over terrain slopes and furniture), unlike the screen-space Material.Decal.");
+
+        if (!string.IsNullOrEmpty(spawnStatus))
+            ImGui.TextDisabled(spawnStatus);
     }
 
     private void DrawObjectList(DemoScene demo)
@@ -318,6 +366,74 @@ public sealed class ScenesSection : IDisposable
         demo.Track(node);
         demo.Selection.SetSingle(node); // select it so the gizmo attaches and the inspector opens on it
         inspected = node;
+    }
+
+    /// <summary>Imports a glTF/glb off-thread; the scene owns the result, and the model root joins the object list.</summary>
+    private void LoadModel(DemoScene demo)
+    {
+        var path = modelPath.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            spawnStatus = $"Model file not found: '{path}'. Pass an absolute path to a .gltf / .glb.";
+            return;
+        }
+
+        var scene = demo.Scene;
+        var at = PlayerPos() + new Vector3(0f, 1f, 4f);
+        spawnStatus = $"Loading '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).";
+        scene.LoadModelAsync(path, at, Path.GetFileNameWithoutExtension(path), keepCpuData: true, importVertexColors: modelVertexColors)
+            .ContinueWith(task =>
+            {
+                if (task.IsFaulted)
+                {
+                    NoireLogger.LogError(task.Exception!, $"Draw3D demo: glTF import failed for '{path}'.", "Draw3D Demo");
+                    spawnStatus = $"Import failed for '{Path.GetFileName(path)}' - see /xllog.";
+                    return;
+                }
+
+                // The load can finish after the scene was disposed / closed; re-check before touching it.
+                if (scene.IsDisposed || !ReferenceEquals(demo.Scene, scene))
+                    return;
+
+                demo.Track(task.Result.Root.MakeSelectable());
+                spawnStatus = $"Imported '{Path.GetFileName(path)}'.";
+            }, TaskScheduler.Default);
+    }
+
+    /// <summary>Spawns the game's real collision around the player as a translucent mesh. Framework thread only.</summary>
+    private void SpawnWorldGeometry(DemoScene demo)
+    {
+        if (demo.Scene.IsDisposed)
+            return;
+
+        var mat = Material.Lit(new Vector4(0.35f, 0.75f, 1f, 0.4f)) with { Cull = CullMode.None, Blend = BlendMode.Premultiplied };
+        var node = demo.Scene.SpawnWorldGeometry(PlayerPos(), worldRadius, mat, worldAnalytic, "WorldGeometry", keepCpuData: true);
+        if (node == null)
+        {
+            spawnStatus = "No collision found near you (open area / airborne, or the read faulted - see /xllog).";
+            return;
+        }
+
+        demo.Track(node.MakeSelectable());
+        spawnStatus = "Spawned the real collision around you, translucent blue.";
+    }
+
+    /// <summary>Projects a decal footprint onto the real collision surface under the player. Framework thread only.</summary>
+    private void SpawnWorldDecal(DemoScene demo)
+    {
+        if (demo.Scene.IsDisposed)
+            return;
+
+        var mat = Material.Unlit(decalColor) with { Cull = CullMode.None };
+        var node = demo.Scene.SpawnWorldDecal(PlayerPos(), Vector3.UnitY, decalSize, decalSize, mat, depth: 3f, name: "WorldDecal");
+        if (node == null)
+        {
+            spawnStatus = "Nothing under the footprint to project onto.";
+            return;
+        }
+
+        demo.Track(node.MakeSelectable());
+        spawnStatus = "Projected a decal onto the real world surface (it drapes over slopes and furniture).";
     }
 
     private static Vector3 PlayerPos() => NoireService.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;

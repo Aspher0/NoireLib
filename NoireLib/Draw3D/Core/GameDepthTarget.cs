@@ -4,12 +4,12 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// A writable depth-stencil view over the game's scene depth buffer, used ONLY by the opt-in native-UI
-/// depth-write (<see cref="NoireDraw3D.NativeUiDepthWrite"/>): at pre-UI injection time Draw3D re-rasterizes
-/// its opaque objects' depth into the game's buffer (greater-equal tested against the world's own depth), so
-/// the game's later nameplate pass occludes against 3D objects that stand in front of a character.<br/>
-/// This deliberately waives the usual Law 5 ("the game's depth is never written") - hence it is off by default,
-/// fail-soft, and re-derives itself whenever the underlying texture changes (resolution, GPose, upscaler).
+/// A writable depth-stencil view over the game's scene depth buffer, used ONLY by
+/// <see cref="Enums.NameplateOcclusion.DepthAware"/>: at pre-UI injection time Draw3D re-rasterizes its opaque
+/// objects' depth into the game's buffer (greater-equal tested against the world's own depth), so the game's
+/// later nameplate pass occludes against 3D objects that stand in front of a character.<br/>
+/// This deliberately waives the usual Law 5 ("the game's depth is never written") - hence it is fail-soft, and
+/// re-derives itself whenever the underlying texture changes (resolution, GPose, upscaler).
 /// </summary>
 internal sealed unsafe class GameDepthTarget : System.IDisposable
 {

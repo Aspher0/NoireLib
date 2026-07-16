@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
 
@@ -20,6 +20,7 @@ internal sealed unsafe class RenderStats : IDisposable
     public long FramesSkippedNoCamera;
     public long FramesSkippedZeroSize;
     public long FramesSkippedEmpty;
+    public long FramesSkippedUiHidden;
     public long DepthOffFrames;
     public long DisposedAssetDraws;
     public long DynamicGeometryOverflows;
@@ -144,6 +145,7 @@ internal sealed unsafe class RenderStats : IDisposable
         FramesSkippedNoCamera = 0;
         FramesSkippedZeroSize = 0;
         FramesSkippedEmpty = 0;
+        FramesSkippedUiHidden = 0;
         DepthOffFrames = 0;
         DisposedAssetDraws = 0;
         DynamicGeometryOverflows = 0;

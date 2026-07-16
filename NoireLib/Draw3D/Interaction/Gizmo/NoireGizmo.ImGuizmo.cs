@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Bindings.ImGuizmo;
 using HexaGen.Runtime;
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -64,13 +65,10 @@ public sealed partial class NoireGizmo
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint ImGuizmoGetStyleDelegate();
 
-    [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
-
     /// <summary>The PHYSICAL (hardware) left-mouse state, read straight from the OS. ImGui's own <c>io.MouseDown</c> can
     /// desync - Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui -
     /// which strands an ImGuizmo drag; reading the hardware bit is the only reliable release signal. VK_LBUTTON = 0x01.</summary>
-    private static bool PhysicalLeftDown() => (GetAsyncKeyState(0x01) & 0x8000) != 0;
+    private static bool PhysicalLeftDown() => KeybindsHelper.IsAsyncKeyDown(0x01);
 
     /// <summary>
     /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend

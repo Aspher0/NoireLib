@@ -40,9 +40,6 @@ public sealed class SmokeSceneSection : IDisposable
     private GpuTexture? icon;         // the loaded game-icon texture, disposed with the section
     private bool portalReady;
 
-    private readonly List<SceneNode> decalNodes = new(); // every ground-decal node, for the projection-box toggle
-    private bool showDecalBoxes;                          // whether the decal projection boxes are drawn as wireframes
-
     private string modelPath = string.Empty;
     private string status = "No smoke scene spawned.";
 
@@ -77,21 +74,8 @@ public sealed class SmokeSceneSection : IDisposable
             SpawnModel(modelPath);
 
         ImGui.Separator();
-        if (ImGui.Checkbox("Show decal projection boxes", ref showDecalBoxes))
-        {
-            foreach (var d in decalNodes)
-            {
-                if (showDecalBoxes)
-                    d.ShowDecalBox();
-                else
-                    d.HideDecalBox();
-            }
-        }
-
-        ImGui.SameLine();
-        ImGui.TextDisabled("(?)");
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Draws each ground decal's oriented projection box as a 3D wireframe - the volume it paints through. A placement / sizing aid.");
+        SectionUi.Toggle("Show decal shape outlines", static () => NoireDraw3D.Diagnostics.DecalShapeOutlines, static v => NoireDraw3D.Diagnostics.DecalShapeOutlines = v,
+            "Traces the shape every ground decal actually paints as a closed 3D line on its plane - circle, ring, pie or rect, straight from the SDF.\n\nGlobal, so it covers the immediate-layer donut and pie by the orbiting orb too, which have no node to toggle.\n\nA placement / sizing aid.");
 
         ImGui.Separator();
         if (editor != null)
@@ -138,17 +122,15 @@ public sealed class SmokeSceneSection : IDisposable
         Row(s.Spawn(combined, Material.Lit(new Vector4(0.80f, 0.80f, 0.88f, 1f)), new Vector3(x, center.Y + 0.6f, pz), "Prim.Combined", keepCpuData: true));
 
         // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadIcon).
-        // Decal(...) collects each node so the "Show decal projection boxes" toggle can trace all of them at once.
         var dz = center.Z - 7f;
-        SceneNode Decal(SceneNode n) { decalNodes.Add(n); return n; }
-        Decal(s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
-         .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion));
-        Decal(s.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
-         .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion));
-        Decal(s.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
-         .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion));
-        Decal(s.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
-         .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion));
+        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)) with { Surface = DecalSurface.Ground, Projection = DecalProjection.HighestOnly }, new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
+         .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+        s.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
+         .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+        s.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
+         .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+        s.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
+         .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
 
         // ---- Station 3: material families + blending + the custom pulse pipeline (a cluster to the west). -----------
         s.AddSphere(0.75f, Material.Unlit(new Vector4(0.20f, 0.60f, 1f, 0.8f)) with { Blend = BlendMode.Additive }, new Vector3(center.X - 9f, center.Y + 1.5f, center.Z + 1f), "Mat.Additive", keepCpuData: true).MakeSelectable();
@@ -180,7 +162,6 @@ public sealed class SmokeSceneSection : IDisposable
         iconDecal = s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.5f, 0.5f, 0.55f, 0.7f)), new Vector3(center.X + 12f, center.Y, dz), "Decal.Texture", keepCpuData: true)
              .Scale(new Vector3(4f, 4f, 4f));
         iconDecal.MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        decalNodes.Add(iconDecal);
         LoadIcon(s, 60074u);
 
         // The editor follows the selection: left-click any object to select it, then drag the handles.
@@ -294,8 +275,6 @@ public sealed class SmokeSceneSection : IDisposable
         iconQuad = null;
         iconDecal = null;
         portalReady = false;
-        decalNodes.Clear();  // the nodes are freed by scene.Dispose(); just drop the section's references
-        showDecalBoxes = false;
         var s = scene;
         scene = null;        // cleared first so any in-flight async load bails instead of touching it
         s?.Dispose();

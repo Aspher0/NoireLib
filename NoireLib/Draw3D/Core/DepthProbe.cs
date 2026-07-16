@@ -6,7 +6,7 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Throttled, allocation-free CPU readback of a single depth texel, for the wall-occlusion hover test. A depth
+/// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. A depth
 /// resource can only be copied whole (D3D forbids a sub-region copy of a depth-stencil texture), so the naive
 /// "make a staging texture, copy, map, read one texel, destroy" would both churn GPU memory and stall the pipeline
 /// on every hover frame: that is what froze and then crashed the device when occlusion was on. This keeps <b>one</b>

@@ -1,3 +1,4 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.Plugin.Services;
@@ -47,27 +48,25 @@ public static unsafe partial class NoireDraw3D
     private static RenderTarget? outlineMaskRt; // RGBA silhouette-coverage mask for the selection outline pass
     private static RenderTarget? outlineVisRt;  // per-silhouette-pixel worldVisible flag (r) for occluding the outline
     private static DepthTarget? privateDepth;
-    private static RenderTarget? worldHeightRt; // top-down collision height-map (R32F) for world-occluded ground decals
+    private static RenderTarget? worldHeightRt; // top-down collision height-map (R32F); read only by HighestOnly decals
     private const uint WorldHeightResolution = 1024; // height-map texels per side (over the ~80m cache region)
     private static SceneDepth? sceneDepth;
     private static SceneStencil? sceneStencil; // the game depth-stencil's STENCIL plane (marks characters) for silhouette-exact decal exclusion
 
-    // World-occluded ground decals: a cached mesh of the real collision world near the player, rebuilt on the framework
-    // thread when the player leaves the cached region, rendered each frame into worldDepthTarget so decals skip any
-    // surface (characters) in front of the world - see GroundDecal.hlsl. The holder is swapped atomically.
+    // A cached mesh of the real collision world near the player, rebuilt on the framework thread when they leave the
+    // cached region. Rendered top-down into worldHeightRt so a DecalProjection.HighestOnly decal can find its column's
+    // topmost surface - see GroundDecal.hlsl. Also what Scene3D.SpawnWorldGeometry hands out. Swapped atomically.
     private sealed class WorldCollisionCache { public NoireLib.Draw3D.Geometry.Mesh Mesh = null!; public Vector3 Center; }
     private static volatile WorldCollisionCache? worldCollision;
     private static Vector3 worldCollisionBuiltAt;
     private static bool worldCollisionEverBuilt;
-    private static volatile bool lastFrameHadDecals; // gates the framework-thread collision rebuild to decal-using scenes
+    private static volatile bool lastFrameNeededHeightMap; // gates the framework-thread collision rebuild to frames with a HighestOnly decal
     private const float WorldCollisionRadius = 40f;         // half-size of the collected region
     private const float WorldCollisionRebuildDistance = 8f; // rebuild once the player is this far from the region centre
     private const int WorldCollisionMaxTriangles = 60000;
-    private static UiMaskSource? uiMaskSource;
-    private static UiMaskHealth? uiMaskHealth;
     private static RenderStats? renderStats;
     private static RenderTargetTap? renderTargetTap;
-    private static DepthProbe? depthProbe; // cached, non-blocking depth readback for the wall-occlusion hover test
+    private static DepthProbe? depthProbe; // cached, non-blocking depth readback for the obstacle-occlusion hover test
     private static bool stencilDebug;      // /noire3d stencil: log the game stencil values in view (discover the object-category convention)
     private static DateTime lastStencilLog = DateTime.MinValue;
 
@@ -79,19 +78,22 @@ public static unsafe partial class NoireDraw3D
     private static ComPtr<ID3D11RenderTargetView> presentRtv;
     private static nint presentRtvPtr;
     private static uint presentRtvWidth, presentRtvHeight;
-    private static bool renderUnderNativeUi = true; // on by default - the layer reads under the game HUD/nameplates
+    private static Draw3DLayering layering = Draw3DLayering.UnderGameUi; // the layer reads under the game HUD/nameplates
     private static bool injectionInitialized;       // one-shot: arm the tap on the first frame that has a device
     private static volatile bool injectedSinceLastPresent;
 
-    // Native-UI depth-write: a writable DSV over the game's scene depth, so nameplates occlude against 3D objects
-    // standing in front of them (needs RenderUnderNativeUi; waives Law 5). On by default alongside the injection.
+    // Nameplate occlusion: a writable DSV over the game's scene depth, stamped before the game's plate pass so plates
+    // behind 3D objects are hidden by the game's own depth test (needs the under-UI injection; waives Law 5).
     private static GameDepthTarget? gameDepthTarget;
-    private static bool nativeUiDepthWrite = true;
+    private static NameplateOcclusion nameplateOcclusion = NameplateOcclusion.DepthAware;
 
-    // Native-UI protection backing (grouped under the NativeUi config; the old flat properties are obsolete forwarders).
-    private static bool protectGameUi = true;
-    private static NativeUiProtectionMode nativeUiProtectionMode = NativeUiProtectionMode.DepthAware;
-    private static float nativeUiProtectionDimFactor;
+    // Over-everything UI masking: the present buffer snapshotted either side of the game's UI pass, differenced at
+    // composite time to recover the UI's own pixels. The render-thread hook is armed for the "before" snapshot even
+    // when the layer itself is not injected.
+    private static UiDiffMask? uiDiffMask;
+    private static UiDiffMaskHealth? uiDiffMaskHealth;
+    private static bool keepUiOnTop = true;
+    private static float nameplateDimFactor;
 
     private static Scene3D? mainScene;
     private static ImDraw3D? im;
@@ -100,6 +102,9 @@ public static unsafe partial class NoireDraw3D
     private static readonly Vector4[] ProtectRects = new Vector4[128];
     private static readonly float[] ProtectFactors = new float[128];
     private static readonly float[] PlateDistances = new float[128];
+    private static readonly float[] PlateCoveredBy = new float[128];  // diagnostics: far distance of the item that covered each plate
+    private static readonly float[] PlateRawDistance = new float[128]; // diagnostics: the game's own (squared) plate distance field
+    private static int lastPlateCount; // last frame's nameplate rect count (the '/noire3d plates' report)
 
     private static long frameId;
     private static FrameContext lastFrame;
@@ -123,6 +128,14 @@ public static unsafe partial class NoireDraw3D
     private static int passFailStreak;
     private static bool passFaultLogged;
     internal static bool Wireframe;
+
+    /// <summary>
+    /// Traces every decal's painted shape as an outline, on top of normal rendering: the retained ones and the immediate
+    /// layer's grounded shapes alike. The global answer to "where are my decals actually landing", where
+    /// <see cref="Scene.SceneNode.ShowDecalShape"/> is the per-node one - an immediate-mode shape has no node to opt in
+    /// with, so it can only be reached from here. Implied by <see cref="Wireframe"/>.
+    /// </summary>
+    internal static bool DecalShapeOutlines;
 
     // ---------------------------------------------------------------- public surface
 
@@ -167,12 +180,20 @@ public static unsafe partial class NoireDraw3D
     public static float LayerOpacity { get; set; } = 1f;
 
     /// <summary>
-    /// Ground decals skip surfaces standing in front of the real collision world (characters / mounts) instead of the
-    /// per-actor <c>ExcludeVolumes</c> cylinder - silhouette-exact, so a decal paints sloped ground cleanly up to a
-    /// character's feet with no gouge and no bleed onto the body, and needs no actor list. Default true; falls back to
-    /// the cylinder path (per decal) when off or when the collision world isn't available.
+    /// Renders the cached collision world top-down into a height-map (the highest collision Y per XZ column) on frames
+    /// that have ground decals. Default true.
+    /// <br/>
+    /// <b>Its only consumer is <see cref="DecalProjection.HighestOnly"/></b>, which needs that height-map to tell a
+    /// tabletop from the floor beneath it. Turning this off makes a <c>HighestOnly</c> decal degrade to
+    /// <see cref="DecalProjection.AllSurfaces"/> - it paints the floor under the table again. Every other decal is
+    /// unaffected, so with no <c>HighestOnly</c> decal on screen this switch changes nothing visible and only saves the
+    /// height-map pass.
+    /// <br/>
+    /// It has <b>nothing to do with cutting characters out of decals</b>: that is
+    /// <see cref="Scene.SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
+    /// plus <see cref="CharacterStencilValue"/>, which cut along the game's stencil silhouette and work regardless of this.
     /// </summary>
-    public static bool WorldOccludedDecals { get; set; } = true;
+    public static bool CollisionHeightMap { get; set; } = true;
 
     /// <summary>
     /// The game depth-stencil value that marks characters, used to occlude ground decals along an excluded character's
@@ -181,58 +202,45 @@ public static unsafe partial class NoireDraw3D
     /// </summary>
     public static uint CharacterStencilValue { get; set; } = 0x08;
 
-    /// <summary>Elevation band (world units) above the local collision ground before a surface counts as an actor's body
-    /// (or, for <c>HighestOnly</c>, below the column top before it's skipped). Larger tolerates coarser collision but paints
-    /// a touch more of a character's base; smaller is tighter but can nibble genuine ground where collision is offset. Default 0.1 m.</summary>
-    public static float WorldOcclusionThreshold { get; set; } = 0.1f;
+    /// <summary>
+    /// The elevation band (world units) used by <see cref="DecalProjection.HighestOnly"/>: a surface more than this far
+    /// below its column's highest collision surface is skipped. Larger tolerates coarser collision; smaller is tighter but
+    /// can nibble genuine ground where collision sits slightly off the visual floor. Default 0.1 m.
+    /// <br/>
+    /// Like <see cref="CollisionHeightMap"/>, this is <b>only</b> read by <c>HighestOnly</c> decals - it does nothing to
+    /// any other decal. <b>0 disables <c>HighestOnly</c> entirely</b> (it is the same value the shader tests the feature's
+    /// availability with), so keep it above zero to keep that projection working.
+    /// </summary>
+    public static float TopSurfaceThreshold { get; set; } = 0.1f;
 
-    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protection</c>.</summary>
-    [Obsolete("Grouped under NoireDraw3D.NativeUi.Protection.")]
-    public static NativeUiProtectionMode NativeUiProtection
+    /// <summary>Applies the layering state (used by <see cref="NativeUi"/>.<c>Layering</c>).</summary>
+    internal static void SetLayering(Draw3DLayering value)
     {
-        get => nativeUiProtectionMode;
-        set => nativeUiProtectionMode = value;
-    }
-
-    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>DimFactor</c>.</summary>
-    [Obsolete("Grouped under NoireDraw3D.NativeUi.DimFactor.")]
-    public static float NativeUiProtectionDimFactor
-    {
-        get => nativeUiProtectionDimFactor;
-        set => nativeUiProtectionDimFactor = value;
-    }
-
-    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protect</c>.</summary>
-    [Obsolete("Grouped under NoireDraw3D.NativeUi.Protect.")]
-    public static bool ProtectGameUi
-    {
-        get => protectGameUi;
-        set => protectGameUi = value;
-    }
-
-    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>RenderUnder</c>.</summary>
-    [Obsolete("Grouped under NoireDraw3D.NativeUi.RenderUnder.")]
-    public static bool RenderUnderNativeUi
-    {
-        get => renderUnderNativeUi;
-        set => SetRenderUnderNativeUi(value);
-    }
-
-    /// <summary>Applies the render-under-native-UI state (used by <see cref="NativeUi"/> and the obsolete flat property).</summary>
-    internal static void SetRenderUnderNativeUi(bool value)
-    {
-        renderUnderNativeUi = value;
+        layering = value;
         ApplyInjectionState();
     }
 
+    /// <summary>Applies the keep-UI-on-top state (used by <see cref="NativeUi"/>.<c>KeepUiOnTop</c>).</summary>
+    internal static void SetKeepUiOnTop(bool value)
+    {
+        keepUiOnTop = value;
+        ApplyInjectionState(); // over everything, the mask's pre-UI snapshot rides the same render-thread hook
+    }
+
     /// <summary>
-    /// Arms or disarms the render-thread injection to match <see cref="renderUnderNativeUi"/>. When the device
-    /// isn't ready yet (very first frames) the tap can't install; the desired state is kept and the frame loop
-    /// retries once a device exists, so the default-on state comes up on its own.
+    /// Whether the render-thread hook needs to fire this frame's injection point at all: to composite the layer
+    /// under the native UI, or - over everything - to take the pre-UI snapshot the UI mask differences against.
+    /// </summary>
+    private static bool NeedsInjectionPoint => layering == Draw3DLayering.UnderGameUi || keepUiOnTop;
+
+    /// <summary>
+    /// Arms or disarms the render-thread hook to match <see cref="NeedsInjectionPoint"/>. When the device isn't ready
+    /// yet (very first frames) the tap can't install; the desired state is kept and the frame loop retries once a
+    /// device exists, so the default under-UI state comes up on its own.
     /// </summary>
     private static void ApplyInjectionState()
     {
-        if (renderUnderNativeUi)
+        if (NeedsInjectionPoint)
         {
             var tap = EnsureRenderTargetTap();
             if (tap == null)
@@ -247,21 +255,16 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>DepthWrite</c>.</summary>
-    [Obsolete("Grouped under NoireDraw3D.NativeUi.DepthWrite.")]
-    public static bool NativeUiDepthWrite
-    {
-        get => nativeUiDepthWrite;
-        set => nativeUiDepthWrite = value;
-    }
-
     /// <summary>
-    /// Keep the 3D layer rendering when the plugin's UI is hidden (cutscenes, GPose, user UI-hide).
+    /// Keep the 3D layer rendering when the game's UI is hidden (cutscenes, GPose, user UI-hide).
     /// <b>Default true</b>: a world overlay should survive the UI-hide toggle - otherwise the whole scene
     /// vanishes when the player hides the HUD.<br/>
-    /// <b>Plugin-wide side effect:</b> the switch lives on the shared UiBuilder, so it also keeps the host
-    /// plugin's own windows drawing in those states; set it false (or hide those windows yourself on
-    /// cutscene/GPose) if that isn't wanted.
+    /// This affects <b>only the 3D layer</b>. It does not decide anything about the host plugin's own windows: NoireDraw3D
+    /// holds Dalamud's UI-hide overrides for the layer's lifetime either way (they are the only way to keep
+    /// <c>UiBuilder.Draw</c> firing, which the layer renders inside), and makes the drawing choice itself.<br/>
+    /// <b>Consequence for the host:</b> because those overrides are held, Dalamud will not auto-hide your windows.
+    /// Deciding that is yours - gate them on <see cref="IsGameUiHidden"/>, which a Dalamud <c>Window</c> does in one line:
+    /// <code>public override bool DrawConditions() =&gt; !NoireDraw3D.IsGameUiHidden;</code>
     /// </summary>
     public static bool KeepDrawingWhenUiHidden
     {
@@ -272,6 +275,20 @@ public static unsafe partial class NoireDraw3D
             RefreshUiHideOverrides();
         }
     }
+
+    /// <summary>
+    /// Whether the game's UI is hidden right now, for any of the reasons <see cref="KeepDrawingWhenUiHidden"/> overrides:
+    /// the player's UI-hide toggle, a cutscene, or GPose.
+    /// <br/>
+    /// This reads the <b>game's</b> state, so it stays truthful while <see cref="KeepDrawingWhenUiHidden"/> is on -
+    /// Dalamud's hide overrides only suppress its own per-plugin hiding, they do not mask the underlying state. That is
+    /// what lets the two be separated: keep the 3D rendering, and still hide your own windows by returning
+    /// <c>!NoireDraw3D.IsGameUiHidden</c> from a window's <c>DrawConditions()</c>.
+    /// </summary>
+    public static bool IsGameUiHidden
+        => NoireService.GameGui.GameUiHidden
+           || NoireService.ClientState.IsGPosing
+           || NoireService.Condition.Any(ConditionFlag.WatchingCutscene, ConditionFlag.WatchingCutscene78, ConditionFlag.OccupiedInCutSceneEvent);
 
     /// <summary>
     /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, stats, wire, smoke, clear, reset,
@@ -287,7 +304,7 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The single interaction front door: the genuinely-global input knobs (gestures, wall-occlusion, deselect,
+    /// The single interaction front door: the genuinely-global input knobs (gestures, obstacle-occlusion, deselect,
     /// multi-select modifiers, debug) grouped on the one class you already use. The everyday path never touches it -
     /// hover / click / select live on <c>scene</c> / <c>node</c> / <c>editor</c>. This is the advanced surface for
     /// tuning gestures or registering a custom interactor.
@@ -488,7 +505,7 @@ public static unsafe partial class NoireDraw3D
             return false;
 
         // Cached, non-blocking readback: one reused staging texture, sampled a cycle late. A per-call staging copy plus
-        // a blocking map here (this runs while hovering with wall occlusion on) churned GPU memory and stalled the
+        // a blocking map here (this runs while hovering with obstacle occlusion on) churned GPU memory and stalled the
         // pipeline, which froze and eventually crashed the device.
         depthProbe ??= new DepthProbe();
         if (!depthProbe.TrySample(renderDevice, in info, screenPx, frame.ViewportSize, out var sample) || float.IsNaN(sample))
@@ -722,10 +739,10 @@ public static unsafe partial class NoireDraw3D
             sceneDepth = null;
             sceneStencil?.Dispose();
             sceneStencil = null;
-            uiMaskSource?.Dispose();
-            uiMaskSource = null;
-            uiMaskHealth?.Dispose();
-            uiMaskHealth = null;
+            uiDiffMask?.Dispose();
+            uiDiffMask = null;
+            uiDiffMaskHealth?.Dispose();
+            uiDiffMaskHealth = null;
             renderStats?.Dispose();
             renderStats = null;
             renderTargetTap?.Dispose();
@@ -851,7 +868,7 @@ public static unsafe partial class NoireDraw3D
 
         // Arm the default-on injection on the first frame that has a device (the property default couldn't install
         // the render-thread hook before the device existed). One-shot: user toggles go through the setter instead.
-        if (renderUnderNativeUi && !injectionInitialized)
+        if (NeedsInjectionPoint && !injectionInitialized)
         {
             injectionInitialized = true;
             ApplyInjectionState();
@@ -909,6 +926,16 @@ public static unsafe partial class NoireDraw3D
     /// </summary>
     private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride)
     {
+        // KeepDrawingWhenUiHidden is decided here, not by Dalamud's hide flags (see RefreshUiHideOverrides): those stay
+        // held so the callback keeps firing, which is what leaves the host's windows free to make their own choice. Both
+        // render paths funnel through here and skip their composite on empty content, so one gate covers both. It sits
+        // after the render-target tap's frame boundary in PresentTimeFrame, which must run every present regardless.
+        if (!keepDrawingWhenUiHidden && IsGameUiHidden)
+        {
+            stats.FramesSkippedUiHidden++;
+            return default;
+        }
+
         // Camera snapshot - once, at a stable point (Law 2). The injection path passes the delayed render camera
         // that matches the world already in the present buffer; the present-time path uses the sim-thread snapshot
         // (it matches the shown backbuffer better than a live read at present time), falling back to a live read.
@@ -1023,6 +1050,16 @@ public static unsafe partial class NoireDraw3D
             }
         }
 
+        // Decal outlines. Wireframe needs them because a decal has no geometry to rasterize - its box only bounds the
+        // volume the SDF runs in, and the shape lives in the pixel shader, so wire-rasterizing it paints fragments where
+        // the box's triangle edges cross the paint, not the shape. DecalShapeOutlines asks for the same trace on its own,
+        // over normally rendered decals. Either way the trace runs here, before the immediate layer is consumed.
+        if (Wireframe || DecalShapeOutlines)
+        {
+            foreach (var scene in scenes)
+                scene.TraceDecalShapes(im!);
+        }
+
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
         Diagnostics.OnCameraTrace(in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot); // "swim" investigation (armed by /noire3d camtrace)
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
@@ -1066,16 +1103,17 @@ public static unsafe partial class NoireDraw3D
         stats.DepthAvailable = hasDepth;
         stats.UsedFallbackCamera = usedFallback;
         stats.DepthSourceDescription =
-            $"{sceneDepth.Description}; map: {DepthMapDescription(in depthMap, hasDepth)}; uiMask: {(protectGameUi ? uiMaskHealth?.Description ?? "pending" : "off")}";
+            $"{sceneDepth.Description}; map: {DepthMapDescription(in depthMap, hasDepth)}; uiMask: {UiMaskDescription}";
 
-        // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible -
-        // they only gate WHERE the per-pixel UI mask applies (composite shader), so plates can be
-        // covered by nearer 3D content without ever cutting a visible rectangle.
+        // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible - they only gate
+        // WHERE the per-pixel UI mask applies (composite shader), so plates can be covered by nearer 3D content
+        // without ever cutting a visible rectangle. Only the over-everything path has a mask for them to gate; under
+        // the game UI, nameplate layering is the depth stamp instead and no rect is ever needed.
         // Layout: [0..plateCount) = nameplates (visibility factors decided after collection),
         //         [plateCount..rectCount) = HUD addon rects (factor 1: HUD wins inside plate regions).
         var plateCount = 0;
-        if (nativeUiProtectionMode != NativeUiProtectionMode.AlwaysVisible && protectGameUi)
-            plateCount = GameRenderSources.CollectNamePlateRects(ProtectRects, PlateDistances, 64, frame.ViewportSize, frame.EyePos);
+        if (UiMaskActive && nameplateOcclusion != NameplateOcclusion.AlwaysVisible)
+            plateCount = GameRenderSources.CollectNamePlateRects(ProtectRects, PlateDistances, 64, frame.ViewportSize, PlateRawDistance);
 
         var rectCount = plateCount;
         if (plateCount > 0)
@@ -1107,19 +1145,19 @@ public static unsafe partial class NoireDraw3D
 
         // Main pass.
         scenePass!.BeginCollect(in frame, mainPass: true);
-        im!.Consume(scenePass, in frame, stats, hasDepth);
+        im!.Consume(scenePass, in frame, stats, hasDepth, Wireframe, DecalShapeOutlines);
         foreach (var scene in scenes)
             scenePass.AddScene(scene, stats, hasDepth);
 
-        // World-occluded decals: render the cached collision world top-down into a height-map so ground decals can cut an
-        // excluded actor's body by its elevation above the local ground (see GroundDecal.hlsl). Needs the game depth
-        // (decals reconstruct their surface from it) and only runs when the frame has decals, so decal-less scenes pay
-        // nothing. Fail-soft: no cache / no target -> null SRV -> decals use the legacy ExcludeVolumes cylinder.
+        // Collision height-map: the cached collision world rendered top-down, giving the highest surface per XZ column.
+        // Only DecalProjection.HighestOnly reads it (to tell a tabletop from the floor under it), so it runs only on frames
+        // that actually have such a decal. Needs the game depth too, since decals reconstruct their surface from it.
+        // Fail-soft: no cache / no target -> null SRV -> HighestOnly degrades to AllSurfaces.
         ID3D11ShaderResourceView* worldHeightSrv = null;
         var worldHeightRegion = Vector4.Zero;
-        var frameHasDecals = WorldOccludedDecals && scenePass.AnyGroundDecals();
-        lastFrameHadDecals = frameHasDecals;
-        if (frameHasDecals && hasDepth && worldCollision is { } wc && wc.Mesh is { } wcMesh)
+        var needHeightMap = CollisionHeightMap && scenePass.AnyTopSurfaceDecals();
+        lastFrameNeededHeightMap = needHeightMap;
+        if (needHeightMap && hasDepth && worldCollision is { } wc && wc.Mesh is { } wcMesh)
         {
             worldHeightRt ??= new RenderTarget(DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT);
             if (worldHeightRt.EnsureSize(device, WorldHeightResolution, WorldHeightResolution))
@@ -1130,7 +1168,7 @@ public static unsafe partial class NoireDraw3D
                 var heightMatrix = BuildHeightMapMatrix(minX, minZ, size);
                 // Cap the height-map at the tallest decal box top (+ the elevation band) so a covered room's roof/upper
                 // floor above every decal never masks the ground; each decal bounds the search to its own box in-shader.
-                var heightCeiling = scenePass.MaxGroundDecalBoxTopY() + WorldOcclusionThreshold;
+                var heightCeiling = scenePass.MaxTopSurfaceDecalBoxTopY() + TopSurfaceThreshold;
                 scenePass.RenderWorldHeight(device, ctx, wcMesh, wc.Center, heightMatrix, heightCeiling, worldHeightRt, shaderLibrary!, stateCache!, stats);
                 worldHeightSrv = worldHeightRt.Srv;
                 worldHeightRegion = new Vector4(minX, minZ, 1f / size, 1f);
@@ -1139,7 +1177,7 @@ public static unsafe partial class NoireDraw3D
 
         var sceneStencilSrv = hasDepth ? sceneStencil.Srv : null; // t3: stencil plane for silhouette-exact character exclusion (null = decal paints as before)
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
-            worldHeightSrv, sceneStencilSrv, CharacterStencilValue, WorldOcclusionThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            worldHeightSrv, sceneStencilSrv, CharacterStencilValue, TopSurfaceThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
         // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
         // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
@@ -1148,13 +1186,13 @@ public static unsafe partial class NoireDraw3D
 
         stats.MarkSceneDone(ctx);
 
-        // Nameplate visibility factors: 1 = letters on top, behindFactor = covered by your content.
-        var behindFactor = Math.Clamp(nativeUiProtectionDimFactor, 0f, 1f);
+        // Nameplate visibility factors: 1 = letters on top, dim = covered by your content.
+        var behindFactor = Math.Clamp(nameplateDimFactor, 0f, 1f);
         if (plateCount > 0)
         {
-            if (nativeUiProtectionMode == NativeUiProtectionMode.DepthAware)
-                scenePass.ComputeRectOcclusion(in frame, ProtectRects, PlateDistances, ProtectFactors, plateCount, behindFactor);
-            else // Off: the layer always covers plates
+            if (nameplateOcclusion == NameplateOcclusion.DepthAware)
+                scenePass.ComputeRectOcclusion(in frame, ProtectRects, PlateDistances, ProtectFactors, plateCount, behindFactor, PlateCoveredBy);
+            else // Covered: the layer always covers plates
                 for (var i = 0; i < plateCount; i++)
                     ProtectFactors[i] = behindFactor;
         }
@@ -1163,14 +1201,28 @@ public static unsafe partial class NoireDraw3D
         for (var i = plateCount; i < rectCount; i++)
             ProtectFactors[i] = 1f;
 
+        lastPlateCount = plateCount;
+
         stats.FramesRendered++;
         return new SceneRenderResult(true, rectCount);
     }
 
     /// <summary>
-    /// Present-time composite of the offscreen layer over the backbuffer: the classic over-everything path, or -
-    /// when <see cref="ProtectGameUi"/> is on - masked per-pixel by the finished frame's native-UI-coverage alpha
-    /// so the HUD reads on top. Also the fallback whenever the pre-UI injection could not run this frame.
+    /// Whether the over-everything UI mask is configured to run: the layering mode that composites after the game's
+    /// UI, with masking asked for. Says nothing about whether a snapshot actually landed this frame.
+    /// </summary>
+    private static bool UiMaskActive => layering == Draw3DLayering.OverEverything && keepUiOnTop;
+
+    /// <summary>One-line UI-mask state for stats/probe.</summary>
+    private static string UiMaskDescription
+        => !UiMaskActive ? (layering == Draw3DLayering.UnderGameUi ? "n/a (game draws its UI over the layer)" : "off")
+            : uiDiffMaskHealth?.Description ?? "pending";
+
+    /// <summary>
+    /// Present-time composite of the offscreen layer over the backbuffer (<see cref="Draw3DLayering.OverEverything"/>),
+    /// and the fallback whenever the pre-UI injection could not run this frame. The game has already drawn its UI by
+    /// this point, so the layer would cover it; with <see cref="NativeUiConfig.KeepUiOnTop"/> the composite masks
+    /// itself per-pixel by the difference between the present buffer before and after the UI was drawn into it.
     /// Assumes <see cref="RenderMainScene"/> just rendered content into <see cref="sceneRt"/>.
     /// </summary>
     private static void CompositeOverBackbuffer(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, int rectCount)
@@ -1179,23 +1231,28 @@ public static unsafe partial class NoireDraw3D
         if (composite == null)
             return;
 
-        // Per-pixel game-UI-on-top: copy the finished frame (its alpha = native-UI coverage) and let the
-        // composite mask the layer by it. Health check self-disables the mask when the alpha channel is
-        // unusable (some upscalers fill it) - fail-visible beats fail-invisible.
-        ID3D11ShaderResourceView* uiMaskSrv = null;
-        if (protectGameUi)
+        // The "after" half of the mask: the same present buffer the injection point photographed pre-UI, now carrying
+        // the game's UI. Health check self-disables the mask if the two snapshots stop being comparable at all -
+        // fail-visible (the layer covers the UI) beats fail-invisible (the layer disappears).
+        ID3D11ShaderResourceView* beforeSrv = null;
+        ID3D11ShaderResourceView* afterSrv = null;
+        if (UiMaskActive && uiDiffMask is { } mask && renderTargetTap?.PresentBuffer is { } present && present != 0)
         {
-            uiMaskSource ??= new UiMaskSource();
-            uiMaskHealth ??= new UiMaskHealth();
-            if (uiMaskSource.EnsureAndCopy(device, ctx, (nint)backBuffer.Texture))
+            if (mask.CaptureAfter(device, ctx, present))
             {
-                uiMaskHealth.Update(device, ctx, uiMaskSource, lastFrame.FrameId);
-                if (uiMaskHealth.AlphaUsable)
-                    uiMaskSrv = uiMaskSource.Srv;
+                uiDiffMaskHealth ??= new UiDiffMaskHealth();
+                uiDiffMaskHealth.Update(device, ctx, mask, lastFrame.FrameId);
+                if (uiDiffMaskHealth.DiffUsable)
+                {
+                    beforeSrv = mask.BeforeSrv;
+                    afterSrv = mask.AfterSrv;
+                }
             }
+
+            mask.EndFrame(); // the next frame must photograph its own "before" or go unmasked
         }
 
-        compositor!.Blit(device, ctx, composite, stateCache!, sceneRt!.Srv, uiMaskSrv, backbufferRtv.Get(), backBuffer.Width, backBuffer.Height, LayerOpacity, ProtectRects, ProtectFactors, rectCount);
+        compositor!.Blit(device, ctx, composite, stateCache!, sceneRt!.Srv, beforeSrv, afterSrv, backbufferRtv.Get(), backBuffer.Width, backBuffer.Height, LayerOpacity, ProtectRects, ProtectFactors, rectCount);
     }
 
     /// <summary>
@@ -1265,7 +1322,7 @@ public static unsafe partial class NoireDraw3D
     /// </summary>
     private static bool InjectComposite(nint presentBufferResource)
     {
-        if (disposed || !renderUnderNativeUi || !enabled || !deviceObjectsReady)
+        if (disposed || !NeedsInjectionPoint || !enabled || !deviceObjectsReady)
             return false;
 
         var stats = renderStats;
@@ -1273,6 +1330,16 @@ public static unsafe partial class NoireDraw3D
         var guard = stateGuard;
         if (stats == null || device == null || guard == null)
             return false;
+
+        // Over everything, this point exists only to photograph the present buffer before the game draws its UI into
+        // it; the layer itself composites later, at present time, differencing this snapshot against the same buffer
+        // with the UI in it. Returning false leaves the present-time path to render as usual.
+        if (layering == Draw3DLayering.OverEverything)
+        {
+            uiDiffMask ??= new UiDiffMask();
+            uiDiffMask.CaptureBefore(device, device.Context, presentBufferResource);
+            return false;
+        }
 
         if (!GameRenderSources.TryGetBackBuffer(out var backBuffer) || !EnsurePresentRtv(device, presentBufferResource))
             return false;
@@ -1288,17 +1355,20 @@ public static unsafe partial class NoireDraw3D
         try
         {
             // Render this frame's scene into the offscreen target with the world-pass camera (the exact camera the
-            // world in the present buffer used), then blit. No UI mask/rects - the real native UI draws on top.
+            // world in the present buffer used), then blit. Nothing to mask against: the real native UI has not been
+            // drawn yet and paints itself over the layer a moment later, at its own pixel granularity.
             var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam);
             if (result.HasContent)
             {
                 var composite = shaderLibrary!.GetComposite(device);
                 if (composite != null && sceneRt!.Srv != null)
-                    compositor!.Blit(device, ctx, composite, stateCache!, sceneRt.Srv, null, presentRtv.Get(), presentRtvWidth, presentRtvHeight, LayerOpacity, ProtectRects, ProtectFactors, 0);
+                    compositor!.Blit(device, ctx, composite, stateCache!, sceneRt.Srv, null, null, presentRtv.Get(), presentRtvWidth, presentRtvHeight, LayerOpacity, ProtectRects, ProtectFactors, 0);
 
-                // Optional: stamp our opaque depth into the game buffer so the coming nameplate pass occludes
-                // against 3D objects in front of characters (real depth-aware nameplates under the native UI).
-                if (nativeUiDepthWrite)
+                // Stamp our opaque depth into the game buffer so the coming nameplate pass is occluded by 3D objects
+                // standing in front of characters. The other modes skip it, leaving the plate pass nothing to test:
+                // Covered cannot be honoured here at all (the game draws the plates after us), so it reads as
+                // AlwaysVisible, which is what NameplateOcclusion.Covered documents.
+                if (nameplateOcclusion == NameplateOcclusion.DepthAware)
                     ProjectOpaqueDepthToGameBuffer(device, ctx);
 
                 stats.EndGpuTiming(ctx);
@@ -1418,7 +1488,7 @@ public static unsafe partial class NoireDraw3D
         worldHeightRt?.Release();
         sceneDepth?.Invalidate();
         gameDepthTarget?.Invalidate();
-        uiMaskSource?.Release();
+        uiDiffMask?.Release();
         depthProbe?.Release(); // drops the cached staging copy of the (now stale-sized) depth texture; recreated on next sample
         // Depth calibration survives resizes: the value mapping is per-value, not per-texel.
     }
@@ -1469,12 +1539,14 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>
     /// Framework-thread only: rebuilds the cached collision-world mesh near the player when they leave the cached region
-    /// (the collision scene is safe to read only here). Fail-soft - a fault leaves the last cache in place and decals
-    /// fall back to the cylinder path. Skipped entirely when <see cref="WorldOccludedDecals"/> is off.
+    /// (the collision scene is safe to read only here). Fail-soft - a fault leaves the last cache in place, and a
+    /// <see cref="DecalProjection.HighestOnly"/> decal degrades to <see cref="DecalProjection.AllSurfaces"/> until it
+    /// recovers. Skipped entirely unless the last frame actually needed the height-map, so a scene without a
+    /// <c>HighestOnly</c> decal never pays for the collision read.
     /// </summary>
     private static void UpdateWorldCollision()
     {
-        if (!WorldOccludedDecals || !lastFrameHadDecals || !initialized || disposed || !NoireService.IsInitialized())
+        if (!CollisionHeightMap || !lastFrameNeededHeightMap || !initialized || disposed || !NoireService.IsInitialized())
             return;
 
         Vector3 center;
@@ -1514,16 +1586,27 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
+    /// <summary>
+    /// Holds Dalamud's four UI-hide overrides for the layer's whole lifetime, and restores them (only the ones it forced)
+    /// on disposal.
+    /// <br/>
+    /// They are deliberately <b>not</b> tied to <see cref="KeepDrawingWhenUiHidden"/>. These flags are the only way to
+    /// keep <c>UiBuilder.Draw</c> firing at all, and both the 3D layer and the host's windows draw from it - so tying them
+    /// to the switch would make the switch silently decide the host's window visibility too. Held always, the switch is
+    /// free to mean only what it says: <see cref="RenderMainScene"/> makes the drawing decision instead, leaving the host
+    /// to decide its windows separately via <see cref="IsGameUiHidden"/>.
+    /// </summary>
     private static void RefreshUiHideOverrides()
     {
         if (!NoireService.IsInitialized())
             return;
 
+        var wanted = !disposed;
         var uiBuilder = NoireService.PluginInterface.UiBuilder;
-        ApplyOverride(ref forcedAutoHide, keepDrawingWhenUiHidden, uiBuilder.DisableAutomaticUiHide, v => uiBuilder.DisableAutomaticUiHide = v);
-        ApplyOverride(ref forcedUserHide, keepDrawingWhenUiHidden, uiBuilder.DisableUserUiHide, v => uiBuilder.DisableUserUiHide = v);
-        ApplyOverride(ref forcedCutsceneHide, keepDrawingWhenUiHidden, uiBuilder.DisableCutsceneUiHide, v => uiBuilder.DisableCutsceneUiHide = v);
-        ApplyOverride(ref forcedGposeHide, keepDrawingWhenUiHidden, uiBuilder.DisableGposeUiHide, v => uiBuilder.DisableGposeUiHide = v);
+        ApplyOverride(ref forcedAutoHide, wanted, uiBuilder.DisableAutomaticUiHide, v => uiBuilder.DisableAutomaticUiHide = v);
+        ApplyOverride(ref forcedUserHide, wanted, uiBuilder.DisableUserUiHide, v => uiBuilder.DisableUserUiHide = v);
+        ApplyOverride(ref forcedCutsceneHide, wanted, uiBuilder.DisableCutsceneUiHide, v => uiBuilder.DisableCutsceneUiHide = v);
+        ApplyOverride(ref forcedGposeHide, wanted, uiBuilder.DisableGposeUiHide, v => uiBuilder.DisableGposeUiHide = v);
     }
 
     private static void ApplyOverride(ref bool forced, bool needed, bool current, Action<bool> setter)
@@ -1549,7 +1632,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | stats | wire | stencil | worldocclude | reset | rtlog | ontop | platedepth",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | stats | wire | decalshapes | stencil | heightmap | reset | rtlog | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -1587,11 +1670,15 @@ public static unsafe partial class NoireDraw3D
             case "wire":
                 Print($"Draw3D: wireframe {(Diagnostics.ToggleWireframe() ? "on" : "off")}.");
                 break;
-            case "worldocclude":
-                WorldOccludedDecals = !WorldOccludedDecals;
-                Print(WorldOccludedDecals
-                    ? "Draw3D: world-occluded decals ON - ground decals skip characters via the real collision world (silhouette-exact, no cylinder). '/noire3d worldocclude' again for the legacy ExcludeVolumes cut."
-                    : "Draw3D: world-occluded decals off - decals use the per-decal ExcludeVolumes cylinder again.");
+            case "decalshapes":
+                Diagnostics.DecalShapeOutlines = !Diagnostics.DecalShapeOutlines;
+                Print($"Draw3D: decal shape outlines {(Diagnostics.DecalShapeOutlines ? "on" : "off")} - every decal traces what it paints, immediate-layer shapes included.");
+                break;
+            case "heightmap":
+                CollisionHeightMap = !CollisionHeightMap;
+                Print(CollisionHeightMap
+                    ? "Draw3D: collision height-map ON - DecalProjection.HighestOnly decals paint only the topmost surface per column. Nothing else reads it, so with no HighestOnly decal on screen there is nothing to see."
+                    : "Draw3D: collision height-map off - HighestOnly decals paint every surface in their box (they degrade to AllSurfaces). Character cut-outs are unaffected: those are ExcludeObjects + the game stencil.");
                 break;
             case "reset":
                 renderStats?.ResetCounters();
@@ -1611,16 +1698,22 @@ public static unsafe partial class NoireDraw3D
 
                 break;
             case "ontop":
-                NativeUi.RenderUnder = !NativeUi.RenderUnder;
-                Print(NativeUi.RenderUnder
-                    ? "Draw3D: native-UI-on-top ON (experimental) - the layer now injects before the game UI; HUD/nameplates should read on top. '/noire3d ontop' again to turn off."
-                    : "Draw3D: native-UI-on-top off - the layer composites over everything again (previous behaviour).");
+                NativeUi.Layering = NativeUi.Layering == Draw3DLayering.UnderGameUi ? Draw3DLayering.OverEverything : Draw3DLayering.UnderGameUi;
+                Print(NativeUi.Layering == Draw3DLayering.UnderGameUi
+                    ? "Draw3D: layering = under the game UI - the layer injects before the game draws its UI, so HUD, addons and nameplates read on top of it."
+                    : "Draw3D: layering = over everything - the layer composites at present time and covers the game UI. Nameplate occlusion does nothing in this mode.");
                 break;
             case "platedepth":
-                NativeUi.DepthWrite = !NativeUi.DepthWrite;
-                Print(NativeUi.DepthWrite
-                    ? "Draw3D: native-UI depth-write ON (experimental) - 3D objects write into the game depth buffer so nameplates behind them get occluded. Needs '/noire3d ontop' on. '/noire3d platedepth' again to turn off."
-                    : "Draw3D: native-UI depth-write off.");
+                NativeUi.Nameplates = NativeUi.Nameplates == NameplateOcclusion.DepthAware ? NameplateOcclusion.AlwaysVisible : NameplateOcclusion.DepthAware;
+                Print(NativeUi.Nameplates == NameplateOcclusion.DepthAware
+                    ? "Draw3D: nameplates = depth-aware - plates standing behind your 3D objects get covered by them."
+                    : "Draw3D: nameplates = always visible - plates read on top of the layer at any distance.");
+                break;
+            case "uimask":
+                Print(UiMaskReport());
+                break;
+            case "plates":
+                Print(PlateReport());
                 break;
             default:
                 Print(Diagnostics.GetStatsText());
@@ -1665,7 +1758,7 @@ public static unsafe partial class NoireDraw3D
             return new Draw3DStats
             {
                 FramesRendered = 0, FramesSkippedDisabled = 0, FramesSkippedInitPending = 0, FramesSkippedNoDevice = 0,
-                FramesSkippedNoCamera = 0, FramesSkippedZeroSize = 0, FramesSkippedEmpty = 0, DepthOffFrames = 0,
+                FramesSkippedNoCamera = 0, FramesSkippedZeroSize = 0, FramesSkippedEmpty = 0, FramesSkippedUiHidden = 0, DepthOffFrames = 0,
                 DisposedAssetDraws = 0, ImCommandsDropped = 0, DrawCalls = 0, Instances = 0, Triangles = 0, Batches = 0,
                 CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
                 DepthSource = "none", SceneGpuMs = 0, CompositeGpuMs = 0,
@@ -1681,6 +1774,7 @@ public static unsafe partial class NoireDraw3D
             FramesSkippedNoCamera = s.FramesSkippedNoCamera,
             FramesSkippedZeroSize = s.FramesSkippedZeroSize,
             FramesSkippedEmpty = s.FramesSkippedEmpty,
+            FramesSkippedUiHidden = s.FramesSkippedUiHidden,
             DepthOffFrames = s.DepthOffFrames,
             DisposedAssetDraws = s.DisposedAssetDraws,
             ImCommandsDropped = s.ImCommandsDropped,
@@ -1699,7 +1793,73 @@ public static unsafe partial class NoireDraw3D
         };
     }
 
-    internal static UiMaskHealth? UiMaskHealthState => uiMaskHealth;
+    /// <summary>
+    /// Human-readable state of the over-everything UI mask: whether it is configured, whether the render-thread
+    /// snapshot is landing, and what fraction of the sampled grid the native UI actually changed. This is the
+    /// answer to "is keeping the UI on top doing anything", which the mask it replaced could never be asked.
+    /// </summary>
+    internal static string UiMaskReport()
+    {
+        if (layering == Draw3DLayering.UnderGameUi)
+            return "Draw3D UI mask: not used - under the game UI the game draws its own UI over the layer, letter-exact and for free. "
+                   + "The mask only exists for the over-everything path ('/noire3d ontop' switches).";
+
+        if (!keepUiOnTop)
+            return "Draw3D UI mask: off (NativeUi.KeepUiOnTop = false) - the layer covers the game UI.";
+
+        var tapState = renderTargetTap == null ? "not installed"
+            : renderTargetTap.PresentBuffer == 0 ? "installed, present buffer not learned yet"
+            : $"installed, present buffer 0x{renderTargetTap.PresentBuffer:X}";
+
+        var samples = uiDiffMaskHealth?.LastSamples is { } s
+            ? "\n  grid difference: " + string.Join(" ", Array.ConvertAll(s, d => d.ToString("F2")))
+            : "\n  grid difference: not sampled yet (give it ~2 seconds)";
+
+        return $"Draw3D UI mask (over everything, keep UI on top):\n  render-thread hook: {tapState}\n  health: {UiMaskDescription}{samples}"
+               + "\n  The mask is the difference between the present buffer before and after the game drew its UI, so a"
+               + "\n  non-zero sample means the UI covers that grid point. All zeroes with the HUD on screen means the"
+               + "\n  pre-UI snapshot is not landing where the UI is drawn; all non-zero means the snapshots are not"
+               + "\n  comparable and the mask disables itself.";
+    }
+
+    /// <summary>
+    /// Per-nameplate report for the over-everything path: the policy factor each plate was given last frame, and the
+    /// distances that decided it. This separates the two ways nameplate layering can look broken, which are otherwise
+    /// identical on screen: a factor of 1 on a plate the layer still covers means the UI mask never found the plate's
+    /// pixels, whereas a factor of 0 on a plate that should read on top means the occlusion test decided wrongly.
+    /// </summary>
+    internal static string PlateReport()
+    {
+        if (layering != Draw3DLayering.OverEverything)
+            return "Draw3D plates: nameplate policy rects are an over-everything mechanism; under the game UI the plate pass "
+                   + "tests the depth Draw3D stamps instead, so there is nothing to report. '/noire3d ontop' switches.";
+
+        if (!keepUiOnTop)
+            return "Draw3D plates: no rects collected - NativeUi.KeepUiOnTop is off, so there is no UI mask for them to gate "
+                   + "and the layer covers every plate.";
+
+        if (nameplateOcclusion == NameplateOcclusion.AlwaysVisible)
+            return "Draw3D plates: no rects collected - Nameplates = AlwaysVisible needs no policy (the mask protects every plate).";
+
+        if (lastPlateCount == 0)
+            return "Draw3D plates: 0 nameplates collected last frame. With plates on screen this means the collection itself is "
+                   + "failing (the NamePlate addon or UI3DModule read), so every plate falls back to reading on top.";
+
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine($"Draw3D plates: {lastPlateCount} collected, mode {nameplateOcclusion}, dim {nameplateDimFactor:F2}. "
+                      + "factor 1 = plate reads on top, dim = layer covers it.");
+        sb.AppendLine($"  camera at {lastFrame.EyePos.X:F1},{lastFrame.EyePos.Y:F1},{lastFrame.EyePos.Z:F1}");
+        for (var i = 0; i < lastPlateCount && i < 12; i++)
+        {
+            var r = ProtectRects[i];
+            var by = PlateCoveredBy[i] > 0f ? $"covered by content whose far side is {PlateCoveredBy[i]:F1}m out" : "not covered";
+            sb.AppendLine($"  [{i}] factor {ProtectFactors[i]:F2} | plate {PlateDistances[i]:F1}m (rooted from the game's squared {PlateRawDistance[i]:F1}) | {by} | rect uv ({r.X:F3},{r.Y:F3})-({r.Z:F3},{r.W:F3})");
+        }
+
+        sb.Append("A plate is covered when its distance is the larger of the two. If the plate distance does not match how "
+                  + "far that character actually looks, the comparison is being fed a bad number and the mode cannot work.");
+        return sb.ToString();
+    }
 
     /// <summary>One-line description of the active analytic depth mapping for stats/probe.</summary>
     internal static string DepthMapDescription(in Vector4 map, bool hasDepth)

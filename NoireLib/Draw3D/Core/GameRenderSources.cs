@@ -184,13 +184,40 @@ internal static unsafe class GameRenderSources
         return data.HasRenderCamera || data.HasControlViewProj;
     }
 
+    /// <summary>Slack (framebuffer pixels) added around each nameplate policy rect - see the padding note at its use.</summary>
+    private const float PlateRectPadding = 6f;
+
+    /// <summary>A visible node's screen rect in framebuffer pixels (xy = min, zw = max), or false when it has no usable area.</summary>
+    private static bool TryNodeRect(AtkResNode* node, out Vector4 rect)
+    {
+        rect = default;
+        if (node == null || !node->IsVisible())
+            return false;
+
+        var w = node->Width * node->ScaleX;
+        var h = node->Height * node->ScaleY;
+        if (w <= 0 || h <= 0)
+            return false;
+
+        rect = new Vector4(node->ScreenX, node->ScreenY, node->ScreenX + w, node->ScreenY + h);
+        return true;
+    }
+
+    /// <summary>The smallest rect containing both (xy = min, zw = max).</summary>
+    private static Vector4 Union(in Vector4 a, in Vector4 b)
+        => new(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Max(a.Z, b.Z), MathF.Max(a.W, b.W));
+
     /// <summary>
     /// Collects the screen rects (display-UV space: xy = min, zw = max) of the currently visible
     /// nameplates plus each plate's world-space distance from the camera. The rects are invisible
-    /// policy regions for the composite's per-pixel UI mask (depth-aware nameplate layering).
+    /// policy regions for the composite's per-pixel UI mask (nameplate layering over everything).
     /// Fails soft: any inconsistency returns 0 rects - plates read on top for this frame only.
     /// </summary>
-    public static int CollectNamePlateRects(Vector4[] rects, float[] distances, int max, Vector2 displaySize, Vector3 eyePos)
+    /// <param name="rawDistances">
+    /// Optional diagnostics: receives the game's own <c>DistanceFromCamera</c> per plate, unconverted. Reported next to
+    /// the measured distance so the squared-units finding stays checkable rather than a claim in a comment.
+    /// </param>
+    public static int CollectNamePlateRects(Vector4[] rects, float[] distances, int max, Vector2 displaySize, float[]? rawDistances = null)
     {
         if (displaySize.X <= 0 || displaySize.Y <= 0)
             return 0;
@@ -226,26 +253,44 @@ internal static unsafe class GameRenderSources
                 if (!plate.IsVisible)
                     continue;
 
-                // The collision node hugs the interactable plate area - much tighter than the container.
-                var node = (AtkResNode*)plate.NameplateCollision;
-                if (node == null || !node->IsVisible())
-                    node = plate.NameContainer;
-                if (node == null || !node->IsVisible())
+                // The UNION of the plate's container and its interactable collision box, never the tighter of the two.
+                // The rect is only a policy gate, so overshooting is free: outside the plate's actual pixels the UI
+                // mask reads no coverage and the layer draws there regardless of what the rect says. Undershooting is
+                // not free - whatever part of the plate falls outside (its icon, a name overhanging the interactable
+                // box, status markers) keeps the default "UI reads on top" and survives a plate meant to be covered.
+                var hasRect = TryNodeRect((AtkResNode*)plate.NameplateCollision, out var rect);
+                if (TryNodeRect(plate.NameContainer, out var containerRect))
+                {
+                    rect = hasRect ? Union(rect, containerRect) : containerRect;
+                    hasRect = true;
+                }
+
+                if (!hasRect)
                     continue;
 
-                var x = node->ScreenX;
-                var y = node->ScreenY;
-                var w = node->Width * node->ScaleX;
-                var h = node->Height * node->ScaleY;
-                if (w <= 0 || h <= 0)
-                    continue;
+                // Same reasoning as the union, applied to time rather than space: these node positions are read on the
+                // framework thread, but the composite that uses them runs at present time, so under camera motion the
+                // plate has moved a little by then. Padding absorbs that drift for free - a rect reaching past the
+                // plate covers pixels the UI never drew, where the mask reads no coverage and nothing changes.
+                rect = new Vector4(rect.X - PlateRectPadding, rect.Y - PlateRectPadding, rect.Z + PlateRectPadding, rect.W + PlateRectPadding);
 
-                var plateDistance = info->DistanceFromCamera;
-                if (plateDistance <= 0f)
-                    plateDistance = Vector3.Distance(info->NamePlatePos, eyePos);
+                // DistanceFromCamera is a SQUARED distance and must be rooted before it can be compared against the
+                // linear world distances the occlusion test works in. Used raw it made every plate read as impossibly
+                // far (15.0 for a character standing 3.9m away) and lose every comparison, so nameplates were covered
+                // by content sitting well behind them and DepthAware behaved identically to Covered.
+                // NamePlatePos is not a usable substitute here: it reads as the world origin, which turns a distance
+                // measured from it into the camera's distance from (0,0,0) - a large number that fails just as badly.
+                var plateDistanceSq = info->DistanceFromCamera;
+                if (plateDistanceSq <= 0f)
+                    continue; // no usable distance - leave this plate reading on top rather than guess at its depth
 
-                distances[count] = plateDistance;
-                rects[count++] = new Vector4(x / displaySize.X, y / displaySize.Y, (x + w) / displaySize.X, (y + h) / displaySize.Y);
+                if (rawDistances != null)
+                    rawDistances[count] = plateDistanceSq;
+
+                distances[count] = MathF.Sqrt(plateDistanceSq);
+                rects[count++] = new Vector4(
+                    rect.X / displaySize.X, rect.Y / displaySize.Y,
+                    rect.Z / displaySize.X, rect.W / displaySize.Y);
             }
 
             return count;

@@ -1,6 +1,6 @@
-# NoireDraw3D
+﻿# NoireDraw3D
 
-A real D3D11 world renderer for Dalamud plugins. It draws real 3D geometry into the game's frame - glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under your plugin windows. By default it composites **under the game's native UI** so HUD and nameplates read on top (this uses a render-thread hook on the present composition); set `RenderUnderNativeUi = false` to composite over everything with no hook at all. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
+A real D3D11 world renderer for Dalamud plugins. It draws real 3D geometry into the game's frame - glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under your plugin windows. By default it composites **under the game's native UI** so HUD and nameplates read on top (this uses a render-thread hook on the present composition); set `NativeUi.Layering = OverEverything` to composite over everything with no hook at all. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
 
 Full design rationale, invariants and acceptance gates live in [`docs/Draw3D V2 Proposal.md`](https://github.com/Aspher0/NoireLib/blob/main/docs/Draw3D%20V2%20Proposal.md).
 
@@ -73,12 +73,16 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
   - `DecalSurface.Ground` (default): the box is kept **horizontal** — projects straight down onto the floor/terrain; rotating it toward vertical has no effect. The classic ground decal.
   - `DecalSurface.Wall`: the box is kept **vertical** — projects horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
   - `DecalSurface.Both`: **free** — rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
-- `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `WorldOccludedDecals` and the covering object to have collision.
+- `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `CollisionHeightMap` on (the default), `TopSurfaceThreshold` above 0, and the covering object to have collision. It is the *only* consumer of those two - they do nothing to any other decal.
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
 - `UnorderedBatching = true` lets hundreds of identical translucent markers collapse into one instanced draw.
 
-> **Seeing the projection volume.** A decal paints inside an invisible oriented box (the footprint is its local XZ, the sweep its local Y). Call `node.ShowDecalBox()` to trace that box as a 3D wireframe - twelve depth-tested edges that mirror the decal's own `Surface` constraint, so you can place and size the volume by eye - and `node.HideDecalBox()` to turn it back off. It is a per-frame overlay driven for you (no plumbing); default color is the decal's own, or pass one: `node.ShowDecalBox(new Vector4(1f, 1f, 0f, 1f))`.
+> **Seeing the shape.** Call `node.ShowDecalShape()` to trace what the decal actually paints - the same circle / ring / pie / rect its SDF evaluates - as a closed 3D line lying on the decal's own plane, and `node.HideDecalShape()` to turn it back off. It follows `Shape`, `ShapeParams` and the `Surface` constraint live, so it tracks the decal through any edit. It is a per-frame overlay driven for you (no plumbing); default color is the decal's own, or pass one: `node.ShowDecalShape(new Vector4(1f, 1f, 0f, 1f))`.
+>
+> It traces the shape, not the projection box, on purpose: that box's footprint is the SDF's *bounding square* and its sweep runs well above and below the surface, so for anything but a full-footprint circle it is much larger than the paint and centred where the paint is not (a pie's box is centred on its apex and spans twice its radius). It reads as stray lines crossing the view rather than as the decal.
+>
+> `ShowDecalShape()` is per-node. For **every** decal at once - including the immediate layer's grounded shapes, which have no node to opt in with - use `NoireDraw3D.Diagnostics.DecalShapeOutlines` (or `/noire3d decalshapes`).
 
 ## Importing models (glTF)
 
@@ -145,14 +149,35 @@ var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact tr
 |---|---|
 | `NoireDraw3D.Enabled` | Master switch (also re-arms the renderer after a fault). |
 | `NoireDraw3D.LayerOpacity` | 0–1 fade of the whole 3D layer. |
-| `NoireDraw3D.RenderUnderNativeUi` | **Default true.** Composite the layer under the game's native UI (HUD/nameplates read on top) via a render-thread hook on the present composition; falls back to the over-everything composite on any frame the injection can't run. Off = draw over everything, no hook. |
-| `NoireDraw3D.NativeUiDepthWrite` | **Default true** (needs `RenderUnderNativeUi`). Write the layer's opaque depth into the game's own scene-depth buffer so nameplates behind your 3D objects get occluded - real depth-aware nameplates. Fail-soft. |
-| `NoireDraw3D.ProtectGameUi` | The game's native UI always draws on top of the 3D layer - **per pixel** (nameplate letters, window drop shadows, chat transparency), via the backbuffer's UI-coverage alpha. Default true. Off = the layer sits above the game UI (still under plugin windows). |
-| `NoireDraw3D.NativeUiProtection` | Nameplate layering, always letter-exact: `DepthAware` (default - a plate in front of your shape reads on top, a plate behind it is covered, like real occlusion), `AlwaysVisible` (letters always on top), `Off` (the layer covers plates). |
-| `NoireDraw3D.NativeUiProtectionDimFactor` | How much a plate that is *behind* your content still shows through it: 0 (default) = fully covered, toward 1 = faintly readable. |
-| `NoireDraw3D.KeepDrawingWhenUiHidden` | Keep rendering in cutscenes/GPose (**plugin-wide** UiBuilder side effect - read the XML doc). |
+| `NoireDraw3D.NativeUi.Layering` | **Default `UnderGameUi`.** Where the layer lands in the game's frame. `UnderGameUi` composites via a render-thread hook on the present composition, before the game draws its UI, so the UI is always on top. `OverEverything` composites over the backbuffer at present time, which is the only mode that can decide *per element* what the layer covers. Falls back to `OverEverything` on any frame the injection can't run. |
+| `NoireDraw3D.NativeUi.KeepUiOnTop` | **Default true. Only applies under `OverEverything`.** Masks the layer per-pixel so the HUD, addons and nameplates read on top. Letter-exact and rectangle-free: the mask is the *difference* between the present buffer photographed before and after the game drew its UI into it. Rides the same render-thread hook, so a frame with no injection point has no "before" and composites unmasked. |
+| `NoireDraw3D.NativeUi.Nameplates` | **Default `DepthAware`. Honoured under both layering modes.** Whether the game's own nameplates are occluded by 3D objects in front of them. Under the game UI it stamps depth for the game's plate pass to test; over everything it gates where the `KeepUiOnTop` mask applies. `Covered` requires `OverEverything`. Fail-soft. |
+| `NoireDraw3D.NativeUi.NameplateDim` | **Default 0. Only applies under `OverEverything`** with `KeepUiOnTop` on, and only to a plate `Nameplates` decided is covered. How much a covered plate still shows through: 0 = fully covered, toward 1 = faintly readable. |
+| `NoireDraw3D.KeepDrawingWhenUiHidden` | Keep **the 3D layer** rendering in cutscenes/GPose/UI-hide. Affects only the layer - your windows are yours (see below). |
+| `NoireDraw3D.IsGameUiHidden` | Whether the game UI is hidden (user toggle / cutscene / GPose), read from the game rather than Dalamud - so it stays truthful whatever the overrides are doing. |
 | `NoireDraw3D.Lighting` | Ambient + directional half-Lambert parameters for `Lit` materials. |
 | `NoireDraw3D.OnFault` | Raised when the self-disable ladder trips (a pipeline, feature, or the renderer disabled itself). |
+
+> **The two layering modes keep the UI readable by opposite means, and both are letter-exact.**
+>
+> - **`UnderGameUi`** composites *before* the game draws its UI, so the game paints its HUD over the layer by itself. Nothing to configure, nothing to mask, no cost. The trade is that the UI always wins: the layer can never cover any of it.
+> - **`OverEverything`** composites *after*, so the UI is already there - which is exactly what makes it decidable. `KeepUiOnTop` masks the layer back off the UI, and because the UI now exists, a nameplate can be `Covered` outright or dimmed rather than merely occluded or not.
+>
+> **Where `OverEverything`'s mask comes from.** Not the backbuffer's alpha channel - FFXIV writes no UI coverage there, which is why an earlier design that read it was inert in every frame it ever ran. Instead Draw3D photographs the game's present buffer at the pre-UI injection point and again at present time, and **differences the two**: wherever the image changed, the UI painted. Same texture both times, so the snapshots always agree on format and resolution, and antialiased glyph edges come out as partial coverage for free.
+>
+> Two consequences worth knowing. The mask rides the same render-thread hook the under-UI path uses, so a frame whose injection point cannot fire has no "before" photo and composites unmasked. And a UI pixel that blends to exactly the colour beneath it reads as no-UI - correct, since it is invisible either way.
+>
+> `/noire3d uimask` reports whether the difference is finding the UI at all, and the sampled grid it is looking at. If protection ever looks inert, that command answers it in one line rather than leaving you guessing.
+
+> **UI-hide, and your windows.** The 3D layer renders inside `UiBuilder.Draw`, and Dalamud's four `Disable*UiHide` flags are the only way to keep that callback firing. NoireDraw3D therefore **holds them for the layer's lifetime** and decides for itself whether to draw, so `KeepDrawingWhenUiHidden` means only what it says.
+>
+> The consequence is that **Dalamud will not auto-hide your windows** - that call is yours now, and it is one line:
+>
+> ```csharp
+> public override bool DrawConditions() => !NoireDraw3D.IsGameUiHidden;
+> ```
+>
+> The two are fully independent: 3D on with windows hidden, windows up with no 3D, either, or neither. `/noire3d stats` reports `skipped (ui-hidden N)` when the layer sits a frame out.
 
 ## Custom shaders
 
@@ -168,14 +193,17 @@ A compile error disables only that pipeline and logs the full compiler output.
 | Command | Purpose |
 |---|---|
 | `/noire3d validate` | Projection parity vs the game's own WorldToScreen over 10 frames (gate: ≤ 1 px). |
-| `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). Also reports the UI-mask alpha health. |
+| `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
-| `/noire3d wire` | Wireframe toggle. |
+| `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead - the same line `ShowDecalShape()` draws. |
+| `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike. The global "where is this decal actually landing"; an `ImDraw3D` shape has no node to call `ShowDecalShape()` on, so this is the only way to outline one. Implied by `wire`. |
 | `/noire3d camtrace [frames]` | Camera-phase "swim" trace: measures overlay-vs-world drift under camera motion, plus the inject-vs-fallback frame split (run it while panning/zooming hard). |
-| `/noire3d worldocclude` | Toggles `WorldOccludedDecals` (ground decals skip characters via the collision world vs. the legacy `ExcludeVolumes` cylinder). |
+| `/noire3d heightmap` | Toggles `CollisionHeightMap` - the top-down collision height-map. Only `DecalProjection.HighestOnly` reads it, so with no `HighestOnly` decal on screen there is nothing to see. It does **not** cut characters out of decals (that is `ExcludeObjects` + `CharacterStencilValue`). |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
-| `/noire3d ontop` | Toggles `RenderUnderNativeUi` (under the game UI vs over everything). |
-| `/noire3d platedepth` | Toggles `NativeUiDepthWrite` (depth-aware nameplates). |
+| `/noire3d ontop` | Toggles `NativeUi.Layering` (under the game UI vs over everything). |
+| `/noire3d platedepth` | Toggles `NativeUi.Nameplates` (depth-aware vs always-visible nameplates). |
+| `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. The answer to "is keeping the UI on top actually doing anything". |
+| `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Separates the two ways nameplate layering looks broken on screen but is not the same bug: factor 1 on a covered plate means the mask never found its pixels; factor 0 on a plate that should read on top means the occlusion test decided wrongly. |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log (injection-point diagnostics). |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.

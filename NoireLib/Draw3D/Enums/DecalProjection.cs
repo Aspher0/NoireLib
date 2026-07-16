@@ -1,8 +1,8 @@
-namespace NoireLib.Draw3D.Enums;
+﻿namespace NoireLib.Draw3D.Enums;
 
 /// <summary>
 /// How a ground decal resolves multiple stacked surfaces inside its projection volume (e.g. a tabletop with the floor
-/// visible beneath it). Uses the collision world, so it needs <see cref="NoireDraw3D.WorldOccludedDecals"/> on to take
+/// visible beneath it). Uses the collision world, so it needs <see cref="NoireDraw3D.CollisionHeightMap"/> on to take
 /// effect (otherwise every decal behaves as <see cref="AllSurfaces"/>).
 /// </summary>
 public enum DecalProjection

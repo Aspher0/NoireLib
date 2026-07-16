@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using NoireDraw3DDemoPlugin.Windows.Sections;
+using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
@@ -26,6 +27,14 @@ public sealed class DemoWindow : Window, IDisposable
             MaximumSize = new Vector2(float.MaxValue, float.MaxValue),
         };
     }
+
+    /// <summary>
+    /// Hides this window while the game UI is hidden, unless the user asked otherwise. This has to be done here rather
+    /// than left to Dalamud: <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/> keeps the 3D layer alive precisely by
+    /// telling Dalamud not to hide this plugin, so the window can only step aside by checking the game's own state.
+    /// </summary>
+    public override bool DrawConditions()
+        => settingsSection.KeepImGuiWhenUiHidden || !NoireDraw3D.IsGameUiHidden;
 
     /// <inheritdoc/>
     public override void Draw()

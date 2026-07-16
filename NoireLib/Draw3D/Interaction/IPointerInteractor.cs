@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Interaction;
 /// A pointer client that lives above the scene graph: it hit-tests the cursor against its own geometry
 /// (gizmo handles, invisible hotspots, custom widgets) and receives hover / click / drag through the same
 /// arbitration that governs clickable nodes, so it shares the one mouse-capture authority instead of fighting it.
-/// The built-in <see cref="NoireGizmo"/> is such a client; register your own with <see cref="NoireInteract.RegisterInteractor"/>.
+/// The built-in <see cref="Gizmo.NoireGizmo"/> is such a client; register your own with <see cref="NoireInteract.RegisterInteractor"/>.
 /// </summary>
 public interface IPointerInteractor
 {
@@ -84,11 +84,12 @@ public interface IPointerInteractor
     bool DrawSelfDriven(in FrameContext frame) => false;
 
     /// <summary>
-    /// Whether a hit reported by <see cref="HitTest"/> should be blocked when game-world geometry (a wall, terrain)
-    /// is nearer to the camera than the hit point, under <see cref="NoireInteract.WallOcclusionMode"/>. Default
-    /// <b>false</b>: interactor geometry stays grabbable through walls. The native gizmo returns true when its handles
-    /// are world-occluded (its depth mode is not fully on top), so a handle behind a wall is not grabbable there.
+    /// Whether a hit reported by <see cref="HitTest"/> should be blocked when something the game draws (a wall,
+    /// terrain, a character) is nearer to the camera than the hit point, under
+    /// <see cref="NoireInteract.ObstacleOcclusionMode"/>. Default <b>false</b>: interactor geometry stays grabbable
+    /// through obstacles. The native gizmo returns true when its handles are world-occluded (its depth mode is not
+    /// fully on top), so a handle behind an obstacle is not grabbable there.
     /// </summary>
     /// <param name="token">The hit element from <see cref="HitTest"/>.</param>
-    bool OccludesBehindWalls(object token) => false;
+    bool OccludesBehindObstacles(object token) => false;
 }

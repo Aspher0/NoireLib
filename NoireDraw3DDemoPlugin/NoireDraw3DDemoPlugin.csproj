@@ -14,7 +14,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
         <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
     </ItemGroup>
 </Project>

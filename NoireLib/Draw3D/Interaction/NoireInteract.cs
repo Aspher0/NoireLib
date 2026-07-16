@@ -1,5 +1,7 @@
 using Dalamud.Bindings.ImGui;
+using Dalamud.Game.ClientState.Keys;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -72,7 +74,10 @@ public static class NoireInteract
     private static object? debugPrevHover;
     private static string? debugPrevGateSig;
 
-    // Depth-buffer occluder probe for wall occlusion (opt-in): the whole-texture readback is throttled, the surface cached.
+    // Last frame's DeselectKeyHeld state, so the clear fires once on the press edge rather than every held frame.
+    private static bool deselectKeyWasDown;
+
+    // Depth-buffer occluder probe for obstacle occlusion (opt-in): the whole-texture readback is throttled, the surface cached.
     private const int DepthProbeMinFrames = 2;
     private const int DepthProbeMaxFrames = 4;
     private const float DepthProbeMovePixels = 2f;
@@ -86,16 +91,10 @@ public static class NoireInteract
     private static readonly uint CurrentProcessId = (uint)Environment.ProcessId;
 
     [DllImport("user32.dll")]
-    private static extern short GetAsyncKeyState(int vKey);
-
-    [DllImport("user32.dll")]
     private static extern nint GetForegroundWindow();
 
     [DllImport("user32.dll")]
     private static extern uint GetWindowThreadProcessId(nint hWnd, out uint processId);
-
-    /// <summary>Physical button state straight from the OS, independent of who ImGui/Dalamud routed the click to.</summary>
-    private static bool PhysicalDown(int vk) => (GetAsyncKeyState(vk) & 0x8000) != 0;
 
     /// <summary>
     /// When true, logs the click pipeline (raw button state, hover, capture, and every press/click/drag event) to the
@@ -154,7 +153,7 @@ public static class NoireInteract
     /// </summary>
     public static bool BlockGameMouseOnHover { get; set; }
 
-    /// <summary>Whether a left click on a node updates <see cref="Selection"/> (with Ctrl-toggle / Shift-add). Default true.</summary>
+    /// <summary>Whether a left click on a node updates its scene's <see cref="InteractSelection"/> (with Ctrl-toggle / Shift-add). Default true.</summary>
     public static bool SelectOnClick { get; set; } = true;
 
     /// <summary>
@@ -167,17 +166,22 @@ public static class NoireInteract
     public static bool GameUiBlocksInteraction { get; set; } = true;
 
     /// <summary>
-    /// How the <see cref="Selection"/> is cleared. Default <see cref="DeselectMode.ClickEmpty"/>: a left click on empty
+    /// How every scene's <see cref="InteractSelection"/> is cleared. Default <see cref="DeselectMode.ClickEmpty"/>: a left click on empty
     /// world (not a camera pan, not over UI) deselects. Set <see cref="DeselectMode.None"/> to manage it yourself, or add
-    /// <see cref="DeselectMode.Key"/> to also clear on <see cref="DeselectKey"/>. Flags; combine freely.
+    /// <see cref="DeselectMode.Key"/> to also clear on <see cref="DeselectKeyHeld"/>. Flags; combine freely.
     /// </summary>
     public static DeselectMode DeselectOn { get; set; } = DeselectMode.ClickEmpty;
 
     /// <summary>
-    /// The deselect key edge for <see cref="DeselectMode.Key"/>: returns true on the frame the key is pressed. Default
-    /// <b>Escape</b>. Point it at any key or your own input.
+    /// Whether the deselect key for <see cref="DeselectMode.Key"/> is <b>down right now</b>. Default <b>Escape</b>.
+    /// A plain held test, like the modifier predicates: the press edge is tracked here, so holding the key clears once
+    /// rather than every frame. Point it at any key or your own input.<br/>
+    /// Read the key from the OS (<see cref="KeybindsHelper.IsAsyncKeyDown"/>) rather than through ImGui: Dalamud only
+    /// forwards a key to ImGui while a text field is focused, and force-releases every non-modifier key otherwise, so
+    /// <c>ImGui.IsKeyPressed</c> never fires during play. Only the modifier keys survive that, which is why
+    /// <see cref="ToggleSelectionHeld"/> and friends can read <c>ImGui.GetIO()</c> and this cannot.
     /// </summary>
-    public static Func<bool> DeselectKey { get; set; } = static () => ImGui.IsKeyPressed(ImGuiKey.Escape, false);
+    public static Func<bool> DeselectKeyHeld { get; set; } = static () => KeybindsHelper.IsAsyncKeyDown((int)VirtualKey.ESCAPE);
 
     /// <summary>
     /// While this returns true, a left-click on a node <b>toggles</b> it in and out of a <see cref="SelectionMode.Multi"/>
@@ -188,29 +192,30 @@ public static class NoireInteract
     /// <summary>
     /// While this returns true, a left-click on a node <b>adds</b> it to a <see cref="SelectionMode.Multi"/> selection
     /// (keeping the rest). Default <b>Shift</b>. Set <c>() =&gt; true</c> to always add on click, or point it at any key.
-    /// Honoured only when <see cref="Selection"/> is in <see cref="SelectionMode.Multi"/>.
+    /// Honoured only when the node's scene <see cref="InteractSelection"/> is in <see cref="SelectionMode.Multi"/>.
     /// </summary>
     public static Func<bool> AddSelectionHeld { get; set; } = static () => ImGui.GetIO().KeyShift;
 
     /// <summary>
-    /// How game-world geometry (walls, terrain, houses) in front of a 3D object affects hovering/clicking it.
-    /// Default <see cref="WallOcclusion.Off"/>: objects are always hoverable/clickable, so picking is reliable at every
-    /// camera angle out of the box. Opt into <see cref="WallOcclusion.Always"/> or
-    /// <see cref="WallOcclusion.HoldToClickThrough"/> when you want real geometry to block picking (bear in mind the
-    /// ground an object rests on can then occlude it at grazing angles). Also governs native gizmo handles whose depth
-    /// mode is not fully on top (see <see cref="IPointerInteractor.OccludesBehindWalls"/>).
+    /// How anything the game draws in front of a 3D object (a wall, terrain, a house, but equally a character or a
+    /// mount) affects hovering/clicking it. Default <see cref="ObstacleOcclusion.Off"/>: objects are always
+    /// hoverable/clickable, so picking is reliable at every camera angle out of the box. Opt into
+    /// <see cref="ObstacleOcclusion.Always"/> or <see cref="ObstacleOcclusion.HoldToClickThrough"/> when you want what
+    /// is really in front to block picking (bear in mind the ground an object rests on can then occlude it at grazing
+    /// angles). Also governs native gizmo handles whose depth mode is not fully on top (see
+    /// <see cref="IPointerInteractor.OccludesBehindObstacles"/>).
     /// </summary>
-    public static WallOcclusion WallOcclusionMode { get; set; } = WallOcclusion.Off;
+    public static ObstacleOcclusion ObstacleOcclusionMode { get; set; } = ObstacleOcclusion.Off;
 
     /// <summary>
-    /// The click-through override for <see cref="WallOcclusion.HoldToClickThrough"/>: while it returns true, obstacles
-    /// are ignored and objects behind them are clickable. Default <b>Alt</b> held (Ctrl/Shift are the selection
-    /// modifiers). Point it at any key (for example <c>() =&gt; ImGui.GetIO().KeyCtrl</c>) or your own input.
+    /// The click-through override for <see cref="ObstacleOcclusion.HoldToClickThrough"/>: while it returns true,
+    /// obstacles are ignored and objects behind them are clickable. Default <b>Alt</b> held (Ctrl/Shift are the
+    /// selection modifiers). Point it at any key (for example <c>() =&gt; ImGui.GetIO().KeyCtrl</c>) or your own input.
     /// </summary>
     public static Func<bool> ClickThroughHeld { get; set; } = static () => ImGui.GetIO().KeyAlt;
 
-    /// <summary>Slack (world units) added to the wall distance before an object counts as occluded, so a ground-hugging decal is not blocked by its own ground. Default 0.3.</summary>
-    public static float WallOcclusionBias { get; set; } = 0.3f;
+    /// <summary>Slack (world units) added to the obstacle distance before an object counts as occluded, so a ground-hugging decal is not blocked by its own ground. Default 0.3.</summary>
+    public static float ObstacleOcclusionBias { get; set; } = 0.3f;
 
     /// <summary>The node currently under the cursor (null when none, or when the mouse is over other UI).</summary>
     public static SceneNode? HoveredNode { get; private set; }
@@ -339,15 +344,19 @@ public static class NoireInteract
         }
 
         modifiers = SelectionModifiers.None;
-        if (SafePredicate(ToggleSelectionHeld, "ToggleSelectionHeld"))
+        if (SafePredicate(ToggleSelectionHeld, nameof(ToggleSelectionHeld)))
             modifiers |= SelectionModifiers.Toggle;
-        if (SafePredicate(AddSelectionHeld, "AddSelectionHeld"))
+        if (SafePredicate(AddSelectionHeld, nameof(AddSelectionHeld)))
             modifiers |= SelectionModifiers.Add;
 
-        // Keybind deselect (edge-triggered), independent of where the cursor is (but not while it is outside the window).
-        // Clears every scene's selection - "deselect" is global to the pointer, selections are per-scene.
-        if (insideWindow && (DeselectOn & DeselectMode.Key) != 0 && SafeDeselectKey())
+        // Keybind deselect, independent of where the cursor is (but not while it is outside the window). The predicate
+        // reports the key as held, so the edge is taken here and holding the key clears once. It is polled every frame,
+        // including frames the window gate rejects, so a press-and-release elsewhere still arms the next press rather
+        // than clearing the moment the cursor comes back. Clearing is global to the pointer; selections are per-scene.
+        var deselectKeyDown = (DeselectOn & DeselectMode.Key) != 0 && SafePredicate(DeselectKeyHeld, nameof(DeselectKeyHeld));
+        if (deselectKeyDown && !deselectKeyWasDown && insideWindow)
             NoireDraw3D.ClearAllSelections();
+        deselectKeyWasDown = deselectKeyDown;
 
         ResolveHover();
         HoveredNode = hoverNode;
@@ -357,14 +366,14 @@ public static class NoireInteract
         // physical button makes a click on a 3D object detectable without stealing the mouse on hover. All button reads
         // are gated on the cursor being inside the window, so a click in another application never reaches the arbiter.
         var imguiLeft = ImGui.IsMouseDown(ImGuiMouseButton.Left);
-        var leftDown = insideWindow && (imguiLeft || PhysicalDown(VkLButton));
-        var rightDown = insideWindow && (ImGui.IsMouseDown(ImGuiMouseButton.Right) || PhysicalDown(VkRButton));
-        var middleDown = insideWindow && (ImGui.IsMouseDown(ImGuiMouseButton.Middle) || PhysicalDown(VkMButton));
+        var leftDown = insideWindow && (imguiLeft || KeybindsHelper.IsAsyncKeyDown(VkLButton));
+        var rightDown = insideWindow && (ImGui.IsMouseDown(ImGuiMouseButton.Right) || KeybindsHelper.IsAsyncKeyDown(VkRButton));
+        var middleDown = insideWindow && (ImGui.IsMouseDown(ImGuiMouseButton.Middle) || KeybindsHelper.IsAsyncKeyDown(VkMButton));
 
         if (DebugLog && (leftDown != debugPrevLeft || !ReferenceEquals(hoverToken, debugPrevHover)))
         {
             NoireLogger.LogInfo(
-                $"[Interact] left={leftDown} (imgui={imguiLeft} phys={PhysicalDown(VkLButton)}) hover={DescribeToken(hoverToken)} " +
+                $"[Interact] left={leftDown} (imgui={imguiLeft} phys={KeybindsHelper.IsAsyncKeyDown(VkLButton)}) hover={DescribeToken(hoverToken)} " +
                 $"draggable={hoverDraggable} foreign={foreignCapturing} inside={insideWindow} rayValid={rayValid} " +
                 $"pos=({mousePos.X:F0},{mousePos.Y:F0})",
                 "Draw3D");
@@ -419,22 +428,22 @@ public static class NoireInteract
         if (!rayValid || foreignCapturing)
             return;
 
-        // Optional world-geometry occlusion (disabled by default, so picking is pure geometry and reliable at any camera
-        // angle). When enabled, a wall / terrain / furnishing in front of a target blocks hovering it unless the
-        // consumer's click-through override is active; wallDepth is the occluding surface's depth along the pick ray,
-        // directly comparable to a target's own ray depth.
-        var occlude = WallOcclusionMode switch
+        // Optional obstacle occlusion (disabled by default, so picking is pure geometry and reliable at any camera
+        // angle). When enabled, anything the game draws in front of a target (a wall, terrain, a furnishing, a
+        // character) blocks hovering it unless the consumer's click-through override is active; obstacleDepth is the
+        // occluding surface's depth along the pick ray, directly comparable to a target's own ray depth.
+        var occlude = ObstacleOcclusionMode switch
         {
-            WallOcclusion.Off => false,
-            WallOcclusion.Always => true,
-            _ => !SafeClickThroughHeld(),
+            ObstacleOcclusion.Off => false,
+            ObstacleOcclusion.Always => true,
+            _ => !SafePredicate(ClickThroughHeld, nameof(ClickThroughHeld)),
         };
-        var wallDepth = float.PositiveInfinity;
-        if (occlude && NoireService.IsInitialized() && TryGetOccluderSurface(out var wallWorld))
+        var obstacleDepth = float.PositiveInfinity;
+        if (occlude && TryGetOccluderSurface(out var obstacleWorld))
         {
-            var depth = Vector3.Dot(wallWorld - rayOrigin, rayDirection);
+            var depth = Vector3.Dot(obstacleWorld - rayOrigin, rayDirection);
             if (depth > 0.01f)
-                wallDepth = depth; // ignore a degenerate or behind-camera surface
+                obstacleDepth = depth; // ignore a degenerate or behind-camera surface
         }
 
         IPointerInteractor[] snapshot;
@@ -450,10 +459,10 @@ public static class NoireInteract
             {
                 if (it.HitTest(rayOrigin, rayDirection, mousePos, in frame, out var token, out var dist, out var hp) && token != null)
                 {
-                    // Interactors are grabbable through walls unless they opt into occlusion (the native gizmo does so
-                    // when its handles are world-occluded rather than drawn fully on top).
-                    if (occlude && it.OccludesBehindWalls(token) &&
-                        Vector3.Dot(hp - rayOrigin, rayDirection) > wallDepth + WallOcclusionBias)
+                    // Interactors are grabbable through obstacles unless they opt into occlusion (the native gizmo does
+                    // so when its handles are world-occluded rather than drawn fully on top).
+                    if (occlude && it.OccludesBehindObstacles(token) &&
+                        Vector3.Dot(hp - rayOrigin, rayDirection) > obstacleDepth + ObstacleOcclusionBias)
                         continue;
 
                     hoverToken = token;
@@ -478,9 +487,9 @@ public static class NoireInteract
             if (!node.Interactable || !node.Visible || node.Destroyed)
                 continue;
 
-            // h.Distance is the depth along the pick ray, directly comparable to wallDepth.
-            if (occlude && h.Distance > wallDepth + WallOcclusionBias)
-                continue; // a wall / terrain is in front of this object (hold the click-through key to reach it)
+            // h.Distance is the depth along the pick ray, directly comparable to obstacleDepth.
+            if (occlude && h.Distance > obstacleDepth + ObstacleOcclusionBias)
+                continue; // something is in front of this object (hold the click-through key to reach it)
 
             hoverToken = node;
             hoverNode = node;
@@ -493,17 +502,16 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// The nearest game surface under the cursor, for wall occlusion. Prefers the game depth buffer (every rendered
-    /// surface: static meshes, fences, furniture, decorations, not only the collision meshes the raycast alone
-    /// misses), reconstructing the world point and caching it since the readback copies the whole depth texture. Falls
-    /// back to the game's collision raycast only on frames where the depth buffer is unreadable.
+    /// The nearest game surface under the cursor, for obstacle occlusion. Prefers the game depth buffer (every rendered
+    /// surface: static meshes, fences, furniture, decorations, characters, not only the collision meshes the raycast
+    /// alone misses), reconstructing the world point and caching it since the readback copies the whole depth texture.
+    /// Falls back to the game's collision raycast only on frames where the depth buffer is unreadable.
     /// </summary>
     private static bool TryGetOccluderSurface(out Vector3 world)
     {
         if (frame.HasDepth && !frame.UsedFallbackCamera)
             return TryGetDepthOccluder(out world); // a miss here is open sky (no occluder), not a reason to fall back
 
-        world = default;
         return NoireService.GameGui.ScreenToWorld(mousePos, out world);
     }
 
@@ -525,19 +533,7 @@ public static class NoireInteract
         return depthProbeValid;
     }
 
-    private static bool SafeClickThroughHeld()
-    {
-        try
-        {
-            return ClickThroughHeld?.Invoke() ?? false;
-        }
-        catch (Exception ex)
-        {
-            NoireLogger.LogError(ex, "The ClickThroughHeld predicate threw.", "Draw3D");
-            return false;
-        }
-    }
-
+    /// <summary>Invokes a consumer-supplied gesture predicate, containing a throw so one bad predicate cannot kill the frame.</summary>
     private static bool SafePredicate(Func<bool>? predicate, string name)
     {
         try
@@ -547,19 +543,6 @@ public static class NoireInteract
         catch (Exception ex)
         {
             NoireLogger.LogError(ex, $"The {name} predicate threw.", "Draw3D");
-            return false;
-        }
-    }
-
-    private static bool SafeDeselectKey()
-    {
-        try
-        {
-            return DeselectKey?.Invoke() ?? false;
-        }
-        catch (Exception ex)
-        {
-            NoireLogger.LogError(ex, "The DeselectKey predicate threw.", "Draw3D");
             return false;
         }
     }
@@ -707,8 +690,7 @@ public static class NoireInteract
         showedCaptureLastFrame = false;
         captureWindowHovered = false;
         foreignCapturing = false;
-        if (HoveredNode != null)
-            HoveredNode = null;
+        HoveredNode = null;
     }
 
     // ---------------------------------------------------------------- dispatch helpers
@@ -892,8 +874,8 @@ public static class NoireInteract
         HoveredNode = null;
         showedCaptureLastFrame = false;
         captureWindowHovered = false;
-        if (NoireDraw3D.PickInputGate != null && NoireService.IsInitialized())
-            NoireDraw3D.PickInputGate = null;
+        deselectKeyWasDown = false;
+        NoireDraw3D.PickInputGate = null;
     }
 
     /// <summary>Routes arbiter events to the owning node or interactor, with per-callback error containment.</summary>

@@ -1,4 +1,4 @@
-using NoireLib.Draw3D.Assets;
+﻿using NoireLib.Draw3D.Assets;
 using NoireLib.Draw3D.Enums;
 using System.Numerics;
 
@@ -53,7 +53,7 @@ public sealed record Material
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how strongly the decal feathers out near the top/bottom of its volume (0 = none, 1 = full).</summary>
     public float HeightFade { get; init; } = 1f;
 
-    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how to resolve stacked surfaces in the footprint (paint all, or only the topmost). Needs <see cref="NoireDraw3D.WorldOccludedDecals"/>.</summary>
+    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how to resolve stacked surfaces in the footprint (paint all, or only the topmost). Needs <see cref="NoireDraw3D.CollisionHeightMap"/>.</summary>
     public DecalProjection Projection { get; init; } = DecalProjection.AllSurfaces;
 
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: locks the decal to a surface by constraining the box's orientation - <see cref="DecalSurface.Ground"/> (kept horizontal, projects down onto the floor), <see cref="DecalSurface.Wall"/> (kept vertical, projects into the wall it faces), or <see cref="DecalSurface.Both"/> (free - orientation decides). Default <see cref="DecalSurface.Ground"/>.</summary>

@@ -113,6 +113,45 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
+    /// Traces every visible ground decal in this scene as its painted shape (wireframe mode). Render-thread only, called
+    /// before the immediate layer is consumed so the outlines land this frame.
+    /// <br/>
+    /// Wireframe mode has nothing to rasterize for a decal - the box carries no shape, only the volume the SDF runs in -
+    /// so the pass drops decals and this draws what they actually paint instead.
+    /// </summary>
+    /// <param name="im">The immediate layer to draw into.</param>
+    internal void TraceDecalShapes(Im.ImDraw3D im)
+    {
+        if (IsDisposed || !Visible)
+            return;
+
+        lock (GraphLock)
+        {
+            foreach (var root in Roots)
+                TraceDecalShapesRecursive(root, im);
+        }
+    }
+
+    /// <summary>Walks a subtree emitting decal outlines. Each node re-checks its own visibility and material.</summary>
+    private static void TraceDecalShapesRecursive(SceneNode node, Im.ImDraw3D im)
+    {
+        if (!node.Visible)
+            return; // the whole subtree is hidden
+
+        try
+        {
+            node.DrawDecalShapeEdges(im, force: true);
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError<Scene3D>(ex, "A decal-shape outline threw while tracing for wireframe; skipped this frame.", "Draw3D");
+        }
+
+        foreach (var child in node.Children)
+            TraceDecalShapesRecursive(child, im);
+    }
+
+    /// <summary>
     /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached
     /// (self-disable rung 2) - logged once, everything else keeps running.
     /// </summary>

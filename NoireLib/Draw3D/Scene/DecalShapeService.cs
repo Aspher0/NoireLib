@@ -4,21 +4,21 @@ using System.Collections.Generic;
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// Draws the opt-in decal-box wireframes on the render thread: nodes that turned one on
-/// (<see cref="SceneNode.ShowDecalBox"/>) are traced here each frame off <see cref="NoireDraw3D.OnRenderOverlay"/> - the
-/// same zero-latency point the native gizmo uses - so the box tracks the live camera and lands this frame. Consumers
+/// Draws the opt-in decal-shape outlines on the render thread: nodes that turned one on
+/// (<see cref="SceneNode.ShowDecalShape"/>) are traced here each frame off <see cref="NoireDraw3D.OnRenderOverlay"/> - the
+/// same zero-latency point the native gizmo uses - so the outline tracks the live camera and lands this frame. Consumers
 /// never plumb a per-frame call. Fail-soft: a destroyed or turned-off node auto-unregisters; a node that throws while
-/// emitting its edges is logged and skipped.
+/// emitting its outline is logged and skipped.
 /// </summary>
-internal static class DecalBoxService
+internal static class DecalShapeService
 {
-    private const string DisposeKey = "NoireLib.Draw3D.DecalBoxService";
+    private const string DisposeKey = "NoireLib.Draw3D.DecalShapeService";
 
     private static readonly object Sync = new();
     private static readonly List<SceneNode> Nodes = new();
     private static bool hooked;
 
-    /// <summary>Registers a node for per-frame decal-box drawing (idempotent). Hooks the render overlay on first use.</summary>
+    /// <summary>Registers a node for per-frame decal-shape drawing (idempotent). Hooks the render overlay on first use.</summary>
     public static void Register(SceneNode node)
     {
         lock (Sync)
@@ -29,7 +29,7 @@ internal static class DecalBoxService
         }
     }
 
-    /// <summary>Stops drawing a node's decal box.</summary>
+    /// <summary>Stops drawing a node's decal-shape outline.</summary>
     public static void Unregister(SceneNode node)
     {
         lock (Sync)
@@ -50,6 +50,9 @@ internal static class DecalBoxService
 
     private static void OnOverlay(FrameContext frame)
     {
+        if (NoireDraw3D.Wireframe || NoireDraw3D.DecalShapeOutlines)
+            return; // those trace every decal, opted in or not - tracing again would double-draw this node's outline
+
         SceneNode[] snapshot;
         lock (Sync)
         {
@@ -61,7 +64,7 @@ internal static class DecalBoxService
         var im = NoireDraw3D.Im;
         foreach (var node in snapshot)
         {
-            if (node.Destroyed || !node.HasDecalBox)
+            if (node.Destroyed || !node.HasDecalShape)
             {
                 Unregister(node);
                 continue;
@@ -69,11 +72,11 @@ internal static class DecalBoxService
 
             try
             {
-                node.DrawDecalBoxEdges(im);
+                node.DrawDecalShapeEdges(im);
             }
             catch (Exception ex)
             {
-                NoireLogger.LogError(ex, "A decal-box wireframe threw while drawing; skipped this frame.", "Draw3D");
+                NoireLogger.LogError(ex, "A decal-shape outline threw while drawing; skipped this frame.", "Draw3D");
             }
         }
     }

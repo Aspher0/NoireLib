@@ -5,6 +5,7 @@ using NoireLib.Draw3D.Materials;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace NoireLib.Draw3D.Im;
 
@@ -35,12 +36,16 @@ public sealed class ImDraw3D
         public Matrix4x4 World;
     }
 
+    /// <summary>Line width, in world units, for a decal outline traced in wireframe mode.</summary>
+    private const float OutlineWidth = 0.03f;
+
     private readonly object sync = new();
     private readonly List<Command> commands = new(128);
     private readonly List<Vector3> pathPool = new(256);
 
     private Mesh? unitBox;
     private Mesh? unitSphere;
+    private List<Vector3>? outlinePath; // reusable buffer for wireframe decal outlines; Consume is render-thread only
 
     internal ImDraw3D() { }
 
@@ -113,7 +118,13 @@ public sealed class ImDraw3D
     }
 
     /// <summary>Converts the buffered commands into draw items for this frame and clears the buffer.</summary>
-    internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable)
+    /// <param name="pass">The pass to add draw items to.</param>
+    /// <param name="frame">This frame's context.</param>
+    /// <param name="stats">Counters to report drops into.</param>
+    /// <param name="depthAvailable">Whether the game depth buffer could be read this frame.</param>
+    /// <param name="wireframe">Wireframe mode: grounded shapes trace their outline instead of projecting, since the pass drops decals (a decal's box carries no shape to rasterize).</param>
+    /// <param name="outlineDecals">Trace grounded shapes' outlines on top of normal rendering. An immediate-mode shape has no node to opt in with, so this is the only way to outline one.</param>
+    internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe = false, bool outlineDecals = false)
     {
         Command[] snapshot;
         Vector3[] paths;
@@ -164,7 +175,7 @@ public sealed class ImDraw3D
                     case Kind.Sector:
                     case Kind.Rect:
                         if (cmd.Style.Placement == ImShapePlacement.Grounded)
-                            AddDecal(pass, ref cmd, stats, depthAvailable);
+                            AddDecal(pass, ref cmd, in frame, stats, depthAvailable, wireframe, outlineDecals);
                         else
                             AddFlatShape(pass, ref cmd, stats, depthAvailable);
                         break;
@@ -184,7 +195,7 @@ public sealed class ImDraw3D
         }
     }
 
-    private void AddDecal(ScenePass pass, ref Command cmd, RenderStats stats, bool depthAvailable)
+    private void AddDecal(ScenePass pass, ref Command cmd, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe, bool outlineDecals)
     {
         var mesh = unitBox ??= new Mesh(MeshBuilder.Box(), name: "Im.UnitBox");
         var height = MathF.Max(cmd.Style.DecalHeight, 0.1f);
@@ -223,6 +234,12 @@ public sealed class ImDraw3D
                     * Matrix4x4.CreateFromAxisAngle(Vector3.UnitY, facing)
                     * Matrix4x4.CreateTranslation(cmd.A);
 
+        if (wireframe || outlineDecals)
+            AddDecalOutline(pass, shape, shapeParams, in world, cmd.Color, cmd.Style.Layer, in frame, stats, depthAvailable);
+
+        if (wireframe)
+            return; // the pass drops decals in wireframe (their box carries no shape to rasterize) - the outline above is the whole draw
+
         var mat = new MaterialData
         {
             Domain = MaterialDomain.GroundDecal,
@@ -237,6 +254,46 @@ public sealed class ImDraw3D
         // Per-decal actor exclusion: the shader skips pixels standing above these actors' feet inside their
         // radius, so a character in the decal is cut out without holing the ground around them.
         pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable, cmd.Style.ExcludeVolumes);
+    }
+
+    /// <summary>
+    /// Emits a grounded shape as its painted outline (wireframe mode): the same loops
+    /// <see cref="Scene.SceneNode.ShowDecalShape"/> traces, as camera-facing ribbons. Drawn on the shape's own plane
+    /// rather than projected, since without the decal shader there is no surface to project onto.
+    /// </summary>
+    private void AddDecalOutline(ScenePass pass, DecalShape shape, Vector4 shapeParams, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
+    {
+        var path = outlinePath ??= new List<Vector3>(DecalOutline.Segments * 2 + 8);
+        var style = new ImShapeStyle { Placement = ImShapePlacement.Flat, Layer = layer };
+        var loops = DecalOutline.LoopCount(shape, shapeParams);
+        for (var i = 0; i < loops; i++)
+        {
+            DecalOutline.BuildLoop(shape, shapeParams, in world, i, path);
+            var needed = (path.Count + 1) * 2;
+            if (pass.DynamicVertexBudget < needed)
+            {
+                stats.ImCommandsDropped++;
+                return;
+            }
+
+            var verts = pass.DynVertices;
+            var indices = pass.DynIndices;
+            var startIndex = indices.Count;
+
+            var center = Vector3.Zero;
+            foreach (var p in path)
+                center += p;
+            center /= path.Count;
+
+            var boundsRadius = OutlineWidth;
+            foreach (var p in path)
+                boundsRadius = MathF.Max(boundsRadius, Vector3.Distance(p, center) + OutlineWidth);
+
+            WriteCameraRibbon(verts, indices, CollectionsMarshal.AsSpan(path), OutlineWidth, frame.EyePos, closed: true);
+            var identity = Matrix4x4.Identity;
+            var mat = FlatData(style, cullNone: true);
+            pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, color, in identity, layer, center, boundsRadius, stats, depthAvailable);
+        }
     }
 
     private static void AddFlatShape(ScenePass pass, ref Command cmd, RenderStats stats, bool depthAvailable)

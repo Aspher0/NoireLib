@@ -1,4 +1,4 @@
-namespace NoireLib.Draw3D;
+﻿namespace NoireLib.Draw3D;
 
 /// <summary>
 /// A point-in-time snapshot of the renderer's counters. Draw3D renders no stats UI itself (Law 11) -
@@ -27,6 +27,9 @@ public readonly struct Draw3DStats
     /// <inheritdoc cref="FramesSkippedDisabled"/>
     public required long FramesSkippedEmpty { get; init; }
 
+    /// <summary>Frames the layer chose not to draw because the game UI was hidden and <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/> is off. The host's own windows are unaffected by that switch.</summary>
+    public required long FramesSkippedUiHidden { get; init; }
+
     /// <summary>Frames rendered in depth-off mode (game depth unreadable).</summary>
     public required long DepthOffFrames { get; init; }
 
@@ -54,7 +57,7 @@ public readonly struct Draw3DStats
     /// <summary>Items that survived culling last frame.</summary>
     public required int VisibleItems { get; init; }
 
-    /// <summary>Native-UI protection rects applied last frame.</summary>
+    /// <summary>Nameplate/HUD policy rects applied last frame (over-everything UI masking only; 0 otherwise).</summary>
     public required int ProtectRects { get; init; }
 
     /// <summary>Whether the game's depth buffer was readable last frame.</summary>
@@ -76,7 +79,7 @@ public readonly struct Draw3DStats
     public override string ToString() =>
         $"""
         Draw3D stats
-          frames: rendered {FramesRendered}, skipped (disabled {FramesSkippedDisabled}, init {FramesSkippedInitPending}, device {FramesSkippedNoDevice}, camera {FramesSkippedNoCamera}, size {FramesSkippedZeroSize}, empty {FramesSkippedEmpty})
+          frames: rendered {FramesRendered}, skipped (disabled {FramesSkippedDisabled}, init {FramesSkippedInitPending}, device {FramesSkippedNoDevice}, camera {FramesSkippedNoCamera}, size {FramesSkippedZeroSize}, empty {FramesSkippedEmpty}, ui-hidden {FramesSkippedUiHidden})
           last frame: draws {DrawCalls}, batches {Batches}, instances {Instances}, tris {Triangles}, visible {VisibleItems}, culled {CulledItems}
           depth: available {DepthAvailable} ({DepthSource}), depth-off frames {DepthOffFrames} | camera fallback: {UsedFallbackCamera}
           protection rects: {ProtectRects} | disposed-asset draws: {DisposedAssetDraws} | Im dropped: {ImCommandsDropped}

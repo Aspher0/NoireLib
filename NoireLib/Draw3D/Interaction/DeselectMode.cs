@@ -19,6 +19,6 @@ public enum DeselectMode
     /// </summary>
     ClickEmpty = 1,
 
-    /// <summary>Pressing the <see cref="NoireInteract.DeselectKey"/> (default Escape) clears the selection.</summary>
+    /// <summary>Pressing the <see cref="NoireInteract.DeselectKeyHeld"/> key (default Escape) clears the selection.</summary>
     Key = 2,
 }

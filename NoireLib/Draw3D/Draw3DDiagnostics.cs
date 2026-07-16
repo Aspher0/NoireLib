@@ -86,6 +86,18 @@ public sealed unsafe class Draw3DDiagnostics
     /// <summary>Toggles wireframe rasterization of the scene pass. Returns the new state.</summary>
     public bool ToggleWireframe() => NoireDraw3D.Wireframe = !NoireDraw3D.Wireframe;
 
+    /// <summary>
+    /// Traces every decal's painted shape as an outline, over normal rendering - retained decals and the immediate
+    /// layer's grounded shapes alike. Answers "where is this decal actually landing" globally, including for shapes drawn
+    /// through <see cref="Im.ImDraw3D"/>, which have no node to call
+    /// <see cref="Scene.SceneNode.ShowDecalShape"/> on. Always on while wireframe is.
+    /// </summary>
+    public bool DecalShapeOutlines
+    {
+        get => NoireDraw3D.DecalShapeOutlines;
+        set => NoireDraw3D.DecalShapeOutlines = value;
+    }
+
     /// <summary>Formats the current stats snapshot.</summary>
     public string GetStatsText() => NoireDraw3D.Stats.ToString();
 
@@ -352,14 +364,6 @@ public sealed unsafe class Draw3DDiagnostics
         var mainVsMap = CountMatches(expectedMap, actualMain);
         var swapVsMap = CountMatches(expectedMap, actualSwap);
         details.AppendLine($"  matches within 1e-3: RTM×map {mainVsMap}/{screens.Count}, Swap×map {swapVsMap}/{screens.Count}");
-
-        // UI-mask alpha health. Per-pixel game-UI-on-top depends on the backbuffer alpha channel holding
-        // native-UI coverage; in FFXIV the native UI often writes NO alpha there, in which case these read
-        // ~0, the per-pixel mask is inert, and the layer draws over the HUD (a known engine limitation).
-        var health = NoireDraw3D.UiMaskHealthState;
-        details.AppendLine($"  ui mask: {health?.Description ?? "off"}");
-        if (health?.LastSamples is { } alphas)
-            details.AppendLine($"  ui alpha samples: {string.Join(" ", Array.ConvertAll(alphas, a => a.ToString("F2")))}");
 
         var gate = (int)MathF.Ceiling(screens.Count * 0.9f);
         var verdict = mainVsMap >= gate ? "PASS"

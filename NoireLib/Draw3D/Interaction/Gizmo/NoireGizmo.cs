@@ -331,7 +331,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     }
 
     /// <inheritdoc/>
-    public bool OccludesBehindWalls(object token)
+    public bool OccludesBehindObstacles(object token)
         => IsNative && ResolveDepth() != GizmoDepth.AlwaysOnTop;
 
     /// <inheritdoc/>

@@ -14,7 +14,11 @@ namespace NoireDraw3DDemoPlugin.Windows;
 /// </summary>
 internal static class SectionUi
 {
-    /// <summary>Appends a hoverable "(?)" help marker to the current line when <paramref name="text"/> is non-empty.</summary>
+    /// <summary>
+    /// Appends a hoverable "(?)" help marker to the current line when <paramref name="text"/> is non-empty. The tooltip
+    /// wraps at a readable column instead of running off-screen as one line, so a hint is free to be several sentences
+    /// long; an explicit "\n" in the text still forces a break where one is wanted.
+    /// </summary>
     public static void Hint(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -22,8 +26,20 @@ internal static class SectionUi
 
         ImGui.SameLine();
         ImGui.TextDisabled("(?)");
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(text);
+        if (!ImGui.IsItemHovered())
+            return;
+
+        ImGui.BeginTooltip();
+        try
+        {
+            ImGui.PushTextWrapPos(ImGui.GetFontSize() * 28f);
+            ImGui.TextUnformatted(text);
+            ImGui.PopTextWrapPos();
+        }
+        finally
+        {
+            ImGui.EndTooltip();
+        }
     }
 
     /// <summary>A checkbox bound to a bool getter/setter.</summary>
@@ -75,6 +91,46 @@ internal static class SectionUi
         var changed = DrawEnumCombo(label, get(), set);
         Hint(hint);
         return changed;
+    }
+
+    /// <summary>
+    /// A checkbox per flag of a <c>[Flags]</c> enum, laid out on one line and bound to a getter/setter. Combined members
+    /// (<c>GizmoOp.Universal</c>) and the zero member are skipped: they are the state of the single-bit boxes, not
+    /// choices of their own. A dropdown cannot edit a flags enum - it can only ever hold one member - so anything
+    /// combinable comes through here. Follows the ImGui convention that a label from "##" on is an id only, not caption.
+    /// </summary>
+    public static void Flags<T>(string label, Func<T> get, Action<T> set, string? hint = null) where T : struct, Enum
+    {
+        var current = Convert.ToInt64(get());
+        var value = current;
+
+        var first = true;
+        foreach (var member in Enum.GetValues<T>())
+        {
+            var bit = Convert.ToInt64(member);
+            if (bit == 0 || (bit & (bit - 1)) != 0)
+                continue; // the zero member and combined aliases are states of the single-bit boxes, not boxes of their own
+
+            if (!first)
+                ImGui.SameLine();
+            first = false;
+
+            var on = (current & bit) != 0;
+            if (ImGui.Checkbox($"{member}##{label}", ref on))
+                value = on ? value | bit : value & ~bit;
+        }
+
+        var caption = label.Split("##", 2)[0];
+        if (caption.Length > 0)
+        {
+            ImGui.SameLine();
+            ImGui.TextUnformatted(caption);
+        }
+
+        Hint(hint);
+
+        if (value != current)
+            set((T)Enum.ToObject(typeof(T), value));
     }
 
     /// <summary>An enum dropdown backed by an external index field (for scenes where the value is applied on a button, not live).</summary>

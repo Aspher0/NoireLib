@@ -94,6 +94,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     public Func<nint, bool>? Injector { get; set; }
 
     /// <summary>
+    /// The committed present-composition buffer, or 0 before one has been learned. The same resource the
+    /// <see cref="Injector"/> is handed, still readable at present time - by then the game has drawn its native UI
+    /// into it, which is what lets the over-everything composite difference the two states to find the UI.
+    /// </summary>
+    public nint PresentBuffer => presentBuffer;
+
+    /// <summary>
     /// The player camera captured on the render thread at this frame's first depth pass - the exact view/projection
     /// the world currently in the present buffer was rasterized with. The inject callback projects the overlay with
     /// this so it stays locked to the world at any frame-rate. False until this frame's first depth pass is seen

@@ -17,20 +17,35 @@ public enum ImShapePlacement
 /// </summary>
 public readonly record struct ImShapeStyle
 {
-    /// <summary>Creates a style with default values.</summary>
-    public ImShapeStyle() { }
+    // Every default that is not the zero value reads through a nullable backing field rather than a property
+    // initializer. An initializer only runs for `new ImShapeStyle()`: `default(ImShapeStyle)` - which is what an
+    // unassigned field, an explicit `default`, and `style ?? default` all produce - would zero the lot instead, leaving a
+    // decal with no fill and no outline (it paints nothing at all) and a curve with no segments. Defaulting on read makes
+    // `default` and `new()` behave identically, so a caller cannot land on the zeroed set by accident.
+    private readonly float? outlineWidth;
+    private readonly float? fillOpacity;
+    private readonly float? decalHeight;
+    private readonly int? segments;
 
-    /// <summary>Ground-projected decal (default) or flat mesh.</summary>
-    public ImShapePlacement Placement { get; init; } = ImShapePlacement.Grounded;
+    /// <summary>Ground-projected decal (the default) or flat mesh.</summary>
+    public ImShapePlacement Placement { get; init; }
 
-    /// <summary>Soft-edge width against world geometry, in world units (flat shapes only; decals hug the ground instead).</summary>
-    public float DepthFade { get; init; } = 0.0f;
+    /// <summary>Soft-edge width against world geometry, in world units (flat shapes only; decals hug the ground instead). Default 0 = hard edge.</summary>
+    public float DepthFade { get; init; }
 
-    /// <summary>Decal outline band width in SDF units (0..1 of the footprint). 0 = no outline.</summary>
-    public float OutlineWidth { get; init; } = 0.08f;
+    /// <summary>Decal outline band width in SDF units (0..1 of the footprint). 0 = no outline. Default 0.08.</summary>
+    public float OutlineWidth
+    {
+        get => outlineWidth ?? 0.08f;
+        init => outlineWidth = value;
+    }
 
-    /// <summary>Decal fill opacity relative to the outline (the classic strong-rim decal look uses ~0.6).</summary>
-    public float FillOpacity { get; init; } = 0.6f;
+    /// <summary>Decal fill opacity relative to the outline (the classic strong-rim decal look uses ~0.6, the default).</summary>
+    public float FillOpacity
+    {
+        get => fillOpacity ?? 0.6f;
+        init => fillOpacity = value;
+    }
 
     /// <summary>Additive (glow-like, order-independent) instead of standard translucent blending.</summary>
     public bool Additive { get; init; }
@@ -48,8 +63,12 @@ public readonly record struct ImShapeStyle
     /// <summary>Draw layer (orders decals; higher draws later).</summary>
     public int Layer { get; init; }
 
-    /// <summary>Decal volume height in world units - how far above/below the anchor the projection reaches (default 4).</summary>
-    public float DecalHeight { get; init; } = 4f;
+    /// <summary>Decal volume height in world units - how far above/below the anchor the projection reaches. Default 4.</summary>
+    public float DecalHeight
+    {
+        get => decalHeight ?? 4f;
+        init => decalHeight = value;
+    }
 
     /// <summary>
     /// Grounded decals only: world-space cylinders (one per actor) the decal will <b>not</b> paint on - so a
@@ -60,6 +79,10 @@ public readonly record struct ImShapeStyle
     /// </summary>
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; init; }
 
-    /// <summary>Segment count for flat curved shapes (default 64).</summary>
-    public int Segments { get; init; } = 64;
+    /// <summary>Segment count for flat curved shapes. Default 64.</summary>
+    public int Segments
+    {
+        get => segments ?? 64;
+        init => segments = value;
+    }
 }

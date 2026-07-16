@@ -1,19 +1,22 @@
-// NoireLib Draw3D - layer composite: one fullscreen triangle, premultiplied blend onto the backbuffer.
+// NoireLib Draw3D - layer composite: one fullscreen triangle, premultiplied blend onto the target.
 // Law 11 at the pixel level: the entire visible output of Draw3D reaches the screen without ImGui.
 //
-// Game-UI-on-top happens HERE, per pixel: UiTex is a copy of the finished game frame, whose alpha
-// channel holds the accumulated native-UI coverage. Multiplying the layer by (1 - uiAlpha) puts every
-// UI pixel - nameplate letters, window drop shadows, chat transparency - visually on top of the layer
-// at letter granularity. The rects are invisible POLICY regions only (depth-aware nameplates): their
-// factor scales how strongly the UI mask applies there, so the visible boundary is always the UI's own
-// pixel shape, never a rectangle.
+// Game-UI-on-top happens HERE, per pixel, and only on the over-everything path (the under-UI path needs none of
+// this: it composites before the game draws its UI, so the game paints over the layer by itself). UiBefore and
+// UiAfter are two snapshots of the game's present buffer, taken before and after the native UI was drawn into it.
+// Wherever they differ, the UI painted something - so their difference is the UI's own shape, letter granularity
+// included, with no coverage channel to trust and no rectangle ever cut.
+//
+// The rects are invisible POLICY regions only (nameplate layering): their factor scales how strongly the UI mask
+// applies there, so the visible boundary is always the UI's own pixels, never a rectangle.
 Texture2D LayerTex : register(t0);
-Texture2D UiTex    : register(t1);
+Texture2D UiBefore : register(t1);
+Texture2D UiAfter  : register(t2);
 SamplerState PointClamp : register(s0);
 
 cbuffer CompositeCB : register(b0)
 {
-    float4 OpacityProtect;       // x = LayerOpacity, y = ui mask enabled, z = rect count
+    float4 OpacityProtect;       // x = LayerOpacity, y = ui mask enabled, z = rect count, w = difference gain
     float4 ProtectRects[128];    // nameplate policy rects, display-uv space: xy = min, zw = max
     float4 ProtectFactors[128];  // x = UI visibility inside the rect (1 = UI on top, 0 = layer covers the UI)
 }
@@ -26,7 +29,19 @@ void vs(uint id : SV_VertexID, out float4 pos : SV_Position, out float2 uv : TEX
 
 float4 ps(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
 {
-    float ui = OpacityProtect.y > 0.5 ? saturate(UiTex.Sample(PointClamp, uv).a) : 0.0;
+    // UI coverage by difference. Every pixel the UI did not draw on is bit-identical between the two snapshots (they
+    // are copies of one texture taken either side of the UI pass), so the test is effectively "did this pixel change
+    // at all" - the gain saturates on a single 8-bit step. Anything gentler under-masks: a semi-transparent HUD panel
+    // over dark scenery moves the image only a few percent, and a proportional mask would let the layer bleed through
+    // it at half strength. A UI pixel that blends to exactly the colour beneath it still reads as no-UI, which is
+    // correct - it is invisible either way.
+    float ui = 0.0;
+    if (OpacityProtect.y > 0.5)
+    {
+        float3 before = UiBefore.Sample(PointClamp, uv).rgb;
+        float3 after  = UiAfter.Sample(PointClamp, uv).rgb;
+        ui = saturate(length(after - before) * OpacityProtect.w);
+    }
 
     // f = how much the UI keeps reading on top at this pixel. Default 1 (always on top).
     // Inside policy rects the most UI-protective overlapping rect wins (max), so a HUD window

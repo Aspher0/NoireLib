@@ -7,7 +7,7 @@ namespace NoireLib.Draw3D;
 /// <summary>
 /// The one front door for the genuinely-global interaction knobs, reached via <see cref="NoireDraw3D.Interaction"/>.
 /// A dev building things never types <see cref="NoireInteract"/>: hover / click / selection live on <c>scene</c> /
-/// <c>node</c> / <c>editor</c>; this facade groups the process-wide input tuning (gestures, wall-occlusion, deselect
+/// <c>node</c> / <c>editor</c>; this facade groups the process-wide input tuning (gestures, obstacle-occlusion, deselect
 /// rules, multi-select modifiers, debug) and the custom-interactor registry on the class you already use. Every member
 /// forwards to the <see cref="NoireInteract"/> engine, which remains available as the advanced alias.
 /// </summary>
@@ -64,11 +64,11 @@ public sealed class Draw3DInteraction
         set => NoireInteract.DeselectOn = value;
     }
 
-    /// <summary>The deselect key edge for <see cref="DeselectMode.Key"/> (default Escape).</summary>
-    public Func<bool> DeselectKey
+    /// <summary>Whether the deselect key for <see cref="DeselectMode.Key"/> is down (default Escape). A held test - the press edge is taken for you.</summary>
+    public Func<bool> DeselectKeyHeld
     {
-        get => NoireInteract.DeselectKey;
-        set => NoireInteract.DeselectKey = value;
+        get => NoireInteract.DeselectKeyHeld;
+        set => NoireInteract.DeselectKeyHeld = value;
     }
 
     /// <summary>While this returns true, a left-click toggles a node in/out of a multi-selection (default Ctrl).</summary>
@@ -85,25 +85,25 @@ public sealed class Draw3DInteraction
         set => NoireInteract.AddSelectionHeld = value;
     }
 
-    /// <summary>How game-world geometry (walls, terrain) in front of a 3D object affects hovering/clicking it. Default <see cref="WallOcclusion.Off"/>.</summary>
-    public WallOcclusion WallOcclusion
+    /// <summary>How anything the game draws in front of a 3D object (a wall, terrain, a character) affects hovering/clicking it. Default <see cref="ObstacleOcclusion.Off"/>.</summary>
+    public ObstacleOcclusion ObstacleOcclusion
     {
-        get => NoireInteract.WallOcclusionMode;
-        set => NoireInteract.WallOcclusionMode = value;
+        get => NoireInteract.ObstacleOcclusionMode;
+        set => NoireInteract.ObstacleOcclusionMode = value;
     }
 
-    /// <summary>The click-through override for <see cref="WallOcclusion.HoldToClickThrough"/> (default Alt held).</summary>
+    /// <summary>The click-through override for <see cref="ObstacleOcclusion.HoldToClickThrough"/> (default Alt held).</summary>
     public Func<bool> ClickThroughHeld
     {
         get => NoireInteract.ClickThroughHeld;
         set => NoireInteract.ClickThroughHeld = value;
     }
 
-    /// <summary>Slack (world units) added to the wall distance before an object counts as occluded. Default 0.3.</summary>
-    public float WallOcclusionBias
+    /// <summary>Slack (world units) added to the obstacle distance before an object counts as occluded. Default 0.3.</summary>
+    public float ObstacleOcclusionBias
     {
-        get => NoireInteract.WallOcclusionBias;
-        set => NoireInteract.WallOcclusionBias = value;
+        get => NoireInteract.ObstacleOcclusionBias;
+        set => NoireInteract.ObstacleOcclusionBias = value;
     }
 
     /// <summary>When true, logs the click / hover / capture pipeline to the plugin log for in-game diagnosis. Off by default.</summary>

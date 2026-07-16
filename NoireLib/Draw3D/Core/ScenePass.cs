@@ -1,4 +1,4 @@
-using NoireLib.Draw3D.Assets;
+﻿using NoireLib.Draw3D.Assets;
 using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Materials;
@@ -59,7 +59,8 @@ internal struct ObjectCBData
 
 /// <summary>
 /// A ground decal's per-actor exclusion volumes (<c>ExcludeVolumes</c>) - must match ActorCB in Common.hlsli
-/// exactly. Each actor is a vertical cylinder packed as (worldX, worldZ, radius, feetY).
+/// exactly. Each actor is packed as (worldX, worldZ, radius, unused) - a horizontal gate picking which characters the
+/// stencil silhouette then cuts; nothing vertical is needed, so the fourth slot is float4 padding.
 /// </summary>
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct ActorCBData
@@ -105,31 +106,40 @@ internal sealed unsafe class ScenePass : IDisposable
     /// <summary>Whether any collected item this frame has a selection outline (drives the optional outline pass).</summary>
     public bool HasOutlinedItems => hasOutlined;
 
-    /// <summary>Whether any collected item this frame is a ground decal (retained or immediate) - gates the world-occlusion depth pass so decal-less scenes pay nothing.</summary>
-    public bool AnyGroundDecals()
+    /// <summary>
+    /// Whether any collected item this frame is a <see cref="DecalProjection.HighestOnly"/> ground decal (retained or
+    /// immediate) - gates the collision height-map pass. Scoped to that projection because it is the map's only consumer:
+    /// a scene of ordinary decals needs no height-map and pays nothing for one.
+    /// </summary>
+    public bool AnyTopSurfaceDecals()
     {
         for (var i = 0; i < itemCount; i++)
-            if (items[i].Mat.Domain == MaterialDomain.GroundDecal)
+            if (IsTopSurfaceDecal(in items[i]))
                 return true;
         return false;
     }
 
     /// <summary>
-    /// The highest box-top world Y across this frame's ground decals - the ceiling the top-down height-map is clipped to
-    /// (<see cref="RenderWorldHeight"/>), so overhead geometry (a room's roof/upper floor) above every decal's box never
-    /// masks the ground below. <see cref="float.NegativeInfinity"/> when no ground decals are present.
+    /// The highest box-top world Y across this frame's <see cref="DecalProjection.HighestOnly"/> decals - the ceiling the
+    /// top-down height-map is clipped to (<see cref="RenderWorldHeight"/>), so overhead geometry (a room's roof/upper
+    /// floor) above every such decal's box never masks the ground below. <see cref="float.NegativeInfinity"/> when there
+    /// are none.
     /// </summary>
-    public float MaxGroundDecalBoxTopY()
+    public float MaxTopSurfaceDecalBoxTopY()
     {
         var top = float.NegativeInfinity;
         for (var i = 0; i < itemCount; i++)
         {
             ref var item = ref items[i];
-            if (item.Mat.Domain == MaterialDomain.GroundDecal)
+            if (IsTopSurfaceDecal(in item))
                 top = MathF.Max(top, BoxTopY(in item.World));
         }
         return top;
     }
+
+    /// <summary>A ground decal that paints only its column's topmost surface, and so reads the collision height-map.</summary>
+    private static bool IsTopSurfaceDecal(in DrawItem item)
+        => item.Mat.Domain == MaterialDomain.GroundDecal && item.Mat.ProjectionMode > 0.5f;
 
     /// <summary>World-space top Y of a decal's unit box (local [-0.5,0.5]³ transformed by <paramref name="world"/>): the
     /// AABB-max Y, i.e. the vertical bound of what the decal paints. Row-vector convention (world = local·M).</summary>
@@ -290,15 +300,21 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>
-    /// Depth-aware nameplate policy: for each plate rect, decides whether the plate is in front of or
-    /// behind the Draw3D content covering it. Output factors feed the composite as <i>UI visibility</i>
-    /// inside the rect: 1 = the plate's letters keep reading on top (plate in front, or nothing covers
-    /// it); <paramref name="behindFactor"/> = the plate is behind your shape, so the shape covers its
-    /// letters (0 = fully, toward 1 = letters faintly showing through).<br/>
-    /// The rects are never visible - they only gate WHERE the per-pixel UI mask applies, so every
-    /// boundary on screen is the letters' own shape.
+    /// Depth-aware nameplate policy for the over-everything composite: for each plate rect, decides whether the plate
+    /// is in front of or behind the Draw3D content covering it. Output factors feed the composite as <i>UI visibility</i>
+    /// inside the rect: 1 = the plate's letters keep reading on top (plate in front, or nothing covers it);
+    /// <paramref name="behindFactor"/> = the plate is behind your shape, so the shape covers its letters (0 = fully,
+    /// toward 1 = letters faintly showing through).<br/>
+    /// The rects are never visible - they only gate WHERE the per-pixel UI mask applies, so every boundary on screen is
+    /// the letters' own shape. Under the game UI none of this runs: the game's plate pass tests the depth Draw3D stamps
+    /// and does the same job on the GPU.
     /// </summary>
-    public void ComputeRectOcclusion(in FrameContext frame, Vector4[] rects, float[] plateDistances, float[] factors, int count, float behindFactor)
+    /// <param name="coveringItemFar">
+    /// Optional diagnostics: receives, per plate, the far-surface distance of the item that covered it (0 = nothing
+    /// did). This is the other half of the comparison the plate report prints, and the only way to tell a plate that
+    /// is genuinely behind your content from one whose own distance was read wrong.
+    /// </param>
+    public void ComputeRectOcclusion(in FrameContext frame, Vector4[] rects, float[] plateDistances, float[] factors, int count, float behindFactor, float[]? coveringItemFar = null)
     {
         // Projection scale for a conservative screen-space radius; the fallback constant only matters
         // when the wholesale-VP camera is active (Proj is identity there).
@@ -306,7 +322,11 @@ internal sealed unsafe class ScenePass : IDisposable
         var gx = frame.Proj.M11 is > 0.05f and < 20f ? frame.Proj.M11 : gy * (frame.ViewportSize.Y / MathF.Max(frame.ViewportSize.X, 1f));
 
         for (var r = 0; r < count; r++)
+        {
             factors[r] = 1f;
+            if (coveringItemFar != null)
+                coveringItemFar[r] = 0f;
+        }
 
         for (var i = 0; i < itemCount; i++)
         {
@@ -334,7 +354,11 @@ internal sealed unsafe class ScenePass : IDisposable
                 // The plate is covered only when it sits behind the item's farthest possible
                 // surface - ties go to the letters (readability beats strictness).
                 if (plateDistances[r] >= item.EyeDistance + item.BoundsRadius)
+                {
                     factors[r] = behindFactor;
+                    if (coveringItemFar != null)
+                        coveringItemFar[r] = item.EyeDistance + item.BoundsRadius;
+                }
             }
         }
     }
@@ -389,7 +413,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ID3D11ShaderResourceView* worldHeightSrv,
         ID3D11ShaderResourceView* sceneStencilSrv,
         uint characterStencil,
-        float worldOcclusionThreshold,
+        float topSurfaceThreshold,
         Vector4 worldHeightRegion,
         Vector4 depthCal,
         ShaderLibrary shaders,
@@ -439,9 +463,9 @@ internal sealed unsafe class ScenePass : IDisposable
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
             Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
-            // DepthCal.w carries the world-occlusion elevation band (world units) for ground decals; 0 = feature off
-            // (decals fall back to the ExcludeVolumes cylinder). WorldHeight (t2) is only sampled when this is > 0.
-            DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldHeightSrv != null ? worldOcclusionThreshold : 0f),
+            // DepthCal.w carries the top-surface elevation band (world units) for HighestOnly decals; 0 = feature off
+            // (they degrade to AllSurfaces). WorldHeight (t2) is only sampled when this is > 0.
+            DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldHeightSrv != null ? topSurfaceThreshold : 0f),
             Ambient = new Vector4(lighting.AmbientColor, lighting.AmbientIntensity),
             LightDirIntensity = new Vector4(Vector3.Normalize(lighting.LightDirection), lighting.LightIntensity),
             LightColor = new Vector4(lighting.LightColor, 0f),
@@ -516,6 +540,15 @@ internal sealed unsafe class ScenePass : IDisposable
         {
             ref var item = ref items[i0];
             var bucket = item.Mat.Bucket;
+
+            // Wireframe: a decal's box is not geometry, it is the volume its SDF is evaluated in, so rasterizing its
+            // triangles as lines shades fragments wherever an edge crosses the paint - noise, not the shape. The shape is
+            // traced into the immediate layer instead (Scene3D.TraceDecalShapes / ImDraw3D), so drop the decal itself.
+            if (wireframe && item.Mat.Domain == MaterialDomain.GroundDecal)
+            {
+                i0++; // decals never instance, so the run is always 1 here
+                continue;
+            }
 
             // Find the instanced run: same mesh + identical material data, batchable domain.
             var run = 1;
@@ -709,7 +742,7 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = item.Color,
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
-                    // x = projection mode; y = this decal's box top world Y (the world-occlusion vertical search bound).
+                    // x = projection mode; y = this decal's box top world Y (the height-map's vertical search bound).
                     Params2 = new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), 0f, 0f),
                 };
                 objectCb.UpdateConstant(ctx, in objData);
@@ -733,7 +766,7 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>
-    /// Opt-in native-UI depth-write (<see cref="NoireDraw3D.NativeUiDepthWrite"/>): re-rasterizes this frame's
+    /// Nameplate occlusion (<see cref="Enums.NameplateOcclusion.DepthAware"/>): re-rasterizes this frame's
     /// opaque, depth-casting mesh items into an external depth-stencil view - the game's scene depth - depth-only
     /// (no colour), greater-equal tested so the world still occludes them. Run right AFTER <see cref="Execute"/>:
     /// it reuses the already-collected, already-sorted items. The caller owns the StateGuard; this binds its own
@@ -860,9 +893,9 @@ internal sealed unsafe class ScenePass : IDisposable
     /// <summary>
     /// Renders the cached collision-world mesh top-down into an R32F height-map (each texel = the highest collision Y in
     /// that XZ column, via MAX blend) up to <paramref name="heightCeiling"/> - collision above it (a room's roof/upper
-    /// floor) is discarded so it never masks the ground below. Ground decals sample it (bounded further to their own box
-    /// top) to tell an elevated body from the ground/furniture surface - see the world-occlusion branch in
-    /// GroundDecal.hlsl. Standalone (own target and states) so it runs before <see cref="Execute"/>.
+    /// floor) is discarded so it never masks the ground below. A <see cref="DecalProjection.HighestOnly"/> decal samples
+    /// it (bounded further to its own box top) to skip surfaces below its column's topmost one - the floor under a table.
+    /// Nothing else reads it. Standalone (own target and states) so it runs before <see cref="Execute"/>.
     /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ→clip map (matching <c>WorldHeightRegion</c>);
     /// the mesh's vertices are relative to <paramref name="meshCenter"/>.
     /// </summary>
@@ -1112,7 +1145,7 @@ internal sealed unsafe class ScenePass : IDisposable
             actorData.Actors[i * 4 + 0] = v.Position.X;
             actorData.Actors[i * 4 + 1] = v.Position.Z;
             actorData.Actors[i * 4 + 2] = v.Radius;
-            actorData.Actors[i * 4 + 3] = v.Position.Y; // feet height - separates the body from the ground
+            actorData.Actors[i * 4 + 3] = 0f; // unused: the stencil silhouette is the cut, so the gate is horizontal only
         }
 
         actorData.ActorCount = (uint)n;
