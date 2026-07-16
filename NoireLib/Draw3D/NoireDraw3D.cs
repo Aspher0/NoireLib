@@ -50,6 +50,7 @@ public static unsafe partial class NoireDraw3D
     private static RenderTarget? worldHeightRt; // top-down collision height-map (R32F) for world-occluded ground decals
     private const uint WorldHeightResolution = 1024; // height-map texels per side (over the ~80m cache region)
     private static SceneDepth? sceneDepth;
+    private static SceneStencil? sceneStencil; // the game depth-stencil's STENCIL plane (marks characters) for silhouette-exact decal exclusion
 
     // World-occluded ground decals: a cached mesh of the real collision world near the player, rebuilt on the framework
     // thread when the player leaves the cached region, rendered each frame into worldDepthTarget so decals skip any
@@ -67,6 +68,8 @@ public static unsafe partial class NoireDraw3D
     private static RenderStats? renderStats;
     private static RenderTargetTap? renderTargetTap;
     private static DepthProbe? depthProbe; // cached, non-blocking depth readback for the wall-occlusion hover test
+    private static bool stencilDebug;      // /noire3d stencil: log the game stencil values in view (discover the object-category convention)
+    private static DateTime lastStencilLog = DateTime.MinValue;
 
     private static ComPtr<ID3D11RenderTargetView> backbufferRtv;
     private static nint backbufferPtr;
@@ -170,6 +173,13 @@ public static unsafe partial class NoireDraw3D
     /// the cylinder path (per decal) when off or when the collision world isn't available.
     /// </summary>
     public static bool WorldOccludedDecals { get; set; } = true;
+
+    /// <summary>
+    /// The game depth-stencil value that marks characters, used to occlude ground decals along an excluded character's
+    /// exact silhouette (see <see cref="Scene.SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>).
+    /// Discovered via <c>/noire3d stencil</c>; default <c>0x08</c>. Set to 0 to disable stencil exclusion (decals paint over characters).
+    /// </summary>
+    public static uint CharacterStencilValue { get; set; } = 0x08;
 
     /// <summary>Elevation band (world units) above the local collision ground before a surface counts as an actor's body
     /// (or, for <c>HighestOnly</c>, below the column top before it's skipped). Larger tolerates coarser collision but paints
@@ -499,6 +509,52 @@ public static unsafe partial class NoireDraw3D
         return float.IsFinite(world.X) && float.IsFinite(world.Y) && float.IsFinite(world.Z);
     }
 
+    /// <summary>
+    /// <c>/noire3d stencil</c> diagnostic (render thread). Samples the game depth-stencil on a screen grid and logs the
+    /// distinct stencil values in view with their grid-hit counts, so the game's object-category convention (which
+    /// stencil value sits on characters vs furniture vs terrain vs the world) can be discovered in-game - the basis for
+    /// silhouette-occluding decals off excluded objects. Throttled to ~2/s; whole-texture readback, debug-only.
+    /// </summary>
+    private static void ProbeStencilGrid(RenderDevice device, in GameRenderSources.BackBufferInfo backBuffer)
+    {
+        var now = DateTime.UtcNow;
+        if ((now - lastStencilLog).TotalMilliseconds < 500)
+            return;
+        lastStencilLog = now;
+
+        if (backBuffer.Width == 0 || backBuffer.Height == 0 || !GameRenderSources.TryGetDepthTexture(out var info))
+            return;
+
+        var display = new Vector2(backBuffer.Width, backBuffer.Height);
+        const int cols = 24, rows = 14;
+        var pts = new List<Vector2>(cols * rows);
+        for (var r = 0; r < rows; r++)
+            for (var c = 0; c < cols; c++)
+                pts.Add(new Vector2((c + 0.5f) / cols * display.X, (r + 0.5f) / rows * display.Y));
+
+        var values = DepthReadback.TryReadStencilAtPoints(device, in info, pts, display, out var desc);
+        if (values == null)
+        {
+            NoireLogger.LogInfo($"[StencilDebug] no readable stencil plane ({desc}).", "Draw3D");
+            return;
+        }
+
+        var counts = new SortedDictionary<int, int>();
+        foreach (var v in values)
+            if (v >= 0)
+                counts[v] = counts.GetValueOrDefault(v) + 1;
+
+        var summary = new System.Text.StringBuilder();
+        foreach (var kv in counts)
+        {
+            if (summary.Length > 0)
+                summary.Append(", ");
+            summary.Append($"0x{kv.Key:X2}={kv.Value}");
+        }
+
+        NoireLogger.LogInfo($"[StencilDebug] {desc} - stencil in view (value=grid-hits): {summary}", "Draw3D");
+    }
+
     // ---------------------------------------------------------------- internals: lifecycle
 
     /// <summary>Lazily initializes the hub (event wiring; GPU objects wait for the game's first Present).</summary>
@@ -665,6 +721,8 @@ public static unsafe partial class NoireDraw3D
             worldCollisionEverBuilt = false;
             sceneDepth?.Dispose();
             sceneDepth = null;
+            sceneStencil?.Dispose();
+            sceneStencil = null;
             uiMaskSource?.Dispose();
             uiMaskSource = null;
             uiMaskHealth?.Dispose();
@@ -917,6 +975,12 @@ public static unsafe partial class NoireDraw3D
         // exactly. The wholesale-VP fallback camera exposes no near/flags, so it runs depth-off by design.
         sceneDepth ??= new SceneDepth();
         var depthSrvOk = sceneDepth.Update(device);
+
+        sceneStencil ??= new SceneStencil();
+        sceneStencil.Update(device); // the stencil plane of the same texture; null SRV when the format has none (decal then paints as before)
+
+        if (stencilDebug)
+            ProbeStencilGrid(device, in backBuffer);
         var hasDepth = depthSrvOk && cam.HasRenderCamera;
         var depthMap = hasDepth
             ? DepthCalibration.AnalyticMap(near, cam.FarPlane, cam.StandardZ, cam.FiniteFarPlane)
@@ -1038,7 +1102,7 @@ public static unsafe partial class NoireDraw3D
 
             scenePass!.BeginCollect(in viewFrame, mainPass: false);
             scenePass.AddScene(view.Scene, stats, depthAvailable: false);
-            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, 0f, Vector4.Zero, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, null, 0u, 0f, Vector4.Zero, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
         }
 
         // Main pass.
@@ -1073,8 +1137,9 @@ public static unsafe partial class NoireDraw3D
             }
         }
 
+        var sceneStencilSrv = hasDepth ? sceneStencil.Srv : null; // t3: stencil plane for silhouette-exact character exclusion (null = decal paints as before)
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
-            worldHeightSrv, WorldOcclusionThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            worldHeightSrv, sceneStencilSrv, CharacterStencilValue, WorldOcclusionThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
         // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
         // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
@@ -1502,6 +1567,12 @@ public static unsafe partial class NoireDraw3D
             case "probe":
                 Diagnostics.RunProbe();
                 Print("Draw3D: depth probe armed for the next frame - results go to the log.");
+                break;
+            case "stencil":
+                stencilDebug = !stencilDebug;
+                Print(stencilDebug
+                    ? "Draw3D: stencil debug ON - aim the camera at your character, a piece of furniture, terrain, etc.; the game stencil values in view are logged (~2/s). Tell me which value sits on each thing and I'll key decal exclusion off it."
+                    : "Draw3D: stencil debug off.");
                 break;
             case "wire":
                 Print($"Draw3D: wireframe {(Diagnostics.ToggleWireframe() ? "on" : "off")}.");

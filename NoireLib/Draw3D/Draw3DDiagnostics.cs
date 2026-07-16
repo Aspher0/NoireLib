@@ -135,7 +135,7 @@ public sealed unsafe class Draw3DDiagnostics
         var dz = center.Z - 7f;
         scene.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)), new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
              .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
-        scene.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)) with { Projection = DecalProjection.HighestOnly }, new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
+        scene.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)), new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
              .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
         scene.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)), new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
              .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
@@ -190,8 +190,8 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>The smoke decals' actor-exclusion predicate: characters, monsters and NPCs (players, battle NPCs, event NPCs) are skipped.</summary>
     private static bool SmokeActorExclusion(IGameObject o)
-        //=> o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
-        => false;
+        => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
+    //=> false;
 
     /// <summary>
     /// Loads a game-icon texture off-thread, then swaps it onto the icon quad + textured decal (a material-reference

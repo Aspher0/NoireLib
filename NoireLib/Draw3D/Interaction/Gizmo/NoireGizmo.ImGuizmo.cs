@@ -64,6 +64,14 @@ public sealed partial class NoireGizmo
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint ImGuizmoGetStyleDelegate();
 
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
+
+    /// <summary>The PHYSICAL (hardware) left-mouse state, read straight from the OS. ImGui's own <c>io.MouseDown</c> can
+    /// desync - Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui -
+    /// which strands an ImGuizmo drag; reading the hardware bit is the only reliable release signal. VK_LBUTTON = 0x01.</summary>
+    private static bool PhysicalLeftDown() => (GetAsyncKeyState(0x01) & 0x8000) != 0;
+
     /// <summary>
     /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend
     /// draws or falls back; the flags are process-static and would otherwise stay silent after the first use. Logs the
@@ -115,6 +123,19 @@ public sealed partial class NoireGizmo
     /// </summary>
     private bool DrawImGuizmo(in FrameContext frame, in Matrix4x4 world)
     {
+        // Hardware stuck-drag watchdog (runs before every early-out). A gizmo drag lives only while the button is
+        // physically held. If we still think we are dragging with the button PHYSICALLY up, the ImGui mouse-up was lost
+        // (Dalamud routed the release to the game while the mouse was captured), so io.MouseDown stays stuck true - then
+        // ImGuizmo keeps dragging the object on mouse-move and our capture flag holds the cursor hostage, with no visible
+        // handle to release on. Reading the REAL button (not io.MouseDown, the very bit that desynced) and resyncing
+        // ImGui to it releases ImGuizmo the same frame. This is why the earlier IsMouseDown-based guard could not work.
+        var physicalDown = PhysicalLeftDown();
+        if (imguizmoUsing && !physicalDown)
+        {
+            ImGui.GetIO().MouseDown[0] = false; // resync ImGui to hardware so ImGuizmo's Manipulate stops using this frame
+            EndImguizmoDrag();
+        }
+
         if (frame.UsedFallbackCamera)
             return false; // the wholesale view-projection fallback exposes no separate view/proj to feed ImGuizmo
 
@@ -248,7 +269,7 @@ public sealed partial class NoireGizmo
             var isOver = ImGuizmo.IsOver();
             var isUsing = ImGuizmo.IsUsing();
 
-            if (isUsing && !imguizmoUsing)
+            if (isUsing && !imguizmoUsing && physicalDown) // start only on a real, physically-held press (never a stuck "using")
             {
                 imguizmoUsing = true;
                 // Latch the driven op: the pre-drag hover normally has it (snapped from frame one); fall back to
@@ -272,7 +293,9 @@ public sealed partial class NoireGizmo
             // so a sub-increment nudge never shows and snaps back. With pre-snap this is normally already false.
             var dropUnsnappedFirstFrame = snapKind == SnapKind.None && OpHasSnap(imguizmoSnapKind);
 
-            ownsMouse = isOver || isUsing;
+            // Own the mouse on hover (so a click lands on the gizmo, not the game) or while genuinely dragging - but a
+            // stuck "using" with the button physically up must never keep it, or the cursor stays hostage.
+            ownsMouse = isOver || (isUsing && physicalDown);
 
             // Block the game camera the way ImGuizmo itself does: a next-frame capture-mouse flag, not a window (which
             // would be "another window hovered" to ImGuizmo and break its hover).
@@ -294,7 +317,9 @@ public sealed partial class NoireGizmo
             // cannot invert) would blank the object, so a garbage matrix is dropped rather than written to the target.
             // The single unsnapped frame at a snapping drag's start is dropped (see dropUnsnappedFirstFrame) so it never
             // shows before the snap takes over.
-            var applied = changed && !dropUnsnappedFirstFrame && IsUsableTransform(in realMatrix);
+            // Apply a manipulation only while the button is PHYSICALLY held - so a stuck "using" (io.MouseDown desynced)
+            // can never drag the object around on plain mouse-moves with no button down.
+            var applied = changed && physicalDown && !dropUnsnappedFirstFrame && IsUsableTransform(in realMatrix);
 
             // Reject a degenerate scale collapse: where a scale handle overlaps the screen rotation ring, ImGuizmo's
             // ambiguous pick can drive the scale to ~0 in a single frame (the object vanishes on all axes). A real scale
@@ -326,18 +351,29 @@ public sealed partial class NoireGizmo
             }
 
             if (!isUsing && imguizmoUsing)
-            {
-                imguizmoUsing = false;
-                imguizmoSnapKind = SnapKind.None;
-                groupPressWorlds = Array.Empty<Matrix4x4>();
-                RaiseEditEnd();
-            }
+                EndImguizmoDrag();
         }
 
         ImGui.End();
         ImGui.PopStyleVar();
 
         return ownsMouse;
+    }
+
+    /// <summary>
+    /// Ends the current ImGuizmo drag: clears the using/snap/group state and raises <c>EditEnd</c> once. Called on the
+    /// normal release and by the hardware watchdog when the physical button comes up while we still think we are
+    /// dragging - so a missed mouse-up can never leave the gizmo permanently owning the mouse.
+    /// </summary>
+    private void EndImguizmoDrag()
+    {
+        if (!imguizmoUsing)
+            return;
+
+        imguizmoUsing = false;
+        imguizmoSnapKind = SnapKind.None;
+        groupPressWorlds = Array.Empty<Matrix4x4>();
+        RaiseEditEnd();
     }
 
     /// <summary>The snap kind for a single-operation gizmo (so its snap is applied without waiting to detect the active op), else None.</summary>

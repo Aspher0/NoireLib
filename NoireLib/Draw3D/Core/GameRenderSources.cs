@@ -537,9 +537,10 @@ internal static unsafe class GameRenderSources
                 if (obj == null || !predicate(obj))
                     continue;
 
-                var radius = obj.HitboxRadius;
-                if (radius <= 0f)
-                    radius = 0.5f;
+                // A GENEROUS gate: this radius no longer cuts anything - it only selects which characters the stencil
+                // exclusion applies to, so it must comfortably contain the character's whole XZ footprint (arms, a tail).
+                // A margin over the hitbox is safe (only stencil-character pixels inside it are ever removed).
+                var radius = (obj.HitboxRadius > 0f ? obj.HitboxRadius : 0.5f) + 0.8f;
 
                 into.Add(new ExcludeVolume(obj.Position, radius * radiusScale));
             }

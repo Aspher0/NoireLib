@@ -12,8 +12,7 @@ namespace NoireLib.Draw3D.Core;
 /// the singletons (Law 8: zero signatures, zero offsets) - the single virtual call is <c>Collider.GetColliderType()</c>,
 /// dispatched through the object's own vtable, never a scanned address.<br/>
 /// It walks the game's real collision world - streamed terrain, placed background parts, housing furniture and any
-/// dynamic object that registers a collider - and yields world-space triangles. This is exactly the source a navmesh
-/// tool (e.g. vnavmesh) reads; here it feeds true surface-projected decals.<br/>
+/// dynamic object that registers a collider - and yields world-space triangles for surface-projected geometry.<br/>
 /// <b>Threading:</b> the collision scene is mutated by the game's framework-thread update under an SRW lock, so every
 /// method here MUST be called on the framework thread. Fail-soft throughout: a bad collider is skipped, never fatal.
 /// </summary>

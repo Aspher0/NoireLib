@@ -65,7 +65,8 @@ internal struct ObjectCBData
 internal unsafe struct ActorCBData
 {
     public uint ActorCount;
-    public uint Pad0, Pad1, Pad2;
+    public uint CharacterStencil; // game stencil value marking characters (0 = feature off); the exact silhouette source
+    public uint Pad1, Pad2;
     public fixed float Actors[ScenePass.MaxActorVolumes * 4];
 }
 
@@ -93,6 +94,7 @@ internal sealed unsafe class ScenePass : IDisposable
     private ulong[] keys = new ulong[256];
     private int itemCount;
     private int sequence;
+    private uint currentCharacterStencil; // the game stencil value marking characters, this Execute (0 = exclusion off)
     private FrustumPlanes frustum;
     private Vector3 eyePos;
     private bool collectingForMainPass;
@@ -385,6 +387,8 @@ internal sealed unsafe class ScenePass : IDisposable
         DepthTarget privateDepth,
         ID3D11ShaderResourceView* sceneDepthSrv,
         ID3D11ShaderResourceView* worldHeightSrv,
+        ID3D11ShaderResourceView* sceneStencilSrv,
+        uint characterStencil,
         float worldOcclusionThreshold,
         Vector4 worldHeightRegion,
         Vector4 depthCal,
@@ -395,6 +399,7 @@ internal sealed unsafe class ScenePass : IDisposable
         Draw3DLighting lighting)
     {
         EnsureBuffers(device);
+        currentCharacterStencil = sceneStencilSrv != null ? characterStencil : 0u; // 0 => decal skips the stencil test (paints as before)
 
         Array.Sort(keys, items, 0, itemCount);
 
@@ -484,7 +489,8 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->PSSetConstantBuffers(1, 1, &ocb);
         var acb = actorCb!.Buffer;
         ctx->PSSetConstantBuffers(2, 1, &acb); // b2: per-decal actor exclusion volumes (decal ExcludeVolumes)
-        ctx->PSSetShaderResources(2, 1, &worldHeightSrv); // t2: top-down collision height-map for world-occluded decals (null = off)
+        ctx->PSSetShaderResources(2, 1, &worldHeightSrv); // t2: top-down collision height-map for DecalProjection.HighestOnly (null = off)
+        ctx->PSSetShaderResources(3, 1, &sceneStencilSrv); // t3: game stencil plane (marks characters) for silhouette-exact decal exclusion (null = off)
         var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &pointClamp);
         var linearWrap = cache.GetSampler(device, SamplerKey.LinearWrap);
@@ -1110,6 +1116,7 @@ internal sealed unsafe class ScenePass : IDisposable
         }
 
         actorData.ActorCount = (uint)n;
+        actorData.CharacterStencil = currentCharacterStencil; // the game stencil value that marks characters (0 = off)
         actorCb!.UpdateConstant(ctx, in actorData);
     }
 

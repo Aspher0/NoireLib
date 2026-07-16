@@ -28,22 +28,37 @@ cbuffer ObjectCB : register(b1)
     float4   Params2;           // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
 }
 
-// ---- b2: per-decal excluded-actor volumes (ground-decal ExcludeVolumes) --
-// The actors THIS decal skips painting on, uploaded per decal draw. Each is a vertical cylinder:
-// xy = world XZ centre, z = radius, w = feet height (Y). ActorCount = 0 when the decal excludes nothing.
+// ---- b2: per-decal excluded-actor gate + stencil key (ground-decal ExcludeObjects) --
+// The actors THIS decal skips painting on, uploaded per decal draw. Each is a vertical cylinder used ONLY as a coarse
+// gate to pick which characters to exclude - the exact cut is the game stencil silhouette, so the radius may be generous
+// without ever holing the ground. xy = world XZ centre, z = radius, w unused. ActorCount = 0 = exclude nothing.
+// CharacterStencil = the game stencil value that marks characters (discovered via /noire3d stencil).
 #define MAX_DECAL_ACTORS 64
 cbuffer ActorCB : register(b2)
 {
     uint   ActorCount;
-    uint3  _actorPad;
+    uint   CharacterStencil;
+    uint2  _actorPad;
     float4 Actors[MAX_DECAL_ACTORS];
 };
 
-Texture2D    SceneDepth  : register(t0);
-Texture2D    BaseTex     : register(t1);
-Texture2D    WorldHeight : register(t2); // top-down highest collision Y per XZ (ground decals; see WorldHeightRegion)
-SamplerState PointClamp  : register(s0);
-SamplerState BaseSamp    : register(s1);
+Texture2D       SceneDepth   : register(t0);
+Texture2D       BaseTex      : register(t1);
+Texture2D       WorldHeight  : register(t2); // top-down highest collision Y per XZ (ground decals; see WorldHeightRegion)
+Texture2D<uint2> SceneStencil : register(t3); // game depth-stencil's STENCIL plane (uint; .g = stencil), marks characters
+SamplerState    PointClamp   : register(s0);
+SamplerState    BaseSamp     : register(s1);
+
+// The game stencil value under a display uv (0 when the stencil plane is unbound/unavailable, which excludes nothing).
+// Integer .Load (stencil is a UINT plane, unfilterable): the display uv maps to the depth-stencil's rendered region via
+// DepthUv.xy (actual/allocated) times the texture's allocated size.
+uint SceneStencilValue(float2 displayUv)
+{
+    uint sw, sh;
+    SceneStencil.GetDimensions(sw, sh);
+    int2 texel = int2(displayUv * DepthUv.xy * float2(sw, sh));
+    return SceneStencil.Load(int3(texel, 0)).g;
+}
 
 // Highest collision-world Y at a world position's XZ column (WorldHeight sampled through WorldHeightRegion).
 // Returns -1e30 when the height-map is unavailable or the point is outside the sampled region (treat as "no ground").

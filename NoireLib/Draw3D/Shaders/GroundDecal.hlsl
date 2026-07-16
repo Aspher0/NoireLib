@@ -1,8 +1,8 @@
 // NoireLib Draw3D - terrain-hugging decal shader (unit-box volume, CullFront, depth Disabled, Premultiplied).
 // Reconstructs the world position under each covered pixel from the game's depth buffer and evaluates an SDF shape in
 // the decal's local footprint space, so the decal projects onto the ground, terrain AND walls exactly like a real
-// projected decal. The only surfaces it removes are the caller's registered actors (ExcludeVolumes) - a tight,
-// anti-aliased cut, never a soft hole. Variants: DECAL_TEXTURED.
+// projected decal. Excluded CHARACTERS are removed along their exact game-stencil silhouette (no volume): the ExcludeObjects
+// cylinders are only a coarse gate that picks which characters, and the stencil provides the cut. Variants: DECAL_TEXTURED.
 #include "Common.hlsli"
 
 struct VsIn
@@ -19,26 +19,25 @@ float4 vs(VsIn v) : SV_Position
     return mul(wp, ViewProj);
 }
 
-// Anti-aliased coverage of the registered excluded actors (1 = fully removed, 0 = paint normally), so an actor
-// standing in the decal is cut cleanly at its silhouette with NO bleed onto the feet and NO aliasing. The excluded
-// region is the INTERSECTION of the actor's vertical cylinder (its XZ footprint) with the half-space above its feet
-// plane - so flat ground inside the cylinder still paints (an over-wide radius leaves no moat) and only the raised
-// body/shoes are removed. The edge is AA'd in screen space by SdfCoverage's fwidth, exactly like the footprint edge.
-float ActorExclusion(float3 wp)
+// Character removal along the game-stencil silhouette. Returns 1 where this pixel must be cut (an EXCLUDED character's
+// body), 0 where it paints. The cut is EXACT (the game marks character pixels in stencil = CharacterStencil); the
+// per-actor cylinders are only a coarse gate selecting WHICH characters to exclude, so their radius may be generous
+// without ever removing ground - only stencil-character pixels inside an excluded actor's footprint are removed. A
+// character the caller did not list (outside every cylinder) is painted over; the ground is never touched.
+float CharacterMask(float3 wp, float2 uv)
 {
-    // Accumulate the UNION signed-distance field of every actor's excluded region (< 0 inside any actor's body
-    // column), then take the screen-space-AA'd coverage ONCE. The AA (fwidth) must stay OUT of this varying-count loop:
-    // a gradient inside a loop with a runtime iteration count forces an unroll and the game compiles shaders with
-    // warnings-as-errors (X3570), so calling SdfCoverage per actor here would fail to compile at runtime.
-    float sd = 1e9;
-    for (uint ai = 0; ai < ActorCount; ai++)
+    if (CharacterStencil == 0u || ActorCount == 0u)
+        return 0.0;                                       // feature off / nothing excluded (stencil unbound reads 0 too)
+    if (SceneStencilValue(uv) != CharacterStencil)
+        return 0.0;                                       // not a character pixel -> keep painting
+
+    for (uint ai = 0; ai < ActorCount; ai++)              // gate: inside an excluded actor's XZ footprint?
     {
-        float2 dxz  = wp.xz - Actors[ai].xy;
-        float  aCyl = length(dxz) - Actors[ai].z;         // signed distance to the cylinder wall: < 0 inside
-        float  aTop = (Actors[ai].w + 0.03) - wp.y;       // < 0 when raised above the feet plane (+3cm): body / shoes
-        sd = min(sd, max(aCyl, aTop));                    // union of each cylinder-∩-above-feet region
+        float2 d = wp.xz - Actors[ai].xy;
+        if (dot(d, d) < Actors[ai].z * Actors[ai].z)
+            return 1.0;
     }
-    return SdfCoverage(sd);                               // one AA coverage of the excluded region (fwidth ~ 1px)
+    return 0.0;
 }
 
 float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
@@ -64,38 +63,20 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     float2 p = lp.xz * 2.0;                              // footprint space: edge at |p| = 1
     float vis = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w; // Y feather near the box top/bottom
 
-    // Actor removal. Two modes:
-    //  * Height-map world-occlusion, GATED by this decal's registered actors (DepthCal.w > 0, the new default).
-    //    WorldHeight is a top-down map of the highest collision Y per XZ column, capped at the tallest decal box top
-    //    (its roof is already removed). Here we bound the search to THIS decal's own box top (Params2.y): the vertical
-    //    slab the decal actually paints. `groundY` is the highest collision surface WITHIN the box; `elevated` = this
-    //    pixel's surface sits above it, i.e. a body/prop standing on the ground - NOT the ground itself. Camera-angle
-    //    independent (unlike a view-depth test, which mistakes a sitting leg at floor depth for the floor). We remove
-    //    ONLY where an excluded actor's cylinder (ActorExclusion) covers an elevated surface. Therefore:
-    //      - ground (flat or sloped) sits at groundY -> never cut (no moat, no gouge);
-    //      - furniture WITH collision sits at its own groundY -> never cut (stools/shelves stop being clipped);
-    //      - an excluded character's body is removed at any angle; a non-listed actor is painted over (no cylinder).
-    //    A surface ABOVE the box (groundY > boxTopY) is outside what this decal paints, so it drives neither the cut nor
-    //    HighestOnly - the box's Y scale IS the search height (a 5cm box searches 5cm; an infinite box reaches the ceiling).
-    //    DepthCal.w is the elevation band in world units (covers height-map/collision coarseness). ActorCount 0 => all painted.
-    //  * Legacy cylinder (DepthCal.w <= 0): the per-decal ExcludeVolumes cut on its own (world-occlusion off).
-    if (DepthCal.w > 0.0)
-    {
-        float groundY    = WorldGroundHeight(wp);                        // highest collision Y in this column (roof capped); -1e30 = unknown
-        float boxTopY    = Params2.y;                                    // THIS decal's box top (world Y): the vertical search bound
-        bool  haveGround = groundY > -1e29 && groundY <= boxTopY + DepthCal.w; // trust only a surface within this decal's own box
-        float elevated   = (haveGround && wp.y > groundY + DepthCal.w) ? 1.0 : 0.0;
-        vis *= 1.0 - elevated * ActorExclusion(wp);                      // remove only an excluded actor's elevated body
+    // Character removal: cut the decal along an excluded character's EXACT game-stencil silhouette (no volume, no
+    // collision). The registered cylinders only pick which characters; the stencil supplies the cut, so legs/feet/tail
+    // are removed exactly and the ground is never holed. A non-excluded character is painted over.
+    vis *= 1.0 - CharacterMask(wp, uv);
 
-        // DecalProjection.HighestOnly (Params2.x = 1): skip a surface below the box's highest collision surface (the
-        // floor under a table) so only the topmost surface WITHIN the box paints. Purely vertical - never touches
-        // wall/object occlusion.
-        if (Params2.x > 0.5 && haveGround && wp.y < groundY - DepthCal.w)
-            return float4(0, 0, 0, 0);
-    }
-    else
+    // DecalProjection.HighestOnly (Params2.x = 1) still uses the collision height-map (DepthCal.w > 0): skip a surface
+    // below the box's highest collision surface (the floor under a table) so only the topmost surface within the box
+    // paints. Purely vertical - never touches wall/object occlusion.
+    if (Params2.x > 0.5 && DepthCal.w > 0.0)
     {
-        vis *= 1.0 - ActorExclusion(wp);                                // registered actors removed (legacy cylinder)
+        float groundY = WorldGroundHeight(wp);
+        float boxTopY = Params2.y;
+        if (groundY > -1e29 && groundY <= boxTopY + DepthCal.w && wp.y < groundY - DepthCal.w)
+            return float4(0, 0, 0, 0);
     }
 
 #ifdef DECAL_TEXTURED
