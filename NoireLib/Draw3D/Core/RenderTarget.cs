@@ -12,6 +12,10 @@ internal sealed unsafe class RenderTarget : IDisposable
     private ComPtr<ID3D11Texture2D> texture;
     private ComPtr<ID3D11RenderTargetView> rtv;
     private ComPtr<ID3D11ShaderResourceView> srv;
+    private readonly DXGI_FORMAT format;
+
+    /// <summary>Creates a render target of the given format (default RGBA8 - the scene color target).</summary>
+    public RenderTarget(DXGI_FORMAT format = DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM) => this.format = format;
 
     /// <summary>Current width in pixels (0 before first creation).</summary>
     public uint Width { get; private set; }
@@ -42,7 +46,7 @@ internal sealed unsafe class RenderTarget : IDisposable
             Height = height,
             MipLevels = 1,
             ArraySize = 1,
-            Format = DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM,
+            Format = format,
             SampleDesc = new DXGI_SAMPLE_DESC { Count = 1 },
             Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
             BindFlags = (uint)(D3D11_BIND_FLAG.D3D11_BIND_RENDER_TARGET | D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE),

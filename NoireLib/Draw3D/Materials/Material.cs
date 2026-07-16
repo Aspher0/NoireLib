@@ -53,6 +53,9 @@ public sealed record Material
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how strongly the decal feathers out near the top/bottom of its volume (0 = none, 1 = full).</summary>
     public float HeightFade { get; init; } = 1f;
 
+    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how to resolve stacked surfaces in the footprint (paint all, or only the topmost). Needs <see cref="NoireDraw3D.WorldOccludedDecals"/>.</summary>
+    public DecalProjection Projection { get; init; } = DecalProjection.AllSurfaces;
+
     /// <summary>Optional name of a custom pipeline registered via <see cref="NoireDraw3D.RegisterPipeline"/>. When set, it replaces the <see cref="Domain"/> shader.</summary>
     public string? CustomPipeline { get; init; }
 

@@ -47,7 +47,8 @@ public static unsafe partial class NoireDraw3D
     private static RenderTarget? outlineMaskRt; // RGBA silhouette-coverage mask for the selection outline pass
     private static RenderTarget? outlineVisRt;  // per-silhouette-pixel worldVisible flag (r) for occluding the outline
     private static DepthTarget? privateDepth;
-    private static DepthTargetSrv? worldDepthTarget; // collision-world device-z for world-occluded ground decals
+    private static RenderTarget? worldHeightRt; // top-down collision height-map (R32F) for world-occluded ground decals
+    private const uint WorldHeightResolution = 1024; // height-map texels per side (over the ~80m cache region)
     private static SceneDepth? sceneDepth;
 
     // World-occluded ground decals: a cached mesh of the real collision world near the player, rebuilt on the framework
@@ -170,10 +171,10 @@ public static unsafe partial class NoireDraw3D
     /// </summary>
     public static bool WorldOccludedDecals { get; set; } = true;
 
-    /// <summary>How much nearer than the collision world a surface must be (world units) to count as "in front of it" and
-    /// be skipped by a world-occluded decal. Larger tolerates coarser collision but paints a touch more of a character's
-    /// base; smaller is tighter but can flicker where collision is offset from the visual ground. Default 0.2 m.</summary>
-    public static float WorldOcclusionThreshold { get; set; } = 0.2f;
+    /// <summary>Elevation band (world units) above the local collision ground before a surface counts as an actor's body
+    /// (or, for <c>HighestOnly</c>, below the column top before it's skipped). Larger tolerates coarser collision but paints
+    /// a touch more of a character's base; smaller is tighter but can nibble genuine ground where collision is offset. Default 0.1 m.</summary>
+    public static float WorldOcclusionThreshold { get; set; } = 0.1f;
 
     /// <summary>Deprecated: use <see cref="NativeUi"/>.<c>Protection</c>.</summary>
     [Obsolete("Grouped under NoireDraw3D.NativeUi.Protection.")]
@@ -657,8 +658,8 @@ public static unsafe partial class NoireDraw3D
             outlineVisRt = null;
             privateDepth?.Dispose();
             privateDepth = null;
-            worldDepthTarget?.Dispose();
-            worldDepthTarget = null;
+            worldHeightRt?.Dispose();
+            worldHeightRt = null;
             worldCollision?.Mesh?.Dispose();
             worldCollision = null;
             worldCollisionEverBuilt = false;
@@ -1037,7 +1038,7 @@ public static unsafe partial class NoireDraw3D
 
             scenePass!.BeginCollect(in viewFrame, mainPass: false);
             scenePass.AddScene(view.Scene, stats, depthAvailable: false);
-            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, 0f, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            scenePass.Execute(device, ctx, in viewFrame, view.Target, view.Depth, null, null, 0f, Vector4.Zero, Vector4.Zero, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
         }
 
         // Main pass.
@@ -1046,25 +1047,34 @@ public static unsafe partial class NoireDraw3D
         foreach (var scene in scenes)
             scenePass.AddScene(scene, stats, hasDepth);
 
-        // World-occluded decals: render the cached collision world into a shader-readable depth buffer so ground decals
-        // can skip characters standing on them (see GroundDecal.hlsl). Needs the game depth (decals reconstruct from it)
-        // and only runs when the frame actually has decals, so decal-less scenes pay nothing. Fail-soft: no cache / no
-        // target -> null SRV -> decals use the legacy ExcludeVolumes cylinder.
-        ID3D11ShaderResourceView* worldDepthSrv = null;
+        // World-occluded decals: render the cached collision world top-down into a height-map so ground decals can cut an
+        // excluded actor's body by its elevation above the local ground (see GroundDecal.hlsl). Needs the game depth
+        // (decals reconstruct their surface from it) and only runs when the frame has decals, so decal-less scenes pay
+        // nothing. Fail-soft: no cache / no target -> null SRV -> decals use the legacy ExcludeVolumes cylinder.
+        ID3D11ShaderResourceView* worldHeightSrv = null;
+        var worldHeightRegion = Vector4.Zero;
         var frameHasDecals = WorldOccludedDecals && scenePass.AnyGroundDecals();
         lastFrameHadDecals = frameHasDecals;
         if (frameHasDecals && hasDepth && worldCollision is { } wc && wc.Mesh is { } wcMesh)
         {
-            worldDepthTarget ??= new DepthTargetSrv();
-            if (worldDepthTarget.EnsureSize(device, backBuffer.Width, backBuffer.Height))
+            worldHeightRt ??= new RenderTarget(DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT);
+            if (worldHeightRt.EnsureSize(device, WorldHeightResolution, WorldHeightResolution))
             {
-                scenePass.RenderWorldDepth(device, ctx, in frame, wcMesh, wc.Center, worldDepthTarget, shaderLibrary!, stateCache!, stats);
-                worldDepthSrv = worldDepthTarget.Srv;
+                var minX = wc.Center.X - WorldCollisionRadius;
+                var minZ = wc.Center.Z - WorldCollisionRadius;
+                var size = 2f * WorldCollisionRadius;
+                var heightMatrix = BuildHeightMapMatrix(minX, minZ, size);
+                // Cap the height-map at the tallest decal box top (+ the elevation band) so a covered room's roof/upper
+                // floor above every decal never masks the ground; each decal bounds the search to its own box in-shader.
+                var heightCeiling = scenePass.MaxGroundDecalBoxTopY() + WorldOcclusionThreshold;
+                scenePass.RenderWorldHeight(device, ctx, wcMesh, wc.Center, heightMatrix, heightCeiling, worldHeightRt, shaderLibrary!, stateCache!, stats);
+                worldHeightSrv = worldHeightRt.Srv;
+                worldHeightRegion = new Vector4(minX, minZ, 1f / size, 1f);
             }
         }
 
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
-            worldDepthSrv, WorldOcclusionThreshold, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
+            worldHeightSrv, WorldOcclusionThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
         // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
         // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
@@ -1332,7 +1342,7 @@ public static unsafe partial class NoireDraw3D
         outlineMaskRt?.Release();
         outlineVisRt?.Release();
         privateDepth?.Release();
-        worldDepthTarget?.Release();
+        worldHeightRt?.Release();
         sceneDepth?.Invalidate();
         gameDepthTarget?.Invalidate();
         uiMaskSource?.Release();
@@ -1348,6 +1358,21 @@ public static unsafe partial class NoireDraw3D
     }
 
     // ---------------------------------------------------------------- internals: camera sampler, UI-hide, command
+
+    /// <summary>
+    /// Builds the affine world→clip map for the top-down collision height-map: world XZ maps linearly to the R32F target
+    /// (no perspective, Y ignored) so a world point at (X,Z) is sampled at UV = (X-minX, Z-minZ)/size - matching the
+    /// <c>WorldHeightRegion</c> the decal shader uses. Row-vector convention (clip = wp · M); transposed on upload.
+    /// </summary>
+    private static Matrix4x4 BuildHeightMapMatrix(float minX, float minZ, float size)
+    {
+        var s = 2f / size;
+        return new Matrix4x4(
+            s,               0f,            0f,   0f,   // X -> clip.x
+            0f,              0f,            0f,   0f,   // Y ignored
+            0f,              -s,            0f,   0f,   // Z -> clip.y
+            -minX * s - 1f,  1f + minZ * s, 0.5f, 1f); // translation + constant clip.z/w
+    }
 
     private static void UpdateFrameworkHook() => SetFrameworkHook(initialized && !disposed);
 

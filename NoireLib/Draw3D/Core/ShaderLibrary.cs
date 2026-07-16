@@ -138,6 +138,18 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
+    /// <summary>Gets the top-down collision height-map pipeline (standard vertex layout; MAX-blended world Y), or null on compile failure.</summary>
+    public ShaderPipeline? GetWorldHeight(RenderDevice device)
+    {
+        const string key = "WorldHeight";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var pipeline = Compile(device, key, GetSource("WorldHeight.hlsl"), null, instanced: false, createLayout: true);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
     /// <summary>Registers a custom pipeline by name (the §14.2 seam). The source may include "Common.hlsli".</summary>
     public bool RegisterCustom(string name, string hlslSource)
     {

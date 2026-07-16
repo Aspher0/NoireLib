@@ -21,10 +21,10 @@ public class Draw3DCoreContractTests
     // ---------------------------------------------------------------- constant-buffer packing
 
     [Fact]
-    public void FrameCB_Is240Bytes() => Unsafe.SizeOf<FrameCBData>().Should().Be(240); // + DepthCal (runtime depth calibration)
+    public void FrameCB_Is256Bytes() => Unsafe.SizeOf<FrameCBData>().Should().Be(256); // + WorldHeightRegion (decal height-map)
 
     [Fact]
-    public void ObjectCB_Is176Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(176);
+    public void ObjectCB_Is192Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(192); // + Params2 (ground-decal projection mode)
 
     [Fact]
     public void CompositeCB_Is4112Bytes() => Unsafe.SizeOf<CompositeCBData>().Should().Be(4112); // header + 128 rects + 128 factors

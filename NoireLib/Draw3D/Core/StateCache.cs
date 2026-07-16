@@ -10,7 +10,7 @@ namespace NoireLib.Draw3D.Core;
 /// alpha channel is the game's native-UI coverage (our per-pixel mask source, and other overlay
 /// libraries read it too), so the composite must never write into it.
 /// </summary>
-internal enum BlendKey { Opaque = 0, Premultiplied = 1, Additive = 2, CompositeRgb = 3 }
+internal enum BlendKey { Opaque = 0, Premultiplied = 1, Additive = 2, CompositeRgb = 3, Max = 4 }
 
 /// <summary>Depth-stencil state catalog keys (reversed-Z GREATER_EQUAL semantics).</summary>
 internal enum DepthKey { WriteGE = 0, ReadGE = 1, Disabled = 2 }
@@ -27,7 +27,7 @@ internal enum SamplerKey { PointClamp = 0, LinearWrap = 1, LinearClamp = 2 }
 /// </summary>
 internal sealed unsafe class StateCache : IDisposable
 {
-    private readonly ComPtr<ID3D11BlendState>[] blends = new ComPtr<ID3D11BlendState>[4];
+    private readonly ComPtr<ID3D11BlendState>[] blends = new ComPtr<ID3D11BlendState>[5];
     private readonly ComPtr<ID3D11DepthStencilState>[] depths = new ComPtr<ID3D11DepthStencilState>[3];
     private readonly ComPtr<ID3D11RasterizerState>[] rasters = new ComPtr<ID3D11RasterizerState>[4];
     private readonly ComPtr<ID3D11SamplerState>[] samplers = new ComPtr<ID3D11SamplerState>[3];
@@ -79,6 +79,17 @@ internal sealed unsafe class StateCache : IDisposable
                 rt.SrcBlendAlpha = D3D11_BLEND.D3D11_BLEND_ZERO;
                 rt.DestBlendAlpha = D3D11_BLEND.D3D11_BLEND_ONE;
                 rt.BlendOpAlpha = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD;
+                break;
+            case BlendKey.Max:
+                // Keep the maximum of src/dest - the top-down collision height-map accumulates the HIGHEST world Y per
+                // texel. Blend factors are ignored for MIN/MAX ops but must still be valid enum values.
+                rt.BlendEnable = BOOL.TRUE;
+                rt.SrcBlend = D3D11_BLEND.D3D11_BLEND_ONE;
+                rt.DestBlend = D3D11_BLEND.D3D11_BLEND_ONE;
+                rt.BlendOp = D3D11_BLEND_OP.D3D11_BLEND_OP_MAX;
+                rt.SrcBlendAlpha = D3D11_BLEND.D3D11_BLEND_ONE;
+                rt.DestBlendAlpha = D3D11_BLEND.D3D11_BLEND_ONE;
+                rt.BlendOpAlpha = D3D11_BLEND_OP.D3D11_BLEND_OP_MAX;
                 break;
         }
 

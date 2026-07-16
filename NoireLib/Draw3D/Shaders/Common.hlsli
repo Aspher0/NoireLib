@@ -13,6 +13,7 @@ cbuffer FrameCB : register(b0)
     float4   Ambient;           // rgb = ambient color, a = ambient intensity      (Lit)
     float4   LightDirIntensity; // xyz = normalized dir *toward* light, w = intensity (Lit)
     float4   LightColor;        // rgb = directional color, a unused
+    float4   WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
 };
 
 // ---- b1: per object / material ------------------------------------------
@@ -24,6 +25,7 @@ cbuffer ObjectCB : register(b1)
     float4   Params0;           // shape params / material params
     float4   Params1;           // x = DepthFade (world units, 0 = hard), y = shapeKind,
                                 // z = outlineWidth (0..1 of SDF units), w = heightFade (decal Y feather)
+    float4   Params2;           // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
 }
 
 // ---- b2: per-decal excluded-actor volumes (ground-decal ExcludeVolumes) --
@@ -37,11 +39,23 @@ cbuffer ActorCB : register(b2)
     float4 Actors[MAX_DECAL_ACTORS];
 };
 
-Texture2D    SceneDepth : register(t0);
-Texture2D    BaseTex    : register(t1);
-Texture2D    WorldDepth : register(t2); // OUR-projection device-z of the collision world (ground decals; 0 = none)
-SamplerState PointClamp : register(s0);
-SamplerState BaseSamp   : register(s1);
+Texture2D    SceneDepth  : register(t0);
+Texture2D    BaseTex     : register(t1);
+Texture2D    WorldHeight : register(t2); // top-down highest collision Y per XZ (ground decals; see WorldHeightRegion)
+SamplerState PointClamp  : register(s0);
+SamplerState BaseSamp    : register(s1);
+
+// Highest collision-world Y at a world position's XZ column (WorldHeight sampled through WorldHeightRegion).
+// Returns -1e30 when the height-map is unavailable or the point is outside the sampled region (treat as "no ground").
+float WorldGroundHeight(float3 wp)
+{
+    if (WorldHeightRegion.w < 0.5)
+        return -1e30;
+    float2 uv = (wp.xz - WorldHeightRegion.xy) * WorldHeightRegion.z;
+    if (any(uv < 0.0) || any(uv > 1.0))
+        return -1e30;
+    return WorldHeight.SampleLevel(PointClamp, uv, 0).r;
+}
 
 // ---- depth helpers (THE ONLY place depth convention lives) ----------------
 // All comparisons happen in clip-w space (w after v·ViewProj - the perspective view depth, world

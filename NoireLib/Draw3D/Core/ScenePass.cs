@@ -42,9 +42,10 @@ internal struct FrameCBData
     public Vector4 Ambient;
     public Vector4 LightDirIntensity;
     public Vector4 LightColor;
+    public Vector4 WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
 }
 
-/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (176 bytes).</summary>
+/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (192 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct ObjectCBData
 {
@@ -53,6 +54,7 @@ internal struct ObjectCBData
     public Vector4 BaseColor;
     public Vector4 Params0;
     public Vector4 Params1;
+    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
 }
 
 /// <summary>
@@ -109,6 +111,28 @@ internal sealed unsafe class ScenePass : IDisposable
                 return true;
         return false;
     }
+
+    /// <summary>
+    /// The highest box-top world Y across this frame's ground decals - the ceiling the top-down height-map is clipped to
+    /// (<see cref="RenderWorldHeight"/>), so overhead geometry (a room's roof/upper floor) above every decal's box never
+    /// masks the ground below. <see cref="float.NegativeInfinity"/> when no ground decals are present.
+    /// </summary>
+    public float MaxGroundDecalBoxTopY()
+    {
+        var top = float.NegativeInfinity;
+        for (var i = 0; i < itemCount; i++)
+        {
+            ref var item = ref items[i];
+            if (item.Mat.Domain == MaterialDomain.GroundDecal)
+                top = MathF.Max(top, BoxTopY(in item.World));
+        }
+        return top;
+    }
+
+    /// <summary>World-space top Y of a decal's unit box (local [-0.5,0.5]³ transformed by <paramref name="world"/>): the
+    /// AABB-max Y, i.e. the vertical bound of what the decal paints. Row-vector convention (world = local·M).</summary>
+    private static float BoxTopY(in Matrix4x4 world)
+        => world.M42 + 0.5f * (MathF.Abs(world.M12) + MathF.Abs(world.M22) + MathF.Abs(world.M32));
 
     /// <summary>Whether the last <see cref="Execute"/> populated the private depth buffer (opaque content) - so the outline mask can GE-test it for 3D-object occlusion. False means no private depth to read, so the mask falls back to world-only occlusion.</summary>
     public bool LastPrivateDepthWritten => lastPrivateDepthWritten;
@@ -360,8 +384,9 @@ internal sealed unsafe class ScenePass : IDisposable
         RenderTarget sceneRt,
         DepthTarget privateDepth,
         ID3D11ShaderResourceView* sceneDepthSrv,
-        ID3D11ShaderResourceView* worldDepthSrv,
+        ID3D11ShaderResourceView* worldHeightSrv,
         float worldOcclusionThreshold,
+        Vector4 worldHeightRegion,
         Vector4 depthCal,
         ShaderLibrary shaders,
         StateCache cache,
@@ -409,12 +434,13 @@ internal sealed unsafe class ScenePass : IDisposable
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
             Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
-            // DepthCal.w carries the world-occlusion threshold (world units) for ground decals; 0 = feature off
-            // (decals fall back to the ExcludeVolumes cylinder). WorldDepth (t2) is only sampled when this is > 0.
-            DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldDepthSrv != null ? worldOcclusionThreshold : 0f),
+            // DepthCal.w carries the world-occlusion elevation band (world units) for ground decals; 0 = feature off
+            // (decals fall back to the ExcludeVolumes cylinder). WorldHeight (t2) is only sampled when this is > 0.
+            DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldHeightSrv != null ? worldOcclusionThreshold : 0f),
             Ambient = new Vector4(lighting.AmbientColor, lighting.AmbientIntensity),
             LightDirIntensity = new Vector4(Vector3.Normalize(lighting.LightDirection), lighting.LightIntensity),
             LightColor = new Vector4(lighting.LightColor, 0f),
+            WorldHeightRegion = worldHeightSrv != null ? worldHeightRegion : Vector4.Zero,
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
@@ -458,7 +484,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->PSSetConstantBuffers(1, 1, &ocb);
         var acb = actorCb!.Buffer;
         ctx->PSSetConstantBuffers(2, 1, &acb); // b2: per-decal actor exclusion volumes (decal ExcludeVolumes)
-        ctx->PSSetShaderResources(2, 1, &worldDepthSrv); // t2: collision-world device-z for world-occluded decals (null = off)
+        ctx->PSSetShaderResources(2, 1, &worldHeightSrv); // t2: top-down collision height-map for world-occluded decals (null = off)
         var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &pointClamp);
         var linearWrap = cache.GetSampler(device, SamplerKey.LinearWrap);
@@ -677,6 +703,8 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = item.Color,
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
+                    // x = projection mode; y = this decal's box top world Y (the world-occlusion vertical search bound).
+                    Params2 = new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), 0f, 0f),
                 };
                 objectCb.UpdateConstant(ctx, in objData);
 
@@ -824,48 +852,43 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>
-    /// Renders the cached collision-world mesh into a shader-readable depth buffer (device-z only, reversed-Z GE test,
-    /// null pixel shader) from the current camera. Ground decals then sample it to skip any surface standing in front
-    /// of the real world (characters) - see the world-occlusion branch in GroundDecal.hlsl. Standalone (own target and
-    /// states), so it can run before <see cref="Execute"/>. The mesh's vertices are relative to <paramref name="meshCenter"/>.
+    /// Renders the cached collision-world mesh top-down into an R32F height-map (each texel = the highest collision Y in
+    /// that XZ column, via MAX blend) up to <paramref name="heightCeiling"/> - collision above it (a room's roof/upper
+    /// floor) is discarded so it never masks the ground below. Ground decals sample it (bounded further to their own box
+    /// top) to tell an elevated body from the ground/furniture surface - see the world-occlusion branch in
+    /// GroundDecal.hlsl. Standalone (own target and states) so it runs before <see cref="Execute"/>.
+    /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ→clip map (matching <c>WorldHeightRegion</c>);
+    /// the mesh's vertices are relative to <paramref name="meshCenter"/>.
     /// </summary>
-    public void RenderWorldDepth(
+    public void RenderWorldHeight(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
-        in FrameContext frame,
         Mesh collisionMesh,
         Vector3 meshCenter,
-        DepthTargetSrv target,
+        Matrix4x4 heightMatrix,
+        float heightCeiling,
+        RenderTarget target,
         ShaderLibrary shaders,
         StateCache cache,
         RenderStats stats)
     {
-        if (collisionMesh == null || target.Dsv == null || target.Width == 0 || target.Height == 0)
+        if (collisionMesh == null || target.Rtv == null || target.Width == 0 || target.Height == 0)
             return;
 
         var vb = collisionMesh.Vb;
         if (vb == null || collisionMesh.IndexCount == 0)
             return;
 
-        var pipeline = shaders.GetStandard(device, MaterialDomain.Unlit, textured: false, instanced: false, opaqueDomain: true);
+        var pipeline = shaders.GetWorldHeight(device);
         if (pipeline == null)
             return;
 
         EnsureBuffers(device);
 
-        // Same reversed-Z ViewProj as Execute, so the device-z we write is directly comparable to the game's calibrated
-        // depth in the decal shader (both map deviceZ = DepthUv.z + DepthUv.w/clipW).
         var frameData = new FrameCBData
         {
-            ViewProj = Matrix4x4.Transpose(frame.ViewProj),
-            InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
-            EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
-            DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
-            DepthCal = Vector4.Zero,
-            Ambient = Vector4.Zero,
-            LightDirIntensity = new Vector4(0f, 1f, 0f, 0f),
-            LightColor = Vector4.Zero,
+            ViewProj = Matrix4x4.Transpose(heightMatrix), // affine XZ->clip; the VS does mul(wp, ViewProj)
+            DepthCal = new Vector4(heightCeiling, 0f, 0f, 0f), // x = ceiling: the PS discards collision above it (roof)
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
@@ -874,13 +897,13 @@ internal sealed unsafe class ScenePass : IDisposable
             World = Matrix4x4.Transpose(Matrix4x4.CreateTranslation(meshCenter)), // verts are relative to the region centre
             InvWorld = Matrix4x4.Identity,
             BaseColor = Vector4.One,
-            Params0 = Vector4.Zero,
-            Params1 = Vector4.Zero,
         };
         objectCb!.UpdateConstant(ctx, in objData);
 
-        ctx->OMSetRenderTargets(0, null, target.Dsv);
-        ctx->ClearDepthStencilView(target.Dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0.0f, 0); // reversed-Z far = 0 (no collision)
+        var rtv = target.Rtv;
+        ctx->OMSetRenderTargets(1, &rtv, null);
+        var clear = stackalloc float[4] { -1e30f, -1e30f, -1e30f, -1e30f }; // MAX-blend baseline: below any real world Y
+        ctx->ClearRenderTargetView(rtv, clear);
 
         var viewport = new D3D11_VIEWPORT { Width = target.Width, Height = target.Height, MaxDepth = 1f };
         ctx->RSSetViewports(1, &viewport);
@@ -895,11 +918,11 @@ internal sealed unsafe class ScenePass : IDisposable
 
         ctx->IASetInputLayout(pipeline.Layout);
         ctx->VSSetShader(pipeline.Vs, null, 0);
-        ctx->PSSetShader(null, null, 0); // depth-only
+        ctx->PSSetShader(pipeline.Ps, null, 0);
 
         var blendFactor = stackalloc float[4];
-        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF);
-        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.WriteGE), 0);
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Max), blendFactor, 0xFFFFFFFF); // keep the highest Y per texel
+        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.Disabled), 0);
         ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided)); // collision winding is arbitrary - two-sided
 
         uint stride = (uint)sizeof(Vertex3D), offset = 0;

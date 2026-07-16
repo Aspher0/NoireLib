@@ -21,6 +21,7 @@ internal struct MaterialData : IEquatable<MaterialData>
     public nint TexSrv;
     public Vector4 Params0;
     public Vector4 Params1; // x = DepthFade, y = shapeKind, z = outlineWidth, w = heightFade
+    public float ProjectionMode; // ground decals: (float)DecalProjection (0 = AllSurfaces, 1 = HighestOnly)
     public string? CustomPipeline;
 
     /// <summary>The bucket this material renders in: 0 opaque, 1 ground decal, 2 transparent.</summary>
@@ -54,6 +55,7 @@ internal struct MaterialData : IEquatable<MaterialData>
             : srv != 0;
         data.Params0 = material.ShapeParams;
         data.Params1 = new Vector4(material.DepthFade, (float)material.Shape, material.OutlineWidth, material.HeightFade);
+        data.ProjectionMode = (float)material.Projection;
         data.CustomPipeline = material.CustomPipeline;
         return true;
     }
@@ -70,6 +72,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         && TexSrv == other.TexSrv
         && Params0 == other.Params0
         && Params1 == other.Params1
+        && ProjectionMode == other.ProjectionMode
         && string.Equals(CustomPipeline, other.CustomPipeline, StringComparison.Ordinal);
 
     /// <inheritdoc/>

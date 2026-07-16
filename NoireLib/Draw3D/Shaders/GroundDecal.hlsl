@@ -64,24 +64,38 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     float2 p = lp.xz * 2.0;                              // footprint space: edge at |p| = 1
     float vis = 1.0 - smoothstep(0.35, 0.5, abs(lp.y)) * Params1.w; // Y feather near the box top/bottom
 
-    // Actor removal. Two mutually-exclusive modes:
-    //  * World-occlusion (DepthCal.w > 0, the new default): the collision world's device-z is in WorldDepth. Compare
-    //    the frontmost surface's view-depth (w) to the collision behind this pixel: if the frontmost is meaningfully
-    //    NEARER than the world, something (a character - actors aren't in the collision scene) is standing in front of
-    //    the ground here, so skip it. This is silhouette-exact: sloped ground still paints (it matches the world) and
-    //    only the actual body is cut - no cylinder, no "above-feet" gouge, no feet bleed. DepthCal.w is the threshold
-    //    in world units (covers coarse collision). No collision behind (czd ~ 0) => paint (fail-soft).
-    //  * Legacy cylinder list (DepthCal.w <= 0): the per-decal ExcludeVolumes, kept for when world-occlusion is off.
+    // Actor removal. Two modes:
+    //  * Height-map world-occlusion, GATED by this decal's registered actors (DepthCal.w > 0, the new default).
+    //    WorldHeight is a top-down map of the highest collision Y per XZ column, capped at the tallest decal box top
+    //    (its roof is already removed). Here we bound the search to THIS decal's own box top (Params2.y): the vertical
+    //    slab the decal actually paints. `groundY` is the highest collision surface WITHIN the box; `elevated` = this
+    //    pixel's surface sits above it, i.e. a body/prop standing on the ground - NOT the ground itself. Camera-angle
+    //    independent (unlike a view-depth test, which mistakes a sitting leg at floor depth for the floor). We remove
+    //    ONLY where an excluded actor's cylinder (ActorExclusion) covers an elevated surface. Therefore:
+    //      - ground (flat or sloped) sits at groundY -> never cut (no moat, no gouge);
+    //      - furniture WITH collision sits at its own groundY -> never cut (stools/shelves stop being clipped);
+    //      - an excluded character's body is removed at any angle; a non-listed actor is painted over (no cylinder).
+    //    A surface ABOVE the box (groundY > boxTopY) is outside what this decal paints, so it drives neither the cut nor
+    //    HighestOnly - the box's Y scale IS the search height (a 5cm box searches 5cm; an infinite box reaches the ceiling).
+    //    DepthCal.w is the elevation band in world units (covers height-map/collision coarseness). ActorCount 0 => all painted.
+    //  * Legacy cylinder (DepthCal.w <= 0): the per-decal ExcludeVolumes cut on its own (world-occlusion off).
     if (DepthCal.w > 0.0)
     {
-        float czd    = WorldDepth.Sample(PointClamp, uv).r;              // OUR device-z of nearest collision (0 = none)
-        float worldW = czd > 1e-6 ? DepthUv.w / max(czd - DepthUv.z, 1e-6) : 1e30; // -> clip-w (world units)
-        if (worldW < 1e29 && w < worldW - DepthCal.w)
-            return float4(0, 0, 0, 0);                                   // occluder in front of the world -> don't paint
+        float groundY    = WorldGroundHeight(wp);                        // highest collision Y in this column (roof capped); -1e30 = unknown
+        float boxTopY    = Params2.y;                                    // THIS decal's box top (world Y): the vertical search bound
+        bool  haveGround = groundY > -1e29 && groundY <= boxTopY + DepthCal.w; // trust only a surface within this decal's own box
+        float elevated   = (haveGround && wp.y > groundY + DepthCal.w) ? 1.0 : 0.0;
+        vis *= 1.0 - elevated * ActorExclusion(wp);                      // remove only an excluded actor's elevated body
+
+        // DecalProjection.HighestOnly (Params2.x = 1): skip a surface below the box's highest collision surface (the
+        // floor under a table) so only the topmost surface WITHIN the box paints. Purely vertical - never touches
+        // wall/object occlusion.
+        if (Params2.x > 0.5 && haveGround && wp.y < groundY - DepthCal.w)
+            return float4(0, 0, 0, 0);
     }
     else
     {
-        vis *= 1.0 - ActorExclusion(wp);                                // registered actors removed (AA, tight, no bleed)
+        vis *= 1.0 - ActorExclusion(wp);                                // registered actors removed (legacy cylinder)
     }
 
 #ifdef DECAL_TEXTURED
