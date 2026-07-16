@@ -36,6 +36,9 @@ public sealed partial class SceneNode
     /// <summary>The scene this node currently belongs to (null while detached, e.g. an unattached imported model).</summary>
     public Scene3D? Scene => SceneRef;
 
+    /// <summary>True once this node has been destroyed (via <see cref="Destroy"/>, <see cref="Scene3D.Remove"/>, or the scene's disposal). A destroyed node must not be reused.</summary>
+    public bool IsDestroyed => Destroyed;
+
     /// <summary>Draw layer: orders ground decals and feeds the sort key (higher layers draw later within a bucket).</summary>
     public int Layer { get; set; }
 
@@ -231,6 +234,7 @@ public sealed partial class SceneNode
         Renderer = null;
         ReleaseInteraction(); // drop this node from the interaction bookkeeping if it opted in
         ReleaseExclusions();  // stop any per-frame decal-exclusion refresh for this node
+        ReleaseDecalBox();    // stop any per-frame decal-box wireframe drawing for this node
         SceneRef?.OnNodeRemoved();
         SceneRef = null;
         foreach (var child in Children)

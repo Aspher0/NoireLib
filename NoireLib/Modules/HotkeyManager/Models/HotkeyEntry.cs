@@ -85,7 +85,6 @@ public sealed class HotkeyEntry
     internal bool HoldTriggered { get; set; }
     internal long? NextRepeatTimestamp { get; set; }
     internal bool BlockedWhileDown { get; set; }
-    internal volatile bool NeedsInputForward;
 
     /// <summary>
     /// Creates a new hotkey entry.

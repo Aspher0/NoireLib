@@ -230,10 +230,11 @@ public class TaskBatch
     /// <returns>True if the delay has elapsed, false otherwise.</returns>
     internal bool HasPostDelayCompleted()
     {
+        // No post-completion delay configured (or one that never started) means there is nothing left to wait for.
         if (!PostDelayStartTicks.HasValue || !PostCompletionDelay.HasValue)
-            return false;
+            return true;
 
-        // If currently paused, don't mark as completed
+        // While the delay is paused it has not elapsed.
         if (PostDelayPausedAtTicks.HasValue)
             return false;
 

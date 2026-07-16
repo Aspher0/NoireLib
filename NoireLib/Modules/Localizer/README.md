@@ -380,10 +380,10 @@ var value = localizer.Get("Window.Title");
 
 ### Locale-Specific Lookup
 
-Retrieve a translation in a specific locale:
+Retrieve a translation in a specific locale with `GetForLocale`:
 
 ```csharp
-var frValue = localizer.Get("fr-FR", "Window.Title");
+var frValue = localizer.GetForLocale("fr-FR", "Window.Title");
 ```
 
 ### Indexed Format Arguments

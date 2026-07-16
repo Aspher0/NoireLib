@@ -191,7 +191,11 @@ updateTracker?.SetNotificationMessage(
 
 ### Default Messages
 
-If you set messages to `null`, default messages will be used:
+If you leave `Message`, `NotificationTitle`, or `NotificationMessage` unset (`null`), the module uses these built-in defaults. The `{{...}}` tokens are substituted at display time:
+
+- **Notification title**: `{{PLUGIN_NAME}} Update Available`
+- **Notification message**: `{{PLUGIN_NAME}} has a new update available.` with the current and new version on the following lines (`Current version: {{CURRENT_VERSION}}`, `New version: {{NEW_VERSION}}`).
+- **Chat message**: `[{{PLUGIN_NAME}}] A new update is available. Please update the plugin in /xlplugins. Current version: {{CURRENT_VERSION}} - New version: {{NEW_VERSION}}.`
 
 ### Notification Duration
 

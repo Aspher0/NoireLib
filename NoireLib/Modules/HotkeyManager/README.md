@@ -240,7 +240,7 @@ RepeatDelayMax = TimeSpan.FromMilliseconds(120)
 
 ## Persistence
 
-When `ShouldSaveKeybinds` is true, the module stores bindings in `NoireHotkeyManager.json`.
+When `ShouldSaveKeybinds` is true, the module stores bindings in `HotkeyManagerConfig.json`.
 
 ```csharp
 hotkeyManager?.SetShouldSaveKeybinds(true);

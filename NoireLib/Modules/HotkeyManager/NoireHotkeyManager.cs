@@ -119,7 +119,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
 
         BlockListeningInputOnFramework();
         BlockHotkeyInputsOnFramework();
-        ForwardPendingInputs();
     }
 
     private bool shouldSaveKeybinds = true;
@@ -728,13 +727,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         if (!mainKeyPhysicallyDown)
         {
             var wasArmed = entry.Armed;
-            var holdTriggered = entry.HoldTriggered;
-
-            if (entry.ActivationMode == HotkeyActivationMode.Held
-                && entry.BlockGameInput && wasArmed && !holdTriggered)
-            {
-                entry.NeedsInputForward = true;
-            }
 
             var shouldTriggerRelease = entry.ActivationMode == HotkeyActivationMode.Released && wasArmed;
 
@@ -841,7 +833,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         entry.HoldStartTimestamp = null;
         entry.HoldTriggered = false;
         entry.NextRepeatTimestamp = null;
-        entry.NeedsInputForward = false;
     }
 
     private void PublishEvent<TEvent>(TEvent eventData)
@@ -1023,32 +1014,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
             {
                 NoireService.KeyState[entry.Binding.VkCode] = false;
             }
-        }
-    }
-
-    private void ForwardPendingInputs()
-    {
-        List<HotkeyEntry> entries;
-        lock (hotkeyLock)
-        {
-            entries = hotkeys.Values.ToList();
-        }
-
-        foreach (var entry in entries)
-        {
-            if (!entry.NeedsInputForward)
-                continue;
-
-            entry.NeedsInputForward = false;
-            var binding = entry.Binding;
-
-            // Not working properly, commented out for now.
-            //if (binding.IsModifierOnly)
-            //    KeybindsHelper.SendModifierPress(binding.Ctrl, binding.Shift, binding.Alt);
-            //else if (binding.Ctrl || binding.Shift || binding.Alt)
-            //    KeybindsHelper.SendModifiedKeyPress(binding.VkCode, binding.Ctrl, binding.Shift, binding.Alt);
-            //else if (binding.VkCode != 0)
-            //    KeybindsHelper.SendKeyPress(binding.VkCode);
         }
     }
 

@@ -78,6 +78,8 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
 - `UnorderedBatching = true` lets hundreds of identical translucent markers collapse into one instanced draw.
 
+> **Seeing the projection volume.** A decal paints inside an invisible oriented box (the footprint is its local XZ, the sweep its local Y). Call `node.ShowDecalBox()` to trace that box as a 3D wireframe - twelve depth-tested edges that mirror the decal's own `Surface` constraint, so you can place and size the volume by eye - and `node.HideDecalBox()` to turn it back off. It is a per-frame overlay driven for you (no plumbing); default color is the decal's own, or pass one: `node.ShowDecalBox(new Vector4(1f, 1f, 0f, 1f))`.
+
 ## Importing models (glTF)
 
 ```csharp
@@ -184,5 +186,5 @@ The **visual showcase** - the smoke scene, the world-geometry collision preview,
 
 - **Ownership:** whoever creates a `Mesh`/`GpuTexture` disposes it. Scenes and nodes only reference assets; disposing an asset in use is safe (draws skip it, counted, never a crash).
 - **Threading:** scene mutation and asset creation are safe from any thread. `Im` calls belong in draw-cycle callbacks.
-- **Depth:** world occlusion **self-calibrates** at runtime - the depth buffer's value convention is fitted from the game's own raycasts, never assumed, so a patch that changes the projection degrades to a one-off recalibration instead of inverted visuals. `/noire3d stats` shows the live fit.
+- **Depth:** world occlusion is **self-calibrating** - the depth buffer's value convention is derived analytically from the game's own projection, never assumed, so a patch that changes the projection is handled automatically instead of producing inverted visuals. `/noire3d probe` cross-checks the calibration against the game's collision surfaces.
 - **Failure:** everything fails soft, loudly once - a broken shader, unreadable depth buffer, or missing camera degrades the narrowest feature and never takes your plugin down.

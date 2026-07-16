@@ -104,7 +104,7 @@ var changelogManager = new NoireChangelogManager(
 Additionnaly, you can modify the following properties after having created the module:
 
 - `ShouldAutomaticallyShowChangelog`: If true, the changelog window will automatically open when a new version is detected. Default: `false`.
-- `WindowName`: Optional custom name for the changelog window. Default: `"Changelog"`.
+- `DisplayWindowName`: Optional custom name for the changelog window (set it with `SetWindowName`). Default: `"Changelog"`.
 - `TitleBarButtons`: Optional list of buttons to add to the title bar. Default: `empty list`. Use methods to modify.
 - `EventBus`: Optional EventBus instance for publishing changelog events. Default: `null`.
 
@@ -148,7 +148,7 @@ When `ShouldAutomaticallyShowChangelog` is enabled:
 - The changelog window opens automatically when a new version is detected
 - Therefore, when users update the plugin, they will see the changelog for the new version
 
-If you would rather control when the window is shown, you can disable this feature and call `ShowChangelogWindow()` manually.
+If you would rather control when the window is shown, you can disable this feature and call `ShowWindow(true)` manually.
 
 ---
 
@@ -195,8 +195,8 @@ Creates section headers with optional icons:
 
 ```csharp
 Header("New Features", Green),
-Header("Bug Fixes", Red, FontAwesomeIcon.Bug),
-Header("Changes", Orange, FontAwesomeIcon.Wrench, Blue),
+Header("Bug Fixes", Red, icon: FontAwesomeIcon.Bug),
+Header("Changes", Orange, icon: FontAwesomeIcon.Wrench, iconColor: Blue),
 ```
 
 #### 2. Regular Entries
@@ -269,13 +269,13 @@ Show the changelog window programmatically:
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
 // Toggle the changelog window
-changelogManager?.ShowChangelogWindow();
+changelogManager?.ShowWindow(null);
 
 // Force show the changelog window
-changelogManager?.ShowChangelogWindow(true);
+changelogManager?.ShowWindow(true);
 
 // Force hide the changelog window
-changelogManager?.ShowChangelogWindow(false);
+changelogManager?.ShowWindow(false);
 ```
 
 ### Show Specific Version
@@ -284,7 +284,7 @@ Display a specific version in the changelog:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
-changelogManager?.ShowChangelogWindow(true, new(1, 0, 0, 0));
+changelogManager?.ShowWindow(true, new(1, 0, 0, 0));
 ```
 
 ### Automatic Display

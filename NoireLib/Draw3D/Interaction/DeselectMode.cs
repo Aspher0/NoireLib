@@ -3,7 +3,7 @@ using System;
 namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
-/// How the shared <see cref="NoireInteract.Selection"/> is cleared. Flags: combine freely (for example
+/// How a scene's <see cref="InteractSelection"/> is cleared. Flags: combine freely (for example
 /// <c>ClickEmpty | Key</c>). Selecting is separate (a left-click on an object, gated by
 /// <see cref="NoireInteract.SelectOnClick"/>); this only governs <i>de</i>selection.
 /// </summary>

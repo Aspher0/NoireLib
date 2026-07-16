@@ -18,12 +18,36 @@ public sealed class DiagnosticsSection : IDisposable
     private int camTraceFrames = 120;
     private Scene3D? worldGeoScene;
     private string worldGeoStatus = "World-geometry preview off.";
+    private bool commandEnabled;
+    private string lastFault = "(none)";
+    private readonly Action<Draw3DFault> onFault;
+
+    /// <summary>Subscribes to the self-disable fault feed so the panel can show the last fault.</summary>
+    public DiagnosticsSection()
+    {
+        onFault = fault => lastFault = $"[{fault.Kind}] {fault.Message}";
+        NoireDraw3D.OnFault += onFault;
+    }
 
     /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         var diag = NoireDraw3D.Diagnostics;
 
+        ImGui.TextUnformatted("Diagnostics command");
+        using (SectionUi.Disabled(commandEnabled))
+        {
+            if (ImGui.Button(commandEnabled ? "/noire3d registered" : "Register /noire3d command"))
+            {
+                NoireDraw3D.EnableDiagnosticsCommand();
+                commandEnabled = true;
+            }
+        }
+
+        ImGui.SameLine();
+        ImGui.TextDisabled("Opt-in in-game console diagnostics.");
+
+        ImGui.Separator();
         ImGui.TextUnformatted("Validators (results go to /xllog)");
         if (ImGui.Button("Run validate (projection parity)"))
             diag.RunValidate();
@@ -49,6 +73,9 @@ public sealed class DiagnosticsSection : IDisposable
         ImGui.Separator();
         ImGui.TextUnformatted("Live stats");
         ImGui.TextUnformatted(diag.GetStatsText());
+
+        ImGui.Separator();
+        SectionUi.LabelValue("Last self-disable fault", lastFault);
     }
 
     /// <summary>Toggles a translucent shaded preview of the game's real collision world near the player (framework thread only).</summary>
@@ -80,6 +107,7 @@ public sealed class DiagnosticsSection : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
+        NoireDraw3D.OnFault -= onFault;
         worldGeoScene?.Dispose();
         worldGeoScene = null;
     }

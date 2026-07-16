@@ -156,8 +156,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
 
         if (allowUserClearDatabase && persistLogs && entry.Id is long id)
         {
-            ExecuteDatabaseQuery(builder => builder.Where("id", id).Delete());
-            removed = true;
+            var deleted = ExecuteDatabaseQuery(builder => builder.Where("id", id).Delete());
+            removed |= deleted > 0;
         }
 
         return removed;

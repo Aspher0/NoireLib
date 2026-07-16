@@ -385,7 +385,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (!child)
             return;
 
-        // Déterminer dynamiquement les colonnes à afficher
+        // Determine which columns to show from the current display preferences.
         bool hideCategory = HistoryLoggerConfig.HideCategoryColumn;
         bool hideSource = HistoryLoggerConfig.HideSourceColumn;
         int columnCount = 3 + (hideCategory ? 0 : 1) + (hideSource ? 0 : 1); // Time, Level, Message, [Category], [Source]

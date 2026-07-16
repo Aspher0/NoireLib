@@ -172,7 +172,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 
     /// <summary>
     /// Whether to show a notification when an update is detected.
-    /// </summary>>
+    /// </summary>
     public bool ShouldShowNotificationOnUpdate { get; set; } = true;
 
     /// <summary>
@@ -249,7 +249,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     /// <summary>
     /// The message content of the notification to show when an update is detected.<br/>
     /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerText.NewVersion}"<br/>
+    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerTextTags.NewVersion}"<br/>
     /// Set to <see langword="null"/> to use the default content.
     /// </summary>
     public string? NotificationMessage { get; set; } = null;
@@ -257,7 +257,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     /// <summary>
     /// Sets the message content of the notification to show when an update is detected.<br/>
     /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerText.NewVersion}"<br/>
+    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerTextTags.NewVersion}"<br/>
     /// Set to <see langword="null"/> to use the default content.
     /// </summary>
     /// <param name="notificationMessage">The notification message content.</param>

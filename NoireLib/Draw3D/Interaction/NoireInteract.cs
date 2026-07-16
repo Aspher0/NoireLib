@@ -905,6 +905,7 @@ public static class NoireInteract
             {
                 node.IsHovered = true;
                 Raise(node.OnHoverEnter, BuildHit(node, MouseButton.Left, current: true), "OnHoverEnter");
+                node.ApplyHoverHighlight();
             }
             else
             {
@@ -918,6 +919,7 @@ public static class NoireInteract
             {
                 node.IsHovered = false;
                 Raise(node.OnHoverExit, BuildHit(node, MouseButton.Left, current: false), "OnHoverExit");
+                node.RemoveHoverHighlight();
             }
             else
             {

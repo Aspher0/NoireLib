@@ -86,16 +86,26 @@ public sealed partial class SceneNode
     /// <summary>The default hover highlight: brightens the renderer tint by ×1.2 (RGB), alpha unchanged.</summary>
     public static readonly Func<Vector4, Vector4> DefaultHoverHighlight = static t => new Vector4(t.X * 1.2f, t.Y * 1.2f, t.Z * 1.2f, t.W);
 
+    /// <summary>The active hover-tint transform (null = no built-in highlight). Applied around, never composed into, the user's <see cref="OnHoverEnter"/> / <see cref="OnHoverExit"/>.</summary>
+    private Func<Vector4, Vector4>? hoverHighlight;
+
+    /// <summary>The renderer tint captured when the current hover began, restored on exit.</summary>
+    private Vector4 hoverRestTint;
+
+    /// <summary>Whether the built-in hover highlight is currently applied (guards against a double apply that would compound the tint).</summary>
+    private bool hoverHighlightActive;
+
     /// <summary>
     /// One-call opt-in to pointer interaction with a built-in hover highlight, without selection: hovering brightens
     /// the renderer tint (default ×1.2) and restores it on exit; a click still fires <see cref="OnClick"/> but does
-    /// <b>not</b> touch any selection. <b>Composes</b> - it adds to whatever <see cref="OnHoverEnter"/> /
-    /// <see cref="OnHoverExit"/> you already set, and you can set more afterward. Fluent.
+    /// <b>not</b> touch any selection. The highlight is applied <b>around</b> your <see cref="OnHoverEnter"/> /
+    /// <see cref="OnHoverExit"/> (never composed into them), and calling this again just replaces the transform - it
+    /// never stacks. Fluent.
     /// </summary>
     /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (×1.2). Return the input unchanged for no visual change.</param>
     public SceneNode MakeInteractable(Func<Vector4, Vector4>? hover = null)
     {
-        AddHoverHighlight(hover ?? DefaultHoverHighlight);
+        hoverHighlight = hover ?? DefaultHoverHighlight;
         Selectable = false;
         Interactable = true;
         return this;
@@ -104,54 +114,53 @@ public sealed partial class SceneNode
     /// <summary>
     /// One-call opt-in to click-to-select with a built-in hover highlight: hovering brightens the renderer tint
     /// (default ×1.2), and a left-click routes into this node's scene <see cref="Scene3D.Selection"/> (honouring the
-    /// configured Ctrl-toggle / Shift-add modifiers). <b>Composes</b> over your own <see cref="OnHoverEnter"/> /
-    /// <see cref="OnHoverExit"/> / <see cref="OnClick"/> - it never clobbers them. Fluent.
+    /// configured Ctrl-toggle / Shift-add modifiers). The highlight is applied <b>around</b> your <see cref="OnHoverEnter"/> /
+    /// <see cref="OnHoverExit"/> / <see cref="OnClick"/> (never composed into them), and calling this again just
+    /// replaces the transform - it never stacks. Fluent.
     /// </summary>
     /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (×1.2). Return the input unchanged for no visual change.</param>
     public SceneNode MakeSelectable(Func<Vector4, Vector4>? hover = null)
     {
-        AddHoverHighlight(hover ?? DefaultHoverHighlight);
+        hoverHighlight = hover ?? DefaultHoverHighlight;
         Selectable = true;
         Interactable = true;
         return this;
     }
 
-    /// <summary>
-    /// Composes a tint-highlight-on-hover onto the node's existing hover handlers: on enter it reads the renderer's
-    /// current tint as the base and applies <paramref name="highlight"/>; on exit it restores the captured base.
-    /// Runs after any handler already set, and leaves later assignments free to add more.
-    /// </summary>
-    private void AddHoverHighlight(Func<Vector4, Vector4> highlight)
+    /// <summary>Removes the built-in hover highlight (a click still selects; only the tint feedback is dropped). Fluent.</summary>
+    public SceneNode ClearHoverHighlight()
     {
-        var previousEnter = OnHoverEnter;
-        var previousExit = OnHoverExit;
-        var baseTint = new Vector4(1f, 1f, 1f, 1f);
-        var captured = false;
+        RemoveHoverHighlight();
+        hoverHighlight = null;
+        return this;
+    }
 
-        OnHoverEnter = hit =>
-        {
-            previousEnter?.Invoke(hit);
-            var renderer = Renderer;
-            if (renderer == null)
-                return;
+    /// <summary>Applies the built-in hover tint, capturing the resting tint to restore on exit. Idempotent (a second call while active is a no-op, so the tint never compounds). Called by <see cref="NoireInteract"/> on hover-enter.</summary>
+    internal void ApplyHoverHighlight()
+    {
+        if (hoverHighlight is not { } transform || hoverHighlightActive || Renderer is not { } renderer)
+            return;
 
-            baseTint = renderer.Tint;
-            captured = true;
-            renderer.Tint = highlight(baseTint);
-        };
+        hoverRestTint = renderer.Tint;
+        hoverHighlightActive = true;
+        renderer.Tint = transform(hoverRestTint);
+    }
 
-        OnHoverExit = hit =>
-        {
-            previousExit?.Invoke(hit);
-            if (captured && Renderer is { } renderer)
-                renderer.Tint = baseTint;
-            captured = false;
-        };
+    /// <summary>Restores the resting tint captured by <see cref="ApplyHoverHighlight"/>. Idempotent. Called by <see cref="NoireInteract"/> on hover-exit.</summary>
+    internal void RemoveHoverHighlight()
+    {
+        if (!hoverHighlightActive)
+            return;
+
+        hoverHighlightActive = false;
+        if (Renderer is { } renderer)
+            renderer.Tint = hoverRestTint;
     }
 
     /// <summary>Drops this node from the interaction bookkeeping when it is destroyed while still interactable.</summary>
     private void ReleaseInteraction()
     {
+        RemoveHoverHighlight(); // restore the resting tint if we were mid-hover
         if (interactable)
         {
             interactable = false;

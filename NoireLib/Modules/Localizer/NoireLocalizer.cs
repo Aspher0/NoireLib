@@ -690,15 +690,22 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     }
 
     /// <summary>
-    /// Retrieves a translation for <paramref name="key"/> in <see cref="CurrentLocale"/>.
+    /// Retrieves a translation for <paramref name="key"/> in <see cref="CurrentLocale"/> and applies indexed formatting.<br/>
+    /// To look up in an explicit locale, use <see cref="GetForLocale(string, string, object?[])"/>.
     /// </summary>
+    /// <param name="key">The translation key.</param>
+    /// <param name="formatArgs">Positional arguments substituted into the {0}, {1}, ... placeholders in the value.</param>
     public string Get(string key, params object?[] formatArgs)
-        => Get(CurrentLocale, key, formatArgs);
+        => GetForLocale(CurrentLocale, key, formatArgs);
 
     /// <summary>
-    /// Retrieves a translation for <paramref name="key"/> in the specified locale and applies indexed formatting.
+    /// Retrieves a translation for <paramref name="key"/> in the specified locale and applies indexed formatting.<br/>
+    /// This is the explicit-locale counterpart of <see cref="Get(string, object?[])"/>, which uses <see cref="CurrentLocale"/>.
     /// </summary>
-    public string Get(string locale, string key, params object?[] formatArgs)
+    /// <param name="locale">The locale to look the translation up in.</param>
+    /// <param name="key">The translation key.</param>
+    /// <param name="formatArgs">Positional arguments substituted into the {0}, {1}, ... placeholders in the value.</param>
+    public string GetForLocale(string locale, string key, params object?[] formatArgs)
     {
         var raw = GetRaw(locale, key);
 
