@@ -573,42 +573,42 @@ internal sealed class HubServer : IDisposable
                 break;
 
             case EnvelopeKind.PeerState:
-            {
-                var state = Wire.FromPayload<PeerStateModel>(envelope.Payload);
+                {
+                    var state = Wire.FromPayload<PeerStateModel>(envelope.Payload);
 
-                if (state == null)
+                    if (state == null)
+                        break;
+
+                    if (session.IsHubLink)
+                    {
+                        lock (sessionGate)
+                            remotePeerOwners[state.Id] = session.RemoteId;
+
+                        state.Remote = true;
+                        owner.ApplyPeerStateModel(state, envelope.TypeName);
+                        BroadcastPeerState(state, fromLocalOrigin: false, excludeSession: null, changedKey: envelope.TypeName);
+                    }
+                    else
+                    {
+                        owner.ApplyPeerStateModel(state, envelope.TypeName);
+                        BroadcastPeerState(state, fromLocalOrigin: true, excludeSession: session, changedKey: envelope.TypeName);
+                    }
+
                     break;
-
-                if (session.IsHubLink)
-                {
-                    lock (sessionGate)
-                        remotePeerOwners[state.Id] = session.RemoteId;
-
-                    state.Remote = true;
-                    owner.ApplyPeerStateModel(state, envelope.TypeName);
-                    BroadcastPeerState(state, fromLocalOrigin: false, excludeSession: null, changedKey: envelope.TypeName);
                 }
-                else
-                {
-                    owner.ApplyPeerStateModel(state, envelope.TypeName);
-                    BroadcastPeerState(state, fromLocalOrigin: true, excludeSession: session, changedKey: envelope.TypeName);
-                }
-
-                break;
-            }
 
             case EnvelopeKind.PeerLeft:
-            {
-                if (!session.IsHubLink || envelope.Origin == null)
+                {
+                    if (!session.IsHubLink || envelope.Origin == null)
+                        break;
+
+                    lock (sessionGate)
+                        remotePeerOwners.Remove(envelope.Origin.Value);
+
+                    owner.RemovePeerById(envelope.Origin.Value);
+                    BroadcastPeerLeft(envelope.Origin.Value, fromLocalOrigin: false, excludeSession: null);
                     break;
-
-                lock (sessionGate)
-                    remotePeerOwners.Remove(envelope.Origin.Value);
-
-                owner.RemovePeerById(envelope.Origin.Value);
-                BroadcastPeerLeft(envelope.Origin.Value, fromLocalOrigin: false, excludeSession: null);
-                break;
-            }
+                }
 
             case EnvelopeKind.Goodbye:
                 session.Dispose();

@@ -21,9 +21,10 @@ namespace NoireLib.Tests;
 /// applying: what was shown was an update from one repository, so a different <see cref="NoireUpdateTracker.RepoUrl"/>
 /// cannot be silenced by it. Third, the check timer is stopped exactly while there is nothing to fetch, and every start
 /// of it restarts the countdown to the first check.<br/><br/>
-/// A disposed module is the fourth: disposal does not deactivate the module, so nothing about its active state says it
-/// is gone, and every path that would start a check or a timer has to recognize that for itself rather than resurrect a
-/// module whose HTTP client and disposal token source are already torn down. Teardown itself is one of those paths, and
+/// A disposed module is the fourth: every path that would start a check or a timer recognizes disposal for itself rather
+/// than resurrect a module whose HTTP client and disposal token source are already torn down. The module keeps its own
+/// latch rather than reading its active state, so a start path cannot be reached through a window where the two disagree.
+/// Teardown itself is one of those paths, and
 /// it runs more than once whenever a consumer disposes the module it owns and the library also tears its modules down,
 /// so it has to run once and leave the latch closed however often it is called.<br/><br/>
 /// The module is constructible without the game: neither initializing nor activating it needs an initialized NoireLib,
@@ -235,9 +236,6 @@ public class NoireUpdateTrackerTests : IDisposable
         var tracker = MakeTracker(active: true);
         tracker.Dispose();
 
-        tracker.IsActive.Should().BeTrue(
-            "disposal does not deactivate the module, which is exactly why the timer paths need a disposed guard of their own");
-
         tracker.SetRepoUrl("https://example.invalid/repo.json");
 
         CheckTimerOf(tracker).Should().BeNull("a timer started after teardown would have nothing left to dispose it");
@@ -273,6 +271,98 @@ public class NoireUpdateTrackerTests : IDisposable
         var act = () => tracker.ResetUpdateNotification();
 
         act.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// The regression gate for teardown. A module is reachable for disposal twice over, from the consumer that owns it
+    /// and from the library tearing its modules down, and neither of the two can tell that the other already ran. A
+    /// second pass therefore has to find nothing left to do rather than cancel a token source it has already disposed,
+    /// which throws.
+    /// </summary>
+    [Fact]
+    public void Dispose_CalledTwice_DoesNotThrow()
+    {
+        var tracker = MakeTracker(active: true, repoUrl: "https://example.invalid/repo.json");
+
+        var act = () =>
+        {
+            tracker.Dispose();
+            tracker.Dispose();
+        };
+
+        act.Should().NotThrow("teardown is reachable both from a consumer and from the library, and neither can tell that the other already ran");
+    }
+
+    /// <summary>
+    /// The second pass returning early must not cost the first pass its effect: the latch is what every path that would
+    /// start a check or a timer reads, so a module disposed twice has to stay just as disposed as one disposed once.
+    /// </summary>
+    [Fact]
+    public void Dispose_CalledRepeatedly_LeavesTheModuleDisposed()
+    {
+        var tracker = MakeTracker(active: true, repoUrl: "https://example.invalid/repo.json");
+
+        tracker.Dispose();
+        tracker.Dispose();
+        tracker.Dispose();
+
+        CheckTimerOf(tracker).Should().BeNull("teardown stops the timer it knew about, and running again must not schedule a new one");
+
+        tracker.SetRepoUrl("https://another.invalid/repo.json");
+        CheckTimerOf(tracker).Should().BeNull("a repeated teardown must leave the latch closed, or the timer paths would start treating a disposed module as a working one again");
+
+        tracker.SetCheckIntervalMinutes(60);
+        CheckTimerOf(tracker).Should().BeNull();
+    }
+
+    /// <summary>
+    /// The disposed guard inside the check reads the same latch a repeated teardown returns on, so the check must still
+    /// decline rather than reach the token source that teardown disposed.
+    /// </summary>
+    [Fact]
+    public async Task CheckForUpdatesNowAsync_AfterARepeatedDispose_ReturnsATaskThatCompletes()
+    {
+        var tracker = MakeTracker(active: true, repoUrl: "https://example.invalid/repo.json");
+        tracker.Dispose();
+        tracker.Dispose();
+
+        var check = tracker.CheckForUpdatesNowAsync();
+        await check;
+
+        check.IsCompletedSuccessfully.Should().BeTrue(
+            "a check on a disposed module declines whether teardown ran once or twice");
+    }
+
+    /// <summary>
+    /// Teardown rests on an order, and the guard that makes it run once must not displace it: the latch is what closes
+    /// every path that would start a check or a timer, including one racing this teardown, and the cancellation is what
+    /// calls off a check already suspended on the HTTP call. Both have to land before the objects they protect are torn
+    /// down.<br/>
+    /// Pinned at the source because the order has no game-free effect to observe it by: each step's absence shows up as
+    /// a race, and the resources are private.
+    /// </summary>
+    [Fact]
+    public void DisposeInternal_ShouldGuardOnTheLatchWithoutReorderingTeardown()
+    {
+        var source = ReadUpdateTrackerSource();
+
+        var body = source[source.IndexOf("protected override void DisposeInternal()", StringComparison.Ordinal)..];
+        var guard = body.IndexOf("if (disposed)", StringComparison.Ordinal);
+        var latch = body.IndexOf("disposed = true;", StringComparison.Ordinal);
+        var cancel = body.IndexOf("disposalTokenSource.Cancel();", StringComparison.Ordinal);
+        var stopTimer = body.IndexOf("StopUpdateCheckTimer();", StringComparison.Ordinal);
+        var disposeClient = body.IndexOf("httpClient.Dispose();", StringComparison.Ordinal);
+        var disposeSource = body.IndexOf("disposalTokenSource.Dispose();", StringComparison.Ordinal);
+
+        guard.Should().BeGreaterThan(0, "a second teardown must return rather than cancel a token source it already disposed")
+            .And.BeLessThan(latch, "the guard reads the latch, so it can only work ahead of the statement that sets it");
+
+        latch.Should().BeLessThan(cancel,
+            "the latch closes the paths that would start a check or a timer, including one racing this teardown");
+
+        cancel.Should().BeLessThan(stopTimer, "a callback the timer already started is not waited for by disposing the timer")
+            .And.BeLessThan(disposeClient, "a check suspended on the HTTP call must be called off before the client it would resume against is disposed")
+            .And.BeLessThan(disposeSource, "cancelling a disposed token source throws");
     }
 
     #endregion

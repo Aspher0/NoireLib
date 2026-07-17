@@ -21,4 +21,14 @@ public sealed record FileWatcherStatistics(
     long TotalNotificationsDispatched,
     long TotalErrors,
     long TotalDuplicateNotificationsSuppressed,
-    long TotalCallbackExceptionsCaught);
+    long TotalCallbackExceptionsCaught)
+{
+    /// <summary>
+    /// The total number of deliveries discarded because the framework thread delivery queue was at capacity
+    /// since the watcher's creation.<br/>
+    /// A non-zero value means <see cref="TotalNotificationsDispatched"/> undercounts what the filesystem reported:
+    /// those notifications were observed and accepted but never reached a callback. It is a sign that handlers are
+    /// too slow for the event volume, or that the filesystem activity is too heavy for the game's frame rate.
+    /// </summary>
+    public long TotalDeliveriesDropped { get; init; }
+}

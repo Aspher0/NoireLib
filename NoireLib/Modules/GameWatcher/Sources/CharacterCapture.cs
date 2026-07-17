@@ -151,39 +151,39 @@ internal static class CharacterCapture
         switch (iterationClass)
         {
             case Scope.IterationClass.LocalOnly:
-            {
-                var local = NoireService.ObjectTable.LocalPlayer;
+                {
+                    var local = NoireService.ObjectTable.LocalPlayer;
 
-                if (local != null)
-                    yield return local;
+                    if (local != null)
+                        yield return local;
 
-                yield break;
-            }
+                    yield break;
+                }
 
             case Scope.IterationClass.Players:
-            {
-                foreach (var obj in NoireService.ObjectTable.PlayerObjects)
                 {
-                    if (obj is ICharacter chara)
-                        yield return chara;
-                }
+                    foreach (var obj in NoireService.ObjectTable.PlayerObjects)
+                    {
+                        if (obj is ICharacter chara)
+                            yield return chara;
+                    }
 
-                yield break;
-            }
+                    yield break;
+                }
 
             default:
-            {
-                foreach (var obj in NoireService.ObjectTable)
                 {
-                    if (obj.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.Companion
-                        && obj is ICharacter chara)
+                    foreach (var obj in NoireService.ObjectTable)
                     {
-                        yield return chara;
+                        if (obj.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.Companion
+                            && obj is ICharacter chara)
+                        {
+                            yield return chara;
+                        }
                     }
-                }
 
-                yield break;
-            }
+                    yield break;
+                }
         }
     }
 

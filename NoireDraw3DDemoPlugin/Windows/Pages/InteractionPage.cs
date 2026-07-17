@@ -1,10 +1,10 @@
-using System;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface.Colors;
 using NoireLib.Draw3D;
 using NoireLib.Draw3D.Interaction;
 using NoireLib.Helpers;
+using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

@@ -5,6 +5,7 @@ You are reading the documentation for the `NoireFileWatcher` module.
 ## Table of Contents
 - [Overview](#overview)
 - [Getting Started](#getting-started)
+- [Thread Contract](#thread-contract)
 - [Configuration](#configuration)
 - [Watching Files and Directories](#watching-files-and-directories)
 - [Managing Callbacks](#managing-callbacks)
@@ -31,6 +32,7 @@ The `NoireFileWatcher` is a filesystem watch module for plugin automation and re
 - **Pattern-based filtering** for directory watches (`*`, `?` wildcard support)
 - **Per-event-type toggle** to selectively observe Changed, Created, Deleted, Renamed, and Error events
 - **CLR events** (`NotificationReceived`, `Changed`, `Created`, `Deleted`, `Renamed`, `Error`)
+- **Framework thread delivery** so handlers can touch game state directly, with no overlapping callbacks (see [Thread Contract](#thread-contract))
 - **EventBus integration** for decoupled event pipelines
 - **Module lifecycle awareness** (activation/deactivation automatically enables/disables all underlying watchers)
 - **Fluent API** for chaining configuration calls
@@ -62,6 +64,76 @@ fileWatcher.Changed += notification =>
 ```
 
 That's it! You now have a working filesystem watcher.
+
+---
+
+## Thread Contract
+
+**Every handler you register runs on the framework thread, so it is safe to touch game state directly.** This applies to sync callbacks, CLR events (`NotificationReceived`, `Changed`, `Created`, `Deleted`, `Renamed`, `Error`), and **every** EventBus event the module publishes. The registration lifecycle events (`FileWatchRegisteredEvent`, `FileWatchStateChangedEvent`, `FileWatchRemovedEvent`, `FileWatchesClearedEvent`) get exactly the same guarantee as `FileWatchNotificationEvent` and `FileWatchErrorEvent`.
+
+There is no split in this contract, and that is deliberate. `NoireEventBus.Publish` runs sync handlers inline, so if the module published a lifecycle event straight from `Watch`, your EventBus subscriber would run on whichever thread the caller of `Watch` happened to use. That caller is a different component: your subscriber cannot see which thread it used, cannot control it, and would break the day that component moved its registration onto a background task. Everything is queued instead, so the thread your subscriber runs on never depends on anyone else's call site.
+
+```csharp
+// Safe: this runs on the framework thread.
+fileWatcher.Changed += n =>
+{
+    var player = NoireService.ClientState.LocalPlayer;
+    NoireLogger.LogInfo($"{player?.Name} saw {n.Name} change.");
+};
+```
+
+The underlying `System.IO.FileSystemWatcher` raises its events on thread pool threads, and it does not serialize them: several can fire concurrently. The module therefore does not hand you those threads. Each notification is queued and drained on the framework thread instead, which gives two guarantees:
+
+- **Handlers run on the framework thread**, not on a thread pool thread.
+- **Handlers never overlap.** Deliveries are drained one at a time, so your callback is never re-entered while it is still running.
+
+### Async callbacks
+
+An `asyncCallback` is *started* on the framework thread and runs fire-and-forget, so everything before its first `await` gets the same guarantee. What runs after an `await` is governed by that callback's own awaits, not by this module. If a continuation needs to touch game state, marshal it back with `AsyncHelper`.
+
+### Lifecycle events are asynchronous
+
+The price of the guarantee above is that a lifecycle event is queued like everything else, so it reaches subscribers **after** the call that caused it has already returned:
+
+```csharp
+eventBus.Subscribe<FileWatchRegisteredEvent>(e => knownWatches.Add(e.Registration.WatchId));
+
+var watchId = fileWatcher.WatchDirectory(directory);
+// knownWatches does not contain watchId yet. The subscriber runs on a later frame.
+```
+
+If you need the registration synchronously, use the returned watch ID or `GetWatch(watchId)`; both are up to date the moment `Watch` returns. The EventBus is for the components that did *not* make the call.
+
+A watch does not start raising events until its `FileWatchRegisteredEvent` is queued, so a subscriber that tracks watches by ID is always told a watch exists before it can receive that watch's first `FileWatchNotificationEvent`. Within a single `ClearAllWatches`, the per-watch `FileWatchRemovedEvent` deliveries precede the `FileWatchesClearedEvent`.
+
+### Delivery ordering and backpressure
+
+Notifications are delivered in the order they were observed. The queue is bounded at 4096 pending deliveries: a filesystem event storm can outpace the game's frame rate, so once the queue is full the **oldest** pending delivery is dropped and a warning is logged. Dropping the oldest keeps the newest notification for a path, which is what a handler re-reading that path needs. A drop is a sign that handlers are too slow for the event volume; keep them short and move heavy work off the framework thread.
+
+Drops are counted in `TotalDeliveriesDropped`, so you can detect them without reading the log:
+
+```csharp
+if (fileWatcher.GetStatistics().TotalDeliveriesDropped > 0)
+    NoireLogger.LogWarning("Some filesystem notifications never reached a handler.");
+```
+
+The queue does **not** merge notifications. Collapsing the burst of events that a single file write produces is [duplicate suppression](#duplicate-suppression)'s job, and it happens before the queue. If you turn suppression off, you get every notification the filesystem reports.
+
+### When NoireLib is not initialized
+
+There is no framework thread to marshal onto, so handlers run inline on the calling or observing thread. This is what makes the module usable in unit tests.
+
+### Disposal
+
+**Once `Dispose` returns, no handler of this module runs again.** That is a hard boundary, not a very likely one: `Dispose` blocks until any delivery that had already started has finished. The flip side is that a handler which blocks forever blocks disposal with it, so keep them short (which the framework thread already demands of you).
+
+Nothing is published from disposal either. `Dispose` removes every watch, but those removals raise no `FileWatchRemovedEvent` or `FileWatchesClearedEvent`: a module being torn down should not be calling into the subscribers of a plugin that is unloading.
+
+A callback is free to dispose the module that invoked it. `Dispose` recognizes the calling thread's own delivery and does not wait for it, so this does not deadlock.
+
+The same retirement holds per watch: a notification that was queued before `RemoveWatch` or `RemoveCallback` is not delivered to the callbacks you retired.
+
+Registering on a disposed module is silently abandoned rather than throwing. `Watch` still returns an ID, but no watch exists under it and `GetWatch(watchId)` reports none, so a registration racing your plugin's teardown cannot leave a live `FileSystemWatcher` behind the module's back.
 
 ---
 
@@ -236,6 +308,10 @@ For single-file watches, pattern filtering is bypassed; the module only dispatch
 
 When you register a watch with a `Key` that already exists, the previous watch with that key is automatically removed (disposed and cleaned up) before the new one is created. This lets you safely replace a watch without manually calling `RemoveWatchByKey` first.
 
+A key resolves to the watch that registered it most recently, and removing a watch only retires the key that still resolves to it. Retiring one watch therefore never makes another unreachable through `GetWatchByKey` or `RemoveWatchByKey`.
+
+Resolving the previous holder of a key and registering the new watch are two steps rather than one atomic operation, so registering the same key from two threads at once can leave both watches registered instead of replacing one with the other. The key resolves to whichever registered last; the other stays live and reachable through its watch ID, `GetWatches`, and `ClearAllWatches`. Register a given key from one thread to get the replacement described above.
+
 ---
 
 ## Managing Callbacks
@@ -302,6 +378,8 @@ Bulk-enable or bulk-disable every registered watch. These methods return the mod
 fileWatcher.EnableAllWatches();
 fileWatcher.DisableAllWatches();
 ```
+
+Both publish one `FileWatchStateChangedEvent` per watch that actually changed, exactly as `SetWatchEnabled` does, so a subscriber tracking watch state stays correct without needing to know which API the caller used. Watches already in the requested state are left alone and report nothing, so a bulk enable over watches that are all enabled publishes no events at all.
 
 ### Remove a Watch
 
@@ -375,6 +453,8 @@ fileWatcher.Renamed += n => NoireLogger.LogInfo($"Renamed: {n.OldName} -> {n.Nam
 fileWatcher.Error += e => NoireLogger.LogError(e.Exception, $"Watcher error: {e.RootPath}");
 ```
 
+All CLR event handlers are invoked on the framework thread and never overlap each other (see [Thread Contract](#thread-contract)).
+
 CLR event handlers that throw exceptions are caught, counted in statistics, and logged.
 
 All CLR events are cleared when the module is disposed.
@@ -393,10 +473,12 @@ var fileWatcher = NoireLibMain.AddModule(new NoireFileWatcher(eventBus: eventBus
 Published event types:
 - `FileWatchRegisteredEvent` - A new watch registration was created. Contains a `FileWatchRegistrationInfo` snapshot.
 - `FileWatchRemovedEvent` - A watch was removed. Contains the `WatchId`, `Path`, and `Key`.
-- `FileWatchStateChangedEvent` - A watch was enabled or disabled. Contains the `WatchId` and new `Enabled` state.
+- `FileWatchStateChangedEvent` - A watch was enabled or disabled, whether through `SetWatchEnabled` or through a bulk `EnableAllWatches`/`DisableAllWatches` call. Contains the `WatchId` and new `Enabled` state. A bulk call publishes one of these per watch that actually changed state.
 - `FileWatchNotificationEvent` - A filesystem notification was dispatched. Contains the `FileWatchNotification`.
 - `FileWatchErrorEvent` - An underlying watcher error occurred. Contains the `FileWatchError`.
 - `FileWatchesClearedEvent` - All watches were removed via `ClearAllWatches`. Contains the `RemovedCount`.
+
+All six are delivered to subscribers on the framework thread, and all six are queued, so a lifecycle event arrives after the call that caused it has returned. Disposal publishes nothing. See [Thread Contract](#thread-contract) for the reasoning and the consequences.
 
 ---
 
@@ -416,6 +498,7 @@ NoireLogger.LogInfo($"Notifications dispatched: {stats.TotalNotificationsDispatc
 NoireLogger.LogInfo($"Errors: {stats.TotalErrors}");
 NoireLogger.LogInfo($"Duplicates suppressed: {stats.TotalDuplicateNotificationsSuppressed}");
 NoireLogger.LogInfo($"Callback exceptions caught: {stats.TotalCallbackExceptionsCaught}");
+NoireLogger.LogInfo($"Deliveries dropped: {stats.TotalDeliveriesDropped}");
 ```
 
 `FileWatcherStatistics` fields:
@@ -428,6 +511,7 @@ NoireLogger.LogInfo($"Callback exceptions caught: {stats.TotalCallbackExceptions
 - `TotalErrors` - Total watcher-level errors observed.
 - `TotalDuplicateNotificationsSuppressed` - Total notifications discarded by duplicate suppression.
 - `TotalCallbackExceptionsCaught` - Total exceptions caught from user callbacks and CLR event handlers.
+- `TotalDeliveriesDropped` - Total deliveries discarded because the delivery queue was at capacity (see [Delivery ordering and backpressure](#delivery-ordering-and-backpressure)). While this is non-zero, `TotalNotificationsDispatched` undercounts what the filesystem reported: those notifications were observed and accepted but never reached a handler.
 
 ---
 
@@ -496,7 +580,7 @@ Enum representing the semantic type of a notification:
 - `Changed`
 - `Deleted`
 - `Renamed`
-- `Error`
+- `Error` - **never carried by a notification.** A watcher-level error reports an exception rather than a path, so it travels as a `FileWatchError` through the `Error` CLR event and `FileWatchErrorEvent`, not as a `FileWatchNotification`. `FileWatchNotification.EventType` is never set to this value, so a `switch` case testing for it is unreachable. The member is retained only because removing it would break consumers that name it.
 
 ---
 
@@ -519,8 +603,13 @@ Enum representing the semantic type of a notification:
 - All callback exceptions (sync, async, and CLR event handlers) are caught and logged automatically. They do not crash the module.
 - Inspect logs for callback failure messages.
 - Check `TotalCallbackExceptionsCaught` in the statistics for a count.
-- Keep callbacks short and delegate heavy work to background tasks.
+- Keep callbacks short and delegate heavy work to background tasks. Callbacks run on the framework thread, so a slow one stalls the game's frame.
 - Prefer async callbacks for IO-bound work.
+
+### Notifications are missing under heavy filesystem activity
+- Check `TotalDeliveriesDropped` in the statistics, or the log for a delivery queue capacity warning. Under an event storm the module drops the oldest pending deliveries rather than growing memory (see [Thread Contract](#thread-contract)).
+- Handlers that block the framework thread let the queue back up. Move heavy work off the callback.
+- Raise `InternalBufferSize` in the options if the underlying watcher itself is overflowing, which surfaces as an `Error` event rather than a drop.
 
 ### Watch registration fails
 - If `AllowNonExistingPath` is `false` (default), the target directory must exist. For file watches, the parent directory must exist.

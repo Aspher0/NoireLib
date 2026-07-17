@@ -397,8 +397,9 @@ public class NoireHistoryLoggerTests : IDisposable
 
         logger.RemoveEntry(stored).Should().BeTrue("the entry is still removed from the runtime list");
 
-        logger.GetDatabaseEntriesSnapshot().Select(entry => entry.Message).Should().Equal("Remove me",
-            "the database-backed list is left alone while clearing the database is refused");
+        logger.GetDatabaseEntriesSnapshot().Select(entry => entry.Message).Should()
+            .ContainSingle("the database-backed list is left alone while clearing the database is refused")
+            .Which.Should().Be("Remove me");
 
         var rowsLeft = logger.ExecuteDatabaseQuery(builder => builder.Where("id", stored.Id!.Value).Count());
         rowsLeft.Should().Be(1, "a refused permission must leave the row in place");

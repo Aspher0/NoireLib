@@ -8,7 +8,6 @@ using NoireLib.IPC;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static FFXIVClientStructs.FFXIV.Client.Graphics.Scene.CharacterBase;
 using NoireDatabase = NoireLib.Database.NoireDatabase;
 
 namespace NoireLib;

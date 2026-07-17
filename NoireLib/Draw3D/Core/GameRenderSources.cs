@@ -5,8 +5,8 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using GameControl = FFXIVClientStructs.FFXIV.Client.Game.Control.Control;
 using GameCameraManager = FFXIVClientStructs.FFXIV.Client.Game.Control.CameraManager;
+using GameControl = FFXIVClientStructs.FFXIV.Client.Game.Control.Control;
 using KernelDevice = FFXIVClientStructs.FFXIV.Client.Graphics.Kernel.Device;
 using RenderTargetManager = FFXIVClientStructs.FFXIV.Client.Graphics.Render.RenderTargetManager;
 

@@ -1,5 +1,5 @@
-using System.Numerics;
 using NoireLib.Draw3D.Scene;
+using System.Numerics;
 
 namespace NoireLib.Draw3D.Interaction;
 

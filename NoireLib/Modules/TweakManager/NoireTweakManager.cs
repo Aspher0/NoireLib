@@ -19,8 +19,16 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
 {
     private readonly Dictionary<string, TweakBase> tweaks = new();
 
+    // Bookkeeping for operations that record several tweaks at once and want a single write.
+    private readonly List<string> deferredSaveReportedKeys = new();
+    private bool batchingConfigSaves;
+    private bool deferredSavePending;
+
     /// <summary>
-    /// Gets the <see cref="TweakManagerConfigInstance"/> used by this module.
+    /// Gets the <see cref="TweakManagerConfigInstance"/> used by this module.<br/>
+    /// This deliberately shadows the generated static accessor of the same name, whose members write the
+    /// configuration file on every call. Reaching the instance instead is what lets this module decide
+    /// when to write, so that every save can be gated on <see cref="AutomaticPersistence"/>.
     /// </summary>
     private static TweakManagerConfigInstance TweakManagerConfig
         => NoireConfigManager.GetConfig<TweakManagerConfigInstance>()!;
@@ -83,7 +91,11 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         var migratedCount = config.ExecuteKeyMigrations();
         if (migratedCount > 0)
         {
+            // A migration rewrites the store and spends the mapping that produced it. Writing that out is what lets the
+            // file settle, because a move left in memory is redone from the same old keys on every load.
+            PersistConfigStore(null);
             PublishEvent(new TweakKeyMigrationsExecutedEvent(migratedCount));
+
             if (EnableLogging)
                 NoireLogger.LogInfo(this, $"Executed {migratedCount} tweak key migration(s).");
         }
@@ -110,31 +122,34 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// </summary>
     protected override void OnActivated()
     {
-        // Ensure globally locked tweaks are disabled in config and never loaded
-        foreach (var tweak in tweaks.Values)
+        RunAsBatch(() =>
         {
-            if (tweak.IsGloballyDisabled)
+            // Ensure globally locked tweaks are disabled in config and never loaded
+            foreach (var tweak in tweaks.Values)
             {
-                var lockedConfig = TweakManagerConfig.GetTweakConfig(tweak.InternalKey);
-                if (lockedConfig is { Enabled: true })
+                if (tweak.IsGloballyDisabled)
                 {
-                    TweakManagerConfig.SetTweakConfig(tweak.InternalKey,
-                        new TweakConfigEntry(false, lockedConfig.ConfigJson, lockedConfig.ConfigVersion));
+                    var lockedConfig = TweakManagerConfig.GetTweakConfig(tweak.InternalKey);
+                    if (lockedConfig is { Enabled: true })
+                    {
+                        TweakManagerConfig.SetTweakConfig(tweak.InternalKey,
+                            new TweakConfigEntry(false, lockedConfig.ConfigJson, lockedConfig.ConfigVersion));
 
-                    if (automaticPersistence)
-                        TweakManagerConfig.Save();
+                        PersistConfigStore(null);
 
-                    if (EnableLogging)
-                        NoireLogger.LogInfo(this, $"Tweak '{tweak.Name}' ({tweak.InternalKey}) is globally locked. Disabled in config.");
+                        if (EnableLogging)
+                            NoireLogger.LogInfo(this, $"Tweak '{tweak.Name}' ({tweak.InternalKey}) is globally locked. Disabled in config.");
+                    }
+
+                    continue;
                 }
 
-                continue;
+                // Restoring what the configuration already says never writes back to it.
+                var config = TweakManagerConfig.GetTweakConfig(tweak.InternalKey);
+                if (config is { Enabled: true } && !tweak.Enabled)
+                    ApplyTweakEnable(tweak);
             }
-
-            var config = TweakManagerConfig.GetTweakConfig(tweak.InternalKey);
-            if (config is { Enabled: true } && !tweak.Enabled)
-                EnableTweakInternal(tweak);
-        }
+        });
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "Tweak Manager activated.");
@@ -145,9 +160,10 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// </summary>
     protected override void OnDeactivated()
     {
-        // Disable all enabled tweaks
+        // Unhook every enabled tweak without recording it, so that the set the user chose is intact
+        // when the module is activated again.
         foreach (var tweak in tweaks.Values.Where(t => t.Enabled).ToList())
-            DisableTweakInternal(tweak);
+            ApplyTweakDisable(tweak);
 
         if (ModuleWindow!.IsOpen)
             ModuleWindow.IsOpen = false;
@@ -156,14 +172,21 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             NoireLogger.LogInfo(this, "Tweak Manager deactivated.");
     }
 
-    private bool automaticPersistence;
+    // Matches the public constructor's default, so that the constructors which take no arguments
+    // (including the one NoireLibMain.AddModule uses) persist rather than silently discarding writes.
+    private bool automaticPersistence = true;
 
     /// <summary>
     /// Whether tweak configuration should be automatically persisted to disk.<br/>
     /// When <see langword="true"/>, tweak enabled states and configs are saved
     /// via <see cref="TweakManagerConfigInstance"/> automatically.
-    /// When <see langword="false"/>, the configuration is still available via <see cref="GetAllTweakConfigs"/>
-    /// for manual persistence by the consumer.
+    /// When <see langword="false"/>, the module writes nothing of its own accord: enabling, disabling, favoriting,
+    /// a tweak calling <see cref="TweakBase.MarkConfigDirty"/>, an import and a key migration are all applied in
+    /// memory only, and the configuration is available via <see cref="GetAllTweakConfigs"/> for manual persistence
+    /// by the consumer.<br/>
+    /// This setting governs the writes the module makes by itself, not the ones the consumer asks for:
+    /// <see cref="SaveTweakConfig"/> and <see cref="SaveAllTweakConfigs"/> write whatever it says, so that turning
+    /// it off is a way to control when writes happen rather than a one-way door.
     /// </summary>
     public bool AutomaticPersistence
     {
@@ -278,8 +301,10 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
 
         try
         {
+            // Removing a tweak from the manager leaves its persisted entry alone, so registering it
+            // again restores the state and the favorite the user had chosen for it.
             if (tweak.Enabled)
-                DisableTweakInternal(tweak);
+                ApplyTweakDisable(tweak);
 
             tweak.Dispose();
         }
@@ -289,7 +314,6 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         }
 
         tweaks.Remove(internalKey);
-        //TweakManagerConfig.SetFavorite(internalKey, false); // To check
 
         PublishEvent(new TweakUnregisteredEvent(internalKey, name));
 
@@ -394,24 +418,18 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
                     (disabledAttr.ShowInList ? " (visible in list)" : ""));
         }
 
-        // Auto-migrate config from old keys declared via TweakKeyMigrationAttribute
+        // Auto-migrate persisted data from old keys declared via TweakKeyMigrationAttribute
         var keyMigrationAttrs = tweak.GetType().GetCustomAttributes<TweakKeyMigrationAttribute>();
         foreach (var attr in keyMigrationAttrs)
         {
-            var oldConfig = TweakManagerConfig.GetTweakConfig(attr.OldKey);
-            if (oldConfig != null && TweakManagerConfig.GetTweakConfig(tweak.InternalKey) == null)
-            {
-                TweakManagerConfig.SetTweakConfig(tweak.InternalKey, oldConfig);
-                TweakManagerConfig.RemoveTweakConfig(attr.OldKey);
+            if (!TweakManagerConfig.MigrateTweakKey(attr.OldKey, tweak.InternalKey))
+                continue;
 
-                if (automaticPersistence)
-                    TweakManagerConfig.Save();
+            PersistConfigStore(null);
+            PublishEvent(new TweakKeyMigrationsExecutedEvent(1));
 
-                PublishEvent(new TweakKeyMigrationsExecutedEvent(1));
-
-                if (EnableLogging)
-                    NoireLogger.LogInfo(this, $"Auto-migrated config from old key '{attr.OldKey}' to '{tweak.InternalKey}'.");
-            }
+            if (EnableLogging)
+                NoireLogger.LogInfo(this, $"Auto-migrated persisted data from old key '{attr.OldKey}' to '{tweak.InternalKey}'.");
         }
 
         // Load config if available
@@ -488,8 +506,11 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager EnableTweaks(params string[] internalKeys)
     {
-        foreach (var key in internalKeys)
-            EnableTweak(key);
+        RunAsBatch(() =>
+        {
+            foreach (var key in internalKeys)
+                EnableTweak(key);
+        });
         return this;
     }
 
@@ -535,8 +556,11 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager DisableTweaks(params string[] internalKeys)
     {
-        foreach (var key in internalKeys)
-            DisableTweak(key);
+        RunAsBatch(() =>
+        {
+            foreach (var key in internalKeys)
+                DisableTweak(key);
+        });
         return this;
     }
 
@@ -567,14 +591,20 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return ToggleTweak(tweak.InternalKey);
     }
 
-    private bool EnableTweakInternal(TweakBase tweak)
+    /// <summary>
+    /// Applies a tweak's enabled effect and reports the outcome, without touching the configuration.<br/>
+    /// Restoring a tweak on activation uses this: the configuration already says the tweak is on, and an
+    /// enable that fails must not be mistaken for the user turning the tweak off.
+    /// </summary>
+    /// <param name="tweak">The tweak to hook up.</param>
+    /// <returns><see langword="true"/> if the tweak was enabled successfully; otherwise, <see langword="false"/>.</returns>
+    private bool ApplyTweakEnable(TweakBase tweak)
     {
         var success = tweak.Enable();
 
         if (success)
         {
             PublishEvent(new TweakEnabledEvent(tweak.InternalKey, tweak.Name));
-            SaveTweakConfigInternal(tweak);
 
             if (EnableLogging)
                 NoireLogger.LogInfo(this, $"Tweak '{tweak.Name}' ({tweak.InternalKey}) enabled.");
@@ -582,7 +612,6 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         else
         {
             PublishEvent(new TweakErrorEvent(tweak.InternalKey, tweak.Name, tweak.LastError!));
-            SaveTweakConfigInternal(tweak);
 
             if (EnableLogging)
                 NoireLogger.LogError(this, $"Failed to enable tweak '{tweak.Name}' ({tweak.InternalKey}).");
@@ -591,14 +620,21 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return success;
     }
 
-    private bool DisableTweakInternal(TweakBase tweak)
+    /// <summary>
+    /// Applies a tweak's disabled effect and reports the outcome, without touching the configuration.<br/>
+    /// Teardown uses this: unhooking a tweak because the module is going away, or because the tweak is
+    /// being removed, is not the user turning it off, and must not overwrite the enabled set that the
+    /// next activation reads back.
+    /// </summary>
+    /// <param name="tweak">The tweak to unhook.</param>
+    /// <returns><see langword="true"/> if the tweak was disabled successfully; otherwise, <see langword="false"/>.</returns>
+    private bool ApplyTweakDisable(TweakBase tweak)
     {
         var success = tweak.Disable();
 
         if (success)
         {
             PublishEvent(new TweakDisabledEvent(tweak.InternalKey, tweak.Name));
-            SaveTweakConfigInternal(tweak);
 
             if (EnableLogging)
                 NoireLogger.LogInfo(this, $"Tweak '{tweak.Name}' ({tweak.InternalKey}) disabled.");
@@ -610,6 +646,33 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             if (EnableLogging)
                 NoireLogger.LogError(this, $"Failed to disable tweak '{tweak.Name}' ({tweak.InternalKey}).");
         }
+
+        return success;
+    }
+
+    /// <summary>
+    /// Enables a tweak on the user's behalf, applying the effect and recording the intent.
+    /// </summary>
+    /// <param name="tweak">The tweak to enable.</param>
+    /// <returns><see langword="true"/> if the tweak was enabled successfully; otherwise, <see langword="false"/>.</returns>
+    private bool EnableTweakInternal(TweakBase tweak)
+    {
+        var success = ApplyTweakEnable(tweak);
+        SaveTweakConfigInternal(tweak);
+        return success;
+    }
+
+    /// <summary>
+    /// Disables a tweak on the user's behalf, applying the effect and recording the intent.
+    /// </summary>
+    /// <param name="tweak">The tweak to disable.</param>
+    /// <returns><see langword="true"/> if the tweak was disabled successfully; otherwise, <see langword="false"/>.</returns>
+    private bool DisableTweakInternal(TweakBase tweak)
+    {
+        var success = ApplyTweakDisable(tweak);
+
+        if (success)
+            SaveTweakConfigInternal(tweak);
 
         return success;
     }
@@ -689,7 +752,10 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     }
 
     /// <summary>
-    /// Sets the favorite state for a tweak.
+    /// Sets the favorite state for a tweak.<br/>
+    /// Starring a tweak is a decision the user made, so it is recorded on the same terms as enabling one: written
+    /// when <see cref="AutomaticPersistence"/> is on, and collapsed into the single write of the operation that is
+    /// running when it is part of one.
     /// </summary>
     /// <param name="internalKey">The tweak internal key.</param>
     /// <param name="isFavorite">Whether the tweak should be favorited.</param>
@@ -700,8 +766,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             return false;
 
         TweakManagerConfig.SetFavorite(internalKey, isFavorite);
-        if (automaticPersistence)
-            TweakManagerConfig.Save();
+        PersistConfigStore(null);
 
         return true;
     }
@@ -734,27 +799,36 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     #region Configuration Management
 
     /// <summary>
-    /// Manually saves the configuration for a specific tweak by its internal key.
+    /// Manually saves the configuration for a specific tweak by its internal key.<br/>
+    /// This is a write the consumer asked for, so it happens whatever <see cref="AutomaticPersistence"/> says.
+    /// Turning automatic persistence off is how a consumer takes over deciding when writes happen, not a refusal
+    /// to write at all, so a save requested by name is honoured.<br/>
+    /// A tweak reporting that its own configuration changed goes through <see cref="TweakBase.MarkConfigDirty"/>
+    /// instead, which is the module recording a change and therefore obeys <see cref="AutomaticPersistence"/>.
     /// </summary>
     /// <param name="internalKey">The internal key of the tweak to save.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager SaveTweakConfig(string internalKey)
     {
         if (tweaks.TryGetValue(internalKey, out var tweak))
-            SaveTweakConfigInternal(tweak);
+            SaveTweakConfigInternal(tweak, explicitRequest: true);
         return this;
     }
 
     /// <summary>
-    /// Manually saves the configuration for all registered tweaks.
+    /// Manually saves the configuration for all registered tweaks, costing a single write however many tweaks
+    /// there are. Each tweak still announces its own <see cref="TweakConfigSavedEvent"/>.<br/>
+    /// As with <see cref="SaveTweakConfig"/>, this is a write the consumer asked for and happens whatever
+    /// <see cref="AutomaticPersistence"/> says.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager SaveAllTweakConfigs()
     {
-        foreach (var tweak in tweaks.Values)
-            SaveTweakConfigToStore(tweak);
-
-        TweakManagerConfig.Save();
+        RunAsBatch(() =>
+        {
+            foreach (var tweak in tweaks.Values)
+                SaveTweakConfigInternal(tweak, explicitRequest: true);
+        });
         return this;
     }
 
@@ -798,16 +872,24 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// <returns>A dictionary mapping tweak internal keys to their config entries.</returns>
     public Dictionary<string, TweakConfigEntry> GetAllTweakConfigs()
     {
-        // Refresh from live tweaks
-        foreach (var tweak in tweaks.Values)
-            SaveTweakConfigToStore(tweak);
+        var configs = new Dictionary<string, TweakConfigEntry>(TweakManagerConfig.TweakConfigs);
 
-        return new Dictionary<string, TweakConfigEntry>(TweakManagerConfig.TweakConfigs);
+        // Live tweaks are the authority on their own state, so the snapshot reflects them without
+        // writing them back into the store that a caller only asked to read.
+        foreach (var tweak in tweaks.Values)
+            configs[tweak.InternalKey] = BuildTweakConfigEntry(tweak);
+
+        return configs;
     }
 
     /// <summary>
     /// Imports tweak configurations from an external dictionary.<br/>
-    /// Useful for restoring configuration from a custom persistence source.
+    /// Useful for restoring configuration from a custom persistence source.<br/>
+    /// An import puts state back rather than asking for a write, so it is recorded on the module's usual terms:
+    /// written when <see cref="AutomaticPersistence"/> is on, and applied in memory only when it is off. A consumer
+    /// who keeps the state themselves is handing back their own copy, not asking for it to be written to a file
+    /// they do not read from; <see cref="SaveAllTweakConfigs"/> is how they ask for that.<br/>
+    /// Whatever the number of entries, the import costs a single write.
     /// </summary>
     /// <param name="configs">The configuration dictionary to import.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -818,14 +900,19 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
 
         LoadConfigIntoTweaks();
 
-        if (automaticPersistence)
-            TweakManagerConfig.Save();
+        PersistConfigStore(null);
 
         return this;
     }
 
     /// <summary>
-    /// Registers a key migration mapping so configuration data is preserved when a tweak's InternalKey changes.
+    /// Registers a key migration mapping so persisted data is preserved when a tweak's InternalKey changes.<br/>
+    /// The mapping moves the enabled state, the serialized config, and the user's favorite together.<br/>
+    /// Mappings are applied by <see cref="ExecuteKeyMigrations"/>, which the module runs on initialization.<br/>
+    /// Registering a mapping writes nothing by itself. A mapping is a declaration that consumer code makes on every
+    /// run, not state the user built up: writing one would keep it applying long after the code that declared it is
+    /// gone, and would rewrite the configuration merely because the plugin started. The move a mapping produces is
+    /// the state, and that is what gets written.
     /// </summary>
     /// <param name="oldKey">The old internal key.</param>
     /// <param name="newKey">The new internal key.</param>
@@ -837,7 +924,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     }
 
     /// <summary>
-    /// Registers multiple key migration mappings.
+    /// Registers multiple key migration mappings.<br/>
+    /// As with <see cref="AddKeyMigration"/>, registering mappings writes nothing by itself; the move they produce
+    /// is what gets written.
     /// </summary>
     /// <param name="migrations">Dictionary of old keys to new keys.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -849,7 +938,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     }
 
     /// <summary>
-    /// Executes any pending key migrations now.
+    /// Executes any pending key migrations now.<br/>
+    /// A migration that moves something is written to disk when <see cref="AutomaticPersistence"/> is on. A run that
+    /// finds nothing to move writes nothing.
     /// </summary>
     /// <returns>The number of migrations executed.</returns>
     public int ExecuteKeyMigrations()
@@ -857,24 +948,130 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         var count = TweakManagerConfig.ExecuteKeyMigrations();
         if (count > 0)
         {
+            // A migration rewrites the store and spends the mapping that produced it. Writing that out is what lets the
+            // file settle, because a move left in memory is redone from the same old keys on every load.
+            PersistConfigStore(null);
             PublishEvent(new TweakKeyMigrationsExecutedEvent(count));
             LoadConfigIntoTweaks();
         }
         return count;
     }
 
-    private void SaveTweakConfigInternal(TweakBase tweak)
+    /// <summary>
+    /// Records a tweak's current state because the tweak reported that its configuration changed.<br/>
+    /// This is the path behind <see cref="TweakBase.MarkConfigDirty"/>. The module is recording a change it was told
+    /// about rather than carrying out a write a consumer asked for, so it obeys <see cref="AutomaticPersistence"/>,
+    /// which <see cref="SaveTweakConfig"/> deliberately does not.
+    /// </summary>
+    /// <param name="internalKey">The internal key of the tweak whose configuration changed.</param>
+    internal void RecordTweakConfig(string internalKey)
+    {
+        if (tweaks.TryGetValue(internalKey, out var tweak))
+            SaveTweakConfigInternal(tweak);
+    }
+
+    /// <summary>
+    /// Records a tweak's current state in the configuration store and persists it.
+    /// </summary>
+    /// <param name="tweak">The tweak whose state should be recorded.</param>
+    /// <param name="explicitRequest">Whether the consumer asked for this write, rather than the module making it on its own.</param>
+    private void SaveTweakConfigInternal(TweakBase tweak, bool explicitRequest = false)
     {
         SaveTweakConfigToStore(tweak);
+        PersistConfigStore(tweak.InternalKey, explicitRequest);
+    }
 
-        if (automaticPersistence)
+    /// <summary>
+    /// Writes the configuration store to disk, deciding both whether a write is allowed and when it happens.
+    /// Every write the module makes is requested here, so no path can escape either decision.<br/>
+    /// A write the module makes on its own, recording something that happened, obeys
+    /// <see cref="AutomaticPersistence"/>. A write the consumer asked for by name, through
+    /// <see cref="SaveTweakConfig"/> or <see cref="SaveAllTweakConfigs"/>, is carried out whatever that setting
+    /// says: opting out of writes the module makes by itself is not opting out of the ones you ask for.<br/>
+    /// Inside a batch the write is deferred either way, so an operation covering many tweaks costs one write
+    /// instead of one per tweak.
+    /// </summary>
+    /// <param name="reportedKey">The tweak key to announce with <see cref="TweakConfigSavedEvent"/>, or <see langword="null"/> to announce none.</param>
+    /// <param name="explicitRequest">Whether the consumer asked for this write, rather than the module making it on its own.</param>
+    private void PersistConfigStore(string? reportedKey, bool explicitRequest = false)
+    {
+        if (!explicitRequest && !automaticPersistence)
+            return;
+
+        if (batchingConfigSaves)
         {
-            TweakManagerConfig.Save();
-            PublishEvent(new TweakConfigSavedEvent(tweak.InternalKey));
+            deferredSavePending = true;
+
+            if (reportedKey != null)
+                deferredSaveReportedKeys.Add(reportedKey);
+
+            return;
+        }
+
+        TweakManagerConfig.Save();
+
+        if (reportedKey != null)
+            PublishEvent(new TweakConfigSavedEvent(reportedKey));
+    }
+
+    /// <summary>
+    /// Runs an operation that records several tweaks, collapsing the writes it produces into a single
+    /// one. Every tweak still announces its own <see cref="TweakConfigSavedEvent"/> once the write lands.<br/>
+    /// Batches nest: an operation already running inside one contributes to it rather than opening its own.
+    /// </summary>
+    /// <param name="operation">The operation to run.</param>
+    internal void RunAsBatch(Action operation)
+    {
+        if (batchingConfigSaves)
+        {
+            operation();
+            return;
+        }
+
+        batchingConfigSaves = true;
+
+        try
+        {
+            operation();
+        }
+        finally
+        {
+            batchingConfigSaves = false;
+            FlushDeferredConfigSaves();
         }
     }
 
+    /// <summary>
+    /// Performs the single write a batch accumulated, if any, and announces the tweaks it covered.
+    /// </summary>
+    private void FlushDeferredConfigSaves()
+    {
+        var reportedKeys = deferredSaveReportedKeys.ToList();
+        var pending = deferredSavePending;
+
+        deferredSaveReportedKeys.Clear();
+        deferredSavePending = false;
+
+        if (!pending)
+            return;
+
+        TweakManagerConfig.Save();
+
+        foreach (var key in reportedKeys)
+            PublishEvent(new TweakConfigSavedEvent(key));
+    }
+
     private void SaveTweakConfigToStore(TweakBase tweak)
+    {
+        TweakManagerConfig.SetTweakConfig(tweak.InternalKey, BuildTweakConfigEntry(tweak));
+    }
+
+    /// <summary>
+    /// Builds the configuration entry describing a tweak's current state.
+    /// </summary>
+    /// <param name="tweak">The tweak to describe.</param>
+    /// <returns>The entry for the tweak.</returns>
+    private TweakConfigEntry BuildTweakConfigEntry(TweakBase tweak)
     {
         string? configJson = null;
         int configVersion = 0;
@@ -894,7 +1091,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             }
         }
 
-        TweakManagerConfig.SetTweakConfig(tweak.InternalKey, new TweakConfigEntry(tweak.Enabled, configJson, configVersion));
+        return new TweakConfigEntry(tweak.Enabled, configJson, configVersion);
     }
 
     private void LoadConfigIntoTweaks()
@@ -926,11 +1123,14 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager EnableAllTweaks()
     {
-        foreach (var tweak in tweaks.Values)
+        RunAsBatch(() =>
         {
-            if (!tweak.IsGloballyDisabled && !tweak.Enabled)
-                EnableTweakInternal(tweak);
-        }
+            foreach (var tweak in tweaks.Values)
+            {
+                if (!tweak.IsGloballyDisabled && !tweak.Enabled)
+                    EnableTweakInternal(tweak);
+            }
+        });
         return this;
     }
 
@@ -940,13 +1140,18 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager DisableAllTweaks()
     {
-        foreach (var tweak in tweaks.Values.Where(t => t.Enabled).ToList())
-            DisableTweakInternal(tweak);
+        RunAsBatch(() =>
+        {
+            foreach (var tweak in tweaks.Values.Where(t => t.Enabled).ToList())
+                DisableTweakInternal(tweak);
+        });
         return this;
     }
 
     /// <summary>
-    /// Clears all registered tweaks, disposing them in the process.
+    /// Clears all registered tweaks, disposing them in the process.<br/>
+    /// Persisted tweak configuration is left untouched, so the tweaks come back in the state the user
+    /// chose if they are registered again.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireTweakManager ClearTweaks()
@@ -956,7 +1161,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             try
             {
                 if (tweak.Enabled)
-                    DisableTweakInternal(tweak);
+                    ApplyTweakDisable(tweak);
                 tweak.Dispose();
             }
             catch (Exception ex)

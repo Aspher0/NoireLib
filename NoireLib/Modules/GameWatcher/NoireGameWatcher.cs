@@ -256,21 +256,6 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             NoireLogger.LogDebug(this, "GameWatcher deactivated. Subscriptions are kept and resume on reactivation.");
     }
 
-    /// <summary>
-    /// Disposes the module completely. Overridden so a watcher created without the game (no window system,
-    /// e.g. in tests) can still be disposed - the base unconditionally unregisters its window.
-    /// </summary>
-    public override void Dispose()
-    {
-        if (HasWindow)
-        {
-            base.Dispose();
-            return;
-        }
-
-        DisposeInternal();
-    }
-
     /// <inheritdoc/>
     protected override void DisposeInternal()
     {

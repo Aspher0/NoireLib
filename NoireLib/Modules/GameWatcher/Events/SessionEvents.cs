@@ -1,5 +1,3 @@
-using System;
-
 namespace NoireLib.GameWatcher;
 
 /// <summary>Fired when the local player logs in.</summary>

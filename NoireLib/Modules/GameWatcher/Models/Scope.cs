@@ -271,15 +271,15 @@ public sealed class Scope
                 return string.Equals(probe.Name, name, StringComparison.OrdinalIgnoreCase)
                     && (worldId == null || probe.HomeWorldId == worldId.Value);
             case RootKind.Union:
-            {
-                foreach (var child in children)
                 {
-                    if (child.PreMatches(in probe))
-                        return true;
-                }
+                    foreach (var child in children)
+                    {
+                        if (child.PreMatches(in probe))
+                            return true;
+                    }
 
-                return false;
-            }
+                    return false;
+                }
             default:
                 return false;
         }

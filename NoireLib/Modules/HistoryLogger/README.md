@@ -221,17 +221,20 @@ Show or hide the history logger window:
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Toggle the window
+// Show the window
 logger?.ShowWindow();
 
-// Force show
-logger?.ShowWindow(true);
+// Hide the window
+logger?.HideWindow();
 
-// Force hide
-logger?.ShowWindow(false);
+// Toggle the window
+logger?.ToggleWindow();
 
-// Check if window is open
-var isOpen = logger?.ModuleWindow?.IsOpen ?? false;
+// Show, hide or toggle from a single call (null toggles)
+logger?.SetShowWindow(true);
+
+// Check if the window is open
+var isOpen = logger?.IsWindowOpen ?? false;
 ```
 
 ### Window Features
@@ -300,12 +303,15 @@ logger?.LoadEntriesFromDatabase(replaceExisting: false);
 Clear persisted logs from the database:
 
 ```csharp
-// Clear database entries (respects AllowUserClearDatabase permission)
+// Clear the database entries, and the rows behind them when persistence is on
 logger?.ClearDatabaseEntries();
 
 // Clear in-memory entries only
 logger?.ClearEntries();
 ```
+
+**Note:** unlike `RemoveEntry`, these two clear unconditionally. The `AllowUserClear*` permissions gate the
+matching buttons in the window, not these calls.
 
 ---
 
@@ -320,8 +326,8 @@ Create a proxy that automatically logs method calls:
 ```csharp
 public class UserService
 {
-    public void CreateUser(string username) { /* ... */ }
-    public void DeleteUser(int userId) { /* ... */ }
+    public virtual void CreateUser(string username) { /* ... */ }
+    public virtual void DeleteUser(int userId) { /* ... */ }
 }
 
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
@@ -333,9 +339,12 @@ var service = logger?.CreateLoggedProxy<UserService>(
 );
 
 // Method calls are automatically logged
-service?.CreateUser("john.doe");  // Logs: "Method CreateUser called"
-service?.DeleteUser(123);         // Logs: "Method DeleteUser called"
+service?.CreateUser("john.doe");  // Logs: "UserService.CreateUser invoked"
+service?.DeleteUser(123);         // Logs: "UserService.DeleteUser invoked"
 ```
+
+A proxy works by subclassing the type and overriding its members, so the methods to log must be `virtual`.
+A non-virtual one is skipped, with a warning naming it.
 
 ### Proxy with Existing Instance
 
@@ -374,7 +383,7 @@ Control which methods to log:
 // Log all methods
 var proxy1 = logger?.CreateLoggedProxy<MyClass>(logAllMethods: true);
 
-// Log only methods decorated with [LogMethod] attribute (if implemented)
+// Log only the members decorated with [NoireLog]
 var proxy2 = logger?.CreateLoggedProxy<MyClass>(logAllMethods: false);
 
 // Override registered settings
@@ -384,6 +393,27 @@ var proxy3 = logger?.CreateLoggedProxy<MyClass>(
     category: "Manual"     // Override registered category
 );
 ```
+
+### The [NoireLog] Attribute
+
+`[NoireLog]` marks what a proxy logs when `logAllMethods` is off, and overrides the message, category and
+level of the entry a call produces. It applies to a method, a property, a constructor, or a whole class:
+
+```csharp
+public class UserService
+{
+    // Logged with the default message, "UserService.CreateUser invoked"
+    [NoireLog]
+    public virtual void CreateUser(string username) { /* ... */ }
+
+    // Logged with everything spelled out, arguments included
+    [NoireLog("User deleted", category: "Accounts", level: HistoryLogLevel.Warning, IncludeArguments = true)]
+    public virtual void DeleteUser(int userId) { /* ... */ }
+}
+```
+
+A call that throws is logged at `Error` and the exception is appended to the message, unless the attribute
+names a level of its own. The exception then keeps propagating.
 
 ---
 
@@ -426,17 +456,32 @@ foreach (var category in categories ?? Enumerable.Empty<string>())
 Remove individual log entries:
 
 ```csharp
+// AddEntry returns the entry as it was stored, which is what RemoveEntry matches on
+var stored = logger?.AddEntry("Test entry", category: "Test");
+
+// Remove the entry (respects user permissions)
+bool removed = stored != null && (logger?.RemoveEntry(stored) ?? false);
+```
+
+Both `AddEntry` overloads return the stored entry. Keep that value rather than the one you handed in: the
+module normalizes an entry on the way in, and persistence stamps the stored copy with its database `Id`, so
+the entry you built yourself is not the one that ended up stored and will not reliably match it.
+
+```csharp
 var entry = new HistoryLogEntry
 {
     Message = "Test entry",
     Category = "Test"
 };
 
-logger?.AddEntry(entry);
-
-// Remove the entry (respects user permissions)
-bool removed = logger?.RemoveEntry(entry) ?? false;
+// Returns the stored entry; `entry` itself stays untouched. Keep `stored` for a later RemoveEntry.
+var stored = logger?.AddEntry(entry);
 ```
+
+Entries read from `GetEntriesSnapshot()`, `GetRuntimeEntriesSnapshot()` or `GetDatabaseEntriesSnapshot()`
+are stored entries too, and can be passed to `RemoveEntry` directly.
+
+Passing `null` to `AddEntry(HistoryLogEntry)` or to `RemoveEntry` throws an `ArgumentNullException`.
 
 **Note:** Removal respects `AllowUserClearInMemory` and `AllowUserClearDatabase` permissions.
 
@@ -488,6 +533,11 @@ int maxEntries = logger?.MaxInMemoryEntries ?? 0;
 bool canTogglePersist = logger?.AllowUserTogglePersistence ?? false;
 bool canClearMemory = logger?.AllowUserClearInMemory ?? false;
 bool canClearDatabase = logger?.AllowUserClearDatabase ?? false;
+bool canAddManually = logger?.AllowManualEntryCreation ?? false;
+
+// Check window state
+bool hasWindow = logger?.HasWindow ?? false;
+bool isWindowOpen = logger?.IsWindowOpen ?? false;
 ```
 
 ---
@@ -511,14 +561,17 @@ bool canClearDatabase = logger?.AllowUserClearDatabase ?? false;
 ### Window not showing
 - Confirm the module has a registered window (`HasWindow == true`).
 - Ensure `ShowWindow()` is called after module initialization.
-- Check that the module is active.
+- Check that the module is active. Deactivating the module closes the window.
+- Read back `IsWindowOpen` after the call to tell a window that never opened from one drawn off screen.
 - Verify no UI framework conflicts.
 
 ### Proxy auto-logging not working
-- Ensure the class implements an interface or has virtual methods (required for proxying).
-- Verify `RegisterTypeForAutoLogging<T>()` was called before creating the proxy.
-- Check that `logAllMethods` is set correctly.
-- Confirm the method being called is public and virtual (or interface method).
+- Confirm the method being called is public and `virtual`. A proxy subclasses the type, so it cannot
+  intercept a non-virtual member; each one it has to skip is named in a warning.
+- Check that `logAllMethods` is set correctly. With it off, only members carrying `[NoireLog]` are logged.
+- Confirm you are calling the proxy that `CreateLoggedProxy` returned rather than the original instance.
+- Note that `RegisterTypeForAutoLogging<T>()` only supplies the default used when `logAllMethods` is left
+  null, so passing `logAllMethods` explicitly ignores it.
 
 ### Entries being trimmed unexpectedly
 - Check `MaxInMemoryEntries` value (default: 2000).

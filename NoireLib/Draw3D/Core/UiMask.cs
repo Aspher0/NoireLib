@@ -359,37 +359,37 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
             case DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
             case DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM:
             case DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM_SRGB:
-            {
-                var d = 0f;
-                for (var c = 0; c < 3; c++)
-                    d = MathF.Max(d, MathF.Abs(b[index * 4 + c] - a[index * 4 + c]) / 255f);
-                return d;
-            }
+                {
+                    var d = 0f;
+                    for (var c = 0; c < 3; c++)
+                        d = MathF.Max(d, MathF.Abs(b[index * 4 + c] - a[index * 4 + c]) / 255f);
+                    return d;
+                }
             case DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM:
-            {
-                var pb = *(uint*)(b + index * 4);
-                var pa = *(uint*)(a + index * 4);
-                var d = 0f;
-                for (var c = 0; c < 3; c++)
                 {
-                    var shift = c * 10;
-                    var vb = (pb >> shift) & 0x3FF;
-                    var va = (pa >> shift) & 0x3FF;
-                    d = MathF.Max(d, MathF.Abs((float)vb - va) / 1023f);
+                    var pb = *(uint*)(b + index * 4);
+                    var pa = *(uint*)(a + index * 4);
+                    var d = 0f;
+                    for (var c = 0; c < 3; c++)
+                    {
+                        var shift = c * 10;
+                        var vb = (pb >> shift) & 0x3FF;
+                        var va = (pa >> shift) & 0x3FF;
+                        d = MathF.Max(d, MathF.Abs((float)vb - va) / 1023f);
+                    }
+                    return d;
                 }
-                return d;
-            }
             case DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_FLOAT:
-            {
-                var d = 0f;
-                for (var c = 0; c < 3; c++)
                 {
-                    var vb = (float)*(Half*)(b + index * 8 + c * 2);
-                    var va = (float)*(Half*)(a + index * 8 + c * 2);
-                    d = MathF.Max(d, MathF.Abs(vb - va));
+                    var d = 0f;
+                    for (var c = 0; c < 3; c++)
+                    {
+                        var vb = (float)*(Half*)(b + index * 8 + c * 2);
+                        var va = (float)*(Half*)(a + index * 8 + c * 2);
+                        d = MathF.Max(d, MathF.Abs(vb - va));
+                    }
+                    return d;
                 }
-                return d;
-            }
             default:
                 return float.NaN;
         }

@@ -1,6 +1,6 @@
+using NoireLib.Draw3D.Scene;
 using System;
 using System.Collections.Generic;
-using NoireLib.Draw3D.Scene;
 
 namespace NoireLib.Draw3D.Interaction;
 

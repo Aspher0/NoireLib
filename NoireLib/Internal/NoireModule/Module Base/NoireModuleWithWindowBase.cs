@@ -77,7 +77,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     #region Title bar button management
 
     /// <summary>
-    /// Adds a button to the title bar of the changelog window.
+    /// Adds a button to the title bar of the module's window.
     /// </summary>
     /// <param name="titleBarButton">The title bar button to add.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -95,7 +95,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
-    /// Removes a button from the title bar of the changelog window by its index.
+    /// Removes a button from the title bar of the module's window by its index.
     /// </summary>
     /// <param name="index">The index of the title bar button to remove.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -113,7 +113,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
-    /// Sets the title bar buttons of the changelog window, replacing any existing buttons.
+    /// Sets the title bar buttons of the module's window, replacing any existing buttons.
     /// </summary>
     /// <param name="titleBarButtons">The list of title bar buttons to set.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -128,7 +128,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
-    /// Clears all title bar buttons from the changelog window.
+    /// Clears all title bar buttons from the module's window.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ClearTitleBarButtons()
@@ -146,7 +146,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     #region Window management
 
     /// <summary>
-    /// Sets the window name of the changelog window.
+    /// Sets the window name of the module's window.
     /// </summary>
     /// <param name="windowName">The name of the window.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -157,10 +157,10 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
-    /// Gets the full window name of the changelog window, including the unique IDs.
+    /// Gets the full window name of the module's window, including the unique IDs.
     /// </summary>
-    /// <returns>The full window name.</returns>
-    public string GetFullWindowName() => ModuleWindow!.WindowName ?? string.Empty;
+    /// <returns>The full window name, or an empty string when the module holds no window.</returns>
+    public string GetFullWindowName() => ModuleWindow?.WindowName ?? string.Empty;
 
     /// <summary>
     /// Registers a window with the NoireLib window system.<br/>
@@ -198,24 +198,28 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
-    /// Unregisters the module's window from the NoireLib window system.
+    /// Unregisters the module's window from the NoireLib window system.<br/>
+    /// Does nothing when the module holds no window, which <see cref="HasWindow"/> reports.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
-    /// <exception cref="InvalidOperationException">Thrown if NoireLib window system is not initialized.</exception>
+    /// <exception cref="InvalidOperationException">Thrown if the module holds a window and the NoireLib window system is not initialized.</exception>
     protected TModule UnregisterWindow()
     {
-        if (NoireService.NoireWindowSystem == null)
-            throw new InvalidOperationException("NoireLib window system is not initialized. Cannot unregister window. Please initialize NoireLib.");
-
+        // Checked before the window system is: a module holding no window has nothing to unregister, and
+        // demanding a window system to establish that would make disposal throw for every module whose window is
+        // optional and absent, which in turn skips the rest of its teardown.
         if (ModuleWindow == null)
             return (TModule)this;
+
+        if (NoireService.NoireWindowSystem == null)
+            throw new InvalidOperationException("NoireLib window system is not initialized. Cannot unregister window. Please initialize NoireLib.");
 
         if (ModuleWindow is Window dalamudWindow)
         {
             NoireService.NoireWindowSystem.RemoveWindow(dalamudWindow);
 
             if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Window '{ModuleWindow.DisplayWindowName}' unregistered from NoireLib window system.");
+                NoireLogger.LogInfo((TModule)this, $"Window '{ModuleWindow.DisplayWindowName}' unregistered from NoireLib window system.");
         }
 
         ModuleWindow?.Dispose();
@@ -241,7 +245,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
                 HideWindow();
         }
         else if (EnableLogging)
-            NoireLogger.LogWarning(this, "This module does not have an associated window.");
+            NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
         return (TModule)this;
     }
@@ -255,7 +259,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         if (ModuleWindow != null)
             ModuleWindow.IsOpen = true;
         else if (EnableLogging)
-            NoireLogger.LogWarning(this, "This module does not have an associated window.");
+            NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
         return (TModule)this;
     }
@@ -269,7 +273,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         if (ModuleWindow != null)
             ModuleWindow.IsOpen = false;
         else if (EnableLogging)
-            NoireLogger.LogWarning(this, "This module does not have an associated window.");
+            NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
         return (TModule)this;
     }
@@ -283,7 +287,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
         if (ModuleWindow != null)
             ModuleWindow.IsOpen = !ModuleWindow.IsOpen;
         else if (EnableLogging)
-            NoireLogger.LogWarning(this, "This module does not have an associated window.");
+            NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
         return (TModule)this;
     }
@@ -291,10 +295,10 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     #endregion
 
     /// <summary>
-    /// Disposes the module completely, unregistering any module window.<br/>
-    /// Do not call manually unless you are managing module lifecycles yourself (i.e. Without using <see cref="NoireLibMain.AddModule{T}(T)"/>).
+    /// Runs the module's teardown, unregistering any module window before the module tears itself down.<br/>
+    /// The window goes first so that a module stops being drawn before the state its window reads is taken apart.
     /// </summary>
-    public override void Dispose()
+    private protected override void DisposeCore()
     {
         UnregisterWindow();
         DisposeInternal();

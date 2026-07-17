@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using Dalamud.Interface;
+using System.Collections.Generic;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 

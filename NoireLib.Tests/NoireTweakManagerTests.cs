@@ -17,6 +17,9 @@ namespace NoireLib.Tests;
 /// enable or disable a tweak is ever written to the configuration.<br/>
 /// Tearing the module down disables every tweak that is running, and recording that transient state used to
 /// destroy the enabled set the user had chosen, because the next activation reads the same entries back.<br/>
+/// They also lock the two halves of the module's persistence rule: a write the module makes on its own follows
+/// <see cref="NoireTweakManager.AutomaticPersistence"/>, a write the consumer asks for by name is carried out
+/// whatever that setting says, and either way an operation covering several tweaks costs exactly one write.<br/>
 /// The configuration these tests drive is a real <see cref="TweakManagerConfigInstance"/> pointed at a file in a
 /// temporary directory, seeded into the configuration cache the module reads from, so the assertions are made
 /// against the bytes on disk rather than an approximation of them.
@@ -77,13 +80,33 @@ public class NoireTweakManagerTests : IDisposable
 
     /// <summary>
     /// A configuration that resolves to a caller-provided path, so the real load and save paths run without a
-    /// running game to supply a plugin configuration directory.
+    /// running game to supply a plugin configuration directory.<br/>
+    /// It also counts the writes it performs, which is what lets an operation covering several tweaks be held to
+    /// the single write it promises rather than merely to the right end state.
     /// </summary>
     private sealed class TempFileTweakManagerConfig : TweakManagerConfigInstance
     {
         internal string? FilePathOverride { get; set; }
 
+        /// <summary>
+        /// How many times this configuration has been written since the last <see cref="ResetSaveCount"/>.
+        /// </summary>
+        internal int SaveCount { get; private set; }
+
+        /// <summary>
+        /// Forgets the writes counted so far, so that a test counts only the ones its own operation produces
+        /// rather than the ones setting the test up produced.
+        /// </summary>
+        internal void ResetSaveCount() => SaveCount = 0;
+
         protected override string? GetConfigFilePath() => FilePathOverride;
+
+        /// <inheritdoc/>
+        public override bool Save()
+        {
+            SaveCount++;
+            return base.Save();
+        }
     }
 
     /// <summary>
@@ -131,12 +154,50 @@ public class NoireTweakManagerTests : IDisposable
         protected override void OnDisable() { }
     }
 
+    /// <summary>
+    /// The settings a <see cref="ConfiguredTweak"/> reports as changed through <see cref="TweakBase.MarkConfigDirty"/>.
+    /// </summary>
+    private sealed class ConfiguredTweakSettings : TweakConfigBase
+    {
+        public override int Version { get; set; } = 1;
+
+        public int Threshold { get; set; }
+    }
+
+    /// <summary>
+    /// A tweak with a typed configuration, standing in for one whose settings the user changes from its own UI.
+    /// </summary>
+    private sealed class ConfiguredTweak : TweakBase<ConfiguredTweakSettings>
+    {
+        internal const string Key = "NoireLibTests_Tweak_Configured";
+
+        public override string InternalKey => Key;
+
+        public override string Name => "Configured tweak";
+
+        public override string Description => "A tweak used to observe what recording a config change writes.";
+
+        protected override void OnEnable() { }
+
+        protected override void OnDisable() { }
+    }
+
     private NoireTweakManager MakeManager(params TweakBase[] tweaks)
+        => MakeManager(automaticPersistence: true, tweaks);
+
+    /// <summary>
+    /// Builds a manager for a consumer who took persistence over, which is the setting that decides whether the
+    /// module writes anything on its own.
+    /// </summary>
+    private NoireTweakManager MakeManagerWithoutPersistence(params TweakBase[] tweaks)
+        => MakeManager(automaticPersistence: false, tweaks);
+
+    private NoireTweakManager MakeManager(bool automaticPersistence, params TweakBase[] tweaks)
     {
         var manager = new NoireTweakManager(
             active: false,
             enableLogging: false,
-            automaticPersistence: true,
+            automaticPersistence: automaticPersistence,
             additionalTweaks: tweaks.ToList());
 
         managersToClean.Add(manager);
@@ -165,6 +226,18 @@ public class NoireTweakManagerTests : IDisposable
 
         var favorites = JObject.Parse(File.ReadAllText(configPath))["FavoriteTweaks"];
         return favorites?.Any(favorite => favorite.Value<string>() == internalKey) == true;
+    }
+
+    /// <summary>
+    /// Reads the serialized tweak configuration a tweak key carries in the configuration file on disk.
+    /// </summary>
+    private string? ConfigJsonOnDisk(string internalKey)
+    {
+        if (!File.Exists(configPath))
+            return null;
+
+        var entry = JObject.Parse(File.ReadAllText(configPath))["TweakConfigs"]?[internalKey];
+        return entry?["configJson"]?.Value<string>();
     }
 
     #endregion
@@ -376,6 +449,285 @@ public class NoireTweakManagerTests : IDisposable
 
         manager.SetAutomaticPersistence(false).AutomaticPersistence.Should().BeFalse();
         manager.SetAutomaticPersistence(true).AutomaticPersistence.Should().BeTrue();
+    }
+
+    #endregion
+
+    #region The module's own writes are gated, the ones the consumer asks for are not
+
+    // The module writes for two different reasons, and AutomaticPersistence separates them: a write it makes on its
+    // own, recording something that happened, is gated, and a write the consumer asked for by name through a save
+    // method is carried out whatever the setting says. Turning the setting off is how a consumer decides when writes
+    // happen, so a save they then ask for cannot be silently discarded.
+
+    [Fact]
+    public void SetFavorite_ByTheUser_IsRecorded()
+    {
+        var tweak = new SpyTweak();
+        var manager = MakeManager(tweak);
+
+        manager.SetFavorite(tweak.InternalKey, true).Should().BeTrue();
+
+        FavoritedOnDisk(tweak.InternalKey).Should().BeTrue("starring a tweak is a decision the user made");
+
+        manager.SetFavorite(tweak.InternalKey, false).Should().BeTrue();
+
+        FavoritedOnDisk(tweak.InternalKey).Should().BeFalse("unstarring it is a decision too");
+    }
+
+    [Fact]
+    public void SetFavorite_WritesNothing_WhenAutomaticPersistenceIsOff()
+    {
+        // Favoriting is a user action exactly like enabling, so it is recorded on the same terms as one rather than
+        // reaching the file through a path of its own.
+        var tweak = new SpyTweak();
+        var manager = MakeManagerWithoutPersistence(tweak);
+
+        manager.SetFavorite(tweak.InternalKey, true).Should().BeTrue();
+
+        File.Exists(configPath).Should().BeFalse("a consumer that opted out of the module's own writes gets none");
+        manager.IsFavorite(tweak.InternalKey).Should().BeTrue("the star is still applied in memory");
+    }
+
+    [Fact]
+    public void MarkConfigDirty_WritesNothing_WhenAutomaticPersistenceIsOff()
+    {
+        // A tweak reporting that its own configuration changed is the module being told to record something, not a
+        // consumer asking for a write, so the setting governs it.
+        var tweak = new ConfiguredTweak();
+        var manager = MakeManagerWithoutPersistence(tweak);
+
+        tweak.Config.Threshold = 42;
+        tweak.MarkConfigDirty();
+
+        File.Exists(configPath).Should().BeFalse("recording a reported change is one of the module's own writes");
+        manager.GetAllTweakConfigs()[ConfiguredTweak.Key].ConfigJson.Should().Contain("42",
+            "the change is still available for manual persistence");
+    }
+
+    [Fact]
+    public void MarkConfigDirty_IsRecorded_WhenAutomaticPersistenceIsOn()
+    {
+        var tweak = new ConfiguredTweak();
+        var manager = MakeManager(tweak);
+
+        tweak.Config.Threshold = 42;
+        tweak.MarkConfigDirty();
+
+        ConfigJsonOnDisk(ConfiguredTweak.Key).Should().Contain("42", "the tweak reported a change to record");
+    }
+
+    [Fact]
+    public void Config_OnAFreshTweak_IsLinkedToItSoItCanPersistWithoutBeingDeserialized()
+    {
+        // A tweak with no stored entry never goes through the Config setter or deserialization, so the configuration
+        // built by the field initializer is the one it keeps. That default has to be linked back to the tweak anyway,
+        // or the first attempt to persist a change through it throws for lack of a parent.
+        var tweak = new ConfiguredTweak();
+
+        tweak.Config.Parent.Should().BeSameAs(tweak, "the default configuration is linked to its tweak at construction");
+
+        var persist = () => tweak.Config.Save();
+        persist.Should().NotThrow<InvalidOperationException>(
+            "a default configuration must be able to persist through its parent rather than throw for lack of one");
+    }
+
+    [Fact]
+    public void SaveTweakConfig_WritesEvenWhenAutomaticPersistenceIsOff()
+    {
+        // The decision this pins: a save the consumer asked for by name is not one of the module's own writes, so
+        // opting out of those does not make it a no-op. A consumer who turns the setting off to control when writes
+        // happen has to have a way to say now.
+        var tweak = new SpyTweak();
+        var manager = MakeManagerWithoutPersistence(tweak);
+
+        manager.EnableTweak(tweak.InternalKey);
+        File.Exists(configPath).Should().BeFalse("enabling is one of the module's own writes and stays in memory");
+
+        manager.SaveTweakConfig(tweak.InternalKey);
+
+        EnabledOnDisk(tweak.InternalKey).Should().BeTrue("a save requested by name is carried out whatever the setting says");
+    }
+
+    [Fact]
+    public void SaveAllTweakConfigs_WritesEvenWhenAutomaticPersistenceIsOff()
+    {
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var manager = MakeManagerWithoutPersistence(a, b);
+
+        manager.EnableTweak("a");
+        File.Exists(configPath).Should().BeFalse();
+
+        manager.SaveAllTweakConfigs();
+
+        EnabledOnDisk("a").Should().BeTrue("a save requested by name is carried out whatever the setting says");
+        EnabledOnDisk("b").Should().BeFalse("every registered tweak is written, including the ones left off");
+    }
+
+    [Fact]
+    public void ImportTweakConfigs_WritesNothing_WhenAutomaticPersistenceIsOff()
+    {
+        // The other half of the decision: an import puts back state the consumer is already holding rather than
+        // asking for a write, so it follows the setting. Writing it would push their copy into a file they do not
+        // read from, which is the arrangement they opted into by taking persistence over.
+        var tweak = new SpyTweak();
+        var manager = MakeManagerWithoutPersistence(tweak);
+
+        manager.ImportTweakConfigs(new Dictionary<string, TweakConfigEntry>
+        {
+            [tweak.InternalKey] = new(true, null, 0),
+        });
+
+        File.Exists(configPath).Should().BeFalse("an import is state coming back, not a write being requested");
+        configStore.GetTweakConfig(tweak.InternalKey)!.Enabled.Should().BeTrue("the import is still applied in memory");
+    }
+
+    [Fact]
+    public void ImportTweakConfigs_IsWritten_WhenAutomaticPersistenceIsOn()
+    {
+        var tweak = new SpyTweak();
+        var manager = MakeManager(tweak);
+
+        manager.ImportTweakConfigs(new Dictionary<string, TweakConfigEntry>
+        {
+            [tweak.InternalKey] = new(true, null, 0),
+        });
+
+        EnabledOnDisk(tweak.InternalKey).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region One operation costs one write
+
+    [Fact]
+    public void SetFavorite_InsideABatch_CostsASingleWrite()
+    {
+        // The gate for the batch. Favoriting used to reach the file through a Save() of its own, which ignored the
+        // batch entirely and put back the write per tweak that batching exists to remove.
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var c = new SpyTweak("c");
+        var manager = MakeManager(a, b, c);
+        configStore.ResetSaveCount();
+
+        manager.RunAsBatch(() =>
+        {
+            manager.SetFavorite("a", true);
+            manager.SetFavorite("b", true);
+            manager.SetFavorite("c", true);
+        });
+
+        configStore.SaveCount.Should().Be(1, "a batch collapses the writes it covers into one");
+        FavoritedOnDisk("a").Should().BeTrue("the single write still carries every star");
+        FavoritedOnDisk("b").Should().BeTrue();
+        FavoritedOnDisk("c").Should().BeTrue();
+    }
+
+    [Fact]
+    public void EnableAllTweaks_CostsASingleWrite()
+    {
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var c = new SpyTweak("c");
+        var manager = MakeManager(a, b, c);
+        configStore.ResetSaveCount();
+
+        manager.EnableAllTweaks();
+
+        configStore.SaveCount.Should().Be(1, "a bulk operation writes once, not once per tweak");
+        EnabledOnDisk("a").Should().BeTrue();
+        EnabledOnDisk("b").Should().BeTrue();
+        EnabledOnDisk("c").Should().BeTrue();
+    }
+
+    [Fact]
+    public void SaveAllTweakConfigs_CostsASingleWrite()
+    {
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var c = new SpyTweak("c");
+        var manager = MakeManager(a, b, c);
+        configStore.ResetSaveCount();
+
+        manager.SaveAllTweakConfigs();
+
+        configStore.SaveCount.Should().Be(1, "writing every tweak is one operation and costs one write");
+        EnabledOnDisk("a").Should().BeFalse();
+        EnabledOnDisk("b").Should().BeFalse();
+        EnabledOnDisk("c").Should().BeFalse();
+    }
+
+    [Fact]
+    public void ImportTweakConfigs_CostsASingleWrite()
+    {
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var manager = MakeManager(a, b);
+        configStore.ResetSaveCount();
+
+        manager.ImportTweakConfigs(new Dictionary<string, TweakConfigEntry>
+        {
+            ["a"] = new(true, null, 0),
+            ["b"] = new(true, null, 0),
+        });
+
+        configStore.SaveCount.Should().Be(1, "an import is one operation however many entries it carries");
+    }
+
+    [Fact]
+    public void SaveAllTweakConfigs_InsideABatch_DefersToTheBatch()
+    {
+        // A batch has to be a guarantee for every write, including the ones the consumer asks for. A save that wrote
+        // immediately because it was explicit would make the promise conditional on what the operation contains.
+        var a = new SpyTweak("a");
+        var b = new SpyTweak("b");
+        var manager = MakeManager(a, b);
+        configStore.ResetSaveCount();
+
+        manager.RunAsBatch(() =>
+        {
+            manager.SaveAllTweakConfigs();
+            manager.SaveTweakConfig("a");
+            manager.SaveAllTweakConfigs();
+        });
+
+        configStore.SaveCount.Should().Be(1, "a save requested by name still defers to the batch it runs inside");
+        EnabledOnDisk("a").Should().BeFalse("the deferred write still lands");
+    }
+
+    [Fact]
+    public void SaveAllTweakConfigs_InsideABatch_CarriesTheWrite_WhenAutomaticPersistenceIsOff()
+    {
+        // The mixed case. The gate suppresses the module's own writes, so nothing in the batch would be written, and
+        // the explicit save is what makes the single write happen. Once it does, everything the store holds lands
+        // with it, because the configuration is written as one document rather than key by key.
+        var a = new SpyTweak("a");
+        var manager = MakeManagerWithoutPersistence(a);
+        configStore.ResetSaveCount();
+
+        manager.RunAsBatch(() =>
+        {
+            manager.SetFavorite("a", true);
+            manager.SaveAllTweakConfigs();
+        });
+
+        configStore.SaveCount.Should().Be(1, "the save requested by name carries the batch's single write");
+        EnabledOnDisk("a").Should().BeFalse("the entry the explicit save asked for is written");
+        FavoritedOnDisk("a").Should().BeTrue("the star was already applied in memory and the file records the store as a whole");
+    }
+
+    [Fact]
+    public void RunAsBatch_WritesNothing_WhenTheOperationRecordsNothing()
+    {
+        var manager = MakeManager(new SpyTweak("a"));
+        configStore.ResetSaveCount();
+
+        manager.RunAsBatch(() => { });
+
+        configStore.SaveCount.Should().Be(0, "an operation that records nothing has nothing to write");
+        File.Exists(configPath).Should().BeFalse();
     }
 
     #endregion

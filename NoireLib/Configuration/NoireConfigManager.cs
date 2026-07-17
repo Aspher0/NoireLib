@@ -270,6 +270,27 @@ public static class NoireConfigManager
     }
 
     /// <summary>
+    /// Replaces the cached instance for a type, but only when one is already cached.<br/>
+    /// A configuration with <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and then handed to
+    /// consumers wrapped in an auto-save proxy. Loading caches the raw instance here, while consumers mutate the proxy,
+    /// so a later <see cref="SaveAllCached"/> would write the raw load-time values over the file the proxy has kept
+    /// current. Swapping the cached entry for the proxy keeps this cache and the instance consumers hold as one object.
+    /// <br/>
+    /// Only an entry that already exists is swapped: a load that failed was deliberately left uncached by
+    /// <see cref="GetConfig{T}"/> so the next call retries, and adding an instance here would defeat that.
+    /// </summary>
+    /// <param name="configType">The configuration type whose cached instance is being replaced.</param>
+    /// <param name="config">The instance to cache in its place.</param>
+    internal static void ReplaceCachedInstance(Type configType, INoireConfig config)
+    {
+        while (ConfigCache.TryGetValue(configType, out var existing))
+        {
+            if (ReferenceEquals(existing, config) || ConfigCache.TryUpdate(configType, config, existing))
+                return;
+        }
+    }
+
+    /// <summary>
     /// Gets the configuration directory path for the current plugin.
     /// </summary>
     /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>

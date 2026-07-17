@@ -2,8 +2,6 @@ using System;
 
 namespace NoireLib.CommandRouter;
 
-// TODO: Add availability condition to root commands as well
-
 /// <summary>
 /// Fluent builder for configuring a root slash command, including help text, subcommands, and default handlers.<br/>
 /// Returned by <see cref="NoireCommandRouter.Map(string)"/>.
@@ -96,6 +94,27 @@ public sealed class RootCommandBuilder
     public RootCommandBuilder HandleRaw(Action<string, string> handler)
     {
         registration.RawHandler = handler;
+        return this;
+    }
+
+    /// <summary>
+    /// Sets an availability predicate. The root command will only run when this predicate returns true.<br/>
+    /// The predicate gates the command as a whole, so while it returns false nothing under the command runs: the raw
+    /// handler, the default handler, every subcommand (whatever its own condition says), and the generated help are
+    /// all blocked. This is the same rule <see cref="SubCommandBuilder.WithCondition(Func{bool})"/> applies to a
+    /// subcommand, where a blocked subcommand also blocks everything nested beneath it, applied to the outermost
+    /// scope.<br/>
+    /// A blocked command tells the user it is not available right now and is recorded in
+    /// <see cref="NoireCommandRouter.GetHistory"/> as an unsuccessful entry. No <see cref="CommandFailedEvent"/> is
+    /// published, since being unavailable is not a failure; that event stays reserved for a handler that threw.<br/>
+    /// The command still appears in Dalamud's help listing. Use <see cref="ShowInDalamudHelp(bool)"/> to hide it.<br/>
+    /// The predicate is evaluated on the framework thread on every invocation of the command.
+    /// </summary>
+    /// <param name="condition">The availability predicate.</param>
+    /// <returns>The builder instance for chaining.</returns>
+    public RootCommandBuilder WithCondition(Func<bool> condition)
+    {
+        registration.Condition = condition;
         return this;
     }
 }

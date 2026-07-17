@@ -834,81 +834,49 @@ public class NoireFileWatcherTests : IDisposable
     }
 
     /// <summary>
-    /// The regression gate for the key index. Registering a key resolves and drops the watch already holding it, but
-    /// that removal and the insert which follows do not share one lock acquisition, so two registrations of one key
-    /// can both complete: both watches stay registered and the key resolves to whichever inserted last. Retiring the
-    /// other one must then leave the key alone, because unindexing it unconditionally would retire a mapping that
-    /// belongs to a watch which is still registered and still raising events, and the only symptom would be
-    /// GetWatchByKey silently reporting nothing for it.<br/>
-    /// The interleaving is driven through inline delivery rather than through racing threads, so the order the two
-    /// registrations insert in is fixed rather than sampled: the displaced watch's removed event runs its subscriber
-    /// inline, inside the resolve-and-drop step, and the watch that subscriber registers under the same key is indexed
-    /// before the outer Watch call overwrites the index with its own.
+    /// The regression gate for the key index. A key identifies at most one watch, so registering a key resolves and
+    /// retires whichever watch already holds it inside the same lock acquisition that inserts the new one. Two
+    /// registrations of one key can no longer both stay live with the index resolving to only one of them: the earlier
+    /// watch is removed outright, so the index always resolves to exactly one live watch or to nothing.
     /// </summary>
     [Fact]
-    public void RemoveWatch_ForOneOfTwoWatchesSharingAKey_LeavesTheOtherReachableByThatKey()
+    public void Watch_UnderAKeyAlreadyHeld_RemovesThePreviousWatchEntirely()
     {
-        var bus = CreateEventBus();
         var watcher = CreateWatcher(active: true);
-        watcher.EventBus = bus;
         var directory = CreateTempDirectory();
 
-        watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
+        var firstId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
+        var secondId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
 
-        var reregistering = false;
-        string? displacedId = null;
-
-        bus.Subscribe<FileWatchRemovedEvent>(_ =>
-        {
-            if (reregistering)
-                return;
-
-            reregistering = true;
-            displacedId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
-        });
-
-        var lastId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
-
-        displacedId.Should().NotBeNull(because: "the removal of the watch holding the key is what re-registers one under it");
-        watcher.GetWatch(displacedId!).Should().NotBeNull(because: "both registrations completed; only the index resolves to one of them");
-        watcher.GetWatchByKey("shared")!.WatchId.Should().Be(lastId, because: "a key resolves to the watch that registered it last");
-
-        watcher.RemoveWatch(displacedId!).Should().BeTrue();
-
-        watcher.GetWatch(lastId).Should().NotBeNull(because: "removing one watch must not remove another");
-        watcher.GetWatchByKey("shared").Should().NotBeNull(
-            because: "retiring a watch must not retire a key that resolves elsewhere, or the watch it resolves to stays registered and raising events while the key reports that it does not exist");
-        watcher.GetWatchByKey("shared")!.WatchId.Should().Be(lastId);
+        secondId.Should().NotBe(firstId);
+        watcher.GetWatch(firstId).Should().BeNull(
+            because: "registering a key removes the watch that held it rather than leaving it live but unreachable by key");
+        watcher.GetWatch(secondId).Should().NotBeNull();
+        watcher.GetWatchByKey("shared")!.WatchId.Should().Be(secondId);
+        watcher.GetWatches().Should().ContainSingle(because: "a key identifies at most one live watch");
     }
 
     [Fact]
-    public void RemoveWatchByKey_AfterOneOfTwoWatchesSharingAKeyWasRemoved_StillReachesTheOther()
+    public void Watch_UnderAKeyAlreadyHeld_AnnouncesThePreviousWatchAsRemoved()
     {
         var bus = CreateEventBus();
         var watcher = CreateWatcher(active: true);
         watcher.EventBus = bus;
         var directory = CreateTempDirectory();
 
+        var firstId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
+
+        var removed = new List<string>();
+        bus.Subscribe<FileWatchRemovedEvent>(e => removed.Add(e.WatchId));
+
         watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
 
-        var reregistering = false;
-        string? displacedId = null;
+        removed.Should().ContainSingle(because: "the watch a key registration displaces is announced as removed")
+            .Which.Should().Be(firstId);
 
-        bus.Subscribe<FileWatchRemovedEvent>(_ =>
-        {
-            if (reregistering)
-                return;
-
-            reregistering = true;
-            displacedId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
-        });
-
-        var lastId = watcher.Watch(new FileWatchRegistrationOptions { Path = directory, Key = "shared" });
-        watcher.RemoveWatch(displacedId!);
-
-        watcher.RemoveWatchByKey("shared").Should().BeTrue(because: "the key still resolves, so removing by key must reach the watch it resolves to");
-        watcher.GetWatch(lastId).Should().BeNull();
-        watcher.GetWatches().Should().BeEmpty(because: "both watches sharing the key are now gone, one by ID and one by key");
+        watcher.RemoveWatchByKey("shared").Should().BeTrue(
+            because: "the key resolves to the surviving watch, so removing by key reaches it");
+        watcher.GetWatches().Should().BeEmpty();
     }
 
     #endregion

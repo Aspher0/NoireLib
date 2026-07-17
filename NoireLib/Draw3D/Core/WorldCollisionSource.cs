@@ -1,7 +1,7 @@
+using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
 using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace NoireLib.Draw3D.Core;

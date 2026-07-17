@@ -1,7 +1,7 @@
-using System;
-using System.Numerics;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.World;
+using System;
+using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 

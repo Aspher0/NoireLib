@@ -3,7 +3,6 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using NoireLib.Core.Modules;
-using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 
@@ -78,6 +77,9 @@ public class NoireService
             PluginInterface.UiBuilder.Draw -= NoireWindowSystem.Draw;
             NoireWindowSystem.RemoveAllWindows();
         }
+
+        PluginInstance = null;
+        PluginInterface = null!;
     }
 
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member

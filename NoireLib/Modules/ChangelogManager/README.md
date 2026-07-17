@@ -148,7 +148,7 @@ When `ShouldAutomaticallyShowChangelog` is enabled:
 - The changelog window opens automatically when a new version is detected
 - Therefore, when users update the plugin, they will see the changelog for the new version
 
-If you would rather control when the window is shown, you can disable this feature and call `ShowWindow(true)` manually.
+If you would rather control when the window is shown, you can disable this feature and call `ShowWindow()` manually.
 
 ---
 
@@ -268,14 +268,20 @@ Show the changelog window programmatically:
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
+// Show the changelog window
+changelogManager?.ShowWindow();
+
+// Hide the changelog window
+changelogManager?.HideWindow();
+
 // Toggle the changelog window
-changelogManager?.ShowWindow(null);
+changelogManager?.ToggleWindow();
 
-// Force show the changelog window
-changelogManager?.ShowWindow(true);
+// Show, hide or toggle from a single call (null toggles)
+changelogManager?.SetShowWindow(true);
 
-// Force hide the changelog window
-changelogManager?.ShowWindow(false);
+// Check if the window is open
+var isOpen = changelogManager?.IsWindowOpen ?? false;
 ```
 
 ### Show Specific Version
@@ -284,8 +290,16 @@ Display a specific version in the changelog:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
-changelogManager?.ShowWindow(true, new(1, 0, 0, 0));
+
+// Open the window on a specific version
+changelogManager?.ShowChangelogForVersion(new Version(1, 0, 0, 0));
+
+// Open the window on the latest available version
+changelogManager?.ShowChangelogForVersion();
 ```
+
+A version this manager does not hold selects the latest available version instead of failing.
+When no version is available at all, the window stays closed and a notification is raised.
 
 ### Automatic Display
 

@@ -1,5 +1,3 @@
-using NoireLib.Database;
-
 namespace NoireLib.Database.Migrations;
 
 /// <summary>

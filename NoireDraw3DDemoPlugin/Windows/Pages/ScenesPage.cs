@@ -1,8 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Numerics;
-using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Interface.Colors;
@@ -14,6 +9,11 @@ using NoireLib.Draw3D.Interaction;
 using NoireLib.Draw3D.Interaction.Gizmo;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Numerics;
+using System.Threading.Tasks;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

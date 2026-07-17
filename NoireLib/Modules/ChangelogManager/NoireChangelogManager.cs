@@ -63,13 +63,15 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         if (args.Length > 0 && args[0] is bool autoShow)
             shouldAutomaticallyShowChangelog = autoShow;
 
-        if (args.Length > 1 && args[1] is List<ChangelogVersion> versions)
-            AddVersions(versions);
-
         if (args.Length > 2 && args[2] is NoireEventBus eventBus)
             EventBus = eventBus;
 
+        // Adding a version rebuilds the window and publishes to the event bus, so both exist before any
+        // version enters the manager.
         RegisterWindow(new ChangelogWindow(this));
+
+        if (args.Length > 1 && args[1] is List<ChangelogVersion> versions)
+            AddVersions(versions);
 
         if (changelogs.Count == 0)
             LoadVersionsFromAssembly();
@@ -126,6 +128,35 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         ShouldAutomaticallyShowChangelog = shouldAutomaticallyShowChangelog;
         return this;
     }
+
+    #region Window Display
+
+    /// <summary>
+    /// Opens the changelog window showing a specific version.<br/>
+    /// This is the version-aware counterpart of the inherited <see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/>,
+    /// which opens the window on whichever version is currently selected.<br/>
+    /// Passing <see langword="null"/>, or a version this manager does not hold, selects the latest available version
+    /// instead of failing. When no version is available at all the window stays closed and a notification is raised.
+    /// </summary>
+    /// <param name="version">The version to show. Defaults to the latest available version.</param>
+    /// <returns>The module instance for chaining.</returns>
+    /// <seealso cref="GetAllVersions"/>
+    /// <seealso cref="GetLatestVersion"/>
+    public NoireChangelogManager ShowChangelogForVersion(Version? version = null)
+    {
+        if (!HasWindow)
+        {
+            if (EnableLogging)
+                NoireLogger.LogWarning(this, "This module does not have an associated window.");
+
+            return this;
+        }
+
+        ModuleWindow!.ShowChangelogForVersion(version);
+        return this;
+    }
+
+    #endregion
 
     #region EventBus Integration
 
@@ -253,8 +284,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     /// <returns>The latest version if available; otherwise, null.</returns>
     public Version? GetLatestVersion()
     {
-        var versions = GetAllVersions();
-        return versions.FirstOrDefault()?.Version;
+        return changelogs.Keys.Max();
     }
 
     /// <summary>
@@ -264,9 +294,8 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     /// <returns>The module instance for chaining.</returns>
     public NoireChangelogManager AddVersion(ChangelogVersion version)
     {
-        changelogs[version.Version] = version;
+        AddVersionInternal(version);
         ModuleWindow!.UpdateVersions();
-        PublishEvent(new ChangelogVersionAddedEvent(version.Version));
         return this;
     }
 
@@ -278,9 +307,22 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     public NoireChangelogManager AddVersions(List<ChangelogVersion> versions)
     {
         foreach (var version in versions)
-            AddVersion(version);
+            AddVersionInternal(version);
+
+        // A rebuild resets the selected version, so the window is rebuilt once for the whole list
+        // rather than once per version.
         ModuleWindow!.UpdateVersions();
         return this;
+    }
+
+    /// <summary>
+    /// Records a changelog version and announces it, leaving the window rebuild to the caller.
+    /// </summary>
+    /// <param name="version">The <see cref="ChangelogVersion"/> to add or update.</param>
+    private void AddVersionInternal(ChangelogVersion version)
+    {
+        changelogs[version.Version] = version;
+        PublishEvent(new ChangelogVersionAddedEvent(version.Version));
     }
 
     /// <summary>
@@ -363,7 +405,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
                     {
                         var versions = versionInstance.GetVersions();
                         foreach (var version in versions)
-                            AddVersion(version);
+                            AddVersionInternal(version);
                     }
                 }
                 catch (Exception ex)
@@ -378,6 +420,10 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
             if (EnableLogging)
                 NoireLogger.LogError(this, ex, $"Failed to load changelog versions from assembly.");
         }
+
+        // A rebuild resets the selected version, so the window is rebuilt once for the whole scan
+        // rather than once per version found.
+        ModuleWindow!.UpdateVersions();
     }
 
     /// <summary>

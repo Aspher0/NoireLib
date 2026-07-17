@@ -238,6 +238,25 @@ public class NoireLoggerTests
     }
 
     /// <summary>
+    /// The thread a message is printed on is part of the contract a caller reads before deciding where to call from, so
+    /// it belongs on every entry point rather than on the funnel none of them can see. Counted against the overloads
+    /// themselves, so that one added later without the contract is caught here rather than by the consumer who calls it
+    /// from a background task.
+    /// </summary>
+    [Fact]
+    public void PrintToChat_EveryPublicOverload_ShouldDocumentItsThreadContract()
+    {
+        var source = ReadLoggerSource();
+
+        var overloads = Regex.Matches(source, "^    public static void PrintToChat", RegexOptions.Multiline).Count;
+        var documented = CountOccurrences(source, "Safe to call from any thread.");
+
+        overloads.Should().BeGreaterThan(0, "the print surface must still exist for this to be pinning anything");
+        documented.Should().Be(overloads,
+            "every public print overload must state the thread its message is printed on and that any thread may call it");
+    }
+
+    /// <summary>
     /// Before initialization there is no chat log and the service behind it is null, so the guard has to come first: a
     /// print made then resolves to nothing rather than to a null dereference at the caller.
     /// </summary>

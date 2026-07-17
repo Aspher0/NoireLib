@@ -2,6 +2,7 @@ using Dalamud.Game.Command;
 using Dalamud.Game.Text;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -25,6 +26,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     private readonly Dictionary<string, RootCommandRegistration> registrations = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CommandHistoryEntry> history = [];
     private readonly object registrationLock = new();
+    private readonly object historyLock = new();
+    private int maxHistorySize = 50;
     private static readonly Vector3 HelpCommandColor = new(0.94f, 0.86f, 0.50f);
     private static readonly Vector3 HelpAliasColor = new(0.78f, 0.74f, 0.95f);
     private static readonly Vector3 HelpArgumentColor = new(1.00f, 0.68f, 0.36f);
@@ -155,17 +158,31 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Gets or sets the maximum number of <see cref="CommandHistoryEntry"/> records to retain.
+    /// Gets or sets the maximum number of <see cref="CommandHistoryEntry"/> records to retain.<br/>
+    /// Once the limit is reached, the oldest entries are discarded first.<br/>
+    /// A value of 0 disables history recording entirely, leaving <see cref="GetHistory"/> permanently empty.
     /// </summary>
-    public int MaxHistorySize { get; set; } = 50;
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is negative.</exception>
+    public int MaxHistorySize
+    {
+        get => maxHistorySize;
+        set
+        {
+            ArgumentOutOfRangeException.ThrowIfNegative(value);
+            maxHistorySize = value;
+        }
+    }
 
     /// <summary>
-    /// Sets the maximum number of command history entries to retain.
+    /// Sets the maximum number of command history entries to retain.<br/>
+    /// A value of 0 disables history recording entirely.
     /// </summary>
-    /// <param name="maxSize">The maximum history size.</param>
+    /// <param name="maxSize">The maximum history size. Must not be negative.</param>
     /// <returns>The module instance for chaining.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="maxSize"/> is negative.</exception>
     public NoireCommandRouter SetMaxHistorySize(int maxSize)
     {
+        ArgumentOutOfRangeException.ThrowIfNegative(maxSize);
         MaxHistorySize = maxSize;
         return this;
     }
@@ -189,6 +206,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         if (!command.StartsWith('/'))
             command = "/" + command;
 
+        // Lower-cased so the canonical spelling handed to Dalamud (and shown in its help listing) does not depend
+        // on how the caller happened to capitalize it. Lookups here are case-insensitive regardless.
         command = command.ToLowerInvariant();
 
         var registration = new RootCommandRegistration(command);
@@ -224,8 +243,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
         if (!command.StartsWith('/'))
             command = "/" + command;
-
-        command = command.ToLowerInvariant();
 
         lock (registrationLock)
         {
@@ -270,10 +287,15 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Gets a read-only snapshot of the command history.
+    /// Gets a read-only snapshot of the command history, ordered oldest first.<br/>
+    /// The returned list is a copy, so it stays safe to iterate while further commands execute.
     /// </summary>
     /// <returns>A list of <see cref="CommandHistoryEntry"/> records.</returns>
-    public IReadOnlyList<CommandHistoryEntry> GetHistory() => history.AsReadOnly();
+    public IReadOnlyList<CommandHistoryEntry> GetHistory()
+    {
+        lock (historyLock)
+            return history.ToList().AsReadOnly();
+    }
 
     /// <summary>
     /// Clears the command history.
@@ -281,7 +303,9 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter ClearHistory()
     {
-        history.Clear();
+        lock (historyLock)
+            history.Clear();
+
         return this;
     }
 
@@ -298,7 +322,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             registrations.Clear();
         }
 
-        history.Clear();
+        lock (historyLock)
+            history.Clear();
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "CommandRouter module disposed.");
@@ -315,11 +340,13 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             DisplayOrder = registration.DisplayOrder,
         };
 
-        registration.DalamudCommandInfo = commandInfo;
-
         try
         {
             NoireService.CommandManager.AddHandler(registration.Command, commandInfo);
+
+            // Only tracked once Dalamud actually owns the handler, so a failed registration does not leave the
+            // registration looking live to RefreshDalamudCommandInfo and UnregisterFromDalamud.
+            registration.DalamudCommandInfo = commandInfo;
 
             if (EnableLogging)
                 NoireLogger.LogDebug(this, $"Registered command '{registration.Command}' with Dalamud.");
@@ -346,7 +373,13 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    private void OnCommandDispatched(string command, string rawArgs)
+    /// <summary>
+    /// The entry point Dalamud invokes for every mapped command, on the framework thread.<br/>
+    /// Resolves the registration for <paramref name="command"/> and dispatches the invocation through the router.
+    /// </summary>
+    /// <param name="command">The root slash command that was typed.</param>
+    /// <param name="rawArgs">The raw argument string as received from Dalamud.</param>
+    internal void OnCommandDispatched(string command, string rawArgs)
     {
         if (!IsActive)
         {
@@ -374,6 +407,24 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     {
         try
         {
+            // The root condition gates the command as a whole, so it is checked before anything is dispatched or
+            // printed. Everything below is scoped to this command, which makes a blocked root block its raw handler,
+            // its default handler, every subcommand, and its own help, exactly as a blocked subcommand blocks
+            // everything nested beneath it.
+            if (registration.Condition != null && !registration.Condition())
+            {
+                if (EnableLogging)
+                    NoireLogger.LogDebug(this, $"Command '{command}' condition returned false.");
+
+                // The outcome is recorded before it is announced. Printing to chat can throw, and an outcome that is
+                // known must not be lost to a failure in reporting it, nor be replaced by that failure: the catch below
+                // records a rootless entry and publishes CommandFailedEvent carrying whatever escaped, which would name
+                // the chat fault rather than the command that was actually refused.
+                AddHistoryEntry(command, rawArgs, null, false);
+                NoireLogger.PrintToChat(XivChatType.Debug, $"Command '{command}' is not available right now.");
+                return;
+            }
+
             var trimmedArgs = rawArgs.Trim();
             var tokens = Tokenize(trimmedArgs);
 
@@ -428,8 +479,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                     if (EnableLogging)
                         NoireLogger.LogDebug(this, $"Subcommand '{matchedPath}' condition returned false.");
 
-                    NoireLogger.PrintToChat(XivChatType.Debug, $"Command '{matchedPath}' is not available right now.");
                     AddHistoryEntry(command, rawArgs, matchedPath, false);
+                    NoireLogger.PrintToChat(XivChatType.Debug, $"Command '{matchedPath}' is not available right now.");
                     return;
                 }
 
@@ -451,6 +502,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 }
                 else
                 {
+                    AddHistoryEntry(command, rawArgs, unknownSubCommandName, false);
+
                     var message = NoireLogger.CreateChatMessageBuilder()
                         .AddText("Unknown subcommand: ")
                         .AddText(unknownSubCommandName, ErrorTokenColor)
@@ -459,7 +512,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                         .AddText(" for available commands.");
 
                     NoireLogger.PrintToChat(XivChatType.Debug, message);
-                    AddHistoryEntry(command, rawArgs, unknownSubCommandName, false);
                 }
 
                 return;
@@ -470,14 +522,18 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
             if (currentSubCommand.Handler == null)
             {
+                // Help is a service rather than a failed invocation, so it is the one way out of here that records
+                // nothing, and it is taken before the outcome below is recorded.
+                if (currentSubCommand.SubCommands.Count > 0 && remainingTokens.Length == 0 && EnableAutoHelp)
+                {
+                    PrintHelp(registration, currentSubCommand, resolvedPath);
+                    return;
+                }
+
+                AddHistoryEntry(command, rawArgs, subCommandPath, false);
+
                 if (currentSubCommand.SubCommands.Count > 0)
                 {
-                    if (remainingTokens.Length == 0 && EnableAutoHelp)
-                    {
-                        PrintHelp(registration, currentSubCommand, resolvedPath);
-                        return;
-                    }
-
                     if (remainingTokens.Length == 0)
                     {
                         var message = NoireLogger.CreateChatMessageBuilder()
@@ -510,15 +566,19 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                     NoireLogger.PrintToChat(XivChatType.Debug, message);
                 }
 
-                AddHistoryEntry(command, rawArgs, subCommandPath, false);
                 return;
             }
 
-            var parsedArgs = ParseArguments(currentSubCommand, remainingTokens, trimmedArgs, BuildQualifiedCommandPath(command, resolvedPath.Select(subCommand => subCommand.Name)));
+            var parsedArgs = ParseArguments(currentSubCommand, remainingTokens, trimmedArgs,
+                BuildQualifiedCommandPath(command, resolvedPath.Select(subCommand => subCommand.Name)), out var parseError);
 
             if (parsedArgs == null)
             {
                 AddHistoryEntry(command, rawArgs, subCommandPath, false);
+
+                if (parseError != null)
+                    NoireLogger.PrintToChat(XivChatType.Debug, parseError);
+
                 return;
             }
 
@@ -527,8 +587,15 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         catch (Exception ex)
         {
             NoireLogger.LogError(this, ex, $"Error dispatching command '{command} {rawArgs}'.");
-            AddHistoryEntry(command, rawArgs, null, false);
-            PublishFailedEvent(command, rawArgs, null, ex);
+
+            // Dalamud invokes this on the framework thread, so anything escaping here takes the game down with it.
+            // Reporting the failure is itself allowed to fail (a consumer event handler can throw), so it is
+            // contained rather than trusted.
+            SafeExecutor.ExecuteSafely(() =>
+            {
+                AddHistoryEntry(command, rawArgs, null, false);
+                PublishFailedEvent(command, rawArgs, null, ex);
+            });
         }
     }
 
@@ -549,8 +616,21 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return null;
     }
 
-    private ParsedCommandArguments? ParseArguments(SubCommandDefinition subCommand, string[] argTokens, string rawArgs, string qualifiedCommandPath)
+    /// <summary>
+    /// Converts the tokens of an invocation into the arguments its handler expects.<br/>
+    /// Rejecting an invocation hands the explanation back through <paramref name="error"/> rather than printing it, so
+    /// that the caller records the outcome before announcing it.
+    /// </summary>
+    /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
+    /// <param name="argTokens">The tokens left over once the subcommand path was consumed.</param>
+    /// <param name="rawArgs">The raw argument string, carried through to the parsed result.</param>
+    /// <param name="qualifiedCommandPath">The full command path, used to point the user at its help.</param>
+    /// <param name="error">The message explaining the rejection, or <see langword="null"/> when parsing succeeded.</param>
+    /// <returns>The parsed arguments, or <see langword="null"/> when the invocation was rejected.</returns>
+    private ParsedCommandArguments? ParseArguments(SubCommandDefinition subCommand, string[] argTokens, string rawArgs, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
+        error = null;
+
         var parsed = new ParsedCommandArguments(rawArgs, argTokens);
         var arguments = subCommand.Arguments;
         var effectiveArgTokens = subCommand.FailOnExtraArguments
@@ -559,17 +639,16 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
         if (subCommand.FailOnExtraArguments && argTokens.Length > arguments.Count)
         {
-            var message = NoireLogger.CreateChatMessageBuilder()
+            error = NoireLogger.CreateChatMessageBuilder()
                 .AddText("Too many arguments for command ")
                 .AddText(subCommand.Name, HelpCommandColor)
                 .AddText($": expected {arguments.Count}, got {argTokens.Length}.");
 
-            NoireLogger.PrintToChat(XivChatType.Debug, message);
             return null;
         }
 
         if (subCommand.AllowUnorderedOptionalArguments)
-            return ParseArgumentsWithUnorderedOptionals(subCommand, parsed, effectiveArgTokens, qualifiedCommandPath);
+            return ParseArgumentsWithUnorderedOptionals(subCommand, parsed, effectiveArgTokens, qualifiedCommandPath, out error);
 
         for (var i = 0; i < arguments.Count; i++)
         {
@@ -583,25 +662,23 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 }
                 else
                 {
-                    var message = NoireLogger.CreateChatMessageBuilder()
+                    error = NoireLogger.CreateChatMessageBuilder()
                         .AddText("Invalid value for argument ")
                         .AddText(argDef.Name, HelpArgumentColor)
                         .AddText($": expected {GetFriendlyTypeName(argDef.Type)}, got ")
                         .AddText(effectiveArgTokens[i], ErrorTokenColor)
                         .AddText(".");
 
-                    NoireLogger.PrintToChat(XivChatType.Debug, message);
                     return null;
                 }
             }
             else if (argDef.IsRequired)
             {
-                var message = NoireLogger.CreateChatMessageBuilder()
+                error = NoireLogger.CreateChatMessageBuilder()
                     .AddText("Missing required argument: ")
                     .AddText(argDef.Name, HelpArgumentColor)
                     .AddText($" ({GetFriendlyTypeName(argDef.Type)}).");
 
-                NoireLogger.PrintToChat(XivChatType.Debug, message);
                 return null;
             }
             else
@@ -613,20 +690,32 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return parsed;
     }
 
-    private ParsedCommandArguments? ParseArgumentsWithUnorderedOptionals(SubCommandDefinition subCommand, ParsedCommandArguments parsed, string[] argTokens, string qualifiedCommandPath)
+    /// <summary>
+    /// Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to the
+    /// first optional argument whose type accepts it.<br/>
+    /// Rejects through <paramref name="error"/> rather than printing, for the reason <see cref="ParseArguments"/> gives.
+    /// </summary>
+    /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
+    /// <param name="parsed">The result being filled in.</param>
+    /// <param name="argTokens">The tokens left over once the subcommand path was consumed.</param>
+    /// <param name="qualifiedCommandPath">The full command path, used to point the user at its help.</param>
+    /// <param name="error">The message explaining the rejection, or <see langword="null"/> when parsing succeeded.</param>
+    /// <returns>The parsed arguments, or <see langword="null"/> when the invocation was rejected.</returns>
+    private ParsedCommandArguments? ParseArgumentsWithUnorderedOptionals(SubCommandDefinition subCommand, ParsedCommandArguments parsed, string[] argTokens, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
+        error = null;
+
         var requiredArguments = subCommand.Arguments.Where(argument => argument.IsRequired).ToArray();
         var optionalArguments = subCommand.Arguments.Where(argument => !argument.IsRequired).ToList();
 
         if (argTokens.Length < requiredArguments.Length)
         {
             var missingArgument = requiredArguments[argTokens.Length];
-            var message = NoireLogger.CreateChatMessageBuilder()
+            error = NoireLogger.CreateChatMessageBuilder()
                 .AddText("Missing required argument: ")
                 .AddText(missingArgument.Name, HelpArgumentColor)
                 .AddText($" ({GetFriendlyTypeName(missingArgument.Type)}).");
 
-            NoireLogger.PrintToChat(XivChatType.Debug, message);
             return null;
         }
 
@@ -635,14 +724,13 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             var requiredArgument = requiredArguments[i];
             if (!TryConvertArgument(argTokens[i], requiredArgument.Type, out var converted))
             {
-                var message = NoireLogger.CreateChatMessageBuilder()
+                error = NoireLogger.CreateChatMessageBuilder()
                     .AddText("Invalid value for argument ")
                     .AddText(requiredArgument.Name, HelpArgumentColor)
                     .AddText($": expected {GetFriendlyTypeName(requiredArgument.Type)}, got ")
                     .AddText(argTokens[i], ErrorTokenColor)
                     .AddText(".");
 
-                NoireLogger.PrintToChat(XivChatType.Debug, message);
                 return null;
             }
 
@@ -652,10 +740,24 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         for (var i = requiredArguments.Length; i < argTokens.Length; i++)
         {
             var token = argTokens[i];
-            var matchedArgument = optionalArguments.FirstOrDefault(argument => TryConvertArgument(token, argument.Type, out _));
+
+            // The first optional argument the token converts cleanly into claims it, and the converted value is
+            // kept from that same attempt rather than reproduced by converting a second time.
+            CommandArgumentDefinition? matchedArgument = null;
+            object? converted = null;
+
+            foreach (var optionalArgument in optionalArguments)
+            {
+                if (!TryConvertArgument(token, optionalArgument.Type, out converted))
+                    continue;
+
+                matchedArgument = optionalArgument;
+                break;
+            }
+
             if (matchedArgument == null)
             {
-                var message = NoireLogger.CreateChatMessageBuilder()
+                error = NoireLogger.CreateChatMessageBuilder()
                     .AddText("Invalid optional argument value ")
                     .AddText(token, ErrorTokenColor)
                     .AddText(" for command ")
@@ -664,11 +766,9 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                     .AddText($"{qualifiedCommandPath} help", HelpArgumentColor)
                     .AddText(".");
 
-                NoireLogger.PrintToChat(XivChatType.Debug, message);
                 return null;
             }
 
-            _ = TryConvertArgument(token, matchedArgument.Type, out var converted);
             parsed.Set(matchedArgument.Name, converted);
             optionalArguments.Remove(matchedArgument);
         }
@@ -699,23 +799,17 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 else
                     task = ((Func<Task>)subCommand.Handler)();
 
-                _ = task.ContinueWith(t =>
-                {
-                    if (t.IsFaulted)
-                    {
-                        var ex = t.Exception?.InnerException ?? t.Exception!;
-                        NoireLogger.LogError(this, ex, $"Async command handler for '{subCommandPath}' failed.");
-                        PublishFailedEvent(command, rawArgs, subCommandPath, ex);
-                    }
-                }, TaskScheduler.Default);
+                // The outcome of an async handler is only known once its task settles, so reporting is deferred to
+                // the continuation rather than assumed here. Awaiting instead would stall the framework thread for
+                // the whole duration of the handler.
+                _ = task.ContinueWith(completedTask => ReportAsyncOutcome(completedTask, command, rawArgs, subCommandPath), TaskScheduler.Default);
+                return;
             }
+
+            if (subCommand.HasArguments)
+                ((Action<ParsedCommandArguments>)subCommand.Handler)(parsedArgs);
             else
-            {
-                if (subCommand.HasArguments)
-                    ((Action<ParsedCommandArguments>)subCommand.Handler)(parsedArgs);
-                else
-                    ((Action)subCommand.Handler)();
-            }
+                ((Action)subCommand.Handler)();
 
             AddHistoryEntry(command, rawArgs, subCommandPath, true);
             PublishExecutedEvent(command, rawArgs, subCommandPath);
@@ -726,6 +820,52 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             AddHistoryEntry(command, rawArgs, subCommandPath, false);
             PublishFailedEvent(command, rawArgs, subCommandPath, ex);
         }
+    }
+
+    /// <summary>
+    /// Records exactly one outcome for a settled async handler task: success when the task ran to completion,
+    /// failure when it faulted or was cancelled.
+    /// </summary>
+    private void ReportAsyncOutcome(Task completedTask, string command, string rawArgs, string subCommandPath)
+    {
+        if (completedTask.IsCompletedSuccessfully)
+        {
+            ReportOnFrameworkThread(() =>
+            {
+                AddHistoryEntry(command, rawArgs, subCommandPath, true);
+                PublishExecutedEvent(command, rawArgs, subCommandPath);
+            });
+
+            return;
+        }
+
+        var exception = completedTask.Exception?.InnerException
+            ?? (Exception?)completedTask.Exception
+            ?? new TaskCanceledException(completedTask);
+
+        NoireLogger.LogError(this, exception, $"Async command handler for '{subCommandPath}' failed.");
+
+        ReportOnFrameworkThread(() =>
+        {
+            AddHistoryEntry(command, rawArgs, subCommandPath, false);
+            PublishFailedEvent(command, rawArgs, subCommandPath, exception);
+        });
+    }
+
+    /// <summary>
+    /// Runs outcome reporting on the framework thread.<br/>
+    /// Publishing reaches consumer event handlers inline on the calling thread, and those handlers routinely touch
+    /// game state, which is only safe on the framework thread. Runs inline when NoireLib is not initialized.
+    /// </summary>
+    private static void ReportOnFrameworkThread(Action report)
+    {
+        if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)
+        {
+            NoireService.Framework.RunOnFrameworkThread(report);
+            return;
+        }
+
+        report();
     }
 
     private void PrintHelp(RootCommandRegistration registration, SubCommandDefinition? scope = null, IReadOnlyList<SubCommandDefinition>? scopePath = null)
@@ -996,10 +1136,18 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
     private void AddHistoryEntry(string command, string rawArgs, string? subCommandName, bool wasSuccessful)
     {
-        history.Add(new CommandHistoryEntry(command, rawArgs, subCommandName, DateTimeOffset.UtcNow, wasSuccessful));
+        var limit = MaxHistorySize;
 
-        while (history.Count > MaxHistorySize)
-            history.RemoveAt(0);
+        if (limit == 0)
+            return;
+
+        lock (historyLock)
+        {
+            history.Add(new CommandHistoryEntry(command, rawArgs, subCommandName, DateTimeOffset.UtcNow, wasSuccessful));
+
+            while (history.Count > limit)
+                history.RemoveAt(0);
+        }
     }
 
     private void PublishExecutedEvent(string command, string rawArgs, string? subCommandName)

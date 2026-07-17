@@ -6,7 +6,7 @@ namespace NoireLib.TweakManager;
 
 /// <summary>
 /// Configuration storage for the <see cref="NoireTweakManager"/> module.<br/>
-/// Persists tweak enabled states, serialized per-tweak configs, and key migration mappings.
+/// Persists tweak enabled states, serialized per-tweak configs, favorites, and key migration mappings.
 /// </summary>
 [NoireConfig("TweakManagerConfig")]
 public class TweakManagerConfigInstance : NoireConfigBase
@@ -32,7 +32,8 @@ public class TweakManagerConfigInstance : NoireConfigBase
     /// <summary>
     /// Dictionary mapping old tweak keys to new tweak keys for migration purposes.<br/>
     /// When a tweak's <see cref="TweakBase.InternalKey"/> changes, add the old key as the dictionary key
-    /// and the new key as the value to preserve configuration data.
+    /// and the new key as the value to preserve everything the old key holds, which is the entry in
+    /// <see cref="TweakConfigs"/> and the <see cref="FavoriteTweaks"/> membership.
     /// </summary>
     [AutoSave]
     public Dictionary<string, string> KeyMigrations { get; set; } = new();
@@ -103,8 +104,50 @@ public class TweakManagerConfigInstance : NoireConfigBase
     }
 
     /// <summary>
-    /// Executes key migrations, moving configuration entries from old keys to new keys.<br/>
-    /// This ensures no data is lost when a tweak's <see cref="TweakBase.InternalKey"/> is changed.
+    /// Moves everything a tweak has persisted under <paramref name="oldKey"/> to <paramref name="newKey"/>.<br/>
+    /// This covers the <see cref="TweakConfigs"/> entry and the <see cref="FavoriteTweaks"/> membership, which are
+    /// keyed by the same <see cref="TweakBase.InternalKey"/> and describe one tweak between them. They move together
+    /// or not at all, so a rename can never strand a favorite on a key no tweak answers to any more.<br/>
+    /// Nothing moves when the new key already holds data of its own, because that data belongs to a tweak that is
+    /// already using the new key and must not be overwritten by a leftover.
+    /// </summary>
+    /// <param name="oldKey">The internal key the data is currently stored under.</param>
+    /// <param name="newKey">The internal key the data should be stored under.</param>
+    /// <returns><see langword="true"/> if data was moved; otherwise, <see langword="false"/>.</returns>
+    [AutoSave]
+    public bool MigrateTweakKey(string oldKey, string newKey)
+    {
+        if (oldKey == newKey)
+            return false;
+
+        var oldEntry = TweakConfigs.GetValueOrDefault(oldKey);
+        var oldIsFavorite = FavoriteTweaks.Contains(oldKey);
+
+        if (oldEntry == null && !oldIsFavorite)
+            return false;
+
+        if (TweakConfigs.ContainsKey(newKey) || FavoriteTweaks.Contains(newKey))
+            return false;
+
+        if (oldEntry != null)
+        {
+            TweakConfigs[newKey] = oldEntry;
+            TweakConfigs.Remove(oldKey);
+        }
+
+        if (oldIsFavorite)
+        {
+            FavoriteTweaks.Add(newKey);
+            FavoriteTweaks.Remove(oldKey);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Executes key migrations, moving persisted tweak data from old keys to new keys.<br/>
+    /// This ensures no data is lost when a tweak's <see cref="TweakBase.InternalKey"/> is changed.<br/>
+    /// A mapping whose old key holds nothing to move is kept, so it still applies if that data appears later.
     /// </summary>
     /// <returns>The number of migrations executed.</returns>
     [AutoSave]
@@ -115,15 +158,13 @@ public class TweakManagerConfigInstance : NoireConfigBase
 
         foreach (var (oldKey, newKey) in KeyMigrations)
         {
-            if (TweakConfigs.ContainsKey(oldKey) && !TweakConfigs.ContainsKey(newKey))
+            if (MigrateTweakKey(oldKey, newKey))
             {
-                TweakConfigs[newKey] = TweakConfigs[oldKey];
-                TweakConfigs.Remove(oldKey);
                 completedMigrations.Add(oldKey);
                 migratedCount++;
 
                 NoireLogger.LogInfo<TweakManagerConfigInstance>(
-                    $"Migrated tweak config from key '{oldKey}' to '{newKey}'.");
+                    $"Migrated tweak data from key '{oldKey}' to '{newKey}'.");
             }
         }
 

@@ -129,14 +129,14 @@ internal sealed class ClientConnection : IDisposable
                         break;
 
                     case EnvelopeKind.PeerState:
-                    {
-                        var state = Wire.FromPayload<PeerStateModel>(envelope.Payload);
+                        {
+                            var state = Wire.FromPayload<PeerStateModel>(envelope.Payload);
 
-                        if (state != null)
-                            owner.ApplyPeerStateModel(state, envelope.TypeName);
+                            if (state != null)
+                                owner.ApplyPeerStateModel(state, envelope.TypeName);
 
-                        break;
-                    }
+                            break;
+                        }
 
                     case EnvelopeKind.PeerLeft:
                         if (envelope.Origin != null)
@@ -216,7 +216,8 @@ internal sealed class ClientConnection : IDisposable
             new Envelope { Kind = EnvelopeKind.Goodbye, Origin = owner.SelfId },
             ex => owner.InternalLog($"Goodbye to hub failed: {ex.Message}"));
 
-        // Cancelling is what ends the read and watchdog loops; they no longer depend on the socket closing first.
+        // Cancelling is what ends the read and watchdog loops: both wait on the token, so neither depends on the
+        // socket having closed first, which is what allows the close to trail the goodbye.
         lifetime.Cancel();
         lifetime.Dispose();
         completion.TrySetResult();

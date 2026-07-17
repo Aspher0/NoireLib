@@ -1,5 +1,5 @@
-using System;
 using NoireLib.Draw3D;
+using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

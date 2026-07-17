@@ -93,7 +93,8 @@ public class NoireOverlayButton : IDisposable
     /// <summary>
     /// In which normally-hidden game states the button keeps being drawn (cutscenes, group pose, hidden game UI, or always).<br/>
     /// Defaults to <see cref="OverlayDrawConditions.None"/>: the button hides in those states, like regular plugin UI.<br/>
-    /// See <see cref="OverlayDrawConditions"/> for the plugin-wide implications of these flags.
+    /// This applies to this button alone: keeping it visible leaves the rest of the plugin's UI, and every other overlay button, hiding as
+    /// they would have. See <see cref="OverlayDrawConditions"/> for the one case where that does not hold.
     /// </summary>
     public OverlayDrawConditions DrawConditions
     {

@@ -13,6 +13,7 @@ You are reading the documentation for the `NoireLocalizer` module.
   - [Missing Translation Behavior](#missing-translation-behavior)
   - [Custom Locales](#custom-locales)
   - [Persistent Configuration](#persistent-configuration)
+    - [Default locale precedence](#default-locale-precedence)
 - [Registering Translations](#registering-translations)
   - [Single Translation](#single-translation)
   - [Bulk Registration](#bulk-registration)
@@ -58,7 +59,7 @@ It is designed to be flexible, safe, and easy to integrate into any plugin.
 **Features at a glance:**
 
 - **Locale-based translation storage** with thread-safe runtime lookup.
-- **Multi-level fallback chains** - requested locale → parent culture → explicit fallbacks → default locale.
+- **Multi-level fallback chains** that try the requested locale first, then its parent culture, then any explicit fallbacks, and finally the default locale.
 - **Runtime locale switching** with CLR events and optional `NoireEventBus` integration.
 - **Fluent translation registration** via `ForLocale()` / `LocaleWriter` for clean setup code.
 - **Attribute-based registration** with automatic discovery from the plugin assembly.
@@ -126,10 +127,11 @@ var localizer = new NoireLocalizer(
     moduleId: "MyLocalizer",           // Optional module identifier
     active: true,                      // Whether the module starts active
     enableLogging: true,               // Log lifecycle and missing-key events
-    defaultLocale: "en-US",            // Fallback locale
+    defaultLocale: "en-US",            // Fallback locale, unless a previous session
+                                       // selected one (see Default locale precedence)
     currentLocale: "en-US",            // Initial active locale (defaults to defaultLocale)
     returnKeyWhenMissing: false,       // Return the key itself when no translation is found
-    allowParentCultureFallback: true,  // Try parent cultures (e.g. fr-CA → fr)
+    allowParentCultureFallback: true,  // Try parent cultures, so a lookup in fr-CA also tries fr
     allowDefaultLocaleFallback: true,  // Fall back to the default locale as last resort
     defaultLocaleSource: DefaultLocaleSource.Custom,
     allowCustomLocales: false,         // Accept non-standard locale codes
@@ -153,7 +155,8 @@ localizer.EventBus = myEventBus;
 ### Default Locale Source
 
 The `DefaultLocaleSource` enum controls how the default locale is resolved:
-- `Custom` Uses the locale explicitly set via `SetDefaultLocale()`.
+- `Custom` Uses the locale set via `SetDefaultLocale()`, or the `defaultLocale` constructor argument when none has been
+set. See [Default locale precedence](#default-locale-precedence).
 - `Windows` Uses the current Windows UI culture (`CultureInfo.CurrentUICulture`).
 - `GameClient` Maps the Dalamud game client language to a locale (`en-US`, `fr-FR`, `de-DE`, `ja-JP`).
 
@@ -177,8 +180,8 @@ Control the fallback strategy with properties or fluent setters:
 
 ```csharp
 localizer
-    .SetAllowParentCultureFallback(true)   // fr-CA → fr
-    .SetAllowDefaultLocaleFallback(true);  // ... → en-US (default locale)
+    .SetAllowParentCultureFallback(true)   // A lookup in fr-CA also tries fr
+    .SetAllowDefaultLocaleFallback(true);  // Anything still unresolved ends at en-US, the default locale
 ```
 
 You can also configure explicit fallback chains per locale:
@@ -229,9 +232,40 @@ The module automatically persists the following settings to disk via `LocalizerC
 
 - **`SelectedLocale`**: the current active locale.
 - **`DefaultLocaleSource`**: the default-locale resolution strategy.
-- **`CustomDefaultLocale`**: the explicit default locale when using `DefaultLocaleSource.Custom`.
+- **`CustomDefaultLocale`**: the default locale selected through `SetDefaultLocale()` / `UseCustomDefaultLocale()`.
+- **`HasCustomDefaultLocaleSelection`**: whether `CustomDefaultLocale` holds such a selection at all.
 
 These are restored automatically when the module initializes, so the user's locale choice survives plugin reloads.
+
+#### Default locale precedence
+
+The `defaultLocale` constructor argument is a **declaration**: it is read again on every construction, so it follows
+your plugin's code. `SetDefaultLocale()` is a **selection**: it is stored and restored, so it sticks until something
+changes it. When they disagree, the module resolves the default locale in this order, highest first:
+
+| Precedence | Source | Wins when |
+|------------|--------|-----------|
+| 1 | `DefaultLocaleSource.Windows` / `.GameClient` | The persisted source is one of these; the locale is resolved from it. |
+| 2 | Persisted `CustomDefaultLocale` | A previous session called `SetDefaultLocale()` or `UseCustomDefaultLocale()`. |
+| 3 | `defaultLocale` constructor argument | Neither of the above applies, which is the state of a fresh configuration. |
+
+This is why `CustomDefaultLocale` is only consulted alongside `HasCustomDefaultLocaleSelection`. It holds a locale from
+the moment the configuration file exists, so restoring it whenever it is populated would overwrite the constructor
+argument with a value nobody picked, and no caller could ever set a default locale.
+
+```csharp
+// Declares the fallback locale. Changing this line changes the default for every user
+// who has not selected one of their own.
+var localizer = new NoireLocalizer(defaultLocale: "fr-FR");
+
+// Selects the fallback locale. Persisted, and restored ahead of the argument above on
+// the next session. Use it for a user-driven choice, not to configure a plugin default.
+localizer.SetDefaultLocale("de-DE");
+```
+
+**Note:** `SelectedLocale` (the *active* locale, which is what `DrawLocaleCombo()` and `SetCurrentLocale()` write) is
+separate from all of this and is always restored when present. The precedence above only decides `DefaultLocale`, the
+last resort of the [fallback chain](#fallback-resolution-order).
 
 ---
 
@@ -552,7 +586,7 @@ Subscribe directly on the localizer instance:
 
 ```csharp
 localizer.LocaleChanged += evt =>
-    NoireLogger.LogInfo($"Locale changed: {evt.PreviousLocale} → {evt.NewLocale}");
+    NoireLogger.LogInfo($"Locale changed from {evt.PreviousLocale} to {evt.NewLocale}");
 
 localizer.LocaleRegistered += evt =>
     NoireLogger.LogInfo($"Locale registered: {evt.Locale}");
@@ -563,6 +597,21 @@ localizer.TranslationChanged += evt =>
 localizer.MissingTranslation += evt =>
     NoireLogger.LogWarning($"Missing key '{evt.Key}' in '{evt.RequestedLocale}', tried: {string.Join(", ", evt.AttemptedLocales)}");
 ```
+
+#### MissingTranslation firing rate
+
+`MissingTranslation` reports that a key **started** missing, not how often it is looked up. It is raised the first time
+a lookup fails for a given key and requested locale; later failures for that same pair are counted but stay silent.
+This matters because a key missing from text a window draws every frame fails on every frame, which would otherwise
+deliver the same fact 60 times a second.
+
+- The same key **is** announced again for a **different** requested locale, since failing to resolve it there is a
+  separate fact with its own attempted chain.
+- The record of what has already been announced lasts for the lifetime of the module and is reset by
+  `ClearAllTranslations()`.
+- Every failure is still counted: use `GetMissingTranslationCounts()` or `GetStatistics()` when you need frequency
+  rather than the edge.
+- `TryGet()` never raises it at all.
 
 ### EventBus Integration
 
@@ -584,7 +633,7 @@ myEventBus.Subscribe<LocalizationLocaleChangedEvent>(evt =>
 | `LocalizationLocaleChangedEvent`        | `SetCurrentLocale()` changes the active locale.  | `PreviousLocale`, `NewLocale` |
 | `LocalizationLocaleRegisteredEvent`     | A locale is created for the first time.          | `Locale` |
 | `LocalizationTranslationChangedEvent`   | A translation is added or updated.               | `Locale`, `Key`, `Value`, `AlreadyExisted`, `OverwriteAttempted` |
-| `LocalizationMissingTranslationEvent`   | A key cannot be resolved in any locale.          | `RequestedLocale`, `Key`, `AttemptedLocales` |
+| `LocalizationMissingTranslationEvent`   | A key cannot be resolved in any locale, the first time it fails for that key and requested locale. See [MissingTranslation firing rate](#missingtranslation-firing-rate). | `RequestedLocale`, `Key`, `AttemptedLocales` |
 
 ---
 
@@ -717,6 +766,16 @@ public static string HelloFr => "ignored when Value is set";
 
 - Ensure the locale is a valid .NET culture name (e.g. `en-US`, `fr-FR`, `ja-JP`).
 - If you need non-standard locale codes, enable `SetAllowCustomLocales(true)`.
+
+### DefaultLocale is not the locale I passed to the constructor
+
+- Check `localizer.DefaultLocaleSource`. If it is `Windows` or `GameClient`, the default locale is resolved from that
+  source and the constructor argument does not apply. Call `UseCustomDefaultLocale(...)` to go back to an explicit one.
+- Otherwise a previous session selected a default locale with `SetDefaultLocale()` / `UseCustomDefaultLocale()`, and a
+  selection is restored ahead of a declaration. See [Default locale precedence](#default-locale-precedence).
+- If your plugin calls `SetDefaultLocale()` during startup to configure its own default, that call is stored as a user
+  selection and will outrank the constructor argument from then on. Pass `defaultLocale:` to the constructor instead,
+  and reserve `SetDefaultLocale()` for choices your users make.
 
 ### Attribute provider not registering
 

@@ -184,12 +184,12 @@ internal sealed class DepthCalibration
         if (!standardZ) // reversed-Z: near→1, far→0
         {
             if (hasFar) { b = near * far / (far - near); a = -near / (far - near); }
-            else        { a = 0f; b = near; }                    // infinite far: sample = near/w
+            else { a = 0f; b = near; }                    // infinite far: sample = near/w
         }
         else            // standard-Z: near→0, far→1
         {
             if (hasFar) { a = far / (far - near); b = -near * far / (far - near); }
-            else        { a = 1f; b = -near; }                   // infinite far: sample = 1 - near/w
+            else { a = 1f; b = -near; }                   // infinite far: sample = 1 - near/w
         }
 
         return new Vector4(a, b, 1f, 0f);

@@ -3,11 +3,11 @@ using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using SharpGLTF.Schema2;
 using System;
-using Mesh = NoireLib.Draw3D.Geometry.Mesh;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using Mesh = NoireLib.Draw3D.Geometry.Mesh;
 
 namespace NoireLib.Draw3D.Assets;
 

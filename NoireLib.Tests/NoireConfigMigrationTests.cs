@@ -1415,3 +1415,109 @@ public class NoireConfigSaveAllCachedTests : IDisposable
         JObject.Parse(File.ReadAllText(second.filePathOverride!))["Value"]!.Value<string>().Should().Be("second-value");
     }
 }
+
+/// <summary>
+/// Game-free tests that the manager cache and the singleton hold one object for a configuration that auto-saves.<br/>
+/// A configuration with <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and then handed to
+/// consumers wrapped in a proxy that turns an assignment into a save. Loading caches the raw instance, while consumers
+/// hold and mutate the proxy, so unless the cache is made to hold the proxy a manager-level
+/// <see cref="NoireConfigManager.SaveAllCached"/> writes the raw load-time values over the file the proxy has kept
+/// current, losing the change the user made. These tests join the cache-walk collection because they reach that walk.
+/// </summary>
+[Collection(ConfigCacheWalkCollection.Name)]
+public class NoireConfigProxyCacheTests : IDisposable
+{
+    private readonly string tempDirectory;
+
+    public NoireConfigProxyCacheTests()
+    {
+        tempDirectory = Path.Combine(Path.GetTempPath(), "NoireLibConfigProxyCacheTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+
+        NoireConfigManager.ClearMigrations();
+        ProxyCacheProbeConfig.ResetProbeState();
+    }
+
+    public void Dispose()
+    {
+        NoireConfigManager.ClearMigrations();
+        ProxyCacheProbeConfig.ResetProbeState();
+
+        try
+        {
+            if (Directory.Exists(tempDirectory))
+                Directory.Delete(tempDirectory, true);
+        }
+        catch (IOException)
+        {
+            // A leftover temporary directory must not fail a test run.
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// A configuration reached the way plugins reach one that auto-saves, through <see cref="NoireConfigBase{T}.Instance"/>,
+    /// which performs a real save so that what a manager-level walk writes is observable in a file.<br/>
+    /// Public, and nested in a public class, because the auto-save proxy is a generated subclass in another assembly: a
+    /// type that assembly cannot see is never wrapped, which would leave these tests measuring a plain instance and
+    /// proving nothing.
+    /// </summary>
+    public class ProxyCacheProbeConfig : NoireConfigBase<ProxyCacheProbeConfig>
+    {
+        public static string? PathOverride;
+
+        public override int Version { get; set; } = 1;
+
+        public override string GetConfigFileName() => "proxy-cache-probe.json";
+
+        protected override string? GetConfigFilePath() => PathOverride;
+
+        /// <summary>
+        /// A member whose assignment must persist, which is both what auto-save is for and what makes the configuration
+        /// get wrapped at all.
+        /// </summary>
+        [AutoSave]
+        public virtual string Value { get; set; } = "value-default";
+
+        public static void ResetProbeState()
+        {
+            ClearCache();
+            NoireConfigManager.UnloadConfig<ProxyCacheProbeConfig>();
+            PathOverride = null;
+        }
+    }
+
+    [Fact]
+    public void TheManagerCachesTheSameWrapperThatConsumersHold()
+    {
+        ProxyCacheProbeConfig.PathOverride = Path.Combine(tempDirectory, "proxy-cache-probe.json");
+
+        var instance = ProxyCacheProbeConfig.Instance;
+        var cached = NoireConfigManager.GetConfig<ProxyCacheProbeConfig>();
+
+        instance.GetType().Should().NotBe(typeof(ProxyCacheProbeConfig),
+            "an [AutoSave] configuration is handed to consumers wrapped in a generated proxy subclass, or this proves nothing");
+        cached.Should().BeSameAs(instance,
+            "the manager must cache the wrapper consumers mutate, not the raw instance the load left behind");
+    }
+
+    [Fact]
+    public void SaveAllCached_WritesTheValueTheWrapperHolds_NotTheRawLoadTimeSnapshot()
+    {
+        var file = Path.Combine(tempDirectory, "proxy-cache-probe.json");
+        ProxyCacheProbeConfig.PathOverride = file;
+
+        var config = ProxyCacheProbeConfig.Instance;
+        config.Value = "set-by-plugin";
+
+        File.ReadAllText(file).Should().Contain("set-by-plugin", "assigning a member marked [AutoSave] persists it through the wrapper");
+
+        NoireConfigManager.SaveAllCached();
+
+        // Read fresh from disk. When the cache held the raw load-time instance rather than the wrapper, the walk saved
+        // that instance here and wrote its default value back over the file, losing the plugin's change.
+        File.ReadAllText(file).Should().Contain("set-by-plugin",
+            "SaveAllCached must write the values consumers changed, not the raw load-time snapshot");
+    }
+}

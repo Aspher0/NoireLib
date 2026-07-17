@@ -1,6 +1,7 @@
 using NoireLib.Configuration;
 using System;
 using System.Collections.Generic;
+using System.Threading;
 
 namespace NoireLib.Core.Modules;
 
@@ -15,10 +16,39 @@ public abstract class NoireModuleBase<TModule> : INoireModule
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();
     private static readonly object CounterLock = new();
 
+    // Volatile because the activation hooks are driven from the framework thread while modules read the flag from
+    // timer callbacks, thread pool continuations and their own worker threads. A bool never tears, so the concern
+    // is a reader carrying on against a stale value rather than reading a corrupt one.
+    private volatile bool isActive = false;
+
+    // Interlocked rather than a bool so that the first caller of Dispose can be identified atomically.
+    private int disposeState = 0;
+
     /// <summary>
-    /// Defines whether the module is currently active.
+    /// Defines whether the module is currently active.<br/>
+    /// Reads <see langword="false"/> once the module has been disposed.<br/>
+    /// Assigning this property records the state without running <see cref="OnActivated"/> or
+    /// <see cref="OnDeactivated"/>; call <see cref="SetActive"/> to run the transition as well. Assigning it is
+    /// how an <see cref="OnActivated"/> implementation refuses an activation it cannot carry out.<br/>
+    /// This is not a disposal guard: it says whether the module is switched on, and a caller can switch a disposed
+    /// module back on through this setter. Guard work that must never outlive the module on
+    /// <see cref="IsDisposed"/> instead.
     /// </summary>
-    public bool IsActive { get; set; } = false;
+    public bool IsActive
+    {
+        get => isActive;
+        set => isActive = value;
+    }
+
+    /// <summary>
+    /// Whether <see cref="Dispose"/> has run on this module.<br/>
+    /// Disposal is terminal, so a module that reads <see langword="true"/> here never returns to service. Guard
+    /// anything that would outlive disposal on this: a timer callback, a queued delivery, or a public entry point
+    /// that would otherwise build a resource nothing is left to tear down again.<br/>
+    /// Reads <see langword="true"/> as soon as disposal is claimed, so a guard placed on it also turns away work
+    /// racing a teardown that is still running.
+    /// </summary>
+    protected internal bool IsDisposed => Volatile.Read(ref disposeState) != 0;
 
     /// <summary>
     /// The module ID, can be null.
@@ -133,7 +163,14 @@ public abstract class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Sets the active state of the module.
+    /// Sets the active state of the module.<br/>
+    /// Runs <see cref="OnActivated"/> or <see cref="OnDeactivated"/> when the state actually changes, and does
+    /// nothing at all when it already holds the requested value.<br/>
+    /// Activating a disposed module is refused, since disposal is terminal; create a new instance instead.
+    /// Deactivating one is not, so that a module can deactivate itself from its own teardown.<br/>
+    /// Drive this from one thread. Reading the current state and performing the transition that follows are not
+    /// one atomic step, so two threads changing the state at the same time can both conclude they own the
+    /// transition and run the hooks concurrently or in the wrong order.
     /// </summary>
     /// <param name="active">Whether to activate the module.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -141,6 +178,16 @@ public abstract class NoireModuleBase<TModule> : INoireModule
     {
         if (IsActive == active)
             return (TModule)this;
+
+        // Everything OnActivated would wire back up was released by the teardown, so allowing this would attach a
+        // disposed module to the framework and run it against resources that are gone. Only activation is refused:
+        // disposal is claimed before a module's teardown runs, and a teardown that deactivates the module itself
+        // still has to reach OnDeactivated.
+        if (active && IsDisposed)
+        {
+            NoireLogger.LogWarning((TModule)this, "Cannot activate a disposed module. Create a new instance instead.");
+            return (TModule)this;
+        }
 
         IsActive = active;
 
@@ -153,7 +200,8 @@ public abstract class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Activates the module.
+    /// Activates the module.<br/>
+    /// Does nothing on a disposed module, which <see cref="IsDisposed"/> reports.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule Activate()
@@ -184,13 +232,44 @@ public abstract class NoireModuleBase<TModule> : INoireModule
     protected abstract void DisposeInternal();
 
     /// <summary>
+    /// Runs the module's teardown. Called by <see cref="Dispose"/> exactly once, after disposal has been claimed
+    /// and before <see cref="IsActive"/> is cleared.<br/>
+    /// Overridden by the bases that own resources of their own, so that a module keeps the guarantees
+    /// <see cref="Dispose"/> makes no matter which base it derives from.
+    /// </summary>
+    private protected virtual void DisposeCore() => DisposeInternal();
+
+    /// <summary>
     /// Disposes the module completely.<br/>
     /// This is here because modules may have windows. This way, windows can be disposed automatically.<br/>
+    /// Tears the module down once. A module is reachable for disposal both from the consumer that owns it and
+    /// from the library disposing its modules, so a second call returns having done nothing.<br/>
+    /// Once this returns, <see cref="IsDisposed"/> reads <see langword="true"/> and <see cref="IsActive"/> reads
+    /// <see langword="false"/>.<br/>
     /// Do not call manually unless you are managing module lifecycles yourself (i.e. Without using <see cref="NoireLibMain.AddModule{T}(T)"/>).
     /// </summary>
     public virtual void Dispose()
     {
-        DisposeInternal();
+        // Claimed before any teardown runs, so that a second call cannot re-enter a teardown, including one racing
+        // this call and one arriving after a teardown that threw partway through and left the module half torn down.
+        if (Interlocked.Exchange(ref disposeState, 1) != 0)
+            return;
+
+        try
+        {
+            DisposeCore();
+        }
+        finally
+        {
+            // Cleared after the teardown, not before it: a module whose teardown deactivates itself needs the
+            // module to still read as active for its own SetActive(false) to reach OnDeactivated at all. Assigned
+            // directly rather than routed through SetActive, so that disposal never runs a deactivation hook a
+            // module did not already ask for; teardown belongs in DisposeInternal, and firing OnDeactivated here
+            // would run it twice for every module that tears down in both places.
+            // The finally is what stops a teardown that throws partway from leaving a disposed module reporting
+            // itself as active.
+            isActive = false;
+        }
     }
 }
 

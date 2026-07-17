@@ -152,7 +152,18 @@ button.DrawConditions = OverlayDrawConditions.DrawInCutscenes | OverlayDrawCondi
 button.DrawConditions = OverlayDrawConditions.AlwaysDraw;
 ```
 
-NoireLib enables the matching per-plugin `UiBuilder` switch automatically as soon as one button needs it, and reverts it when no button needs it anymore. Because those switches are **per-plugin** (a Dalamud limitation), enabling any of these flags on a single overlay button also prevents Dalamud from auto-hiding **the rest of your plugin's UI** in that state - other overlay buttons that don't carry the matching flag are still hidden individually, but your own windows drawn through the same `UiBuilder` will stay visible.
+**These flags apply to the button that carries them, and to nothing else.** Keeping one overlay visible during a cutscene leaves your windows hiding exactly as they would have, and leaves every other overlay answering for itself.
+
+That is worth spelling out, because Dalamud decides whether to hide plugin UI **once per plugin**, inside the draw callback it invokes for you: an overlay drawn from there could only be exempted by exempting your whole plugin along with it. NoireLib avoids that by not drawing overlays from your callback at all - they are drawn beside it, straight from Dalamud's frame, so nothing Dalamud decides about your plugin's UI reaches them and each overlay is free to answer for itself.
+
+The single exception is a Dalamud that NoireLib cannot install its own draw hook into (a future version that moves what NoireLib reaches for). Overlays then fall back to being drawn with the rest of your UI, and Dalamud's per-plugin hiding applies to them all at once - so setting any flag on one overlay would also keep the rest of your plugin's UI visible in that state. NoireLib logs a warning when it happens, and you can check for it:
+
+```csharp
+if (!NoireUI.OverlaysDrawIndependently)
+{
+    // Overlays are sharing your plugin's draw callback, so their draw conditions are plugin-wide.
+}
+```
 
 ### Manual drawing
 

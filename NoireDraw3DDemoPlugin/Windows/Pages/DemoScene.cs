@@ -1,7 +1,7 @@
-using System.Collections.Generic;
 using NoireLib.Draw3D.Interaction;
 using NoireLib.Draw3D.Interaction.Gizmo;
 using NoireLib.Draw3D.Scene;
+using System.Collections.Generic;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

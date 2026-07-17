@@ -1,4 +1,3 @@
-using Dalamud.Game.Addon.Lifecycle;
 using NoireLib.Core.Subscriptions;
 using System;
 using System.Threading.Tasks;

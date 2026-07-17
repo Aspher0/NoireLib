@@ -1,14 +1,15 @@
 using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Reflection;
 
 namespace NoireLib.UI;
 
 /// <summary>
 /// The central hub of the NoireLib UI helpers.<br/>
-/// Manages the shared draw hook used by <see cref="NoireOverlayButton"/> instances and provides frame-scoped services to the other UI helpers.
+/// Draws the registered <see cref="NoireOverlayButton"/> instances, keeping them independent of the host plugin's own UI so that an overlay's
+/// <see cref="NoireOverlayButton.DrawConditions"/> answer for that overlay alone (see <see cref="OverlaysDrawIndependently"/>), and provides
+/// frame-scoped services to the other UI helpers.
 /// </summary>
 public static class NoireUI
 {
@@ -67,7 +68,9 @@ public static class NoireUI
     /// When <see langword="false"/>, NoireLib could not install its own draw hook and falls back to drawing overlays from
     /// the plugin's own draw callback, where Dalamud decides for the whole plugin at once. In that mode, and only in that
     /// mode, setting a draw condition on any single overlay also keeps the rest of the plugin's UI visible in that state.
-    /// The reason is logged once when it happens.
+    /// The reason is logged once when it happens.<br/>
+    /// The hook is installed with the first overlay button, so this only answers for something once one exists: it reads
+    /// <see langword="false"/> before that, when there is no hook of either kind rather than a fallback.
     /// </summary>
     public static bool OverlaysDrawIndependently => hookMode == OverlayHookMode.Independent;
 

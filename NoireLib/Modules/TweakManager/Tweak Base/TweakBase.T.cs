@@ -20,6 +20,17 @@ public abstract class TweakBase<TConfig> : TweakBase where TConfig : TweakConfig
     private TConfig config = new();
 
     /// <summary>
+    /// Links the default configuration back to this tweak. A tweak whose configuration is never deserialized, because
+    /// it has no stored entry yet, still reaches persistence through <see cref="TweakConfigBase.Save"/>, which throws
+    /// when the parent link is absent. The field initializer cannot reference the tweak, so the link is made here,
+    /// where every other construction path (the <see cref="Config"/> setter and deserialization) also makes it.
+    /// </summary>
+    protected TweakBase()
+    {
+        config.Parent = this;
+    }
+
+    /// <summary>
     /// The typed configuration instance for this tweak.<br/>
     /// Modify properties on this object and call <see cref="TweakBase.MarkConfigDirty"/>
     /// to persist changes.

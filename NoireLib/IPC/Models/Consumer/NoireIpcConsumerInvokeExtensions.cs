@@ -7,6 +7,8 @@ namespace NoireLib.IPC;
 /// </summary>
 public static class NoireIpcConsumerInvokeExtensions
 {
+#pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
+
     public static bool TryInvoke(this NoireIpcConsumer<Action> consumer)
         => consumer.TryInvokeRaw(Array.Empty<object?>());
 
@@ -141,4 +143,6 @@ public static class NoireIpcConsumerInvokeExtensions
 
     public static TResult InvokeOrDefault<T1, T2, T3, T4, T5, T6, T7, T8, TResult>(this NoireIpcConsumer<Func<T1, T2, T3, T4, T5, T6, T7, T8, TResult>> consumer, T1 arg1, T2 arg2, T3 arg3, T4 arg4, T5 arg5, T6 arg6, T7 arg7, T8 arg8, TResult defaultValue = default!)
         => consumer.InvokeRawOrDefault(defaultValue, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+
+#pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
 }

@@ -1,5 +1,3 @@
-using System;
-using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Colors;
@@ -7,6 +5,8 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using NoireDraw3DDemoPlugin.Windows.Pages;
 using NoireLib.Draw3D;
+using System;
+using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 

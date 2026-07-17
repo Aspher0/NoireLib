@@ -1539,10 +1539,10 @@ public static unsafe partial class NoireDraw3D
     {
         var s = 2f / size;
         return new Matrix4x4(
-            s,               0f,            0f,   0f,   // X -> clip.x
-            0f,              0f,            0f,   0f,   // Y ignored
-            0f,              -s,            0f,   0f,   // Z -> clip.y
-            -minX * s - 1f,  1f + minZ * s, 0.5f, 1f); // translation + constant clip.z/w
+            s, 0f, 0f, 0f,   // X -> clip.x
+            0f, 0f, 0f, 0f,   // Y ignored
+            0f, -s, 0f, 0f,   // Z -> clip.y
+            -minX * s - 1f, 1f + minZ * s, 0.5f, 1f); // translation + constant clip.z/w
     }
 
     private static void UpdateFrameworkHook() => SetFrameworkHook(initialized && !disposed);
@@ -2057,18 +2057,18 @@ public static unsafe partial class NoireDraw3D
                 sd = p.Length() - 1f;
                 break;
             case DecalShape.Ring:
-            {
-                var r = p.Length();
-                sd = MathF.Max(r - 1f, sp.X - r);                // x = inner radius ratio
-                break;
-            }
+                {
+                    var r = p.Length();
+                    sd = MathF.Max(r - 1f, sp.X - r);                // x = inner radius ratio
+                    break;
+                }
             case DecalShape.Sector:
-            {
-                var r = p.Length();
-                var an = MathF.Abs(MathF.Atan2(p.X, p.Y));       // 0 at local +Z
-                sd = MathF.Max(MathF.Max(r - 1f, sp.Y - r), (an - sp.X) * r); // x = half angle, y = inner ratio
-                break;
-            }
+                {
+                    var r = p.Length();
+                    var an = MathF.Abs(MathF.Atan2(p.X, p.Y));       // 0 at local +Z
+                    sd = MathF.Max(MathF.Max(r - 1f, sp.Y - r), (an - sp.X) * r); // x = half angle, y = inner ratio
+                    break;
+                }
             default:                                             // Rect / Texture - the footprint square
                 sd = MathF.Max(MathF.Abs(p.X), MathF.Abs(p.Y)) - 1f;
                 break;

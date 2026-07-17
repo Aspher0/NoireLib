@@ -1,10 +1,10 @@
+using FluentAssertions;
+using NoireLib.EventBus;
 using System;
 using System.Collections.Generic;
-using System.Threading.Tasks;
-using FluentAssertions;
-using Xunit;
-using NoireLib.EventBus;
 using System.Runtime.Versioning;
+using System.Threading.Tasks;
+using Xunit;
 
 namespace NoireLib.Tests;
 

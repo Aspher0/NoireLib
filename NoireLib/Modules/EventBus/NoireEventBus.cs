@@ -2,6 +2,7 @@ using NoireLib.Core.Modules;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NoireLib.EventBus;
@@ -15,6 +16,10 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     private readonly Dictionary<Type, List<SubscriptionEntry>> subscriptions = new();
     private readonly Dictionary<string, (Type EventType, EventSubscriptionToken Token)> keyToSubscription = new();
     private readonly object subscriptionLock = new();
+
+    // Publishing is allowed from any thread and is deliberately not serialized by subscriptionLock, so these
+    // counters are only ever touched through Interlocked. A plain increment would drop counts under concurrent
+    // publishes, and a plain read is not guaranteed to observe a whole 64-bit value.
     private long totalEventsPublished;
     private long totalExceptionsCaught;
 
@@ -301,6 +306,12 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         }
 
         var eventType = typeof(TEvent);
+
+        // Counted before the subscribers are looked up, because this counts publishes rather than deliveries.
+        // An event type nobody has subscribed to is still an event that was published, and counting it only once
+        // a handler exists would silently under-report exactly the traffic worth noticing.
+        Interlocked.Increment(ref totalEventsPublished);
+
         List<SubscriptionEntry>? handlers;
 
         lock (subscriptionLock)
@@ -314,8 +325,6 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
 
             handlers = handlers.ToList(); // Copy to avoid modification during iteration
         }
-
-        totalEventsPublished++;
 
         if (EnableLogging)
             NoireLogger.LogVerbose(this, $"Publishing {eventType.Name} to {handlers.Count} subscriber(s).");
@@ -370,6 +379,10 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         }
 
         var eventType = typeof(TEvent);
+
+        // Counted before the subscribers are looked up, for the same reason as the synchronous publish above.
+        Interlocked.Increment(ref totalEventsPublished);
+
         List<SubscriptionEntry>? handlers;
 
         lock (subscriptionLock)
@@ -383,8 +396,6 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
 
             handlers = handlers.ToList();
         }
-
-        totalEventsPublished++;
 
         if (EnableLogging)
             NoireLogger.LogVerbose(this, $"Publishing async {eventType.Name} to {handlers.Count} subscriber(s).");
@@ -633,8 +644,8 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             var eventTypeCount = subscriptions.Count;
 
             return new EventBusStatistics(
-                TotalEventsPublished: totalEventsPublished,
-                TotalExceptionsCaught: totalExceptionsCaught,
+                TotalEventsPublished: Interlocked.Read(ref totalEventsPublished),
+                TotalExceptionsCaught: Interlocked.Read(ref totalExceptionsCaught),
                 ActiveSubscriptions: subscriptionCount,
                 RegisteredEventTypes: eventTypeCount
             );
@@ -657,7 +668,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
 
     private void HandleException(Exception ex, Type eventType)
     {
-        totalExceptionsCaught++;
+        Interlocked.Increment(ref totalExceptionsCaught);
 
         switch (ExceptionHandling)
         {

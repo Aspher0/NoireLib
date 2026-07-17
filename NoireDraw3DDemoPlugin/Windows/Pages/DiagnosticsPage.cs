@@ -1,11 +1,11 @@
-using System;
-using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Colors;
 using NoireLib;
 using NoireLib.Draw3D;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
+using System;
+using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

@@ -408,6 +408,8 @@ networker.OnStateChanged(state =>
 
 The transitions a consumer can observe are `Stopped` to `Starting` on activation, `Starting` to `Ready` once the instance has joined, `Ready` to `Reelecting` when the hub disappears, `Reelecting` to `Ready` once a new hub is elected, and any state to `Stopped` on deactivation or disposal.
 
+`Stopped` is always the last transition a handler sees, and it is delivered before `SetActive(false)` or `Dispose()` returns rather than on a later frame, so a handler that mirrors `State` into your own UI never gets stranded showing `Ready` after the networker has gone. By the time it runs, the peer list is empty, `IsHub` is false, and sends are refused, which is exactly the state it is reporting. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations) for the threading detail.
+
 ### How Election Looks From Here
 
 Election needs nothing from you and is worth understanding only to know what you are seeing in the logs:
@@ -530,6 +532,8 @@ networker.Dispose();
 
 Modules registered through `NoireLibMain.AddModule` are disposed with the library, so an explicit call is only needed when you manage the lifecycle yourself. `SetActive(false)` performs the same teardown while leaving the module reusable; activating it again rejoins the network.
 
+Teardown does not wait on the network. The departure announcement is written in the background and closes its socket once it is out, so disposing from the framework thread does not stall a frame waiting for peers to acknowledge anything. The announcement is best-effort, as it always was: if it cannot be written, peers fall back to noticing the departure at their next ping timeout instead.
+
 ---
 
 ## Delivery Guarantees and Limitations
@@ -546,6 +550,8 @@ Message handlers, request handlers, peer callbacks, state callbacks, bridged-in 
 Ordering is preserved: deliveries are processed in the order they were received.
 
 That inbound queue is bounded by `NetworkerOptions.DeliveryQueueCapacity` (default 4096). If the framework thread is frozen long enough for the queue to overflow, the **oldest deliveries are dropped** with an error log rather than growing memory without limit.
+
+There is **one exception**: the final `Stopped` state change is delivered synchronously, on whatever thread stopped the networker, before `Dispose()` or `SetActive(false)` returns. The queue is torn down as part of stopping, so a `Stopped` routed through it would be discarded and never seen at all. Everything else, including the transitions to `Starting`, `Ready`, and `Reelecting`, goes through the queue as described above. If you deactivate or dispose the networker from a background thread, an `OnStateChanged` handler observing `Stopped` therefore runs on that thread, so avoid touching game state from inside it unless you know the stop came from the framework thread.
 
 ### Outbound Buffering Across a Hub Re-election Is Bounded and Lossy
 

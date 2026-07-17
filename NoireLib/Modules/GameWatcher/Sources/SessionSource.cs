@@ -1,5 +1,4 @@
 using Lumina.Excel.Sheets;
-using NoireLib.Helpers;
 using System;
 
 namespace NoireLib.GameWatcher;

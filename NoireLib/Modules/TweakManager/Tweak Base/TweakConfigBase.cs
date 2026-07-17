@@ -3,6 +3,9 @@ using Newtonsoft.Json.Linq;
 using NoireLib.Configuration;
 using NoireLib.Configuration.Migrations;
 using System;
+using System.Globalization;
+using System.IO;
+using System.Text;
 
 namespace NoireLib.TweakManager;
 
@@ -17,6 +20,29 @@ namespace NoireLib.TweakManager;
 [Serializable]
 public abstract class TweakConfigBase : NoireConfigBase
 {
+    /// <summary>
+    /// Reads and writes the JSON a tweak configuration is stored as. It is built with
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
+    /// <see cref="NoireConfigBase.JsonSettings"/> alone. The <see cref="JsonConvert"/> overloads and
+    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> instead merge in
+    /// <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into this process can
+    /// assign, and only overlay the properties the given settings object actually sets. Anything the settings leave
+    /// unmentioned, such as the converters, the contract resolver or the null handling, would then be decided by
+    /// unrelated code and the stored format would drift with it.
+    /// </summary>
+    private static readonly JsonSerializer TweakConfigSerializer = CreateTweakConfigSerializer();
+
+    private static JsonSerializer CreateTweakConfigSerializer()
+    {
+        var serializer = JsonSerializer.Create(JsonSettings);
+
+        // A stored tweak configuration is exactly one JSON document, so anything after it means the stored value is
+        // corrupt. JsonConvert.DeserializeObject turns this on for its callers implicitly; setting it explicitly keeps
+        // that rejection in place now that the read below goes through a serializer instance instead.
+        serializer.CheckAdditionalContent = true;
+        return serializer;
+    }
+
     /// <summary>
     /// The owning tweak instance for this configuration, if any.
     /// This is populated automatically by <see cref="TweakBase{TConfig}"/> when the tweak is created.
@@ -83,7 +109,7 @@ public abstract class TweakConfigBase : NoireConfigBase
     /// <returns>A JSON string representing the current configuration state.</returns>
     public string ToJson()
     {
-        return JsonConvert.SerializeObject(this, GetType(), JsonSettings);
+        return SerializeTweakConfigToJson();
     }
 
     /// <summary>
@@ -92,7 +118,39 @@ public abstract class TweakConfigBase : NoireConfigBase
     /// <returns>A JSON string representing the current configuration.</returns>
     internal string SerializeToJson()
     {
-        return JsonConvert.SerializeObject(this, GetType(), JsonSettings);
+        return SerializeTweakConfigToJson();
+    }
+
+    /// <summary>
+    /// Serializes this instance to the JSON a tweak configuration is stored as.
+    /// </summary>
+    /// <returns>The JSON representation of this instance, serialized as its concrete type.</returns>
+    private string SerializeTweakConfigToJson()
+    {
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            TweakConfigSerializer.Serialize(jsonWriter, this, GetType());
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Deserializes stored tweak configuration JSON into a new instance of the given type.
+    /// </summary>
+    /// <typeparam name="T">The concrete tweak configuration type to materialize.</typeparam>
+    /// <param name="json">The stored JSON.</param>
+    /// <returns>The deserialized instance, or null when the JSON holds a bare null.</returns>
+    /// <exception cref="JsonException">The JSON is malformed or carries content after the configuration object.</exception>
+    private static T? DeserializeTweakConfigFromJson<T>(string json) where T : TweakConfigBase
+    {
+        using var stringReader = new StringReader(json);
+        using var jsonReader = new JsonTextReader(stringReader);
+
+        return TweakConfigSerializer.Deserialize<T>(jsonReader);
     }
 
     /// <summary>
@@ -119,7 +177,7 @@ public abstract class TweakConfigBase : NoireConfigBase
                     json = migratedJson;
             }
 
-            var deserialized = JsonConvert.DeserializeObject<T>(json, JsonSettings);
+            var deserialized = DeserializeTweakConfigFromJson<T>(json);
             return deserialized ?? new T();
         }
         catch (Exception ex)

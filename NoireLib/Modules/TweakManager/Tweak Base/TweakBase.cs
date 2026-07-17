@@ -143,7 +143,7 @@ public abstract class TweakBase : IDisposable
     /// </summary>
     public void MarkConfigDirty()
     {
-        Manager?.SaveTweakConfig(InternalKey);
+        Manager?.RecordTweakConfig(InternalKey);
     }
 
     /// <summary>

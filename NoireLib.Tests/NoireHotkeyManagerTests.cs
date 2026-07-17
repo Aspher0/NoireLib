@@ -804,6 +804,127 @@ public class NoireHotkeyManagerTests : IDisposable
         manager.TryConsumeBindingChanged("missing.hotkey").Should().BeFalse("nothing changed, so there is nothing to report");
     }
 
+    [Fact]
+    public void TryConsumeBindingChanged_WhileAnotherHotkeyIsReboundConcurrently_DoesNotSwallowTheOtherReport()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("consumed.hotkey", () => { })).Should().BeTrue();
+        manager.RegisterHotkey(MakeEntry("rebound.hotkey", () => { })).Should().BeTrue();
+
+        var swallowed = 0;
+        var consuming = true;
+
+        // A button drawn for one hotkey consumes its report on the framework thread while the detection timer
+        // captures a rebind of a different hotkey from its own thread, so a rebind really does land between that
+        // button's read of the report and its clearing of it. The consuming side asks in a different case from
+        // the one the rebind was made in, so that the id rule and the conditional clear are exercised together:
+        // deciding the report is this caller's is a question about identity, while clearing it is a question
+        // about whether the record is still the one that was read.
+        var consumer = Task.Run(() =>
+        {
+            while (Volatile.Read(ref consuming))
+                manager.TryConsumeBindingChanged("CONSUMED.HOTKEY");
+        });
+
+        for (var i = 0; i < 20_000; i++)
+        {
+            manager.SetHotkeyBinding("consumed.hotkey", new HotkeyBinding(66 + (i % 2)));
+            manager.SetHotkeyBinding("rebound.hotkey", new HotkeyBinding(66 + (i % 2)));
+
+            if (!manager.TryConsumeBindingChanged("rebound.hotkey"))
+                swallowed++;
+        }
+
+        Volatile.Write(ref consuming, false);
+        consumer.Wait(TimeSpan.FromSeconds(30)).Should().BeTrue();
+
+        swallowed.Should().Be(
+            0,
+            "the report is cleared only while it is still the one that was read, so a rebind of another hotkey landing after that read survives to reach its own button rather than being wiped out by a button that was never told about it");
+    }
+
+    #endregion
+
+    #region Hotkey ids naming one hotkey whatever case they are written in
+
+    [Fact]
+    public void TryConsumeBindingChanged_WithADifferentlyCasedId_ReportsTheRebindOnce()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("my.hotkey", () => { })).Should().BeTrue();
+
+        manager.SetHotkeyBinding("MY.HOTKEY", new HotkeyBinding(66)).Should().BeTrue();
+
+        manager.TryConsumeBindingChanged("My.Hotkey").Should().BeTrue("a rebind belongs to the hotkey it was made on, and an id names that hotkey whatever case it is written in");
+        manager.TryConsumeBindingChanged("my.hotkey").Should().BeFalse("the report is consumed by whichever spelling of the id asked first, since they are all the same hotkey");
+    }
+
+    [Fact]
+    public void IsListeningFor_WithADifferentlyCasedId_ReportsTheCapture()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("my.hotkey", () => { })).Should().BeTrue();
+
+        manager.StartListening("MY.HOTKEY").Should().BeTrue();
+
+        manager.IsListeningFor("My.Hotkey").Should().BeTrue("the binding UI has to show as listening even when it draws the id in a different case from the one the capture was started in");
+        manager.IsListeningFor("my.hotkey").Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsListeningFor_ForAnotherHotkey_ReportsNothing()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("listening.hotkey", () => { })).Should().BeTrue();
+        manager.RegisterHotkey(MakeEntry("idle.hotkey", () => { })).Should().BeTrue();
+
+        manager.StartListening("listening.hotkey").Should().BeTrue();
+
+        manager.IsListeningFor("idle.hotkey").Should().BeFalse("ignoring case is not ignoring the id, and a different hotkey is still a different hotkey");
+    }
+
+    [Fact]
+    public void IsListeningFor_WhenNothingIsBeingRebound_ReportsNothing()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("quiet.hotkey", () => { })).Should().BeTrue();
+
+        manager.IsListeningFor("quiet.hotkey").Should().BeFalse("no capture is in progress");
+    }
+
+    [Fact]
+    public void ARebind_RegisteredDrawnAndConsumedInDifferentCases_IsOneHotkeyThroughout()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("my.hotkey", () => { })).Should().BeTrue();
+
+        // The whole path a binding button walks, spelled a different way at every step. Registering under one
+        // case and drawing under another must not silently produce a button that never shows as listening and
+        // never receives the rebind it captured, while the rest of the module treats the two ids as one hotkey.
+        manager.StartListening("MY.HOTKEY").Should().BeTrue();
+        manager.IsListeningFor("My.Hotkey").Should().BeTrue();
+
+        manager.SetHotkeyBinding("mY.hOtKeY", new HotkeyBinding(66)).Should().BeTrue();
+        manager.StopListening(false);
+
+        manager.TryConsumeBindingChanged("My.Hotkey").Should().BeTrue();
+        manager.TryGetHotkey("MY.hotkey", out var entry).Should().BeTrue();
+        entry.Binding.VkCode.Should().Be(66);
+        entry.Id.Should().Be("my.hotkey", "the entry keeps the id it was registered with, since matching ignoring case is not rewriting what the consumer supplied");
+    }
+
+    [Fact]
+    public void StartListening_WithADifferentlyCasedId_StartsASessionForTheRegisteredHotkey()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("my.hotkey", () => { })).Should().BeTrue();
+
+        manager.StartListening("MY.HOTKEY", HotkeyListenMode.Gamepad).Should().BeTrue();
+
+        manager.CurrentListeningSession!.HotkeyId.Should().Be("MY.HOTKEY", "the session carries the id as the caller wrote it, and every comparison against it ignores case rather than the id being rewritten");
+        manager.IsListeningFor("my.hotkey").Should().BeTrue();
+    }
+
     #endregion
 
     #region Persistence of the shared stored keybinds

@@ -1,13 +1,12 @@
-using System;
-using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility.Raii;
-using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
+using System;
+using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 

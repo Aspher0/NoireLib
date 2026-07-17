@@ -16,6 +16,22 @@ namespace NoireLib.HistoryLogger;
 /// </summary>
 public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 {
+    /// <summary>
+    /// Identifies a column of the entries table independently of where it sits.<br/>
+    /// The Category and Source columns are only registered when the display preferences show them, so a column's
+    /// positional index shifts with those preferences. These values are handed to ImGui as the column user id and
+    /// come back unchanged in the sort specs, which is what lets a clicked header be resolved to the field it
+    /// actually sorts by whatever the current layout is.
+    /// </summary>
+    private enum EntryColumn : uint
+    {
+        Time = 1,
+        Level = 2,
+        Category = 3,
+        Message = 4,
+        Source = 5,
+    }
+
     private string filterText = string.Empty;
     private string lastFilterText = string.Empty;
     private string newMessage = string.Empty;
@@ -25,11 +41,21 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     private readonly HashSet<HistoryLogLevel> selectedLevels = new();
     private readonly HashSet<HistoryLogEntry> selectedEntries = new();
     private readonly HashSet<(HistoryLogEntry Entry, int LineIndex)> selectedLines = new();
-    private int sortColumnIndex;
+    // Matches the column carrying ImGuiTableColumnFlags.DefaultSort below, which is what ImGui selects before the
+    // first sort spec is reported.
+    private EntryColumn sortColumn = EntryColumn.Time;
     private ImGuiSortDirection sortDirection = ImGuiSortDirection.Descending;
     private int lastSelectedIndex = -1;
     private HistoryLogEntry? contextEntry;
     private int currentPage = 1;
+
+    // Filtering the whole log is far too expensive to redo on every frame the window is open, so the result is
+    // cached and rebuilt only once the entries or the active filters actually change.
+    private List<HistoryLogEntry>? filteredEntries;
+    private int totalEntryCount;
+    private int filterVersion;
+    private int cachedFilterVersion = -1;
+    private int cachedEntriesVersion = -1;
 
     /// <summary>
     /// Gets or sets the name of the display window.
@@ -114,6 +140,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         {
             currentPage = 1;
             lastFilterText = filterText;
+            filterVersion++;
         }
 
         ImGui.SameLine();
@@ -132,6 +159,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             {
                 selectedCategories.Clear();
                 currentPage = 1;
+                filterVersion++;
             }
 
             var categories = ParentModule.GetCategories();
@@ -145,6 +173,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                     else
                         selectedCategories.Add(category);
                     currentPage = 1;
+                    filterVersion++;
                 }
             }
 
@@ -167,6 +196,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             {
                 selectedLevels.Clear();
                 currentPage = 1;
+                filterVersion++;
             }
 
             var levels = Enum.GetValues<HistoryLogLevel>();
@@ -180,6 +210,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                     else
                         selectedLevels.Add(level);
                     currentPage = 1;
+                    filterVersion++;
                 }
             }
 
@@ -344,21 +375,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
     private void DrawLogEntries()
     {
-        var entries = ParentModule.GetEntriesSnapshot();
-        var filtered = ApplyFilters(entries);
-
-        // Deselect entries that are no longer visible due to filters
-        if (selectedEntries.Count > 0)
-        {
-            var filteredSet = new HashSet<HistoryLogEntry>(filtered);
-            selectedEntries.RemoveWhere(entry => !filteredSet.Contains(entry));
-        }
-
-        if (selectedLines.Count > 0)
-        {
-            var filteredSet = new HashSet<HistoryLogEntry>(filtered);
-            selectedLines.RemoveWhere(line => !filteredSet.Contains(line.Entry));
-        }
+        var filtered = GetFilteredEntries();
 
         var itemsPerPage = Math.Max(1, HistoryLoggerConfig.ItemsPerPage);
         var totalPages = Math.Max(1, (int)Math.Ceiling(filtered.Count / (double)itemsPerPage));
@@ -375,7 +392,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             ImGui.SameLine();
         }
 
-        ImGui.TextDisabled($"Showing {startIndex + 1}-{endIndex} of {filtered.Count} entries ({entries.Count} total)");
+        ImGui.TextDisabled($"Showing {startIndex + 1}-{endIndex} of {filtered.Count} entries ({totalEntryCount} total)");
         ImGui.SameLine();
         DrawPaginationControls(totalPages, itemsPerPage);
 
@@ -395,29 +412,22 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             return;
 
         ImGui.TableSetupScrollFreeze(0, 1);
-        int col = 0;
-        ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.NoResize);
-        col++;
-        ImGui.TableSetupColumn("Level", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize);
-        col++;
+
+        // Each column is registered with its EntryColumn value as the user id, so that the sort specs identify the
+        // clicked header even though the conditional columns move every later column's index.
+        ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.NoResize, 0f, (uint)EntryColumn.Time);
+        ImGui.TableSetupColumn("Level", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize, 0f, (uint)EntryColumn.Level);
         if (!hideCategory)
-        {
-            ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize, 100f);
-            col++;
-        }
-        ImGui.TableSetupColumn("Message", ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.NoSort, 250f);
-        col++;
+            ImGui.TableSetupColumn("Category", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize, 100f, (uint)EntryColumn.Category);
+        ImGui.TableSetupColumn("Message", ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.NoSort, 250f, (uint)EntryColumn.Message);
         if (!hideSource)
-        {
-            ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthFixed, 200f);
-            col++;
-        }
+            ImGui.TableSetupColumn("Source", ImGuiTableColumnFlags.WidthFixed, 200f, (uint)EntryColumn.Source);
         ImGui.TableHeadersRow();
 
         UpdateSortSpecs();
 
-        // Pre-calculate message column width for row height estimation
-        // Trouver l'index de la colonne Message
+        // Pre-calculate message column width for row height estimation. The message column sits after the category
+        // column only when the category column is shown.
         int messageColIndex = 2;
         if (!hideCategory) messageColIndex++;
         ImGui.TableNextRow();
@@ -731,6 +741,48 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.PopFont();
     }
 
+    /// <summary>
+    /// Gets the filtered and sorted entries backing the current view, rebuilding them only when the module's
+    /// entries or the active filters have changed since the last rebuild.
+    /// </summary>
+    private List<HistoryLogEntry> GetFilteredEntries()
+    {
+        var entriesVersion = ParentModule.EntriesVersion;
+
+        if (filteredEntries != null && cachedEntriesVersion == entriesVersion && cachedFilterVersion == filterVersion)
+            return filteredEntries;
+
+        var entries = ParentModule.GetEntriesSnapshot();
+
+        filteredEntries = ApplyFilters(entries);
+        totalEntryCount = entries.Count;
+        cachedEntriesVersion = entriesVersion;
+        cachedFilterVersion = filterVersion;
+
+        PruneSelectionsOutsideFilter(filteredEntries);
+
+        return filteredEntries;
+    }
+
+    /// <summary>
+    /// Drops selections that the current filters no longer show, so hidden rows cannot be acted on from the
+    /// context menu.
+    /// </summary>
+    /// <param name="filtered">The entries currently passing the filters.</param>
+    private void PruneSelectionsOutsideFilter(List<HistoryLogEntry> filtered)
+    {
+        if (selectedEntries.Count == 0 && selectedLines.Count == 0)
+            return;
+
+        var filteredSet = new HashSet<HistoryLogEntry>(filtered);
+
+        if (selectedEntries.Count > 0)
+            selectedEntries.RemoveWhere(entry => !filteredSet.Contains(entry));
+
+        if (selectedLines.Count > 0)
+            selectedLines.RemoveWhere(line => !filteredSet.Contains(line.Entry));
+    }
+
     private List<HistoryLogEntry> ApplyFilters(IReadOnlyList<HistoryLogEntry> entries)
     {
         IEnumerable<HistoryLogEntry> query = entries;
@@ -755,16 +807,21 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         return query.ToList();
     }
 
+    /// <summary>
+    /// Orders <paramref name="entries"/> by the field the currently sorted column stands for.
+    /// </summary>
+    /// <param name="entries">The entries to order.</param>
+    /// <returns>The ordered entries, or the input unchanged for a column that carries no ordering.</returns>
     private IEnumerable<HistoryLogEntry> ApplySorting(IEnumerable<HistoryLogEntry> entries)
     {
         var descending = sortDirection == ImGuiSortDirection.Descending;
 
-        return sortColumnIndex switch
+        return sortColumn switch
         {
-            0 => descending ? entries.OrderByDescending(entry => entry.Timestamp) : entries.OrderBy(entry => entry.Timestamp),
-            1 => descending ? entries.OrderByDescending(entry => entry.Level) : entries.OrderBy(entry => entry.Level),
-            2 => descending ? entries.OrderByDescending(entry => entry.Category) : entries.OrderBy(entry => entry.Category),
-            4 => descending ? entries.OrderByDescending(entry => entry.Source) : entries.OrderBy(entry => entry.Source),
+            EntryColumn.Time => descending ? entries.OrderByDescending(entry => entry.Timestamp) : entries.OrderBy(entry => entry.Timestamp),
+            EntryColumn.Level => descending ? entries.OrderByDescending(entry => entry.Level) : entries.OrderBy(entry => entry.Level),
+            EntryColumn.Category => descending ? entries.OrderByDescending(entry => entry.Category) : entries.OrderBy(entry => entry.Category),
+            EntryColumn.Source => descending ? entries.OrderByDescending(entry => entry.Source) : entries.OrderBy(entry => entry.Source),
             _ => entries
         };
     }
@@ -775,7 +832,12 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (sortSpecs.SpecsDirty && sortSpecs.SpecsCount > 0)
         {
             var spec = sortSpecs.Specs[0];
-            sortColumnIndex = spec.ColumnIndex;
+            var column = (EntryColumn)spec.ColumnUserID;
+
+            if (sortColumn != column || sortDirection != spec.SortDirection)
+                filterVersion++;
+
+            sortColumn = column;
             sortDirection = spec.SortDirection;
             sortSpecs.SpecsDirty = false;
         }
@@ -934,7 +996,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
             var linesToCopy = new List<string>();
 
-            var sortedEntries = ApplyFilters(ParentModule.GetEntriesSnapshot());
+            var sortedEntries = GetFilteredEntries();
 
             foreach (var entry in sortedEntries)
             {
@@ -997,7 +1059,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
             var linesToCopy = new List<string>();
 
-            var sortedEntries = ApplyFilters(ParentModule.GetEntriesSnapshot());
+            var sortedEntries = GetFilteredEntries();
 
             foreach (var entry in sortedEntries)
             {
