@@ -9,10 +9,10 @@ using NoireLib.Draw3D;
 namespace NoireDraw3DDemoPlugin;
 
 /// <summary>
-/// A demonstration plugin for the NoireLib Draw3D renderer. Everything it does goes through the public Draw3D API, so
-/// it doubles as a worked reference - spawning the smoke showcase scene, tweaking every global knob, building scenes and
-/// decals, and running the render diagnostics. The library's own <c>/noire3d</c> validators stay in the library and are
-/// enabled here too.
+/// A demonstration plugin for the NoireLib Draw3D renderer. Everything it does goes through the public Draw3D API, so it
+/// doubles as a worked reference - spawning the showcase scene, tweaking every global knob, building scenes and decals,
+/// and running the render diagnostics. The validators themselves stay in the library; this plugin opts their
+/// <c>/noire3d</c> command in.
 /// </summary>
 public sealed class Plugin : IDalamudPlugin
 {

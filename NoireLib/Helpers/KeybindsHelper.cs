@@ -133,12 +133,23 @@ public static class KeybindsHelper
     }
 
     /// <summary>
-    /// Returns the current modifier key state.
+    /// Returns the current modifier key state, as seen by the game through <see cref="NoireService.KeyState"/>.<br/>
+    /// A key that a consumer suppressed for this frame reads as up here. Use <see cref="GetAsyncModifierState"/> to read the physical keys instead.
     /// </summary>
     /// <returns>The current modifier key state.</returns>
     public static (bool Ctrl, bool Shift, bool Alt) GetModifierState()
     {
         return (IsCtrlDown(), IsShiftDown(), IsAltDown());
+    }
+
+    /// <summary>
+    /// Returns the current modifier key state read from the physical keyboard through the Win32 async key state.<br/>
+    /// This is thread independent, needs no active frame, and is unaffected by a consumer suppressing a key through <see cref="NoireService.KeyState"/>.
+    /// </summary>
+    /// <returns>The current modifier key state.</returns>
+    public static (bool Ctrl, bool Shift, bool Alt) GetAsyncModifierState()
+    {
+        return (IsAsyncCtrlDown(), IsAsyncShiftDown(), IsAsyncAltDown());
     }
 
     /// <summary>
@@ -259,22 +270,83 @@ public static class KeybindsHelper
     }
 
     /// <summary>
-    /// Returns whether the required modifiers for a binding are pressed.
+    /// Returns whether the required modifiers for a binding are pressed, as seen by the game through <see cref="NoireService.KeyState"/>.<br/>
+    /// Additional modifiers are ignored: a binding on Ctrl matches while Ctrl and Shift are both held.
     /// </summary>
     /// <param name="binding">The hotkey binding to check.</param>
     /// <returns>True if the required modifiers are pressed, false otherwise.</returns>
     public static bool AreModifiersDown(HotkeyBinding binding)
     {
-        if (binding.Ctrl && !IsCtrlDown())
+        return AreRequiredModifiersDown(GetModifierState(), binding);
+    }
+
+    /// <summary>
+    /// Returns whether exactly the modifiers a binding requires are held, and no others.<br/>
+    /// This is the strict rule an activated binding is matched with: a binding on Ctrl + G does not match while Ctrl, Shift and G are held,
+    /// so that two bindings differing only by a modifier never activate together.
+    /// </summary>
+    /// <param name="modifierState">The modifier state to test, from <see cref="GetModifierState"/>, <see cref="GetAsyncModifierState"/> or <see cref="GetRawModifierState"/>.</param>
+    /// <param name="binding">The hotkey binding to check.</param>
+    /// <returns>True if the held modifiers match the binding exactly, false otherwise.</returns>
+    public static bool AreExactModifiersDown((bool Ctrl, bool Shift, bool Alt) modifierState, HotkeyBinding binding)
+    {
+        return modifierState.Ctrl == binding.Ctrl
+            && modifierState.Shift == binding.Shift
+            && modifierState.Alt == binding.Alt;
+    }
+
+    /// <summary>
+    /// Returns whether every modifier a binding requires is held, ignoring any additional modifier.<br/>
+    /// This is the permissive rule a modifier-only binding is held with, so that a binding on Ctrl stays held while the user also presses Shift.
+    /// </summary>
+    /// <param name="modifierState">The modifier state to test, from <see cref="GetModifierState"/>, <see cref="GetAsyncModifierState"/> or <see cref="GetRawModifierState"/>.</param>
+    /// <param name="binding">The hotkey binding to check.</param>
+    /// <returns>True if every required modifier is held, false otherwise.</returns>
+    public static bool AreRequiredModifiersDown((bool Ctrl, bool Shift, bool Alt) modifierState, HotkeyBinding binding)
+    {
+        if (binding.Ctrl && !modifierState.Ctrl)
             return false;
 
-        if (binding.Shift && !IsShiftDown())
+        if (binding.Shift && !modifierState.Shift)
             return false;
 
-        if (binding.Alt && !IsAltDown())
+        if (binding.Alt && !modifierState.Alt)
             return false;
 
         return true;
+    }
+
+    /// <summary>
+    /// Returns whether a binding is currently held, using the same matching rules as <see cref="NoireHotkeyManager"/>:<br/>
+    /// - A keyboard binding is held when its key is down and exactly its modifiers are held (see <see cref="AreExactModifiersDown"/>).<br/>
+    /// - A modifier-only binding is held when its modifiers are held, ignoring any extra one (see <see cref="AreRequiredModifiersDown"/>).<br/>
+    /// - A gamepad binding is held when its button reads down on <see cref="NoireService.GamepadState"/>.<br/>
+    /// Keyboard state is read from the physical keyboard, so this is thread independent and needs no active frame.
+    /// A gamepad binding always reads as not held while NoireLib is not initialized, since no gamepad state exists then.
+    /// </summary>
+    /// <param name="binding">The binding to test. An empty binding is never held.</param>
+    /// <returns>True if the binding is currently held, false otherwise.</returns>
+    public static bool IsBindingHeld(HotkeyBinding binding)
+    {
+        if (binding.IsEmpty)
+            return false;
+
+        if (binding.IsGamepadBinding)
+        {
+            return binding.GamepadButton.HasValue
+                && NoireService.GamepadState != null
+                && NoireService.GamepadState.Raw(binding.GamepadButton.Value) > 0f;
+        }
+
+        if (!binding.IsKeyboardBinding)
+            return false;
+
+        var modifierState = GetAsyncModifierState();
+
+        if (binding.IsModifierOnly)
+            return AreRequiredModifiersDown(modifierState, binding);
+
+        return AreExactModifiersDown(modifierState, binding) && IsAsyncKeyDown(binding.VkCode);
     }
 
     /// <summary>
@@ -322,6 +394,21 @@ public static class KeybindsHelper
     private static bool IsAltDown()
     {
         return NoireService.KeyState[VkAlt] || NoireService.KeyState[VkLeftAlt] || NoireService.KeyState[VkRightAlt];
+    }
+
+    private static bool IsAsyncCtrlDown()
+    {
+        return IsAsyncKeyDown(VkControl) || IsAsyncKeyDown(VkLeftControl) || IsAsyncKeyDown(VkRightControl);
+    }
+
+    private static bool IsAsyncShiftDown()
+    {
+        return IsAsyncKeyDown(VkShift) || IsAsyncKeyDown(VkLeftShift) || IsAsyncKeyDown(VkRightShift);
+    }
+
+    private static bool IsAsyncAltDown()
+    {
+        return IsAsyncKeyDown(VkAlt) || IsAsyncKeyDown(VkLeftAlt) || IsAsyncKeyDown(VkRightAlt);
     }
 
     private static List<string> FormatModifierParts(bool ctrl, bool shift, bool alt)

@@ -1,5 +1,6 @@
 using Dalamud.Utility;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -12,7 +13,14 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public static class MigrationExecutor
 {
-    private static readonly Dictionary<Type, List<IConfigMigration>> _runtimeMigrations = new();
+    /// <summary>
+    /// Migrations registered at runtime, keyed by configuration type.<br/>
+    /// Registration is a public entry point and every plugin sharing this process reaches the same table, so a
+    /// registration can run while another plugin is loading a configuration and reading it. The lists are treated as
+    /// immutable once published and a registration replaces the whole list rather than appending to the one in the
+    /// table, which lets a read take a list that nothing can go on to mutate underneath it.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, List<IConfigMigration>> RuntimeMigrations = new();
 
     /// <summary>
     /// Discovers and executes all necessary migrations for a configuration type.
@@ -182,13 +190,15 @@ public static class MigrationExecutor
     /// <param name="migration">The migration instance to register.</param>
     public static void RegisterMigration(Type configType, IConfigMigration migration)
     {
-        if (!_runtimeMigrations.TryGetValue(configType, out var migrations))
-        {
-            migrations = new List<IConfigMigration>();
-            _runtimeMigrations[configType] = migrations;
-        }
+        // Copy on write: the replacement list is built off to the side and swapped in as one value, so a concurrent
+        // read either sees the table without this migration or with it, and never a list mid-append. AddOrUpdate
+        // retries its factory against the current value if another registration lands first, so two registrations
+        // racing on the same type both survive.
+        RuntimeMigrations.AddOrUpdate(
+            configType,
+            _ => new List<IConfigMigration> { migration },
+            (_, existing) => new List<IConfigMigration>(existing) { migration });
 
-        migrations.Add(migration);
         NoireLogger.LogDebug($"Registered runtime migration {migration.FromVersion} -> {migration.ToVersion} for {configType.Name}", "[MigrationExecutor] ");
     }
 
@@ -199,7 +209,9 @@ public static class MigrationExecutor
     /// <returns>A list of runtime-registered migrations.</returns>
     internal static List<IConfigMigration> GetRuntimeMigrations(Type configType)
     {
-        return _runtimeMigrations.TryGetValue(configType, out var migrations)
+        // Copied rather than handed out directly, so that a caller cannot reach the list held in the table and the
+        // copy-on-write registration above can keep assuming a published list is never mutated.
+        return RuntimeMigrations.TryGetValue(configType, out var migrations)
             ? new List<IConfigMigration>(migrations)
             : new List<IConfigMigration>();
     }
@@ -209,7 +221,7 @@ public static class MigrationExecutor
     /// </summary>
     public static void ClearRuntimeMigrations()
     {
-        _runtimeMigrations.Clear();
+        RuntimeMigrations.Clear();
         NoireLogger.LogDebug("Cleared all runtime migrations", "[MigrationExecutor] ");
     }
 }

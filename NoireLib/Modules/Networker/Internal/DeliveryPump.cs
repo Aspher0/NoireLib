@@ -26,8 +26,24 @@ internal sealed class DeliveryPump : IDisposable
         this.onError = onError;
     }
 
-    public bool InlineMode => !NoireService.IsInitialized();
+    /// <summary>
+    /// Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
+    /// <see cref="Drain"/> as the only way to run them.<br/>
+    /// This is the seam for exercising queueing, ordering and the discard-on-disposal policy without a running game.
+    /// </summary>
+    internal bool ForceQueuedDelivery { get; init; }
 
+    /// <summary>
+    /// Whether deliveries run on the posting thread.<br/>
+    /// Without an initialized NoireLib there is no framework thread to marshal onto, so inline is the only option.
+    /// </summary>
+    public bool InlineMode => !NoireService.IsInitialized() && !ForceQueuedDelivery;
+
+    /// <summary>
+    /// Queues a delivery for the framework thread, or runs it inline when there is no framework thread to marshal
+    /// onto. Deliveries posted after disposal are discarded, and so is anything still queued when disposal runs.
+    /// </summary>
+    /// <param name="action">The delivery to run.</param>
     public void Post(Action action)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -50,13 +66,18 @@ internal sealed class DeliveryPump : IDisposable
 
         queue.Enqueue(action);
 
-        if (Interlocked.CompareExchange(ref attached, 1, 0) == 0)
+        if (NoireService.IsInitialized() && Interlocked.CompareExchange(ref attached, 1, 0) == 0)
             NoireService.Framework.Update += OnFrameworkUpdate;
     }
 
-    private void OnFrameworkUpdate(IFramework framework)
+    private void OnFrameworkUpdate(IFramework framework) => Drain();
+
+    /// <summary>
+    /// Runs the deliveries queued as of entry, on the calling thread.
+    /// </summary>
+    internal void Drain()
     {
-        // Drain only what was queued at tick start so a handler that posts new work cannot starve the frame.
+        // Drain only what was queued at entry so a handler that posts new work cannot starve the frame.
         var toDrain = Volatile.Read(ref queuedCount);
 
         while (toDrain-- > 0 && queue.TryDequeue(out var action))
@@ -78,6 +99,12 @@ internal sealed class DeliveryPump : IDisposable
         }
     }
 
+    /// <summary>
+    /// Detaches from the framework update and discards every delivery still queued.<br/>
+    /// The backlog is dropped rather than drained: disposal happens while the networker is being torn down, and the
+    /// queued deliveries describe a network it has already left. A delivery that must reach a consumer therefore
+    /// cannot be posted here and then left to disposal; it has to be run before the pump is disposed.
+    /// </summary>
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)

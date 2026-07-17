@@ -99,6 +99,13 @@ public static unsafe partial class NoireDraw3D
     private static ImDraw3D? im;
     private static readonly List<Scene3D> Scenes = new();
     private static readonly List<RenderView> Views = new();
+
+    // Reusable snapshots of the two registries above, for the frame body. It must iterate them outside their lock,
+    // because the user code it invokes is free to create or drop a scene or a view mid-loop, but a fresh snapshot
+    // array every frame is precisely the steady-state garbage Law 9 forbids. Refilled under the lock at the top of
+    // each frame and read only from the render thread, which is the sole caller and never re-enters itself.
+    private static readonly List<Scene3D> SceneScratch = new();
+    private static readonly List<RenderView> ViewScratch = new();
     private static readonly Vector4[] ProtectRects = new Vector4[128];
     private static readonly float[] ProtectFactors = new float[128];
     private static readonly float[] PlateDistances = new float[128];
@@ -110,6 +117,7 @@ public static unsafe partial class NoireDraw3D
     private static FrameContext lastFrame;
     private static bool lastFrameValid;
     private static GameRenderSources.CameraData lastCameraData;
+    private static Vector4 lastDepthMap; // last frame's analytic depth map, kept raw so DescribeDepthSource can format it on demand
 
     // The present-time path projects with a camera sampled on the sim thread each Framework.Update, which matches
     // the presented backbuffer more closely than a live read at present time.
@@ -291,8 +299,9 @@ public static unsafe partial class NoireDraw3D
            || NoireService.Condition.Any(ConditionFlag.WatchingCutscene, ConditionFlag.WatchingCutscene78, ConditionFlag.OccupiedInCutSceneEvent);
 
     /// <summary>
-    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, stats, wire, smoke, clear, reset,
-    /// rtlog, ontop, platedepth). <b>Opt-in:</b> it is not registered automatically - call this once (e.g. in your
+    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, camtrace, stencil, wire, decalshapes,
+    /// heightmap, reset, rtlog, ontop, platedepth, uimask, plates; anything else prints the stats).
+    /// <b>Opt-in:</b> it is not registered automatically - call this once (e.g. in your
     /// plugin constructor) to expose the command. No-op if it is already registered (by you or another plugin using
     /// NoireLib). The full toolkit is also available programmatically via <see cref="Diagnostics"/> without it.
     /// </summary>
@@ -339,7 +348,15 @@ public static unsafe partial class NoireDraw3D
     /// <summary>A snapshot of the renderer's counters (see <see cref="Draw3DStats"/>).</summary>
     public static Draw3DStats Stats => BuildStats();
 
-    /// <summary>Programmatic access to the diagnostics toolkit (validate/probe/stats/wireframe/smoke) - command-independent.</summary>
+    /// <summary>
+    /// Whether the layer has a usable frame: the game's camera was readable on the last one, so world points can be
+    /// projected and picked. False before the very first frame, and wherever there is no camera to read (a loading
+    /// screen, the title screen). <see cref="Pick"/> returns nothing while this is false, so it is the honest answer to
+    /// "why is my content not on screen, and why does clicking it do nothing".
+    /// </summary>
+    public static bool HasValidFrame => lastFrameValid;
+
+    /// <summary>Programmatic access to the diagnostics toolkit (validate/probe/camtrace/stats/wireframe) - command-independent.</summary>
     public static Draw3DDiagnostics Diagnostics { get; } = new();
 
     /// <summary>Raised whenever the self-disable ladder trips (a pipeline, feature, depth, pass, or the renderer was disabled).</summary>
@@ -700,11 +717,16 @@ public static unsafe partial class NoireDraw3D
                 foreach (var scene in Scenes)
                     scene.DisposeContentsInternal();
                 Scenes.Clear();
+                SceneScratch.Clear(); // the reused frame snapshots must not keep scenes or views alive past teardown
             }
 
             RenderView[] views;
             lock (Views)
+            {
                 views = Views.ToArray();
+                ViewScratch.Clear();
+            }
+
             foreach (var view in views)
                 view.Dispose();
 
@@ -1029,9 +1051,13 @@ public static unsafe partial class NoireDraw3D
         lastCameraData = cam;
 
         // Prepare phase: render-thread user code runs FIRST so its mutations and Im calls land this frame.
-        Scene3D[] scenes;
+        var scenes = SceneScratch;
         lock (Scenes)
-            scenes = Scenes.ToArray();
+        {
+            scenes.Clear();
+            scenes.AddRange(Scenes);
+        }
+
         foreach (var scene in scenes)
             scene.FirePrepare(in frame);
 
@@ -1065,9 +1091,12 @@ public static unsafe partial class NoireDraw3D
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
         // Anything to do at all?
-        RenderView[] views;
+        var views = ViewScratch;
         lock (Views)
-            views = Views.ToArray();
+        {
+            views.Clear();
+            views.AddRange(Views);
+        }
 
         var anyScene = false;
         foreach (var scene in scenes)
@@ -1102,8 +1131,7 @@ public static unsafe partial class NoireDraw3D
         stats.BeginFrameCounters();
         stats.DepthAvailable = hasDepth;
         stats.UsedFallbackCamera = usedFallback;
-        stats.DepthSourceDescription =
-            $"{sceneDepth.Description}; map: {DepthMapDescription(in depthMap, hasDepth)}; uiMask: {UiMaskDescription}";
+        lastDepthMap = depthMap; // the description is composed on read (DescribeDepthSource); a frame must not format strings (Law 9)
 
         // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible - they only gate
         // WHERE the per-pixel UI mask applies (composite shader), so plates can be covered by nearer 3D content
@@ -1787,7 +1815,7 @@ public static unsafe partial class NoireDraw3D
             ProtectRects = s.ProtectRects,
             DepthAvailable = s.DepthAvailable,
             UsedFallbackCamera = s.UsedFallbackCamera,
-            DepthSource = s.DepthSourceDescription,
+            DepthSource = DescribeDepthSource(s.DepthAvailable),
             SceneGpuMs = s.SceneGpuMs,
             CompositeGpuMs = s.CompositeGpuMs,
         };
@@ -1861,6 +1889,15 @@ public static unsafe partial class NoireDraw3D
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Full description of the frame's depth source: the buffer in use, the analytic mapping applied to it, and the
+    /// UI-mask health. Composed here, on read, from the raw values the frame recorded: only <c>/noire3d stats</c> ever
+    /// asks for it, so a rendered frame must not pay for formatting it (Law 9).
+    /// </summary>
+    /// <param name="hasDepth">Whether the frame being described had a usable depth source.</param>
+    private static string DescribeDepthSource(bool hasDepth)
+        => $"{sceneDepth?.Description ?? "none"}; map: {DepthMapDescription(in lastDepthMap, hasDepth)}; uiMask: {UiMaskDescription}";
+
     /// <summary>One-line description of the active analytic depth mapping for stats/probe.</summary>
     internal static string DepthMapDescription(in Vector4 map, bool hasDepth)
         => !hasDepth
@@ -1878,6 +1915,10 @@ public static unsafe partial class NoireDraw3D
     /// draw the native gizmo handles here, so their screen-constant sizing tracks the live camera instead of lagging
     /// it by a frame during zoom (the handle "swim"). Interaction (hit-testing, drag solving) still runs on the UI
     /// thread; only the drawing moves here.
+    /// <br/>
+    /// The render thread is stricter than "not the framework thread": on the default under-UI path this fires
+    /// <b>mid-frame, from inside one of the game's own D3D calls</b>. Subscribers emit geometry and read their own
+    /// state only - no game state, no chat, no Dalamud game service.
     /// </summary>
     internal static event Action<FrameContext>? OnRenderOverlay;
 

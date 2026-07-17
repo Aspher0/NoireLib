@@ -35,7 +35,8 @@ public static partial class EncryptionHelper
     /// </summary>
     /// <param name="value">The value to serialize and encode.</param>
     /// <param name="urlSafe">If <see langword="true"/>, produces URL-safe Base64.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>The Base64 representation of the serialized value.</returns>
     public static string SerializeToBase64(object? value, bool urlSafe = false, JsonSerializerSettings? jsonSettings = null)
     {
@@ -78,7 +79,8 @@ public static partial class EncryptionHelper
     /// </summary>
     /// <typeparam name="T">The type to deserialize into.</typeparam>
     /// <param name="base64">The Base64 string to decode.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>The deserialized value, or <see langword="default"/> if the payload was empty.</returns>
     public static T? DeserializeFromBase64<T>(this string base64, JsonSerializerSettings? jsonSettings = null)
     {
@@ -86,7 +88,7 @@ public static partial class EncryptionHelper
         if (string.IsNullOrEmpty(json))
             return default;
 
-        return JsonConvert.DeserializeObject<T>(json, jsonSettings);
+        return FromJson<T>(json, jsonSettings);
     }
 
     /// <summary>

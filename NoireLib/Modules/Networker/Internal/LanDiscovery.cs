@@ -1,8 +1,6 @@
-using Newtonsoft.Json;
 using System;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -67,7 +65,7 @@ internal sealed class LanDiscovery : IDisposable
             Port = hub.Port,
         };
 
-        var datagram = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(beacon));
+        var datagram = Wire.EncodeModel(beacon);
         var broadcastEndPoint = new IPEndPoint(IPAddress.Broadcast, beaconPort);
 
         try
@@ -113,16 +111,9 @@ internal sealed class LanDiscovery : IDisposable
                     continue;
                 }
 
-                BeaconModel? beacon;
-
-                try
-                {
-                    beacon = JsonConvert.DeserializeObject<BeaconModel>(Encoding.UTF8.GetString(result.Buffer));
-                }
-                catch
-                {
-                    continue;
-                }
+                // The datagram is unauthenticated broadcast from any host on the LAN, so malformed content is skipped
+                // and only the salted network hash below decides whether it is acted on at all.
+                var beacon = Wire.DecodeModel<BeaconModel>(result.Buffer);
 
                 if (beacon == null
                     || beacon.NetworkHash != networkHash

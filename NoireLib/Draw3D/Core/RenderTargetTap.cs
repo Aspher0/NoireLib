@@ -403,7 +403,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
 
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
-        NoireService.ChatGui.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame - paste the log (/xllog).");
+        DiagnosticChat.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame - paste the log (/xllog).");
     }
 
     /// <inheritdoc/>

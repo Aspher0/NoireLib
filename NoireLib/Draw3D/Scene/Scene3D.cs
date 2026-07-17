@@ -16,6 +16,7 @@ public sealed partial class Scene3D
 
     internal readonly List<SceneNode> Roots = new();
     internal readonly List<ISceneFeature> FeatureList = new();
+    private readonly List<ISceneFeature> featureScratch = new(); // reused per-frame snapshot of FeatureList (see FirePrepare)
     private int nodeCount;
 
     /// <summary>Optional scene name (diagnostics).</summary>
@@ -30,6 +31,11 @@ public sealed partial class Scene3D
     /// <summary>
     /// Fires once per frame on the render thread before culling - the place for per-frame procedural
     /// updates (billboards, pulses) without touching Framework events. Mutations made here render this frame.
+    /// <br/>
+    /// This is stricter than "not the framework thread": on the default under-UI path the callback fires <b>mid-frame,
+    /// from inside one of the game's own D3D calls</b>, with the game part-way through composing the frame. Touch only
+    /// the scene graph, <see cref="NoireDraw3D.Im"/>, and your own state. Do not read or write game state, print to
+    /// chat, or call any Dalamud game service from here; hand that work to the framework thread instead.
     /// </summary>
     public event Action<FrameContext>? OnPrepareFrame;
 
@@ -100,11 +106,17 @@ public sealed partial class Scene3D
 
     internal void OnNodeRemoved() => nodeCount--;
 
-    /// <summary>Adopts a detached node subtree (e.g. an imported model's root) as a scene root. O(1) reparent, any thread.</summary>
+    /// <summary>
+    /// Adopts a detached node subtree (e.g. an imported model's root) as a scene root. O(1) reparent, any thread.
+    /// Throws when the scene is disposed, matching <see cref="CreateNode"/>: a disposed scene has already run its
+    /// teardown, so a root added afterwards would never be freed by it.
+    /// </summary>
+    /// <exception cref="ObjectDisposedException">The scene has been disposed.</exception>
     internal void AdoptRoot(SceneNode node)
     {
         lock (GraphLock)
         {
+            ObjectDisposedException.ThrowIf(disposed, this);
             node.DetachFromParentNoLock();
             node.SetSceneRecursive(this);
             Roots.Add(node);
@@ -166,17 +178,19 @@ public sealed partial class Scene3D
             NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': OnPrepareFrame handler threw. Handlers must not throw; continuing.", "Draw3D");
         }
 
-        ISceneFeature[]? features = null;
+        // Snapshot the features under the lock, then run them outside it: a feature is free to add or remove features
+        // (and a throwing one is detached below, mid-loop). The buffer is reused across frames because a fresh array
+        // per frame is steady-state garbage (Law 9); it is per-scene and only ever touched from the render thread.
         lock (GraphLock)
         {
-            if (FeatureList.Count > 0)
-                features = FeatureList.ToArray();
+            if (FeatureList.Count == 0)
+                return;
+
+            featureScratch.Clear();
+            featureScratch.AddRange(FeatureList);
         }
 
-        if (features == null)
-            return;
-
-        foreach (var feature in features)
+        foreach (var feature in featureScratch)
         {
             try
             {

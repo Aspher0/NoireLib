@@ -705,20 +705,17 @@ internal sealed class HubServer : IDisposable
             remotePeerOwners.Clear();
         }
 
-        // Announce the shutdown so clients re-elect immediately instead of waiting for disconnect detection.
+        // Announce the shutdown so clients re-elect immediately instead of waiting for disconnect detection. Each
+        // session closes itself once its goodbye has been written, rather than being closed here after a fixed pause:
+        // this runs during a plugin unload or a SetActive(false), both of which reach it from the framework thread,
+        // where pausing to watch the frames flush would stall the game's frame.
         var goodbye = new Envelope { Kind = EnvelopeKind.HubGoodbye, Origin = owner.SelfId };
 
         foreach (var session in allSessions)
-            session.Post(goodbye);
+            session.CloseAfterSending(goodbye);
 
         lanDiscovery?.Dispose();
         lifetime.Cancel();
-
-        // Give the goodbye frames a brief moment to flush before closing sockets.
-        Thread.Sleep(50);
-
-        foreach (var session in allSessions)
-            session.Dispose();
 
         try
         {
@@ -758,6 +755,13 @@ internal sealed class HubServer : IDisposable
 
         public void Post(Envelope envelope)
             => connection.Post(envelope, ex => hub.owner.InternalLog($"Send to {RemoteId} failed: {ex.Message}"));
+
+        /// <summary>
+        /// Sends one last frame and closes the session once it has been written, without blocking the caller.
+        /// </summary>
+        /// <param name="envelope">The farewell frame to send.</param>
+        public void CloseAfterSending(Envelope envelope)
+            => connection.CloseAfterSending(envelope, ex => hub.owner.InternalLog($"Goodbye to {RemoteId} failed: {ex.Message}"));
 
         public void RunReadLoop()
             => _ = ReadLoopAsync();

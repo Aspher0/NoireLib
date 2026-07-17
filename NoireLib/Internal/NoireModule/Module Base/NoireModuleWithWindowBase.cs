@@ -26,6 +26,13 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     public bool HasWindow => ModuleWindow != null;
 
     /// <summary>
+    /// Gets whether the module's window is currently open.<br/>
+    /// Reads <see langword="false"/> when the module holds no window, which <see cref="HasWindow"/> reports.<br/>
+    /// Use <see cref="SetShowWindow"/>, <see cref="ShowWindow"/>, <see cref="HideWindow"/> or <see cref="ToggleWindow"/> to change it.
+    /// </summary>
+    public bool IsWindowOpen => ModuleWindow?.IsOpen == true;
+
+    /// <summary>
     /// Gets or sets the display name of the module's window.
     /// </summary>
     public virtual string DisplayWindowName

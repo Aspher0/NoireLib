@@ -7,6 +7,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Overlay Buttons](#overlay-buttons)
 - [Positioning (UiPosition)](#positioning-uiposition)
 - [Combo Box](#combo-box)
+  - [Plugging in the Hotkey Manager](#plugging-in-the-hotkey-manager)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
 
@@ -17,7 +18,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 `NoireLib.UI` is a set of ImGui UI helpers:
 
 - **`NoireOverlayButton`** - A standalone button overlayed on the game screen, drawn independently from any window. Anchorable anywhere (nine anchors, absolute pixels or screen ratio), with click/scroll callbacks, a hover mouse cursor, tooltips, a visibility condition evaluated on draw, per-state draw conditions (cutscene / gpose / hidden UI / always), drag-to-reposition, optional manual drawing, and full styling. Auto-disposed with NoireLib.
-- **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input, wheel/arrow cycling of the highlighted option inside the dropdown, and an optional "hold key + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping).
+- **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input (pinned above the options or scrolling with them), arrow-key cycling of the highlighted option inside the dropdown, and an optional "hold a binding + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping). The shortcut is a `HotkeyBinding` matched with the same rules as a hotkey, and can be driven straight from the Hotkey Manager so the user can rebind it.
 - **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content (text, FontAwesome icons, images).
 
 ---
@@ -254,28 +255,48 @@ combo.FilterPredicate = (item, filter) => ...;      // Custom matching
 combo.NoResultsText = "Nothing found";
 ```
 
+The filter is **pinned above the options** by default, so it stays put while they scroll. Set `FilterPinned = false` to let it scroll away with them:
+
+```csharp
+combo.FilterPinned = true;   // Default: only the option list scrolls
+combo.FilterPinned = false;  // The whole dropdown scrolls, filter included
+```
+
+The dropdown always shows **exactly one scrollbar**, in either mode: it is sized to hold `VisibleItemCount` options plus the filter row, and shrinks to fit when there are fewer options.
+
 While the dropdown is open:
-- **Mouse wheel** or **Up/Down arrows** cycle the highlighted option (the list follows it).
+- **Mouse wheel** scrolls the option list, as in any list.
+- **Up/Down arrows** cycle the highlighted option (the list follows it).
 - **Enter** confirms the highlighted option.
 - Clicking an option selects it, as usual.
 
 ```csharp
-combo.DropdownWheelCycle = true;  // Default. Set to false to let the wheel scroll the list normally.
-combo.DropdownCycleLoop = false;  // Default. Whether highlight cycling wraps around.
-combo.VisibleItemCount = 8;       // Items shown before the list scrolls.
+combo.DropdownCycleLoop = false;  // Default. Whether arrow key cycling wraps around.
+combo.VisibleItemCount = 8;       // Options shown before the list scrolls.
 ```
 
-### Hold key + wheel cycling (closed combo)
+### Hold a binding + wheel cycling (closed combo)
 
-The selection can be cycled by scrolling the mouse wheel over the **closed** combo, optionally gated behind a held key, with or without looping at the boundaries:
+The selection can be cycled by scrolling the mouse wheel over the **closed** combo, optionally gated behind a held binding, with or without looping at the boundaries:
 
 ```csharp
 combo.WheelCycleEnabled = true;
-combo.WheelCycleHoldKey = VirtualKey.CONTROL; // null = no key required
+combo.WheelCycleBinding = VirtualKey.CONTROL; // Default: an empty binding, meaning no key is required
 combo.WheelCycleLoop = true;                  // true = wrap around, false = stop at the first/last item
 ```
 
-A hint tooltip (drawn with `NoireTooltip`) is shown automatically when hovering the combo, e.g. "CONTROL + 🖱 ↕ to cycle":
+`WheelCycleBinding` is a `HotkeyBinding`, the same model the [Hotkey Manager](#plugging-in-the-hotkey-manager) uses, so the whole binding surface is available and it is matched with the same rules a hotkey is (see `KeybindsHelper.IsBindingHeld`): a key, a modifier combination, a key plus modifiers, or a gamepad button. Modifiers must match **exactly**, so a combo bound to Ctrl does not cycle while Ctrl and Shift are both held.
+
+```csharp
+combo.WheelCycleBinding = VirtualKey.CONTROL;                    // A plain key converts implicitly
+combo.WheelCycleBinding = new HotkeyBinding(0, ctrl: true, shift: true); // Ctrl + Shift, no key
+combo.WheelCycleBinding = new HotkeyBinding(VirtualKey.G, ctrl: true);   // Ctrl + G
+combo.WheelCycleBinding = GamepadButtons.North;                  // A gamepad button
+```
+
+While the combo is cycling a scroll, **nothing else scrolls**: not the window behind it, not any list it sits in. The combo claims the wheel from ImGui for as long as it is cycling, so the event is never routed anywhere else rather than being undone afterwards. This is not configurable and needs nothing from the host window. A scroll over an idle combo (cycling off, or the binding not held) still scrolls the surrounding window normally.
+
+A hint tooltip (drawn with `NoireTooltip`) is shown automatically when hovering the combo, e.g. "Ctrl + 🖱 ↕ to cycle". It is generated from the binding actually in effect, so it follows a rebinding on its own:
 
 ```csharp
 combo.WheelCycleHintEnabled = true; // Default
@@ -284,6 +305,31 @@ combo.WheelCycleHintContent = new TooltipContent() // Optional override
     .AddImage(UiImageSource.FromFile(@"C:\path\to\mouse_scroll.png"), new Vector2(16f, 16f));
 combo.WheelCycleHintStyle = new TooltipStyle { BackgroundOpacity = 0.75f };
 ```
+
+### Plugging in the Hotkey Manager
+
+Rather than hardcoding the shortcut, let the user rebind it: attach a hotkey registered on a [`NoireHotkeyManager`](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HotkeyManager/README.md) and the combo reads its binding live.
+
+```csharp
+// Register the shortcut as a normal, user-rebindable hotkey.
+// The combo reads the binding, not the trigger, so a hotkey registered only to gate a combo takes an empty callback.
+hotkeyManager.RegisterHotkey(new HotkeyEntry("combo.cycle", "Cycle job", VirtualKey.CONTROL, () => { }, true, HotkeyActivationMode.Pressed));
+
+combo.WheelCycleEnabled = true;
+combo.BindWheelCycleHotkey(hotkeyManager, "combo.cycle");
+
+// Anywhere in your settings window. The combo and its hint tooltip follow the new binding immediately:
+hotkeyManager.DrawKeybindInputButton("combo.cycle");
+```
+
+The manager keeps owning the hotkey: its binding is only ever read, its own callback is untouched, and it stays usable as a regular hotkey at the same time. `BindWheelCycleHotkey` does not enable the cycling on its own, so set `WheelCycleEnabled` as well.
+
+```csharp
+combo.ResolvedWheelCycleBinding;   // The binding actually in effect (the hotkey's when attached, else WheelCycleBinding)
+combo.UnbindWheelCycleHotkey();    // Detach: falls back to WheelCycleBinding
+```
+
+An attached hotkey that is disabled or unregistered resolves to an empty binding and turns the cycling **off**, rather than making it unconditional.
 
 ### Items & selection
 
@@ -362,8 +408,13 @@ style.Placement = TooltipPlacement.Mouse;       // Default: follows the mouse cu
 style.MouseOffset = new Vector2(16f, 16f);
 
 style.Placement = TooltipPlacement.AboveItem;   // Or BelowItem / LeftOfItem / RightOfItem
-style.ItemGap = 6f;                             // Gap between the tooltip and the item
+style.ItemGap = 6f;                             // Pushes the tooltip away from the item, along the placement axis
+style.ItemOffset = new Vector2(12f, -4f);       // Shifts it freely on both axes, on top of the gap
 ```
+
+`ItemGap` and `ItemOffset` do different jobs and compose: the gap moves the tooltip along whichever axis the placement implies (so it reads the same whichever side the tooltip is on), while the offset nudges it in x and y regardless of placement.
+
+A tooltip is placed where it belongs on the frame it appears, with no visible settling into position.
 
 `Show(content, style)` can also be called unconditionally (every frame the tooltip should stay visible), independently from any hovered item.
 

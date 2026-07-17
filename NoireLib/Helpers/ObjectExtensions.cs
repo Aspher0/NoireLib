@@ -1,8 +1,11 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 
 namespace NoireLib.Helpers.ObjectExtensions;
 
@@ -11,6 +14,19 @@ namespace NoireLib.Helpers.ObjectExtensions;
 /// </summary>
 public static class ObjectExtensions
 {
+    /// <summary>
+    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>. It is built with
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
+    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
+    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
+    /// this process can assign, which would make the shape of a clone depend on unrelated code.<br/>
+    /// Every setting is left at its default, matching what the round trip has always produced.
+    /// </summary>
+    private static readonly JsonSerializer CloneSerializer = JsonSerializer.Create(new JsonSerializerSettings
+    {
+        TypeNameHandling = TypeNameHandling.None,
+    });
+
     /// <summary>
     /// Checks if the value is the default for its type.
     /// </summary>
@@ -113,8 +129,19 @@ public static class ObjectExtensions
     public static T? Clone<T>(this T value) where T : class
     {
         if (value is null) return null;
-        var json = JsonConvert.SerializeObject(value);
-        return JsonConvert.DeserializeObject<T>(json);
+
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            CloneSerializer.Serialize(jsonWriter, value);
+        }
+
+        using var stringReader = new StringReader(builder.ToString());
+        using var jsonReader = new JsonTextReader(stringReader);
+
+        return CloneSerializer.Deserialize<T>(jsonReader);
     }
 
     /// <summary>

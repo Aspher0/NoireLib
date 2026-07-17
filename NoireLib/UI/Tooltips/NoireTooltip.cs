@@ -17,6 +17,15 @@ public static class NoireTooltip
     private static readonly TooltipStyle DefaultStyle = new();
     private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new();
 
+    /// <summary>
+    /// Where a tooltip is parked for the frame or two it takes to measure it, before its real position can be worked out.<br/>
+    /// Far outside any viewport, and ImGui leaves a window given an explicit position exactly where it is put rather than
+    /// clamping it back into view, so the tooltip is measured in full while never being seen. Hiding it by drawing it at
+    /// zero alpha instead would not work: ImGui refuses to process a window whose style alpha is zero when it begins, so
+    /// the size it is being hidden to discover would never be measured at all.
+    /// </summary>
+    private static readonly Vector2 MeasuringPosition = new(-10000f, -10000f);
+
     private const ImGuiWindowFlags TooltipWindowFlags =
         ImGuiWindowFlags.Tooltip |
         ImGuiWindowFlags.NoTitleBar |
@@ -38,7 +47,12 @@ public static class NoireTooltip
     /// <param name="content">The content of the tooltip. A plain <see cref="string"/> is implicitly converted.</param>
     /// <param name="style">Optional visual and placement options.</param>
     /// <param name="hoveredFlags">Optional hover detection flags passed to <c>ImGui.IsItemHovered()</c>.</param>
-    /// <param name="id">Optional stable id. Only needed when tooltips are shown in a varying order and <see cref="TooltipStyle.ClampToViewport"/> matters.</param>
+    /// <param name="id">
+    /// Optional stable id. Only needed when tooltips are shown in a varying order: an id left <see langword="null"/> is
+    /// assigned from the order tooltips are shown in each frame, and a tooltip is placed and clamped against the size
+    /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
+    /// until it is measured again.
+    /// </param>
     public static void ShowOnItemHover(TooltipContent content, TooltipStyle? style = null, ImGuiHoveredFlags hoveredFlags = ImGuiHoveredFlags.None, string? id = null)
     {
         if (ImGui.IsItemHovered(hoveredFlags))
@@ -51,7 +65,12 @@ public static class NoireTooltip
     /// </summary>
     /// <param name="content">The content of the tooltip. A plain <see cref="string"/> is implicitly converted.</param>
     /// <param name="style">Optional visual and placement options.</param>
-    /// <param name="id">Optional stable id. Only needed when tooltips are shown in a varying order and <see cref="TooltipStyle.ClampToViewport"/> matters.</param>
+    /// <param name="id">
+    /// Optional stable id. Only needed when tooltips are shown in a varying order: an id left <see langword="null"/> is
+    /// assigned from the order tooltips are shown in each frame, and a tooltip is placed and clamped against the size
+    /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
+    /// until it is measured again.
+    /// </param>
     public static void Show(TooltipContent content, TooltipStyle? style = null, string? id = null)
     {
         if (content == null || content.IsEmpty)
@@ -73,7 +92,13 @@ public static class NoireTooltip
     private static void DrawTooltipWindow(string windowId, TooltipContent content, TooltipStyle style)
     {
         var (anchorPosition, pivot) = ResolveAnchor(style);
-        SetupNextWindowPosition(windowId, anchorPosition, pivot, style);
+
+        // Placing a tooltip means resolving it against its own size, and an auto-resizing ImGui window only learns its
+        // size by being drawn once. Until that has happened there is nowhere sensible to put this one, so it is parked
+        // off screen for the frame or two that measuring takes. Showing it anyway would put it somewhere wrong first and
+        // visibly move it into place after.
+        var measured = SizeCache.TryGetValue(windowId, out var cached);
+        ImGui.SetNextWindowPos(measured ? ResolveTopLeft(anchorPosition, pivot, cached.Size, style) : MeasuringPosition, ImGuiCond.Always);
 
         if (style.BackgroundOpacity.HasValue)
             ImGui.SetNextWindowBgAlpha(Math.Clamp(style.BackgroundOpacity.Value, 0f, 1f));
@@ -89,7 +114,11 @@ public static class NoireTooltip
         if (ImGui.Begin(windowId, TooltipWindowFlags))
         {
             content.Draw();
-            SizeCache[windowId] = (ImGui.GetWindowSize(), ImGui.GetFrameCount());
+
+            // The size an appearing window reports is derived from a content size it has not measured yet, so it is
+            // recorded only from the second frame on, once it describes the content actually inside.
+            if (!ImGui.IsWindowAppearing())
+                SizeCache[windowId] = (ImGui.GetWindowSize(), ImGui.GetFrameCount());
         }
 
         ImGui.End();
@@ -97,6 +126,11 @@ public static class NoireTooltip
         PruneSizeCache();
     }
 
+    /// <summary>
+    /// Resolves the anchor point the tooltip hangs from, and which of its own corners hangs there.
+    /// </summary>
+    /// <param name="style">The style carrying the placement, the gap and the offsets.</param>
+    /// <returns>The anchor position in screen coordinates, and the normalized pivot of the tooltip pinned to it.</returns>
     private static (Vector2 Position, Vector2 Pivot) ResolveAnchor(TooltipStyle style)
     {
         if (style.Placement == TooltipPlacement.Mouse)
@@ -108,37 +142,57 @@ public static class NoireTooltip
         var itemMax = ImGui.GetItemRectMax();
         var itemCenter = (itemMin + itemMax) / 2f;
 
-        return style.Placement switch
+        var (position, pivot) = style.Placement switch
         {
             TooltipPlacement.AboveItem => (new Vector2(itemCenter.X, itemMin.Y - style.ItemGap), new Vector2(0.5f, 1f)),
             TooltipPlacement.BelowItem => (new Vector2(itemCenter.X, itemMax.Y + style.ItemGap), new Vector2(0.5f, 0f)),
             TooltipPlacement.LeftOfItem => (new Vector2(itemMin.X - style.ItemGap, itemCenter.Y), new Vector2(1f, 0.5f)),
             TooltipPlacement.RightOfItem => (new Vector2(itemMax.X + style.ItemGap, itemCenter.Y), new Vector2(0f, 0.5f)),
-            _ => (ImGui.GetMousePos() + style.MouseOffset, Vector2.Zero),
+            _ => (itemCenter, new Vector2(0.5f, 0.5f)),
         };
+
+        return (position + style.ItemOffset, pivot);
     }
 
-    private static void SetupNextWindowPosition(string windowId, Vector2 anchorPosition, Vector2 pivot, TooltipStyle style)
+    /// <summary>
+    /// Turns an anchor and a pivot into the top left corner of a tooltip of the given size, clamping it into the viewport
+    /// when the style asks for it.
+    /// </summary>
+    /// <remarks>
+    /// The pivot is applied here rather than handed to <c>ImGui.SetNextWindowPos</c>, which takes one: ImGui defers a
+    /// non-zero pivot until it knows the window size, and an auto-resizing window does not know its size on the frame it
+    /// appears. The tooltip would spawn at the raw anchor and visibly settle into place on the next frame, which is why
+    /// only the item-relative placements ever showed it (the mouse placement pivots on its top left corner, so there is
+    /// nothing to defer). Resolving it against the size the tooltip had the last time it was drawn places it correctly on
+    /// the first frame instead.
+    /// </remarks>
+    /// <param name="anchorPosition">The anchor position in screen coordinates.</param>
+    /// <param name="pivot">The normalized point of the tooltip pinned to the anchor.</param>
+    /// <param name="size">The size of the tooltip.</param>
+    /// <param name="style">The style carrying the clamping preference.</param>
+    /// <returns>The top left corner of the tooltip in screen coordinates.</returns>
+    private static Vector2 ResolveTopLeft(Vector2 anchorPosition, Vector2 pivot, Vector2 size, TooltipStyle style)
     {
-        // Clamping needs the window size, which is only known from the previous frame (the window auto-resizes).
-        if (style.ClampToViewport && SizeCache.TryGetValue(windowId, out var cached) && ImGui.GetFrameCount() - cached.Frame <= 2)
-        {
-            var viewport = ImGui.GetMainViewport();
-            var topLeft = anchorPosition - (pivot * cached.Size);
-            var max = viewport.Pos + viewport.Size - cached.Size;
+        var topLeft = anchorPosition - (pivot * size);
 
-            topLeft = new Vector2(
-                MathF.Max(viewport.Pos.X, MathF.Min(topLeft.X, max.X)),
-                MathF.Max(viewport.Pos.Y, MathF.Min(topLeft.Y, max.Y)));
+        if (!style.ClampToViewport)
+            return topLeft;
 
-            ImGui.SetNextWindowPos(topLeft, ImGuiCond.Always);
-        }
-        else
-        {
-            ImGui.SetNextWindowPos(anchorPosition, ImGuiCond.Always, pivot);
-        }
+        var viewport = ImGui.GetMainViewport();
+        var max = viewport.Pos + viewport.Size - size;
+
+        return new Vector2(
+            MathF.Max(viewport.Pos.X, MathF.Min(topLeft.X, max.X)),
+            MathF.Max(viewport.Pos.Y, MathF.Min(topLeft.Y, max.Y)));
     }
 
+
+    /// <summary>
+    /// Drops remembered sizes of tooltips that have not been drawn for a while, once enough of them have piled up to be
+    /// worth bounding.<br/>
+    /// A remembered size is what places a tooltip on the frame it reappears, so one is worth keeping long after the
+    /// tooltip was last shown, and evicting one only costs the couple of invisible frames it takes to measure it again.
+    /// </summary>
     private static void PruneSizeCache()
     {
         if (SizeCache.Count < 64)

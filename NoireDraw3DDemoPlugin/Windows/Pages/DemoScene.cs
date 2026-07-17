@@ -3,7 +3,7 @@ using NoireLib.Draw3D.Interaction;
 using NoireLib.Draw3D.Interaction.Gizmo;
 using NoireLib.Draw3D.Scene;
 
-namespace NoireDraw3DDemoPlugin.Windows.Sections;
+namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
 /// <summary>
 /// One scene the Scenes tab manages: the <see cref="Scene3D"/> itself, the <see cref="SceneEditor"/> that drives its

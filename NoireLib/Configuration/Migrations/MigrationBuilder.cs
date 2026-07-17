@@ -12,6 +12,27 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public class MigrationBuilder
 {
+    /// <summary>
+    /// Settings for every conversion performed by this builder. TypeNameHandling stays None: a migrated property is
+    /// read from the user's configuration file on disk, so honouring a type name embedded in that file would let the
+    /// file choose which type to instantiate.
+    /// </summary>
+    private static readonly JsonSerializerSettings ConversionSettings = new()
+    {
+        TypeNameHandling = TypeNameHandling.None,
+        PreserveReferencesHandling = PreserveReferencesHandling.None,
+    };
+
+    /// <summary>
+    /// The serializer every conversion runs through.<br/>
+    /// Built with <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
+    /// <see cref="ConversionSettings"/> alone. The serializer-less <see cref="JToken.FromObject(object)"/> and
+    /// <see cref="JToken.ToObject{T}()"/> overloads instead route through
+    /// <see cref="JsonSerializer.CreateDefault()"/>, which merges in <see cref="JsonConvert.DefaultSettings"/>, a
+    /// process-global that any other code loaded into this process can assign. Nothing here may use those overloads.
+    /// </summary>
+    private static readonly JsonSerializer ConversionSerializer = JsonSerializer.Create(ConversionSettings);
+
     private readonly List<Action<JObject>> orderedOperations = new();
     private MigrationBuilder() { }
 
@@ -85,11 +106,11 @@ public class MigrationBuilder
             {
                 try
                 {
-                    var oldValue = value.ToObject<TFrom>();
+                    var oldValue = value.ToObject<TFrom>(ConversionSerializer);
                     if (oldValue != null)
                     {
                         var newValue = converter(oldValue);
-                        root[propertyName] = JToken.FromObject(newValue);
+                        root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
                     }
                 }
                 catch
@@ -115,7 +136,7 @@ public class MigrationBuilder
         orderedOperations.Add(root =>
         {
             if (!root.ContainsKey(propertyName))
-                root[propertyName] = JToken.FromObject(defaultValue);
+                root[propertyName] = JToken.FromObject(defaultValue, ConversionSerializer);
         });
         return this;
     }
@@ -132,7 +153,7 @@ public class MigrationBuilder
         orderedOperations.Add(root =>
         {
             var value = computeValue(root);
-            root[propertyName] = JToken.FromObject(value);
+            root[propertyName] = JToken.FromObject(value, ConversionSerializer);
         });
         return this;
     }
@@ -152,11 +173,11 @@ public class MigrationBuilder
             {
                 try
                 {
-                    var oldValue = value.ToObject<T>();
+                    var oldValue = value.ToObject<T>(ConversionSerializer);
                     if (oldValue != null)
                     {
                         var newValue = transform(oldValue);
-                        root[propertyName] = JToken.FromObject(newValue);
+                        root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
                     }
                 }
                 catch

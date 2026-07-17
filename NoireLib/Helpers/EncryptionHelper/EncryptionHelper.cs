@@ -1,5 +1,7 @@
 using Newtonsoft.Json;
 using System;
+using System.Globalization;
+using System.IO;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -65,6 +67,62 @@ public static partial class EncryptionHelper
     }
 
     /// <summary>
+    /// The serializer used when the caller supplies no settings.
+    /// </summary>
+    private static readonly JsonSerializer DefaultJsonSerializer = CreateJsonSerializer(null);
+
+    /// <summary>
+    /// Builds the serializer that backs every JSON conversion here, which is the single point where a value handed to
+    /// this class becomes JSON and where JSON becomes a value again.
+    /// </summary>
+    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>A serializer that honours <paramref name="jsonSettings"/> without leaving the format open to the process.</returns>
+    private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? jsonSettings)
+    {
+        // JsonSerializer.Create resolves every setting from the object it is given. The JsonConvert overloads and
+        // JsonSerializer.CreateDefault instead merge in JsonConvert.DefaultSettings, a process-global that any other
+        // code loaded into this process can assign, so a caller whose settings do not mention a property would silently
+        // inherit that code's choice for it. That global also changes at runtime, which would let the JSON behind a
+        // hash or a ciphertext differ between the moment it is written and the moment it is read back. The settings
+        // object itself is never mutated; the serializer is the copy.
+        var serializer = JsonSerializer.Create(jsonSettings);
+
+        // Type resolution driven by payload content is what turns a decrypted or decoded document into an instruction
+        // to construct arbitrary types. It stays off for every caller regardless of what was passed.
+        serializer.TypeNameHandling = TypeNameHandling.None;
+
+        // A payload holds exactly one JSON document, so anything after it means it is corrupt or has been tampered
+        // with. The JsonConvert deserialization overloads turn this on for their callers implicitly; setting it
+        // explicitly keeps content after the document rejected rather than quietly ignored.
+        serializer.CheckAdditionalContent = true;
+
+        return serializer;
+    }
+
+    /// <summary>
+    /// Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
+    /// </summary>
+    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The serializer to use.</returns>
+    private static JsonSerializer GetJsonSerializer(JsonSerializerSettings? jsonSettings)
+        => jsonSettings == null ? DefaultJsonSerializer : CreateJsonSerializer(jsonSettings);
+
+    /// <summary>
+    /// Deserializes a JSON document produced by one of the serializing entry points.
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize into.</typeparam>
+    /// <param name="json">The JSON document.</param>
+    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The deserialized value.</returns>
+    private static T? FromJson<T>(string json, JsonSerializerSettings? jsonSettings)
+    {
+        using var stringReader = new StringReader(json);
+        using var jsonReader = new JsonTextReader(stringReader);
+
+        return GetJsonSerializer(jsonSettings).Deserialize<T>(jsonReader);
+    }
+
+    /// <summary>
     /// Resolves an arbitrary value into its raw byte representation.<br/>
     /// <see langword="null"/> becomes an empty array, byte buffers are returned as-is, strings are
     /// encoded as UTF-8, and any other object is serialized to JSON before being encoded as UTF-8.
@@ -89,8 +147,27 @@ public static partial class EncryptionHelper
             case string text:
                 return Encoding.UTF8.GetBytes(text);
             default:
-                return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(data, jsonSettings));
+                return Encoding.UTF8.GetBytes(ToJson(data, jsonSettings));
         }
+    }
+
+    /// <summary>
+    /// Serializes a value to the JSON that stands in for it when it is hashed, encrypted or encoded.
+    /// </summary>
+    /// <param name="data">The value to serialize.</param>
+    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The JSON representation of the value.</returns>
+    private static string ToJson(object data, JsonSerializerSettings? jsonSettings)
+    {
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            GetJsonSerializer(jsonSettings).Serialize(jsonWriter, data);
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

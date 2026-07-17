@@ -9,8 +9,8 @@ namespace NoireLib.Configuration;
 /// <typeparam name="T">The concrete configuration type</typeparam>
 public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfigBase<T>, new()
 {
-    private static T? _instance;
-    private static readonly object _lock = new();
+    private static T? CachedInstance;
+    private static readonly object InstanceLock = new();
 
     /// <summary>
     /// Gets the singleton instance of this configuration.
@@ -20,21 +20,12 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
     {
         get
         {
-            if (_instance == null)
-                lock (_lock)
-                    if (_instance == null)
-                    {
-                        var rawInstance = NoireConfigManager.GetConfig<T>();
-                        var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
+            if (CachedInstance == null)
+                lock (InstanceLock)
+                    if (CachedInstance == null)
+                        CachedInstance = LoadProxiedInstance();
 
-                        IsInternalCopying = true;
-                        rawInstance?.CopyMembersTo(proxy);
-                        IsInternalCopying = false;
-
-                        _instance = proxy;
-                    }
-
-            return _instance!;
+            return CachedInstance!;
         }
     }
 
@@ -43,17 +34,39 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
     /// </summary>
     public static void Reload()
     {
-        lock (_lock)
+        lock (InstanceLock)
+            CachedInstance = LoadProxiedInstance();
+    }
+
+    /// <summary>
+    /// Loads the configuration from disk and transfers it onto the auto-save wrapper that consumers hold.
+    /// </summary>
+    /// <returns>The wrapper carrying the loaded values, or null when the configuration could not be loaded.</returns>
+    private static T? LoadProxiedInstance()
+    {
+        var rawInstance = NoireConfigManager.GetConfig<T>();
+        var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
+
+        // The copy assigns through the wrapper's intercepted setters, so without this every member marked [AutoSave]
+        // would write the file it was just read from, once per member.
+        var wasCopying = IsInternalCopying;
+        IsInternalCopying = true;
+
+        try
         {
-            var rawInstance = NoireConfigManager.GetConfig<T>();
-            var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
-
-            IsInternalCopying = true;
             rawInstance?.CopyMembersTo(proxy);
-            IsInternalCopying = false;
-
-            _instance = proxy;
         }
+        finally
+        {
+            // The copy reflects over the configuration's members and runs whatever a derived class does in a property
+            // setter, so it can throw. Left set, the suppression would outlive the copy and disable auto-save for every
+            // configuration on this thread for the rest of the session: settings would apply in memory, never reach
+            // disk, and report no error. Restored to its previous value rather than cleared, so that a copy running
+            // further up this call stack keeps the suppression it is relying on.
+            IsInternalCopying = wasCopying;
+        }
+
+        return proxy;
     }
 
     /// <summary>
@@ -61,7 +74,7 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
     /// </summary>
     public static void ClearCache()
     {
-        lock (_lock)
-            _instance = null;
+        lock (InstanceLock)
+            CachedInstance = null;
     }
 }

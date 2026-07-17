@@ -61,6 +61,10 @@ public interface IPointerInteractor
     /// or placement must track the live camera without lag; the native gizmo draws its handles here so they stay
     /// phase-locked to the camera during a zoom. Read only atomically-simple state captured on the UI thread; do not
     /// run input logic here. Default: no-op (interactors that do not need it keep drawing in <see cref="Draw"/>).
+    /// <br/>
+    /// The render thread is stricter than "not the framework thread": on the default under-UI path this fires
+    /// <b>mid-frame, from inside one of the game's own D3D calls</b>. Emit geometry and nothing else - no game state,
+    /// no chat, no Dalamud game service.
     /// </summary>
     /// <param name="frame">The current render-frame snapshot.</param>
     void DrawOverlay(in FrameContext frame) { }

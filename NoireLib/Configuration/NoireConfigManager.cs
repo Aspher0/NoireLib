@@ -16,10 +16,22 @@ public static class NoireConfigManager
 
     /// <summary>
     /// Gets or creates a configuration instance of the specified type.
-    /// The configuration is automatically loaded from disk if it exists, otherwise a new instance is created.
+    /// The configuration is automatically loaded from disk if it exists, otherwise a new instance is created.<br/>
+    /// The returned instance is cached and shared by every later caller, with one exception: an instance whose load
+    /// failed against a configuration that is actually there is returned but not cached, so that the next call tries
+    /// again instead of being handed defaults forever. A load fails that way when the file exists but cannot be read
+    /// or parsed, and when no path to it can be resolved at all, which is the state of a configuration reached before
+    /// NoireLib is initialized. Caching those would mean a configuration touched a moment too early, or during a
+    /// transient file error, permanently shadows the user's real settings, and that the first save afterwards writes
+    /// the defaults over them.<br/>
+    /// A first run, where the file simply does not exist yet, is not a failure of this kind: the defaults are the real
+    /// configuration until something saves them, so that instance is cached like any other. A configuration loaded
+    /// into a degraded state (see <see cref="NoireConfigBase.IsDegraded"/>) is cached as well, because its load
+    /// succeeded and it is the live instance whose saves are being refused on purpose.
     /// </summary>
     /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
     /// <returns>The configuration instance, or null if creation/loading failed.</returns>
+    /// <seealso cref="ReloadConfig{T}"/>
     public static T? GetConfig<T>() where T : NoireConfigBase, new()
     {
         var type = typeof(T);
@@ -27,11 +39,17 @@ public static class NoireConfigManager
         if (ConfigCache.TryGetValue(type, out var cachedConfig))
             return cachedConfig as T;
 
-        T? config = null;
+        T config;
+        bool cacheable;
+
         try
         {
             config = new T();
-            config.Load();
+
+            // Evaluated inside the boundary because the second operand reaches a virtual member a derived
+            // configuration may override. A successful load has already cached the instance from inside Load, so this
+            // only ever decides what happens to a failure.
+            cacheable = config.Load() || config.IsUnwrittenDefault;
         }
         catch (Exception ex)
         {
@@ -39,7 +57,17 @@ public static class NoireConfigManager
             return null;
         }
 
-        ConfigCache.TryAdd(type, config!);
+        if (cacheable)
+        {
+            ConfigCache.TryAdd(type, config);
+        }
+        else
+        {
+            NoireLogger.LogWarning(
+                $"Configuration {type.Name} could not be loaded and is not being cached, so the defaults returned here " +
+                $"are for this caller only and the next call will try to load it again.", "[NoireConfigManager] ");
+        }
+
         return config;
     }
 
@@ -184,17 +212,50 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Saves all cached configurations to disk.
+    /// Saves all cached configurations to disk.<br/>
+    /// Each configuration is saved inside its own boundary, so one that cannot be written costs only its own write and
+    /// every other cached configuration is still saved. <see cref="NoireConfigBase.Save"/> is virtual and resolves its
+    /// file path through another virtual member, so a configuration can throw out of it rather than report false;
+    /// without a boundary per configuration the first one to do so would end the run and leave every configuration
+    /// after it silently unwritten, which loses settings that have nothing to do with the one that misbehaved.<br/>
+    /// A configuration that refuses to write because it is <see cref="NoireConfigBase.IsDegraded"/> is not reported as
+    /// a fault here. The refusal is the protection working as intended, and it already explains itself where it is
+    /// decided. It still counts against the return value, because the configuration was not written.
     /// </summary>
-    /// <returns>True if all configurations were saved successfully; otherwise, false.</returns>
+    /// <returns>True if every cached configuration is on disk, whether it was written now or was already up to date;
+    /// false if any of them is not, whether it failed to write or refused to.</returns>
+    /// <seealso cref="NoireConfigBase.IsDegraded"/>
     public static bool SaveAllCached()
     {
         var allSuccess = true;
 
         foreach (var config in ConfigCache.Values)
         {
-            if (!config.Save())
+            try
+            {
+                if (config.Save())
+                    continue;
+
                 allSuccess = false;
+
+                // A degraded configuration reports false every time anything asks it to save, which for a configuration
+                // with members marked [AutoSave] is as often as anything assigns to one. Reporting that as a fault here
+                // would bury the log under an error per pass for a state the configuration itself has already explained.
+                if (config is NoireConfigBase { IsDegraded: true })
+                    continue;
+
+                NoireLogger.LogWarning(
+                    $"Cached configuration {config.GetType().Name} reported that it was not saved. Every other cached " +
+                    $"configuration is still being saved.", "[NoireConfigManager] ");
+            }
+            catch (Exception ex)
+            {
+                allSuccess = false;
+
+                NoireLogger.LogError(ex,
+                    $"Failed to save cached configuration of type: {config.GetType().Name}. Every other cached " +
+                    $"configuration is still being saved.", "[NoireConfigManager] ");
+            }
         }
 
         return allSuccess;

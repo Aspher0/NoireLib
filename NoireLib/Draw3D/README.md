@@ -29,6 +29,8 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
 
 > **Zero-latency rule:** `Im` calls made inside `Scene3D.OnPrepareFrame` or an `ISceneFeature` render *this* frame; calls made elsewhere render at most one frame late. For markers you will never notice - it is documented so nobody debugs it as a bug.
 
+> **What you may do there:** those two callbacks run on the **render thread**, and on the default under-UI path they run *mid-frame, from inside one of the game's own D3D calls*. Touch the scene graph, `Im`, and your own state - nothing else. Reading game state, printing to chat, or calling a Dalamud game service from there re-enters the game underneath itself; do that work on the framework thread and leave the result somewhere the callback can read.
+
 ## Retained scenes - the "FF14 Blender"
 
 For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node → build mesh → attach → track for disposal" into one call - the node **owns** the mesh, so there is nothing to track:
@@ -208,7 +210,7 @@ A compile error disables only that pipeline and logs the full compiler output.
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
 
-The **visual showcase** - the smoke scene, the world-geometry collision preview, glTF import, and the gizmo-backend toggle - lives in the standalone **`NoireDraw3DDemoPlugin`** (in this repo's solution), an ImGui front-end built entirely on this public API. It also exposes a scenes/decals playground (including the wall/ground/both surface filter) and a live editor for every global knob.
+The **visual showcase** - the showcase gallery scene, the world-geometry collision preview, glTF import, and the gizmo-backend toggle - lives in the standalone **`NoireDraw3DDemoPlugin`** (in this repo's solution), an ImGui front-end built entirely on this public API. It also exposes a scenes/decals playground (including the wall/ground/both surface filter), a full per-object inspector, and a live editor for every global knob, one page per area.
 
 ## Rules of the road
 

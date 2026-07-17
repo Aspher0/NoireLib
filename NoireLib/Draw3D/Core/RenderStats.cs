@@ -36,7 +36,6 @@ internal sealed unsafe class RenderStats : IDisposable
     public int ProtectRects;
     public bool DepthAvailable;
     public bool UsedFallbackCamera;
-    public string DepthSourceDescription = "none";
 
     /// <summary>Last resolved GPU time for the scene pass, in milliseconds.</summary>
     public float SceneGpuMs { get; private set; }

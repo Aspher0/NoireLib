@@ -104,6 +104,15 @@
     </ItemGroup>
 
     <ItemGroup>
+      <!-- The native library the managed SQLitePCLRaw assemblies P/Invoke into. A plugin gets it from the Dalamud
+           runtime rather than from the package graph, so nothing places it next to the test host on its own and the
+           Database system is unreachable without this copy. -->
+      <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll"
+            CopyToOutputDirectory="PreserveNewest"
+            Visible="false" />
+    </ItemGroup>
+
+    <ItemGroup>
       <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.5" />
     </ItemGroup>
 </Project>

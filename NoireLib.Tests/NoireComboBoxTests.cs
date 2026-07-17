@@ -1,17 +1,55 @@
+using Dalamud.Game.ClientState.Keys;
 using FluentAssertions;
+using NoireLib.HotkeyManager;
 using NoireLib.UI;
+using System;
 using System.Collections.Generic;
+using System.Runtime.Versioning;
 using Xunit;
 
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Unit tests for the non-drawing logic of <see cref="NoireComboBox{T}"/>: cycling, filtering and selection management.
+/// Unit tests for the non-drawing logic of <see cref="NoireComboBox{T}"/>: cycling, filtering, selection management, and the
+/// resolution of the binding that gates the closed-combo wheel cycling (including the live read of a hotkey attached from
+/// <see cref="NoireHotkeyManager"/>, which is what lets a rebinding apply with no bookkeeping on the consumer's side).
 /// </summary>
-public class NoireComboBoxTests
+[SupportedOSPlatform("windows")]
+public class NoireComboBoxTests : IDisposable
 {
+    private readonly List<NoireHotkeyManager> managersToClean = new();
+
+    public void Dispose()
+    {
+        foreach (var manager in managersToClean)
+        {
+            try
+            {
+                manager.Dispose();
+            }
+            catch
+            {
+                // Best effort cleanup.
+            }
+        }
+    }
+
     private static NoireComboBox<string> CreateCombo(params string[] items)
         => new("TestCombo", items);
+
+    /// <summary>
+    /// Creates a game-free hotkey manager: inactive so no detection timer runs, and with persistence off so that
+    /// registering a hotkey never reaches the configuration system.
+    /// </summary>
+    private NoireHotkeyManager MakeManager()
+    {
+        var manager = new NoireHotkeyManager(moduleId: null, active: false, enableLogging: false, shouldSaveKeybinds: false);
+        managersToClean.Add(manager);
+        return manager;
+    }
+
+    private static HotkeyEntry MakeEntry(string id, HotkeyBinding binding)
+        => new(id, id, binding, () => { }, true, HotkeyActivationMode.Pressed);
 
     #region Cycling
 
@@ -213,6 +251,106 @@ public class NoireComboBoxTests
         combo.SetItems(new[] { "A", "B" }, keepSelection: false);
 
         combo.SelectedIndex.Should().Be(-1);
+    }
+
+    #endregion
+
+    #region Wheel cycle binding resolution
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_ByDefault_IsEmpty()
+    {
+        CreateCombo("A").ResolvedWheelCycleBinding.IsEmpty.Should().BeTrue("no key is required until one is configured");
+    }
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_WithoutAHotkey_IsTheConfiguredBinding()
+    {
+        var combo = CreateCombo("A");
+        combo.WheelCycleBinding = new HotkeyBinding(VirtualKey.G, ctrl: true);
+
+        combo.ResolvedWheelCycleBinding.Should().Be(new HotkeyBinding(VirtualKey.G, ctrl: true));
+    }
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_WithAnAttachedHotkey_ReadsTheManagerAndIgnoresTheLocalBinding()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("combo.cycle", VirtualKey.CONTROL));
+
+        var combo = CreateCombo("A");
+        combo.WheelCycleBinding = VirtualKey.MENU;
+        combo.BindWheelCycleHotkey(manager, "combo.cycle");
+
+        combo.ResolvedWheelCycleBinding.Should().Be((HotkeyBinding)VirtualKey.CONTROL, "an attached hotkey is the source of truth for the shortcut");
+    }
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_AfterARebind_FollowsTheManagerWithoutReattaching()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("combo.cycle", VirtualKey.CONTROL));
+
+        var combo = CreateCombo("A");
+        combo.BindWheelCycleHotkey(manager, "combo.cycle");
+
+        manager.SetHotkeyBinding("combo.cycle", new HotkeyBinding(VirtualKey.G, shift: true));
+
+        combo.ResolvedWheelCycleBinding.Should().Be(new HotkeyBinding(VirtualKey.G, shift: true),
+            "the binding is read live, which is what makes a rebind through the manager's own UI apply with no bookkeeping on the consumer's side");
+    }
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_WhenTheAttachedHotkeyIsUnregistered_IsEmptyRatherThanTheLocalBinding()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("combo.cycle", VirtualKey.CONTROL));
+
+        var combo = CreateCombo("A");
+        combo.WheelCycleBinding = VirtualKey.MENU;
+        combo.BindWheelCycleHotkey(manager, "combo.cycle");
+
+        manager.UnregisterHotkey("combo.cycle");
+
+        combo.ResolvedWheelCycleBinding.IsEmpty.Should().BeTrue("falling back to the local binding would silently restore a shortcut the consumer moved to the manager");
+    }
+
+    [Fact]
+    public void ResolvedWheelCycleBinding_WhenTheAttachedHotkeyIsDisabled_IsEmpty()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("combo.cycle", VirtualKey.CONTROL));
+        manager.SetHotkeyEnabled("combo.cycle", false);
+
+        var combo = CreateCombo("A");
+        combo.BindWheelCycleHotkey(manager, "combo.cycle");
+
+        combo.ResolvedWheelCycleBinding.IsEmpty.Should().BeTrue();
+    }
+
+    [Fact]
+    public void UnbindWheelCycleHotkey_FallsBackToTheConfiguredBinding()
+    {
+        var manager = MakeManager();
+        manager.RegisterHotkey(MakeEntry("combo.cycle", VirtualKey.CONTROL));
+
+        var combo = CreateCombo("A");
+        combo.WheelCycleBinding = VirtualKey.MENU;
+        combo.BindWheelCycleHotkey(manager, "combo.cycle");
+
+        combo.UnbindWheelCycleHotkey();
+
+        combo.ResolvedWheelCycleBinding.Should().Be((HotkeyBinding)VirtualKey.MENU);
+    }
+
+    [Fact]
+    public void BindWheelCycleHotkey_RejectsAMissingManagerOrId()
+    {
+        var combo = CreateCombo("A");
+        var manager = MakeManager();
+
+        combo.Invoking(c => c.BindWheelCycleHotkey(null!, "id")).Should().Throw<ArgumentNullException>();
+        combo.Invoking(c => c.BindWheelCycleHotkey(manager, " ")).Should().Throw<ArgumentException>();
     }
 
     #endregion

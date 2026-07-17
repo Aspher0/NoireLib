@@ -49,14 +49,26 @@ public sealed class TooltipStyle
     public TooltipPlacement Placement { get; set; } = TooltipPlacement.Mouse;
 
     /// <summary>
-    /// The offset from the mouse cursor when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.
+    /// The offset in pixels from the mouse cursor, when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.<br/>
+    /// See <see cref="ItemOffset"/> for the item-relative placements.
     /// </summary>
     public Vector2 MouseOffset { get; set; } = new(16f, 16f);
 
     /// <summary>
-    /// The gap in pixels between the tooltip and the item when using an item-relative <see cref="Placement"/>.
+    /// The gap in pixels between the tooltip and the item, when using an item-relative <see cref="Placement"/>
+    /// (every placement except <see cref="TooltipPlacement.Mouse"/>).<br/>
+    /// This pushes the tooltip away from the item along the placement axis, so it grows the same way whichever side the
+    /// tooltip is on. See <see cref="ItemOffset"/> to shift it freely instead.
     /// </summary>
     public float ItemGap { get; set; } = 6f;
+
+    /// <summary>
+    /// An additional offset in pixels applied when using an item-relative <see cref="Placement"/>
+    /// (every placement except <see cref="TooltipPlacement.Mouse"/>), on top of <see cref="ItemGap"/>.<br/>
+    /// Where <see cref="ItemGap"/> only moves the tooltip along the placement axis, this shifts it on both axes: use it to
+    /// nudge a tooltip placed above an item to the right, for example. Defaults to no offset.
+    /// </summary>
+    public Vector2 ItemOffset { get; set; } = Vector2.Zero;
 
     /// <summary>
     /// Whether the tooltip should be kept fully inside the viewport. Defaults to <see langword="true"/>.

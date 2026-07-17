@@ -16,6 +16,10 @@ internal static class DecalShapeService
 
     private static readonly object Sync = new();
     private static readonly List<SceneNode> Nodes = new();
+
+    // Reused snapshot for the per-frame pass: the loop unregisters stale nodes as it goes, so it cannot run over the
+    // live list, and a fresh array every frame is steady-state garbage (Law 9). Render thread only (see OnOverlay).
+    private static readonly List<SceneNode> Scratch = new();
     private static bool hooked;
 
     /// <summary>Registers a node for per-frame decal-shape drawing (idempotent). Hooks the render overlay on first use.</summary>
@@ -53,16 +57,17 @@ internal static class DecalShapeService
         if (NoireDraw3D.Wireframe || NoireDraw3D.DecalShapeOutlines)
             return; // those trace every decal, opted in or not - tracing again would double-draw this node's outline
 
-        SceneNode[] snapshot;
         lock (Sync)
         {
             if (Nodes.Count == 0)
                 return;
-            snapshot = Nodes.ToArray();
+
+            Scratch.Clear();
+            Scratch.AddRange(Nodes);
         }
 
         var im = NoireDraw3D.Im;
-        foreach (var node in snapshot)
+        foreach (var node in Scratch)
         {
             if (node.Destroyed || !node.HasDecalShape)
             {
@@ -89,6 +94,7 @@ internal static class DecalShapeService
                 NoireDraw3D.OnRenderOverlay -= OnOverlay;
             hooked = false;
             Nodes.Clear();
+            Scratch.Clear(); // the reused snapshot must not keep node references alive past teardown
         }
     }
 }

@@ -2,6 +2,7 @@ using Dalamud.Utility;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
@@ -500,12 +501,85 @@ public static class FileHelper
     }
 
     /// <summary>
+    /// The serializer used by the JSON file operations when the caller supplies no settings.
+    /// </summary>
+    private static readonly JsonSerializer DefaultJsonSerializer = CreateJsonSerializer(null);
+
+    /// <summary>
+    /// Builds the serializer that backs every JSON file operation here.
+    /// </summary>
+    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>A serializer that honours <paramref name="settings"/> without leaving the file format open to the process.</returns>
+    private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? settings)
+    {
+        // JsonSerializer.Create resolves every setting from the object it is given. The JsonConvert overloads and
+        // JsonSerializer.CreateDefault instead merge in JsonConvert.DefaultSettings, a process-global that any other
+        // code loaded into this process can assign, so a caller whose settings do not mention a property would silently
+        // inherit that code's choice for it. The settings object itself is never mutated; the serializer is the copy.
+        var serializer = JsonSerializer.Create(settings);
+
+        // Type resolution driven by file content is what turns a JSON file into an instruction to construct arbitrary
+        // types, so it is off for every caller regardless of what was passed. A file names data, never a type to build.
+        serializer.TypeNameHandling = TypeNameHandling.None;
+
+        // A file holds exactly one JSON document, so anything after it means the file is corrupt. The JsonConvert
+        // deserialization overloads turn this on for their callers implicitly; setting it explicitly keeps content
+        // after the document rejected rather than quietly ignored.
+        serializer.CheckAdditionalContent = true;
+
+        return serializer;
+    }
+
+    /// <summary>
+    /// Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
+    /// </summary>
+    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The serializer to use.</returns>
+    private static JsonSerializer GetJsonSerializer(JsonSerializerSettings? settings)
+        => settings == null ? DefaultJsonSerializer : CreateJsonSerializer(settings);
+
+    /// <summary>
+    /// Serializes an object to the JSON written to a file.
+    /// </summary>
+    /// <param name="obj">The object to serialize.</param>
+    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The JSON representation of the object.</returns>
+    private static string SerializeToJson(object? obj, JsonSerializerSettings? settings)
+    {
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            GetJsonSerializer(settings).Serialize(jsonWriter, obj);
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Deserializes the JSON read from a file.
+    /// </summary>
+    /// <typeparam name="T">The type to deserialize to.</typeparam>
+    /// <param name="json">The JSON read from the file.</param>
+    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
+    /// <returns>The deserialized object.</returns>
+    private static T? DeserializeFromJson<T>(string json, JsonSerializerSettings? settings)
+    {
+        using var stringReader = new StringReader(json);
+        using var jsonReader = new JsonTextReader(stringReader);
+
+        return GetJsonSerializer(settings).Deserialize<T>(jsonReader);
+    }
+
+    /// <summary>
     /// Serializes an object to JSON and writes it to a file.
     /// </summary>
     /// <typeparam name="T">The type of the object to serialize.</typeparam>
     /// <param name="filePath">The path to the file.</param>
     /// <param name="obj">The object to serialize.</param>
-    /// <param name="settings">Optional JSON serializer settings.</param>
+    /// <param name="settings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>True if the operation was successful; otherwise, false.</returns>
     public static bool WriteJsonToFile<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
     {
@@ -518,7 +592,7 @@ public static class FileHelper
             if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
-            var json = JsonConvert.SerializeObject(obj, settings);
+            var json = SerializeToJson(obj, settings);
             File.WriteAllText(filePath, json);
             return true;
         }
@@ -547,7 +621,7 @@ public static class FileHelper
                 return default;
 
             var json = File.ReadAllText(filePath);
-            var obj = JsonConvert.DeserializeObject<T>(json, settings);
+            var obj = DeserializeFromJson<T>(json, settings);
             return obj;
         }
         catch (Exception ex)
@@ -633,7 +707,7 @@ public static class FileHelper
             if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
                 return false;
 
-            var json = JsonConvert.SerializeObject(obj, settings);
+            var json = SerializeToJson(obj, settings);
             await File.WriteAllTextAsync(filePath, json);
             return true;
         }
@@ -662,7 +736,7 @@ public static class FileHelper
                 return default;
 
             var json = await File.ReadAllTextAsync(filePath);
-            var obj = JsonConvert.DeserializeObject<T>(json, settings);
+            var obj = DeserializeFromJson<T>(json, settings);
             return obj;
         }
         catch (Exception ex)

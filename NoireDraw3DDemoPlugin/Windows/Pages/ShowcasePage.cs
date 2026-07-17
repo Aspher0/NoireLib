@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Interface;
 using NoireLib;
 using NoireLib.Draw3D;
 using NoireLib.Draw3D.Assets;
@@ -17,18 +18,17 @@ using System.IO;
 using System.Numerics;
 using System.Threading.Tasks;
 
-namespace NoireDraw3DDemoPlugin.Windows.Sections;
+namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
 /// <summary>
-/// The reference QA "smoke" scene - a hands-on gallery of (almost) every Draw3D feature in one disposable scene, built
-/// entirely on the public API. Formerly baked into the library's <c>Draw3DDiagnostics</c>; it now lives here so the
-/// library ships no showcase. Owns its scene, editor, render view and icon texture, and frees them all on
-/// <see cref="Clear"/> / <see cref="Dispose"/>.
+/// The showcase scene: (almost) every Draw3D feature in one disposable scene, built entirely on the public API and laid
+/// out as stations around the player so features can be found and compared in the world. Owns its scene, editor, render
+/// view and icon texture; frees them all on <see cref="Clear"/> / <see cref="Dispose"/>.
 /// </summary>
-public sealed class SmokeSceneSection : IDisposable
+public sealed class ShowcasePage : IDisposable
 {
-    private const string SmokePulsePipeline = "NoireSmokePulse";
-    private static bool smokePulseRegistered;
+    private const string PulsePipeline = "NoireShowcasePulse";
+    private static bool pulseRegistered;
 
     private Scene3D? scene;
     private SceneEditor? editor;
@@ -37,71 +37,110 @@ public sealed class SmokeSceneSection : IDisposable
     private SceneNode? portalNode;    // shows view's texture (material swapped in once it exists)
     private SceneNode? iconQuad;      // shows a game-icon texture (material swapped in once loaded)
     private SceneNode? iconDecal;     // a DecalShape.Texture decal (material swapped in once loaded)
-    private GpuTexture? icon;         // the loaded game-icon texture, disposed with the section
+    private GpuTexture? icon;         // the loaded game-icon texture, disposed with the page
     private bool portalReady;
 
     private string modelPath = string.Empty;
-    private string status = "No smoke scene spawned.";
+    private string status = string.Empty;
+
+    /// <summary>Whether the showcase scene is currently in the world.</summary>
+    public bool IsSpawned => scene is { IsDisposed: false };
 
     /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
-        ImGui.TextWrapped("A gallery of nearly every Draw3D feature: all mesh primitives, every decal footprint, the material families, a custom-pipeline pulse box, a textured quad, a render-to-texture portal, animated immediate-layer markers, and the selection/gizmo editor - all selectable and movable.");
-        ImGui.Separator();
-
-        var spawned = scene is { IsDisposed: false };
-        if (ImGui.Button(spawned ? "Respawn smoke scene" : "Spawn smoke scene"))
+        Ui.Section("Scene");
+        if (Ui.IconButton(FontAwesomeIcon.Cubes, IsSpawned ? "Respawn here" : "Spawn here", 150f))
             Spawn();
+        if (ImGui.IsItemHovered())
+            Ui.Tooltip("Builds the gallery around where you are standing. Respawning moves it to you.");
+
         ImGui.SameLine();
-        using (ImRaiiDisabled(!spawned))
+        using (Ui.Disabled(!IsSpawned))
         {
-            if (ImGui.Button("Clear"))
+            if (Ui.IconButton(FontAwesomeIcon.TrashAlt, "Clear", 110f))
                 Clear();
         }
 
-        ImGui.Spacing();
-        ImGui.TextDisabled(status);
-
-        if (!spawned)
+        if (!IsSpawned)
+        {
+            Ui.Gap();
+            Ui.Note("Every primitive, every decal footprint, the material families, a custom pipeline, a textured quad, an "
+                    + "RTT portal and the immediate layer - one scene, all of it selectable.");
             return;
+        }
 
-        ImGui.Separator();
-        ImGui.TextUnformatted("glTF / glb model import");
-        ImGui.SetNextItemWidth(320f);
-        ImGui.InputTextWithHint("##smokeModelPath", @"Absolute path to a .gltf / .glb", ref modelPath, 512);
         ImGui.SameLine();
-        if (ImGui.Button("Load model"))
-            SpawnModel(modelPath);
+        Ui.Status(status);
 
-        ImGui.Separator();
-        SectionUi.Toggle("Show decal shape outlines", static () => NoireDraw3D.Diagnostics.DecalShapeOutlines, static v => NoireDraw3D.Diagnostics.DecalShapeOutlines = v,
-            "Traces the shape every ground decal actually paints as a closed 3D line on its plane - circle, ring, pie or rect, straight from the SDF.\n\nGlobal, so it covers the immediate-layer donut and pie by the orbiting orb too, which have no node to toggle.\n\nA placement / sizing aid.");
+        Ui.Section("Stations");
+        using (Ui.Form("showcase.stations", 110f))
+        {
+            Station("North", "Mesh primitives",
+                "Box, sphere, cylinder, cone, torus, disc, ring, arrow, sector, an extruded path, and one mesh combining two builders. All Lit, so the Lighting page moves them together.");
+            Station("South", "Decal footprints",
+                "Circle, ring, sector, rect, and a texture stamp. All cut around characters standing in them. The circle is HighestOnly, so it needs the collision height-map on to skip the floor under a table.");
+            Station("Far south", "Immediate layer",
+                "Donut, sweeping pie, orbiting additive orb, spinning line. Redrawn every frame from OnPrepareFrame, so there is no node to select.");
+            Station("West", "Materials",
+                "Additive sphere, a depth-faded quad softening where it meets the ground, and a box on a custom HLSL pipeline pulsing with EyePosTime.w.");
+            Station("West, up", "RTT portal",
+                "This scene rendered from a second camera above it. The texture only exists after the view's first frame, so it starts as a dark placeholder.");
+            Station("East", "Depth, textures",
+                "A stack of rotated opaque boxes occluding each other through Draw3D's private depth, and a quad stamped with a game icon.");
+        }
 
-        ImGui.Separator();
         if (editor != null)
         {
-            ImGui.TextUnformatted($"Gizmo backend: {editor.Gizmo.Backend}");
-            ImGui.SameLine();
-            if (ImGui.Button("Toggle backend"))
+            Ui.Section("Gizmo");
+            using (Ui.Form("showcase.gizmo"))
             {
-                editor.Gizmo.Backend = editor.Gizmo.Backend == GizmoBackend.ImGuizmo ? GizmoBackend.Native : GizmoBackend.ImGuizmo;
-                status = $"Gizmo backend = {editor.Gizmo.Backend}. Select an object to see it.";
+                Ui.Enum("Backend", () => editor.Gizmo.Backend, v => editor.Gizmo.Backend = v,
+                    "Same API either way.\n\nNative: real in-world geometry hit-tested in screen space - occludes correctly, never wobbles.\n\nImGuizmo: the classic flat handles, always on top.\n\nThis scene runs AlwaysOnTop depth, so Native handles stay visible through walls.");
+                Ui.Value("Attached to", editor.Selection.Count switch
+                {
+                    0 => "-",
+                    1 => editor.Selection.Primary?.Name ?? "?",
+                    var n => $"{n} objects, primary {editor.Selection.Primary?.Name ?? "?"}",
+                }, "Click an object in the world; Shift-click to add more.");
             }
         }
+
+        Ui.Section("Model");
+        using (Ui.Form("showcase.model"))
+        {
+            Ui.Text("glTF / glb", () => modelPath, v => modelPath = v, @"Absolute path", 512,
+                "Blender: File > Export > glTF 2.0. Base colour and textures import; PBR maps, skins and animations are skipped and logged. Surrounding quotes are stripped.");
+        }
+
+        if (Ui.IconButton(FontAwesomeIcon.FileImport, "Load", 110f))
+            SpawnModel(modelPath);
     }
 
-    /// <summary>Spawns the smoke scene around the player (or the world origin when no player is present).</summary>
-    private void Spawn()
+    /// <summary>One station row: where it is, and what it demonstrates.</summary>
+    /// <param name="where">Direction from the spawn point.</param>
+    /// <param name="what">The feature group.</param>
+    /// <param name="detail">What it proves.</param>
+    private static void Station(string where, string what, string detail)
+    {
+        Ui.Row(where);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(what);
+        Ui.HelpMarker(detail);
+    }
+
+    /// <summary>Spawns the showcase scene around the player (or the world origin when no player is present).</summary>
+    public void Spawn()
     {
         Clear();
 
         center = NoireService.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-        var s = scene = NoireDraw3D.CreateScene("smoke");
+        var s = scene = NoireDraw3D.CreateScene("showcase");
         s.OnPrepareFrame += OnPrepareFrame; // render-thread per-frame work (portal swap + immediate markers)
 
         // Register the custom pulse pipeline once (used by the custom-shader station); a compile failure disables only it.
-        if (!smokePulseRegistered)
-            smokePulseRegistered = NoireDraw3D.RegisterPipeline(SmokePulsePipeline, SmokePulseHlsl);
+        if (!pulseRegistered)
+            pulseRegistered = NoireDraw3D.RegisterPipeline(PulsePipeline, PulseHlsl);
 
         // ---- Station 1: every MeshBuilder primitive, one Lit node each, all selectable (a row to the north). --------
         var pz = center.Z + 9f;
@@ -124,23 +163,23 @@ public sealed class SmokeSceneSection : IDisposable
         // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadIcon).
         var dz = center.Z - 7f;
         s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)) with { Surface = DecalSurface.Ground, Projection = DecalProjection.HighestOnly }, new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
-         .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+         .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(ActorExclusion);
         s.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
-         .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+         .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(ActorExclusion);
         s.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
-         .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+         .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(ActorExclusion);
         s.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
-         .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+         .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(ActorExclusion);
 
         // ---- Station 3: material families + blending + the custom pulse pipeline (a cluster to the west). -----------
         s.AddSphere(0.75f, Material.Unlit(new Vector4(0.20f, 0.60f, 1f, 0.8f)) with { Blend = BlendMode.Additive }, new Vector3(center.X - 9f, center.Y + 1.5f, center.Z + 1f), "Mat.Additive", keepCpuData: true).MakeSelectable();
         s.AddQuad(4f, 4f, Material.Unlit(new Vector4(0.30f, 1f, 0.50f, 0.5f), depthFade: 0.35f) with { Cull = CullMode.None }, new Vector3(center.X - 9f, center.Y + 0.05f, center.Z - 2f), "Mat.DepthFadeQuad", keepCpuData: true).MakeSelectable();
-        var pulseMat = smokePulseRegistered
-            ? Material.Custom(SmokePulsePipeline, new Vector4(1f, 0.40f, 0.80f, 1f))
+        var pulseMat = pulseRegistered
+            ? Material.Custom(PulsePipeline, new Vector4(1f, 0.40f, 0.80f, 1f))
             : Material.Unlit(new Vector4(1f, 0.40f, 0.80f, 1f)); // fallback if the pipeline failed to compile
         s.AddBox(new Vector3(1.3f, 1.3f, 1.3f), pulseMat, new Vector3(center.X - 13f, center.Y + 1f, center.Z), "Mat.CustomPulse", keepCpuData: true).MakeSelectable();
 
-        // Opaque box stack (private-depth V2↔V2 occlusion), east.
+        // Opaque box stack (private-depth occlusion between Draw3D meshes), east.
         for (var i = 0; i < 3; i++)
             s.AddBox(Material.Lit(new Vector4(0.8f - i * 0.2f, 0.4f + i * 0.25f, 0.35f, 1f)) with { Cull = CullMode.None }, new Vector3(center.X + 7f, center.Y + 0.5f + i * 1.05f, center.Z), $"Stack.Box{i}", keepCpuData: true)
              .RotateY(i * 0.4f).MakeSelectable();
@@ -161,7 +200,7 @@ public sealed class SmokeSceneSection : IDisposable
         iconQuad.MakeSelectable();
         iconDecal = s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.5f, 0.5f, 0.55f, 0.7f)), new Vector3(center.X + 12f, center.Y, dz), "Decal.Texture", keepCpuData: true)
              .Scale(new Vector3(4f, 4f, 4f));
-        iconDecal.MakeSelectable().ExcludeObjects(SmokeActorExclusion);
+        iconDecal.MakeSelectable().ExcludeObjects(ActorExclusion);
         LoadIcon(s, 60074u);
 
         // The editor follows the selection: left-click any object to select it, then drag the handles.
@@ -175,11 +214,11 @@ public sealed class SmokeSceneSection : IDisposable
         e.SelectionOutline = new Vector4(1f, 0.85f, 0.2f, 1f);
         e.OutlineWidth = 4f;
 
-        status = "Smoke scene spawned. Left-click an object to select it, then drag the gizmo handles.";
+        status = "Spawned around you. Left-click an object to select it, then drag the gizmo handles.";
     }
 
-    /// <summary>The smoke decals' actor-exclusion predicate: characters, monsters and NPCs are skipped.</summary>
-    private static bool SmokeActorExclusion(IGameObject o)
+    /// <summary>The showcase decals' actor-exclusion predicate: characters, monsters and NPCs are skipped.</summary>
+    private static bool ActorExclusion(IGameObject o)
         => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 
     /// <summary>
@@ -192,7 +231,7 @@ public sealed class SmokeSceneSection : IDisposable
         {
             if (task.IsFaulted)
             {
-                NoireLogger.LogError(task.Exception!, "Draw3D smoke: game-icon texture load failed.", "Draw3D Demo");
+                NoireLogger.LogError(task.Exception!, "Draw3D showcase: game-icon texture load failed.", "Draw3D Demo");
                 return;
             }
 
@@ -214,12 +253,12 @@ public sealed class SmokeSceneSection : IDisposable
         }, TaskScheduler.Default);
     }
 
-    /// <summary>Loads a glTF/glb model from disk into the running smoke scene (spawned in front of the player, selectable).</summary>
+    /// <summary>Loads a glTF/glb model from disk into the running showcase scene (spawned in front of the player, selectable).</summary>
     private void SpawnModel(string path)
     {
         if (scene is not { IsDisposed: false } s)
         {
-            status = "Spawn the smoke scene first, then load a model.";
+            status = "Spawn the scene first, then load a model.";
             return;
         }
 
@@ -231,16 +270,16 @@ public sealed class SmokeSceneSection : IDisposable
         }
 
         var spawnAt = center + new Vector3(0f, 1f, 13f);
-        s.LoadModelAsync(path, spawnAt, "Smoke.Model", keepCpuData: true).ContinueWith(task =>
+        s.LoadModelAsync(path, spawnAt, "Showcase.Model", keepCpuData: true).ContinueWith(task =>
         {
             if (task.IsFaulted)
-                NoireLogger.LogError(task.Exception!, $"Draw3D smoke: glTF import failed for '{path}'.", "Draw3D Demo");
+                NoireLogger.LogError(task.Exception!, $"Draw3D showcase: glTF import failed for '{path}'.", "Draw3D Demo");
         }, TaskScheduler.Default);
         status = $"Loading model '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).";
     }
 
     /// <summary>
-    /// Per-frame smoke-scene work (render thread, via <see cref="Scene3D.OnPrepareFrame"/>): swaps the render view's
+    /// Per-frame showcase work (render thread, via <see cref="Scene3D.OnPrepareFrame"/>): swaps the render view's
     /// texture onto the portal quad once it exists, and draws the animated immediate-layer markers.
     /// </summary>
     private void OnPrepareFrame(FrameContext frame)
@@ -266,8 +305,8 @@ public sealed class SmokeSceneSection : IDisposable
         im.DrawLine(c + new Vector3(co * 4f, 0.6f, sn * 4f), c + new Vector3(-co * 4f, 0.6f, -sn * 4f), 0.1f, new Vector4(0.6f, 1f, 0.7f, 0.9f), new ImShapeStyle { Placement = ImShapePlacement.Flat });
     }
 
-    /// <summary>Removes the smoke scene: one <see cref="Scene3D.Dispose"/> frees its nodes, owned meshes, view and editor.</summary>
-    private void Clear()
+    /// <summary>Removes the showcase scene: one <see cref="Scene3D.Dispose"/> frees its nodes, owned meshes, view and editor.</summary>
+    public void Clear()
     {
         editor = null;       // owned by the scene; disposed by scene.Dispose() below
         view = null;         // ditto (scene.Own)
@@ -278,23 +317,20 @@ public sealed class SmokeSceneSection : IDisposable
         var s = scene;
         scene = null;        // cleared first so any in-flight async load bails instead of touching it
         s?.Dispose();
-        icon?.Dispose();     // the game-icon texture is section-owned, not scene-owned
+        icon?.Dispose();     // the game-icon texture is page-owned, not scene-owned
         icon = null;
-        status = "Smoke scene cleared.";
+        status = "Scene cleared.";
     }
 
     /// <inheritdoc/>
     public void Dispose() => Clear();
-
-    // A tiny local Disabled scope so the section needn't take a dependency on the exact ImRaii Disabled overload name.
-    private static IDisposable ImRaiiDisabled(bool disabled) => Dalamud.Interface.Utility.Raii.ImRaii.Disabled(disabled);
 
     /// <summary>
     /// The custom pipeline HLSL for the pulse box: an unlit shader whose brightness pulses with time (<c>EyePosTime.w</c>),
     /// premultiplied and world-depth tested, over the standard vertex layout - the minimal shape of a
     /// <see cref="NoireDraw3D.RegisterPipeline"/> shader.
     /// </summary>
-    private const string SmokePulseHlsl = """
+    private const string PulseHlsl = """
         #include "Common.hlsli"
 
         struct VsIn  { float3 pos : POSITION; float3 normal : NORMAL; float2 uv : TEXCOORD0; float4 color : COLOR0; };

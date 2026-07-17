@@ -45,7 +45,10 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
 
         var methodName = invocation.Method.Name;
 
-        // Do not auto-save if an internal copy is in progress
+        // The member copy that transfers a loaded configuration onto this wrapper assigns through these same setters,
+        // and those assignments carry the values that were just read from disk, so writing them back is redundant. The
+        // flag is scoped to the thread performing the copy, which is the thread that reaches this, so a genuine change
+        // made on another thread while a copy runs still persists.
         if (NoireConfigBase.IsInternalCopying)
             return;
 

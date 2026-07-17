@@ -9,9 +9,15 @@ namespace NoireLib.Networker.Internal;
 /// </summary>
 internal sealed class ElectionMutex : IDisposable
 {
+    private static readonly TimeSpan AcquireTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan HolderJoinTimeout = TimeSpan.FromSeconds(2);
+
+    private readonly object gate = new();
     private readonly string mutexName;
+    private ManualResetEventSlim? acquireCompleted;
     private ManualResetEventSlim? releaseRequested;
     private Thread? holderThread;
+    private bool disposed;
 
     public ElectionMutex(string mutexName)
     {
@@ -21,16 +27,26 @@ internal sealed class ElectionMutex : IDisposable
     public bool IsHeld { get; private set; }
 
     /// <summary>
-    /// Tries to acquire the election mutex without waiting. Returns true when this instance is now the hub.
+    /// Tries to acquire the election mutex without waiting. Returns true when this instance is now the hub.<br/>
+    /// Returns false once disposed, so a caller that outlives its election mutex cannot take the role back.
     /// </summary>
     public bool TryAcquire()
     {
-        if (IsHeld)
-            return true;
+        lock (gate)
+        {
+            if (disposed)
+                return false;
 
-        using var acquireResult = new ManualResetEventSlim(false);
+            if (IsHeld)
+                return true;
+        }
+
+        // The holder thread signals both events for as long as it runs, so neither may be disposed before it has been
+        // joined. Disposing one underneath a live thread faults it on a signal it is entitled to make, in a frame
+        // where nothing can handle the exception.
+        var acquireSignal = new ManualResetEventSlim(false);
+        var releaseSignal = new ManualResetEventSlim(false);
         var acquired = false;
-        var release = new ManualResetEventSlim(false);
 
         var thread = new Thread(() =>
         {
@@ -42,21 +58,21 @@ internal sealed class ElectionMutex : IDisposable
 
                 try
                 {
-                    acquired = mutex.WaitOne(0);
+                    Volatile.Write(ref acquired, mutex.WaitOne(0));
                 }
                 catch (AbandonedMutexException)
                 {
                     // The previous hub died while holding the mutex - ownership transferred to us.
-                    acquired = true;
+                    Volatile.Write(ref acquired, true);
                 }
 
-                acquireResult.Set();
+                acquireSignal.Set();
 
-                if (!acquired)
+                if (!Volatile.Read(ref acquired))
                     return;
 
                 // Hold ownership on this thread until release is requested.
-                release.Wait();
+                releaseSignal.Wait();
 
                 try
                 {
@@ -69,7 +85,16 @@ internal sealed class ElectionMutex : IDisposable
             }
             catch
             {
-                acquireResult.Set();
+                // Report the failed attempt so the caller stops waiting, without ever throwing out of this frame:
+                // an unhandled exception on a background thread terminates the process.
+                try
+                {
+                    acquireSignal.Set();
+                }
+                catch
+                {
+                    // Best effort.
+                }
             }
             finally
             {
@@ -82,19 +107,35 @@ internal sealed class ElectionMutex : IDisposable
         };
 
         thread.Start();
-        acquireResult.Wait(TimeSpan.FromSeconds(5));
 
-        if (!acquired)
+        // A wait that times out leaves the thread's progress unknown, so the attempt counts as failed and the thread is
+        // asked to unwind: any mutex it did take is released as soon as it reaches the request, freeing the role for
+        // the next contender.
+        if (!acquireSignal.Wait(AcquireTimeout) || !Volatile.Read(ref acquired))
         {
-            release.Set();
-            release.Dispose();
+            releaseSignal.Set();
+            JoinAndDispose(thread, acquireSignal, releaseSignal);
             return false;
         }
 
-        holderThread = thread;
-        releaseRequested = release;
-        IsHeld = true;
-        return true;
+        lock (gate)
+        {
+            if (!disposed)
+            {
+                holderThread = thread;
+                acquireCompleted = acquireSignal;
+                releaseRequested = releaseSignal;
+                IsHeld = true;
+                return true;
+            }
+        }
+
+        // Disposal landed while this attempt was in flight. The role was taken but nothing will ever use it, so it is
+        // handed straight back rather than published, which is what keeps a disposed election mutex from stranding the
+        // role on a thread nobody will ask to release.
+        releaseSignal.Set();
+        JoinAndDispose(thread, acquireSignal, releaseSignal);
+        return false;
     }
 
     /// <summary>
@@ -102,17 +143,63 @@ internal sealed class ElectionMutex : IDisposable
     /// </summary>
     public void Release()
     {
-        if (!IsHeld)
+        Thread? thread;
+        ManualResetEventSlim? acquireSignal;
+        ManualResetEventSlim? releaseSignal;
+
+        // Taking ownership of the holder state under the gate is what makes a release concurrent with an acquire safe:
+        // exactly one of the two publishes the thread, and exactly one unwinds it.
+        lock (gate)
+        {
+            if (!IsHeld)
+                return;
+
+            IsHeld = false;
+
+            thread = holderThread;
+            acquireSignal = acquireCompleted;
+            releaseSignal = releaseRequested;
+
+            holderThread = null;
+            acquireCompleted = null;
+            releaseRequested = null;
+        }
+
+        if (thread == null || acquireSignal == null || releaseSignal == null)
             return;
 
-        IsHeld = false;
-        releaseRequested?.Set();
-        holderThread?.Join(TimeSpan.FromSeconds(2));
-        releaseRequested?.Dispose();
-        releaseRequested = null;
-        holderThread = null;
+        releaseSignal.Set();
+        JoinAndDispose(thread, acquireSignal, releaseSignal);
     }
 
+    /// <summary>
+    /// Releases the role and refuses any further acquisition.<br/>
+    /// Safe to call while another thread is acquiring: the in-flight attempt observes the disposal and hands the role back.
+    /// </summary>
     public void Dispose()
-        => Release();
+    {
+        lock (gate)
+        {
+            if (disposed)
+                return;
+
+            disposed = true;
+        }
+
+        Release();
+    }
+
+    /// <summary>
+    /// Waits for the holder thread to exit, then disposes the events it signals.<br/>
+    /// A thread that outlives the join keeps its events instead: their handles are then reclaimed by finalization,
+    /// which costs a collection, where disposing them out from under the thread would fault it.
+    /// </summary>
+    private static void JoinAndDispose(Thread thread, ManualResetEventSlim acquireSignal, ManualResetEventSlim releaseSignal)
+    {
+        if (!thread.Join(HolderJoinTimeout))
+            return;
+
+        acquireSignal.Dispose();
+        releaseSignal.Dispose();
+    }
 }

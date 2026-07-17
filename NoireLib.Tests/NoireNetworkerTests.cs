@@ -1,9 +1,12 @@
 using FluentAssertions;
+using NoireLib.Core.Modules;
 using NoireLib.EventBus;
 using NoireLib.Networker;
+using NoireLib.Networker.Internal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
@@ -94,6 +97,23 @@ public class NoireNetworkerTests : IDisposable
         return condition();
     }
 
+    /// <summary>
+    /// Builds a networker exactly the way <see cref="NoireLibMain.AddModule{T}(string?)"/> does: by reflecting over the
+    /// internal (ModuleId, bool, bool) constructor and asking for an active, logging module.
+    /// </summary>
+    private static NoireNetworker CreateThroughAddModuleConstructor(string? moduleId)
+    {
+        var constructor = typeof(NoireNetworker).GetConstructor(
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            [typeof(ModuleId), typeof(bool), typeof(bool)],
+            null);
+
+        constructor.Should().NotBeNull("AddModule<T> reflects over this exact signature and silently degrades to a new T() path without it");
+
+        return (NoireNetworker)constructor!.Invoke([moduleId == null ? null : new ModuleId(moduleId), true, true]);
+    }
+
     private async Task<List<NoireNetworker>> CreateReadyGroupAsync(string network, int count)
     {
         var networkers = Enumerable.Range(0, count).Select(_ => CreateNetworker(network)).ToList();
@@ -102,6 +122,205 @@ public class NoireNetworkerTests : IDisposable
             .Should().BeTrue("all instances should become Ready and see each other");
 
         return networkers;
+    }
+
+    [Fact]
+    public void AddModule_Construction_Defers_Activation_Rather_Than_Failing_To_Activate()
+    {
+        var networker = CreateThroughAddModuleConstructor(moduleId: "Deferred");
+        networkersToClean.Add(networker);
+
+        networker.ModuleId.Should().Be("Deferred");
+        networker.NetworkName.Should().BeNull();
+        networker.IsActive.Should().BeFalse("a networker with no network name has nothing to join, so activation waits for the caller");
+        networker.State.Should().Be(NetworkerState.Stopped);
+    }
+
+    [Fact]
+    public async Task Deferred_Networker_Joins_The_Network_Once_Named_And_Activated()
+    {
+        var network = TestNetwork();
+
+        var deferred = CreateThroughAddModuleConstructor(moduleId: null);
+        networkersToClean.Add(deferred);
+
+        deferred.SetEnableLogging(false);
+        deferred.SetNetworkName(network);
+        deferred.SetActive(true);
+
+        var peer = CreateNetworker(network);
+
+        (await WaitUntilAsync(() =>
+            deferred.State == NetworkerState.Ready && peer.State == NetworkerState.Ready
+            && deferred.OtherPeers.Count == 1 && peer.OtherPeers.Count == 1))
+            .Should().BeTrue("a deferred-configuration networker joins like any other once it is named and activated");
+    }
+
+    [Fact]
+    public void Activating_Without_A_Network_Name_Is_Refused()
+    {
+        var networker = new NoireNetworker();
+        networkersToClean.Add(networker);
+
+        networker.SetEnableLogging(false);
+        networker.SetActive(true);
+
+        networker.IsActive.Should().BeFalse("activating an unnamed networker is a misconfiguration, and is refused");
+        networker.State.Should().Be(NetworkerState.Stopped);
+    }
+
+    [Fact]
+    public void A_Disposed_Delivery_Pump_Discards_Everything_Still_Queued()
+    {
+        var pump = new DeliveryPump(16, (ex, message) => { }) { ForceQueuedDelivery = true };
+
+        var ran = 0;
+        pump.Post(() => Interlocked.Increment(ref ran));
+
+        Volatile.Read(ref ran).Should().Be(0, "a queued delivery waits for a frame to drain it rather than running on the posting thread");
+
+        pump.Dispose();
+        pump.Drain();
+
+        Volatile.Read(ref ran).Should().Be(
+            0,
+            "disposal drops the backlog, which is why a delivery that must reach a consumer has to be run before the pump is disposed rather than posted through it and left behind");
+    }
+
+    [Fact]
+    public async Task Stopping_Delivers_The_Stopped_State_Rather_Than_Discarding_It_With_The_Pump()
+    {
+        var networker = new NoireNetworker(TestNetwork(), active: false, enableLogging: false);
+        networkersToClean.Add(networker);
+
+        // Inline delivery is what lets the rest of this suite run without a game, and it is also what would hide the
+        // behavior under test: inline, the Stopped delivery runs on the thread that posts it and so is already done by
+        // the time the pump is disposed. A running game only ever takes the queued path, so it is forced on here.
+        networker.ForceQueuedDelivery = true;
+        networker.SetActive(true);
+
+        var observed = new List<NetworkerState>();
+        networker.OnStateChanged(state => { lock (observed) observed.Add(state); });
+
+        // With queueing forced there is no framework update driving the pump, so draining stands in for a frame.
+        (await WaitUntilAsync(() =>
+        {
+            networker.DrainDeliveries();
+
+            lock (observed)
+                return observed.Contains(NetworkerState.Ready);
+        })).Should().BeTrue("a lone instance elects itself hub and reaches Ready");
+
+        networker.SetActive(false);
+
+        lock (observed)
+        {
+            observed.Should().Contain(
+                NetworkerState.Stopped,
+                "a consumer must observe the networker stopping; the delivery carrying Stopped must not be discarded along with the pump");
+
+            observed[^1].Should().Be(
+                NetworkerState.Stopped,
+                "Stopped is the terminal transition, so nothing may reach a consumer after it");
+        }
+    }
+
+    [Fact]
+    public void ElectionMutex_Hands_The_Role_To_The_Next_Contender_On_Release()
+    {
+        var mutexName = NetworkerNames.MutexName(TestNetwork());
+
+        using var first = new ElectionMutex(mutexName);
+        using var second = new ElectionMutex(mutexName);
+
+        first.TryAcquire().Should().BeTrue("an uncontended election mutex is acquired immediately");
+        first.TryAcquire().Should().BeTrue("re-acquiring while already held is a no-op");
+        second.TryAcquire().Should().BeFalse("the mutex is already owned by the first holder thread");
+        second.IsHeld.Should().BeFalse();
+
+        first.Release();
+        first.IsHeld.Should().BeFalse();
+
+        second.TryAcquire().Should().BeTrue("releasing frees the role for the next contender");
+        second.IsHeld.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ElectionMutex_Refuses_The_Role_Once_Disposed_And_Frees_It_For_The_Next_Contender()
+    {
+        var mutexName = NetworkerNames.MutexName(TestNetwork());
+
+        var first = new ElectionMutex(mutexName);
+        first.TryAcquire().Should().BeTrue();
+
+        first.Dispose();
+        first.IsHeld.Should().BeFalse("disposal hands the role back");
+
+        first.TryAcquire()
+            .Should().BeFalse("a disposed election mutex must never take the role again, since nothing would be left to release it");
+
+        using var second = new ElectionMutex(mutexName);
+        second.TryAcquire().Should().BeTrue("the role a disposed holder gave up belongs to the next contender");
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Election_Backoff_Starts_At_The_Base_Delay(int idleAttempts)
+        => NoireNetworker.ComputeElectionBackoff(idleAttempts).Should().Be(TimeSpan.FromMilliseconds(100));
+
+    [Fact]
+    public void Election_Backoff_Grows_And_Is_Capped()
+    {
+        NoireNetworker.ComputeElectionBackoff(2).Should().Be(TimeSpan.FromMilliseconds(200));
+        NoireNetworker.ComputeElectionBackoff(3).Should().Be(TimeSpan.FromMilliseconds(400));
+        NoireNetworker.ComputeElectionBackoff(4).Should().Be(TimeSpan.FromMilliseconds(800));
+        NoireNetworker.ComputeElectionBackoff(5).Should().Be(TimeSpan.FromMilliseconds(1600));
+
+        foreach (var idleAttempts in new[] { 6, 10, 100, int.MaxValue })
+        {
+            NoireNetworker.ComputeElectionBackoff(idleAttempts)
+                .Should().Be(TimeSpan.FromSeconds(2), "the retry delay is capped rather than growing without bound");
+        }
+    }
+
+    [Fact]
+    public async Task A_Connected_Client_Never_Re_Elects_While_Its_Hub_Lives()
+    {
+        var networkers = await CreateReadyGroupAsync(TestNetwork(), 2);
+
+        var client = networkers.First(n => !n.IsHub);
+        var attemptsWhenSettled = client.ElectionAttempts;
+
+        await Task.Delay(1_500);
+
+        client.State.Should().Be(NetworkerState.Ready);
+        client.ElectionAttempts.Should().Be(
+            attemptsWhenSettled,
+            "a client holds its hub connection for its whole life, so a settled client must not contend for the role at all");
+    }
+
+    [Fact]
+    public async Task An_Instance_That_Cannot_Join_Backs_Off_Instead_Of_Re_Electing_Constantly()
+    {
+        var network = TestNetwork();
+
+        // Holding the role from outside, without ever serving a hub, is the shape of every situation an instance cannot
+        // resolve on its own: no rendezvous is ever published, so it can neither elect nor connect.
+        using var squatter = new ElectionMutex(NetworkerNames.MutexName(network));
+        squatter.TryAcquire().Should().BeTrue();
+
+        var networker = CreateNetworker(network);
+
+        await Task.Delay(3_000);
+
+        networker.State.Should().NotBe(NetworkerState.Ready, "there is no hub to join");
+
+        // Each attempt starts a dedicated election thread. Backing off from 100ms to a 2s ceiling allows roughly six
+        // attempts in this window; a fixed short retry would allow around thirty. A slow machine only makes the
+        // upper bound safer, since it can only lower the attempt count.
+        networker.ElectionAttempts.Should().BeInRange(
+            2, 12, "an instance that cannot join must keep contending, but must not spawn an election thread several times a second forever");
     }
 
     [Fact]

@@ -16,6 +16,14 @@ internal sealed class FramedConnection : IDisposable
 {
     private const int MaxPendingSends = 4096;
 
+    /// <summary>
+    /// How long a farewell frame is given to reach the peer before its socket is closed anyway.<br/>
+    /// The frame travels over loopback or a local link, where a write completes in well under a millisecond, so this
+    /// only bounds the pathological case of a peer that has stopped reading: without a bound the socket would stay
+    /// open until that peer went away on its own.
+    /// </summary>
+    private static readonly TimeSpan FarewellFlushTimeout = TimeSpan.FromMilliseconds(250);
+
     private readonly TcpClient tcpClient;
     private readonly NetworkStream stream;
     private readonly SemaphoreSlim writeLock = new(1, 1);
@@ -105,6 +113,41 @@ internal sealed class FramedConnection : IDisposable
         finally
         {
             Interlocked.Decrement(ref pendingSends);
+        }
+    }
+
+    /// <summary>
+    /// Sends one last frame and closes the connection as soon as that frame has been written, without blocking the
+    /// caller.<br/>
+    /// A farewell frame and the socket close are a race: closing first discards the frame, and waiting for the write
+    /// on the calling thread is not an option, because teardown reaches this from the framework thread, where
+    /// blocking on a socket stalls the game's frame. Handing the close to the write's own continuation settles the
+    /// race without anyone waiting, and closes the socket the moment the frame is out rather than after a fixed pause.
+    /// </summary>
+    /// <param name="envelope">The farewell frame to send.</param>
+    /// <param name="onError">Invoked when the frame could not be written. The connection closes either way.</param>
+    public void CloseAfterSending(Envelope envelope, Action<Exception>? onError = null)
+    {
+        if (IsDisposed)
+            return;
+
+        _ = CloseAfterSendingCoreAsync(envelope, onError);
+    }
+
+    private async Task CloseAfterSendingCoreAsync(Envelope envelope, Action<Exception>? onError)
+    {
+        try
+        {
+            using var flushTimeout = new CancellationTokenSource(FarewellFlushTimeout);
+            await SendAsync(envelope, flushTimeout.Token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            onError?.Invoke(ex);
+        }
+        finally
+        {
+            Dispose();
         }
     }
 

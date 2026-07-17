@@ -26,7 +26,9 @@ public static partial class EncryptionHelper
     /// <param name="data">The value to encrypt. Strings are encoded as UTF-8, other objects are serialized to JSON.</param>
     /// <param name="password">The password used to derive the encryption key.</param>
     /// <param name="iterations">The number of PBKDF2 iterations used for key derivation.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.
+    /// <see cref="TypeNameHandling"/> is always <see cref="TypeNameHandling.None"/>, whatever the settings ask for;
+    /// every other setting is honoured.</param>
     /// <returns>The encrypted payload.</returns>
     public static byte[] AesEncrypt(object? data, string password, int iterations = DefaultPbkdf2Iterations, JsonSerializerSettings? jsonSettings = null)
     {
@@ -67,7 +69,8 @@ public static partial class EncryptionHelper
     /// <param name="password">The password used to derive the encryption key.</param>
     /// <param name="urlSafe">If <see langword="true"/>, produces URL-safe Base64.</param>
     /// <param name="iterations">The number of PBKDF2 iterations used for key derivation.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>The Base64-encoded encrypted payload.</returns>
     public static string AesEncryptToBase64(object? data, string password, bool urlSafe = false, int iterations = DefaultPbkdf2Iterations, JsonSerializerSettings? jsonSettings = null)
         => ToBase64(AesEncrypt(data, password, iterations, jsonSettings), urlSafe);
@@ -151,12 +154,13 @@ public static partial class EncryptionHelper
     /// <typeparam name="T">The type to deserialize into.</typeparam>
     /// <param name="payload">The encrypted payload.</param>
     /// <param name="password">The password used to derive the encryption key.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>The decrypted, deserialized value.</returns>
     public static T? AesDecryptToObject<T>(byte[] payload, string password, JsonSerializerSettings? jsonSettings = null)
     {
         var json = AesDecryptToString(payload, password);
-        return string.IsNullOrEmpty(json) ? default : JsonConvert.DeserializeObject<T>(json, jsonSettings);
+        return string.IsNullOrEmpty(json) ? default : FromJson<T>(json, jsonSettings);
     }
 
     #endregion
@@ -169,7 +173,8 @@ public static partial class EncryptionHelper
     /// </summary>
     /// <param name="data">The value to encrypt. Strings are encoded as UTF-8, other objects are serialized to JSON.</param>
     /// <param name="key">The 32-byte (256-bit) AES key.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>The encrypted payload.</returns>
     /// <exception cref="ArgumentException">The key is not 32 bytes long.</exception>
     public static byte[] AesEncryptWithKey(object? data, byte[] key, JsonSerializerSettings? jsonSettings = null)

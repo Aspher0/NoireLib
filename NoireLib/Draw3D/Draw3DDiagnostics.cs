@@ -12,7 +12,11 @@ namespace NoireLib.Draw3D;
 /// <c>RunValidate</c>: projection parity vs the game's own WorldToScreen (the wobble-class killer).<br/>
 /// <c>RunProbe</c>: reads actual depth-buffer values back and compares them against expectation.<br/>
 /// <c>RunCameraPhaseTrace</c>: measures the overlay-vs-world camera drift under motion (the "swim" investigation).<br/>
-/// The visual showcase (smoke scene, world-geometry preview, glTF import) lives in the separate
+/// Each of these arms a window and then samples from inside the render body, on the render thread. The game reads they
+/// take there are best-effort by design: answering them off-thread would return them against a camera that has already
+/// moved, which destroys the frame-coherent comparison each one is built on. Their terminal chat lines are marshalled
+/// to the framework thread (<see cref="Core.DiagnosticChat"/>); the full findings always go to the plugin log.<br/>
+/// The visual showcase (the showcase scene, world-geometry preview, glTF import) lives in the separate
 /// <c>NoireDraw3DDemoPlugin</c>, built entirely on the public Draw3D API.
 /// </summary>
 public sealed unsafe class Draw3DDiagnostics
@@ -83,8 +87,18 @@ public sealed unsafe class Draw3DDiagnostics
         camTraceMaxMatrixDelta = 0f;
     }
 
-    /// <summary>Toggles wireframe rasterization of the scene pass. Returns the new state.</summary>
-    public bool ToggleWireframe() => NoireDraw3D.Wireframe = !NoireDraw3D.Wireframe;
+    /// <summary>
+    /// Wireframe rasterization of the scene pass. Ground decals have no mesh of their own to wireframe (their shape
+    /// lives in the pixel shader), so they trace <see cref="DecalShapeOutlines"/> instead while this is on.
+    /// </summary>
+    public bool Wireframe
+    {
+        get => NoireDraw3D.Wireframe;
+        set => NoireDraw3D.Wireframe = value;
+    }
+
+    /// <summary>Flips <see cref="Wireframe"/>. Returns the new state.</summary>
+    public bool ToggleWireframe() => Wireframe = !Wireframe;
 
     /// <summary>
     /// Traces every decal's painted shape as an outline, over normal rendering - retained decals and the immediate
@@ -111,6 +125,12 @@ public sealed unsafe class Draw3DDiagnostics
         validateFramesRemaining--;
 
         // Sample world points: around the player, plus points pushed forward through screen rays.
+        // The object-table and GameGui reads below happen on the render thread, deliberately. This measurement is a
+        // parity check between our projection and the game's own, and it is only meaningful when both project the same
+        // points against the same camera at the same instant. Marshalling the reads to the framework thread would
+        // answer them a frame later against a camera that has since moved, turning every sample into inter-frame
+        // camera drift (what RunCameraPhaseTrace measures on purpose) and hiding the projection error being looked for.
+        // They stay here as best-effort diagnostic reads: armed by hand, never on a normal frame, and read-only.
         Span<Vector3> points = stackalloc Vector3[24];
         var count = 0;
 
@@ -169,7 +189,7 @@ public sealed unsafe class Draw3DDiagnostics
             var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames - max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max ≤ 1 px). " +
                          $"VP cross-check max element delta: {validateMaxMatrixDelta:E2}. Camera fallback active: {frame.UsedFallbackCamera}. " +
                          "Repeat in the §7.5 poses: orbit, side-on grazing, wall-collision camera, first-person, max zoom.";
-            NoireService.ChatGui.Print($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
+            DiagnosticChat.Print($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
     }
@@ -247,7 +267,7 @@ public sealed unsafe class Draw3DDiagnostics
                 $"Overlay-vs-world screen drift: max {camTraceMaxScreenDelta:F2} px, mean {meanDrift:F2} px over {camTraceScreenSamples} samples. " +
                 $"View·Proj max element delta: {camTraceMaxMatrixDelta:E2}. " +
                 "Read: near-zero drift = in phase; large drift on inject frames = intra-frame camera advance; many fallback frames = camera-source mismatch under load.";
-            NoireService.ChatGui.Print($"Draw3D camtrace: max drift {camTraceMaxScreenDelta:F2} px, fallback {camTraceFallbackFrames}/{traced} frames (details in log).");
+            DiagnosticChat.Print($"Draw3D camtrace: max drift {camTraceMaxScreenDelta:F2} px, fallback {camTraceFallbackFrames}/{traced} frames (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
     }
@@ -285,6 +305,10 @@ public sealed unsafe class Draw3DDiagnostics
     private void RunProbeNow(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)
     {
         // Gather ground-truth points: screen positions raycast into the world by the game itself.
+        // Read on the render thread by design: these points are compared against depth texels read back from THIS
+        // frame's buffer, so a raycast answered a frame later on the framework thread would be measured against a
+        // different camera and a different depth image, which is exactly the comparison the probe exists to avoid.
+        // Best-effort diagnostic read: armed by hand, one frame, read-only.
         var screens = new List<Vector2>();
         var worlds = new List<Vector3>();
         for (var gy = 0; gy < 4; gy++)
@@ -395,7 +419,7 @@ public sealed unsafe class Draw3DDiagnostics
 
     private static void Report(string message)
     {
-        NoireService.ChatGui.Print(message);
+        DiagnosticChat.Print(message);
         NoireLogger.LogInfo(message, "Draw3D");
     }
 }

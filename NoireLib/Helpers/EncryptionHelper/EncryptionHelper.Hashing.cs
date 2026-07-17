@@ -36,7 +36,9 @@ public static partial class EncryptionHelper
     /// </summary>
     /// <param name="data">The value to hash. Strings are encoded as UTF-8, other objects are serialized to JSON.</param>
     /// <param name="algorithm">The hashing algorithm to use.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.
+    /// <see cref="TypeNameHandling"/> is always <see cref="TypeNameHandling.None"/>, whatever the settings ask for;
+    /// every other setting is honoured.</param>
     /// <returns>The raw hash bytes.</returns>
     public static byte[] HashBytes(object? data, HashAlgorithmType algorithm = HashAlgorithmType.Sha256, JsonSerializerSettings? jsonSettings = null)
         => ComputeHash(ToRawBytes(data, jsonSettings), algorithm);
@@ -47,7 +49,9 @@ public static partial class EncryptionHelper
     /// <param name="data">The value to hash. Strings are encoded as UTF-8, other objects are serialized to JSON.</param>
     /// <param name="algorithm">The hashing algorithm to use.</param>
     /// <param name="format">The textual representation of the resulting hash.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.
+    /// <see cref="TypeNameHandling"/> is always <see cref="TypeNameHandling.None"/>, whatever the settings ask for;
+    /// every other setting is honoured.</param>
     /// <returns>The formatted hash string.</returns>
     public static string Hash(object? data, HashAlgorithmType algorithm = HashAlgorithmType.Sha256, BinaryTextFormat format = BinaryTextFormat.Hex, JsonSerializerSettings? jsonSettings = null)
         => FormatBytes(HashBytes(data, algorithm, jsonSettings), format);
@@ -109,7 +113,9 @@ public static partial class EncryptionHelper
     /// <param name="data">The value to authenticate. Strings are encoded as UTF-8, other objects are serialized to JSON.</param>
     /// <param name="key">The secret key (raw bytes or a string, which is encoded as UTF-8).</param>
     /// <param name="algorithm">The underlying hashing algorithm (SHA-1/256/384/512 are supported).</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.</param>
+    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.
+    /// <see cref="TypeNameHandling"/> is always <see cref="TypeNameHandling.None"/>, whatever the settings ask for;
+    /// every other setting is honoured.</param>
     /// <returns>The raw HMAC bytes.</returns>
     public static byte[] HmacBytes(object? data, object key, HashAlgorithmType algorithm = HashAlgorithmType.Sha256, JsonSerializerSettings? jsonSettings = null)
     {

@@ -21,6 +21,7 @@ You are reading the documentation for `NoireConfigManager`.
     - [3. Runtime Migration Registration](#3---runtime-migration-registration)
   - [Using MigrationBuilder](#using-migrationbuilder)
   - [Migration Best Practices](#migration-best-practices)
+  - [When a Migration Fails](#when-a-migration-fails)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
@@ -390,6 +391,17 @@ var config = NoireConfigManager.GetConfig<MyConfig>();
 var freshConfig = NoireConfigManager.LoadConfigFresh<MyConfig>();
 ```
 
+`GetConfig<T>()` caches the instance it returns and hands the same one to every later caller. The exception is a
+load that failed against a configuration that is actually there: the file exists but cannot be read or parsed, or
+no path to it could be resolved at all, which is the state of a configuration reached before
+`NoireLibMain.Initialize`. Those instances are returned so the caller has something to work with, but they are not
+cached, so the next call tries the load again instead of being handed defaults for the rest of the session.
+
+A first run, where no file exists yet, is not a failure of that kind. The defaults are the real configuration until
+something saves them, so that instance is cached like any other and a value set on it is visible to the next
+caller. A [degraded](#the-degraded-state) configuration is cached too, since its load succeeded and it is the live
+instance whose saves are being refused deliberately.
+
 ### Save Configuration
 
 ```csharp
@@ -402,6 +414,16 @@ config.Save();
 // Save all cached configurations
 NoireConfigManager.SaveAllCached();
 ```
+
+`SaveAllCached()` saves each cached configuration inside its own boundary, so one that cannot be written costs only
+its own write and every other cached configuration is still saved. `Save()` is virtual and resolves its file path
+through another virtual member, so a configuration can throw out of it rather than return false, and one that did
+would otherwise strand every configuration the walk had not reached yet.
+
+It returns true only when every cached configuration is on disk. A configuration that failed is reported with its
+type name, so the log says which one it was. A [degraded](#the-degraded-state) configuration refusing to write is not
+reported as a fault, since the refusal is the protection working and explains itself where it is decided, but it
+still counts against the return value because the configuration was not written.
 
 ### Update Configuration
 
@@ -803,6 +825,60 @@ private class MigrationV1ToV2 : ConfigMigrationBase
 #### 3. **Never Remove Old Migrations**
 
 Once deployed, migrations should never be removed or modified. Users might be upgrading from any previous version.
+
+---
+
+### When a Migration Fails
+
+A migration that throws, returns empty JSON, or has no registered path to the current version cannot be recovered
+from automatically. Loading un-migrated JSON into the current class mostly succeeds anyway, because unknown members
+are ignored and absent ones keep their defaults, so the failure would otherwise be silent. Two protections apply.
+
+#### Backups
+
+Whenever the file on disk is older than `Version`, it is copied to a sibling backup **before** the migration runs,
+so the backup exists whatever the outcome:
+
+```
+MyConfig.json          the configuration
+MyConfig.json.v1.bak   the file as it was while it was still at schema version 1
+```
+
+The backup is named for the schema version it was taken at, not for the moment it was taken. That keeps exactly one
+backup per version the configuration has been through, instead of adding a copy on every start that retries a
+failing migration. An existing backup is never overwritten: the earliest copy taken at a given version is the most
+trustworthy one.
+
+#### The Degraded State
+
+A configuration whose migration failed is marked **degraded**, and `Save()` then refuses to write and returns
+`false`. This is what stops an ordinary save, of the kind modules perform during startup, from replacing a good
+file with the partially defaulted values in memory.
+
+```csharp
+var config = MyConfig.Instance;
+
+if (config.IsDegraded)
+{
+    // The user's file could not be migrated. It is untouched on disk, and backed up at:
+    NoireLogger.LogWarning($"Configuration not migrated. Backup: {config.DegradedBackupPath}");
+}
+```
+
+| Member | Meaning |
+|---|---|
+| `IsDegraded` | True when the most recent `Load()` could not migrate the file. Cleared by a later successful load. |
+| `DegradedBackupPath` | The pre-migration backup to recover from, or null. |
+| `ForceSave()` | Writes anyway and clears the degraded state. **Destructive**: it replaces the stored values with the defaults the failed migration left behind. |
+| `ClearDegradedState()` | Declares the instance repaired and re-enables `Save()`, without writing anything. |
+
+The safe order of recovery is to repair the values in memory first, then call `ClearDegradedState()` and `Save()`.
+Reach for `ForceSave()` only when the degraded values really are the ones that should be persisted.
+
+Members marked `[AutoSave]` save on every assignment, so a degraded configuration refuses a save as often as the
+plugin assigns to one of them. The first refusal of a degraded state is logged as an error, with the explanation
+and the backup path; the refusals after it are logged at verbose level, so the state stays visible without costing
+an error line per assignment. Each new degraded state explains itself in full again.
 
 ---
 

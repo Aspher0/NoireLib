@@ -1,8 +1,11 @@
 using FluentAssertions;
+using NoireLib.Draw3D;
+using NoireLib.Draw3D.Assets;
 using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Scene;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -13,8 +16,9 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Locks the trap doors of the Draw3D core: constant-buffer packing sizes (a drive-by field addition
 /// must fail the build, not the visuals), scene-graph semantics (dirty flags, cycles, destruction),
-/// steady-state allocation, and Law 11 - zero ImGui anywhere under NoireLib/Draw3D (executable policy,
-/// not convention).
+/// disposed-scene semantics (a dead scene rejects new content instead of silently destroying it),
+/// steady-state allocation of the frame body's device-free half, and Law 11 - zero ImGui anywhere under
+/// NoireLib/Draw3D (executable policy, not convention).
 /// </summary>
 public class Draw3DCoreContractTests
 {
@@ -118,7 +122,97 @@ public class Draw3DCoreContractTests
         sceneB.NodeCount.Should().Be(2);
     }
 
+    // ---------------------------------------------------------------- disposed-scene semantics
+
+    [Fact]
+    public void AdoptRoot_OnDisposedScene_Throws()
+    {
+        var source = new Scene3D("source");
+        var node = source.CreateNode("n");
+        var target = new Scene3D("target");
+        target.Dispose();
+
+        var act = () => target.AdoptRoot(node);
+        act.Should().Throw<ObjectDisposedException>(
+            "a disposed scene has already run its teardown, so a root adopted afterwards would never be freed - CreateNode already rejects this");
+    }
+
+    [Fact]
+    public void AddModel_OnDisposedScene_ThrowsAndLeavesTheCallersModelIntact()
+    {
+        var host = new Scene3D("host");
+        var model = new Model3D(host.CreateNode("root"), new List<Mesh>(), new List<GpuTexture>());
+        var target = new Scene3D("target");
+        target.Dispose();
+
+        var act = () => target.AddModel(model);
+        act.Should().Throw<ObjectDisposedException>(
+            "Own frees anything handed to a dead scene, so adopting there would hand back a model whose GPU buffers are gone and which draws nothing without erroring");
+        model.Root.Destroyed.Should().BeFalse("a rejected AddModel must not destroy the model the caller still owns");
+    }
+
+    // ---------------------------------------------------------------- prepare phase
+
+    [Fact]
+    public void FirePrepare_FeatureThatThrows_IsDetachedAndTheOthersStillRun()
+    {
+        var scene = new Scene3D("features");
+        var survivor = new CountingFeature();
+        scene.AddFeature(new ThrowingFeature());
+        scene.AddFeature(survivor);
+        var frame = MakeFrame();
+
+        scene.FirePrepare(in frame);
+        survivor.Calls.Should().Be(1, "a feature that throws must not stop the features after it");
+        scene.FeatureList.Should().ContainSingle().Which.Should().BeSameAs(survivor, "the throwing feature is detached (self-disable rung 2)");
+
+        scene.FirePrepare(in frame);
+        survivor.Calls.Should().Be(2);
+    }
+
+    [Fact]
+    public void FirePrepare_FeatureRegisteredDuringPrepare_RunsFromTheNextFrameOn()
+    {
+        var scene = new Scene3D("features");
+        var late = new CountingFeature();
+        scene.AddFeature(new FeatureAdder(late));
+        var frame = MakeFrame();
+
+        // The prepare loop runs off a snapshot taken under the lock: a feature registered from inside a feature must
+        // neither run this frame nor disturb the loop already in flight.
+        scene.FirePrepare(in frame);
+        late.Calls.Should().Be(0);
+
+        scene.FirePrepare(in frame);
+        late.Calls.Should().Be(1);
+    }
+
     // ---------------------------------------------------------------- steady-state allocation
+
+    [Fact]
+    public void FirePrepare_HandlerAndFeatures_AllocateNothingAfterWarmup()
+    {
+        var scene = new Scene3D("prepare-alloc");
+        var handlerCalls = 0;
+        scene.OnPrepareFrame += _ => handlerCalls++;
+        var first = new CountingFeature();
+        var second = new CountingFeature();
+        scene.AddFeature(first);
+        scene.AddFeature(second);
+        var frame = MakeFrame();
+
+        scene.FirePrepare(in frame); // warm-up (JIT, snapshot buffer growth)
+
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 8; i++)
+            scene.FirePrepare(in frame);
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+
+        handlerCalls.Should().Be(9);
+        first.Calls.Should().Be(9);
+        second.Calls.Should().Be(9);
+        allocated.Should().Be(0, "the per-frame prepare phase must not allocate, snapshotting its feature list included (Law 9)");
+    }
 
     [Fact]
     public void WorldResolutionCullingAndKeys_AllocateNothingAfterWarmup()
@@ -180,6 +274,43 @@ public class Draw3DCoreContractTests
         }
 
         offenders.Should().BeEmpty("Law 11: the Draw3D renderer core must never reference the ImGui bindings (only NoireLib/Draw3D/Interaction/ may)");
+    }
+
+    // ---------------------------------------------------------------- helpers
+
+    /// <summary>A device-free frame snapshot: the prepare phase only passes it through, so identity matrices suffice.</summary>
+    private static FrameContext MakeFrame()
+        => new(Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity,
+            Vector3.Zero, 0f, new Vector2(1920f, 1080f), Vector2.One, true, 0.1f, true, false, 1);
+
+    private sealed class CountingFeature : ISceneFeature
+    {
+        public int Calls;
+
+        public void OnPrepareFrame(Scene3D scene, in FrameContext frame) => Calls++;
+    }
+
+    private sealed class ThrowingFeature : ISceneFeature
+    {
+        public void OnPrepareFrame(Scene3D scene, in FrameContext frame)
+            => throw new InvalidOperationException("feature failure");
+    }
+
+    /// <summary>Registers another feature from inside the prepare loop, to prove the loop runs off a snapshot.</summary>
+    private sealed class FeatureAdder : ISceneFeature
+    {
+        private ISceneFeature? pending;
+
+        public FeatureAdder(ISceneFeature toAdd) => pending = toAdd;
+
+        public void OnPrepareFrame(Scene3D scene, in FrameContext frame)
+        {
+            if (pending == null)
+                return;
+
+            scene.AddFeature(pending);
+            pending = null;
+        }
     }
 
     private static string FindDraw3DSourceDirectory()

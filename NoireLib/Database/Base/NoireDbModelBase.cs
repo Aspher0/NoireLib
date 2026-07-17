@@ -3,8 +3,10 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 
 namespace NoireLib.Database;
 
@@ -18,6 +20,62 @@ namespace NoireLib.Database;
 public abstract class NoireDbModelBase
 {
     private static readonly ConcurrentDictionary<string, IReadOnlyCollection<string>> TableColumnsCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Writes and reads the JSON held inside column values. It is built with
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
+    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
+    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
+    /// this process can assign, which would make the stored column format depend on unrelated code and could change it
+    /// between the write and the read.<br/>
+    /// TypeNameHandling stays None so a stored value can never name a type into existence when it is read back.
+    /// </summary>
+    private static readonly JsonSerializer ColumnSerializer = CreateColumnSerializer();
+
+    private static JsonSerializer CreateColumnSerializer()
+    {
+        var serializer = JsonSerializer.Create(new JsonSerializerSettings
+        {
+            TypeNameHandling = TypeNameHandling.None,
+        });
+
+        // A column holds exactly one JSON document; anything after it means the stored value is corrupt.
+        serializer.CheckAdditionalContent = true;
+        return serializer;
+    }
+
+    /// <summary>
+    /// Writes the JSON <see cref="ToJson"/> returns when it is given no settings. It is separate from
+    /// <see cref="ColumnSerializer"/>, which writes the compact form stored inside a column, because
+    /// <see cref="ToJson"/> exports the model for a reader and has always produced the indented form.<br/>
+    /// It is built the same way and for the same reasons, so the exported JSON cannot be reshaped by unrelated code.
+    /// </summary>
+    private static readonly JsonSerializer DefaultJsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
+    {
+        Formatting = Formatting.Indented,
+        TypeNameHandling = TypeNameHandling.None,
+    });
+
+    private static string SerializeColumnValue(object? value)
+    {
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            ColumnSerializer.Serialize(jsonWriter, value);
+        }
+
+        return builder.ToString();
+    }
+
+    private static T? DeserializeColumnValue<T>(string json) where T : class
+    {
+        using var stringReader = new StringReader(json);
+        using var jsonReader = new JsonTextReader(stringReader);
+
+        return ColumnSerializer.Deserialize<T>(jsonReader);
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="NoireDbModelBase"/> class.
@@ -417,11 +475,40 @@ public abstract class NoireDbModelBase
     /// <summary>
     /// Serializes the model columns to JSON.
     /// </summary>
-    /// <param name="settings">Optional JSON serialization settings.</param>
+    /// <param name="settings">Optional JSON serialization settings. <see cref="TypeNameHandling"/> is always
+    /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.
+    /// When omitted, the columns are written indented.</param>
     /// <returns>A JSON string representing the model columns.</returns>
     public string ToJson(JsonSerializerSettings? settings = null)
     {
-        return JsonConvert.SerializeObject(ToDictionary(), settings ?? new JsonSerializerSettings { Formatting = Formatting.Indented });
+        var serializer = settings == null ? DefaultJsonSerializer : CreateToJsonSerializer(settings);
+        var builder = new StringBuilder(256);
+
+        using (var stringWriter = new StringWriter(builder, CultureInfo.InvariantCulture))
+        using (var jsonWriter = new JsonTextWriter(stringWriter))
+        {
+            serializer.Serialize(jsonWriter, ToDictionary());
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Builds the serializer <see cref="ToJson"/> uses for caller-supplied settings.
+    /// </summary>
+    /// <param name="settings">The caller-supplied settings.</param>
+    /// <returns>A serializer that honours <paramref name="settings"/> without leaving the output open to the process.</returns>
+    private static JsonSerializer CreateToJsonSerializer(JsonSerializerSettings settings)
+    {
+        // JsonSerializer.Create resolves every setting from the object it is given, unlike the JsonConvert overloads
+        // and JsonSerializer.CreateDefault, which merge in the process-global JsonConvert.DefaultSettings described on
+        // ColumnSerializer. The settings object itself is never mutated; the serializer is the copy.
+        var serializer = JsonSerializer.Create(settings);
+
+        // A model exports its column data, never a type to build from it.
+        serializer.TypeNameHandling = TypeNameHandling.None;
+
+        return serializer;
     }
 
     /// <summary>
@@ -748,7 +835,7 @@ public abstract class NoireDbModelBase
             }
             else if (value is System.Collections.IEnumerable && value is not string)
             {
-                columnValues[key] = JsonConvert.SerializeObject(value);
+                columnValues[key] = SerializeColumnValue(value);
             }
             else
             {
@@ -779,8 +866,8 @@ public abstract class NoireDbModelBase
             DbColumnCast.Float => Convert.ToDouble(value, CultureInfo.InvariantCulture),
             DbColumnCast.String => Convert.ToString(value, CultureInfo.InvariantCulture),
             DbColumnCast.Boolean => Convert.ToBoolean(value, CultureInfo.InvariantCulture),
-            DbColumnCast.Array => value is string text ? JsonConvert.DeserializeObject<object[]>(text) : value,
-            DbColumnCast.Json => value is string json ? JsonConvert.DeserializeObject<object>(json) : JsonConvert.SerializeObject(value),
+            DbColumnCast.Array => value is string text ? DeserializeColumnValue<object[]>(text) : value,
+            DbColumnCast.Json => value is string json ? DeserializeColumnValue<object>(json) : SerializeColumnValue(value),
             DbColumnCast.DateTime => value is DateTime dateTime ? dateTime : DateTime.Parse(value.ToString()!, CultureInfo.InvariantCulture),
             DbColumnCast.Timestamp => value is long longValue ? DateTimeOffset.FromUnixTimeSeconds(longValue).DateTime : DateTimeOffset.FromUnixTimeSeconds(Convert.ToInt64(value, CultureInfo.InvariantCulture)).DateTime,
             _ => value

@@ -31,6 +31,10 @@ public static class NoireInteract
 
     private static readonly object SyncRoot = new();
     private static readonly List<IPointerInteractor> Interactors = new();
+
+    // Reused snapshot for the render-thread overlay pass only (see DrawOverlayInteractors), so a rendered frame does
+    // not allocate one (Law 9). Deliberately not shared with the UI-thread passes, which run on their own thread.
+    private static readonly List<IPointerInteractor> OverlayScratch = new();
     private static readonly InteractionArbiter Arbiter = new();
     private static readonly Dispatcher Sink = new();
     private static readonly DragContext DragScratch = new();
@@ -609,11 +613,13 @@ public static class NoireInteract
         if (!enabled)
             return;
 
-        IPointerInteractor[] snapshot;
         lock (SyncRoot)
-            snapshot = Interactors.ToArray();
+        {
+            OverlayScratch.Clear();
+            OverlayScratch.AddRange(Interactors);
+        }
 
-        foreach (var it in snapshot)
+        foreach (var it in OverlayScratch)
         {
             if (!it.Active || it.SelfDriven)
                 continue;
@@ -866,6 +872,7 @@ public static class NoireInteract
         lock (SyncRoot)
         {
             Interactors.Clear();
+            OverlayScratch.Clear(); // the reused snapshot must not keep interactor references alive past teardown
             interactableCount = 0;
         }
 

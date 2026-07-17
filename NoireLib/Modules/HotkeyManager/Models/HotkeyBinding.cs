@@ -1,4 +1,5 @@
 using Dalamud.Game.ClientState.GamePad;
+using Dalamud.Game.ClientState.Keys;
 using System;
 
 namespace NoireLib.HotkeyManager;
@@ -66,6 +67,16 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
     }
 
     /// <summary>
+    /// Creates a keyboard binding from a <see cref="VirtualKey"/>, for example <c>new HotkeyBinding(VirtualKey.G, ctrl: true)</c>.
+    /// </summary>
+    /// <param name="key">The key of the binding.</param>
+    /// <param name="ctrl">Whether Ctrl must be held for this binding.</param>
+    /// <param name="shift">Whether Shift must be held for this binding.</param>
+    /// <param name="alt">Whether Alt must be held for this binding.</param>
+    public HotkeyBinding(VirtualKey key, bool ctrl = false, bool shift = false, bool alt = false)
+        : this((int)key, ctrl, shift, alt) { }
+
+    /// <summary>
     /// Creates a gamepad binding.
     /// </summary>
     public HotkeyBinding(GamepadButtons gamepadButton)
@@ -119,6 +130,12 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
 
     /// <inheritdoc/>
     public static implicit operator HotkeyBinding(int vkCode) => new(vkCode);
+
+    /// <summary>
+    /// Creates a modifierless keyboard binding from a <see cref="VirtualKey"/>, so a plain key can be assigned wherever a binding is expected.
+    /// </summary>
+    /// <param name="key">The key of the binding.</param>
+    public static implicit operator HotkeyBinding(VirtualKey key) => new(key);
 
     /// <inheritdoc/>
     public static implicit operator HotkeyBinding(GamepadButtons gamepadButton) => new(gamepadButton);

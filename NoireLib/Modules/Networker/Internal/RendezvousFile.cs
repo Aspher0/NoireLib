@@ -1,7 +1,6 @@
 using Newtonsoft.Json;
 using System;
 using System.IO.MemoryMappedFiles;
-using System.Text;
 
 namespace NoireLib.Networker.Internal;
 
@@ -77,7 +76,7 @@ internal static class RendezvousFile
             var bytes = new byte[length];
             accessor.ReadArray(4, bytes, 0, length);
 
-            return JsonConvert.DeserializeObject<RendezvousData>(Encoding.UTF8.GetString(bytes));
+            return Wire.DecodeModel<RendezvousData>(bytes);
         }
         catch
         {
@@ -88,7 +87,7 @@ internal static class RendezvousFile
 
     private static void Write(MemoryMappedFile mappedFile, RendezvousData data)
     {
-        var bytes = Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(data));
+        var bytes = Wire.EncodeModel(data);
 
         if (bytes.Length > Capacity - 4)
             throw new InvalidOperationException("Rendezvous data exceeds the mapped file capacity.");

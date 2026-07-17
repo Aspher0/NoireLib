@@ -9,12 +9,16 @@ namespace NoireLib.HotkeyManager;
 public sealed class HotkeyEntry
 {
     /// <summary>
-    /// The unique identifier for the hotkey.
+    /// The unique identifier for the hotkey.<br/>
+    /// Ids are matched ignoring case, so "my.hotkey" and "My.Hotkey" name one hotkey, and either spelling
+    /// reaches it from every surface that takes an id.
     /// </summary>
     public string Id { get; set; }
 
     /// <summary>
-    /// The display name for the hotkey.
+    /// The display name for the hotkey, used as the label of the binding UI.<br/>
+    /// Registering an entry whose display name is blank replaces it with <see cref="Id"/>, so that the binding
+    /// UI always has a name to render.
     /// </summary>
     public string DisplayName { get; set; }
 
@@ -85,6 +89,21 @@ public sealed class HotkeyEntry
     internal bool HoldTriggered { get; set; }
     internal long? NextRepeatTimestamp { get; set; }
     internal bool BlockedWhileDown { get; set; }
+
+    private volatile bool unregistered;
+
+    /// <summary>
+    /// Whether the manager has stopped holding this entry.<br/>
+    /// Detection queues a trigger ahead of the framework thread that delivers it, so an entry can be removed
+    /// while one of its triggers is still waiting. Delivery reads this to discard such a trigger rather than
+    /// invoke a callback the consumer has already retired. Volatile because the removal and the delivery need
+    /// not run on the same thread, and the delivery deliberately reads it without taking the manager's lock.
+    /// </summary>
+    internal bool Unregistered
+    {
+        get => unregistered;
+        set => unregistered = value;
+    }
 
     /// <summary>
     /// Creates a new hotkey entry.
