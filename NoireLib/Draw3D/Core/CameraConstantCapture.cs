@@ -346,60 +346,97 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>Whether the tap should keep its draw hooks enabled: the commit runs at the main pass's first draw.</summary>
     public bool WantsDrawSignal => active;
 
+    /// <summary>Draws a locked commit may retry across while the frame's fresh main-view upload has not landed yet.</summary>
+    private const int CommitRetryDraws = 96;
+    private int commitRetriesLeft;
+
     /// <summary>
-    /// Signal from the tap's OM detour at the first main-scene-pass bind: arms the commit for the pass's FIRST
-    /// draw. Committing at the bind itself was measured wrong in-game - the game binds and uploads its camera
-    /// block between the OM bind and the first draw, so at the bind the VS slots still hold the previous pass's
-    /// buffers and the newest camera upload may not exist yet. At the first draw both are guaranteed in place.
+    /// Signal from the tap's OM detour at the first main-scene-pass bind: arms the commit for the pass's draws.
+    /// Committing at the bind itself was measured wrong in-game - the game binds and uploads its camera block
+    /// between the OM bind and the pass's draws, so at the bind the VS slots still hold the previous pass's
+    /// buffers and the newest camera upload may not exist yet.
     /// </summary>
     public void OnMainPassBind()
     {
-        if (active)
-            awaitingMainDraw = true;
+        if (!active)
+            return;
+
+        awaitingMainDraw = true;
+        commitRetriesLeft = CommitRetryDraws;
     }
 
     /// <summary>
-    /// Signal from the tap's draw detours (render thread, every game draw while active). The first draw after the
-    /// main-pass bind runs the per-frame commit: locked, it promotes the newest pending upload that validates
-    /// against the struct camera; discovering, it learns the VS-bound buffers and advances the lock state machine.
-    /// Fast no-op on every other draw.
+    /// Signal from the tap's draw detours (render thread, every game draw while active). Locked, the commit runs
+    /// at the first draw at-or-after the frame's fresh main-view upload: a small fraction of frames put a draw
+    /// (clear, sky, query) between the pass bind and the camera upload (measured in-game as ~2% commit misses,
+    /// each a one-frame fallback pop), so a failed attempt keeps retrying on subsequent draws, bounded by
+    /// <see cref="CommitRetryDraws"/>. Discovering, the first draw learns the VS-bound buffers and advances the
+    /// lock state machine. Fast no-op on every other draw.
     /// </summary>
     public void OnGameDraw(nint context)
     {
         if (!awaitingMainDraw || context != gameContext || tap is not { SuppressSelf: false, IsInjecting: false })
             return;
 
-        awaitingMainDraw = false;
-
         try
         {
             if (!GameRenderSources.TryGetCamera(out var cam) || !cam.HasRenderCamera)
+            {
+                awaitingMainDraw = false;
                 return;
+            }
 
-            CommitAtMainDraw((ID3D11DeviceContext*)context, in cam);
+            var refVp = cam.View * cam.Proj;
+
+            if (!lockedOn)
+            {
+                awaitingMainDraw = false;
+                commitFrames++;
+                LearnBoundBuffers((ID3D11DeviceContext*)context);
+                AdvanceDiscovery(in refVp);
+                FinishCommitFrame(in refVp);
+                return;
+            }
+
+            var firstAttempt = commitRetriesLeft == CommitRetryDraws;
+            if (firstAttempt)
+            {
+                commitFrames++;
+                statCommits++;
+            }
+
+            if (TryCommitLocked(in refVp, firstAttempt))
+            {
+                awaitingMainDraw = false;
+                invalidCommitStreak = 0;
+                statValidCommits++;
+                FinishCommitFrame(in refVp);
+                return;
+            }
+
+            if (--commitRetriesLeft > 0)
+                return; // fresh upload not landed yet - the next draw retries
+
+            awaitingMainDraw = false;
+            invalidCommitStreak++;
+            if (invalidCommitStreak >= UnlockAfterInvalidCommits)
+            {
+                Unlock($"no valid upload for {UnlockAfterInvalidCommits} main-pass frames");
+                ResetDiscovery();
+            }
+
+            FinishCommitFrame(in refVp);
         }
         catch (Exception ex)
         {
+            awaitingMainDraw = false;
             OnDetourFault(ex);
         }
     }
 
-    /// <summary>The per-frame commit body, at the main pass's first draw (see <see cref="OnGameDraw"/>).</summary>
-    private void CommitAtMainDraw(ID3D11DeviceContext* ctx, in GameRenderSources.CameraData cam)
+    /// <summary>Once-per-frame commit epilogue: the phase reference for the next frame's scoring/validation, and the probe clock.</summary>
+    private void FinishCommitFrame(in Matrix4x4 refVp)
     {
-        commitFrames++;
-        var refVp = cam.View * cam.Proj;
-
-        if (lockedOn)
-        {
-            CommitLocked(in refVp);
-        }
-        else
-        {
-            LearnBoundBuffers(ctx);
-            AdvanceDiscovery(in refVp);
-        }
-
         lastCommitRefVp = refVp;
         hasLastCommitRef = true;
 
@@ -1186,17 +1223,19 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     // ---------------------------------------------------------------- locked commit
 
     /// <summary>
-    /// Promotes the newest pending upload that validates against the struct camera to this frame's commit. Newest
-    /// wins by design: the game uploads the other views first and the main view last, before the pass draws.
-    /// Validation rejects foreign views (shadow/water/portrait constants differ by orders of magnitude).
-    /// A pending already committed once is never re-committed: a frame with no fresh upload produces NO commit and
-    /// the frame falls back to the struct snapshot - projecting a frames-old camera is the one failure mode worse
-    /// than the fallback (measured in-game as amplified swim when a pointer-set lock starved the pendings).
+    /// One locked-commit attempt: promotes the newest FRESH pending upload that validates against the struct camera
+    /// to this frame's commit; false when none exists yet (the caller retries on the next draw). Newest wins by
+    /// design: the game uploads the other views first and the main view last, before the pass draws.
+    /// Validation runs against BOTH the draw-moment reference and the previous commit's reference: the uploads
+    /// carry the previous frame's camera phase (measured in-game - the captured constants equal the struct one
+    /// frame back), so under extreme motion the draw-moment reference alone is a full frame ahead and would
+    /// reject the true main view. Foreign views (shadow/water/portrait) differ by orders of magnitude from either.
+    /// A pending already committed once is never re-committed: a frame whose fresh upload never arrives produces
+    /// NO commit and falls back to the struct snapshot - projecting a frames-old camera is the one failure mode
+    /// worse than the fallback (measured in-game as amplified swim when a pointer-set lock starved the pendings).
     /// </summary>
-    private void CommitLocked(in Matrix4x4 refVp)
+    private bool TryCommitLocked(in Matrix4x4 refVp, bool firstAttempt)
     {
-        statCommits++;
-
         var bestSeq = -1L;
         var bestIdx = -1;
         for (var i = 0; i < PendingRingLength; i++)
@@ -1205,7 +1244,15 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             if (seq == 0 || seq <= bestSeq)
                 continue;
 
-            if (MatrixError(in pendingRing[i].Vp, in refVp, skipZColumn: true) < SteadyErr)
+            var err = MatrixError(in pendingRing[i].Vp, in refVp, skipZColumn: true);
+            if (hasLastCommitRef)
+            {
+                var errPrev = MatrixError(in pendingRing[i].Vp, in lastCommitRefVp, skipZColumn: true);
+                if (!float.IsNaN(errPrev) && (float.IsNaN(err) || errPrev < err))
+                    err = errPrev;
+            }
+
+            if (err < SteadyErr)
             {
                 bestSeq = seq;
                 bestIdx = i;
@@ -1219,28 +1266,19 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         if (bestIdx >= 0 && bestSeq <= lastCommittedSeq)
         {
-            statStaleSkips++;
-            bestIdx = -1; // already projected with once - stale, the struct fallback is strictly better
+            if (firstAttempt)
+                statStaleSkips++;
+            bestIdx = -1; // already projected with once - wait for the frame's fresh upload instead
         }
 
         if (bestIdx < 0)
-        {
-            invalidCommitStreak++;
-            if (invalidCommitStreak >= UnlockAfterInvalidCommits)
-            {
-                Unlock($"no valid upload for {UnlockAfterInvalidCommits} main-pass frames");
-                ResetDiscovery();
-            }
+            return false;
 
-            return;
-        }
-
-        invalidCommitStreak = 0;
         committedVp = pendingRing[bestIdx].Vp;
         commitPresentIndex = presentIndex;
         haveCommit = true;
         lastCommittedSeq = bestSeq;
-        statValidCommits++;
+        return true;
     }
 
     // ---------------------------------------------------------------- pure logic (unit-tested)

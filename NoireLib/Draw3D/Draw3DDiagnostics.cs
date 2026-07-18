@@ -49,8 +49,10 @@ public sealed unsafe class Draw3DDiagnostics
     // Frame-lag sweep accumulators: per candidate lag k (0 = the camera this frame projected with, 1 = last frame's
     // snapshot, …), how well that camera reprojects independent world anchors onto THIS frame's rendered image. The
     // depth residual (predicted depth-buffer sample vs the actual texel) is anchored to the pixels themselves and is
-    // authoritative; the screen residual (anchor reprojected vs where the game shows it) corroborates. The k with the
-    // smallest residual names the camera the pixels were drawn with - the lag the injected overlay must project with.
+    // authoritative. The screen residual corroborates but carries a lag-0 bias: its anchors come from the game's
+    // ScreenToWorld, which unprojects through the LIVE struct camera, so reprojecting through that same camera is
+    // near-self-fulfilling - a row beating lag 0 on depth while trailing it on screen is in phase with the pixels,
+    // not behind them. The k with the smallest depth residual names the camera the pixels were drawn with.
     private readonly double[] camTraceDepthResidual = new double[LagSweepMax];
     private readonly int[] camTraceDepthResidualN = new int[LagSweepMax];
     private readonly double[] camTraceScreenResidual = new double[LagSweepMax];
