@@ -100,6 +100,31 @@ Blender → *File → Export → glTF 2.0* just works (base color + texture; PBR
 
 > **Vertex colors are off by default.** FFXIV-derived character exports carry a per-vertex `COLOR_0` channel the game uses as shader *data* (wetness / wind / blend masks), not albedo - importing it as a tint paints the model in psychedelic colors. Pass `importVertexColors: true` (on `LoadAsync` / `scene.LoadModel`) only for assets that genuinely author vertex colors.
 
+**Level of detail (opt-in).** Pass `generateLods: true` when loading a model to build a chain of progressively coarser meshes (a quadric-error decimation, logged in the summary line); the renderer then draws the level that fits the object's size on screen, so a heavy model shrinking into the distance stops paying for triangles it no longer resolves. It is **off by default** - a full-detail model renders cheaply, so LOD is there for scenes with *many* heavy models at once, not for a single one. Culling, picking and bounds always use the full-resolution mesh.
+
+## Performance
+
+Everything here lives on `NoireDraw3D.Performance` (or a `Configure(c => c.Performance...)` batch). Every knob is opt-in and off the default path:
+
+```csharp
+var model = await scene.LoadModelAsync(path, generateLods: true); // build the LOD chain at import
+
+NoireDraw3D.Performance.Lod = true;             // use LOD chains where present (default on; no-op without a chain)
+NoireDraw3D.Performance.LodBias = 1f;           // >1 = drop detail sooner; <1 = keep it longer
+NoireDraw3D.Performance.LodScreenRadii = new[]{160f, 60f, 22f}; // px radii where each LOD takes over
+
+NoireDraw3D.Performance.MaxDrawDistance = 0f;   // 0 = unlimited; else skip objects past this (world units)
+NoireDraw3D.Performance.MinScreenPixels = 0f;   // 0 = off; else skip objects smaller than this on screen
+
+NoireDraw3D.Performance.Supersample = 1f;       // 1 = off; 2 = 2x2 SSAA (fixes distance shimmer, 4x the layer fill)
+```
+
+LOD and the culls all default off, so nothing is swapped or disappears unexpectedly. Reach for LOD in scenes with many heavy models; the culls pay off with many far or tiny objects (`MinScreenPixels = 1` is a near-free win there, and outlined/selected objects are exempt so a highlight never vanishes). All of it applies to the main game view only, never to a render-to-texture pass.
+
+> **Anti-aliasing.** The 3D layer has no MSAA of its own (the game world does), so a *dense* mesh - a detailed glTF model - shimmers along its edges at a distance where the anti-aliased world does not. `Performance.Supersample = 2` renders the layer at 2x and box-downsamples it at composite, which removes the shimmer at the cost of 4x the layer's fill and VRAM (opt-in for that reason). Model LOD is the lighter alternative: thinning distant geometry also removes the aliasing, trading detail for fill instead.
+
+> **Picking is BVH-accelerated.** Hover/click hit-testing against a `keepCpuData` mesh uses a bounding-volume hierarchy built once per mesh, so hovering a dense imported model (hundreds of thousands of triangles) costs an O(log n) ray query per frame, not a scan of every triangle.
+
 ## Textures
 
 ```csharp

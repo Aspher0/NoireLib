@@ -12,7 +12,8 @@
 Texture2D LayerTex : register(t0);
 Texture2D UiBefore : register(t1);
 Texture2D UiAfter  : register(t2);
-SamplerState PointClamp : register(s0);
+SamplerState PointClamp  : register(s0); // UI-mask difference must be point-exact (bit-identical pixels; see below)
+SamplerState LinearClamp : register(s1); // the layer is sampled linearly so an exact-2x supersampled layer box-downsamples here
 
 cbuffer CompositeCB : register(b0)
 {
@@ -62,5 +63,6 @@ float4 ps(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
     if (inAny) f = fMax;
 
     float k = OpacityProtect.x * (1.0 - f * ui);
-    return LayerTex.Sample(PointClamp, uv) * k;           // premultiplied x scalar is linear - Law 4
+    // Linear: at 1x it reads the exact texel (== point); a supersampled layer downsamples here (an exact 2x is a 2x2 box).
+    return LayerTex.Sample(LinearClamp, uv) * k;           // premultiplied x scalar is linear - Law 4
 }

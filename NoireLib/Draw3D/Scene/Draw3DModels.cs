@@ -57,11 +57,12 @@ public static class Draw3DModels
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
     /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint. Off by default - FFXIV-derived exports store shader data there, not colors (see <see cref="GltfLoader"/>).</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; tune via <see cref="NoireDraw3D.Performance"/>).</param>
     /// <exception cref="ObjectDisposedException">The scene is disposed. The imported model is freed before the throw.</exception>
-    public static Model3D LoadModel(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false)
+    public static Model3D LoadModel(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        var model = GltfLoader.LoadAsync(path, keepCpuData, importVertexColors).GetAwaiter().GetResult();
+        var model = GltfLoader.LoadAsync(path, keepCpuData, importVertexColors, generateLods).GetAwaiter().GetResult();
         return AttachOrFree(scene, model, position, name);
     }
 
@@ -79,12 +80,13 @@ public static class Draw3DModels
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
     /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint. Off by default (see <see cref="GltfLoader"/>).</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; tune via <see cref="NoireDraw3D.Performance"/>).</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <exception cref="ObjectDisposedException">The scene was disposed before or during the load. The imported model is freed before the throw.</exception>
-    public static async Task<Model3D> LoadModelAsync(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
+    public static async Task<Model3D> LoadModelAsync(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        var model = await GltfLoader.LoadAsync(path, keepCpuData, importVertexColors, ct).ConfigureAwait(false);
+        var model = await GltfLoader.LoadAsync(path, keepCpuData, importVertexColors, generateLods, ct).ConfigureAwait(false);
         return AttachOrFree(scene, model, position, name);
     }
 

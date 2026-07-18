@@ -134,6 +134,9 @@ public static partial class NoireDraw3D
         /// <summary>Lighting parameters for lit materials (see <see cref="NoireDraw3D.Lighting"/>).</summary>
         public Draw3DLighting Lighting => NoireDraw3D.Lighting;
 
+        /// <summary>Performance knobs: model level-of-detail and culling (see <see cref="NoireDraw3D.Performance"/>).</summary>
+        public Draw3DPerformance Performance => NoireDraw3D.Performance;
+
         /// <summary>The interaction knobs (see <see cref="NoireDraw3D.Interaction"/>).</summary>
         public Draw3DInteraction Interaction => NoireDraw3D.Interaction;
     }

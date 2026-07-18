@@ -4,6 +4,7 @@ using NoireLib.Networker.Internal;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -810,20 +811,27 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     #region Logging
 
-    internal void InternalLog(string message)
+    // Internal-visibility logging seam for the Networker's Internal/ classes, which cannot reach the protected
+    // module logging helpers directly. The debug overload takes an interpolated string handler so that the many
+    // interpolated call sites here do not build their message while EnableLogging is off; the string overload and
+    // the warning and error seams forward to the shared module helpers.
+    internal void InternalLog([InterpolatedStringHandlerArgument("")] ref NoireLogHandler message)
     {
-        if (EnableLogging)
-            NoireLogger.LogDebug(this, message);
+        if (message.IsEnabled)
+            NoireLogger.LogDebug(this, message.ToStringAndClear());
     }
 
+    internal void InternalLog(string message)
+        => LogDebug(message);
+
     internal void InternalLogWarning(string message)
-        => NoireLogger.LogWarning(this, message);
+        => LogWarning(message);
 
     internal void InternalLogError(Exception? ex, string message)
-        => NoireLogger.LogError(this, ex, message);
+        => LogError(ex, message);
 
     private void ReportHandlerException(Exception ex, string description)
-        => NoireLogger.LogError(this, ex, $"Unhandled exception in {description}.");
+        => LogError(ex, $"Unhandled exception in {description}.");
 
     #endregion
 }

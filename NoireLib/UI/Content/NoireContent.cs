@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Collections.Generic;
@@ -9,17 +10,21 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The content of a custom tooltip, built from inline segments (text, icons, images...).<br/>
-/// Segments flow on the same line, vertically centered against each other, until <see cref="AddNewLine"/> or <see cref="AddSeparator"/> is called.<br/>
-/// Example: <c>new TooltipContent().AddText("CTRL + ").AddIcon(FontAwesomeIcon.Mouse)</c>.
+/// A reusable block of rich inline content, built from segments (text, icons, images, keycaps, arbitrary widgets).<br/>
+/// Segments flow on the same line, vertically centered against each other, until <see cref="AddNewLine"/> or
+/// <see cref="AddSeparator"/> starts a new one.<br/>
+/// It is not tied to any one surface: a custom tooltip (<see cref="NoireTooltip"/>) renders one, and so can any window,
+/// label or cell of your own through the public <see cref="Draw"/>.<br/>
+/// Example: <c>new NoireContent().AddText("Hold ").AddKeyCap("Ctrl").AddText(" and scroll")</c>.
 /// </summary>
-public sealed class TooltipContent
+public sealed class NoireContent
 {
     private enum SegmentKind
     {
         Text,
         Icon,
         Image,
+        KeyCap,
         Spacing,
         NewLine,
         Separator,
@@ -30,6 +35,8 @@ public sealed class TooltipContent
     {
         public SegmentKind Kind;
         public string? Text;
+        public Func<string>? TextProvider;
+        public string? RuntimeText;
         public Vector4? Color;
         public FontAwesomeIcon Icon;
         public UiImageSource? Image;
@@ -49,11 +56,27 @@ public sealed class TooltipContent
     /// Adds a text segment.
     /// </summary>
     /// <param name="text">The text to display.</param>
-    /// <param name="color">An optional text color. When <see langword="null"/>, the tooltip text color is used.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddText(string text, Vector4? color = null)
+    /// <param name="color">An optional text color. When <see langword="null"/>, the current text color is used.</param>
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddText(string text, Vector4? color = null)
     {
         segments.Add(new Segment { Kind = SegmentKind.Text, Text = text ?? string.Empty, Color = color });
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a text segment whose text is evaluated on every draw, for a value that changes over time.<br/>
+    /// The provider runs once per draw. Keep it cheap, and note that a formatted string allocates each frame.
+    /// </summary>
+    /// <param name="textProvider">Produces the text to display, called on every draw.</param>
+    /// <param name="color">An optional text color. When <see langword="null"/>, the current text color is used.</param>
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="textProvider"/> is <see langword="null"/>.</exception>
+    public NoireContent AddText(Func<string> textProvider, Vector4? color = null)
+    {
+        ArgumentNullException.ThrowIfNull(textProvider);
+
+        segments.Add(new Segment { Kind = SegmentKind.Text, TextProvider = textProvider, Color = color });
         return this;
     }
 
@@ -61,11 +84,23 @@ public sealed class TooltipContent
     /// Adds a FontAwesome icon segment.
     /// </summary>
     /// <param name="icon">The icon to display.</param>
-    /// <param name="color">An optional icon color. When <see langword="null"/>, the tooltip text color is used.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddIcon(FontAwesomeIcon icon, Vector4? color = null)
+    /// <param name="color">An optional icon color. When <see langword="null"/>, the current text color is used.</param>
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddIcon(FontAwesomeIcon icon, Vector4? color = null)
     {
         segments.Add(new Segment { Kind = SegmentKind.Icon, Icon = icon, Color = color });
+        return this;
+    }
+
+    /// <summary>
+    /// Adds a keycap segment: the label drawn in a small bordered tile, for spelling out a shortcut inline.<br/>
+    /// The tile borrows the current theme's frame and border colors, so it sits naturally in whatever surface renders it.
+    /// </summary>
+    /// <param name="key">The key label, for example "Ctrl" or "F1".</param>
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddKeyCap(string key)
+    {
+        segments.Add(new Segment { Kind = SegmentKind.KeyCap, Text = key ?? string.Empty });
         return this;
     }
 
@@ -74,8 +109,8 @@ public sealed class TooltipContent
     /// </summary>
     /// <param name="image">The image source to display.</param>
     /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used, falling back to a text-line-sized square while loading.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddImage(UiImageSource image, Vector2? size = null)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddImage(UiImageSource image, Vector2? size = null)
     {
         if (image == null)
             throw new ArgumentNullException(nameof(image), "Image source cannot be null.");
@@ -89,8 +124,8 @@ public sealed class TooltipContent
     /// </summary>
     /// <param name="filePath">The path of the image file.</param>
     /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddImage(string filePath, Vector2? size = null)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddImage(string filePath, Vector2? size = null)
         => AddImage(UiImageSource.FromFile(filePath), size);
 
     /// <summary>
@@ -98,8 +133,8 @@ public sealed class TooltipContent
     /// </summary>
     /// <param name="gameIconId">The id of the game icon.</param>
     /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddImage(uint gameIconId, Vector2? size = null)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddImage(uint gameIconId, Vector2? size = null)
         => AddImage(UiImageSource.FromGameIcon(gameIconId), size);
 
     /// <summary>
@@ -107,16 +142,16 @@ public sealed class TooltipContent
     /// </summary>
     /// <param name="textureWrap">The texture wrap to display.</param>
     /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddImage(IDalamudTextureWrap textureWrap, Vector2? size = null)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddImage(IDalamudTextureWrap textureWrap, Vector2? size = null)
         => AddImage(UiImageSource.FromWrap(textureWrap), size);
 
     /// <summary>
     /// Adds a horizontal spacing segment on the current line.
     /// </summary>
     /// <param name="width">The width of the spacing in pixels.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddSpacing(float width)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddSpacing(float width)
     {
         segments.Add(new Segment { Kind = SegmentKind.Spacing, SpacingWidth = width });
         return this;
@@ -125,8 +160,8 @@ public sealed class TooltipContent
     /// <summary>
     /// Ends the current line: the next segments will be placed on a new line.
     /// </summary>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddNewLine()
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddNewLine()
     {
         segments.Add(new Segment { Kind = SegmentKind.NewLine });
         return this;
@@ -135,8 +170,8 @@ public sealed class TooltipContent
     /// <summary>
     /// Adds a horizontal separator line. Also ends the current line.
     /// </summary>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddSeparator()
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddSeparator()
     {
         segments.Add(new Segment { Kind = SegmentKind.Separator });
         return this;
@@ -147,8 +182,8 @@ public sealed class TooltipContent
     /// Custom segments are drawn in the natural flow of the line, without vertical centering.
     /// </summary>
     /// <param name="draw">The action drawing the segment.</param>
-    /// <returns>This <see cref="TooltipContent"/> instance, for chaining.</returns>
-    public TooltipContent AddCustom(Action draw)
+    /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
+    public NoireContent AddCustom(Action draw)
     {
         if (draw == null)
             throw new ArgumentNullException(nameof(draw), "Draw action cannot be null.");
@@ -158,17 +193,27 @@ public sealed class TooltipContent
     }
 
     /// <summary>
-    /// Creates a <see cref="TooltipContent"/> containing a single text segment.
+    /// Creates a <see cref="NoireContent"/> containing a single text segment.
     /// </summary>
-    /// <param name="text">The text of the tooltip.</param>
-    public static implicit operator TooltipContent(string text)
-        => new TooltipContent().AddText(text);
+    /// <param name="text">The text of the content.</param>
+    public static implicit operator NoireContent(string text)
+        => new NoireContent().AddText(text);
 
     /// <summary>
-    /// Draws the content inside the current ImGui window, line by line with vertical centering.
+    /// Draws the content at the current cursor, line by line with vertical centering.<br/>
+    /// Call this from your own ImGui code to render the content anywhere; a custom tooltip renders it for you.
     /// </summary>
-    internal void Draw()
+    public void Draw()
     {
+        // Dynamic text is resolved once per draw, so the provider runs a single time and the measure and draw passes agree.
+        foreach (var segment in segments)
+        {
+            if (segment.Kind == SegmentKind.Text)
+                segment.RuntimeText = segment.TextProvider != null ? segment.TextProvider() ?? string.Empty : segment.Text ?? string.Empty;
+            else if (segment.Kind == SegmentKind.KeyCap)
+                segment.RuntimeText = segment.Text ?? string.Empty;
+        }
+
         var line = new List<Segment>();
         var firstLine = true;
 
@@ -228,7 +273,7 @@ public sealed class TooltipContent
         switch (segment.Kind)
         {
             case SegmentKind.Text:
-                return ImGui.CalcTextSize(segment.Text ?? string.Empty).Y;
+                return ImGui.CalcTextSize(segment.RuntimeText ?? string.Empty).Y;
 
             case SegmentKind.Icon:
                 using (ImRaii.PushFont(UiBuilder.IconFont))
@@ -236,6 +281,9 @@ public sealed class TooltipContent
 
             case SegmentKind.Image:
                 return ResolveImageSize(segment).Y;
+
+            case SegmentKind.KeyCap:
+                return ImGui.CalcTextSize(segment.RuntimeText ?? string.Empty).Y + KeyCapPadding.Y * 2f;
 
             default:
                 return ImGui.GetTextLineHeight();
@@ -255,13 +303,16 @@ public sealed class TooltipContent
         return new Vector2(lineHeight, lineHeight);
     }
 
+    /// <summary>The inner padding of a keycap tile, DPI-scaled.</summary>
+    private static Vector2 KeyCapPadding => new Vector2(5f, 2f) * ImGuiHelpers.GlobalScale;
+
     private static void DrawSegment(Segment segment)
     {
         switch (segment.Kind)
         {
             case SegmentKind.Text:
                 using (ImRaii.PushColor(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
-                    ImGui.TextUnformatted(segment.Text ?? string.Empty);
+                    ImGui.TextUnformatted(segment.RuntimeText ?? string.Empty);
                 break;
 
             case SegmentKind.Icon:
@@ -279,6 +330,10 @@ public sealed class TooltipContent
                     ImGui.Dummy(size);
                 break;
 
+            case SegmentKind.KeyCap:
+                DrawKeyCap(segment.RuntimeText ?? string.Empty);
+                break;
+
             case SegmentKind.Spacing:
                 ImGui.Dummy(new Vector2(segment.SpacingWidth, 0f));
                 break;
@@ -287,5 +342,21 @@ public sealed class TooltipContent
                 segment.Custom?.Invoke();
                 break;
         }
+    }
+
+    private static void DrawKeyCap(string label)
+    {
+        var padding = KeyCapPadding;
+        var position = ImGui.GetCursorScreenPos();
+        var textSize = ImGui.CalcTextSize(label);
+        var tileSize = new Vector2(textSize.X + padding.X * 2f, textSize.Y + padding.Y * 2f);
+        var rounding = 3f * ImGuiHelpers.GlobalScale;
+
+        var drawList = ImGui.GetWindowDrawList();
+        drawList.AddRectFilled(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.FrameBg), rounding);
+        drawList.AddRect(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.Border), rounding);
+        drawList.AddText(position + padding, ImGui.GetColorU32(ImGuiCol.Text), label);
+
+        ImGui.Dummy(tileSize);
     }
 }

@@ -209,7 +209,7 @@ public class NoireOverlayButton : IDisposable
     /// A custom tooltip shown when the button is hovered, drawn with <see cref="NoireTooltip"/>.<br/>
     /// Can be combined with <see cref="Tooltip"/>: both are shown at the same time.
     /// </summary>
-    public TooltipContent? CustomTooltip { get; set; } = null;
+    public NoireContent? CustomTooltip { get; set; } = null;
 
     /// <summary>
     /// The style of <see cref="CustomTooltip"/>. When <see langword="null"/>, the default style is used.

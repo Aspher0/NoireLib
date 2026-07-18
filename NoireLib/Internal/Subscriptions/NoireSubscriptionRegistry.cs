@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -36,17 +37,26 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
     private readonly Dictionary<string, (TKey GroupKey, Entry Entry)> keyedSubscriptions = new();
     private readonly object gate = new();
     private readonly Action<Exception, string>? exceptionHandler;
+    private readonly bool propagateHandlerExceptions;
 
     /// <summary>
     /// Creates a new subscription registry.
     /// </summary>
     /// <param name="exceptionHandler">
     /// An optional callback invoked when a handler throws, receiving the exception and a short description of the failing subscription.<br/>
-    /// When null, exceptions are logged through <see cref="NoireLogger"/>.
+    /// When null, exceptions are logged through <see cref="NoireLogger"/>. Not used when <paramref name="propagateHandlerExceptions"/> is set.
     /// </param>
-    public NoireSubscriptionRegistry(Action<Exception, string>? exceptionHandler = null)
+    /// <param name="propagateHandlerExceptions">
+    /// When set, the registry does not catch exceptions thrown by handlers: a synchronous throw propagates out of
+    /// <see cref="Dispatch"/> / <see cref="DispatchAsync"/> and aborts the remaining handlers in the snapshot, and an
+    /// async fault is left to the caller (awaited by <see cref="DispatchAsync"/>, or fire-and-forget under
+    /// <see cref="Dispatch"/>). This is for callers such as the EventBus that apply their own per-handler exception
+    /// policy and need a handler fault to reach the publisher. Defaults to <see langword="false"/>, the catch-and-report behavior.
+    /// </param>
+    public NoireSubscriptionRegistry(Action<Exception, string>? exceptionHandler = null, bool propagateHandlerExceptions = false)
     {
         this.exceptionHandler = exceptionHandler;
+        this.propagateHandlerExceptions = propagateHandlerExceptions;
     }
 
     /// <summary>
@@ -133,6 +143,65 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
                 delivered++;
             }
         }
+
+        return delivered;
+    }
+
+    /// <summary>
+    /// Dispatches a context to all subscriptions for the given key in priority order, awaiting async handlers.<br/>
+    /// Synchronous handlers run inline in order; asynchronous handlers are started in order and all awaited together
+    /// before this returns. Filtering, one-shot claiming and priority ordering are shared with <see cref="Dispatch"/>
+    /// so the two paths cannot drift.
+    /// </summary>
+    /// <param name="key">The key to dispatch for.</param>
+    /// <param name="context">The context passed to each handler.</param>
+    /// <returns>The number of subscriptions the context was delivered to (before filtering on non-inline deliveries).</returns>
+    public async Task<int> DispatchAsync(TKey key, TContext context)
+    {
+        Entry[] snapshot;
+
+        lock (gate)
+        {
+            if (!subscriptions.TryGetValue(key, out var list) || list.Count == 0)
+                return 0;
+
+            snapshot = list.ToArray();
+        }
+
+        var delivered = 0;
+        List<Task>? pending = null;
+
+        foreach (var entry in snapshot)
+        {
+            if (!entry.Token.IsActive)
+                continue;
+
+            if (entry.Delivery == SubscriptionDelivery.FrameworkThread
+                && NoireService.IsInitialized()
+                && !NoireService.Framework.IsInFrameworkUpdateThread)
+            {
+                // Counted before filtering (per the return-value contract), and the filter, once-claim and handler
+                // all run on the framework thread, just like the synchronous Dispatch marshals them there.
+                delivered++;
+                await AsyncHelper.StartOnFrameworkThreadAsync(async () =>
+                {
+                    if (ShouldDeliver(key, entry, context))
+                        await InvokeEntryAsync(entry, context);
+                });
+                continue;
+            }
+
+            if (!ShouldDeliver(key, entry, context))
+                continue;
+
+            // A synchronous handler runs inline here (its task is already completed); an async handler is started
+            // and collected. A synchronous throw under propagation surfaces at this call and aborts the loop.
+            (pending ??= new List<Task>()).Add(InvokeEntryAsync(entry, context));
+            delivered++;
+        }
+
+        if (pending != null)
+            await Task.WhenAll(pending);
 
         return delivered;
     }
@@ -351,6 +420,21 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
     /// <returns>True if the handler was invoked; false if the filter rejected the context or the once-claim was lost.</returns>
     private bool Deliver(TKey key, Entry entry, TContext context)
     {
+        if (!ShouldDeliver(key, entry, context))
+            return false;
+
+        InvokeEntry(entry, context);
+        return true;
+    }
+
+    /// <summary>
+    /// The filter-and-once core shared by <see cref="Dispatch"/> and <see cref="DispatchAsync"/>, so the two paths
+    /// decide delivery identically. Applies the filter first, then, for a one-shot subscription, claims and removes
+    /// it, so a non-matching context never consumes a filtered one-shot.
+    /// </summary>
+    /// <returns>True when the handler should be invoked; false when the filter rejected the context or the once-claim was lost.</returns>
+    private bool ShouldDeliver(TKey key, Entry entry, TContext context)
+    {
         if (entry.Filter != null && !SafeFilter(entry, context))
             return false;
 
@@ -362,7 +446,6 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
             RemoveEntry(key, entry, invalidateToken: true);
         }
 
-        InvokeEntry(entry, context);
         return true;
     }
 
@@ -381,6 +464,18 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
 
     private void InvokeEntry(Entry entry, TContext context)
     {
+        if (propagateHandlerExceptions)
+        {
+            // The caller owns exception handling: a synchronous throw propagates out of Dispatch and aborts the
+            // rest of the snapshot, and an async handler is started fire-and-forget without a fault reporter.
+            if (entry.IsAsync)
+                _ = ((Func<TContext, Task>)entry.Handler)(context);
+            else
+                ((Action<TContext>)entry.Handler)(context);
+
+            return;
+        }
+
         try
         {
             if (entry.IsAsync)
@@ -397,6 +492,36 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
             {
                 ((Action<TContext>)entry.Handler)(context);
             }
+        }
+        catch (Exception ex)
+        {
+            ReportException(ex, $"handler of subscription {entry.Token}");
+        }
+    }
+
+    /// <summary>
+    /// Awaited counterpart to <see cref="InvokeEntry"/>, used by <see cref="DispatchAsync"/>. A synchronous handler
+    /// runs inline (returning a completed task); an async handler is awaited. Under propagation, a fault surfaces to
+    /// the awaiting dispatcher; otherwise it is caught and reported.
+    /// </summary>
+    private async Task InvokeEntryAsync(Entry entry, TContext context)
+    {
+        if (propagateHandlerExceptions)
+        {
+            if (entry.IsAsync)
+                await ((Func<TContext, Task>)entry.Handler)(context);
+            else
+                ((Action<TContext>)entry.Handler)(context);
+
+            return;
+        }
+
+        try
+        {
+            if (entry.IsAsync)
+                await ((Func<TContext, Task>)entry.Handler)(context);
+            else
+                ((Action<TContext>)entry.Handler)(context);
         }
         catch (Exception ex)
         {

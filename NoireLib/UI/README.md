@@ -19,7 +19,8 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 
 - **`NoireOverlayButton`** - A standalone button overlayed on the game screen, drawn independently from any window. Anchorable anywhere (nine anchors, absolute pixels or screen ratio), with click/scroll callbacks, a hover mouse cursor, tooltips, a visibility condition evaluated on draw, per-state draw conditions (cutscene / gpose / hidden UI / always), drag-to-reposition, optional manual drawing, and full styling. Auto-disposed with NoireLib.
 - **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input (pinned above the options or scrolling with them), arrow-key cycling of the highlighted option inside the dropdown, and an optional "hold a binding + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping). The shortcut is a `HotkeyBinding` matched with the same rules as a hotkey, and can be driven straight from the Hotkey Manager so the user can rebind it.
-- **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content (text, FontAwesome icons, images).
+- **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content built from `NoireContent`.
+- **`NoireContent`** - A reusable block of rich inline content (text, dynamic text, FontAwesome icons, images, keycaps, and any widget), flowing on lines with vertical centering. Rendered by `NoireTooltip`, and by anything of your own through its public `Draw()`.
 
 ---
 
@@ -104,7 +105,7 @@ Both tooltip kinds can be shown **at the same time**:
 
 ```csharp
 button.Tooltip = "A regular ImGui tooltip";
-button.CustomTooltip = new TooltipContent()
+button.CustomTooltip = new NoireContent()
     .AddText("CTRL + ")
     .AddIcon(FontAwesomeIcon.Mouse);
 button.CustomTooltipStyle = new TooltipStyle { BackgroundOpacity = 0.5f };
@@ -311,7 +312,7 @@ A hint tooltip (drawn with `NoireTooltip`) is shown automatically when hovering 
 
 ```csharp
 combo.WheelCycleHintEnabled = true; // Default
-combo.WheelCycleHintContent = new TooltipContent() // Optional override
+combo.WheelCycleHintContent = new NoireContent() // Optional override
     .AddText("CTRL + ")
     .AddImage(UiImageSource.FromFile(@"C:\path\to\mouse_scroll.png"), new Vector2(16f, 16f));
 combo.WheelCycleHintStyle = new TooltipStyle { BackgroundOpacity = 0.75f };
@@ -367,7 +368,7 @@ combo.OnSelectionChanged = (oldItem, newItem) => { ... };
 ```csharp
 ImGui.Button("Hover me");
 
-// Plain strings are implicitly converted to TooltipContent:
+// Plain strings are implicitly converted to NoireContent:
 NoireTooltip.ShowOnItemHover("I am a custom tooltip");
 
 // And the regular tooltip still works alongside it:
@@ -375,22 +376,32 @@ if (ImGui.IsItemHovered())
     ImGui.SetTooltip("I am a regular tooltip");
 ```
 
-### Content
+### Content (NoireContent)
 
-Content is built from inline segments. Segments flow on the same line, **vertically centered against each other**, until `AddNewLine()` / `AddSeparator()`:
+Content is built from inline segments held by a `NoireContent`. Segments flow on the same line, **vertically centered against each other**, until `AddNewLine()` / `AddSeparator()`:
 
 ```csharp
-var content = new TooltipContent()
+var content = new NoireContent()
     .AddText("CTRL + ")
     .AddImage(UiImageSource.FromFile(@"C:\path\to\mouse_scroll_down.png"), new Vector2(20f, 20f))
     .AddNewLine()
     .AddText("Scroll while pressing CTRL", new Vector4(0.7f, 0.7f, 0.7f, 1f))
+    .AddNewLine()
+    .AddText("Hold ").AddKeyCap("Ctrl").AddText(" and scroll")   // Keycap chips
+    .AddNewLine()
+    .AddText(() => $"Distance: {GetDistance():0.0}m")            // Dynamic text, re-evaluated each frame
     .AddSeparator()
     .AddIcon(FontAwesomeIcon.InfoCircle, new Vector4(0.4f, 0.7f, 1f, 1f))
     .AddText(" Icons, images and text can be mixed freely")
     .AddCustom(() => ImGui.ProgressBar(0.5f, new Vector2(120f, 0f)));
 
 NoireTooltip.ShowOnItemHover(content);
+```
+
+`NoireContent` is not tooltip-specific. Its `Draw()` is public, so the same block can be rendered anywhere in your own ImGui code (a label, a table cell, a panel), not only inside a custom tooltip:
+
+```csharp
+content.Draw();   // Renders at the current cursor.
 ```
 
 ### Style & transparency

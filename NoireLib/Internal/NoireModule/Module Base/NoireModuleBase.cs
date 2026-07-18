@@ -10,7 +10,7 @@ namespace NoireLib.Core.Modules;
 /// Allows for multiple instances of the same module type with unique identifiers and instance counters.
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
-public abstract class NoireModuleBase<TModule> : INoireModule
+public abstract partial class NoireModuleBase<TModule> : INoireModule
     where TModule : NoireModuleBase<TModule>, new()
 {
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();

@@ -1,5 +1,6 @@
 using NoireLib.Draw3D.Core;
 using System;
+using System.Numerics;
 using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Geometry;
@@ -15,6 +16,10 @@ public sealed unsafe class Mesh : IDisposable
 {
     private GpuBuffer? vertexBuffer;
     private GpuBuffer? indexBuffer;
+    private Mesh[]? lods; // progressively coarser levels (finest first), owned by this mesh; null = none
+    private MeshBvh? bvh; // lazily built on the first pick, from the retained CPU geometry (keepCpuData meshes only)
+    private bool bvhAttempted;
+    private readonly object bvhLock = new();
     private volatile bool disposed;
 
     /// <summary>Number of vertices.</summary>
@@ -43,6 +48,77 @@ public sealed unsafe class Mesh : IDisposable
 
     /// <summary>True once disposed. Draws referencing a disposed mesh are skipped and counted, never a crash.</summary>
     public bool IsDisposed => disposed;
+
+    /// <summary>
+    /// Number of coarser level-of-detail meshes attached below this one (0 = none). The renderer draws a lower LOD when
+    /// the object is small on screen; culling, picking and bounds always use this full-resolution mesh. Generated
+    /// automatically for large imported models (see <see cref="MeshSimplifier.BuildLods"/>), off otherwise.
+    /// </summary>
+    public int LodCount => lods?.Length ?? 0;
+
+    /// <summary>
+    /// Attaches a finest-first chain of coarser LOD meshes, transferring their ownership to this mesh (they are freed
+    /// when it is). Replaces any existing chain. Pass an empty array to clear it. Called by the importer; usable
+    /// directly for hand-authored LODs.
+    /// </summary>
+    /// <param name="levels">Coarser meshes, ordered from most to least detailed. Null or empty clears the chain.</param>
+    public void SetLods(Mesh[]? levels)
+    {
+        var old = lods;
+        lods = levels != null && levels.Length > 0 ? levels : null;
+        if (old != null)
+            foreach (var lod in old)
+                lod.Dispose();
+    }
+
+    /// <summary>
+    /// The mesh to draw at the given LOD level: 0 (or no chain) returns this full-resolution mesh; higher levels return
+    /// progressively coarser ones, clamped to the coarsest available. The renderer's screen-size selection drives it.
+    /// </summary>
+    /// <param name="level">0 = full detail; 1..<see cref="LodCount"/> = coarser levels.</param>
+    public Mesh SelectLod(int level)
+    {
+        var chain = lods;
+        if (level <= 0 || chain == null || chain.Length == 0)
+            return this;
+
+        return chain[Math.Min(level - 1, chain.Length - 1)];
+    }
+
+    /// <summary>
+    /// Casts a <b>model-space</b> ray against this mesh's triangles via a lazily-built BVH and returns the nearest hit -
+    /// the acceleration that keeps hover-picking a dense mesh from scanning every triangle each frame. The direction is
+    /// treated as-is, so <paramref name="t"/> comes back in the units of <paramref name="localDirection"/>. False when
+    /// the mesh kept no CPU geometry (created without <c>keepCpuData</c>), is disposed, or the ray misses. Any thread.
+    /// </summary>
+    /// <param name="localOrigin">Ray origin in model space.</param>
+    /// <param name="localDirection">Ray direction in model space.</param>
+    /// <param name="t">Receives the hit distance along <paramref name="localDirection"/>.</param>
+    /// <param name="triangle">Receives the hit triangle index.</param>
+    internal bool RayCastLocal(Vector3 localOrigin, Vector3 localDirection, out float t, out int triangle)
+    {
+        t = 0f;
+        triangle = -1;
+        if (disposed || CpuVertices == null || (CpuIndices16 == null && CpuIndices32 == null))
+            return false;
+
+        var built = bvh;
+        if (built == null && !bvhAttempted)
+        {
+            lock (bvhLock)
+            {
+                if (bvh == null && !bvhAttempted)
+                {
+                    bvhAttempted = true; // build once even if the mesh is degenerate (Build returns null)
+                    bvh = MeshBvh.Build(CpuVertices, CpuIndices16, CpuIndices32);
+                }
+
+                built = bvh;
+            }
+        }
+
+        return built != null && built.RayCast(localOrigin, localDirection, out t, out triangle);
+    }
 
     internal ID3D11Buffer* Vb
     {
@@ -135,6 +211,14 @@ public sealed unsafe class Mesh : IDisposable
             return;
 
         disposed = true;
+
+        // Coarser LOD levels are owned by this mesh - release them with it.
+        var chain = lods;
+        lods = null;
+        bvh = null; // managed arrays only; GC reclaims them once unreferenced
+        if (chain != null)
+            foreach (var lod in chain)
+                lod.Dispose();
 
         // Defer the GPU releases to the render thread so an in-progress frame can never bind a freed buffer.
         var vb = vertexBuffer;

@@ -9,7 +9,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// Draws custom tooltips that are independent from the regular ImGui tooltip system.<br/>
 /// A custom tooltip is rendered as its own window on the topmost display layer, so it can be shown
-/// <b>at the same time</b> as a regular <c>ImGui.SetTooltip()</c>, and can contain any mix of text, icons and images (see <see cref="TooltipContent"/>).<br/>
+/// <b>at the same time</b> as a regular <c>ImGui.SetTooltip()</c>, and can contain any mix of text, icons and images (see <see cref="NoireContent"/>).<br/>
 /// The background transparency is fully customizable, from 0% to 100%. See <see cref="TooltipStyle"/>.
 /// </summary>
 public static class NoireTooltip
@@ -53,7 +53,7 @@ public static class NoireTooltip
     /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
     /// until it is measured again.
     /// </param>
-    public static void ShowOnItemHover(TooltipContent content, TooltipStyle? style = null, ImGuiHoveredFlags hoveredFlags = ImGuiHoveredFlags.None, string? id = null)
+    public static void ShowOnItemHover(NoireContent content, TooltipStyle? style = null, ImGuiHoveredFlags hoveredFlags = ImGuiHoveredFlags.None, string? id = null)
     {
         if (ImGui.IsItemHovered(hoveredFlags))
             Show(content, style, id);
@@ -71,7 +71,7 @@ public static class NoireTooltip
     /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
     /// until it is measured again.
     /// </param>
-    public static void Show(TooltipContent content, TooltipStyle? style = null, string? id = null)
+    public static void Show(NoireContent content, TooltipStyle? style = null, string? id = null)
     {
         if (content == null || content.IsEmpty)
             return;
@@ -89,7 +89,7 @@ public static class NoireTooltip
         }
     }
 
-    private static void DrawTooltipWindow(string windowId, TooltipContent content, TooltipStyle style)
+    private static void DrawTooltipWindow(string windowId, NoireContent content, TooltipStyle style)
     {
         var (anchorPosition, pivot) = ResolveAnchor(style);
 

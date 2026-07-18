@@ -19,9 +19,12 @@ namespace NoireLib.Tests;
 /// sees whole rather than as a mixture of two, the rebind report the binding UI consumes exactly once, the
 /// single case insensitive rule that every comparison of a hotkey id follows, the stored keybinds that every
 /// instance of the module shares, activation while NoireLib is not initialized, and the case insensitive
-/// comparer that a load from disk restores without writing anything back.
+/// comparer that a load from disk restores without writing anything back.<br/>
+/// Shares the stored-hotkeys collection with <see cref="NoireHotkeyManagerLiveMutationTests"/> so the two never
+/// run in parallel: both mutate the process-wide <see cref="HotkeyManagerConfig.Hotkeys"/> singleton.
 /// </summary>
 [SupportedOSPlatform("windows")]
+[Collection("HotkeyManagerStoredHotkeys")]
 public class NoireHotkeyManagerTests : IDisposable
 {
     #region Helpers
@@ -55,9 +58,9 @@ public class NoireHotkeyManagerTests : IDisposable
             }
         }
 
-        // The stored keybinds are a process wide singleton that outlives a test, so a binding one test persists
-        // would otherwise be restored over the binding of the next test that registers the same id.
-        HotkeyManagerConfig.Keybinds.Clear();
+        // The stored hotkeys are a process wide singleton that outlives a test, so a hotkey one test persists
+        // would otherwise be restored over the hotkey of the next test that registers the same id.
+        HotkeyManagerConfig.Hotkeys.Clear();
     }
 
     private NoireHotkeyManager MakeManager()
@@ -122,9 +125,9 @@ public class NoireHotkeyManagerTests : IDisposable
 
     private const string ConfigJson = """
         {
-          "Version": 1,
-          "Keybinds": {
-            "My.Hotkey": { "VkCode": 65, "Ctrl": true, "Shift": false, "Alt": false, "GamepadButton": null }
+          "Version": 2,
+          "Hotkeys": {
+            "My.Hotkey": { "Binding": { "VkCode": 65, "Ctrl": true, "Shift": false, "Alt": false, "GamepadButton": null } }
           }
         }
         """;
@@ -470,9 +473,9 @@ public class NoireHotkeyManagerTests : IDisposable
         manager.SetHotkeyBinding("retired.hotkey", new HotkeyBinding(66)).Should().BeTrue();
 
         manager.TryGetHotkey("retired.hotkey", out _).Should().BeFalse("the handler unregistered it");
-        HotkeyManagerConfig.Keybinds.Should().NotContainKey(
+        HotkeyManagerConfig.Hotkeys.Should().NotContainKey(
             "retired.hotkey",
-            "the binding is stored before consumers are notified, so a handler that retires the hotkey has the last word on the stored bind rather than having its removal written straight back over");
+            "the binding is stored before consumers are notified, so a handler that retires the hotkey has the last word on the stored hotkey rather than having its removal written straight back over");
     }
 
     [Fact]
@@ -489,7 +492,7 @@ public class NoireHotkeyManagerTests : IDisposable
 
         manager.TryGetHotkey("brittle.hotkey", out var entry).Should().BeTrue();
         entry.Binding.VkCode.Should().Be(66, "the binding is committed before consumers are notified, so a throwing handler cannot undo it");
-        HotkeyManagerConfig.Keybinds["brittle.hotkey"].VkCode.Should().Be(66, "and cannot prevent it from being persisted either");
+        HotkeyManagerConfig.Hotkeys["brittle.hotkey"].Binding.VkCode.Should().Be(66, "and cannot prevent it from being persisted either");
     }
 
     [Fact]
@@ -941,22 +944,22 @@ public class NoireHotkeyManagerTests : IDisposable
         // Turning persistence back on is what saves every bind the instance holds.
         first.SetShouldSaveKeybinds(false).SetShouldSaveKeybinds(true);
 
-        HotkeyManagerConfig.Keybinds.Should().ContainKey(
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey(
             "second.instance.hotkey",
-            "the stored keybinds are keyed by id alone and shared by every instance of the module, so one instance saving its own binds must not erase another's");
-        HotkeyManagerConfig.Keybinds.Should().ContainKey("first.instance.hotkey", "the instance still stores what it holds");
+            "the stored hotkeys are keyed by id alone and shared by every instance of the module, so one instance saving its own hotkeys must not erase another's");
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey("first.instance.hotkey", "the instance still stores what it holds");
     }
 
     [Fact]
     public void SaveAllKeybinds_KeepsStoredBindsThatNoRegisteredHotkeyOwns()
     {
         var manager = MakePersistingManager();
-        HotkeyManagerConfig.Keybinds["not.registered.yet"] = new HotkeyBinding(66);
+        HotkeyManagerConfig.Hotkeys["not.registered.yet"] = new PersistedHotkey { Binding = new HotkeyBinding(66) };
 
         manager.RegisterHotkey(MakeEntry("registered.hotkey", () => { })).Should().BeTrue();
         manager.SetShouldSaveKeybinds(false).SetShouldSaveKeybinds(true);
 
-        HotkeyManagerConfig.Keybinds.Should().ContainKey(
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey(
             "not.registered.yet",
             "a stored id can belong to a hotkey registered later or to another instance, so a save has no way to tell that it is stale");
     }
@@ -967,11 +970,11 @@ public class NoireHotkeyManagerTests : IDisposable
         var manager = MakeManager();
         manager.RegisterHotkey(MakeEntry("saved.later.hotkey", () => { })).Should().BeTrue();
 
-        HotkeyManagerConfig.Keybinds.Should().NotContainKey("saved.later.hotkey", "persistence was off while the hotkey was registered");
+        HotkeyManagerConfig.Hotkeys.Should().NotContainKey("saved.later.hotkey", "persistence was off while the hotkey was registered");
 
         manager.SetShouldSaveKeybinds(true);
 
-        HotkeyManagerConfig.Keybinds.Should().ContainKey("saved.later.hotkey", "turning persistence on stores the binds the instance is already holding");
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey("saved.later.hotkey", "turning persistence on stores the hotkeys the instance is already holding");
     }
 
     [Fact]
@@ -979,12 +982,68 @@ public class NoireHotkeyManagerTests : IDisposable
     {
         var manager = MakePersistingManager();
         manager.RegisterHotkey(MakeEntry("removed.hotkey", () => { })).Should().BeTrue();
-        HotkeyManagerConfig.Keybinds["kept.hotkey"] = new HotkeyBinding(66);
+        HotkeyManagerConfig.Hotkeys["kept.hotkey"] = new PersistedHotkey { Binding = new HotkeyBinding(66) };
 
         manager.UnregisterHotkey("removed.hotkey").Should().BeTrue();
 
-        HotkeyManagerConfig.Keybinds.Should().NotContainKey("removed.hotkey", "unregistering a hotkey is the one path that deletes a stored bind");
-        HotkeyManagerConfig.Keybinds.Should().ContainKey("kept.hotkey", "it deletes the single id it is retiring and nothing else");
+        HotkeyManagerConfig.Hotkeys.Should().NotContainKey("removed.hotkey", "unregistering a hotkey is the one path that deletes a stored hotkey");
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey("kept.hotkey", "it deletes the single id it is retiring and nothing else");
+    }
+
+    [Fact]
+    public void RegisteringAHotkey_PersistsEveryOption_NotJustTheBinding()
+    {
+        var manager = MakePersistingManager();
+
+        var entry = new HotkeyEntry("options.hotkey", "Options", new HotkeyBinding(65), () => { }, true, HotkeyActivationMode.HoldAndRepeat)
+        {
+            HoldDelay = TimeSpan.FromMilliseconds(250),
+            FixedRepeatDelay = TimeSpan.FromMilliseconds(120),
+            UseRandomRepeatDelay = true,
+            BlockGameInput = true,
+            RequireGameFocus = false,
+            BlockWhenTextInputActive = false,
+            Enabled = false,
+        };
+
+        manager.RegisterHotkey(entry).Should().BeTrue();
+
+        HotkeyManagerConfig.Hotkeys.Should().ContainKey("options.hotkey");
+        var stored = HotkeyManagerConfig.Hotkeys["options.hotkey"];
+        stored.Binding.VkCode.Should().Be(65);
+        stored.DisplayName.Should().Be("Options");
+        stored.ActivationMode.Should().Be(HotkeyActivationMode.HoldAndRepeat);
+        stored.HoldDelay.Should().Be(TimeSpan.FromMilliseconds(250));
+        stored.FixedRepeatDelay.Should().Be(TimeSpan.FromMilliseconds(120));
+        stored.UseRandomRepeatDelay.Should().BeTrue();
+        stored.BlockGameInput.Should().BeTrue();
+        stored.RequireGameFocus.Should().BeFalse();
+        stored.BlockWhenTextInputActive.Should().BeFalse();
+        stored.Enabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReRegistering_RestoresTheStoredOptions_OverTheRegistrationValues()
+    {
+        var first = MakePersistingManager();
+        var second = MakePersistingManager();
+
+        first.RegisterHotkey(new HotkeyEntry("shared.options", "First", new HotkeyBinding(65), () => { }, true, HotkeyActivationMode.Repeat)
+        {
+            BlockGameInput = true,
+            HoldDelay = TimeSpan.FromMilliseconds(700),
+        }).Should().BeTrue();
+
+        // A later registration with plain defaults, as after a restart or from a sibling instance, must pick up the
+        // stored option set rather than the values it was registered with, exactly as the stored binding already did.
+        second.RegisterHotkey(new HotkeyEntry("shared.options", "Second", new HotkeyBinding(66), () => { }, true, HotkeyActivationMode.Pressed))
+            .Should().BeTrue();
+
+        second.TryGetHotkey("shared.options", out var loaded).Should().BeTrue();
+        loaded.ActivationMode.Should().Be(HotkeyActivationMode.Repeat, "the stored option overrides the code's registration value");
+        loaded.BlockGameInput.Should().BeTrue();
+        loaded.HoldDelay.Should().Be(TimeSpan.FromMilliseconds(700));
+        loaded.Binding.VkCode.Should().Be(65, "the stored binding overrides the re-registration binding, as it did before this rework");
     }
 
     #endregion
@@ -1037,7 +1096,7 @@ public class NoireHotkeyManagerTests : IDisposable
     [Fact]
     public void Config_NewInstance_UsesCaseInsensitiveComparer()
     {
-        new HotkeyManagerConfigInstance().Keybinds.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
+        new HotkeyManagerConfigInstance().Hotkeys.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -1046,19 +1105,19 @@ public class NoireHotkeyManagerTests : IDisposable
         var config = JsonConvert.DeserializeObject<HotkeyManagerConfigInstance>(ConfigJson, ProbeConfig.LoadSettings);
 
         config.Should().NotBeNull();
-        config!.Keybinds.Comparer.Should().BeSameAs(
+        config!.Hotkeys.Comparer.Should().BeSameAs(
             StringComparer.OrdinalIgnoreCase,
             "deserialization rebuilds the dictionary with the default ordinal comparer, so the load boundary has to restore the case insensitive one");
     }
 
     [Fact]
-    public void Config_Deserialized_ResolvesKeybindsIgnoringCase()
+    public void Config_Deserialized_ResolvesHotkeysIgnoringCase()
     {
         var config = JsonConvert.DeserializeObject<HotkeyManagerConfigInstance>(ConfigJson, ProbeConfig.LoadSettings);
 
-        config!.Keybinds.TryGetValue("my.hotkey", out var binding).Should().BeTrue("a persisted binding must resolve regardless of the case its id was written in");
-        binding.VkCode.Should().Be(65);
-        binding.Ctrl.Should().BeTrue();
+        config!.Hotkeys.TryGetValue("my.hotkey", out var persisted).Should().BeTrue("a persisted hotkey must resolve regardless of the case its id was written in");
+        persisted!.Binding.VkCode.Should().Be(65);
+        persisted.Binding.Ctrl.Should().BeTrue();
     }
 
     [Fact]
@@ -1066,18 +1125,18 @@ public class NoireHotkeyManagerTests : IDisposable
     {
         var config = JsonConvert.DeserializeObject<ProbeConfig>(ConfigJson, ProbeConfig.LoadSettings);
 
-        config!.Keybinds.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
+        config!.Hotkeys.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
         config.SaveCount.Should().Be(0, "normalizing the comparer must never write the configuration back to disk");
     }
 
     [Fact]
-    public void Config_Deserialized_WithNullKeybinds_YieldsEmptyCaseInsensitiveDictionary()
+    public void Config_Deserialized_WithNullHotkeys_YieldsEmptyCaseInsensitiveDictionary()
     {
-        var config = JsonConvert.DeserializeObject<HotkeyManagerConfigInstance>("""{ "Version": 1, "Keybinds": null }""", ProbeConfig.LoadSettings);
+        var config = JsonConvert.DeserializeObject<HotkeyManagerConfigInstance>("""{ "Version": 2, "Hotkeys": null }""", ProbeConfig.LoadSettings);
 
-        config!.Keybinds.Should().NotBeNull("a hand edited file must not leave the property null for every later read to dereference");
-        config.Keybinds.Should().BeEmpty();
-        config.Keybinds.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
+        config!.Hotkeys.Should().NotBeNull("a hand edited file must not leave the property null for every later read to dereference");
+        config.Hotkeys.Should().BeEmpty();
+        config.Hotkeys.Comparer.Should().BeSameAs(StringComparer.OrdinalIgnoreCase);
     }
 
     #endregion

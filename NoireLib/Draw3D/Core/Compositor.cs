@@ -106,8 +106,9 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->PSSetConstantBuffers(0, 1, &cb);
         var srvs = stackalloc ID3D11ShaderResourceView*[3] { layerSrv, uiBeforeSrv, uiAfterSrv };
         ctx->PSSetShaderResources(0, 3, srvs);
-        var sampler = cache.GetSampler(device, SamplerKey.PointClamp);
-        ctx->PSSetSamplers(0, 1, &sampler);
+        // s0 point (the UI-mask difference must read exact texels), s1 linear (box-downsamples a supersampled layer).
+        var samplers = stackalloc ID3D11SamplerState*[2] { cache.GetSampler(device, SamplerKey.PointClamp), cache.GetSampler(device, SamplerKey.LinearClamp) };
+        ctx->PSSetSamplers(0, 2, samplers);
 
         ctx->Draw(3, 0);
     }

@@ -10,6 +10,7 @@ You are reading the documentation for the `NoireHotkeyManager` module.
 - [Registering Hotkeys](#registering-hotkeys)
 - [Binding UI](#binding-ui)
 - [Activation Modes](#activation-modes)
+- [Changing a Hotkey at Runtime](#changing-a-hotkey-at-runtime)
 - [Threading](#threading)
 - [Persistence](#persistence)
 - [EventBus Integration](#eventbus-integration)
@@ -25,9 +26,10 @@ The `NoireHotkeyManager` is a module that lets you register editable hotkeys and
 
 It provides:
 - **Keyboard + gamepad hotkeys**
-- **Pressed, released, hold, repeat activation modes** (with delays if applicable)
+- **Pressed, released, hold, repeat, hold-and-repeat activation modes** (with delays if applicable)
 - **Framework thread callbacks**, so handlers can touch game state safely
-- **Optional self-managed persistence** via NoireLib configuration
+- **Optional self-managed persistence** of the whole hotkey, every option and not just the binding
+- **Live reconfiguration**: set a property on the entry and it takes effect and persists, with no remove-and-re-add
 - **EventBus integration** for hotkey lifecycle events
 - **Per-hotkey control** over enabled state, activation mode, delays, and text input blocking
 - **Managed listen state** for rebinding (with modifier-only support)
@@ -128,8 +130,8 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
 - `Binding`: Initial `HotkeyBinding`.
 - `Callback`: Action invoked when the hotkey triggers. Required.
 - `Enabled`: Enable/disable this hotkey (default `true`).
-- `ActivationMode`: Pressed, Released, Held, or Repeat.
-- `HoldDelay`: Delay before `Held` triggers (default 400ms).
+- `ActivationMode`: Pressed, Released, Held, Repeat, or HoldAndRepeat.
+- `HoldDelay`: Delay before `Held` triggers, and the initial delay before `HoldAndRepeat` starts repeating (default 400ms).
 - `FixedRepeatDelay`: Delay between repeats when `Repeat` is fixed.
 - `RepeatDelayMin`/`RepeatDelayMax`: Bounds for random repeat delay.
 - `UseRandomRepeatDelay`: Randomize repeat delay between min/max.
@@ -256,11 +258,54 @@ RepeatDelayMin = TimeSpan.FromMilliseconds(60),
 RepeatDelayMax = TimeSpan.FromMilliseconds(120)
 ```
 
+### HoldAndRepeat
+Waits `HoldDelay`, triggers once, then repeats on the same cadence as `Repeat`. It composes the two: the initial
+delay is `HoldDelay`, and the repeat interval is `FixedRepeatDelay`, or the `RepeatDelayMin`/`RepeatDelayMax` range
+when `UseRandomRepeatDelay` is set. Use it for a key that should fire after a deliberate press and then auto-repeat,
+without a separate first trigger the instant it goes down.
+
+```csharp
+ActivationMode = HotkeyActivationMode.HoldAndRepeat,
+HoldDelay = TimeSpan.FromMilliseconds(400),
+FixedRepeatDelay = TimeSpan.FromMilliseconds(80)
+```
+
 ### Defaults
 
 - `HoldDelay`: 400ms
 - `FixedRepeatDelay`: 80ms
 - `RepeatDelayMin`/`RepeatDelayMax`: 80ms
+
+---
+
+## Changing a Hotkey at Runtime
+
+The entry `TryGetHotkey` hands back is the **live** entry the module runs on, so reconfiguring a hotkey is just
+setting a property on it. There is no remove-and-re-add.
+
+```csharp
+if (hotkeyManager.TryGetHotkey("my.hotkey", out var hotkey))
+{
+    hotkey.ActivationMode = HotkeyActivationMode.HoldAndRepeat;
+    hotkey.HoldDelay = TimeSpan.FromMilliseconds(300);
+    hotkey.BlockGameInput = false;
+}
+```
+
+Each assignment takes effect on the next detection tick, and, when the manager persists, is saved as well. A burst
+of sets like the one above coalesces into a single write while the game is running, so writing several options in
+one frame is one save, not one per property.
+
+- Every configurable option behaves this way: `Enabled`, `ActivationMode`, `HoldDelay`, `FixedRepeatDelay`,
+  `RepeatDelayMin`/`RepeatDelayMax`, `UseRandomRepeatDelay`, `BlockWhenTextInputActive`, `RequireGameFocus`,
+  `BlockGameInput`, and `DisplayName`.
+- Assigning `Binding` is equivalent to calling `SetHotkeyBinding`: it raises the binding-changed notifications on
+  the framework thread and persists, exactly as that method does.
+- `Callback` is runtime-only and is not persisted. `Id` must not be changed after registration.
+- The convenience methods do the same thing for a single option: `SetHotkeyEnabled`, `SetHotkeyBinding`,
+  `SetHotkeyCallback`. `SetHotkeyEnabled` persists its change, just as setting `Enabled` on the entry does.
+- An entry you have unregistered is detached from the manager, so a later property set on it neither takes effect
+  nor writes its removed hotkey back to storage.
 
 ---
 
@@ -318,31 +363,51 @@ calling thread instead. Once the module is disposed, nothing is delivered again.
 
 ## Persistence
 
-When `ShouldSaveKeybinds` is true, the module stores bindings in `HotkeyManagerConfig.json`.
+When `ShouldSaveKeybinds` is true, the module stores hotkeys in `HotkeyManagerConfig.json`.
 
 ```csharp
 hotkeyManager?.SetShouldSaveKeybinds(true);
 ```
 
-- When enabled, existing keybinds are saved immediately.
+- When enabled, existing hotkeys are saved immediately.
 - When disabled, persistence stops and you manage storage yourself.
-- Bindings are saved and restored by hotkey `Id`.
+- Hotkeys are saved and restored by hotkey `Id`.
+
+### The whole hotkey is stored, not just the binding
+
+A stored record carries the binding **and every option**: `DisplayName`, `Enabled`, `ActivationMode`,
+`HoldDelay`, `FixedRepeatDelay`, `RepeatDelayMin`/`RepeatDelayMax`, `UseRandomRepeatDelay`,
+`BlockWhenTextInputActive`, `RequireGameFocus`, and `BlockGameInput`. A change a user makes at runtime therefore
+survives a restart.
+
+On load, the stored record **overrides** the values a hotkey is registered with, the same way the stored binding
+already did. The values you pass to `RegisterHotkey` are the defaults for a hotkey that has never been stored; once
+a hotkey is stored, its stored options win. Changing a default in your code later will not move a user who already
+has that hotkey stored, exactly as changing a default binding would not.
+
+### Upgrading from an older config
+
+Configs written before this (version 1) stored only a binding per id. They are migrated to the version 2 shape on
+load: each stored binding is lifted into a full record whose other options come up at their defaults, so an older
+plugin's saved bindings are preserved. The migration is handled by NoireLib's configuration framework, which backs
+up the file first and refuses to persist a load that failed, so a migration that cannot complete leaves the file
+untouched.
 
 ### Multiple instances share one store
 
 `HotkeyManagerConfig.json` is keyed by hotkey `Id` alone, and every `NoireHotkeyManager` in the plugin reads
 and writes the same file. Saving therefore **updates** the ids an instance holds and leaves every other id
-untouched, so two instances can persist their bindings side by side:
+untouched, so two instances can persist their hotkeys side by side:
 
 ```csharp
 var combat = NoireLibMain.AddModule<NoireHotkeyManager>("Hotkeys_Combat");
 var ui = NoireLibMain.AddModule<NoireHotkeyManager>("Hotkeys_UI");
 ```
 
-`UnregisterHotkey(id)` is the only call that deletes a stored binding, and it deletes exactly that one id.
+`UnregisterHotkey(id)` is the only call that deletes a stored hotkey, and it deletes exactly that one id.
 A stored id that no registered hotkey owns is left alone, because it may belong to another instance or to a
 hotkey that has not been registered yet. Give your ids a per-instance prefix if two instances could otherwise
-pick the same one, since a shared id means a shared binding. Ids are matched ignoring case here too, so two
+pick the same one, since a shared id means a shared hotkey. Ids are matched ignoring case here too, so two
 prefixes that differ only in case are the same prefix.
 
 ---
@@ -397,6 +462,10 @@ hotkeyManager?.SetHotkeyEnabled("my.hotkey", false);
 hotkeyManager?.SetHotkeyCallback("my.hotkey", () => DoSomething());
 hotkeyManager?.UnregisterHotkey("my.hotkey");
 ```
+
+To change any other option, set it on the live entry from `TryGetHotkey`; see
+[Changing a Hotkey at Runtime](#changing-a-hotkey-at-runtime). There is no need to unregister and re-add a hotkey
+to reconfigure it.
 
 ### Query registered hotkeys
 

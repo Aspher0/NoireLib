@@ -28,7 +28,10 @@ namespace NoireLib.Draw3D.Assets;
 /// blend masks), not albedo; multiplying it into the base color paints the model in psychedelic tints.
 /// Pass <c>importVertexColors: true</c> for assets that genuinely author vertex colors.<br/>
 /// <b>FBX:</b> never natively - convert once with FBX2glTF or Blender export; the result is a
-/// better-specified asset.
+/// better-specified asset.<br/>
+/// <b>Level of detail is off by default.</b> Pass <c>generateLods: true</c> to build a quadric-error LOD chain for large
+/// primitives (drawn coarser as they shrink on screen); tune or disable it via <see cref="NoireDraw3D.Performance"/>.
+/// Rendering a full-detail model is cheap; the LODs are for scenes with many heavy models at once.
 /// </summary>
 public static class GltfLoader
 {
@@ -36,17 +39,25 @@ public static class GltfLoader
     /// <param name="path">Absolute file path.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
     /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default - FFXIV-derived exports store shader data there, not colors (see the type remarks).</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives so they draw a coarser mesh as they shrink on screen. <b>Off by default</b> (see the type remarks); tune with <see cref="NoireDraw3D.Performance"/>.</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static Task<Model3D> LoadAsync(string path, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
-        => Task.Run(() => Import(ModelRoot.Load(path), System.IO.Path.GetFileName(path), keepCpuData, importVertexColors, ct), ct);
+    public static Task<Model3D> LoadAsync(string path, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
+        => Task.Run(() => Import(ModelRoot.Load(path), System.IO.Path.GetFileName(path), keepCpuData, importVertexColors, generateLods, ct), ct);
 
     /// <summary>Loads a binary .glb from memory into a detached, ready-to-attach model.</summary>
     /// <param name="glbBytes">GLB file contents.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
     /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default (see the type remarks).</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; see the type remarks).</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, CancellationToken ct = default)
-        => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, ct), ct);
+    public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
+        => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, generateLods, ct), ct);
+
+    /// <summary>Below this triangle count a mesh is left at full detail - a small mesh gains nothing from a LOD chain.</summary>
+    private const int LodMinTriangles = 4000;
+
+    /// <summary>Target triangle fractions for the LOD levels (finest first): 50%, 25%, 12% of the original.</summary>
+    private static readonly float[] LodTargetRatios = { 0.5f, 0.25f, 0.12f };
 
     /// <summary>Accumulates what the import actually did, so "the model looks wrong" is answerable from one log line.</summary>
     private sealed class ImportStats
@@ -55,9 +66,10 @@ public static class GltfLoader
         public int TexturedMaterials;
         public int TextureDecodeFailures;
         public bool SawVertexColors;
+        public int LodLevels;
     }
 
-    private static Model3D Import(ModelRoot root, string sourceName, bool keepCpuData, bool importVertexColors, CancellationToken ct)
+    private static Model3D Import(ModelRoot root, string sourceName, bool keepCpuData, bool importVertexColors, bool generateLods, CancellationToken ct)
     {
         NoireDraw3D.EnsureInitialized();
 
@@ -75,7 +87,7 @@ public static class GltfLoader
             foreach (var child in scene.VisualChildren)
             {
                 ct.ThrowIfCancellationRequested();
-                ImportNode(child, modelRoot, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, ct);
+                ImportNode(child, modelRoot, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, generateLods, ct);
             }
         }
 
@@ -89,6 +101,8 @@ public static class GltfLoader
         // One summary line makes a wrong-looking import self-diagnosing: textured vs. flat materials, decode
         // failures, and whether a vertex-color channel was present (the usual cause of psychedelic tints).
         var summary = $"glTF '{sourceName}': {stats.Primitives} primitive(s), {stats.TexturedMaterials} textured / {stats.Primitives - stats.TexturedMaterials} flat.";
+        if (stats.LodLevels > 0)
+            summary += $" Generated {stats.LodLevels} LOD level(s) for large primitives (NoireDraw3D.Performance.Lod).";
         if (stats.TextureDecodeFailures > 0)
             summary += $" {stats.TextureDecodeFailures} base texture(s) failed to decode (those render flat).";
         if (stats.SawVertexColors && !importVertexColors)
@@ -110,6 +124,7 @@ public static class GltfLoader
         ImportStats stats,
         bool keepCpuData,
         bool importVertexColors,
+        bool generateLods,
         CancellationToken ct)
     {
         var node = parent.CreateChild(gltfNode.Name);
@@ -120,12 +135,12 @@ public static class GltfLoader
             foreach (var primitive in gltfNode.Mesh.Primitives)
             {
                 ct.ThrowIfCancellationRequested();
-                ImportPrimitive(primitive, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors);
+                ImportPrimitive(primitive, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, generateLods);
             }
         }
 
         foreach (var child in gltfNode.VisualChildren)
-            ImportNode(child, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, ct);
+            ImportNode(child, node, meshes, textures, textureCache, dropped, stats, keepCpuData, importVertexColors, generateLods, ct);
     }
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
@@ -159,7 +174,8 @@ public static class GltfLoader
         HashSet<string> dropped,
         ImportStats stats,
         bool keepCpuData,
-        bool importVertexColors)
+        bool importVertexColors,
+        bool generateLods)
     {
         var positions = primitive.GetVertexAccessor("POSITION")?.AsVector3Array();
         if (positions == null || positions.Count == 0)
@@ -216,10 +232,37 @@ public static class GltfLoader
 
         meshes.Add(mesh);
         stats.Primitives++;
+        if (generateLods)
+            GenerateLods(mesh, vertices, triangles, stats);
 
         var material = BuildMaterial(primitive.Material, textures, textureCache, dropped, stats);
         var renderNode = node.CreateChild($"{primitive.LogicalParent?.Name}#prim");
         renderNode.SetMesh(mesh, material);
+    }
+
+    /// <summary>
+    /// Builds and attaches a quadric-error LOD chain for a large primitive, so it draws a coarser mesh as it shrinks on
+    /// screen (used/tuned via <see cref="NoireDraw3D.Performance"/>). Skipped for small meshes; fail-soft - a decimation
+    /// fault leaves the model at full detail.
+    /// </summary>
+    private static void GenerateLods(Mesh mesh, Vertex3D[] vertices, List<uint> triangles, ImportStats stats)
+    {
+        if (triangles.Count / 3 < LodMinTriangles)
+            return;
+
+        try
+        {
+            var lods = MeshSimplifier.BuildLods(vertices, triangles.ToArray(), LodTargetRatios, mesh.Name);
+            if (lods.Length > 0)
+            {
+                mesh.SetLods(lods);
+                stats.LodLevels += lods.Length;
+            }
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "glTF: LOD generation failed for a primitive; it draws at full detail.", "Draw3D");
+        }
     }
 
     private static Materials.Material BuildMaterial(

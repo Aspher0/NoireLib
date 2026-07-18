@@ -37,7 +37,7 @@ public class NoireComboBox<T>
     private NoireHotkeyManager? wheelCycleHotkeyManager;
     private string? wheelCycleHotkeyId;
 
-    private TooltipContent? cachedHintContent;
+    private NoireContent? cachedHintContent;
     private HotkeyBinding cachedHintBinding;
     private bool hasCachedHint;
 
@@ -184,7 +184,7 @@ public class NoireComboBox<T>
     /// A custom content for the wheel shortcut hint tooltip. When <see langword="null"/>, a default hint is generated from
     /// <see cref="ResolvedWheelCycleBinding"/> (e.g. "Ctrl + &lt;mouse icon&gt; to cycle"), and it follows a rebinding automatically.
     /// </summary>
-    public TooltipContent? WheelCycleHintContent { get; set; } = null;
+    public NoireContent? WheelCycleHintContent { get; set; } = null;
 
     /// <summary>
     /// The style of the wheel shortcut hint tooltip. When <see langword="null"/>, the default style is used.
@@ -728,7 +728,7 @@ public class NoireComboBox<T>
     /// </summary>
     /// <param name="binding">The binding currently gating the cycling, from <see cref="ResolvedWheelCycleBinding"/>.</param>
     /// <returns>The hint content to show.</returns>
-    private TooltipContent GetWheelCycleHint(HotkeyBinding binding)
+    private NoireContent GetWheelCycleHint(HotkeyBinding binding)
     {
         if (WheelCycleHintContent != null)
             return WheelCycleHintContent;
@@ -737,7 +737,7 @@ public class NoireComboBox<T>
         {
             cachedHintBinding = binding;
             hasCachedHint = true;
-            cachedHintContent = new TooltipContent();
+            cachedHintContent = new NoireContent();
 
             if (!binding.IsEmpty)
                 cachedHintContent.AddText($"{KeybindsHelper.FormatBinding(binding)} + ");

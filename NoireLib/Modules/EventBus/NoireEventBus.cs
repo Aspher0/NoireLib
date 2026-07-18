@@ -1,4 +1,5 @@
 using NoireLib.Core.Modules;
+using NoireLib.Core.Subscriptions;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,17 +10,43 @@ namespace NoireLib.EventBus;
 
 /// <summary>
 /// A module providing a type-safe pub/sub event bus for decoupled component communication.<br/>
-/// Supports priority ordering, filtering, async handlers, and lifecycle management.
+/// Supports priority ordering, filtering, async handlers, and lifecycle management.<br/>
+/// The subscription storage and dispatch run on the shared <see cref="NoireSubscriptionRegistry{TKey, TContext}"/>;
+/// this module maps the public <see cref="EventSubscriptionToken"/> onto the registry's internal token and applies
+/// its own <see cref="EventExceptionMode"/> policy per handler.
 /// </summary>
 public class NoireEventBus : NoireModuleBase<NoireEventBus>
 {
-    private readonly Dictionary<Type, List<SubscriptionEntry>> subscriptions = new();
-    private readonly Dictionary<string, (Type EventType, EventSubscriptionToken Token)> keyToSubscription = new();
-    private readonly object subscriptionLock = new();
+    /// <summary>
+    /// One subscription's outer/inner token pairing plus the metadata the per-type and per-owner unsubscribe
+    /// operations need, which the registry does not expose per key.
+    /// </summary>
+    private sealed class Registration
+    {
+        public required EventSubscriptionToken Outer { get; init; }
+        public required NoireSubscriptionToken Inner { get; init; }
+        public required Type EventType { get; init; }
+        public required int Priority { get; init; }
+        public object? Owner { get; init; }
+        public string? Key { get; init; }
+    }
 
-    // Publishing is allowed from any thread and is deliberately not serialized by subscriptionLock, so these
-    // counters are only ever touched through Interlocked. A plain increment would drop counts under concurrent
-    // publishes, and a plain read is not guaranteed to observe a whole 64-bit value.
+    // The registry runs with exception propagation on: each handler is wrapped so that this module's HandleException
+    // applies the EventExceptionMode (counting, logging, and re-throwing for LogAndThrow), and propagation is what
+    // lets a LogAndThrow re-throw reach the publisher and abort the remaining handlers.
+    private readonly NoireSubscriptionRegistry<Type, object> registry = new(propagateHandlerExceptions: true);
+
+    // The ledger is this module's view of its subscriptions, kept in sync with the registry under ledgerLock. Each
+    // per-type list is held in the registry's dispatch order (priority descending, stable) so UnsubscribeFirst
+    // resolves the same handler the registry would invoke first.
+    private readonly Dictionary<Type, List<Registration>> ledger = new();
+    private readonly Dictionary<EventSubscriptionToken, Registration> byOuterToken = new();
+    private readonly Dictionary<string, Registration> byKey = new(StringComparer.Ordinal);
+    private readonly object ledgerLock = new();
+
+    // Publishing is allowed from any thread and is deliberately not serialized by ledgerLock, so these counters are
+    // only ever touched through Interlocked. A plain increment would drop counts under concurrent publishes, and a
+    // plain read is not guaranteed to observe a whole 64-bit value.
     private long totalEventsPublished;
     private long totalExceptionsCaught;
 
@@ -59,8 +86,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         if (args.Length > 0 && args[0] is EventExceptionMode exceptionHandling)
             ExceptionHandling = exceptionHandling;
 
-        if (EnableLogging)
-            NoireLogger.LogInfo(this, "EventBus module initialized.");
+        LogInfo("EventBus module initialized.");
     }
 
     /// <summary>
@@ -68,8 +94,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// </summary>
     protected override void OnActivated()
     {
-        if (EnableLogging)
-            NoireLogger.LogInfo(this, "EventBus module activated.");
+        LogInfo("EventBus module activated.");
     }
 
     /// <summary>
@@ -77,8 +102,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// </summary>
     protected override void OnDeactivated()
     {
-        if (EnableLogging)
-            NoireLogger.LogInfo(this, "EventBus module deactivated.");
+        LogInfo("EventBus module deactivated.");
     }
 
     /// <summary>
@@ -97,6 +121,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         return this;
     }
 
+    #region Subscribe
 
     /// <summary>
     /// Subscribes to events of type <typeparamref name="TEvent"/>.
@@ -112,7 +137,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal<TEvent>(null, handler, priority, filter, owner);
+        => SubscribeInternal(null, handler, priority, filter, owner);
 
     /// <summary>
     /// Subscribes to events of type <typeparamref name="TEvent"/> with a custom key for easy unsubscription.
@@ -130,7 +155,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
-        => SubscribeInternal<TEvent>(key, handler, priority, filter, owner);
+        => SubscribeInternal(key, handler, priority, filter, owner);
 
     /// <summary>
     /// Subscribes to events of type <typeparamref name="TEvent"/> with an async handler.
@@ -146,7 +171,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
-        => SubscribeAsyncInternal<TEvent>(null, handler, priority, filter, owner);
+        => SubscribeAsyncInternal(null, handler, priority, filter, owner);
 
     /// <summary>
     /// Subscribes to events of type <typeparamref name="TEvent"/> with an async handler and a custom key for easy unsubscription.
@@ -164,7 +189,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         int priority = 0,
         Func<TEvent, bool>? filter = null,
         object? owner = null)
-        => SubscribeAsyncInternal<TEvent>(key, handler, priority, filter, owner);
+        => SubscribeAsyncInternal(key, handler, priority, filter, owner);
 
     private EventSubscriptionToken SubscribeInternal<TEvent>(
         string? key,
@@ -180,52 +205,25 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
 
         var eventType = typeof(TEvent);
-        var token = new EventSubscriptionToken(Guid.NewGuid());
 
-        Action<object> wrappedHandler = evt => handler((TEvent)evt);
-        Func<object, bool>? wrappedFilter = filter != null ? (evt => filter((TEvent)evt)) : null;
-
-        var entry = new SubscriptionEntry(
-            token,
-            wrappedHandler,
-            priority,
-            wrappedFilter,
-            owner,
-            isAsync: false,
-            key: key);
-
-        lock (subscriptionLock)
+        // The filter runs inside the wrapper (not in the registry) so a throwing filter is routed through
+        // HandleException like a throwing handler, and so the whole exception policy lives in one place.
+        Action<object> wrapped = evt =>
         {
-            if (key != null && keyToSubscription.TryGetValue(key, out var existingSubscription))
+            try
             {
-                if (subscriptions.TryGetValue(existingSubscription.EventType, out var existingHandlers))
-                {
-                    existingHandlers.RemoveAll(e => e.Token.Equals(existingSubscription.Token));
+                if (filter != null && !filter((TEvent)evt))
+                    return;
 
-                    if (EnableLogging)
-                        NoireLogger.LogDebug(this, $"Replaced existing subscription with key '{key}'");
-                }
+                handler((TEvent)evt);
             }
+            catch (Exception ex)
+            {
+                HandleException(ex, eventType);
+            }
+        };
 
-            if (!subscriptions.ContainsKey(eventType))
-                subscriptions[eventType] = new List<SubscriptionEntry>();
-
-            subscriptions[eventType].Add(entry);
-            subscriptions[eventType] = subscriptions[eventType]
-                .OrderByDescending(e => e.Priority)
-                .ToList();
-
-            if (key != null)
-                keyToSubscription[key] = (eventType, token);
-        }
-
-        if (EnableLogging)
-        {
-            var keyInfo = key != null ? $" with key '{key}'" : "";
-            NoireLogger.LogDebug(this, $"Subscribed to {eventType.Name}{keyInfo} (Priority: {priority})");
-        }
-
-        return token;
+        return Register(key, eventType, priority, owner, isAsync: false, () => registry.Subscribe(eventType, wrapped, BuildOptions(priority, owner)));
     }
 
     private EventSubscriptionToken SubscribeAsyncInternal<TEvent>(
@@ -242,53 +240,65 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
             throw new ArgumentException("Subscription key cannot be empty.", nameof(key));
 
         var eventType = typeof(TEvent);
-        var token = new EventSubscriptionToken(Guid.NewGuid());
 
-        Func<object, Task> wrappedHandler = evt => handler((TEvent)evt);
-        Func<object, bool>? wrappedFilter = filter != null ? (Func<object, bool>)(evt => filter((TEvent)evt)) : null;
-
-        var entry = new SubscriptionEntry(
-            token,
-            wrappedHandler,
-            priority,
-            wrappedFilter,
-            owner,
-            isAsync: true,
-            key: key);
-
-        lock (subscriptionLock)
+        Func<object, Task> wrapped = async evt =>
         {
-            if (key != null && keyToSubscription.TryGetValue(key, out var existingSubscription))
+            try
             {
-                if (subscriptions.TryGetValue(existingSubscription.EventType, out var existingHandlers))
-                {
-                    existingHandlers.RemoveAll(e => e.Token.Equals(existingSubscription.Token));
+                if (filter != null && !filter((TEvent)evt))
+                    return;
 
-                    if (EnableLogging)
-                        NoireLogger.LogDebug(this, $"Replaced existing subscription with key '{key}'");
-                }
+                await handler((TEvent)evt);
+            }
+            catch (Exception ex)
+            {
+                HandleException(ex, eventType);
+            }
+        };
+
+        return Register(key, eventType, priority, owner, isAsync: true, () => registry.SubscribeAsync(eventType, wrapped, BuildOptions(priority, owner)));
+    }
+
+    private static NoireSubscriptionOptions<object> BuildOptions(int priority, object? owner)
+        => new() { Priority = priority, Owner = owner };
+
+    /// <summary>
+    /// Creates the registry subscription and records the outer/inner pairing, applying keyed replacement first.
+    /// </summary>
+    private EventSubscriptionToken Register(string? key, Type eventType, int priority, object? owner, bool isAsync, Func<NoireSubscriptionToken> subscribe)
+    {
+        var outer = new EventSubscriptionToken(Guid.NewGuid());
+
+        lock (ledgerLock)
+        {
+            if (key != null && byKey.TryGetValue(key, out var existing))
+            {
+                RemoveFromLedger(existing, disposeInner: true);
+                LogDebug($"Replaced existing subscription with key '{key}'");
             }
 
-            if (!subscriptions.ContainsKey(eventType))
-                subscriptions[eventType] = new List<SubscriptionEntry>();
+            var inner = subscribe();
 
-            subscriptions[eventType].Add(entry);
-            subscriptions[eventType] = subscriptions[eventType]
-                .OrderByDescending(e => e.Priority)
-                .ToList();
-
-            if (key != null)
-                keyToSubscription[key] = (eventType, token);
+            AddToLedger(new Registration
+            {
+                Outer = outer,
+                Inner = inner,
+                EventType = eventType,
+                Priority = priority,
+                Owner = owner,
+                Key = key,
+            });
         }
 
-        if (EnableLogging)
-        {
-            var keyInfo = key != null ? $" with key '{key}'" : "";
-            NoireLogger.LogDebug(this, $"Subscribed async to {eventType.Name}{keyInfo} (Priority: {priority})");
-        }
+        var keyInfo = key != null ? $" with key '{key}'" : "";
+        LogDebug($"Subscribed{(isAsync ? " async" : "")} to {eventType.Name}{keyInfo} (Priority: {priority})");
 
-        return token;
+        return outer;
     }
+
+    #endregion
+
+    #region Publish
 
     /// <summary>
     /// Publishes an event to all subscribers.
@@ -308,57 +318,20 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         var eventType = typeof(TEvent);
 
         // Counted before the subscribers are looked up, because this counts publishes rather than deliveries.
-        // An event type nobody has subscribed to is still an event that was published, and counting it only once
-        // a handler exists would silently under-report exactly the traffic worth noticing.
+        // An event type nobody has subscribed to is still an event that was published.
         Interlocked.Increment(ref totalEventsPublished);
 
-        List<SubscriptionEntry>? handlers;
-
-        lock (subscriptionLock)
+        if (!registry.HasSubscribers(eventType))
         {
-            if (!subscriptions.TryGetValue(eventType, out handlers))
-            {
-                if (EnableLogging)
-                    NoireLogger.LogVerbose(this, $"Published {eventType.Name} with no subscribers.");
-                return this;
-            }
-
-            handlers = handlers.ToList(); // Copy to avoid modification during iteration
+            LogVerbose($"Published {eventType.Name} with no subscribers.");
+            return this;
         }
 
-        if (EnableLogging)
-            NoireLogger.LogVerbose(this, $"Publishing {eventType.Name} to {handlers.Count} subscriber(s).");
+        LogVerbose($"Publishing {eventType.Name} to {registry.Count(eventType)} subscriber(s).");
 
-        foreach (var entry in handlers)
-        {
-            try
-            {
-                if (entry.Filter != null && !entry.Filter(eventData!))
-                    continue;
-
-                if (entry.IsAsync)
-                {
-                    var asyncHandler = (Func<object, Task>)entry.Handler;
-                    var task = asyncHandler(eventData!);
-
-                    // Fire and forget for async handlers in synchronous publish
-                    _ = task.ContinueWith(t =>
-                    {
-                        if (t.IsFaulted)
-                            HandleException(t.Exception!.InnerException!, eventType);
-                    }, TaskScheduler.Default);
-                }
-                else
-                {
-                    var syncHandler = (Action<object>)entry.Handler;
-                    syncHandler(eventData!);
-                }
-            }
-            catch (Exception ex)
-            {
-                HandleException(ex, eventType);
-            }
-        }
+        // Dispatch invokes handlers outside the registry lock; the per-handler wrapper applies the exception policy.
+        // A LogAndThrow re-throw surfaces here and aborts the remaining handlers, matching the documented behavior.
+        registry.Dispatch(eventType, eventData!);
 
         return this;
     }
@@ -383,62 +356,20 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         // Counted before the subscribers are looked up, for the same reason as the synchronous publish above.
         Interlocked.Increment(ref totalEventsPublished);
 
-        List<SubscriptionEntry>? handlers;
-
-        lock (subscriptionLock)
+        if (!registry.HasSubscribers(eventType))
         {
-            if (!subscriptions.TryGetValue(eventType, out handlers))
-            {
-                if (EnableLogging)
-                    NoireLogger.LogVerbose(this, $"Published {eventType.Name} with no subscribers.");
-                return;
-            }
-
-            handlers = handlers.ToList();
+            LogVerbose($"Published {eventType.Name} with no subscribers.");
+            return;
         }
 
-        if (EnableLogging)
-            NoireLogger.LogVerbose(this, $"Publishing async {eventType.Name} to {handlers.Count} subscriber(s).");
+        LogVerbose($"Publishing async {eventType.Name} to {registry.Count(eventType)} subscriber(s).");
 
-        var tasks = new List<Task>();
-
-        foreach (var entry in handlers)
-        {
-            try
-            {
-                if (entry.Filter != null && !entry.Filter(eventData!))
-                    continue;
-
-                if (entry.IsAsync)
-                {
-                    var asyncHandler = (Func<object, Task>)entry.Handler;
-                    var task = asyncHandler(eventData!);
-                    tasks.Add(task);
-                }
-                else
-                {
-                    var syncHandler = (Action<object>)entry.Handler;
-                    syncHandler(eventData!);
-                }
-            }
-            catch (Exception ex)
-            {
-                HandleException(ex, eventType);
-            }
-        }
-
-        if (tasks.Count > 0)
-        {
-            try
-            {
-                await Task.WhenAll(tasks);
-            }
-            catch (Exception ex)
-            {
-                HandleException(ex, eventType);
-            }
-        }
+        await registry.DispatchAsync(eventType, eventData!);
     }
+
+    #endregion
+
+    #region Unsubscribe
 
     /// <summary>
     /// Unsubscribes a handler using its subscription token.
@@ -447,26 +378,15 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>True if the subscription was found and removed.</returns>
     public bool Unsubscribe(EventSubscriptionToken token)
     {
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            foreach (var kvp in subscriptions)
-            {
-                var entry = kvp.Value.FirstOrDefault(e => e.Token.Equals(token));
-                if (entry != null)
-                {
-                    kvp.Value.Remove(entry);
+            if (!byOuterToken.TryGetValue(token, out var reg))
+                return false;
 
-                    if (entry.Key != null)
-                        keyToSubscription.Remove(entry.Key);
-
-                    if (EnableLogging)
-                        NoireLogger.LogDebug(this, $"Unsubscribed from {kvp.Key.Name}");
-                    return true;
-                }
-            }
+            RemoveFromLedger(reg, disposeInner: true);
+            LogDebug($"Unsubscribed from {reg.EventType.Name}");
+            return true;
         }
-
-        return false;
     }
 
     /// <summary>
@@ -479,26 +399,15 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         if (string.IsNullOrWhiteSpace(key))
             return false;
 
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            if (!keyToSubscription.TryGetValue(key, out var subscriptionInfo))
+            if (!byKey.TryGetValue(key, out var reg))
                 return false;
 
-            keyToSubscription.Remove(key);
-
-            if (subscriptions.TryGetValue(subscriptionInfo.EventType, out var handlers))
-            {
-                var removed = handlers.RemoveAll(e => e.Token.Equals(subscriptionInfo.Token));
-                if (removed > 0)
-                {
-                    if (EnableLogging)
-                        NoireLogger.LogDebug(this, $"Unsubscribed from {subscriptionInfo.EventType.Name} using key '{key}'");
-                    return true;
-                }
-            }
+            RemoveFromLedger(reg, disposeInner: true);
+            LogDebug($"Unsubscribed from {reg.EventType.Name} using key '{key}'");
+            return true;
         }
-
-        return false;
     }
 
     /// <summary>
@@ -507,28 +416,20 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>True if a subscription was found and removed.</returns>
     public bool UnsubscribeFirst<TEvent>(object? owner = null)
     {
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            if (!subscriptions.TryGetValue(typeof(TEvent), out var handlers))
+            if (!ledger.TryGetValue(typeof(TEvent), out var list))
                 return false;
 
-            var toRemove = handlers.FirstOrDefault(e =>
-                owner == null || ReferenceEquals(e.Owner, owner));
+            var reg = list.FirstOrDefault(r => owner == null || ReferenceEquals(r.Owner, owner));
 
-            if (toRemove != null)
-            {
-                handlers.Remove(toRemove);
+            if (reg == null)
+                return false;
 
-                if (toRemove.Key != null)
-                    keyToSubscription.Remove(toRemove.Key);
-
-                if (EnableLogging)
-                    NoireLogger.LogDebug(this, $"Unsubscribed from {typeof(TEvent).Name}");
-                return true;
-            }
+            RemoveFromLedger(reg, disposeInner: true);
+            LogDebug($"Unsubscribed from {typeof(TEvent).Name}");
+            return true;
         }
-
-        return false;
     }
 
     /// <summary>
@@ -541,27 +442,20 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         if (owner == null)
             throw new ArgumentNullException(nameof(owner));
 
-        int totalRemoved = 0;
+        int totalRemoved;
 
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            foreach (var kvp in subscriptions)
-            {
-                var entriesToRemove = kvp.Value.Where(e => ReferenceEquals(e.Owner, owner)).ToList();
+            var matches = byOuterToken.Values.Where(r => ReferenceEquals(r.Owner, owner)).ToList();
 
-                foreach (var entry in entriesToRemove)
-                {
-                    if (entry.Key != null)
-                        keyToSubscription.Remove(entry.Key);
-                }
+            foreach (var reg in matches)
+                RemoveFromLedger(reg, disposeInner: true);
 
-                var removed = kvp.Value.RemoveAll(e => ReferenceEquals(e.Owner, owner));
-                totalRemoved += removed;
-            }
+            totalRemoved = matches.Count;
         }
 
-        if (EnableLogging && totalRemoved > 0)
-            NoireLogger.LogDebug(this, $"Unsubscribed {totalRemoved} handler(s) for owner {owner.GetType().Name}");
+        if (totalRemoved > 0)
+            LogDebug($"Unsubscribed {totalRemoved} handler(s) for owner {owner.GetType().Name}");
 
         return totalRemoved;
     }
@@ -574,43 +468,28 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>The number of subscriptions removed.</returns>
     public int UnsubscribeAll<TEvent>(object? owner = null)
     {
-        lock (subscriptionLock)
+        int removed;
+
+        lock (ledgerLock)
         {
-            if (!subscriptions.TryGetValue(typeof(TEvent), out var handlers))
+            if (!ledger.TryGetValue(typeof(TEvent), out var list))
                 return 0;
 
-            List<SubscriptionEntry> entriesToRemove;
+            var matches = (owner == null ? list : list.Where(r => ReferenceEquals(r.Owner, owner))).ToList();
 
-            if (owner == null)
-                entriesToRemove = handlers.ToList();
-            else
-                entriesToRemove = handlers.Where(e => ReferenceEquals(e.Owner, owner)).ToList();
+            foreach (var reg in matches)
+                RemoveFromLedger(reg, disposeInner: true);
 
-            foreach (var entry in entriesToRemove)
-            {
-                if (entry.Key != null)
-                    keyToSubscription.Remove(entry.Key);
-            }
-
-            int removed;
-            if (owner == null)
-            {
-                removed = handlers.Count;
-                handlers.Clear();
-            }
-            else
-            {
-                removed = handlers.RemoveAll(e => ReferenceEquals(e.Owner, owner));
-            }
-
-            if (EnableLogging && removed > 0)
-            {
-                var ownerInfo = owner != null ? $" for owner {owner.GetType().Name}" : "";
-                NoireLogger.LogDebug(this, $"Unsubscribed {removed} handler(s) from {typeof(TEvent).Name}{ownerInfo}");
-            }
-
-            return removed;
+            removed = matches.Count;
         }
+
+        if (removed > 0)
+        {
+            var ownerInfo = owner != null ? $" for owner {owner.GetType().Name}" : "";
+            LogDebug($"Unsubscribed {removed} handler(s) from {typeof(TEvent).Name}{ownerInfo}");
+        }
+
+        return removed;
     }
 
     /// <summary>
@@ -619,18 +498,26 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>The module instance for chaining.</returns>
     public NoireEventBus ClearAllSubscriptions()
     {
-        lock (subscriptionLock)
-        {
-            var totalCount = subscriptions.Values.Sum(list => list.Count);
-            subscriptions.Clear();
-            keyToSubscription.Clear();
+        int totalCount;
 
-            if (EnableLogging)
-                NoireLogger.LogInfo(this, $"Cleared {totalCount} subscription(s).");
+        lock (ledgerLock)
+        {
+            totalCount = byOuterToken.Count;
+
+            registry.ClearAll();
+            ledger.Clear();
+            byOuterToken.Clear();
+            byKey.Clear();
         }
+
+        LogInfo($"Cleared {totalCount} subscription(s).");
 
         return this;
     }
+
+    #endregion
+
+    #region Statistics
 
     /// <summary>
     /// Gets statistics about the event bus.
@@ -638,16 +525,13 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>An <see cref="EventBusStatistics"/> object containing statistics.</returns>
     public EventBusStatistics GetStatistics()
     {
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            var subscriptionCount = subscriptions.Values.Sum(list => list.Count);
-            var eventTypeCount = subscriptions.Count;
-
             return new EventBusStatistics(
                 TotalEventsPublished: Interlocked.Read(ref totalEventsPublished),
                 TotalExceptionsCaught: Interlocked.Read(ref totalExceptionsCaught),
-                ActiveSubscriptions: subscriptionCount,
-                RegisteredEventTypes: eventTypeCount
+                ActiveSubscriptions: byOuterToken.Count,
+                RegisteredEventTypes: ledger.Count
             );
         }
     }
@@ -658,13 +542,71 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     /// <returns>The number of subscribers for the specified event type.</returns>
     public int GetSubscriberCount<TEvent>()
     {
-        lock (subscriptionLock)
+        lock (ledgerLock)
         {
-            return subscriptions.TryGetValue(typeof(TEvent), out var handlers)
-                ? handlers.Count
-                : 0;
+            return ledger.TryGetValue(typeof(TEvent), out var list) ? list.Count : 0;
         }
     }
+
+    #endregion
+
+    #region Ledger
+
+    /// <summary>
+    /// Adds a registration to the outer-token, key and per-type indexes. The per-type list is kept in the registry's
+    /// dispatch order (priority descending, stable) so order-sensitive operations agree with dispatch. Call under <see cref="ledgerLock"/>.
+    /// </summary>
+    private void AddToLedger(Registration reg)
+    {
+        byOuterToken[reg.Outer] = reg;
+
+        if (reg.Key != null)
+            byKey[reg.Key] = reg;
+
+        if (!ledger.TryGetValue(reg.EventType, out var list))
+        {
+            list = new List<Registration>();
+            ledger[reg.EventType] = list;
+        }
+
+        var index = list.Count;
+
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (list[i].Priority < reg.Priority)
+            {
+                index = i;
+                break;
+            }
+        }
+
+        list.Insert(index, reg);
+    }
+
+    /// <summary>
+    /// Removes a registration from every index and, when requested, disposes its inner token so the registry drops
+    /// the underlying subscription. Call under <see cref="ledgerLock"/>.
+    /// </summary>
+    private void RemoveFromLedger(Registration reg, bool disposeInner)
+    {
+        byOuterToken.Remove(reg.Outer);
+
+        if (reg.Key != null && byKey.TryGetValue(reg.Key, out var keyed) && ReferenceEquals(keyed, reg))
+            byKey.Remove(reg.Key);
+
+        if (ledger.TryGetValue(reg.EventType, out var list))
+        {
+            list.Remove(reg);
+
+            if (list.Count == 0)
+                ledger.Remove(reg.EventType);
+        }
+
+        if (disposeInner)
+            reg.Inner.Dispose();
+    }
+
+    #endregion
 
     private void HandleException(Exception ex, Type eventType)
     {
@@ -693,7 +635,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         if (EnableLogging)
         {
             var stats = GetStatistics();
-            NoireLogger.LogInfo(this, $"EventBus disposed. Published: {stats.TotalEventsPublished}, Exceptions: {stats.TotalExceptionsCaught}");
+            LogInfo($"EventBus disposed. Published: {stats.TotalEventsPublished}, Exceptions: {stats.TotalExceptionsCaught}");
         }
     }
 }

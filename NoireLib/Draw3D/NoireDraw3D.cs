@@ -119,6 +119,15 @@ public static unsafe partial class NoireDraw3D
     private static GameRenderSources.CameraData lastCameraData;
     private static Vector4 lastDepthMap; // last frame's analytic depth map, kept raw so DescribeDepthSource can format it on demand
 
+    // A short ring of the camera each of the most recent presented frames projected its overlay with, newest reachable
+    // via TryGetCameraHistory(0). Entirely inert: nothing in the render path reads it. It exists only for the
+    // camera-phase trace (/noire3d camtrace), which sweeps it to find the frame-lag between the CPU camera snapshot the
+    // overlay uses and the GPU-rasterized pixels already in the present buffer - the residual "swim" source.
+    private const int CameraHistoryLength = 8;
+    private static readonly GameRenderSources.CameraData[] cameraHistory = new GameRenderSources.CameraData[CameraHistoryLength];
+    private static int cameraHistoryCursor; // index the NEXT push lands at; newest entry is (cursor - 1)
+    private static int cameraHistoryCount;
+
     // The present-time path projects with a camera sampled on the sim thread each Framework.Update, which matches
     // the presented backbuffer more closely than a live read at present time.
     private static GameRenderSources.CameraData frameworkCamera;
@@ -344,6 +353,9 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>Lighting parameters for <see cref="Materials.MaterialDomain.Lit"/> materials.</summary>
     public static Draw3DLighting Lighting { get; } = new();
+
+    /// <summary>Performance knobs: automatic model level-of-detail, and optional distance / screen-size culling.</summary>
+    public static Draw3DPerformance Performance { get; } = new();
 
     /// <summary>A snapshot of the renderer's counters (see <see cref="Draw3DStats"/>).</summary>
     public static Draw3DStats Stats => BuildStats();
@@ -1049,6 +1061,7 @@ public static unsafe partial class NoireDraw3D
         lastFrame = frame;
         lastFrameValid = true;
         lastCameraData = cam;
+        RecordCameraHistory(in cam); // inert ring for the camera-phase trace's lag sweep (see cameraHistory)
 
         // Prepare phase: render-thread user code runs FIRST so its mutations and Im calls land this frame.
         var scenes = SceneScratch;
@@ -1087,7 +1100,7 @@ public static unsafe partial class NoireDraw3D
         }
 
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
-        Diagnostics.OnCameraTrace(in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot); // "swim" investigation (armed by /noire3d camtrace)
+        Diagnostics.OnCameraTrace(device, in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot, injectUsedMainPass); // "swim" investigation (armed by /noire3d camtrace)
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
         // Anything to do at all?
@@ -1119,7 +1132,16 @@ public static unsafe partial class NoireDraw3D
         sceneRt ??= new RenderTarget();
         privateDepth ??= new DepthTarget();
 
-        if (!EnsureBackbufferRtv(device, backBuffer) || !sceneRt.EnsureSize(device, backBuffer.Width, backBuffer.Height))
+        // Supersampling: render the scene layer at a multiple of the display resolution and box-downsample at composite
+        // (the composite samples linearly, so an exact 2x is a perfect 2x2 box). Fail-soft - fall back to 1x if the
+        // larger target cannot be allocated. The composite still targets the present buffer at 1x, so only sceneRt (and
+        // the private depth / outline targets, which follow its size) grow. RTT views are unaffected (their own size).
+        var supersample = Performance.SupersampleFactor;
+        var renderW = supersample > 1f ? (uint)MathF.Round(backBuffer.Width * supersample) : backBuffer.Width;
+        var renderH = supersample > 1f ? (uint)MathF.Round(backBuffer.Height * supersample) : backBuffer.Height;
+
+        if (!EnsureBackbufferRtv(device, backBuffer)
+            || (!sceneRt.EnsureSize(device, renderW, renderH) && !sceneRt.EnsureSize(device, backBuffer.Width, backBuffer.Height)))
         {
             stats.FramesSkippedZeroSize++;
             return default;
@@ -1438,16 +1460,22 @@ public static unsafe partial class NoireDraw3D
         if (renderTargetTap != null && renderTargetTap.TryGetWorldCamera(out cam))
         {
             injectUsedWorldSnapshot = true;
+            injectUsedMainPass = renderTargetTap.WorldCameraIsMainPass;
             return true;
         }
 
         injectUsedWorldSnapshot = false;
+        injectUsedMainPass = false;
         return GameRenderSources.TryGetCamera(out cam);
     }
 
     // camtrace diagnostic: whether the last inject frame projected with the render-thread world-pass snapshot (true) or
     // fell back to a live camera read (false). Only meaningful on inject frames; read by Draw3DDiagnostics.OnCameraTrace.
     private static bool injectUsedWorldSnapshot;
+
+    // camtrace diagnostic: whether that world snapshot came from the main scene pass (the swim fix) vs the first-depth
+    // fallback. 0 main-pass frames in a trace means the RTM.DepthStencil fingerprint is not matching in-game.
+    private static bool injectUsedMainPass;
 
     /// <summary>
     /// Writes this frame's opaque 3D depth into the game's scene depth buffer (render thread, inside the inject
@@ -1924,6 +1952,36 @@ public static unsafe partial class NoireDraw3D
 
     internal static GameRenderSources.CameraData LastCameraData => lastCameraData;
 
+    /// <summary>Records the camera this frame's overlay was projected with, for the camera-phase trace's lag sweep. Inert to rendering.</summary>
+    private static void RecordCameraHistory(in GameRenderSources.CameraData cam)
+    {
+        cameraHistory[cameraHistoryCursor] = cam;
+        cameraHistoryCursor = (cameraHistoryCursor + 1) % CameraHistoryLength;
+        if (cameraHistoryCount < CameraHistoryLength)
+            cameraHistoryCount++;
+    }
+
+    /// <summary>
+    /// The camera <paramref name="framesBack"/> presented frames ago (0 = the camera the current frame's overlay was
+    /// projected with, 1 = the previous frame's, …). False when the ring has not yet recorded that many frames.
+    /// Used only by the camera-phase trace to test whether the pixels in the present buffer match an earlier snapshot.
+    /// </summary>
+    internal static bool TryGetCameraHistory(int framesBack, out GameRenderSources.CameraData cam)
+    {
+        cam = default;
+        if (framesBack < 0 || framesBack >= cameraHistoryCount)
+            return false;
+
+        var idx = (cameraHistoryCursor - 1 - framesBack) % CameraHistoryLength;
+        if (idx < 0)
+            idx += CameraHistoryLength;
+        cam = cameraHistory[idx];
+        return true;
+    }
+
+    /// <summary>The number of frame-lags the camera-phase trace can sweep (bounded by the history ring).</summary>
+    internal static int CameraHistoryDepth => CameraHistoryLength;
+
     private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, Vector3? groundSurface, List<PickHit> hits)
     {
         if (!node.Visible || node.Destroyed)
@@ -2102,7 +2160,7 @@ public static unsafe partial class NoireDraw3D
         if (!Matrix4x4.Invert(world, out var invWorld))
             return false;
 
-        // Transform the ray into model space (direction unnormalized - t stays in world units after rescale).
+        // Transform the ray into model space (direction normalized - t comes back in model units, rescaled below).
         var localOrigin = Vector3.Transform(origin, invWorld);
         var localDir = Vector3.TransformNormal(direction, invWorld);
         var dirScale = localDir.Length();
@@ -2110,64 +2168,14 @@ public static unsafe partial class NoireDraw3D
             return false;
         localDir /= dirScale;
 
-        var vertices = mesh.CpuVertices!;
-        var triCount = mesh.IndexCount / 3;
-        for (var i = 0; i < triCount; i++)
-        {
-            int i0, i1, i2;
-            if (mesh.CpuIndices16 != null)
-            {
-                i0 = mesh.CpuIndices16[i * 3];
-                i1 = mesh.CpuIndices16[i * 3 + 1];
-                i2 = mesh.CpuIndices16[i * 3 + 2];
-            }
-            else
-            {
-                i0 = (int)mesh.CpuIndices32![i * 3];
-                i1 = (int)mesh.CpuIndices32[i * 3 + 1];
-                i2 = (int)mesh.CpuIndices32[i * 3 + 2];
-            }
-
-            if (RayTriangle(localOrigin, localDir, vertices[i0].Position, vertices[i1].Position, vertices[i2].Position, out var t) && t < bestT)
-            {
-                bestT = t;
-                bestTriangle = i;
-            }
-        }
-
-        if (bestTriangle < 0)
+        // BVH-accelerated: O(log triangles) per pick instead of a per-triangle scan every hover frame (the mesh builds
+        // the tree once, lazily, from its retained CPU geometry).
+        if (!mesh.RayCastLocal(localOrigin, localDir, out var localT, out bestTriangle))
             return false;
 
-        // Convert model-space t back to world-space distance.
-        var hitLocal = localOrigin + localDir * bestT;
-        var hitWorld = Vector3.Transform(hitLocal, world);
+        // Convert the model-space hit distance back to world-space distance.
+        var hitWorld = Vector3.Transform(localOrigin + localDir * localT, world);
         bestT = Vector3.Distance(origin, hitWorld);
         return true;
-    }
-
-    private static bool RayTriangle(Vector3 origin, Vector3 dir, Vector3 a, Vector3 b, Vector3 c, out float t)
-    {
-        // Möller–Trumbore, two-sided.
-        t = 0f;
-        var e1 = b - a;
-        var e2 = c - a;
-        var p = Vector3.Cross(dir, e2);
-        var det = Vector3.Dot(e1, p);
-        if (MathF.Abs(det) < 1e-9f)
-            return false;
-
-        var invDet = 1f / det;
-        var s = origin - a;
-        var u = Vector3.Dot(s, p) * invDet;
-        if (u < 0f || u > 1f)
-            return false;
-
-        var q = Vector3.Cross(s, e1);
-        var v = Vector3.Dot(dir, q) * invDet;
-        if (v < 0f || u + v > 1f)
-            return false;
-
-        t = Vector3.Dot(e2, q) * invDet;
-        return t >= 0f;
     }
 }

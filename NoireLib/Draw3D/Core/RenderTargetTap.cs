@@ -78,11 +78,16 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private volatile bool injecting;        // re-entrancy guard around the injection callback
 
     // World-camera snapshot. The injected overlay must be projected with the same camera the game rasterized the
-    // world with, or it drifts relative to world geometry under camera motion. The player camera is snapshotted
-    // here on the render thread at the frame's first depth pass (the main world pass) - the exact view/projection
-    // the world now in the present buffer was drawn with - and reused at the later injection bind in the same frame.
+    // world with, or it drifts relative to world geometry under camera motion. The player camera is snapshotted here on
+    // the render thread at the MAIN scene pass (the bind whose depth-stencil is RenderTargetManager.DepthStencil) - not
+    // merely the frame's first depth-bound bind, which is a shadow-map pass. Under load the game advances the camera
+    // between the shadow passes and the main pass, so a shadow-pass snapshot lags the pixels and the layer swims
+    // (camtrace: best-fit lag 0 but a ~2px intra-frame proj-vs-live drift). The snapshot is taken at the FIRST main-scene
+    // bind (the opaque pass) and locked, and falls back to the first depth bind on a frame with no main pass.
     private GameRenderSources.CameraData worldCamera;
     private volatile bool hasWorldCamera;
+    private bool mainDepthSeen;      // the main-scene depth (RTM.DepthStencil) was captured this frame - locked, later binds ignored
+    private nint frameSceneDepthTex; // RTM.DepthStencil texture pointer, cached per present for the main-pass fingerprint
 
     /// <summary>When true the detour skips its work - set around Draw3D's OWN binds so they never interfere.</summary>
     public bool SuppressSelf;
@@ -111,6 +116,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         camera = worldCamera;
         return hasWorldCamera;
     }
+
+    /// <summary>
+    /// Whether this frame's world-camera snapshot came from the main scene pass (RTM.DepthStencil fingerprint matched)
+    /// rather than the first-depth-bind fallback. A camtrace showing 0 main-pass frames means the fingerprint is not
+    /// matching in-game and the swim fix is inert - the signal that makes that failure visible instead of silent.
+    /// </summary>
+    public bool WorldCameraIsMainPass => mainDepthSeen;
 
     /// <summary>True once the hooks have been installed (they may still be disabled).</summary>
     public bool Installed => omHook != null;
@@ -185,7 +197,11 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         candidatePresentBuffer = 0;
         lastNonBackbufferRtv = 0;
         presentBufferBinds = 0;
-        hasWorldCamera = false; // re-snapshot at this new frame's first depth pass
+        hasWorldCamera = false; // re-snapshot at the next frame's main scene pass
+        mainDepthSeen = false;
+        // Cache the main scene-depth texture for next frame's main-pass fingerprint (stable across frames; a resize just
+        // costs one frame of first-depth fallback until it is refreshed here).
+        frameSceneDepthTex = GameRenderSources.TryGetDepthTexture(out var sceneDepth) ? sceneDepth.Texture : 0;
 
         switch (state)
         {
@@ -275,14 +291,25 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             }
         }
 
-        // Snapshot the world camera at the frame's first depth pass - the main world pass runs early with a
-        // depth-stencil bound, before the present-composition binds. This captures the exact camera the world in
-        // the present buffer was drawn with, for the injection to project with later this frame. One per frame.
-        if (InjectionEnabled && !hasWorldCamera && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0)
-            && GameRenderSources.TryGetCamera(out var worldSnap))
+        // Snapshot the camera the world in the present buffer was rasterized with, at the FIRST main-scene-depth bind
+        // (the opaque depth pre-pass / colour pass - where the visible pixels are drawn). NOT the last such bind: later
+        // passes that re-bind scene depth (transparency, water, depth-reading post-fx) run with a newer camera and
+        // overshoot the pixels, which reintroduces swim (measured: keeping the latest bind put the snapshot at the live
+        // camera, proj-vs-live 0px, and the depth residual worsened). A shadow-map pass binds depth first, so it seeds a
+        // provisional snapshot that the first main pass replaces; locked after that so no later bind can overwrite it.
+        if (InjectionEnabled && !mainDepthSeen && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0))
         {
-            worldCamera = worldSnap;
-            hasWorldCamera = true;
+            if (IsMainSceneDepth(pDsv) && GameRenderSources.TryGetCamera(out var mainSnap))
+            {
+                worldCamera = mainSnap;
+                hasWorldCamera = true;
+                mainDepthSeen = true; // lock: the opaque camera is captured, ignore later (newer) binds
+            }
+            else if (!hasWorldCamera && GameRenderSources.TryGetCamera(out var provisionalSnap))
+            {
+                worldCamera = provisionalSnap; // first depth bind (shadow pass) - a fallback until the main pass replaces it
+                hasWorldCamera = true;
+            }
         }
 
         if (state == 2 && bindCount < MaxBinds)
@@ -360,6 +387,26 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         var res = (nint)resource;
         resource->Release(); // for-comparison only; the RTV keeps the resource alive
         return res;
+    }
+
+    /// <summary>
+    /// Whether a bound depth-stencil view targets the main scene depth (RTM.DepthStencil) - the fingerprint that
+    /// distinguishes the main world pass from the shadow-map passes that render first. Compares the DSV's resource to
+    /// the per-frame cached scene-depth texture; false (fall back to the first depth bind) when the cache is unset.
+    /// </summary>
+    private bool IsMainSceneDepth(nint pDsv)
+    {
+        if (frameSceneDepthTex == 0 || pDsv == 0)
+            return false;
+
+        ID3D11Resource* resource = null;
+        ((ID3D11DepthStencilView*)pDsv)->GetResource(&resource);
+        if (resource == null)
+            return false;
+
+        var match = (nint)resource == frameSceneDepthTex;
+        resource->Release(); // for-comparison only; the DSV keeps the resource alive
+        return match;
     }
 
     private void Record(uint numViews, nint rtv0, nint pDsv)

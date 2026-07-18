@@ -99,6 +99,14 @@ internal sealed unsafe class ScenePass : IDisposable
     private FrustumPlanes frustum;
     private Vector3 eyePos;
     private bool collectingForMainPass;
+
+    // Distance/screen-size culling + LOD selection, captured once per collection pass (BeginCollect). Applicable only on
+    // the main game pass with a real projection scale: a render-to-texture view or the wholesale-VP fallback exposes no
+    // usable vertical focal length, so those always draw full detail and never size-cull.
+    private Draw3DPerformance.Snapshot perfSnapshot;
+    private bool perfApplicable;
+    private float projFocalY;   // frame.Proj.M22: NDC vertical units per view-space unit at unit depth
+    private float halfViewportH;
     private bool hasOutlined;
     private float maxOutlineWidth;
     private bool lastPrivateDepthWritten;
@@ -176,6 +184,12 @@ internal sealed unsafe class ScenePass : IDisposable
         collectingForMainPass = mainPass;
         hasOutlined = false;
         maxOutlineWidth = 0f;
+
+        // Snapshot the performance settings once (Law 2 in spirit: a mid-frame settings change never tears the pass).
+        perfSnapshot = NoireDraw3D.Performance.Take();
+        projFocalY = frame.Proj.M22;
+        halfViewportH = frame.ViewportSize.Y * 0.5f;
+        perfApplicable = mainPass && !frame.UsedFallbackCamera && projFocalY is > 0.1f and < 20f;
         if (mainPass)
         {
             DynVertices.Clear();
@@ -243,6 +257,33 @@ internal sealed unsafe class ScenePass : IDisposable
             return;
         }
 
+        var distance = Vector3.Distance(bounds.Center, eyePos);
+
+        // Distance / screen-size culling and level-of-detail. Only on the main game pass with a real projection scale
+        // (see BeginCollect); bounds, sort and picking always use the full-resolution mesh, only the drawn mesh changes.
+        var drawMesh = mesh;
+        if (perfApplicable)
+        {
+            if (perfSnapshot.MaxDrawDistance > 0f && distance > perfSnapshot.MaxDrawDistance)
+            {
+                stats.CulledItems++;
+                return;
+            }
+
+            var screenRadius = distance > 1e-3f ? bounds.Radius * projFocalY * halfViewportH / distance : float.MaxValue;
+
+            // Sub-pixel cull: skip objects too small to see. Outlined/selected objects are exempt so a highlight never vanishes.
+            if (perfSnapshot.MinScreenPixels > 0f && outlineColor.W <= 0f && screenRadius < perfSnapshot.MinScreenPixels)
+            {
+                stats.CulledItems++;
+                return;
+            }
+
+            // Level of detail: draw a coarser mesh when the object is small on screen (imported models carry the chain).
+            if (mesh.LodCount > 0 && mat.Domain != MaterialDomain.GroundDecal)
+                drawMesh = mesh.SelectLod(Draw3DPerformance.SelectLevel(screenRadius, mesh.LodCount, in perfSnapshot));
+        }
+
         if (texture != null && texture.HasKeyedMutex && collectingForMainPass && !KeyedTextures.Contains(texture))
             KeyedTextures.Add(texture);
 
@@ -253,10 +294,9 @@ internal sealed unsafe class ScenePass : IDisposable
             maxOutlineWidth = MathF.Max(maxOutlineWidth, outlineWidth);
         }
 
-        var distance = Vector3.Distance(bounds.Center, eyePos);
         Append(new DrawItem
         {
-            Mesh = mesh,
+            Mesh = drawMesh,
             Mat = mat,
             Color = color,
             World = world,
@@ -461,7 +501,10 @@ internal sealed unsafe class ScenePass : IDisposable
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
             InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
+            // Viewport is the RENDER target size (= display size × supersample), not the display size, so DisplayUv
+            // (svPos.xy · Viewport.zw) is a correct [0,1] UV at any supersample factor; the game-depth sample then
+            // scales that UV by DepthUv into the game buffer, which is resolution-independent.
+            Viewport = new Vector4(sceneRt.Width, sceneRt.Height, 1f / sceneRt.Width, 1f / sceneRt.Height),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
             // DepthCal.w carries the top-surface elevation band (world units) for HighestOnly decals; 0 = feature off
             // (they degrade to AllSurfaces). WorldHeight (t2) is only sampled when this is > 0.
@@ -1007,7 +1050,7 @@ internal sealed unsafe class ScenePass : IDisposable
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
             InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            Viewport = new Vector4(frame.ViewportSize.X, frame.ViewportSize.Y, 1f / frame.ViewportSize.X, 1f / frame.ViewportSize.Y),
+            Viewport = new Vector4(maskRt.Width, maskRt.Height, 1f / maskRt.Width, 1f / maskRt.Height), // render size (supersample-aware)
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
             DepthCal = depthCal,
             Ambient = Vector4.Zero,

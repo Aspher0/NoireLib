@@ -28,16 +28,31 @@ public sealed unsafe class Draw3DDiagnostics
     private float validateMaxMatrixDelta;
     private bool probePending;
 
-    // Camera-phase trace ("swim" investigation): compares the camera the overlay is projected with against a fresh live
-    // read taken later in the same frame, over an armed window (see RunCameraPhaseTrace / OnCameraTrace).
+    // Camera-phase trace ("swim" investigation): over an armed window, sweeps the recorded camera history to find the
+    // frame-lag between the CPU camera the overlay projects with and the GPU-rasterized pixels already in the present
+    // buffer (see RunCameraPhaseTrace / OnCameraTrace). The legacy proj-vs-live drift is kept as a secondary signal.
+    private const int LagSweepMax = 8;
+    private const int DepthReadbackEvery = 6; // whole-texture depth copy is heavy; sample the depth-anchored residual on a subset of frames
     private int camTraceFramesRemaining;
     private int camTraceInjectFrames;
     private int camTraceFallbackFrames;
     private int camTraceSnapshotFrames;
+    private int camTraceMainPassFrames;
     private float camTraceMaxScreenDelta;
     private double camTraceScreenSum;
     private int camTraceScreenSamples;
     private float camTraceMaxMatrixDelta;
+
+    // Frame-lag sweep accumulators: per candidate lag k (0 = the camera this frame projected with, 1 = last frame's
+    // snapshot, …), how well that camera reprojects independent world anchors onto THIS frame's rendered image. The
+    // depth residual (predicted depth-buffer sample vs the actual texel) is anchored to the pixels themselves and is
+    // authoritative; the screen residual (anchor reprojected vs where the game shows it) corroborates. The k with the
+    // smallest residual names the camera the pixels were drawn with - the lag the injected overlay must project with.
+    private readonly double[] camTraceDepthResidual = new double[LagSweepMax];
+    private readonly int[] camTraceDepthResidualN = new int[LagSweepMax];
+    private readonly double[] camTraceScreenResidual = new double[LagSweepMax];
+    private readonly int[] camTraceScreenResidualN = new int[LagSweepMax];
+    private int camTraceDepthReadbacks;
 
     internal Draw3DDiagnostics() { }
 
@@ -65,13 +80,18 @@ public sealed unsafe class Draw3DDiagnostics
     }
 
     /// <summary>
-    /// Arms the camera-phase trace for the next <paramref name="frames"/> rendered frames (results logged): each frame it
-    /// compares the camera the overlay was projected with against a fresh live camera read taken later in the same frame,
-    /// and reports the resulting screen drift (the visible "swim" magnitude), the View·Proj element delta, and how many
-    /// frames went through the pre-UI inject path (world-pass snapshot) vs the present-time fallback. Read-only.<br/>
-    /// Run it while panning / zooming / orbiting the camera vigorously at high frame-rate to characterize the swim; the
-    /// numbers say whether the drift is intra-frame camera advance (large delta on inject frames) or a fallback-path
-    /// camera-source mismatch (many fallback frames). No projection behavior changes - this only measures.
+    /// Arms the camera-phase trace for the next <paramref name="frames"/> rendered frames (results logged): the tool that
+    /// pins down the residual "swim". Each frame it takes independent world anchors under a screen grid (the game's own
+    /// collision raycast) plus this frame's rendered depth texels, and for each candidate <b>frame-lag</b> - the camera
+    /// the overlay projected 0, 1, 2, … frames ago, from the history ring - measures how well that camera reprojects the
+    /// anchors onto THIS frame's rendered image. The pixels were drawn with exactly one camera, so the lag with the
+    /// smallest residual names it. It also reports the inject-vs-present-time-fallback frame split, and the old
+    /// proj-vs-live drift as a secondary signal. Read-only - no projection behavior changes.<br/>
+    /// Run it while panning / zooming / orbiting the camera <b>vigorously</b> at high frame-rate under load: the log's
+    /// lag table calls out the best-fit lag k, which is the exact correction (project the injected overlay with the
+    /// snapshot k frames back). A best-fit of 0 means the overlay is already in phase and any residual is not a frame-lag
+    /// (look at the fallback count instead). The whole-texture depth readback is throttled, so the trace itself costs
+    /// some frames while armed.
     /// </summary>
     /// <param name="frames">How many rendered frames to trace (clamped to 1..6000; default 120 ≈ a couple seconds).</param>
     public void RunCameraPhaseTrace(int frames = 120)
@@ -81,10 +101,16 @@ public sealed unsafe class Draw3DDiagnostics
         camTraceInjectFrames = 0;
         camTraceFallbackFrames = 0;
         camTraceSnapshotFrames = 0;
+        camTraceMainPassFrames = 0;
         camTraceMaxScreenDelta = 0f;
         camTraceScreenSum = 0;
         camTraceScreenSamples = 0;
         camTraceMaxMatrixDelta = 0f;
+        Array.Clear(camTraceDepthResidual);
+        Array.Clear(camTraceDepthResidualN);
+        Array.Clear(camTraceScreenResidual);
+        Array.Clear(camTraceScreenResidualN);
+        camTraceDepthReadbacks = 0;
     }
 
     /// <summary>
@@ -195,15 +221,17 @@ public sealed unsafe class Draw3DDiagnostics
     }
 
     /// <summary>
-    /// Per-rendered-frame camera-phase sampling (called from the shared render body with the camera the overlay was
-    /// actually projected with). Compares it against a fresh live read taken now - later in the same frame than the
-    /// projection camera was captured - and accumulates the screen drift over the armed window. See <see cref="RunCameraPhaseTrace"/>.
+    /// Per-rendered-frame camera-phase sampling (called from the shared render body, render thread). Runs the frame-lag
+    /// sweep that measures the overlay-vs-pixels error directly, plus the legacy proj-vs-live drift as a secondary
+    /// signal. See <see cref="RunCameraPhaseTrace"/>.
     /// </summary>
-    /// <param name="frame">This frame's context (viewport + projection cross-check).</param>
+    /// <param name="device">The render device (for the throttled depth-buffer readback that anchors the sweep to the pixels).</param>
+    /// <param name="frame">This frame's context (viewport + projection).</param>
     /// <param name="projCam">The camera the overlay was projected with (inject = world-pass snapshot; fallback = framework snapshot).</param>
     /// <param name="viaInject">True when the frame rendered through the pre-UI inject path.</param>
     /// <param name="usedWorldSnapshot">True when the inject path used the render-thread world-pass camera snapshot (vs a live fallback).</param>
-    internal void OnCameraTrace(in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot)
+    /// <param name="usedMainPass">True when that snapshot came from the main scene pass (the swim fix) vs the first-depth fallback.</param>
+    internal void OnCameraTrace(RenderDevice device, in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot, bool usedMainPass)
     {
         if (camTraceFramesRemaining <= 0)
             return;
@@ -214,28 +242,24 @@ public sealed unsafe class Draw3DDiagnostics
             camTraceInjectFrames++;
             if (usedWorldSnapshot)
                 camTraceSnapshotFrames++;
+            if (usedMainPass)
+                camTraceMainPassFrames++;
         }
         else
         {
             camTraceFallbackFrames++;
         }
 
-        // A fresh live camera read, sampled now - later in the frame than projCam was captured. The delta between the two
-        // IS the phase error the overlay is projected with this frame.
+        // Secondary signal: the projection camera vs a fresh live read taken now (later in the same frame). Kept because
+        // a large value flags intra-frame camera advance and the fallback count flags source mismatch - but this is
+        // BLIND to the real swim, since BOTH cameras are ahead of the pixels already in the present buffer. The lag
+        // sweep below is what measures the actual pixels-vs-overlay error.
         if (projCam.HasRenderCamera && GameRenderSources.TryGetCamera(out var live) && live.HasRenderCamera)
         {
             var projVp = projCam.View * projCam.Proj;
             var liveVp = live.View * live.Proj;
+            camTraceMaxMatrixDelta = MathF.Max(camTraceMaxMatrixDelta, MaxElementDelta(in projVp, in liveVp));
 
-            var md = 0f;
-            Span<float> pv = stackalloc float[16] { projVp.M11, projVp.M12, projVp.M13, projVp.M14, projVp.M21, projVp.M22, projVp.M23, projVp.M24, projVp.M31, projVp.M32, projVp.M33, projVp.M34, projVp.M41, projVp.M42, projVp.M43, projVp.M44 };
-            Span<float> lv = stackalloc float[16] { liveVp.M11, liveVp.M12, liveVp.M13, liveVp.M14, liveVp.M21, liveVp.M22, liveVp.M23, liveVp.M24, liveVp.M31, liveVp.M32, liveVp.M33, liveVp.M34, liveVp.M41, liveVp.M42, liveVp.M43, liveVp.M44 };
-            for (var i = 0; i < 16; i++)
-                md = MathF.Max(md, MathF.Abs(pv[i] - lv[i]));
-            camTraceMaxMatrixDelta = MathF.Max(camTraceMaxMatrixDelta, md);
-
-            // Screen drift: for a grid of world points the projection camera "sees" across the view, measure how far the
-            // live camera would place each one. That gap is exactly what the eye reads as swim.
             for (var gy = 0; gy < 4; gy++)
             {
                 for (var gx = 0; gx < 4; gx++)
@@ -258,18 +282,183 @@ public sealed unsafe class Draw3DDiagnostics
             }
         }
 
+        SweepFrameLags(device, in frame);
+
         if (camTraceFramesRemaining == 0)
+            ReportCameraTrace();
+    }
+
+    /// <summary>
+    /// The authoritative measurement: anchor points are independent world surfaces under a screen grid (the game's own
+    /// collision raycast) plus this frame's rendered depth texels. For each candidate frame-lag it takes the camera the
+    /// overlay projected that many frames ago (the history ring) and measures how well it reprojects those anchors onto
+    /// THIS frame's image - a screen residual (where the anchor lands vs where the game shows it, every frame) and a
+    /// depth residual (predicted depth-buffer sample vs the actual texel, on a throttled subset). The pixels were drawn
+    /// with exactly one camera; the lag that minimizes the residual names it. Best-effort, read-only.
+    /// </summary>
+    private void SweepFrameLags(RenderDevice device, in FrameContext frame)
+    {
+        // Independent world anchors under a screen grid: the game's collision raycast, camera-agnostic physical points.
+        Span<Vector2> screens = stackalloc Vector2[16];
+        Span<Vector3> worlds = stackalloc Vector3[16];
+        var n = 0;
+        for (var gy = 0; gy < 4; gy++)
         {
-            var traced = camTraceInjectFrames + camTraceFallbackFrames;
-            var meanDrift = camTraceScreenSamples > 0 ? camTraceScreenSum / camTraceScreenSamples : 0;
-            var report =
-                $"Draw3D camtrace: {traced} frames - inject {camTraceInjectFrames} (world-snapshot {camTraceSnapshotFrames}), present-time fallback {camTraceFallbackFrames}. " +
-                $"Overlay-vs-world screen drift: max {camTraceMaxScreenDelta:F2} px, mean {meanDrift:F2} px over {camTraceScreenSamples} samples. " +
-                $"View·Proj max element delta: {camTraceMaxMatrixDelta:E2}. " +
-                "Read: near-zero drift = in phase; large drift on inject frames = intra-frame camera advance; many fallback frames = camera-source mismatch under load.";
-            DiagnosticChat.Print($"Draw3D camtrace: max drift {camTraceMaxScreenDelta:F2} px, fallback {camTraceFallbackFrames}/{traced} frames (details in log).");
-            NoireLogger.LogInfo(report, "Draw3D");
+            for (var gx = 0; gx < 4; gx++)
+            {
+                var s = new Vector2(frame.ViewportSize.X * (0.2f + 0.2f * gx), frame.ViewportSize.Y * (0.2f + 0.2f * gy));
+                if (NoireService.GameGui.ScreenToWorld(s, out var w))
+                {
+                    screens[n] = s;
+                    worlds[n] = w;
+                    n++;
+                }
+            }
         }
+
+        if (n == 0)
+            return;
+
+        // Precompute each candidate camera's View·Proj + analytic depth map once (sample = map.x + map.y / clipW).
+        var lags = Math.Min(LagSweepMax, NoireDraw3D.CameraHistoryDepth);
+        Span<Matrix4x4> vp = stackalloc Matrix4x4[LagSweepMax];
+        Span<Vector4> map = stackalloc Vector4[LagSweepMax];
+        Span<bool> ok = stackalloc bool[LagSweepMax];
+        var available = 0;
+        for (var k = 0; k < lags; k++)
+        {
+            if (NoireDraw3D.TryGetCameraHistory(k, out var camK) && camK.HasRenderCamera)
+            {
+                vp[k] = camK.View * camK.Proj;
+                var near = camK.NearPlane > 1e-6f ? camK.NearPlane : 0.1f;
+                map[k] = DepthCalibration.AnalyticMap(near, camK.FarPlane, camK.StandardZ, camK.FiniteFarPlane);
+                ok[k] = true;
+                available = k + 1;
+            }
+        }
+
+        if (available == 0)
+            return;
+
+        // Screen residual, every frame (cheap): how far each candidate camera puts the anchor from where the game shows it.
+        for (var i = 0; i < n; i++)
+        {
+            for (var k = 0; k < available; k++)
+            {
+                if (!ok[k] || !TryProjectToScreen(in vp[k], worlds[i], frame.ViewportSize, out var proj))
+                    continue;
+                camTraceScreenResidual[k] += Vector2.Distance(proj, screens[i]);
+                camTraceScreenResidualN[k]++;
+            }
+        }
+
+        // Depth residual, throttled (whole-texture readback is heavy): predicted depth-buffer sample vs the actual
+        // texel. Anchored to the pixels themselves, so this - not the screen residual - is the tie-breaker.
+        if (camTraceFramesRemaining % DepthReadbackEvery != 0 || !GameRenderSources.TryGetDepthTexture(out var info))
+            return;
+
+        var pts = new List<Vector2>(n);
+        for (var i = 0; i < n; i++)
+            pts.Add(screens[i]);
+
+        var depth = DepthReadback.TryReadAtPoints(device, in info, pts, frame.ViewportSize, out _);
+        if (depth == null)
+            return;
+        camTraceDepthReadbacks++;
+
+        for (var i = 0; i < n; i++)
+        {
+            var actual = depth[i];
+            if (float.IsNaN(actual) || actual < 0f || actual > 1f)
+                continue;
+
+            for (var k = 0; k < available; k++)
+            {
+                if (!ok[k])
+                    continue;
+
+                var clip = Vector4.Transform(new Vector4(worlds[i], 1f), vp[k]);
+                if (clip.W <= 1e-4f)
+                    continue;
+
+                var predicted = map[k].X + map[k].Y / clip.W;
+                camTraceDepthResidual[k] += MathF.Abs(predicted - actual);
+                camTraceDepthResidualN[k]++;
+            }
+        }
+    }
+
+    /// <summary>Formats the frame-lag sweep and names the best-fit lag (the correction the injected overlay should apply).</summary>
+    private void ReportCameraTrace()
+    {
+        var traced = camTraceInjectFrames + camTraceFallbackFrames;
+        var meanLegacy = camTraceScreenSamples > 0 ? camTraceScreenSum / camTraceScreenSamples : 0;
+
+        var bestDepthK = -1;
+        var bestDepth = double.MaxValue;
+        var bestScreenK = -1;
+        var bestScreen = double.MaxValue;
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"Draw3D camtrace: {traced} frames - inject {camTraceInjectFrames} (world-snapshot {camTraceSnapshotFrames}, main-pass {camTraceMainPassFrames}), present-time fallback {camTraceFallbackFrames}. Depth readbacks: {camTraceDepthReadbacks}.");
+        if (camTraceSnapshotFrames > 0 && camTraceMainPassFrames == 0)
+            sb.AppendLine("  WARNING: 0 main-pass snapshots - the RTM.DepthStencil fingerprint is not matching, so the swim fix is inert (still on the first-depth fallback). Report this.");
+        sb.AppendLine($"  Secondary proj-vs-live drift (blind to the true swim): max {camTraceMaxScreenDelta:F2} px, mean {meanLegacy:F2} px; View·Proj max element delta {camTraceMaxMatrixDelta:E2}.");
+        sb.AppendLine("  Frame-lag sweep - how well the camera k frames back reprojects onto THIS frame's rendered image (lower = better fit):");
+        sb.AppendLine("   lag | depth residual (sample units, n) | screen residual (px, n)");
+        for (var k = 0; k < LagSweepMax; k++)
+        {
+            var dN = camTraceDepthResidualN[k];
+            var sN = camTraceScreenResidualN[k];
+            if (dN == 0 && sN == 0)
+                continue;
+
+            var dMean = dN > 0 ? camTraceDepthResidual[k] / dN : double.NaN;
+            var sMean = sN > 0 ? camTraceScreenResidual[k] / sN : double.NaN;
+            if (dN > 0 && dMean < bestDepth) { bestDepth = dMean; bestDepthK = k; }
+            if (sN > 0 && sMean < bestScreen) { bestScreen = sMean; bestScreenK = k; }
+
+            var dTxt = dN > 0 ? $"{dMean:E3} ({dN})" : "-";
+            var sTxt = sN > 0 ? $"{sMean:F2} ({sN})" : "-";
+            sb.AppendLine($"   {k,3} | {dTxt,-32} | {sTxt}");
+        }
+
+        var best = bestDepthK >= 0 ? bestDepthK : bestScreenK;
+        string verdict;
+        if (best < 0)
+            verdict = "no usable anchors - aim at terrain/walls and keep the camera moving while tracing.";
+        else if (best == 0)
+            verdict = "best fit is lag 0 - the overlay is already in phase, so any residual swim is NOT a frame-lag. "
+                      + "Check the fallback count above (a high count = present-time camera-source mismatch under load) or intra-frame advance.";
+        else
+            verdict = $"the pixels best match the camera from {best} frame(s) back. FIX: project the injected overlay with the "
+                      + $"snapshot {best} frame(s) back (NoireDraw3D.TryGetCameraHistory({best})) instead of the live world-pass snapshot.";
+
+        sb.AppendLine($"  Verdict: {verdict}");
+
+        DiagnosticChat.Print($"Draw3D camtrace: best-fit frame-lag = {(best < 0 ? "n/a" : best.ToString())}, fallback {camTraceFallbackFrames}/{traced} (details in log).");
+        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+    }
+
+    /// <summary>Largest absolute element-wise difference between two matrices (the View·Proj phase cross-check).</summary>
+    private static float MaxElementDelta(in Matrix4x4 a, in Matrix4x4 b)
+    {
+        var m = MathF.Abs(a.M11 - b.M11);
+        m = MathF.Max(m, MathF.Abs(a.M12 - b.M12));
+        m = MathF.Max(m, MathF.Abs(a.M13 - b.M13));
+        m = MathF.Max(m, MathF.Abs(a.M14 - b.M14));
+        m = MathF.Max(m, MathF.Abs(a.M21 - b.M21));
+        m = MathF.Max(m, MathF.Abs(a.M22 - b.M22));
+        m = MathF.Max(m, MathF.Abs(a.M23 - b.M23));
+        m = MathF.Max(m, MathF.Abs(a.M24 - b.M24));
+        m = MathF.Max(m, MathF.Abs(a.M31 - b.M31));
+        m = MathF.Max(m, MathF.Abs(a.M32 - b.M32));
+        m = MathF.Max(m, MathF.Abs(a.M33 - b.M33));
+        m = MathF.Max(m, MathF.Abs(a.M34 - b.M34));
+        m = MathF.Max(m, MathF.Abs(a.M41 - b.M41));
+        m = MathF.Max(m, MathF.Abs(a.M42 - b.M42));
+        m = MathF.Max(m, MathF.Abs(a.M43 - b.M43));
+        return MathF.Max(m, MathF.Abs(a.M44 - b.M44));
     }
 
     /// <summary>Projects a world point through a raw View·Proj to framebuffer-pixel screen space. False behind the camera.</summary>
