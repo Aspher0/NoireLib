@@ -224,7 +224,9 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead - the same line `ShowDecalShape()` draws. |
 | `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike. The global "where is this decal actually landing"; an `ImDraw3D` shape has no node to call `ShowDecalShape()` on, so this is the only way to outline one. Implied by `wire`. |
-| `/noire3d camtrace [frames]` | Camera-phase "swim" trace: measures overlay-vs-world drift under camera motion, plus the inject-vs-fallback frame split (run it while panning/zooming hard). |
+| `/noire3d camtrace [frames]` | Camera-phase "swim" trace: pixel-anchored residuals for the struct-camera history and the captured GPU camera (the `cap` row), plus the inject-vs-fallback split and the capture state (run it while panning/zooming hard). |
+| `/noire3d cbprobe [frames]` | Camera-constant discovery report: every constant buffer observed on the upload paths, its update mechanism and VS slot, and the candidate camera windows with match errors. The answer to "is the capture locked, and on what". |
+| `/noire3d gpucam` | A/B toggle between the captured GPU camera constants (default, swim-free) and the struct snapshot. Turning it off deliberately reintroduces the old load-scaled swim for comparison. |
 | `/noire3d heightmap` | Toggles `CollisionHeightMap` - the top-down collision height-map. Only `DecalProjection.HighestOnly` reads it, so with no `HighestOnly` decal on screen there is nothing to see. It does **not** cut characters out of decals (that is `ExcludeObjects` + `CharacterStencilValue`). |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `NativeUi.Layering` (under the game UI vs over everything). |
@@ -241,5 +243,6 @@ The **visual showcase** - the showcase gallery scene, the world-geometry collisi
 
 - **Ownership:** whoever creates a `Mesh`/`GpuTexture` disposes it. Scenes and nodes only reference assets; disposing an asset in use is safe (draws skip it, counted, never a crash).
 - **Threading:** scene mutation and asset creation are safe from any thread. `Im` calls belong in draw-cycle callbacks.
+- **Camera:** the layer projects with the **exact camera constants the GPU rasterized the frame with**, self-discovered from the game's own constant-buffer uploads (never a fixed offset), so world-anchored content stays pixel-locked to the world during violent camera motion at any frame-rate and any load. Falls back to a struct snapshot automatically; `/noire3d gpucam` A/Bs the two and `/noire3d cbprobe` reports the discovery.
 - **Depth:** world occlusion is **self-calibrating** - the depth buffer's value convention is derived analytically from the game's own projection, never assumed, so a patch that changes the projection is handled automatically instead of producing inverted visuals. `/noire3d probe` cross-checks the calibration against the game's collision surfaces.
 - **Failure:** everything fails soft, loudly once - a broken shader, unreadable depth buffer, or missing camera degrades the narrowest feature and never takes your plugin down.

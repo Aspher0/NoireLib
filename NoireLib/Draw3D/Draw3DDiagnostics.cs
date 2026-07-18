@@ -11,7 +11,10 @@ namespace NoireLib.Draw3D;
 /// run it even when another plugin owns the command name. Results go to the plugin log.<br/>
 /// <c>RunValidate</c>: projection parity vs the game's own WorldToScreen (the wobble-class killer).<br/>
 /// <c>RunProbe</c>: reads actual depth-buffer values back and compares them against expectation.<br/>
-/// <c>RunCameraPhaseTrace</c>: measures the overlay-vs-world camera drift under motion (the "swim" investigation).<br/>
+/// <c>RunCameraPhaseTrace</c>: measures the overlay-vs-world camera drift under motion, scoring the struct history
+/// and the captured GPU camera constants against pixel-anchored residuals (the "swim" verifier).<br/>
+/// <see cref="PreferCapturedCamera"/> and <c>/noire3d cbprobe</c> belong to the camera-constant capture - the
+/// swim fix's source and its discovery report.<br/>
 /// Each of these arms a window and then samples from inside the render body, on the render thread. The game reads they
 /// take there are best-effort by design: answering them off-thread would return them against a camera that has already
 /// moved, which destroys the frame-coherent comparison each one is built on. Their terminal chat lines are marshalled
@@ -54,7 +57,24 @@ public sealed unsafe class Draw3DDiagnostics
     private readonly int[] camTraceScreenResidualN = new int[LagSweepMax];
     private int camTraceDepthReadbacks;
 
+    // The captured-GPU-camera row of the same sweep: the committed camera constants scored against the same anchors.
+    // When the capture is the pixels' true camera this row beats every struct lag - the in-game proof of the fix.
+    private double camTraceCapDepthResidual;
+    private int camTraceCapDepthResidualN;
+    private double camTraceCapScreenResidual;
+    private int camTraceCapScreenResidualN;
+    private int camTraceCapAvailableFrames;
+    private int camTraceCapUsedFrames;
+
     internal Draw3DDiagnostics() { }
+
+    /// <summary>
+    /// Projects the layer with the captured GPU camera constants whenever a frame has them (default true) - the
+    /// exact uploaded bytes the world pixels were rasterized from, which eliminates the camera swim under load.
+    /// Off is the A/B lever (<c>/noire3d gpucam</c>): the layer falls back to the struct snapshot so the difference
+    /// can be felt and measured in-game. The struct fallback also covers every frame with no fresh capture.
+    /// </summary>
+    public bool PreferCapturedCamera { get; set; } = true;
 
     /// <summary>Arms the projection parity validator for the next 10 rendered frames (results logged). Gate: max ≤ 1 px.</summary>
     public void RunValidate()
@@ -111,6 +131,12 @@ public sealed unsafe class Draw3DDiagnostics
         Array.Clear(camTraceScreenResidual);
         Array.Clear(camTraceScreenResidualN);
         camTraceDepthReadbacks = 0;
+        camTraceCapDepthResidual = 0;
+        camTraceCapDepthResidualN = 0;
+        camTraceCapScreenResidual = 0;
+        camTraceCapScreenResidualN = 0;
+        camTraceCapAvailableFrames = 0;
+        camTraceCapUsedFrames = 0;
     }
 
     /// <summary>
@@ -230,8 +256,11 @@ public sealed unsafe class Draw3DDiagnostics
     /// <param name="projCam">The camera the overlay was projected with (inject = world-pass snapshot; fallback = framework snapshot).</param>
     /// <param name="viaInject">True when the frame rendered through the pre-UI inject path.</param>
     /// <param name="usedWorldSnapshot">True when the inject path used the render-thread world-pass camera snapshot (vs a live fallback).</param>
-    /// <param name="usedMainPass">True when that snapshot came from the main scene pass (the swim fix) vs the first-depth fallback.</param>
-    internal void OnCameraTrace(RenderDevice device, in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot, bool usedMainPass)
+    /// <param name="usedMainPass">True when that snapshot came from the main scene pass (the take-2 struct fix) vs the first-depth fallback.</param>
+    /// <param name="usedGpuCamera">True when the frame projected with the captured GPU camera constants.</param>
+    /// <param name="gpuVp">The frame's committed GPU camera constants (identity when <paramref name="hasGpuVp"/> is false). Scored whether applied or not.</param>
+    /// <param name="hasGpuVp">Whether a fresh capture commit existed for this frame.</param>
+    internal void OnCameraTrace(RenderDevice device, in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot, bool usedMainPass, bool usedGpuCamera, in Matrix4x4 gpuVp, bool hasGpuVp)
     {
         if (camTraceFramesRemaining <= 0)
             return;
@@ -249,6 +278,11 @@ public sealed unsafe class Draw3DDiagnostics
         {
             camTraceFallbackFrames++;
         }
+
+        if (hasGpuVp)
+            camTraceCapAvailableFrames++;
+        if (usedGpuCamera)
+            camTraceCapUsedFrames++;
 
         // Secondary signal: the projection camera vs a fresh live read taken now (later in the same frame). Kept because
         // a large value flags intra-frame camera advance and the fallback count flags source mismatch - but this is
@@ -282,7 +316,7 @@ public sealed unsafe class Draw3DDiagnostics
             }
         }
 
-        SweepFrameLags(device, in frame);
+        SweepFrameLags(device, in frame, in gpuVp, hasGpuVp);
 
         if (camTraceFramesRemaining == 0)
             ReportCameraTrace();
@@ -294,9 +328,10 @@ public sealed unsafe class Draw3DDiagnostics
     /// overlay projected that many frames ago (the history ring) and measures how well it reprojects those anchors onto
     /// THIS frame's image - a screen residual (where the anchor lands vs where the game shows it, every frame) and a
     /// depth residual (predicted depth-buffer sample vs the actual texel, on a throttled subset). The pixels were drawn
-    /// with exactly one camera; the lag that minimizes the residual names it. Best-effort, read-only.
+    /// with exactly one camera; the lag that minimizes the residual names it. The captured GPU camera constants are
+    /// scored against the same anchors as their own row. Best-effort, read-only.
     /// </summary>
-    private void SweepFrameLags(RenderDevice device, in FrameContext frame)
+    private void SweepFrameLags(RenderDevice device, in FrameContext frame, in Matrix4x4 gpuVp, bool hasGpuVp)
     {
         // Independent world anchors under a screen grid: the game's collision raycast, camera-agnostic physical points.
         Span<Vector2> screens = stackalloc Vector2[16];
@@ -350,6 +385,12 @@ public sealed unsafe class Draw3DDiagnostics
                 camTraceScreenResidual[k] += Vector2.Distance(proj, screens[i]);
                 camTraceScreenResidualN[k]++;
             }
+
+            if (hasGpuVp && TryProjectToScreen(in gpuVp, worlds[i], frame.ViewportSize, out var capProj))
+            {
+                camTraceCapScreenResidual += Vector2.Distance(capProj, screens[i]);
+                camTraceCapScreenResidualN++;
+            }
         }
 
         // Depth residual, throttled (whole-texture readback is heavy): predicted depth-buffer sample vs the actual
@@ -385,6 +426,19 @@ public sealed unsafe class Draw3DDiagnostics
                 camTraceDepthResidual[k] += MathF.Abs(predicted - actual);
                 camTraceDepthResidualN[k]++;
             }
+
+            // The capture's own row: its clip-w comes from the uploaded W column (the truth); the analytic value
+            // mapping only needs the near plane, so the lag-0 camera's map applies.
+            if (hasGpuVp && ok[0])
+            {
+                var capClip = Vector4.Transform(new Vector4(worlds[i], 1f), gpuVp);
+                if (capClip.W > 1e-4f)
+                {
+                    var capPredicted = map[0].X + map[0].Y / capClip.W;
+                    camTraceCapDepthResidual += MathF.Abs(capPredicted - actual);
+                    camTraceCapDepthResidualN++;
+                }
+            }
         }
     }
 
@@ -401,8 +455,10 @@ public sealed unsafe class Draw3DDiagnostics
 
         var sb = new StringBuilder();
         sb.AppendLine($"Draw3D camtrace: {traced} frames - inject {camTraceInjectFrames} (world-snapshot {camTraceSnapshotFrames}, main-pass {camTraceMainPassFrames}), present-time fallback {camTraceFallbackFrames}. Depth readbacks: {camTraceDepthReadbacks}.");
+        sb.AppendLine($"  GPU camera capture: {NoireDraw3D.DescribeCameraCapture()}");
+        sb.AppendLine($"  capture during trace: fresh on {camTraceCapAvailableFrames}/{traced} frames, projected with on {camTraceCapUsedFrames} (toggle: /noire3d gpucam).");
         if (camTraceSnapshotFrames > 0 && camTraceMainPassFrames == 0)
-            sb.AppendLine("  WARNING: 0 main-pass snapshots - the RTM.DepthStencil fingerprint is not matching, so the swim fix is inert (still on the first-depth fallback). Report this.");
+            sb.AppendLine("  WARNING: 0 main-pass snapshots - the RTM.DepthStencil fingerprint is not matching, so both the struct fix and the capture commit are inert. Report this.");
         sb.AppendLine($"  Secondary proj-vs-live drift (blind to the true swim): max {camTraceMaxScreenDelta:F2} px, mean {meanLegacy:F2} px; View·Proj max element delta {camTraceMaxMatrixDelta:E2}.");
         sb.AppendLine("  Frame-lag sweep - how well the camera k frames back reprojects onto THIS frame's rendered image (lower = better fit):");
         sb.AppendLine("   lag | depth residual (sample units, n) | screen residual (px, n)");
@@ -423,20 +479,36 @@ public sealed unsafe class Draw3DDiagnostics
             sb.AppendLine($"   {k,3} | {dTxt,-32} | {sTxt}");
         }
 
+        var capDepthMean = camTraceCapDepthResidualN > 0 ? camTraceCapDepthResidual / camTraceCapDepthResidualN : double.NaN;
+        var capScreenMean = camTraceCapScreenResidualN > 0 ? camTraceCapScreenResidual / camTraceCapScreenResidualN : double.NaN;
+        if (camTraceCapDepthResidualN > 0 || camTraceCapScreenResidualN > 0)
+        {
+            var dTxt = camTraceCapDepthResidualN > 0 ? $"{capDepthMean:E3} ({camTraceCapDepthResidualN})" : "-";
+            var sTxt = camTraceCapScreenResidualN > 0 ? $"{capScreenMean:F2} ({camTraceCapScreenResidualN})" : "-";
+            sb.AppendLine($"   cap | {dTxt,-32} | {sTxt}   (the captured GPU camera constants)");
+        }
+
         var best = bestDepthK >= 0 ? bestDepthK : bestScreenK;
+        var capBeatsStruct = camTraceCapDepthResidualN > 0 && bestDepthK >= 0 && capDepthMean <= bestDepth * 1.05;
         string verdict;
         if (best < 0)
             verdict = "no usable anchors - aim at terrain/walls and keep the camera moving while tracing.";
+        else if (capBeatsStruct)
+            verdict = "the captured GPU camera fits the pixels at least as well as every struct lag - it is the pixels' camera. "
+                      + (camTraceCapUsedFrames > 0 ? "The overlay is projecting with it; camera swim is eliminated." : "Turn it on (/noire3d gpucam) - the overlay is not using it.");
+        else if (camTraceCapDepthResidualN > 0)
+            verdict = "the captured GPU camera fits WORSE than the best struct lag - the capture may be locked on the wrong window. "
+                      + "Run /noire3d cbprobe and paste both logs.";
         else if (best == 0)
-            verdict = "best fit is lag 0 - the overlay is already in phase, so any residual swim is NOT a frame-lag. "
-                      + "Check the fallback count above (a high count = present-time camera-source mismatch under load) or intra-frame advance.";
+            verdict = "best fit is lag 0 and no capture was available - the struct snapshot is in phase here; capture engages under load "
+                      + "(check the capture state above if it never locks).";
         else
-            verdict = $"the pixels best match the camera from {best} frame(s) back. FIX: project the injected overlay with the "
-                      + $"snapshot {best} frame(s) back (NoireDraw3D.TryGetCameraHistory({best})) instead of the live world-pass snapshot.";
+            verdict = $"the pixels best match the camera from {best} frame(s) back and no capture was available. "
+                      + "The capture should remove this once locked - check its state above, and run /noire3d cbprobe if it stays unlocked.";
 
         sb.AppendLine($"  Verdict: {verdict}");
 
-        DiagnosticChat.Print($"Draw3D camtrace: best-fit frame-lag = {(best < 0 ? "n/a" : best.ToString())}, fallback {camTraceFallbackFrames}/{traced} (details in log).");
+        DiagnosticChat.Print($"Draw3D camtrace: best-fit lag = {(best < 0 ? "n/a" : best.ToString())}, cap row {(camTraceCapDepthResidualN > 0 ? capDepthMean.ToString("E2") : "n/a")}, fallback {camTraceFallbackFrames}/{traced} (details in log).");
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 

@@ -8,7 +8,7 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// The render-thread hook on the game's D3D11 immediate context. It serves two jobs on the
+/// The render-thread hook on the game's D3D11 immediate context. It serves three jobs on the
 /// <c>ID3D11DeviceContext::OMSetRenderTargets</c> vtable slot:
 /// <list type="bullet">
 /// <item><b>Diagnostics</b> (<c>/noire3d rtlog</c>): records one frame's render-target bind sequence and
@@ -18,6 +18,9 @@ namespace NoireLib.Draw3D.Core;
 /// to the swapchain. By learning that present buffer (the render target bound right before the swapchain
 /// backbuffer) and firing a callback at its 2nd bind of the frame - after the world copy, before the UI
 /// burst - Draw3D can composite its layer UNDER the native UI.</item>
+/// <item><b>Camera frame phase</b>: the main scene pass is fingerprinted here (the bind whose depth-stencil
+/// is RTM.DepthStencil), which snapshots the struct camera and drives <see cref="CameraConstantCapture"/> -
+/// the per-frame commit of the exact camera constants the GPU rasterizes with.</item>
 /// </list>
 /// Opt-in (installed only on first use); the OM hook stays disabled unless a capture is armed or injection
 /// is enabled; the four draw-count hooks are enabled only for the single frame of a capture.
@@ -91,6 +94,15 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>When true the detour skips its work - set around Draw3D's OWN binds so they never interfere.</summary>
     public bool SuppressSelf;
+
+    /// <summary>Whether the injection callback is running right now - Draw3D's own D3D calls made inside it must not be observed.</summary>
+    public bool IsInjecting => injecting;
+
+    /// <summary>
+    /// The camera-constant capture riding this tap's frame phase: the frame boundary and the main-pass commit are
+    /// signalled from here, and its upload-path taps follow the injection enable state. Null when not installed.
+    /// </summary>
+    public CameraConstantCapture? Capture;
 
     /// <summary>Enables the pre-UI injection path (the OM hook must be installed and stays enabled while set).</summary>
     public bool InjectionEnabled { get; private set; }
@@ -190,6 +202,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     public void OnPresent(nint backbufferTexture)
     {
         RememberBackbuffer(backbufferTexture);
+        Capture?.OnFrameBoundary();
 
         // Commit the present buffer observed this frame for next frame's injection; reset per-frame state.
         if (candidatePresentBuffer != 0)
@@ -211,16 +224,14 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                     bindCount = 0;
                     drawCounter = 0;
                     state = 2;
-                    SetDrawHooksEnabled(true);
-                    RefreshOmHookState();
+                    RefreshOmHookState(); // also enables the draw hooks for the capture frame
                 }
 
                 break;
             case 2:
                 Flush();
                 state = 0;
-                SetDrawHooksEnabled(false);
-                RefreshOmHookState();
+                RefreshOmHookState(); // draw hooks stay on only if the camera capture still wants its draw signal
                 break;
         }
     }
@@ -230,7 +241,16 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         var wanted = InjectionEnabled || state == 2;
         if (omHook != null && omHook.IsEnabled != wanted)
             omHook.SetEnabled(wanted);
+
+        // The camera-constant capture only means something while the injection point provides the main-pass signal;
+        // its per-frame commit runs at the main pass's first draw, so the draw hooks follow its active state too.
+        Capture?.SetActive(InjectionEnabled);
+        RefreshDrawHookState();
     }
+
+    /// <summary>Draw hooks serve two masters: the one-frame rtlog capture, and the camera-constant commit signal.</summary>
+    private void RefreshDrawHookState()
+        => SetDrawHooksEnabled(state == 2 || (Capture?.WantsDrawSignal ?? false));
 
     private void SetDrawHooksEnabled(bool enabled)
     {
@@ -304,6 +324,11 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                 worldCamera = mainSnap;
                 hasWorldCamera = true;
                 mainDepthSeen = true; // lock: the opaque camera is captured, ignore later (newer) binds
+
+                // Arm the camera-constant commit for this pass's FIRST draw (see CameraConstantCapture.OnMainPassBind:
+                // the game binds and uploads its camera block between this bind and that draw, so committing here
+                // would read the previous pass's bindings). The struct snapshot above stays the fallback.
+                Capture?.OnMainPassBind();
             }
             else if (!hasWorldCamera && GameRenderSources.TryGetCamera(out var provisionalSnap))
             {
@@ -342,6 +367,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
+        Capture?.OnGameDraw(context); // no-op except at the main pass's first draw (the commit moment)
 
         drawIndexedHook!.Original(context, indexCount, startIndex, baseVertex);
     }
@@ -350,6 +376,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
+        Capture?.OnGameDraw(context);
 
         drawHook!.Original(context, vertexCount, startVertex);
     }
@@ -358,6 +385,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
+        Capture?.OnGameDraw(context);
 
         drawIndexedInstancedHook!.Original(context, indexCountPerInstance, instanceCount, startIndex, baseVertex, startInstance);
     }
@@ -366,6 +394,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
+        Capture?.OnGameDraw(context);
 
         drawInstancedHook!.Original(context, vertexCountPerInstance, instanceCount, startVertex, startInstance);
     }
@@ -458,6 +487,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         InjectionEnabled = false;
         Injector = null;
+        Capture = null; // owned and disposed by the hub
+
         omHook?.Dispose();
         drawIndexedHook?.Dispose();
         drawHook?.Dispose();

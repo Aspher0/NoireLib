@@ -25,6 +25,7 @@ internal sealed unsafe class RenderStats : IDisposable
     public long DisposedAssetDraws;
     public long DynamicGeometryOverflows;
     public long ImCommandsDropped;
+    public long GpuCameraFrames; // frames projected with the captured GPU camera constants
 
     // Per-frame values (rewritten every rendered frame).
     public int DrawCalls;
@@ -36,6 +37,7 @@ internal sealed unsafe class RenderStats : IDisposable
     public int ProtectRects;
     public bool DepthAvailable;
     public bool UsedFallbackCamera;
+    public bool UsedGpuCamera;
 
     /// <summary>Last resolved GPU time for the scene pass, in milliseconds.</summary>
     public float SceneGpuMs { get; private set; }
@@ -149,6 +151,7 @@ internal sealed unsafe class RenderStats : IDisposable
         DisposedAssetDraws = 0;
         DynamicGeometryOverflows = 0;
         ImCommandsDropped = 0;
+        GpuCameraFrames = 0;
     }
 
     /// <inheritdoc/>

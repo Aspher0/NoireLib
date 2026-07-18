@@ -66,6 +66,7 @@ public static unsafe partial class NoireDraw3D
     private const int WorldCollisionMaxTriangles = 60000;
     private static RenderStats? renderStats;
     private static RenderTargetTap? renderTargetTap;
+    private static CameraConstantCapture? cameraCapture; // exact GPU camera constants (see TryGetInjectCamera)
     private static DepthProbe? depthProbe; // cached, non-blocking depth readback for the obstacle-occlusion hover test
     private static bool stencilDebug;      // /noire3d stencil: log the game stencil values in view (discover the object-category convention)
     private static DateTime lastStencilLog = DateTime.MinValue;
@@ -135,9 +136,10 @@ public static unsafe partial class NoireDraw3D
     private static bool frameworkHooked;
 
     // The injected layer must be projected with the same camera the game rasterized the world in the present buffer
-    // with, or it drifts relative to world geometry under camera motion. The render-thread tap snapshots that camera
-    // at the frame's first depth pass and the inject path projects with exactly it (see TryGetInjectCamera /
-    // RenderTargetTap.TryGetWorldCamera), so the layer stays locked to the world independent of frame-rate.
+    // with, or it drifts relative to world geometry under camera motion. Two sources provide that camera, best first:
+    // the camera-constant capture (CameraConstantCapture - the exact uploaded GPU bytes, committed at the main scene
+    // pass; immune to the sim-vs-render skew that made every struct-timed read swim under load), then the render-thread
+    // struct snapshot taken at the main pass (RenderTargetTap.TryGetWorldCamera). See TryGetInjectCamera.
 
     private static bool keepDrawingWhenUiHidden = true;
     private static bool forcedAutoHide, forcedUserHide, forcedCutsceneHide, forcedGposeHide;
@@ -308,8 +310,8 @@ public static unsafe partial class NoireDraw3D
            || NoireService.Condition.Any(ConditionFlag.WatchingCutscene, ConditionFlag.WatchingCutscene78, ConditionFlag.OccupiedInCutSceneEvent);
 
     /// <summary>
-    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, camtrace, stencil, wire, decalshapes,
-    /// heightmap, reset, rtlog, ontop, platedepth, uimask, plates; anything else prints the stats).
+    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, camtrace, cbprobe, gpucam, stencil, wire,
+    /// decalshapes, heightmap, reset, rtlog, ontop, platedepth, uimask, plates; anything else prints the stats).
     /// <b>Opt-in:</b> it is not registered automatically - call this once (e.g. in your
     /// plugin constructor) to expose the command. No-op if it is already registered (by you or another plugin using
     /// NoireLib). The full toolkit is also available programmatically via <see cref="Diagnostics"/> without it.
@@ -779,6 +781,8 @@ public static unsafe partial class NoireDraw3D
             uiDiffMaskHealth = null;
             renderStats?.Dispose();
             renderStats = null;
+            cameraCapture?.Dispose();
+            cameraCapture = null;
             renderTargetTap?.Dispose();
             renderTargetTap = null;
             depthProbe?.Dispose();
@@ -923,14 +927,20 @@ public static unsafe partial class NoireDraw3D
             return;
         }
 
-        // Classic / fallback path: render + composite over the backbuffer at present time.
+        // Classic / fallback path: render + composite over the backbuffer at present time. The backbuffer holds
+        // this frame's world, so the frame's committed GPU camera constants are the right projection here too
+        // (the boundary above already advanced, hence the present-time freshness rule inside TryGetCommitted).
+        Matrix4x4? presentGpuVp = null;
+        if (cameraCapture != null && cameraCapture.TryGetCommitted(presentTimePath: true, out var presentCaptured))
+            presentGpuVp = presentCaptured;
+
         var ctx = device.Context;
         if (renderTargetTap != null)
             renderTargetTap.SuppressSelf = true; // our own binds must not pollute an armed rtlog capture
         stateGuard!.Capture(ctx);
         try
         {
-            var result = RenderMainScene(device, ctx, in backBuffer, stats, cameraOverride: null);
+            var result = RenderMainScene(device, ctx, in backBuffer, stats, cameraOverride: null, presentGpuVp);
             if (result.HasContent)
             {
                 CompositeOverBackbuffer(device, ctx, in backBuffer, result.RectCount);
@@ -955,10 +965,13 @@ public static unsafe partial class NoireDraw3D
     /// <paramref name="cameraOverride"/> is supplied by the injection path - the world-pass camera snapshot that
     /// matches the world already in the present buffer (see <see cref="TryGetInjectCamera"/>). The present-time
     /// fallback passes null and uses the sim-thread framework snapshot, falling back to a live camera read.<br/>
+    /// <paramref name="gpuViewProj"/> is the frame's committed GPU camera constants when the capture has them - the
+    /// preferred projection source (exact uploaded bytes; kills the camera swim). The struct camera still supplies
+    /// the frame parameters (near plane, convention flags, eye) either way.<br/>
     /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames - the caller must NOT
     /// composite then, so a cleared scene leaves no stale content stamped on the present buffer.
     /// </summary>
-    private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride)
+    private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride, Matrix4x4? gpuViewProj)
     {
         // KeepDrawingWhenUiHidden is decided here, not by Dalamud's hide flags (see RefreshUiHideOverrides): those stay
         // held so the callback keeps firing, which is what leaves the host's windows free to make their own choice. Both
@@ -990,11 +1003,17 @@ public static unsafe partial class NoireDraw3D
 
         Matrix4x4 camView = Matrix4x4.Identity, camProj = Matrix4x4.Identity, viewProj;
         var usedFallback = false;
+        var usedGpuCamera = false;
         if (cam.HasRenderCamera)
         {
             camView = cam.View;
             camProj = cam.Proj;
-            viewProj = camView * camProj;
+
+            // The captured GPU constants are the bytes the world pixels were rasterized from - projecting with them
+            // makes the overlay-vs-world camera error exactly zero at any load (jitter included). The struct-composed
+            // product is the fallback, and the A/B lever ('/noire3d gpucam') for verifying the difference in-game.
+            usedGpuCamera = gpuViewProj.HasValue && Diagnostics.PreferCapturedCamera;
+            viewProj = usedGpuCamera ? gpuViewProj!.Value : camView * camProj;
         }
         else if (cam.HasControlViewProj)
         {
@@ -1061,6 +1080,8 @@ public static unsafe partial class NoireDraw3D
         lastFrame = frame;
         lastFrameValid = true;
         lastCameraData = cam;
+        if (usedGpuCamera)
+            stats.GpuCameraFrames++;
         RecordCameraHistory(in cam); // inert ring for the camera-phase trace's lag sweep (see cameraHistory)
 
         // Prepare phase: render-thread user code runs FIRST so its mutations and Im calls land this frame.
@@ -1100,7 +1121,8 @@ public static unsafe partial class NoireDraw3D
         }
 
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
-        Diagnostics.OnCameraTrace(device, in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot, injectUsedMainPass); // "swim" investigation (armed by /noire3d camtrace)
+        var capVpForTrace = gpuViewProj ?? Matrix4x4.Identity; // the committed capture, whether applied or not (the trace scores it either way)
+        Diagnostics.OnCameraTrace(device, in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot, injectUsedMainPass, usedGpuCamera, in capVpForTrace, gpuViewProj.HasValue); // "swim" investigation (armed by /noire3d camtrace)
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
         // Anything to do at all?
@@ -1153,6 +1175,7 @@ public static unsafe partial class NoireDraw3D
         stats.BeginFrameCounters();
         stats.DepthAvailable = hasDepth;
         stats.UsedFallbackCamera = usedFallback;
+        stats.UsedGpuCamera = usedGpuCamera;
         lastDepthMap = depthMap; // the description is composed on read (DescribeDepthSource); a frame must not format strings (Law 9)
 
         // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible - they only gate
@@ -1394,10 +1417,10 @@ public static unsafe partial class NoireDraw3D
         if (!GameRenderSources.TryGetBackBuffer(out var backBuffer) || !EnsurePresentRtv(device, presentBufferResource))
             return false;
 
-        // Project with the exact camera the world in the present buffer was rasterized with - the render-thread
-        // tap's world-pass snapshot (see TryGetInjectCamera). This locks the layer to the world at any frame-rate;
-        // there is no delay/timing estimation. Falls back to the live camera on a frame with no world pass.
-        if (!TryGetInjectCamera(out var injectCam))
+        // Project with the exact camera the world in the present buffer was rasterized with: the captured GPU
+        // constants when committed this frame, else the tap's world-pass struct snapshot (see TryGetInjectCamera).
+        // This locks the layer to the world at any frame-rate; there is no delay/timing estimation.
+        if (!TryGetInjectCamera(out var injectCam, out var injectGpuVp))
             return false; // no camera available - let the present-time path handle this frame
 
         var ctx = device.Context;
@@ -1407,7 +1430,7 @@ public static unsafe partial class NoireDraw3D
             // Render this frame's scene into the offscreen target with the world-pass camera (the exact camera the
             // world in the present buffer used), then blit. Nothing to mask against: the real native UI has not been
             // drawn yet and paints itself over the layer a moment later, at its own pixel granularity.
-            var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam);
+            var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam, injectGpuVp);
             if (result.HasContent)
             {
                 var composite = shaderLibrary!.GetComposite(device);
@@ -1449,14 +1472,19 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The camera to project the injected layer with: the render thread's world-pass snapshot - the exact camera
-    /// the world currently in the present buffer was rasterized with, captured at the frame's first depth pass, so
-    /// the layer matches the world independent of frame-rate. Falls back to the live render camera only on a frame
-    /// where no world pass was seen (e.g. menu/loading, which carries no world-anchored content).
+    /// The camera to project the injected layer with. <paramref name="gpuViewProj"/> receives the frame's committed
+    /// GPU camera constants when the capture has them - the exact uploaded bytes the world pixels were rasterized
+    /// from, the source that eliminates the camera swim at any load. <paramref name="cam"/> is the render-thread
+    /// world-pass struct snapshot (camera parameters, and the projection fallback when no capture is fresh), falling
+    /// back to a live read only on a frame with no world pass (menu/loading, no world-anchored content).
     /// False only when no camera is available at all.
     /// </summary>
-    private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam)
+    private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam, out Matrix4x4? gpuViewProj)
     {
+        gpuViewProj = null;
+        if (cameraCapture != null && cameraCapture.TryGetCommitted(presentTimePath: false, out var captured))
+            gpuViewProj = captured;
+
         if (renderTargetTap != null && renderTargetTap.TryGetWorldCamera(out cam))
         {
             injectUsedWorldSnapshot = true;
@@ -1688,7 +1716,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | stats | wire | decalshapes | stencil | heightmap | reset | rtlog | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | gpucam | stats | wire | decalshapes | stencil | heightmap | reset | rtlog | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -1716,6 +1744,25 @@ public static unsafe partial class NoireDraw3D
                 var camTraceFrames = int.TryParse(rest, out var parsedFrames) && parsedFrames > 0 ? parsedFrames : 120;
                 Diagnostics.RunCameraPhaseTrace(camTraceFrames);
                 Print($"Draw3D: camera-phase trace armed for {camTraceFrames} frames - pan/zoom/orbit the camera vigorously; the overlay-vs-world drift goes to the log.");
+                break;
+            case "cbprobe":
+                if (cameraCapture is { Installed: true } probeCapture)
+                {
+                    var probeFrames = int.TryParse(rest, out var parsedProbe) && parsedProbe > 0 ? parsedProbe : 120;
+                    probeCapture.ArmProbe(probeFrames);
+                    Print($"Draw3D: camera-constant discovery probe armed for {probeFrames} world frames - keep playing; the observation table goes to the log.");
+                }
+                else
+                {
+                    Print("Draw3D: the camera-constant capture is not installed (no device / hook failure) - see the log.");
+                }
+
+                break;
+            case "gpucam":
+                Diagnostics.PreferCapturedCamera = !Diagnostics.PreferCapturedCamera;
+                Print(Diagnostics.PreferCapturedCamera
+                    ? $"Draw3D: GPU camera capture ON - the layer projects with the exact uploaded camera constants when available. State: {cameraCapture?.Describe() ?? "not installed"}."
+                    : "Draw3D: GPU camera capture OFF (A/B) - the layer projects with the struct snapshot; expect the old load-dependent swim under fast camera motion.");
                 break;
             case "stencil":
                 stencilDebug = !stencilDebug;
@@ -1794,7 +1841,22 @@ public static unsafe partial class NoireDraw3D
             var device = RequireDevice();
             var tap = new RenderTargetTap();
             if (tap.Install(device))
+            {
                 renderTargetTap = tap;
+
+                // The camera-constant capture rides the tap's frame phase. Fail-soft: without it the layer
+                // projects with the struct snapshot, exactly as before.
+                var capture = new CameraConstantCapture();
+                if (capture.Install(device, tap))
+                {
+                    cameraCapture = capture;
+                    tap.Capture = capture;
+                }
+                else
+                {
+                    capture.Dispose();
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -1818,6 +1880,7 @@ public static unsafe partial class NoireDraw3D
                 DisposedAssetDraws = 0, ImCommandsDropped = 0, DrawCalls = 0, Instances = 0, Triangles = 0, Batches = 0,
                 CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
                 DepthSource = "none", SceneGpuMs = 0, CompositeGpuMs = 0,
+                CameraCapture = "not installed", GpuCameraFrames = 0, UsedGpuCamera = false,
             };
         }
 
@@ -1846,8 +1909,14 @@ public static unsafe partial class NoireDraw3D
             DepthSource = DescribeDepthSource(s.DepthAvailable),
             SceneGpuMs = s.SceneGpuMs,
             CompositeGpuMs = s.CompositeGpuMs,
+            CameraCapture = cameraCapture?.Describe() ?? "not installed",
+            GpuCameraFrames = s.GpuCameraFrames,
+            UsedGpuCamera = s.UsedGpuCamera,
         };
     }
+
+    /// <summary>One-line camera-constant capture state, for the camtrace report and <see cref="Draw3DStats"/>.</summary>
+    internal static string DescribeCameraCapture() => cameraCapture?.Describe() ?? "not installed";
 
     /// <summary>
     /// Human-readable state of the over-everything UI mask: whether it is configured, whether the render-thread
