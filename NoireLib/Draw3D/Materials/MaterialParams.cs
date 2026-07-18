@@ -22,6 +22,10 @@ internal struct MaterialData : IEquatable<MaterialData>
     public Vector4 Params0;
     public Vector4 Params1; // x = DepthFade, y = shapeKind, z = outlineWidth, w = heightFade
     public float ProjectionMode; // ground decals: (float)DecalProjection (0 = AllSurfaces, 1 = HighestOnly)
+    public float OutlineScaleRef; // ground decals: reference footprint scale for the outline rim - 0 keeps the rim a
+                                  // constant world thickness under any scale (scene decals); the immediate layer passes
+                                  // its own built footprint scale so its rim stays proportional to the drawn radius
+    public Vector4 DecalOutlineColor; // ground decals: rim colour, straight alpha; alpha 0 = unset (rim uses the decal colour)
     public string? CustomPipeline;
 
     /// <summary>The bucket this material renders in: 0 opaque, 1 ground decal, 2 transparent.</summary>
@@ -44,7 +48,11 @@ internal struct MaterialData : IEquatable<MaterialData>
 
         var domain = material.Domain;
         data.Domain = domain;
-        data.Blend = domain == MaterialDomain.GroundDecal ? BlendMode.Premultiplied : material.Blend;
+        // Decals cannot be opaque (they blend a projected footprint), so only Additive or Premultiplied are meaningful:
+        // Additive passes through (stacked coloured decals sum toward white), anything else resolves to Premultiplied.
+        data.Blend = domain == MaterialDomain.GroundDecal
+            ? material.Blend == BlendMode.Additive ? BlendMode.Additive : BlendMode.Premultiplied
+            : material.Blend;
         data.Depth = material.Depth;
         data.WhenDepthUnavailable = material.WhenDepthUnavailable;
         data.Cull = domain == MaterialDomain.GroundDecal ? CullMode.Front : material.Cull;
@@ -56,6 +64,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         data.Params0 = material.ShapeParams;
         data.Params1 = new Vector4(material.DepthFade, (float)material.Shape, material.OutlineWidth, material.HeightFade);
         data.ProjectionMode = (float)material.Projection;
+        data.DecalOutlineColor = material.OutlineColor;
         data.CustomPipeline = material.CustomPipeline;
         return true;
     }
@@ -73,6 +82,8 @@ internal struct MaterialData : IEquatable<MaterialData>
         && Params0 == other.Params0
         && Params1 == other.Params1
         && ProjectionMode == other.ProjectionMode
+        && OutlineScaleRef == other.OutlineScaleRef
+        && DecalOutlineColor == other.DecalOutlineColor
         && string.Equals(CustomPipeline, other.CustomPipeline, StringComparison.Ordinal);
 
     /// <inheritdoc/>
@@ -80,5 +91,5 @@ internal struct MaterialData : IEquatable<MaterialData>
 
     /// <inheritdoc/>
     public readonly override int GetHashCode()
-        => HashCode.Combine((int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12), TexSrv, Params0, Params1, ProjectionMode, CustomPipeline);
+        => HashCode.Combine((int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12), TexSrv, Params0, Params1, ProjectionMode, OutlineScaleRef, DecalOutlineColor, CustomPipeline);
 }

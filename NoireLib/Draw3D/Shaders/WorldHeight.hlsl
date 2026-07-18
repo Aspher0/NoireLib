@@ -34,6 +34,9 @@ float ps(PsIn i) : SV_Target
 {
     // Drop overhead geometry (ceiling / roof / upper floor) above the tallest decal box top so MAX blend keeps the
     // real ground/furniture below it, not the roof. No derivatives here, so the discard is /WX-safe.
+    // NOTE: this reads b0 from the PIXEL stage, so RenderWorldHeight must PSSetConstantBuffers(0, ...) as well as
+    // VSSetConstantBuffers. Miss that and DepthCal.x reads as 0, which discards every surface above world Y 0 and
+    // leaves the height-map empty - HighestOnly then silently degrades to AllSurfaces.
     if (i.worldY > DepthCal.x)
         discard;
     return i.worldY;

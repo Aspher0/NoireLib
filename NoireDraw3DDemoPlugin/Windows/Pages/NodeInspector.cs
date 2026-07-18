@@ -29,6 +29,7 @@ internal sealed class NodeInspector
     private Vector4 outlineColor = new(1f, 0.85f, 0.2f, 1f);
     private float outlineWidth = 4f;
     private Vector4 decalShapeColor = new(1f, 1f, 0f, 1f);
+    private Vector4 decalVolumeColor = new(0.35f, 0.85f, 1f, 1f);
 
     /// <summary>Draws the inspector for <paramref name="node"/> inside <paramref name="demo"/>.</summary>
     /// <param name="demo">The scene the node belongs to.</param>
@@ -248,8 +249,28 @@ internal sealed class NodeInspector
                 "Locks the box's orientation. Ground: kept horizontal, projects down. Wall: kept vertical, projects into the wall it faces. Both: free, and the orientation decides.\n\nTry rotating with the gizmo after changing this.");
             Ui.Enum("Projection", () => renderer.Material.Projection, v => renderer.Material = renderer.Material with { Projection = v },
                 "AllSurfaces paints everything in the box. HighestOnly paints only the topmost surface per column - a tabletop, not the floor beneath - and needs the collision height-map on and the top-surface threshold above 0 (Decals page), plus real collision on the covering object.");
-            Ui.Drag("Outline width (SDF)", () => renderer.Material.OutlineWidth, v => renderer.Material = renderer.Material with { OutlineWidth = v }, 0.005f, 0f, 0.5f,
-                "Width of the bright rim, in SDF units (0..1 of the footprint). 0 means no outline.");
+            Ui.Drag("Outline width", () => renderer.Material.OutlineWidth, v => renderer.Material = renderer.Material with { OutlineWidth = v }, 0.005f, 0f, 0.5f,
+                "Width of the bright rim, held at a constant world thickness regardless of the decal's scale - scale the box and the rim stays put. 0 means no outline.");
+
+            Ui.Row("Custom border color", "Off, the border is the decal's own colour and only its opacity differs from the fill. On, it gets its own colour.");
+            var hasOutlineColor = renderer.Material.OutlineColor.W > 0f;
+            if (ImGui.Checkbox("##decaloutlinecol", ref hasOutlineColor))
+            {
+                renderer.Material = renderer.Material with
+                {
+                    // Alpha 0 is the "unset" sentinel the shader reads, so clearing it restores the decal-coloured rim.
+                    // Seeding from the decal colour at full alpha means enabling it changes nothing until you pick a colour.
+                    OutlineColor = hasOutlineColor
+                        ? new Vector4(renderer.Material.Color.X, renderer.Material.Color.Y, renderer.Material.Color.Z, 1f)
+                        : default,
+                };
+            }
+
+            using (Ui.Disabled(renderer.Material.OutlineColor.W <= 0f))
+            {
+                Ui.Color4("Border color", () => renderer.Material.OutlineColor, v => renderer.Material = renderer.Material with { OutlineColor = v });
+            }
+
             Ui.Drag("Height fade", () => renderer.Material.HeightFade, v => renderer.Material = renderer.Material with { HeightFade = v }, 0.02f, 0f, 1f,
                 "Feathering near the top and bottom of the box volume.");
             Ui.Drag4("Shape params", () => renderer.Material.ShapeParams, v => renderer.Material = renderer.Material with { ShapeParams = v }, 0.02f,
@@ -295,7 +316,7 @@ internal sealed class NodeInspector
             Ui.Callout("This object is a ground decal, and decal outlines are inert - a decal has no mesh silhouette to trace. Use the decal shape outline below instead.");
         }
 
-        Ui.Section("Decal shape");
+        Ui.Section("Decal overlays");
         using (Ui.Form("insp.decalshape", InspectorLabelWidth))
         {
             Ui.Row("Shape outline", "The exact circle / ring / pie / rect the shader's SDF paints, as a 3D line on the decal plane. Follows Shape, ShapeParams and Surface live.");
@@ -315,6 +336,26 @@ internal sealed class NodeInspector
                     decalShapeColor = v;
                     if (node.HasDecalShape)
                         node.ShowDecalShape(decalShapeColor);
+                });
+            }
+
+            Ui.Row("Volume box", "The projection box the SDF is evaluated in - the limit of what this decal can paint at all. Shows how far the projection reaches above and below the surface, so a decal stopping short of a wall or a step explains itself.\n\nComposes with the shape outline: turn both on to see the shape inside its volume.");
+            var hasVolume = node.HasDecalVolume;
+            if (ImGui.Checkbox("##hasdecalvolume", ref hasVolume))
+            {
+                if (hasVolume)
+                    node.ShowDecalVolume(decalVolumeColor);
+                else
+                    node.HideDecalVolume();
+            }
+
+            using (Ui.Disabled(!node.HasDecalVolume))
+            {
+                Ui.Color4("Volume box color", () => decalVolumeColor, v =>
+                {
+                    decalVolumeColor = v;
+                    if (node.HasDecalVolume)
+                        node.ShowDecalVolume(decalVolumeColor);
                 });
             }
         }

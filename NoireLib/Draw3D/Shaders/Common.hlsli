@@ -24,9 +24,14 @@ cbuffer ObjectCB : register(b1)
     float4   BaseColor;         // straight alpha; premultiplied inside the PS
     float4   Params0;           // shape params / material params
     float4   Params1;           // x = DepthFade (world units, 0 = hard), y = shapeKind,
-                                // z = outlineWidth (0..1 of SDF units), w = heightFade (decal Y feather)
+                                // z = outlineWidth (SDF units of the unit footprint; the decal PS divides it by the
+                                //     box world scale so the rim is a constant world thickness), w = heightFade (decal Y feather)
     float4   Params2;           // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
                                 // y = decal box top world Y (the height-map's vertical search bound)
+                                // z = outline reference footprint scale (0 = rim stays a constant world thickness under any
+                                //     box scale; immediate shapes pass their built footprint scale to keep the old proportional rim)
+    float4   OutlineColor;      // ground-decal rim colour, straight alpha. Alpha 0 = unset: the rim uses BaseColor, which is
+                                // the classic look where rim and fill differ only in opacity.
 }
 
 // ---- b2: per-decal excluded-actor gate + stencil key (ground-decal ExcludeObjects) --

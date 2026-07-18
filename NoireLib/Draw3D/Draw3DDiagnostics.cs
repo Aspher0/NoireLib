@@ -166,6 +166,19 @@ public sealed unsafe class Draw3DDiagnostics
         set => NoireDraw3D.DecalShapeOutlines = value;
     }
 
+    /// <summary>
+    /// Draws every decal's projection box - the volume its SDF is evaluated in - as a wireframe, over normal rendering:
+    /// retained decals and the immediate layer's grounded shapes alike. Where <see cref="DecalShapeOutlines"/> answers
+    /// "what does this decal paint", this answers "how far does its projection reach", which is what a decal that stops
+    /// short of a wall or a step needs. <see cref="Scene.SceneNode.ShowDecalVolume"/> is the per-node version.
+    /// Independent of <see cref="Wireframe"/> and of the shape outlines - turn both on to see the shape inside its volume.
+    /// </summary>
+    public bool DecalVolumeOutlines
+    {
+        get => NoireDraw3D.DecalVolumeOutlines;
+        set => NoireDraw3D.DecalVolumeOutlines = value;
+    }
+
     /// <summary>Formats the current stats snapshot.</summary>
     public string GetStatsText() => NoireDraw3D.Stats.ToString();
 

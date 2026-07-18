@@ -76,6 +76,9 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
   - `DecalSurface.Wall`: the box is kept **vertical** — projects horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
   - `DecalSurface.Both`: **free** — rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
 - `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `CollisionHeightMap` on (the default), `TopSurfaceThreshold` above 0, and the covering object to have collision. It is the *only* consumer of those two - they do nothing to any other decal.
+- `OutlineWidth` is the rim thickness, held **constant in world space regardless of the decal's scale** - scale the box up or down and the rim stays put, so decals of different sizes share one edge weight. `0` is a flat fill. (Immediate-mode `Im.DrawCircle(...)` etc. keep a rim proportional to the radius you pass - there is no separate scale transform to hold it against.)
+- `outlineColor:` gives the border **its own colour**, independent of the fill (`Material.Decal(shape, fill, outlineColor: rim)`, or `OutlineColor` via `with`). Leave it unset (alpha 0, the default) and the rim stays the decal's own colour, differing from the fill only in opacity - the classic look. The immediate layer has the same switch as `ImShapeStyle.OutlineColor`.
+- `additive: true` on `Material.Decal(...)` (or `Blend = BlendMode.Additive`) blends the decal additively, so **stacked coloured decals sum their light toward white** - overlap a red, a green and a blue one and the shared area reads white. A decal is never opaque; only additive and premultiplied blends apply.
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
 - `UnorderedBatching = true` lets hundreds of identical translucent markers collapse into one instanced draw.
@@ -85,6 +88,8 @@ var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));     
 > It traces the shape, not the projection box, on purpose: that box's footprint is the SDF's *bounding square* and its sweep runs well above and below the surface, so for anything but a full-footprint circle it is much larger than the paint and centred where the paint is not (a pie's box is centred on its apex and spans twice its radius). It reads as stray lines crossing the view rather than as the decal.
 >
 > `ShowDecalShape()` is per-node. For **every** decal at once - including the immediate layer's grounded shapes, which have no node to opt in with - use `NoireDraw3D.Diagnostics.DecalShapeOutlines` (or `/noire3d decalshapes`).
+
+> **Seeing the volume.** `node.ShowDecalVolume()` / `node.HideDecalVolume()` draws the decal's **projection box** - the oriented volume the SDF is evaluated in, as its twelve edges. Where the shape outline answers *what does this decal paint*, the box answers *how far does its projection reach*: only what falls inside it can be painted at all, so a decal stopping short of a wall or a step explains itself, and the vertical sweep becomes something you can size by eye. The master switch is `NoireDraw3D.Diagnostics.DecalVolumeOutlines` (or `/noire3d decalvolumes`), which reaches immediate-mode shapes too. The two overlays are independent and compose - turn both on to see the painted shape sitting inside the volume that produced it.
 
 ## Importing models (glTF)
 
@@ -228,6 +233,8 @@ A compile error disables only that pipeline and logs the full compiler output.
 | `/noire3d cbprobe [frames]` | Camera-constant discovery report: every constant buffer observed on the upload paths, its update mechanism and VS slot, and the candidate camera windows with match errors. The answer to "is the capture locked, and on what". |
 | `/noire3d gpucam` | A/B toggle between the captured GPU camera constants (default, swim-free) and the struct snapshot. Turning it off deliberately reintroduces the old load-scaled swim for comparison. |
 | `/noire3d heightmap` | Toggles `CollisionHeightMap` - the top-down collision height-map. Only `DecalProjection.HighestOnly` reads it, so with no `HighestOnly` decal on screen there is nothing to see. It does **not** cut characters out of decals (that is `ExcludeObjects` + `CharacterStencilValue`). |
+| `/noire3d decalvolumes` | Draws every decal's **projection box** - the volume its SDF is evaluated in - retained and immediate alike. `SceneNode.ShowDecalVolume()` is the per-node version. Independent of `decalshapes`; turn both on to see the shape inside its volume. |
+| `/noire3d topsurface` | Reports every link in the `DecalProjection.HighestOnly` chain - how many decals asked for it, the master switch, the threshold, the cached collision, and whether the height-map actually drew - then names the missing one. The answer to "I set HighestOnly and nothing changed". |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `NativeUi.Layering` (under the game UI vs over everything). |
 | `/noire3d platedepth` | Toggles `NativeUi.Nameplates` (depth-aware vs always-visible nameplates). |

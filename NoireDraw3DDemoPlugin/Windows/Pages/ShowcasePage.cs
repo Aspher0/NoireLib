@@ -79,7 +79,7 @@ public sealed class ShowcasePage : IDisposable
             Station("North", "Mesh primitives",
                 "Box, sphere, cylinder, cone, torus, disc, ring, arrow, sector, an extruded path, and one mesh combining two builders. All Lit, so the Lighting page moves them together.");
             Station("South", "Decal footprints",
-                "Circle, ring, sector, rect, and a texture stamp. All cut around characters standing in them. The circle is HighestOnly, so it needs the collision height-map on to skip the floor under a table.");
+                "Circle, ring, sector, rect, and a texture stamp, each scaled differently but all sharing one constant-thickness rim. All cut around characters standing in them. The circle is HighestOnly, so it needs the collision height-map on to skip the floor under a table. Behind them, three additive circles overlap to white.");
             Station("Far south", "Immediate layer",
                 "Donut, sweeping pie, orbiting additive orb, spinning line. Redrawn every frame from OnPrepareFrame, so there is no node to select.");
             Station("West", "Materials",
@@ -160,16 +160,29 @@ public sealed class ShowcasePage : IDisposable
         var combined = new MeshBuilder().AddBox(new Vector3(1f, 0.4f, 1f)).AddSphere(0.45f, new Vector3(0f, 0.6f, 0f)).ToMeshData();
         Row(s.Spawn(combined, Material.Lit(new Vector4(0.80f, 0.80f, 0.88f, 1f)), new Vector3(x, center.Y + 0.6f, pz), "Prim.Combined", keepCpuData: true));
 
-        // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadIcon).
+        // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadIcon). Every setting
+        // rides the Material.Decal(...) factory in one call, and each footprint is scaled differently on purpose - the rim
+        // keeps a constant world thickness regardless, so a 4m and a 12m decal read with the same edge.
         var dz = center.Z - 7f;
-        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f)) with { Surface = DecalSurface.Ground, Projection = DecalProjection.HighestOnly }, new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
+        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f), projection: DecalProjection.HighestOnly), new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
          .Scale(new Vector3(4f, 4f, 4f)).MakeSelectable().ExcludeObjects(ActorExclusion);
-        s.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
+        s.AddBox(Material.Decal(DecalShape.Ring, new Vector4(1f, 0.55f, 0.10f, 0.9f), new Vector4(0.6f, 0f, 0f, 0.5f)), new Vector3(center.X - 3.5f, center.Y, dz), "Decal.Ring", keepCpuData: true)
          .Scale(new Vector3(5f, 4f, 5f)).MakeSelectable().ExcludeObjects(ActorExclusion);
-        s.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
+        s.AddBox(Material.Decal(DecalShape.Sector, new Vector4(0.90f, 0.15f, 0.15f, 0.9f), new Vector4(MathF.PI / 4f, 0f, 0f, 0.55f)), new Vector3(center.X + 2f, center.Y, dz), "Decal.Sector", keepCpuData: true)
          .Scale(new Vector3(6f, 4f, 6f)).MakeSelectable().ExcludeObjects(ActorExclusion);
-        s.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f)) with { Surface = DecalSurface.Ground }, new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
+        // The rect carries its own border colour (amber rim on a violet fill) - the rim is not tied to the decal colour.
+        s.AddBox(Material.Decal(DecalShape.Rect, new Vector4(0.60f, 0.35f, 1f, 0.9f), outlineColor: new Vector4(1f, 0.75f, 0.25f, 1f)), new Vector3(center.X + 7f, center.Y, dz), "Decal.Rect", keepCpuData: true)
          .Scale(new Vector3(4f, 4f, 3f)).MakeSelectable().ExcludeObjects(ActorExclusion);
+
+        // Additive decals: three coloured circles overlapping on the ground. Where all three meet, their light sums to
+        // white - the plainest proof that the additive blend now survives the decal path.
+        var addZ = dz - 4f;
+        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(1f, 0f, 0f, 0.9f), additive: true), new Vector3(center.X - 1.1f, center.Y, addZ + 0.6f), "Decal.Add.R", keepCpuData: true)
+         .Scale(new Vector3(3f, 4f, 3f)).MakeSelectable().ExcludeObjects(ActorExclusion);
+        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0f, 1f, 0f, 0.9f), additive: true), new Vector3(center.X + 1.1f, center.Y, addZ + 0.6f), "Decal.Add.G", keepCpuData: true)
+         .Scale(new Vector3(3f, 4f, 3f)).MakeSelectable().ExcludeObjects(ActorExclusion);
+        s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0f, 0f, 1f, 0.9f), additive: true), new Vector3(center.X, center.Y, addZ - 1.2f), "Decal.Add.B", keepCpuData: true)
+         .Scale(new Vector3(3f, 4f, 3f)).MakeSelectable().ExcludeObjects(ActorExclusion);
 
         // ---- Station 3: material families + blending + the custom pulse pipeline (a cluster to the west). -----------
         s.AddSphere(0.75f, Material.Unlit(new Vector4(0.20f, 0.60f, 1f, 0.8f)) with { Blend = BlendMode.Additive }, new Vector3(center.X - 9f, center.Y + 1.5f, center.Z + 1f), "Mat.Additive", keepCpuData: true).MakeSelectable();

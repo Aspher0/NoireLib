@@ -61,6 +61,13 @@ public static unsafe partial class NoireDraw3D
     private static Vector3 worldCollisionBuiltAt;
     private static bool worldCollisionEverBuilt;
     private static volatile bool lastFrameNeededHeightMap; // gates the framework-thread collision rebuild to frames with a HighestOnly decal
+
+    // Last frame's top-surface chain state, snapshotted for /noire3d topsurface. HighestOnly needs every link (a decal
+    // asking for it, the master switch, a threshold, cached collision, and a drawn map), and each one fails soft, so the
+    // report names the link that is missing instead of leaving "it is not HighestOnly" to guesswork.
+    private static volatile int lastTopSurfaceDecals;
+    private static volatile bool lastHeightMapRendered;
+    private static float lastHeightCeiling;
     private const float WorldCollisionRadius = 40f;         // half-size of the collected region
     private const float WorldCollisionRebuildDistance = 8f; // rebuild once the player is this far from the region centre
     private const int WorldCollisionMaxTriangles = 60000;
@@ -155,6 +162,16 @@ public static unsafe partial class NoireDraw3D
     /// with, so it can only be reached from here. Implied by <see cref="Wireframe"/>.
     /// </summary>
     internal static bool DecalShapeOutlines;
+
+    /// <summary>
+    /// Draws every decal's <b>projection box</b> - the volume its SDF is evaluated in - as a wireframe, on top of normal
+    /// rendering: the retained ones and the immediate layer's grounded shapes alike. Where
+    /// <see cref="DecalShapeOutlines"/> answers "what does this decal paint", this answers "how far does its projection
+    /// reach", which is what a decal that stops short of a wall or a step needs. <see cref="Scene.SceneNode.ShowDecalVolume"/>
+    /// is the per-node version; an immediate-mode shape has no node to opt in with, so it can only be reached from here.
+    /// Independent of <see cref="Wireframe"/> and of the shape outlines - turn both on to see the shape inside its volume.
+    /// </summary>
+    internal static bool DecalVolumeOutlines;
 
     // ---------------------------------------------------------------- public surface
 
@@ -311,7 +328,7 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>
     /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, camtrace, cbprobe, gpucam, stencil, wire,
-    /// decalshapes, heightmap, reset, rtlog, ontop, platedepth, uimask, plates; anything else prints the stats).
+    /// decalshapes, decalvolumes, heightmap, topsurface, reset, rtlog, ontop, platedepth, uimask, plates; anything else prints the stats).
     /// <b>Opt-in:</b> it is not registered automatically - call this once (e.g. in your
     /// plugin constructor) to expose the command. No-op if it is already registered (by you or another plugin using
     /// NoireLib). The full toolkit is also available programmatically via <see cref="Diagnostics"/> without it.
@@ -1120,6 +1137,14 @@ public static unsafe partial class NoireDraw3D
                 scene.TraceDecalShapes(im!);
         }
 
+        // The projection boxes are a separate answer to a separate question ("how far does this reach"), so they have
+        // their own switch and compose with the shape trace above rather than replacing it.
+        if (DecalVolumeOutlines)
+        {
+            foreach (var scene in scenes)
+                scene.TraceDecalVolumes(im!);
+        }
+
         Diagnostics.OnFrame(in frame, in cam, hasDepth);
         var capVpForTrace = gpuViewProj ?? Matrix4x4.Identity; // the committed capture, whether applied or not (the trace scores it either way)
         Diagnostics.OnCameraTrace(device, in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot, injectUsedMainPass, usedGpuCamera, in capVpForTrace, gpuViewProj.HasValue); // "swim" investigation (armed by /noire3d camtrace)
@@ -1218,7 +1243,7 @@ public static unsafe partial class NoireDraw3D
 
         // Main pass.
         scenePass!.BeginCollect(in frame, mainPass: true);
-        im!.Consume(scenePass, in frame, stats, hasDepth, Wireframe, DecalShapeOutlines);
+        im!.Consume(scenePass, in frame, stats, hasDepth, Wireframe, DecalShapeOutlines, DecalVolumeOutlines);
         foreach (var scene in scenes)
             scenePass.AddScene(scene, stats, hasDepth);
 
@@ -1228,8 +1253,11 @@ public static unsafe partial class NoireDraw3D
         // Fail-soft: no cache / no target -> null SRV -> HighestOnly degrades to AllSurfaces.
         ID3D11ShaderResourceView* worldHeightSrv = null;
         var worldHeightRegion = Vector4.Zero;
-        var needHeightMap = CollisionHeightMap && scenePass.AnyTopSurfaceDecals();
+        var topSurfaceDecals = scenePass.CountTopSurfaceDecals();
+        var needHeightMap = CollisionHeightMap && topSurfaceDecals > 0;
         lastFrameNeededHeightMap = needHeightMap;
+        lastTopSurfaceDecals = topSurfaceDecals;
+        lastHeightMapRendered = false;
         if (needHeightMap && hasDepth && worldCollision is { } wc && wc.Mesh is { } wcMesh)
         {
             worldHeightRt ??= new RenderTarget(DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT);
@@ -1242,9 +1270,15 @@ public static unsafe partial class NoireDraw3D
                 // Cap the height-map at the tallest decal box top (+ the elevation band) so a covered room's roof/upper
                 // floor above every decal never masks the ground; each decal bounds the search to its own box in-shader.
                 var heightCeiling = scenePass.MaxTopSurfaceDecalBoxTopY() + TopSurfaceThreshold;
-                scenePass.RenderWorldHeight(device, ctx, wcMesh, wc.Center, heightMatrix, heightCeiling, worldHeightRt, shaderLibrary!, stateCache!, stats);
-                worldHeightSrv = worldHeightRt.Srv;
-                worldHeightRegion = new Vector4(minX, minZ, 1f / size, 1f);
+                lastHeightCeiling = heightCeiling;
+                // Bind the map only when it was actually drawn: the target is cleared on the drawing path alone, so
+                // binding after a bail would feed HighestOnly uninitialized heights rather than degrade to AllSurfaces.
+                if (scenePass.RenderWorldHeight(device, ctx, wcMesh, wc.Center, heightMatrix, heightCeiling, worldHeightRt, shaderLibrary!, stateCache!, stats))
+                {
+                    worldHeightSrv = worldHeightRt.Srv;
+                    worldHeightRegion = new Vector4(minX, minZ, 1f / size, 1f);
+                    lastHeightMapRendered = true;
+                }
             }
         }
 
@@ -1601,6 +1635,44 @@ public static unsafe partial class NoireDraw3D
             -minX * s - 1f, 1f + minZ * s, 0.5f, 1f); // translation + constant clip.z/w
     }
 
+    /// <summary>
+    /// Reports every link in the <see cref="DecalProjection.HighestOnly"/> chain (<c>/noire3d topsurface</c>). The feature
+    /// fails soft at each step - no decal asking for it, the master switch off, a zero threshold, no cached collision, or a
+    /// height-map that could not be drawn all degrade silently to <see cref="DecalProjection.AllSurfaces"/> - so this names
+    /// the missing link instead of leaving "my decal is not HighestOnly" to guesswork.
+    /// </summary>
+    private static void PrintTopSurfaceReport()
+    {
+        var decals = lastTopSurfaceDecals;
+        var cache = worldCollision;
+        var tris = cache is { Mesh: { } cm } ? cm.IndexCount / 3 : 0;
+
+        Print("Draw3D top-surface (HighestOnly) report:");
+        Print($"  decals asking for it (last frame): {decals}");
+        Print($"  CollisionHeightMap: {(CollisionHeightMap ? "on" : "OFF")}");
+        Print($"  TopSurfaceThreshold: {TopSurfaceThreshold:0.###} m");
+        Print(cache != null
+            ? $"  collision cache: {tris} triangles around ({cache.Center.X:0.#}, {cache.Center.Y:0.#}, {cache.Center.Z:0.#}), radius {WorldCollisionRadius:0} m, analytic colliders excluded"
+            : "  collision cache: NONE collected near you yet");
+        Print($"  height-map drawn last frame: {(lastHeightMapRendered ? $"yes (ceiling {lastHeightCeiling:0.##} m)" : "no")}");
+
+        if (decals == 0)
+            Print("  => No decal is set to HighestOnly - check Material.Projection on the one you spawned.");
+        else if (!CollisionHeightMap)
+            Print("  => Turn the collision height-map on (/noire3d heightmap).");
+        else if (TopSurfaceThreshold <= 0f)
+            Print("  => TopSurfaceThreshold is 0, which disables HighestOnly outright. Raise it (0.1 is the default).");
+        else if (cache == null)
+            Print("  => No collision is cached here, so there is no height to compare against. It builds a frame after the "
+                  + "first HighestOnly decal appears, and only where the area actually has collision.");
+        else if (!lastHeightMapRendered)
+            Print("  => The height-map pass did not draw - see /xllog for a pipeline or target fault.");
+        else
+            Print($"  => The chain is complete. HighestOnly only changes a pixel where a surface you can SEE sits at least "
+                  + $"{TopSurfaceThreshold:0.###} m below the highest collision in the same column, so it is a no-op on flat "
+                  + "ground and on anything whose cover has no collision mesh.");
+    }
+
     private static void UpdateFrameworkHook() => SetFrameworkHook(initialized && !disposed);
 
     private static void SetFrameworkHook(bool hook)
@@ -1716,7 +1788,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics façade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | gpucam | stats | wire | decalshapes | stencil | heightmap | reset | rtlog | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -1777,11 +1849,18 @@ public static unsafe partial class NoireDraw3D
                 Diagnostics.DecalShapeOutlines = !Diagnostics.DecalShapeOutlines;
                 Print($"Draw3D: decal shape outlines {(Diagnostics.DecalShapeOutlines ? "on" : "off")} - every decal traces what it paints, immediate-layer shapes included.");
                 break;
+            case "decalvolumes":
+                Diagnostics.DecalVolumeOutlines = !Diagnostics.DecalVolumeOutlines;
+                Print($"Draw3D: decal volume boxes {(Diagnostics.DecalVolumeOutlines ? "on" : "off")} - every decal draws the projection box its SDF is evaluated in, immediate-layer shapes included.");
+                break;
             case "heightmap":
                 CollisionHeightMap = !CollisionHeightMap;
                 Print(CollisionHeightMap
                     ? "Draw3D: collision height-map ON - DecalProjection.HighestOnly decals paint only the topmost surface per column. Nothing else reads it, so with no HighestOnly decal on screen there is nothing to see."
                     : "Draw3D: collision height-map off - HighestOnly decals paint every surface in their box (they degrade to AllSurfaces). Character cut-outs are unaffected: those are ExcludeObjects + the game stencil.");
+                break;
+            case "topsurface":
+                PrintTopSurfaceReport();
                 break;
             case "reset":
                 renderStats?.ResetCounters();

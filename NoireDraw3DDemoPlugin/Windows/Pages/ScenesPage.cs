@@ -46,7 +46,11 @@ public sealed class ScenesPage : IDisposable
     private int decalShapeIdx;
     private int decalSurfaceIdx;
     private int decalProjIdx;
+    private bool decalAdditive;
     private Vector4 decalColor = new(0.30f, 0.70f, 1f, 0.9f);
+    private bool decalCustomOutlineColor;
+    private Vector4 decalOutlineColor = new(1f, 0.95f, 0.55f, 1f);
+    private bool decalShowVolume;
     private float decalSize = 4f;
     private float decalOutline = 0.08f;
 
@@ -283,10 +287,18 @@ public sealed class ScenesPage : IDisposable
             Ui.Enum<DecalProjection>("Projection", ref decalProjIdx,
                 "AllSurfaces paints everything inside the box. HighestOnly paints only the topmost surface per column - a tabletop, not the floor under it - and needs the collision height-map on (Decals page).");
             Ui.Color4("Color", () => decalColor, v => decalColor = v);
+            Ui.Toggle("Additive", () => decalAdditive, v => decalAdditive = v,
+                "Blends additively, so stacked coloured decals sum their light toward white - overlap a red, green and blue one to see white. Off is the standard translucent blend.");
             Ui.Slider("Footprint size (m)", () => decalSize, v => decalSize = v, 1f, 12f,
-                "Scales the projection box: footprint and vertical sweep.");
+                "Scales the projection box: footprint and vertical sweep. The outline rim keeps a constant world thickness no matter how large this gets.");
             Ui.Slider("Outline width", () => decalOutline, v => decalOutline = v, 0f, 0.3f,
-                "SDF units, 0..1 of the footprint. 0 is a flat fill.");
+                "Rim thickness, held constant in world space regardless of the footprint size above. 0 is a flat fill.");
+            Ui.Toggle("Custom border color", () => decalCustomOutlineColor, v => decalCustomOutlineColor = v,
+                "Off, the border is the decal's own colour and only its opacity differs from the fill (the classic look). On, the border gets its own colour.");
+            using (Ui.Disabled(!decalCustomOutlineColor))
+                Ui.Color4("Border color", () => decalOutlineColor, v => decalOutlineColor = v);
+            Ui.Toggle("Show volume box", () => decalShowVolume, v => decalShowVolume = v,
+                "Spawns it with its projection box drawn - the volume the SDF is evaluated in, and the limit of what it can paint. Handy while sizing the vertical sweep. Toggle it per object later in the inspector, or for every decal at once on the Renderer page.");
         }
 
         Ui.Gap();
@@ -450,11 +462,15 @@ public sealed class ScenesPage : IDisposable
         var surface = Enum.GetValues<DecalSurface>()[decalSurfaceIdx];
         var projection = Enum.GetValues<DecalProjection>()[decalProjIdx];
 
-        var mat = Material.Decal(shape, decalColor, outlineWidth: decalOutline, surface: surface) with { Projection = projection };
+        var mat = Material.Decal(shape, decalColor, outlineWidth: decalOutline, surface: surface, projection: projection, additive: decalAdditive,
+                                 outlineColor: decalCustomOutlineColor ? decalOutlineColor : null);
         var node = demo.Scene.AddBox(mat, pos, "Decal", keepCpuData: true)
              .Scale(new Vector3(decalSize, decalSize, decalSize))
              .MakeSelectable()
              .ExcludeObjects(static o => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc);
+
+        if (decalShowVolume)
+            node.ShowDecalVolume();
 
         demo.Track(node);
         demo.Selection.SetSingle(node); // select it so the gizmo attaches and the inspector opens on it

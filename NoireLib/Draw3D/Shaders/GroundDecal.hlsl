@@ -100,12 +100,28 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     else                sd = max(abs(p.x), abs(p.y)) - 1.0;                          // Rect (lines = scaled rects)
 
     float fill    = SdfCoverage(sd);
-    float outline = Params1.z > 0.0
-        ? SdfCoverage(abs(sd + Params1.z * 0.5) - Params1.z * 0.5)                   // band hugging the edge, inside
+    // Rim width. The SDF lives in the normalized footprint (edge at |p| = 1), so an unscaled band widens in world space
+    // as the box grows. Dividing by the footprint's world size (the box X/Z axis lengths, averaged) cancels that.
+    // Params2.z is the reference footprint scale that keeps the rim's meaning fixed: a scene decal passes 0, so the rim
+    // is a constant world thickness no matter how the box is scaled; an immediate shape passes its own built footprint
+    // scale, so its rim stays proportional to the radius it was drawn with (no change from before).
+    float footprintScale = 0.5 * (length(World[0].xyz) + length(World[2].xyz));
+    float outlineRef = Params2.z > 0.0 ? Params2.z : 1.0;
+    float bandW = Params1.z * outlineRef / max(footprintScale, 1e-4);
+    float outline = bandW > 0.0
+        ? SdfCoverage(abs(sd + bandW * 0.5) - bandW * 0.5)                           // band hugging the edge, inside
         : 0.0;
 
-    float4 c = BaseColor;
-    c.a *= max(fill * Params0.w, outline) * vis;          // classic decal: strong rim, translucent fill (Params0.w = fill opacity)
-    return float4(c.rgb * c.a, c.a);
+    // Rim colour: an OutlineColor with alpha > 0 overrides the decal colour for the band; alpha 0 leaves the rim the
+    // decal's own colour, so rim and fill differ only in opacity (the classic look, and the default).
+    float4 rim = OutlineColor.a > 0.0 ? OutlineColor : BaseColor;
+
+    float fillA = BaseColor.a * fill * Params0.w;         // translucent interior (Params0.w = fill opacity)
+    float rimA  = rim.a * outline;                        // strong band hugging the edge
+    float top   = max(fillA, rimA);
+    float a     = top * vis;
+    // Where the band covers, its colour wins; the interior keeps the decal colour. The ratio is the AA-smooth crossfade.
+    float3 rgb  = lerp(BaseColor.rgb, rim.rgb, top > 1e-6 ? rimA / top : 0.0);
+    return float4(rgb * a, a);
 #endif
 }

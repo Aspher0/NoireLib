@@ -124,7 +124,8 @@ public sealed class ImDraw3D
     /// <param name="depthAvailable">Whether the game depth buffer could be read this frame.</param>
     /// <param name="wireframe">Wireframe mode: grounded shapes trace their outline instead of projecting, since the pass drops decals (a decal's box carries no shape to rasterize).</param>
     /// <param name="outlineDecals">Trace grounded shapes' outlines on top of normal rendering. An immediate-mode shape has no node to opt in with, so this is the only way to outline one.</param>
-    internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe = false, bool outlineDecals = false)
+    /// <param name="volumeDecals">Trace grounded shapes' projection boxes (the volume the SDF runs in) on top of normal rendering. Same reasoning: an immediate-mode shape can only be reached from here.</param>
+    internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe = false, bool outlineDecals = false, bool volumeDecals = false)
     {
         Command[] snapshot;
         Vector3[] paths;
@@ -175,7 +176,7 @@ public sealed class ImDraw3D
                     case Kind.Sector:
                     case Kind.Rect:
                         if (cmd.Style.Placement == ImShapePlacement.Grounded)
-                            AddDecal(pass, ref cmd, in frame, stats, depthAvailable, wireframe, outlineDecals);
+                            AddDecal(pass, ref cmd, in frame, stats, depthAvailable, wireframe, outlineDecals, volumeDecals);
                         else
                             AddFlatShape(pass, ref cmd, stats, depthAvailable);
                         break;
@@ -195,7 +196,7 @@ public sealed class ImDraw3D
         }
     }
 
-    private void AddDecal(ScenePass pass, ref Command cmd, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe, bool outlineDecals)
+    private void AddDecal(ScenePass pass, ref Command cmd, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe, bool outlineDecals, bool volumeDecals)
     {
         var mesh = unitBox ??= new Mesh(MeshBuilder.Box(), name: "Im.UnitBox");
         var height = MathF.Max(cmd.Style.DecalHeight, 0.1f);
@@ -237,6 +238,11 @@ public sealed class ImDraw3D
         if (wireframe || outlineDecals)
             AddDecalOutline(pass, shape, shapeParams, in world, cmd.Color, cmd.Style.Layer, in frame, stats, depthAvailable);
 
+        // The projection box is drawn regardless of wireframe: it is the volume, not the paint, so it still answers
+        // "how far does this reach" on a frame where the decal itself is dropped.
+        if (volumeDecals)
+            AddDecalVolume(pass, in world, cmd.Color, cmd.Style.Layer, in frame, stats, depthAvailable);
+
         if (wireframe)
             return; // the pass drops decals in wireframe (their box carries no shape to rasterize) - the outline above is the whole draw
 
@@ -249,6 +255,10 @@ public sealed class ImDraw3D
             Cull = CullMode.Front,
             Params0 = shapeParams,
             Params1 = new Vector4(0f, (float)shape, cmd.Style.OutlineWidth, 1f),
+            // The size is baked into the footprint scale below, so pass it as the outline reference: the rim stays
+            // proportional to the drawn radius (its long-standing behaviour), not the constant-thickness rim scene decals get.
+            OutlineScaleRef = 0.5f * (scale.X + scale.Z),
+            DecalOutlineColor = cmd.Style.OutlineColor,
         };
 
         // Per-decal actor exclusion: the shader skips pixels standing above these actors' feet inside their
@@ -290,6 +300,62 @@ public sealed class ImDraw3D
                 boundsRadius = MathF.Max(boundsRadius, Vector3.Distance(p, center) + OutlineWidth);
 
             WriteCameraRibbon(verts, indices, CollectionsMarshal.AsSpan(path), OutlineWidth, frame.EyePos, closed: true);
+            var identity = Matrix4x4.Identity;
+            var mat = FlatData(style, cullNone: true);
+            pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, color, in identity, layer, center, boundsRadius, stats, depthAvailable);
+        }
+    }
+
+    /// <summary>
+    /// Emits a grounded shape's projection box as camera-facing ribbons (<see cref="NoireDraw3D.DecalVolumeOutlines"/>):
+    /// the twelve edges of the volume the decal's SDF is evaluated in, which an immediate-mode shape has no node to opt
+    /// into. Mirrors <see cref="Scene.SceneNode.ShowDecalVolume"/> for the retained side.
+    /// </summary>
+    private void AddDecalVolume(ScenePass pass, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
+    {
+        Span<Vector3> corners = stackalloc Vector3[DecalOutline.VolumeCorners];
+        DecalOutline.BuildVolumeCorners(in world, corners);
+
+        var path = outlinePath ??= new List<Vector3>(DecalOutline.Segments * 2 + 8);
+        var style = new ImShapeStyle { Placement = ImShapePlacement.Flat, Layer = layer };
+
+        // Runs 0-1 are the bottom and top face loops (closed); 2-5 are the verticals joining them (open).
+        for (var run = 0; run < 6; run++)
+        {
+            var closed = run < 2;
+            path.Clear();
+            if (closed)
+            {
+                for (var i = 0; i < 4; i++)
+                    path.Add(corners[run * 4 + i]);
+            }
+            else
+            {
+                path.Add(corners[run - 2]);
+                path.Add(corners[run - 2 + 4]);
+            }
+
+            var needed = (path.Count + 1) * 2;
+            if (pass.DynamicVertexBudget < needed)
+            {
+                stats.ImCommandsDropped++;
+                return;
+            }
+
+            var verts = pass.DynVertices;
+            var indices = pass.DynIndices;
+            var startIndex = indices.Count;
+
+            var center = Vector3.Zero;
+            foreach (var p in path)
+                center += p;
+            center /= path.Count;
+
+            var boundsRadius = OutlineWidth;
+            foreach (var p in path)
+                boundsRadius = MathF.Max(boundsRadius, Vector3.Distance(p, center) + OutlineWidth);
+
+            WriteCameraRibbon(verts, indices, CollectionsMarshal.AsSpan(path), OutlineWidth, frame.EyePos, closed);
             var identity = Matrix4x4.Identity;
             var mat = FlatData(style, cullNone: true);
             pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, color, in identity, layer, center, boundsRadius, stats, depthAvailable);

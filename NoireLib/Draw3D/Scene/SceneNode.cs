@@ -235,6 +235,7 @@ public sealed partial class SceneNode
         ReleaseInteraction(); // drop this node from the interaction bookkeeping if it opted in
         ReleaseExclusions();  // stop any per-frame decal-exclusion refresh for this node
         ReleaseDecalShape();  // stop any per-frame decal-shape outline drawing for this node
+        ReleaseDecalVolume(); // and any per-frame decal projection-box drawing
         SceneRef?.OnNodeRemoved();
         SceneRef = null;
         foreach (var child in Children)

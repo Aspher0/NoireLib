@@ -6,16 +6,47 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// Traces the shape a ground decal actually paints - the outline of the SDF the decal shader evaluates - as world-space
-/// closed loops. The single source of truth for "what does this decal look like as a line", shared by the opt-in
-/// per-node outline (<see cref="Scene.SceneNode.ShowDecalShape"/>) and by wireframe mode.
+/// Traces a ground decal as world-space lines. The single source of truth for "what does this decal look like as a
+/// line", in both senses a decal has:
 /// <br/>
-/// A decal has no geometry of its own: its box is only the volume the SDF is evaluated in, and the shape lives in the
-/// pixel shader. Anything that wants to draw a decal as lines has to re-derive the shape from
-/// <see cref="Materials.Material.Shape"/> / <see cref="Materials.Material.ShapeParams"/>, which is what this does.
+/// - <see cref="BuildLoop"/> traces the <b>shape it paints</b> - the outline of the SDF the decal shader evaluates -
+///   shared by the opt-in per-node outline (<see cref="Scene.SceneNode.ShowDecalShape"/>) and by wireframe mode.
+/// <br/>
+/// - <see cref="BuildVolumeCorners"/> traces the <b>projection box</b> - the volume the SDF is evaluated in - which is
+///   what <see cref="Scene.SceneNode.ShowDecalVolume"/> draws. The box is deliberately not the shape: its footprint is
+///   the SDF's bounding square and its sweep runs above and below the painted surface, so it answers "how far does this
+///   projection reach" rather than "what does it look like".
+/// <br/>
+/// A decal has no geometry of its own, so anything that wants to draw one as lines has to re-derive it from
+/// <see cref="Materials.Material.Shape"/> / <see cref="Materials.Material.ShapeParams"/> and the world matrix, which is
+/// what this does.
 /// </summary>
 internal static class DecalOutline
 {
+    /// <summary>Corner count of a decal's projection box (<see cref="BuildVolumeCorners"/>).</summary>
+    public const int VolumeCorners = 8;
+
+    /// <summary>
+    /// Fills <paramref name="corners"/> (length <see cref="VolumeCorners"/>) with the decal's projection-box corners in
+    /// world space: 0-3 are the bottom face in loop order, 4-7 the top face directly above them. The 12 edges are
+    /// therefore the two 4-point loops plus corner <c>i</c> to corner <c>i + 4</c>.
+    /// </summary>
+    /// <param name="world">The decal's world matrix, constraint already applied.</param>
+    /// <param name="corners">Receives the 8 world-space corners.</param>
+    public static void BuildVolumeCorners(in Matrix4x4 world, Span<Vector3> corners)
+    {
+        // The decal volume is the unit box the shader tests lp against (any(abs(lp) > 0.5) rejects), so the corners are
+        // the eight combinations of +/-0.5 - bottom face first, both faces wound the same way so i -> i+4 is a vertical.
+        corners[0] = Vector3.Transform(new Vector3(-0.5f, -0.5f, -0.5f), world);
+        corners[1] = Vector3.Transform(new Vector3(+0.5f, -0.5f, -0.5f), world);
+        corners[2] = Vector3.Transform(new Vector3(+0.5f, -0.5f, +0.5f), world);
+        corners[3] = Vector3.Transform(new Vector3(-0.5f, -0.5f, +0.5f), world);
+        corners[4] = Vector3.Transform(new Vector3(-0.5f, +0.5f, -0.5f), world);
+        corners[5] = Vector3.Transform(new Vector3(+0.5f, +0.5f, -0.5f), world);
+        corners[6] = Vector3.Transform(new Vector3(+0.5f, +0.5f, +0.5f), world);
+        corners[7] = Vector3.Transform(new Vector3(-0.5f, +0.5f, +0.5f), world);
+    }
+
     /// <summary>Segment count for a full turn of a curved outline; a partial arc gets a proportional share.</summary>
     public const int Segments = 64;
 

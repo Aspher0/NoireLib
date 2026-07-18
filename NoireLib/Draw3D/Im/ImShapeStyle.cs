@@ -33,12 +33,22 @@ public readonly record struct ImShapeStyle
     /// <summary>Soft-edge width against world geometry, in world units (flat shapes only; decals hug the ground instead). Default 0 = hard edge.</summary>
     public float DepthFade { get; init; }
 
-    /// <summary>Decal outline band width in SDF units (0..1 of the footprint). 0 = no outline. Default 0.08.</summary>
+    /// <summary>
+    /// Decal outline band width in SDF units (0..1 of the footprint), so the rim stays proportional to the radius you
+    /// draw with. 0 = no outline. Default 0.08. (Scene decals via <see cref="Materials.Material.Decal"/> instead hold a
+    /// constant world thickness, since they carry a separate scale transform this has nothing to hold against.)
+    /// </summary>
     public float OutlineWidth
     {
         get => outlineWidth ?? 0.08f;
         init => outlineWidth = value;
     }
+
+    /// <summary>
+    /// Decal outline color, straight alpha. Alpha 0 (the default) leaves the rim the shape's own color, so rim and fill
+    /// differ only in opacity; give it an alpha above 0 to color the border independently of the fill.
+    /// </summary>
+    public System.Numerics.Vector4 OutlineColor { get; init; }
 
     /// <summary>Decal fill opacity relative to the outline (the classic strong-rim decal look uses ~0.6, the default).</summary>
     public float FillOpacity

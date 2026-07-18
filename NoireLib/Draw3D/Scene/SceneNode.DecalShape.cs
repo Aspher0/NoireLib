@@ -26,7 +26,7 @@ public sealed partial class SceneNode
     /// <summary>The immediate-layer style for the outline: a world-depth-tested line, so it reads as a real marking on the surface.</summary>
     private static readonly ImShapeStyle DecalShapeEdgeStyle = new();
 
-    /// <summary>Reusable point buffer for the outline loops. Render-thread only (see <see cref="DecalShapeService"/>), so one per thread costs nothing and keeps the per-frame trace allocation-free.</summary>
+    /// <summary>Reusable point buffer for the outline loops. Render-thread only (see <see cref="DecalOverlayService"/>), so one per thread costs nothing and keeps the per-frame trace allocation-free.</summary>
     [System.ThreadStatic]
     private static List<Vector3>? decalShapePath;
 
@@ -62,7 +62,7 @@ public sealed partial class SceneNode
             decalShapeColor.W = 1f;
 
         decalShapeWidth = edgeWidth > 0f ? edgeWidth : DefaultDecalShapeWidth;
-        DecalShapeService.Register(this);
+        DecalOverlayService.Register(this);
         return this;
     }
 
@@ -70,23 +70,25 @@ public sealed partial class SceneNode
     public SceneNode HideDecalShape()
     {
         decalShapeColor = default;
-        DecalShapeService.Unregister(this);
+        if (!HasDecalVolume)
+            DecalOverlayService.Unregister(this); // the volume box may still need the per-frame slot
         return this;
     }
 
-    /// <summary>Stops the decal-shape outline and drops the node from the service (called on destroy).</summary>
+    /// <summary>Stops the decal-shape outline and drops the node from the service when nothing else needs it (called on destroy).</summary>
     private void ReleaseDecalShape()
     {
         if (decalShapeColor.W <= 0f)
             return;
 
         decalShapeColor = default;
-        DecalShapeService.Unregister(this);
+        if (!HasDecalVolume)
+            DecalOverlayService.Unregister(this);
     }
 
     /// <summary>
     /// Emits this node's decal-shape outline into the immediate layer for this frame. Render-thread only, driven off
-    /// <see cref="NoireDraw3D.OnRenderOverlay"/> by <see cref="DecalShapeService"/> (the opt-in path) or by
+    /// <see cref="NoireDraw3D.OnRenderOverlay"/> by <see cref="DecalOverlayService"/> (the opt-in path) or by
     /// <see cref="Scene3D.TraceDecalShapes"/> (wireframe mode). Reads the shape and world matrix under the graph lock and
     /// skips a destroyed, hidden, or no-longer-decal node.
     /// </summary>

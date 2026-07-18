@@ -14,7 +14,11 @@ public sealed record Material
     /// <summary>Which shader family renders this material.</summary>
     public MaterialDomain Domain { get; init; } = MaterialDomain.Unlit;
 
-    /// <summary>How pixels blend into the Draw3D layer. <see cref="BlendMode.Opaque"/> materials also z-test each other in hardware.</summary>
+    /// <summary>
+    /// How pixels blend into the Draw3D layer. <see cref="BlendMode.Opaque"/> materials also z-test each other in hardware.<br/>
+    /// <see cref="MaterialDomain.GroundDecal"/> honours only <see cref="BlendMode.Additive"/> (stacked decals sum toward white)
+    /// or <see cref="BlendMode.Premultiplied"/> - a decal is never opaque - so <see cref="Decal"/>'s <c>additive</c> flag is the ergonomic switch.
+    /// </summary>
     public BlendMode Blend { get; init; } = BlendMode.Premultiplied;
 
     /// <summary>
@@ -47,8 +51,19 @@ public sealed record Material
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: shape parameters (see <see cref="DecalShape"/> members). W = fill opacity relative to the outline (default 0.6).</summary>
     public Vector4 ShapeParams { get; init; } = new(0f, 0f, 0f, 0.6f);
 
-    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: outline band width in SDF units (0..1 of the footprint), 0 = no outline.</summary>
+    /// <summary>
+    /// <see cref="MaterialDomain.GroundDecal"/> only: outline band width, measured against the unit footprint (SDF units,
+    /// 0..1). The rim is held at a <b>constant world thickness regardless of the decal's scale</b> - scaling the box up or
+    /// down never widens or narrows it - so this reads as a fixed thickness rather than a fraction of the footprint. 0 = no outline.
+    /// </summary>
     public float OutlineWidth { get; init; }
+
+    /// <summary>
+    /// <see cref="MaterialDomain.GroundDecal"/> only: the outline rim's own color, straight alpha.<br/>
+    /// Alpha 0 (the default) leaves the rim the decal's <see cref="Color"/>, so rim and fill differ only in opacity - the
+    /// classic look. Give it an alpha above 0 to color the border independently of the fill.
+    /// </summary>
+    public Vector4 OutlineColor { get; init; }
 
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: how strongly the decal feathers out near the top/bottom of its volume (0 = none, 1 = full).</summary>
     public float HeightFade { get; init; } = 1f;
@@ -92,9 +107,12 @@ public sealed record Material
     /// <param name="shape">Footprint shape.</param>
     /// <param name="color">Base color, straight alpha.</param>
     /// <param name="shapeParams">Shape parameters (see <see cref="DecalShape"/> members); when null, sensible defaults are used.</param>
-    /// <param name="outlineWidth">Outline band width in SDF units (default 0.08 - the classic strong-rim look).</param>
+    /// <param name="outlineWidth">Outline band width (default 0.08 - the classic strong-rim look). Held at a constant world thickness regardless of the decal's scale; see <see cref="OutlineWidth"/>.</param>
     /// <param name="surface">Locks the decal to a surface by constraining the box orientation: ground (kept horizontal), wall (kept vertical), or both (free). Default <see cref="DecalSurface.Ground"/>.</param>
-    public static Material Decal(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f, DecalSurface surface = DecalSurface.Ground)
+    /// <param name="projection">How stacked surfaces in the footprint resolve: paint all, or only the topmost. <see cref="DecalProjection.HighestOnly"/> needs <see cref="NoireDraw3D.CollisionHeightMap"/> on. Default <see cref="DecalProjection.AllSurfaces"/>.</param>
+    /// <param name="additive">True blends additively - stacking coloured decals sums their light toward white (a red, green and blue decal overlapping read white). False is the standard translucent blend. Equivalent to setting <see cref="Blend"/> to <see cref="BlendMode.Additive"/>.</param>
+    /// <param name="outlineColor">The border's own color, straight alpha. Null (the default) leaves the rim the decal's <paramref name="color"/>, differing only in opacity; pass one to color the border independently of the fill.</param>
+    public static Material Decal(DecalShape shape, Vector4 color, Vector4? shapeParams = null, float outlineWidth = 0.08f, DecalSurface surface = DecalSurface.Ground, DecalProjection projection = DecalProjection.AllSurfaces, bool additive = false, Vector4? outlineColor = null)
         => new()
         {
             Domain = MaterialDomain.GroundDecal,
@@ -102,7 +120,10 @@ public sealed record Material
             Color = color,
             ShapeParams = shapeParams ?? new Vector4(0f, 0f, 0f, 0.6f),
             OutlineWidth = outlineWidth,
+            OutlineColor = outlineColor ?? default,
             Surface = surface,
+            Projection = projection,
+            Blend = additive ? BlendMode.Additive : BlendMode.Premultiplied,
             Cull = CullMode.Front,
         };
 

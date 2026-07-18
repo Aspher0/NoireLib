@@ -164,6 +164,44 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
+    /// Traces every visible ground decal in this scene as its projection box - the volume the SDF is evaluated in - for
+    /// <see cref="NoireDraw3D.DecalVolumeOutlines"/>. Render-thread only, called before the immediate layer is consumed so
+    /// the boxes land this frame. Independent of <see cref="TraceDecalShapes"/>: turn both on to see the painted shape
+    /// sitting inside the volume that produced it.
+    /// </summary>
+    /// <param name="im">The immediate layer to draw into.</param>
+    internal void TraceDecalVolumes(Im.ImDraw3D im)
+    {
+        if (IsDisposed || !Visible)
+            return;
+
+        lock (GraphLock)
+        {
+            foreach (var root in Roots)
+                TraceDecalVolumesRecursive(root, im);
+        }
+    }
+
+    /// <summary>Walks a subtree emitting decal projection boxes. Each node re-checks its own visibility and material.</summary>
+    private static void TraceDecalVolumesRecursive(SceneNode node, Im.ImDraw3D im)
+    {
+        if (!node.Visible)
+            return; // the whole subtree is hidden
+
+        try
+        {
+            node.DrawDecalVolumeEdges(im, force: true);
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError<Scene3D>(ex, "A decal volume box threw while tracing; skipped this frame.", "Draw3D");
+        }
+
+        foreach (var child in node.Children)
+            TraceDecalVolumesRecursive(child, im);
+    }
+
+    /// <summary>
     /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached
     /// (self-disable rung 2) - logged once, everything else keeps running.
     /// </summary>

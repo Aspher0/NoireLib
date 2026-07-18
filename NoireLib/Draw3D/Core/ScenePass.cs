@@ -45,7 +45,7 @@ internal struct FrameCBData
     public Vector4 WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
 }
 
-/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (192 bytes).</summary>
+/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (208 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct ObjectCBData
 {
@@ -54,7 +54,9 @@ internal struct ObjectCBData
     public Vector4 BaseColor;
     public Vector4 Params0;
     public Vector4 Params1;
-    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only); y = box top world Y
+    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only); y = box top world Y;
+                            // z = outline reference footprint scale (0 = constant-thickness rim)
+    public Vector4 OutlineColor; // ground-decal rim colour, straight alpha; alpha 0 = unset (the rim uses BaseColor)
 }
 
 /// <summary>
@@ -115,16 +117,18 @@ internal sealed unsafe class ScenePass : IDisposable
     public bool HasOutlinedItems => hasOutlined;
 
     /// <summary>
-    /// Whether any collected item this frame is a <see cref="DecalProjection.HighestOnly"/> ground decal (retained or
-    /// immediate) - gates the collision height-map pass. Scoped to that projection because it is the map's only consumer:
-    /// a scene of ordinary decals needs no height-map and pays nothing for one.
+    /// How many collected items this frame are <see cref="DecalProjection.HighestOnly"/> ground decals (retained or
+    /// immediate) - gates the collision height-map pass (&gt; 0). Scoped to that projection because it is the map's only
+    /// consumer: a scene of ordinary decals needs no height-map and pays nothing for one. The count itself is what
+    /// <c>/noire3d topsurface</c> reports, so "my decal is not HighestOnly" is answerable without a debugger.
     /// </summary>
-    public bool AnyTopSurfaceDecals()
+    public int CountTopSurfaceDecals()
     {
+        var n = 0;
         for (var i = 0; i < itemCount; i++)
             if (IsTopSurfaceDecal(in items[i]))
-                return true;
-        return false;
+                n++;
+        return n;
     }
 
     /// <summary>
@@ -785,8 +789,10 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = item.Color,
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
-                    // x = projection mode; y = this decal's box top world Y (the height-map's vertical search bound).
-                    Params2 = new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), 0f, 0f),
+                    // x = projection mode; y = this decal's box top world Y (the height-map's vertical search bound);
+                    // z = outline reference footprint scale (0 = constant-thickness rim; see MaterialData.OutlineScaleRef).
+                    Params2 = new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), item.Mat.OutlineScaleRef, 0f),
+                    OutlineColor = item.Mat.DecalOutlineColor,
                 };
                 objectCb.UpdateConstant(ctx, in objData);
 
@@ -941,8 +947,12 @@ internal sealed unsafe class ScenePass : IDisposable
     /// Nothing else reads it. Standalone (own target and states) so it runs before <see cref="Execute"/>.
     /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ→clip map (matching <c>WorldHeightRegion</c>);
     /// the mesh's vertices are relative to <paramref name="meshCenter"/>.
+    /// <br/>
+    /// Returns false when the map could not be drawn (no mesh, no target, pipeline self-disabled). The caller must then
+    /// leave the height-map SRV unbound: the target is only cleared on the drawing path, so binding it after a bail would
+    /// feed <c>HighestOnly</c> stale or uninitialized heights instead of cleanly degrading to <c>AllSurfaces</c>.
     /// </summary>
-    public void RenderWorldHeight(
+    public bool RenderWorldHeight(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
         Mesh collisionMesh,
@@ -955,15 +965,15 @@ internal sealed unsafe class ScenePass : IDisposable
         RenderStats stats)
     {
         if (collisionMesh == null || target.Rtv == null || target.Width == 0 || target.Height == 0)
-            return;
+            return false;
 
         var vb = collisionMesh.Vb;
         if (vb == null || collisionMesh.IndexCount == 0)
-            return;
+            return false;
 
         var pipeline = shaders.GetWorldHeight(device);
         if (pipeline == null)
-            return;
+            return false;
 
         EnsureBuffers(device);
 
@@ -995,6 +1005,11 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         var cb = frameCb.Buffer;
         ctx->VSSetConstantBuffers(0, 1, &cb);
+        // b0 must reach the PIXEL shader too: WorldHeight.hlsl's PS reads the ceiling from DepthCal.x to discard overhead
+        // collision. This pass runs before Execute, and StateGuard has already restored the game's buffers into the PS
+        // slots, so without this bind the PS reads the game's b0 - out of range, which D3D returns as 0, making the test
+        // "discard everything above world Y 0". That silently emptied the height-map and made HighestOnly a no-op.
+        ctx->PSSetConstantBuffers(0, 1, &cb);
         var ocb = objectCb.Buffer;
         ctx->VSSetConstantBuffers(1, 1, &ocb);
 
@@ -1012,6 +1027,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->IASetIndexBuffer(collisionMesh.Ib, collisionMesh.IndexFormat, 0);
         ctx->DrawIndexed((uint)collisionMesh.IndexCount, 0, 0);
         stats.DrawCalls++;
+        return true;
     }
 
     /// <summary>

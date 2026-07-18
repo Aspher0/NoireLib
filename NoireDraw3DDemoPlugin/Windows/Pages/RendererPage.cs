@@ -39,6 +39,8 @@ internal sealed class RendererPage
                 "Decals have no mesh to wireframe - their shape lives in the pixel shader - so they trace their painted outline instead.");
             Ui.Toggle("Decal outlines", static () => NoireDraw3D.Diagnostics.DecalShapeOutlines, static v => NoireDraw3D.Diagnostics.DecalShapeOutlines = v,
                 "Traces what every decal paints, retained and immediate alike. Objects have a per-object version in the inspector; immediate shapes have no node, so only this reaches them.\n\nAlways on while wireframe is.");
+            Ui.Toggle("Decal volume boxes", static () => NoireDraw3D.Diagnostics.DecalVolumeOutlines, static v => NoireDraw3D.Diagnostics.DecalVolumeOutlines = v,
+                "Draws every decal's projection box - the volume its SDF is evaluated in, and the limit of what it can paint at all. Where the outline above shows what a decal paints, this shows how far it reaches, so a decal stopping short of a wall or a step explains itself.\n\nIndependent of the two above: turn both on to see the shape sitting inside its volume.");
         }
     }
 }
