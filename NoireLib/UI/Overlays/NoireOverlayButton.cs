@@ -173,7 +173,8 @@ public class NoireOverlayButton : NoireDrawable
     public Action<NoireOverlayButton>? CustomContent { get; set; } = null;
 
     /// <summary>
-    /// An explicit button size in pixels. When <see langword="null"/>, the size is computed from the content and <see cref="OverlayButtonStyle.Padding"/>.
+    /// An explicit button size, at 100%. When <see langword="null"/>, the size is computed from the content and <see cref="OverlayButtonStyle.Padding"/>.<br/>
+    /// See <see cref="NoireUI.Scale"/>.
     /// </summary>
     public Vector2? Size { get; set; } = null;
 
@@ -275,7 +276,7 @@ public class NoireOverlayButton : NoireDrawable
             return;
         }
 
-        var size = Vector2.Max(Size ?? MeasureAutoSize(), new Vector2(4f, 4f));
+        var size = Vector2.Max(ResolveSize(), NoireUI.Scaled(new Vector2(4f, 4f)));
         var viewport = ImGui.GetMainViewport();
 
         Vector2 windowPos;
@@ -418,15 +419,16 @@ public class NoireOverlayButton : NoireDrawable
             backgroundColor = ImGui.GetColorU32(colorIndex);
         }
 
-        var rounding = Style.Rounding ?? ImGui.GetStyle().FrameRounding;
+        var rounding = Style.ResolveRounding();
         drawList.AddRectFilled(rectMin, rectMax, backgroundColor, rounding);
 
-        if (Style.BorderSize > 0f)
+        var borderSize = Style.ScaledBorderSize;
+        if (borderSize > 0f)
         {
             var borderColor = Style.BorderColor.HasValue
                 ? ImGui.GetColorU32(Style.BorderColor.Value)
                 : ImGui.GetColorU32(ImGuiCol.Border);
-            drawList.AddRect(rectMin, rectMax, borderColor, rounding, ImDrawFlags.None, Style.BorderSize);
+            drawList.AddRect(rectMin, rectMax, borderColor, rounding, ImDrawFlags.None, borderSize);
         }
     }
 
@@ -437,7 +439,7 @@ public class NoireOverlayButton : NoireDrawable
         if (partCount == 0)
             return;
 
-        var totalWidth = (iconSize?.X ?? 0f) + (imageSize?.X ?? 0f) + (textSize?.X ?? 0f) + (Style.ContentSpacing * (partCount - 1));
+        var totalWidth = (iconSize?.X ?? 0f) + (imageSize?.X ?? 0f) + (textSize?.X ?? 0f) + (Style.ScaledContentSpacing * (partCount - 1));
         var cursorX = (size.X - totalWidth) / 2f;
 
         if (iconSize.HasValue)
@@ -447,7 +449,7 @@ public class NoireOverlayButton : NoireDrawable
             using (ImRaii.PushFont(UiBuilder.IconFont))
                 ImGui.TextUnformatted(Icon!.Value.ToIconString());
 
-            cursorX += iconSize.Value.X + Style.ContentSpacing;
+            cursorX += iconSize.Value.X + Style.ScaledContentSpacing;
         }
 
         if (imageSize.HasValue)
@@ -459,7 +461,7 @@ public class NoireOverlayButton : NoireDrawable
             else
                 ImGui.Dummy(imageSize.Value);
 
-            cursorX += imageSize.Value.X + Style.ContentSpacing;
+            cursorX += imageSize.Value.X + Style.ScaledContentSpacing;
         }
 
         if (textSize.HasValue)
@@ -469,6 +471,16 @@ public class NoireOverlayButton : NoireDrawable
                 ImGui.TextUnformatted(Text!);
         }
     }
+
+    /// <summary>
+    /// The size the button is drawn at: the explicit <see cref="Size"/> scaled, or one measured from the content.
+    /// </summary>
+    /// <remarks>
+    /// The measured size needs no scaling of its own. It is built from text metrics and a resolved padding, both of
+    /// which are already real pixels.
+    /// </remarks>
+    private Vector2 ResolveSize()
+        => Size.HasValue ? NoireUI.Scaled(Size.Value) : MeasureAutoSize();
 
     /// <summary>
     /// Measures the icon, image and text parts of the default content.<br/>
@@ -510,10 +522,10 @@ public class NoireOverlayButton : NoireDrawable
         }
 
         var contentSize = new Vector2(
-            (iconSize?.X ?? 0f) + (imageSize?.X ?? 0f) + (textSize?.X ?? 0f) + (Style.ContentSpacing * (partCount - 1)),
+            (iconSize?.X ?? 0f) + (imageSize?.X ?? 0f) + (textSize?.X ?? 0f) + (Style.ScaledContentSpacing * (partCount - 1)),
             MathF.Max(iconSize?.Y ?? 0f, MathF.Max(imageSize?.Y ?? 0f, textSize?.Y ?? 0f)));
 
-        var padding = Style.Padding ?? ImGui.GetStyle().FramePadding;
+        var padding = Style.ResolvePadding();
         return contentSize + (padding * 2f);
     }
 

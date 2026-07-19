@@ -63,7 +63,8 @@ public sealed class NoireModalHost : NoireDrawable
 
         var viewport = ImGui.GetMainViewport();
         ImGui.SetNextWindowPos(viewport.Pos + viewport.Size * 0.5f, ImGuiCond.Appearing, new Vector2(0.5f, 0.5f));
-        ImGui.SetNextWindowSizeConstraints(new Vector2(request.Options.Width, 0f), new Vector2(request.Options.Width, float.MaxValue));
+        var dialogWidth = request.Options.ScaledWidth;
+        ImGui.SetNextWindowSizeConstraints(new Vector2(dialogWidth, 0f), new Vector2(dialogWidth, float.MaxValue));
 
         var title = string.IsNullOrEmpty(request.Title) ? " " : request.Title;
 
@@ -98,7 +99,7 @@ public sealed class NoireModalHost : NoireDrawable
     private static void DrawContents(ModalRequest request)
     {
         var theme = NoireTheme.Current;
-        var width = request.Options.Width - theme.ResolveFramePadding().X * 2f;
+        var width = request.Options.ScaledWidth - theme.ResolveFramePadding().X * 2f;
 
         // Resolved through the theme rather than inherited, so a light palette does not leave near-white text on a
         // near-white dialog.
@@ -217,7 +218,7 @@ public sealed class NoireModalHost : NoireDrawable
     };
 
     private static float MeasureButton(string label)
-        => MathF.Max(80f, ImGui.CalcTextSize(label).X + NoireTheme.Current.ResolveFramePadding().X * 4f);
+        => MathF.Max(NoireUI.Scaled(80f), ImGui.CalcTextSize(label).X + NoireTheme.Current.ResolveFramePadding().X * 4f);
 
     /// <summary>
     /// Moves the cursor so a row of that width ends at the right edge of the dialog.

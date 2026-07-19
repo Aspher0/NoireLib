@@ -1,9 +1,10 @@
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
-/// Visual and placement options for a custom tooltip drawn with <see cref="NoireTooltip"/>.
+/// Visual and placement options for a custom tooltip drawn with <see cref="NoireTooltip"/>.<br/>
+/// Every pixel value here is written at 100% and scaled when it is drawn. See <see cref="NoireUI.Scale"/>.
 /// </summary>
 public sealed class TooltipStyle
 {
@@ -29,17 +30,17 @@ public sealed class TooltipStyle
     public Vector4? BorderColor { get; set; } = null;
 
     /// <summary>
-    /// The border thickness of the tooltip. When <see langword="null"/>, the current ImGui window border size is used.
+    /// The border thickness of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window border size is used.
     /// </summary>
     public float? BorderSize { get; set; } = null;
 
     /// <summary>
-    /// The corner rounding of the tooltip. When <see langword="null"/>, the current ImGui window rounding is used.
+    /// The corner rounding of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window rounding is used.
     /// </summary>
     public float? Rounding { get; set; } = null;
 
     /// <summary>
-    /// The inner padding of the tooltip. When <see langword="null"/>, the current ImGui window padding is used.
+    /// The inner padding of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window padding is used.
     /// </summary>
     public Vector2? Padding { get; set; } = null;
 
@@ -49,13 +50,13 @@ public sealed class TooltipStyle
     public TooltipPlacement Placement { get; set; } = TooltipPlacement.Mouse;
 
     /// <summary>
-    /// The offset in pixels from the mouse cursor, when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.<br/>
+    /// The offset from the mouse cursor at 100%, when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.<br/>
     /// See <see cref="ItemOffset"/> for the item-relative placements.
     /// </summary>
     public Vector2 MouseOffset { get; set; } = new(16f, 16f);
 
     /// <summary>
-    /// The gap in pixels between the tooltip and the item, when using an item-relative <see cref="Placement"/>
+    /// The gap at 100% between the tooltip and the item, when using an item-relative <see cref="Placement"/>
     /// (every placement except <see cref="TooltipPlacement.Mouse"/>).<br/>
     /// This pushes the tooltip away from the item along the placement axis, so it grows the same way whichever side the
     /// tooltip is on. See <see cref="ItemOffset"/> to shift it freely instead.
@@ -63,7 +64,7 @@ public sealed class TooltipStyle
     public float ItemGap { get; set; } = 6f;
 
     /// <summary>
-    /// An additional offset in pixels applied when using an item-relative <see cref="Placement"/>
+    /// An additional offset at 100% applied when using an item-relative <see cref="Placement"/>
     /// (every placement except <see cref="TooltipPlacement.Mouse"/>), on top of <see cref="ItemGap"/>.<br/>
     /// Where <see cref="ItemGap"/> only moves the tooltip along the placement axis, this shifts it on both axes: use it to
     /// nudge a tooltip placed above an item to the right, for example. Defaults to no offset.
@@ -74,4 +75,18 @@ public sealed class TooltipStyle
     /// Whether the tooltip should be kept fully inside the viewport. Defaults to <see langword="true"/>.
     /// </summary>
     public bool ClampToViewport { get; set; } = true;
+
+    // What the tooltip actually draws from. Each logical value above is scaled here and nowhere else.
+
+    internal Vector2 ScaledMouseOffset => NoireUI.Scaled(MouseOffset);
+
+    internal float ScaledItemGap => NoireUI.Scaled(ItemGap);
+
+    internal Vector2 ScaledItemOffset => NoireUI.Scaled(ItemOffset);
+
+    internal float? ScaledBorderSize => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : null;
+
+    internal float? ScaledRounding => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : null;
+
+    internal Vector2? ScaledPadding => Padding.HasValue ? NoireUI.Scaled(Padding.Value) : null;
 }

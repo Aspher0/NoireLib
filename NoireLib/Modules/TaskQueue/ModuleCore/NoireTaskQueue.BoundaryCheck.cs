@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace NoireLib.TaskQueue;
@@ -27,7 +28,7 @@ public partial class NoireTaskQueue
     /// </summary>
     private bool AreTasksInSameContextFlexible(QueuedTask targetTask)
     {
-        if (currentBatch != null)
+        if (IsCurrentContextBatch)
         {
             return ReferenceEquals(targetTask.ParentBatch, currentBatch);
         }
@@ -46,7 +47,7 @@ public partial class NoireTaskQueue
     /// </summary>
     private bool AreTasksInSameContextStrict(QueuedTask targetTask)
     {
-        if (currentBatch != null)
+        if (IsCurrentContextBatch)
         {
             return ReferenceEquals(targetTask.ParentBatch, currentBatch);
         }
@@ -147,25 +148,132 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
+    /// Whether the queue's current context is a batch rather than a standalone task.
+    /// </summary>
+    /// <remarks>
+    /// A batch being processed is not on its own enough to make the current context a batch. A standalone task
+    /// that is still waiting keeps the context standalone even while a later batch runs, which is the ordinary
+    /// state whenever a non blocking task is waiting on its completion condition. Deciding from the batch alone
+    /// made every context scoped operation act on that batch's contents while the caller's own current task sat
+    /// outside it, so a strict skip issued against a standalone task reached into the batch behind it.<br/>
+    /// The queue never assigns a current task while a batch is processing, so a current task existing at all is
+    /// what says the context is standalone.
+    /// </remarks>
+    private bool IsCurrentContextBatch => currentBatch != null && currentTask == null;
+
+    /// <summary>
+    /// The position of the executing standalone task in the unified queue, or -1 when none is executing.
+    /// </summary>
+    private int GetCurrentStandaloneTaskIndex()
+    {
+        return currentTask != null
+            ? unifiedQueue.FindIndex(item => item.IsTask && ReferenceEquals(item.AsTask(), currentTask))
+            : -1;
+    }
+
+    /// <summary>
+    /// Reports whether a batch at the given position ends the strict standalone context.
+    /// </summary>
+    /// <remarks>
+    /// This is the single definition of where <see cref="ContextDefinition.SameContextStrict"/> stops, and it is
+    /// deliberately shared: a batch only closes the context when it sits after the executing task, or when
+    /// nothing is executing at all. A batch the executing task is already past does not close it, so a scan
+    /// still reaches the tasks before that task.
+    /// </remarks>
+    /// <param name="index">The position of the batch in the unified queue.</param>
+    /// <param name="currentTaskIndex">The position of the executing standalone task, or -1 when none is executing.</param>
+    /// <returns>True if the batch ends the strict context; otherwise, false.</returns>
+    private static bool IsStrictBoundaryBatch(int index, int currentTaskIndex)
+    {
+        return currentTaskIndex == -1 || index > currentTaskIndex;
+    }
+
+    /// <summary>
+    /// Lists the tasks a context-scoped query reaches, in queue order.
+    /// </summary>
+    /// <remarks>
+    /// This is the single definition of what each <see cref="ContextDefinition"/> selects, shared by every query
+    /// family so that a lookup, a predicate search, a custom-id search and a full listing cannot disagree about
+    /// what "the same context" means. The three modes are:<br/>
+    /// - CrossContext walks the whole queue and descends into every batch.<br/>
+    /// - SameContext is the current batch's own tasks while a batch is the current context, and the standalone
+    ///   tasks otherwise, with batches in between allowed but not entered.<br/>
+    /// - SameContextStrict is the same, except it stops at the first batch that closes the context per
+    ///   <see cref="IsStrictBoundaryBatch"/>.<br/>
+    /// The result is materialized rather than lazy on purpose. Callers pass consumer predicates, and a predicate
+    /// is free to enqueue or clear, which structurally changes the queue this walks. Deferring the walk let that
+    /// surface as "Collection was modified" out of an ordinary read call.
+    /// </remarks>
+    /// <param name="contextDefinition">The context to scope the listing to.</param>
+    /// <returns>The tasks in that context, in queue order.</returns>
+    private List<QueuedTask> ListTasksInContext(ContextDefinition contextDefinition)
+    {
+        var tasks = new List<QueuedTask>();
+
+        if (contextDefinition == ContextDefinition.CrossContext)
+        {
+            foreach (var item in unifiedQueue)
+            {
+                if (item.IsTask)
+                    tasks.Add(item.AsTask());
+                else if (item.IsBatch)
+                    tasks.AddRange(item.AsBatch().Tasks);
+            }
+
+            return tasks;
+        }
+
+        if (contextDefinition is not (ContextDefinition.SameContext or ContextDefinition.SameContextStrict))
+            return tasks;
+
+        if (IsCurrentContextBatch && currentBatch != null)
+        {
+            tasks.AddRange(currentBatch.Tasks);
+            return tasks;
+        }
+
+        var stopAtBatch = contextDefinition == ContextDefinition.SameContextStrict;
+        var currentIndex = GetCurrentStandaloneTaskIndex();
+
+        for (int i = 0; i < unifiedQueue.Count; i++)
+        {
+            var item = unifiedQueue[i];
+
+            if (stopAtBatch && item.IsBatch && IsStrictBoundaryBatch(i, currentIndex))
+                break;
+
+            if (item.IsTask)
+                tasks.Add(item.AsTask());
+        }
+
+        return tasks;
+    }
+
+    /// <summary>
     /// Counts pending tasks in the current context (batch or standalone).
     /// </summary>
     private int CountTasksInCurrentContext(bool stopAtBatch)
     {
-        if (currentBatch != null)
+        if (IsCurrentContextBatch)
         {
-            return currentBatch.Tasks.Count(t => t.Status == TaskStatus.Queued);
+            return currentBatch!.Tasks.Count(t => t.Status == TaskStatus.Queued);
         }
         else
         {
+            var currentIndex = GetCurrentStandaloneTaskIndex();
             int count = 0;
-            foreach (var item in unifiedQueue)
+
+            for (int i = 0; i < unifiedQueue.Count; i++)
             {
-                if (stopAtBatch && item.IsBatch)
+                var item = unifiedQueue[i];
+
+                if (stopAtBatch && item.IsBatch && IsStrictBoundaryBatch(i, currentIndex))
                     break;
 
                 if (item.IsTask && item.AsTask().Status == TaskStatus.Queued)
                     count++;
             }
+
             return count;
         }
     }
@@ -333,9 +441,9 @@ public partial class NoireTaskQueue
     /// </summary>
     private int? GetTaskDepthSameContext(QueuedTask targetTask)
     {
-        if (currentBatch != null)
+        if (IsCurrentContextBatch)
         {
-            return GetTaskDepthInBatch(targetTask, currentBatch);
+            return GetTaskDepthInBatch(targetTask, currentBatch!);
         }
         else
         {
@@ -348,9 +456,9 @@ public partial class NoireTaskQueue
     /// </summary>
     private int? GetTaskDepthStrictBoundary(QueuedTask targetTask)
     {
-        if (currentBatch != null)
+        if (IsCurrentContextBatch)
         {
-            return GetTaskDepthInBatch(targetTask, currentBatch);
+            return GetTaskDepthInBatch(targetTask, currentBatch!);
         }
         else
         {
@@ -402,12 +510,15 @@ public partial class NoireTaskQueue
         if (targetTask.ParentBatch != null)
             return null;
 
+        var currentIndex = GetCurrentStandaloneTaskIndex();
         int depth = 0;
         bool foundCurrent = currentTask == null;
 
-        foreach (var item in unifiedQueue)
+        for (int i = 0; i < unifiedQueue.Count; i++)
         {
-            if (stopAtBatch && item.IsBatch)
+            var item = unifiedQueue[i];
+
+            if (stopAtBatch && item.IsBatch && IsStrictBoundaryBatch(i, currentIndex))
                 break;
 
             if (item.IsTask)

@@ -7,7 +7,8 @@ namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
 /// The one-liner creation surface of a scene: <see cref="Spawn(MeshData, Material, Vector3, string, bool)"/> collapses
-/// "create node → build mesh → attach → track for disposal" into a single call that returns the node and owns its mesh.
+/// creating a node, building its mesh, attaching it, and tracking it for disposal into a single call that returns the
+/// node and owns its mesh.
 /// Everything here is sugar over <see cref="CreateNode"/> + <see cref="SceneNode.SetMesh(MeshData, Material, bool)"/>;
 /// drop to those any time you want the manual, shared-mesh reference model.
 /// </summary>

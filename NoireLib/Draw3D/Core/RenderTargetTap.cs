@@ -84,8 +84,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     // world with, or it drifts relative to world geometry under camera motion. The player camera is snapshotted here on
     // the render thread at the MAIN scene pass (the bind whose depth-stencil is RenderTargetManager.DepthStencil) - not
     // merely the frame's first depth-bound bind, which is a shadow-map pass. Under load the game advances the camera
-    // between the shadow passes and the main pass, so a shadow-pass snapshot lags the pixels and the layer swims
-    // (camtrace: best-fit lag 0 but a ~2px intra-frame proj-vs-live drift). The snapshot is taken at the FIRST main-scene
+    // between the shadow passes and the main pass, so a shadow-pass snapshot still differs from the main-pass camera by
+    // a small sub-pixel amount even with no frame lag, and the layer swims. The snapshot is taken at the FIRST main-scene
     // bind (the opaque pass) and locked, and falls back to the first depth bind on a frame with no main pass.
     private GameRenderSources.CameraData worldCamera;
     private volatile bool hasWorldCamera;
@@ -131,8 +131,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>
     /// Whether this frame's world-camera snapshot came from the main scene pass (RTM.DepthStencil fingerprint matched)
-    /// rather than the first-depth-bind fallback. A camtrace showing 0 main-pass frames means the fingerprint is not
-    /// matching in-game and the swim fix is inert - the signal that makes that failure visible instead of silent.
+    /// rather than the first-depth-bind fallback. False on every frame means the fingerprint is not matching in-game,
+    /// so the camera silently degrades to the less accurate shadow-pass fallback until this is investigated.
     /// </summary>
     public bool WorldCameraIsMainPass => mainDepthSeen;
 
@@ -314,9 +314,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         // Snapshot the camera the world in the present buffer was rasterized with, at the FIRST main-scene-depth bind
         // (the opaque depth pre-pass / colour pass - where the visible pixels are drawn). NOT the last such bind: later
         // passes that re-bind scene depth (transparency, water, depth-reading post-fx) run with a newer camera and
-        // overshoot the pixels, which reintroduces swim (measured: keeping the latest bind put the snapshot at the live
-        // camera, proj-vs-live 0px, and the depth residual worsened). A shadow-map pass binds depth first, so it seeds a
-        // provisional snapshot that the first main pass replaces; locked after that so no later bind can overwrite it.
+        // overshoot the pixels, reintroducing swim even though it would remove any snapshot lag. A shadow-map pass
+        // binds depth first, so it seeds a provisional snapshot that the first main pass replaces; locked after that
+        // so no later bind can overwrite it.
         if (InjectionEnabled && !mainDepthSeen && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0))
         {
             if (IsMainSceneDepth(pDsv) && GameRenderSources.TryGetCamera(out var mainSnap))

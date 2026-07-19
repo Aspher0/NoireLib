@@ -14,7 +14,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// The ONLY file in Draw3D that touches FFXIVClientStructs. Every read goes through named fields
-/// on <c>Instance()</c> singletons (Law 8: zero signatures, zero offsets, zero hooks).<br/>
+/// on <c>Instance()</c> singletons: no signatures, no offsets, no hooks.<br/>
 /// All methods return raw values only; COM lifetime management happens in the callers.
 /// </summary>
 internal static unsafe class GameRenderSources
@@ -34,7 +34,7 @@ internal static unsafe class GameRenderSources
         public Matrix4x4 Proj;
         /// <summary>The render camera's second projection matrix (role unknown) - diagnostics/probe only, never a render source.</summary>
         public Matrix4x4 Proj2;
-        /// <summary>The game's own combined view-projection (world→screen path), used as cross-check and wholesale fallback.</summary>
+        /// <summary>The game's own combined view-projection (world-to-screen path), used as cross-check and wholesale fallback.</summary>
         public Matrix4x4 ControlViewProj;
         /// <summary>Camera origin in world space.</summary>
         public Vector3 Origin;
@@ -141,9 +141,9 @@ internal static unsafe class GameRenderSources
     }
 
     /// <summary>
-    /// Reads the camera once (Law 2: one snapshot per presented frame). The One-Camera-Object rule:
-    /// view and projection come from the single active RenderCamera; the Control combined VP is the
-    /// wholesale fallback and validator cross-check - sources are never mixed.
+    /// Reads the camera once, as a single immutable snapshot per presented frame. View and projection come
+    /// from the single active RenderCamera; the Control combined VP is the wholesale fallback and validator
+    /// cross-check - sources are never mixed.
     /// </summary>
     public static bool TryGetCamera(out CameraData data)
     {
@@ -563,7 +563,7 @@ internal static unsafe class GameRenderSources
 
     /// <summary>
     /// Appends nearby game objects to <paramref name="into"/> as <see cref="ExcludeVolume"/>s (position + hitbox
-    /// radius × <paramref name="radiusScale"/>) for a ground decal's <c>ExcludeVolumes</c>. Filtered by
+    /// radius * <paramref name="radiusScale"/>) for a ground decal's <c>ExcludeVolumes</c>. Filtered by
     /// <paramref name="include"/> (default: players, battle NPCs, event NPCs) and capped at <paramref name="max"/>.
     /// Reads the object table, so call it on the framework thread. Fails soft (appends nothing) on error.
     /// </summary>
@@ -582,9 +582,9 @@ internal static unsafe class GameRenderSources
                 if (obj == null || !predicate(obj))
                     continue;
 
-                // A GENEROUS gate: this radius no longer cuts anything - it only selects which characters the stencil
-                // exclusion applies to, so it must comfortably contain the character's whole XZ footprint (arms, a tail).
-                // A margin over the hitbox is safe (only stencil-character pixels inside it are ever removed).
+                // A GENEROUS gate: this radius does not cut anything itself - it only selects which characters the
+                // stencil exclusion applies to, so it must comfortably contain the character's whole XZ footprint
+                // (arms, a tail). A margin over the hitbox is safe (only stencil-character pixels inside it are ever removed).
                 var radius = (obj.HitboxRadius > 0f ? obj.HitboxRadius : 0.5f) + 0.8f;
 
                 into.Add(new ExcludeVolume(obj.Position, radius * radiusScale));

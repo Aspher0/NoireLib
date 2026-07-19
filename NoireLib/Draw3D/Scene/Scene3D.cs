@@ -202,8 +202,8 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
-    /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached
-    /// (self-disable rung 2) - logged once, everything else keeps running.
+    /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached and
+    /// logged once; everything else keeps running.
     /// </summary>
     internal void FirePrepare(in FrameContext frame)
     {
@@ -218,7 +218,8 @@ public sealed partial class Scene3D
 
         // Snapshot the features under the lock, then run them outside it: a feature is free to add or remove features
         // (and a throwing one is detached below, mid-loop). The buffer is reused across frames because a fresh array
-        // per frame is steady-state garbage (Law 9); it is per-scene and only ever touched from the render thread.
+        // per frame would allocate in the steady state, which this path must not do; it is per-scene and only ever
+        // touched from the render thread.
         lock (GraphLock)
         {
             if (FeatureList.Count == 0)

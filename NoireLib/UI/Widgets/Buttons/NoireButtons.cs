@@ -29,6 +29,10 @@ namespace NoireLib.UI;
 /// </example>
 public static class NoireButtons
 {
+    /// <summary>
+    /// The smallest a button is allowed to be, at 100%. Guards the degenerate cases: a fill-minus size larger than the
+    /// space left, or a segmented control with more segments than pixels.
+    /// </summary>
     private const float MinimumSize = 4f;
 
     /// <summary>
@@ -304,7 +308,7 @@ public static class NoireButtons
         var theme = NoireTheme.Current;
         var id = label;
         var text = VisibleLabel(label);
-        var height = style.Height ?? ImGui.GetFrameHeight();
+        var height = style.ResolveHeight();
         var width = height * MathF.Max(1f, style.WidthRatio);
 
         if (style.LabelFirst && text.Length > 0)
@@ -331,8 +335,8 @@ public static class NoireButtons
         if (hovered)
             trackColor = theme.Hover(trackColor);
 
-        var rounding = style.Rounding ?? height * 0.5f;
-        var knobRadius = height * 0.5f - MathF.Max(2f, height * 0.12f);
+        var rounding = style.ResolveRounding(height);
+        var knobRadius = height * 0.5f - MathF.Max(NoireUI.Scaled(2f), height * 0.12f);
         var knobTravel = width - height;
         var knobCenter = new Vector2(min.X + height * 0.5f + knobTravel * travel, (min.Y + max.Y) * 0.5f);
         var knobColor = style.KnobColor ?? theme.On(trackColor);
@@ -348,7 +352,7 @@ public static class NoireButtons
         {
             drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(trackColor), rounding);
 
-            var borderSize = style.BorderSize ?? theme.ResolveBorderSize();
+            var borderSize = style.ResolveBorderSize();
             if (borderSize > 0f)
                 drawList.AddRect(min, max, ColorHelper.Vector4ToUint(style.BorderColor ?? theme.Resolve(ThemeColor.Border)), rounding, ImDrawFlags.None, borderSize);
 
@@ -392,7 +396,7 @@ public static class NoireButtons
         var theme = NoireTheme.Current;
         style ??= ToneStyles.For(ButtonTone.Neutral);
 
-        var padding = style.Padding ?? theme.ResolveFramePadding();
+        var padding = style.ResolvePadding();
         var height = ImGui.GetFrameHeight();
 
         // Every segment is the same width, taken from the longest label, so the control does not reflow as the
@@ -412,7 +416,7 @@ public static class NoireButtons
             total = width < 0f ? MathF.Max(measured, ImGui.GetContentRegionAvail().X + width) : measured;
         }
 
-        var segmentWidth = MathF.Max(MinimumSize, total / options.Count);
+        var segmentWidth = MathF.Max(NoireUI.Scaled(MinimumSize), total / options.Count);
         var changed = false;
         var accent = theme.Resolve(ThemeColor.Accent);
 
@@ -421,7 +425,7 @@ public static class NoireButtons
         for (var index = 0; index < options.Count; index++)
         {
             if (index > 0)
-                ImGui.SameLine(0f, 1f);
+                ImGui.SameLine(0f, NoireUI.Scaled(1f));
 
             var isSelected = index == selected;
             var segment = style.Clone();
@@ -479,7 +483,7 @@ public static class NoireButtons
     private static Vector2 Measure(string label, ButtonStyle style, Vector2 size)
     {
         var theme = NoireTheme.Current;
-        var padding = style.Padding ?? theme.ResolveFramePadding();
+        var padding = style.ResolvePadding();
         var text = VisibleLabel(label);
 
         var contentWidth = ImGui.CalcTextSize(text).X;
@@ -490,18 +494,18 @@ public static class NoireButtons
         var width = size.X switch
         {
             > 0f => size.X,
-            < 0f => MathF.Max(MinimumSize, ImGui.GetContentRegionAvail().X + size.X),
+            < 0f => MathF.Max(NoireUI.Scaled(MinimumSize), ImGui.GetContentRegionAvail().X + size.X),
             _ => contentWidth + padding.X * 2f,
         };
 
         var height = size.Y switch
         {
             > 0f => size.Y,
-            < 0f => MathF.Max(MinimumSize, ImGui.GetContentRegionAvail().Y + size.Y),
+            < 0f => MathF.Max(NoireUI.Scaled(MinimumSize), ImGui.GetContentRegionAvail().Y + size.Y),
             _ => ImGui.GetTextLineHeight() + padding.Y * 2f,
         };
 
-        return new Vector2(MathF.Max(MinimumSize, width), MathF.Max(MinimumSize, height));
+        return new Vector2(MathF.Max(NoireUI.Scaled(MinimumSize), width), MathF.Max(NoireUI.Scaled(MinimumSize), height));
     }
 
     /// <summary>
@@ -531,7 +535,7 @@ public static class NoireButtons
             fill = ColorHelper.WithAlpha(fill, 0f);
 
         var textColor = style.TextColor ?? (style.Tone == ButtonTone.Ghost ? theme.Resolve(ThemeColor.Text) : theme.On(baseColor));
-        var rounding = style.Rounding ?? theme.ResolveRounding();
+        var rounding = style.ResolveRounding();
 
         if (style.CustomDraw != null)
         {
@@ -546,7 +550,7 @@ public static class NoireButtons
         if (progressive && progress > 0f)
             PaintHoldProgress(drawList, min, max, style, baseColor, rounding, Math.Clamp(progress, 0f, 1f));
 
-        var borderSize = style.BorderSize ?? theme.ResolveBorderSize();
+        var borderSize = style.ResolveBorderSize();
         if (borderSize > 0f)
             drawList.AddRect(min, max, ColorHelper.Vector4ToUint(style.BorderColor ?? theme.Resolve(ThemeColor.Border)), rounding, ImDrawFlags.None, borderSize);
 
@@ -579,7 +583,7 @@ public static class NoireButtons
                 break;
 
             case HoldFillMode.Border:
-                UiOutline.TraceClockwise(drawList, min, max, color, style.HoldBorderThickness, progress);
+                UiOutline.TraceClockwise(drawList, min, max, color, style.ScaledHoldBorderThickness, progress);
                 break;
 
             default:
@@ -600,7 +604,7 @@ public static class NoireButtons
 
         var baseColor = style.Color ?? BaseColorFor(style.Tone, theme);
         var fill = theme.Muted(baseColor);
-        var rounding = style.Rounding ?? theme.ResolveRounding();
+        var rounding = style.ResolveRounding();
 
         if (fill.W > 0f)
             drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(fill), rounding);
@@ -631,7 +635,7 @@ public static class NoireButtons
     private static void DrawContent(ImDrawListPtr drawList, Vector2 min, Vector2 max, string text, ButtonStyle style, Vector4 textColor)
     {
         var theme = NoireTheme.Current;
-        var padding = style.Padding ?? theme.ResolveFramePadding();
+        var padding = style.ResolvePadding();
         var color = ColorHelper.Vector4ToUint(textColor);
         var iconColor = ColorHelper.Vector4ToUint(style.IconColor ?? textColor);
         var gap = theme.ResolveItemSpacing().X * 0.6f;

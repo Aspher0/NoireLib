@@ -10,7 +10,8 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
-/// The interaction spine for Draw3D: the half of picking the renderer deliberately refuses to own (Law 11).
+/// The interaction spine for Draw3D: the half of picking the renderer core deliberately refuses to own, since the
+/// core reads no input and this interaction layer is the sanctioned exception that does.
 /// It runs on the UI thread inside the ImGui frame, reads the mouse, tracks gesture state across frames, and turns
 /// raw input into hover / click / drag events on <see cref="SceneNode"/>s and registered <see cref="IPointerInteractor"/>s
 /// (the gizmo among them).<br/>
@@ -33,7 +34,7 @@ public static class NoireInteract
     private static readonly List<IPointerInteractor> Interactors = new();
 
     // Reused snapshot for the render-thread overlay pass only (see DrawOverlayInteractors), so a rendered frame does
-    // not allocate one (Law 9). Deliberately not shared with the UI-thread passes, which run on their own thread.
+    // not allocate in the steady state. Deliberately not shared with the UI-thread passes, which run on their own thread.
     private static readonly List<IPointerInteractor> OverlayScratch = new();
     private static readonly InteractionArbiter Arbiter = new();
     private static readonly Dispatcher Sink = new();

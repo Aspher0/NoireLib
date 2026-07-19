@@ -29,7 +29,7 @@ float CharacterMask(float3 wp, float2 uv)
     if (CharacterStencil == 0u || ActorCount == 0u)
         return 0.0;                                       // feature off / nothing excluded (stencil unbound reads 0 too)
     if (SceneStencilValue(uv) != CharacterStencil)
-        return 0.0;                                       // not a character pixel -> keep painting
+        return 0.0;                                       // not a character pixel: keep painting
 
     for (uint ai = 0; ai < ActorCount; ai++)              // gate: inside an excluded actor's XZ footprint?
     {
@@ -47,7 +47,7 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     float w = SceneSurfaceW(uv);
     bool hasSurface = w < 1e29;
     // Emit OUR reversed-Z device z of that ground point as the fragment depth, so the private-depth GE test lets
-    // nearer 3D objects (cubes, donut) occlude the decal instead of it painting over them. Sky/unwritten -> far (0);
+    // nearer 3D objects (cubes, donut) occlude the decal instead of it painting over them. Sky/unwritten becomes far (0);
     // its colour is 0 there too, so the value is harmless either way.
     outDepth = hasSurface ? DepthUv.z + DepthUv.w / max(w, 1e-6) : 0.0;
 
@@ -55,7 +55,7 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     // come from 2x2 pixel quads - discard before a derivative makes neighboring lanes formally undefined. Under
     // premultiplied blending, float4(0,0,0,0) is a mathematically exact no-op pixel, so rejection costs nothing.
     if (!hasSurface) return float4(0, 0, 0, 0);
-    float3 wp  = WorldFromDepth(uv, outDepth);           // depth -> world
+    float3 wp  = WorldFromDepth(uv, outDepth);           // depth to world
     float3 lp  = mul(float4(wp, 1.0), InvWorld).xyz;     // into unit-box local space
     if (any(abs(lp) > 0.5)) return float4(0, 0, 0, 0);   // outside the decal volume
 
@@ -104,7 +104,7 @@ float4 ps(float4 svPos : SV_Position, out float outDepth : SV_Depth) : SV_Target
     // as the box grows. Dividing by the footprint's world size (the box X/Z axis lengths, averaged) cancels that.
     // Params2.z is the reference footprint scale that keeps the rim's meaning fixed: a scene decal passes 0, so the rim
     // is a constant world thickness no matter how the box is scaled; an immediate shape passes its own built footprint
-    // scale, so its rim stays proportional to the radius it was drawn with (no change from before).
+    // scale, so its rim stays proportional to the radius it was drawn with.
     float footprintScale = 0.5 * (length(World[0].xyz) + length(World[2].xyz));
     float outlineRef = Params2.z > 0.0 ? Params2.z : 1.0;
     float bandW = Params1.z * outlineRef / max(footprintScale, 1e-4);

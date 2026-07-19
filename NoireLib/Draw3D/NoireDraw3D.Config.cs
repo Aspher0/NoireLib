@@ -114,7 +114,7 @@ public static partial class NoireDraw3D
             set => NoireDraw3D.Enabled = value;
         }
 
-        /// <summary>0–1 opacity applied to the whole 3D layer at composite time (see <see cref="NoireDraw3D.LayerOpacity"/>).</summary>
+        /// <summary>0-1 opacity applied to the whole 3D layer at composite time (see <see cref="NoireDraw3D.LayerOpacity"/>).</summary>
         public float LayerOpacity
         {
             get => NoireDraw3D.LayerOpacity;

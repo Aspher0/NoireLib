@@ -7,7 +7,8 @@ namespace NoireLib.UI;
 /// <summary>
 /// Describes where a UI element should be placed on screen.<br/>
 /// Supports the nine screen anchors (<see cref="UiAnchor"/>), absolute pixel coordinates and screen-ratio coordinates (e.g. 10% left / 10% top),
-/// each combined with an optional pixel offset, an optional pivot override and optional clamping to the viewport.
+/// each combined with an optional pixel offset, an optional pivot override and optional clamping to the viewport.<br/>
+/// Every pixel value here is written at 100% and scaled when the position is resolved. See <see cref="NoireUI.Scale"/>.
 /// </summary>
 public sealed class UiPosition
 {
@@ -22,7 +23,8 @@ public sealed class UiPosition
     public UiAnchor Anchor { get; set; } = UiAnchor.TopLeft;
 
     /// <summary>
-    /// The absolute pixel coordinates used when <see cref="Mode"/> is <see cref="UiPositionMode.Absolute"/>, relative to the top left corner of the game window.
+    /// The absolute coordinates used when <see cref="Mode"/> is <see cref="UiPositionMode.Absolute"/>, relative to the top left corner of the game window.<br/>
+    /// In pixels at 100%: see <see cref="NoireUI.Scale"/>.
     /// </summary>
     public Vector2 AbsolutePosition { get; set; } = Vector2.Zero;
 
@@ -33,7 +35,8 @@ public sealed class UiPosition
     public Vector2 Ratio { get; set; } = Vector2.Zero;
 
     /// <summary>
-    /// An additional offset in pixels, applied after the base position has been resolved. Applies in every mode.
+    /// An additional offset applied after the base position has been resolved. Applies in every mode.<br/>
+    /// In pixels at 100%: see <see cref="NoireUI.Scale"/>.
     /// </summary>
     public Vector2 Offset { get; set; } = Vector2.Zero;
 
@@ -136,7 +139,12 @@ public sealed class UiPosition
     /// <summary>
     /// Resolves this position to the top left coordinates of an element inside the given viewport.
     /// </summary>
-    /// <param name="elementSize">The size of the element to position.</param>
+    /// <remarks>
+    /// <see cref="AbsolutePosition"/> and <see cref="Offset"/> are scaled here, which is the only place they are, so an
+    /// overlay pinned 20 pixels off a corner stays 20 pixels off it at 100% and clears the same margin at 200%.
+    /// <paramref name="elementSize"/> is a measured size and is already at the right scale.
+    /// </remarks>
+    /// <param name="elementSize">The size of the element to position, in real pixels.</param>
     /// <param name="viewportPos">The top left position of the viewport.</param>
     /// <param name="viewportSize">The size of the viewport.</param>
     /// <returns>The top left position of the element.</returns>
@@ -146,12 +154,12 @@ public sealed class UiPosition
         {
             UiPositionMode.Anchor => viewportPos + GetAnchorRatio(Anchor) * viewportSize,
             UiPositionMode.Ratio => viewportPos + Ratio * viewportSize,
-            UiPositionMode.Absolute => viewportPos + AbsolutePosition,
+            UiPositionMode.Absolute => viewportPos + NoireUI.Scaled(AbsolutePosition),
             _ => viewportPos,
         };
 
         var pivot = Pivot ?? (Mode == UiPositionMode.Anchor ? GetAnchorRatio(Anchor) : Vector2.Zero);
-        var position = basePoint - pivot * elementSize + Offset;
+        var position = basePoint - pivot * elementSize + NoireUI.Scaled(Offset);
 
         if (ClampToViewport)
         {

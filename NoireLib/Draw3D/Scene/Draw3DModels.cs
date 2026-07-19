@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// Imported-model shortcuts that fold "load → attach → track for disposal" into one call and hand the model to the
+/// Imported-model shortcuts that fold loading, attaching, and disposal tracking into one call and hand the model to the
 /// scene's ownership scope, so <see cref="Scene3D.Dispose"/> frees its meshes and textures. Thin sugar over
 /// <see cref="GltfLoader"/> + <see cref="Model3D.AttachTo(Scene3D)"/> + <see cref="Scene3D.Own{T}"/>.
 /// </summary>

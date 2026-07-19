@@ -19,7 +19,8 @@ internal static class DecalOverlayService
     private static readonly List<SceneNode> Nodes = new();
 
     // Reused snapshot for the per-frame pass: the loop unregisters stale nodes as it goes, so it cannot run over the
-    // live list, and a fresh array every frame is steady-state garbage (Law 9). Render thread only (see OnOverlay).
+    // live list, and a fresh array every frame would allocate in the steady state, which this path must not do.
+    // Render thread only (see OnOverlay).
     private static readonly List<SceneNode> Scratch = new();
     private static bool hooked;
 

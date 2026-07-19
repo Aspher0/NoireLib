@@ -1,4 +1,4 @@
-namespace NoireLib.UI;
+﻿namespace NoireLib.UI;
 
 /// <summary>
 /// How a dialog raised through <see cref="NoireModal"/> behaves and looks.
@@ -48,9 +48,14 @@ public class ModalOptions
     public string? RememberLabel { get; set; }
 
     /// <summary>
-    /// The dialog width in pixels.
+    /// The dialog width, at 100%. See <see cref="NoireUI.Scale"/>.
     /// </summary>
     public float Width { get; set; } = 420f;
+
+    /// <summary>
+    /// The width the dialog is actually laid out at.
+    /// </summary>
+    internal float ScaledWidth => NoireUI.Scaled(Width);
 }
 
 /// <summary>

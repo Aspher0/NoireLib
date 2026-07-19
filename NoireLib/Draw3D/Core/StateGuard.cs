@@ -5,8 +5,8 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Saves and restores exactly the pipeline slots Draw3D touches (Law 6). The slot list below is the
-/// exhaustive contract - touching a new slot anywhere in the renderer without adding it here is a bug.<br/>
+/// Saves and restores exactly the pipeline slots Draw3D touches. The slot list below is the
+/// exhaustive contract: touching a new slot anywhere in the renderer without adding it here is a bug.<br/>
 /// Rules encoded: every XXGet AddRefs (each gets one Release); null is a value (restored, never skipped);
 /// viewport/scissor counts are captured and restored exactly.
 /// </summary>

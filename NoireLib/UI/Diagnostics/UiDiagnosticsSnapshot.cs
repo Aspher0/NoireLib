@@ -1,4 +1,4 @@
-namespace NoireLib.UI;
+﻿namespace NoireLib.UI;
 
 /// <summary>
 /// A consistent read of what NoireUI is doing right now, taken with <see cref="UiDiagnostics.Snapshot"/>.<br/>
@@ -13,6 +13,9 @@ namespace NoireLib.UI;
 /// <param name="StackRepairs">How many ImGui style-stack leaks have been repaired since startup.</param>
 /// <param name="Faults">How many faults have been reported since startup.</param>
 /// <param name="DisabledDrawables">How many drawables the fault ladder has switched off.</param>
+/// <param name="TextFontSizes">How many distinct font sizes <see cref="NoireText"/> has built. Each one is a full glyph
+/// atlas, so a number that keeps climbing is an interface asking for text by number instead of by
+/// <see cref="TextSize"/>.</param>
 public readonly record struct UiDiagnosticsSnapshot(
     int Frame,
     int Drawables,
@@ -22,4 +25,5 @@ public readonly record struct UiDiagnosticsSnapshot(
     int DroppedDrawActions,
     int StackRepairs,
     int Faults,
-    int DisabledDrawables);
+    int DisabledDrawables,
+    int TextFontSizes);

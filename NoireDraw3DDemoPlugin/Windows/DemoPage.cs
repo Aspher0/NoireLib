@@ -12,6 +12,9 @@ internal enum DemoPage
     /// <summary>Scenes, spawning, the object list and the per-object inspector.</summary>
     Scenes,
 
+    /// <summary>Models loaded out of the game's own archives.</summary>
+    GameAssets,
+
     /// <summary>Layer-wide render switches.</summary>
     Renderer,
 
@@ -43,6 +46,7 @@ internal readonly record struct DemoPageInfo(DemoPage Page, string Group, string
     {
         new DemoPageInfo(DemoPage.Showcase, "Scenes", "Showcase", FontAwesomeIcon.Cubes),
         new DemoPageInfo(DemoPage.Scenes, "Scenes", "Objects", FontAwesomeIcon.Shapes),
+        new DemoPageInfo(DemoPage.GameAssets, "Scenes", "Game assets", FontAwesomeIcon.Archive),
         new DemoPageInfo(DemoPage.Renderer, "Render", "Renderer", FontAwesomeIcon.Desktop),
         new DemoPageInfo(DemoPage.Decals, "Render", "Decals", FontAwesomeIcon.Stamp),
         new DemoPageInfo(DemoPage.NativeUi, "Render", "Native UI", FontAwesomeIcon.LayerGroup),

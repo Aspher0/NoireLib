@@ -1,5 +1,5 @@
 // NoireLib Draw3D - layer composite: one fullscreen triangle, premultiplied blend onto the target.
-// Law 11 at the pixel level: the entire visible output of Draw3D reaches the screen without ImGui.
+// The entire visible output of Draw3D reaches the screen through this pass, without ImGui involvement.
 //
 // Game-UI-on-top happens HERE, per pixel, and only on the over-everything path (the under-UI path needs none of
 // this: it composites before the game draws its UI, so the game paints over the layer by itself). UiBefore and
@@ -64,5 +64,5 @@ float4 ps(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
 
     float k = OpacityProtect.x * (1.0 - f * ui);
     // Linear: at 1x it reads the exact texel (== point); a supersampled layer downsamples here (an exact 2x is a 2x2 box).
-    return LayerTex.Sample(LinearClamp, uv) * k;           // premultiplied x scalar is linear - Law 4
+    return LayerTex.Sample(LinearClamp, uv) * k;           // scaling a premultiplied color by k stays premultiplied (linear operation)
 }

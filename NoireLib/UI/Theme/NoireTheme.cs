@@ -1,4 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Interface;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -120,33 +121,109 @@ public sealed class NoireTheme
 
     #region Shape
 
+    // Every value in this region is a pixel measurement at 100%, scaled by NoireUI.Scale when it is resolved. Set what
+    // looks right at 100% and it holds at any scale.
+
     /// <summary>
-    /// The corner radius of buttons, toggles and framed widgets. When <see langword="null"/>, the ImGui frame rounding
-    /// is used.
+    /// The corner radius of buttons, toggles and framed widgets, at 100%. When <see langword="null"/>, the ImGui frame
+    /// rounding is used.
     /// </summary>
     public float? Rounding { get; set; }
 
     /// <summary>
-    /// The corner radius of raised surfaces: toasts, modals, cards. When <see langword="null"/>, the ImGui window
-    /// rounding is used.
+    /// The corner radius of raised surfaces at 100%: toasts, modals, cards. When <see langword="null"/>, the ImGui
+    /// window rounding is used.
     /// </summary>
     public float? SurfaceRounding { get; set; }
 
     /// <summary>
-    /// The thickness of widget borders in pixels. When <see langword="null"/>, the ImGui frame border size is used.<br/>
+    /// The thickness of widget borders at 100%. When <see langword="null"/>, the ImGui frame border size is used.<br/>
     /// Zero is a real value here, and the way to ask for a flat, borderless look.
     /// </summary>
     public float? BorderSize { get; set; }
 
     /// <summary>
-    /// The padding inside widgets. When <see langword="null"/>, the ImGui frame padding is used.
+    /// The padding inside widgets at 100%. When <see langword="null"/>, the ImGui frame padding is used.
     /// </summary>
     public Vector2? FramePadding { get; set; }
 
     /// <summary>
-    /// The spacing between consecutive items. When <see langword="null"/>, the ImGui item spacing is used.
+    /// The spacing between consecutive items at 100%. When <see langword="null"/>, the ImGui item spacing is used.
     /// </summary>
     public Vector2? ItemSpacing { get; set; }
+
+    #endregion
+
+    #region Type
+
+    // Sizes here are logical pixels at 100%, like every other measurement on this theme. NoireText scales them when it
+    // builds the font, so the number set here is the number you would have measured on a 100% monitor.
+
+    /// <summary>
+    /// The shipped proportions of the type scale, as multiples of <see cref="BodySize"/>.
+    /// </summary>
+    /// <remarks>
+    /// A size left unset derives from the body size through these rather than carrying an absolute default, which is
+    /// what makes moving <see cref="BodySize"/> move the whole scale. Setting a size explicitly opts that one step out
+    /// of the proportion and leaves the others following.
+    /// </remarks>
+    private static readonly Dictionary<TextSize, float> SizeRatios = new()
+    {
+        [TextSize.Display] = 2.2f,
+        [TextSize.Heading] = 1.5f,
+        [TextSize.Body] = 1f,
+        [TextSize.Caption] = 0.85f,
+    };
+
+    /// <summary>
+    /// Every text size this theme overrides. The named size properties read and write here, and a size left out is
+    /// derived from <see cref="BodySize"/> instead.
+    /// </summary>
+    public Dictionary<TextSize, float> TextSizes { get; } = new();
+
+    /// <summary>The masthead size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    public float? DisplaySize { get => GetSize(TextSize.Display); set => SetSize(TextSize.Display, value); }
+
+    /// <summary>The section-heading size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    public float? HeadingSize { get => GetSize(TextSize.Heading); set => SetSize(TextSize.Heading, value); }
+
+    /// <summary>
+    /// The running-text size at 100%, and the root of the scale. When <see langword="null"/>, the host's own default
+    /// font size is used, so an untouched theme matches the interface around it exactly.
+    /// </summary>
+    public float? BodySize { get => GetSize(TextSize.Body); set => SetSize(TextSize.Body, value); }
+
+    /// <summary>The supporting-text size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    public float? CaptionSize { get => GetSize(TextSize.Caption); set => SetSize(TextSize.Caption, value); }
+
+    /// <summary>
+    /// Resolves a named step of the type scale to a size in logical pixels: this theme's override when it has one, and
+    /// a proportion of the body size otherwise.
+    /// </summary>
+    /// <param name="size">The step to resolve.</param>
+    /// <returns>The size at 100%, which is what <see cref="NoireText"/> takes.</returns>
+    public float ResolveTextSize(TextSize size)
+    {
+        if (TextSizes.TryGetValue(size, out var explicitSize))
+            return MathF.Max(1f, explicitSize);
+
+        var body = TextSizes.TryGetValue(TextSize.Body, out var bodySize) ? bodySize : DefaultBodySize;
+        var ratio = SizeRatios.TryGetValue(size, out var value) ? value : 1f;
+
+        return MathF.Max(1f, body * ratio);
+    }
+
+    /// <summary>
+    /// The body size a theme that sets none falls back to: the host's own default font size, so text drawn through
+    /// <see cref="NoireText"/> at <see cref="TextSize.Body"/> is indistinguishable from an ordinary
+    /// <c>ImGui.TextUnformatted</c> beside it.
+    /// </summary>
+    /// <remarks>
+    /// A logical size, not a scaled one. Dalamud builds its own default font from this constant into a global-scaled
+    /// atlas, which is exactly what NoireText does, so the two agree at every scale.<br/>
+    /// Public because a settings screen offering the type scale has to show the user what "unset" currently means.
+    /// </remarks>
+    public static float DefaultBodySize => NoireService.IsInitialized() ? UiBuilder.DefaultFontSizePx : 17f;
 
     #endregion
 
@@ -265,40 +342,54 @@ public sealed class NoireTheme
     public Vector4 Resolve(string token, Vector4 fallback)
         => CustomColors.TryGetValue(token, out var value) ? value : fallback;
 
+    // The shape values below are logical units, authored at 100% and scaled here so no widget has to remember to. The
+    // ImGui branch of each is returned untouched: Dalamud has already scaled the style, and scaling it a second time is
+    // the one way this goes wrong. Only a number NoireUI ships is ever passed through NoireUI.Scaled.
+
     /// <summary>
     /// Resolves the corner radius of framed widgets.
     /// </summary>
-    /// <returns>The rounding in pixels.</returns>
+    /// <returns>The rounding in pixels, at the user's scale.</returns>
     public float ResolveRounding()
-        => Rounding ?? (NoireService.IsInitialized() ? ImGui.GetStyle().FrameRounding : 3f);
+        => Rounding.HasValue
+            ? NoireUI.Scaled(Rounding.Value)
+            : NoireService.IsInitialized() ? ImGui.GetStyle().FrameRounding : NoireUI.Scaled(3f);
 
     /// <summary>
     /// Resolves the corner radius of raised surfaces.
     /// </summary>
-    /// <returns>The rounding in pixels.</returns>
+    /// <returns>The rounding in pixels, at the user's scale.</returns>
     public float ResolveSurfaceRounding()
-        => SurfaceRounding ?? (NoireService.IsInitialized() ? ImGui.GetStyle().WindowRounding : 6f);
+        => SurfaceRounding.HasValue
+            ? NoireUI.Scaled(SurfaceRounding.Value)
+            : NoireService.IsInitialized() ? ImGui.GetStyle().WindowRounding : NoireUI.Scaled(6f);
 
     /// <summary>
     /// Resolves the border thickness of widgets.
     /// </summary>
-    /// <returns>The border size in pixels.</returns>
+    /// <returns>The border size in pixels, at the user's scale.</returns>
     public float ResolveBorderSize()
-        => BorderSize ?? (NoireService.IsInitialized() ? ImGui.GetStyle().FrameBorderSize : 0f);
+        => BorderSize.HasValue
+            ? NoireUI.Scaled(BorderSize.Value)
+            : NoireService.IsInitialized() ? ImGui.GetStyle().FrameBorderSize : 0f;
 
     /// <summary>
     /// Resolves the padding inside widgets.
     /// </summary>
-    /// <returns>The padding in pixels.</returns>
+    /// <returns>The padding in pixels, at the user's scale.</returns>
     public Vector2 ResolveFramePadding()
-        => FramePadding ?? (NoireService.IsInitialized() ? ImGui.GetStyle().FramePadding : new Vector2(4f, 3f));
+        => FramePadding.HasValue
+            ? NoireUI.Scaled(FramePadding.Value)
+            : NoireService.IsInitialized() ? ImGui.GetStyle().FramePadding : NoireUI.Scaled(new Vector2(4f, 3f));
 
     /// <summary>
     /// Resolves the spacing between consecutive items.
     /// </summary>
-    /// <returns>The spacing in pixels.</returns>
+    /// <returns>The spacing in pixels, at the user's scale.</returns>
     public Vector2 ResolveItemSpacing()
-        => ItemSpacing ?? (NoireService.IsInitialized() ? ImGui.GetStyle().ItemSpacing : new Vector2(8f, 4f));
+        => ItemSpacing.HasValue
+            ? NoireUI.Scaled(ItemSpacing.Value)
+            : NoireService.IsInitialized() ? ImGui.GetStyle().ItemSpacing : NoireUI.Scaled(new Vector2(8f, 4f));
 
     /// <summary>
     /// Builds a <see cref="UiStyle"/> that paints raw ImGui with this theme, so your own <c>ImGui.Button</c> calls match
@@ -370,6 +461,9 @@ public sealed class NoireTheme
 
         foreach (var entry in Colors)
             clone.Colors[entry.Key] = entry.Value;
+
+        foreach (var entry in TextSizes)
+            clone.TextSizes[entry.Key] = entry.Value;
 
         foreach (var entry in CustomColors)
             clone.CustomColors[entry.Key] = entry.Value;
@@ -464,6 +558,16 @@ public sealed class NoireTheme
     }
 
     #endregion
+
+    private float? GetSize(TextSize size) => TextSizes.TryGetValue(size, out var value) ? value : null;
+
+    private void SetSize(TextSize size, float? value)
+    {
+        if (value.HasValue)
+            TextSizes[size] = value.Value;
+        else
+            TextSizes.Remove(size);
+    }
 
     private Vector4? Get(ThemeColor token) => Colors.TryGetValue(token, out var value) ? value : null;
 

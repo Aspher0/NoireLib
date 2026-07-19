@@ -108,7 +108,9 @@ public sealed class NoireContent
     /// Adds an image segment.
     /// </summary>
     /// <param name="image">The image source to display.</param>
-    /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used, falling back to a text-line-sized square while loading.</param>
+    /// <param name="size">The display size in real pixels, not scaled: it shares a space with the native texture size it
+    /// falls back to. When <see langword="null"/>, the native size of the texture is used, falling back to a
+    /// text-line-sized square while loading. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddImage(UiImageSource image, Vector2? size = null)
     {
@@ -149,7 +151,7 @@ public sealed class NoireContent
     /// <summary>
     /// Adds a horizontal spacing segment on the current line.
     /// </summary>
-    /// <param name="width">The width of the spacing in pixels.</param>
+    /// <param name="width">The width of the spacing, at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddSpacing(float width)
     {
@@ -322,8 +324,8 @@ public sealed class NoireContent
         return new Vector2(lineHeight, lineHeight);
     }
 
-    /// <summary>The inner padding of a keycap tile, DPI-scaled.</summary>
-    private static Vector2 KeyCapPadding => new Vector2(5f, 2f) * ImGuiHelpers.GlobalScale;
+    /// <summary>The inner padding of a keycap tile, at 100%.</summary>
+    private static Vector2 KeyCapPadding => NoireUI.Scaled(new Vector2(5f, 2f));
 
     private static void DrawSegment(Segment segment)
     {
@@ -354,7 +356,7 @@ public sealed class NoireContent
                 break;
 
             case SegmentKind.Spacing:
-                ImGui.Dummy(new Vector2(segment.SpacingWidth, 0f));
+                ImGui.Dummy(new Vector2(NoireUI.Scaled(segment.SpacingWidth), 0f));
                 break;
 
             case SegmentKind.Custom:
@@ -369,7 +371,7 @@ public sealed class NoireContent
         var position = ImGui.GetCursorScreenPos();
         var textSize = ImGui.CalcTextSize(label);
         var tileSize = new Vector2(textSize.X + padding.X * 2f, textSize.Y + padding.Y * 2f);
-        var rounding = 3f * ImGuiHelpers.GlobalScale;
+        var rounding = NoireUI.Scaled(3f);
 
         var drawList = ImGui.GetWindowDrawList();
         drawList.AddRectFilled(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.FrameBg), rounding);

@@ -18,6 +18,12 @@ public static partial class NoireLayout
     #region Splitter
 
     /// <summary>
+    /// The smallest a splitter lets a pane become when the caller names no minimum, at 100%. Small enough not to fight
+    /// a deliberate layout, large enough that a pane cannot be dragged shut and then never found again.
+    /// </summary>
+    private const float DefaultSplitterMinimum = 40f;
+
+    /// <summary>
     /// Draws a draggable divider that resizes the pane before it.<br/>
     /// ImGui ships no splitter at all, so every plugin that wants a resizable sidebar writes the same invisible button,
     /// mouse-delta and cursor dance. This is that, done once.
@@ -27,25 +33,29 @@ public static partial class NoireLayout
     /// screen is corrected on the first frame rather than leaving a pane off the edge.
     /// </remarks>
     /// <param name="id">A unique id for the splitter.</param>
-    /// <param name="size">The size of the pane before the splitter, read and written.</param>
-    /// <param name="minSize">The smallest the pane may become, in pixels.</param>
-    /// <param name="maxSize">The largest the pane may become, in pixels. Zero leaves it bounded only by the space
+    /// <param name="size">The size of the pane before the splitter, read and written. In real pixels: it is driven by
+    /// the mouse, so every measurement here shares that space rather than being written at 100%.</param>
+    /// <param name="minSize">The smallest the pane may become. Zero uses a usable default, which does scale.</param>
+    /// <param name="maxSize">The largest the pane may become. Zero leaves it bounded only by the space
     /// available.</param>
-    /// <param name="thickness">The grab thickness in pixels. Zero uses a comfortable default.</param>
+    /// <param name="thickness">The grab thickness. Zero uses a comfortable default, which does scale.</param>
     /// <param name="vertical">Whether the divider is a vertical bar, resizing the pane to its left. Set it to
     /// <see langword="false"/> for a horizontal bar resizing the pane above it.</param>
     /// <param name="length">How long the divider is, across the panes it separates. Zero fills the space remaining in
     /// the current region, which is only what you want when the panes do too: give it the pane height (or width) when
     /// they are a fixed size, or the divider will run past them.</param>
     /// <returns>True while the splitter is being dragged.</returns>
-    public static bool Splitter(string id, ref float size, float minSize = 40f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
+    public static bool Splitter(string id, ref float size, float minSize = 0f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
     {
         ArgumentNullException.ThrowIfNull(id);
 
         var theme = NoireTheme.Current;
 
+        if (minSize <= 0f)
+            minSize = NoireUI.Scaled(DefaultSplitterMinimum);
+
         if (thickness <= 0f)
-            thickness = MathF.Max(4f, theme.ResolveItemSpacing().X);
+            thickness = MathF.Max(NoireUI.Scaled(4f), theme.ResolveItemSpacing().X);
 
         var available = ImGui.GetContentRegionAvail();
         var span = length > 0f ? length : vertical ? available.Y : available.X;
@@ -79,9 +89,9 @@ public static partial class NoireLayout
         var drawList = ImGui.GetWindowDrawList();
 
         if (vertical)
-            drawList.AddLine(new Vector2(center.X, min.Y), new Vector2(center.X, max.Y), ColorHelper.Vector4ToUint(grip), 1f);
+            drawList.AddLine(new Vector2(center.X, min.Y), new Vector2(center.X, max.Y), ColorHelper.Vector4ToUint(grip), NoireUI.Scaled(1f));
         else
-            drawList.AddLine(new Vector2(min.X, center.Y), new Vector2(max.X, center.Y), ColorHelper.Vector4ToUint(grip), 1f);
+            drawList.AddLine(new Vector2(min.X, center.Y), new Vector2(max.X, center.Y), ColorHelper.Vector4ToUint(grip), NoireUI.Scaled(1f));
 
         return dragging;
     }
@@ -240,7 +250,7 @@ public static partial class NoireLayout
     /// <summary>
     /// Places the next item of a wrapping row, either beside the previous one or at the start of a new line.<br/>
     /// Call it immediately before drawing each item when the items are not a list you can hand to
-    /// <see cref="Flow{T}(IReadOnlyList{T}, Func{T, Vector2}, Action{T}, float)"/>.
+    /// <see cref="Flow{T}(IReadOnlyList{T}, Func{T, Vector2}, Action{T}, float, float)"/>.
     /// </summary>
     /// <param name="itemWidth">How wide the item about to be drawn will be.</param>
     /// <param name="first">Whether this is the first item of the row, which always starts on the current line.</param>

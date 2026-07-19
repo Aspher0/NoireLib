@@ -126,6 +126,16 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     protected override void OnActivated()
     {
+        // Processing is driven by the framework update, which does not exist until NoireLib is initialized.
+        // Activating beforehand records the active state and wires nothing, rather than faulting on a null
+        // service. The module stays inert in that state and does not start processing once NoireLib initializes,
+        // since nothing revisits the decision; activate it again afterwards to start processing.
+        if (!NoireService.IsInitialized())
+        {
+            NoireLogger.LogWarning(this, "Task Queue activated before NoireLib was initialized. The queue will not be processed until the module is activated again once NoireLib is initialized.");
+            return;
+        }
+
         NoireService.Framework.Update += OnFrameworkUpdate;
 
         if (EnableLogging)
@@ -137,7 +147,11 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     protected override void OnDeactivated()
     {
-        NoireService.Framework.Update -= OnFrameworkUpdate;
+        // Detaching is all that needs the service: an activation that happened while NoireLib was not
+        // initialized never attached this handler, and there is no framework to detach it from anyway.
+        if (NoireService.IsInitialized())
+            NoireService.Framework.Update -= OnFrameworkUpdate;
+
         StopQueue();
 
         if (EnableLogging)
@@ -167,7 +181,26 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
-        if (!IsActive || QueueState != QueueState.Running)
+        if (!IsActive)
+            return;
+
+        TickOnce();
+    }
+
+    /// <summary>
+    /// Runs a single queue processing pass, the same one a framework frame runs.
+    /// </summary>
+    /// <remarks>
+    /// Processing is otherwise reachable only from the framework update, which needs a running game, so this is
+    /// the entry point that lets the queue be stepped deterministically without one.<br/>
+    /// It deliberately does not test <see cref="NoireModuleBase{TModule}.IsActive"/>: that flag records whether
+    /// the module is wired to the frame loop, which is a question about the caller rather than about processing.
+    /// The queue state gate does belong to processing and is kept here, so a pass driven from anywhere obeys the
+    /// same rule a frame does.
+    /// </remarks>
+    internal void TickOnce()
+    {
+        if (QueueState != QueueState.Running)
             return;
 
         try
@@ -179,6 +212,18 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
             if (EnableLogging)
                 NoireLogger.LogError(this, ex, "Error in queue processing.");
         }
+
+        // Deliberately outside the try above and in its own guard, so that a pass which threw still reconciles
+        // what it managed to change, and a consumer callback that throws from here cannot mask a processing error.
+        try
+        {
+            ReconcileConsumerWrittenStatuses();
+        }
+        catch (Exception ex)
+        {
+            if (EnableLogging)
+                NoireLogger.LogError(this, ex, "Error reconciling directly written task or batch statuses.");
+        }
     }
 
     /// <summary>
@@ -186,7 +231,9 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     protected override void DisposeInternal()
     {
-        NoireService.Framework.Update -= OnFrameworkUpdate;
+        if (NoireService.IsInitialized())
+            NoireService.Framework.Update -= OnFrameworkUpdate;
+
         StopQueue();
         UnsubscribeFromAllEvents();
 

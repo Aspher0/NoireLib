@@ -6,9 +6,9 @@ namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
 /// Interaction surface of a scene node: opt a node into hover / click / drag and it behaves like a button in the
-/// world. Off by default (Law 11 stays intact for non-interactive content - zero cost until asked). The events are
-/// raised by <see cref="NoireInteract"/> on the UI thread; every callback is exception-wrapped there so a throwing
-/// handler never breaks the frame.
+/// world. Off by default, so a scene that never opts a node in never touches the interaction layer - zero cost until
+/// asked. The events are raised by <see cref="NoireInteract"/> on the UI thread; every callback is exception-wrapped
+/// there so a throwing handler never breaks the frame.
 /// </summary>
 public sealed partial class SceneNode
 {
@@ -83,7 +83,7 @@ public sealed partial class SceneNode
     /// <summary>True while the cursor is over this node (maintained by <see cref="NoireInteract"/>).</summary>
     public bool IsHovered { get; internal set; }
 
-    /// <summary>The default hover highlight: brightens the renderer tint by ×1.2 (RGB), alpha unchanged.</summary>
+    /// <summary>The default hover highlight: brightens the renderer tint by x1.2 (RGB), alpha unchanged.</summary>
     public static readonly Func<Vector4, Vector4> DefaultHoverHighlight = static t => new Vector4(t.X * 1.2f, t.Y * 1.2f, t.Z * 1.2f, t.W);
 
     /// <summary>The active hover-tint transform (null = no built-in highlight). Applied around, never composed into, the user's <see cref="OnHoverEnter"/> / <see cref="OnHoverExit"/>.</summary>
@@ -97,12 +97,12 @@ public sealed partial class SceneNode
 
     /// <summary>
     /// One-call opt-in to pointer interaction with a built-in hover highlight, without selection: hovering brightens
-    /// the renderer tint (default ×1.2) and restores it on exit; a click still fires <see cref="OnClick"/> but does
+    /// the renderer tint (default x1.2) and restores it on exit; a click still fires <see cref="OnClick"/> but does
     /// <b>not</b> touch any selection. The highlight is applied <b>around</b> your <see cref="OnHoverEnter"/> /
     /// <see cref="OnHoverExit"/> (never composed into them), and calling this again just replaces the transform - it
     /// never stacks. Fluent.
     /// </summary>
-    /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (×1.2). Return the input unchanged for no visual change.</param>
+    /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (x1.2). Return the input unchanged for no visual change.</param>
     public SceneNode MakeInteractable(Func<Vector4, Vector4>? hover = null)
     {
         hoverHighlight = hover ?? DefaultHoverHighlight;
@@ -113,12 +113,12 @@ public sealed partial class SceneNode
 
     /// <summary>
     /// One-call opt-in to click-to-select with a built-in hover highlight: hovering brightens the renderer tint
-    /// (default ×1.2), and a left-click routes into this node's scene <see cref="Scene3D.Selection"/> (honouring the
+    /// (default x1.2), and a left-click routes into this node's scene <see cref="Scene3D.Selection"/> (honouring the
     /// configured Ctrl-toggle / Shift-add modifiers). The highlight is applied <b>around</b> your <see cref="OnHoverEnter"/> /
     /// <see cref="OnHoverExit"/> / <see cref="OnClick"/> (never composed into them), and calling this again just
     /// replaces the transform - it never stacks. Fluent.
     /// </summary>
-    /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (×1.2). Return the input unchanged for no visual change.</param>
+    /// <param name="hover">Tint transform applied while hovered; null uses <see cref="DefaultHoverHighlight"/> (x1.2). Return the input unchanged for no visual change.</param>
     public SceneNode MakeSelectable(Func<Vector4, Vector4>? hover = null)
     {
         hoverHighlight = hover ?? DefaultHoverHighlight;

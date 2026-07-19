@@ -7,7 +7,8 @@ namespace NoireLib.Draw3D.Materials;
 /// <summary>
 /// The flattened, GPU-facing form of a <see cref="Material"/> resolved once at snapshot time.<br/>
 /// Value equality (texture by SRV pointer) is the batching key, which lets the immediate layer produce
-/// batchable draws without allocating Material records per call (Law 9).
+/// batchable draws without allocating Material records per call, keeping the steady-state path free of
+/// managed allocations.
 /// </summary>
 internal struct MaterialData : IEquatable<MaterialData>
 {

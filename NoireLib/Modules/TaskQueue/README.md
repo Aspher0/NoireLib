@@ -455,6 +455,8 @@ BatchBuilder.Create("critical-batch")
 - `CancelBatch`: Cancel the entire batch immediately.
 - `CancelBatchAndQueue`: Cancel the batch and stop the entire queue.
 
+The mode applies however the task came to be cancelled: `CancelTask`, a skip, or a cancellation that ran a post-cancellation delay first. A batch whose every task ends up cancelled reports itself `Cancelled` rather than `Completed`, so its `OnCancelled` runs and not its `OnCompleted`.
+
 ```csharp
 BatchBuilder.Create("cancel-safe-batch")
     .CancelBatchOnTaskCancellation()
@@ -570,6 +572,22 @@ batch.GetExecutionTime();   // TimeSpan of execution
 batch.GetTotalTime();       // TimeSpan including queue wait
 batch.Metadata;             // Custom metadata
 ```
+
+### Blocking vs Non-Blocking Batches
+
+A batch blocks by default: while it runs, nothing behind it in the queue starts. A non-blocking batch instead lets the rest of the queue keep moving alongside it, the same way a non-blocking task does.
+
+```csharp
+BatchBuilder.Create("background-batch")
+    .AsNonBlocking()
+    .AddAction(() => DoSlowWork())
+    .EnqueueTo(queue);
+
+// A task enqueued after it starts without waiting for the batch to finish
+queue.CreateTask("runs-alongside").WithAction(() => DoOtherWork()).Enqueue();
+```
+
+While a non-blocking batch is running, the queue's current task is the standalone task it moved on to, not a task inside the batch. Context-scoped operations issued from that task therefore act on the standalone context, not on the batch.
 
 ---
 
@@ -743,6 +761,29 @@ var task = taskQueue.GetTaskByCustomId("my-task");
 task?.Cancel();
 ```
 
+### Resolving Work by Writing Status Directly
+
+`QueuedTask.Status` and `TaskBatch.Status` are public and settable, so a task or batch can be resolved by assigning to it, from anywhere, including from inside a completion condition or any other callback:
+
+```csharp
+TaskBuilder.Create("conditional")
+    .WithCondition(() =>
+    {
+        if (SomethingElseAlreadyDidTheWork())
+        {
+            someOtherTask.Status = TaskStatus.Completed;
+            return true;
+        }
+
+        return false;
+    })
+    .EnqueueTo(queue);
+```
+
+The queue reconciles such a write at the end of the pass it happened in, so it is observationally the same as calling the matching queue method: the task's `OnCompleted`, `OnCancelled` or `OnFailed` runs, the corresponding event is published, and the statistics agree with the callback. A task written `Failed` without an exception is given one, so `FailureException` is never null on a failed task. A batch written to a terminal status resolves the tasks it still holds rather than leaving them unfinished.
+
+Writing a status states an outcome; it does not ask the queue to run the policies attached to that outcome. `StopQueueOnFail`, `StopQueueOnCancel` and the parent-batch modes are not applied by a direct write. Call `CancelTask`, `FailBatch` or the other queue methods when you want those to run.
+
 ### Cancelling and Failing Batches
 
 ```csharp
@@ -805,7 +846,7 @@ Insertion works across both standalone tasks and tasks inside batches. When inse
 ### Skipping Tasks
 
 ```csharp
-// Skip the next 3 queued tasks (cancels them)
+// Skip the next 3 unfinished tasks (cancels them)
 int skipped = taskQueue.SkipNextTasks(3);
 
 // Skip including the current task
@@ -817,6 +858,10 @@ int skipped = taskQueue.SkipNextTasks(3, boundaryType: ContextDefinition.SameCon
 // Skip the current task only
 bool skipped = taskQueue.SkipCurrentTask();
 ```
+
+A skip resolves any task that has not finished, not only tasks still `Queued`. A non-blocking task that has already started and is waiting on its completion condition is therefore skippable too. The current task is held back unless `includeCurrentTask` is set, so it is never resolved twice.
+
+Because a skip resolves its target by cancelling it, a task inside a batch counts as a cancelled task for that batch, and the batch's `TaskCancellationMode` applies. A batch set to `CancelBatch` or `CancelBatchAndQueue` is therefore taken down by skipping one of its tasks. Leave the mode at `ContinueRemaining` to skip a single task without disturbing its batch.
 
 Skipping inside an action:
 

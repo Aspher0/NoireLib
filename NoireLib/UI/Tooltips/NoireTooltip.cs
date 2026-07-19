@@ -107,9 +107,9 @@ public static class NoireTooltip
         using var borderColor = ImRaii.PushColor(ImGuiCol.Border, style.BorderColor ?? Vector4.One, style.BorderColor.HasValue);
         using var textColor = ImRaii.PushColor(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
 
-        using var borderSize = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, style.BorderSize ?? 0f, style.BorderSize.HasValue);
-        using var rounding = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, style.Rounding ?? 0f, style.Rounding.HasValue);
-        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, style.Padding ?? Vector2.Zero, style.Padding.HasValue);
+        using var borderSize = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
+        using var rounding = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
+        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
 
         if (ImGui.Begin(windowId, TooltipWindowFlags))
         {
@@ -139,7 +139,7 @@ public static class NoireTooltip
     private static (Vector2 Position, Vector2 Pivot) ResolveAnchor(TooltipStyle style)
     {
         if (style.Placement == TooltipPlacement.Mouse)
-            return (ImGui.GetMousePos() + style.MouseOffset, Vector2.Zero);
+            return (ImGui.GetMousePos() + style.ScaledMouseOffset, Vector2.Zero);
 
         // Item-relative placements use the rect of the last drawn ImGui item,
         // so they must be resolved before beginning the tooltip window.
@@ -149,14 +149,14 @@ public static class NoireTooltip
 
         var (position, pivot) = style.Placement switch
         {
-            TooltipPlacement.AboveItem => (new Vector2(itemCenter.X, itemMin.Y - style.ItemGap), new Vector2(0.5f, 1f)),
-            TooltipPlacement.BelowItem => (new Vector2(itemCenter.X, itemMax.Y + style.ItemGap), new Vector2(0.5f, 0f)),
-            TooltipPlacement.LeftOfItem => (new Vector2(itemMin.X - style.ItemGap, itemCenter.Y), new Vector2(1f, 0.5f)),
-            TooltipPlacement.RightOfItem => (new Vector2(itemMax.X + style.ItemGap, itemCenter.Y), new Vector2(0f, 0.5f)),
+            TooltipPlacement.AboveItem => (new Vector2(itemCenter.X, itemMin.Y - style.ScaledItemGap), new Vector2(0.5f, 1f)),
+            TooltipPlacement.BelowItem => (new Vector2(itemCenter.X, itemMax.Y + style.ScaledItemGap), new Vector2(0.5f, 0f)),
+            TooltipPlacement.LeftOfItem => (new Vector2(itemMin.X - style.ScaledItemGap, itemCenter.Y), new Vector2(1f, 0.5f)),
+            TooltipPlacement.RightOfItem => (new Vector2(itemMax.X + style.ScaledItemGap, itemCenter.Y), new Vector2(0f, 0.5f)),
             _ => (itemCenter, new Vector2(0.5f, 0.5f)),
         };
 
-        return (position + style.ItemOffset, pivot);
+        return (position + style.ScaledItemOffset, pivot);
     }
 
     /// <summary>

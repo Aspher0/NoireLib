@@ -80,8 +80,8 @@ internal interface IArbiterSink
 
 /// <summary>
 /// The pure interaction state machine: turns raw per-frame pointer state into hover / click / drag events and
-/// decides when Draw3D must claim the mouse from the game. It owns the two behaviours the renderer deliberately
-/// refuses to (Law 11):
+/// decides when Draw3D must claim the mouse from the game. It owns the two behaviours the renderer core itself
+/// never touches, since the core reads no input and this interaction layer is the sanctioned exception that does:
 /// <list type="bullet">
 /// <item><b>Click vs. camera-pan.</b> A gesture is latched to its owner at press time. A press that begins over an
 /// interactable is ours; a press that begins over empty world is the game's (its camera pan), and it stays the game's

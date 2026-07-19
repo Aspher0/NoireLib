@@ -39,8 +39,8 @@ public class MeshBuilder
     /// <summary>Appends a UV sphere centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Sphere radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
-    /// <param name="slices">Longitudinal segments (≥ 3).</param>
-    /// <param name="stacks">Latitudinal segments (≥ 2).</param>
+    /// <param name="slices">Longitudinal segments (>= 3).</param>
+    /// <param name="stacks">Latitudinal segments (>= 2).</param>
     public MeshBuilder AddSphere(float radius = 0.5f, Vector3 offset = default, int slices = 24, int stacks = 16)
         => Append(offset, (v, i) => WriteSphere(v, i, radius, slices, stacks));
 
@@ -54,7 +54,7 @@ public class MeshBuilder
     /// <summary>Appends a disc on the XZ plane centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Disc radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
-    /// <param name="segments">Number of outer segments (≥ 3).</param>
+    /// <param name="segments">Number of outer segments (>= 3).</param>
     public MeshBuilder AddDisc(float radius = 0.5f, Vector3 offset = default, int segments = 48)
         => Append(offset, (v, i) => WriteDisc(v, i, radius, segments));
 
@@ -62,7 +62,7 @@ public class MeshBuilder
     /// <param name="radius">Cylinder radius.</param>
     /// <param name="height">Cylinder height.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
-    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="segments">Radial segments (>= 3).</param>
     /// <param name="caps">Whether to close the top and bottom.</param>
     public MeshBuilder AddCylinder(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool caps = true)
         => Append(offset, (v, i) => WriteCylinder(v, i, radius, height, segments, caps));
@@ -71,7 +71,7 @@ public class MeshBuilder
     /// <param name="radius">Base radius.</param>
     /// <param name="height">Cone height.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
-    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="segments">Radial segments (>= 3).</param>
     /// <param name="cap">Whether to close the base.</param>
     public MeshBuilder AddCone(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool cap = true)
         => Append(offset, (v, i) => WriteCone(v, i, radius, height, segments, cap));
@@ -80,8 +80,8 @@ public class MeshBuilder
     /// <param name="majorRadius">Distance from the origin to the tube center.</param>
     /// <param name="minorRadius">Tube radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
-    /// <param name="segMajor">Segments around the main ring (≥ 3).</param>
-    /// <param name="segMinor">Segments around the tube (≥ 3).</param>
+    /// <param name="segMajor">Segments around the main ring (>= 3).</param>
+    /// <param name="segMinor">Segments around the tube (>= 3).</param>
     public MeshBuilder AddTorus(float majorRadius, float minorRadius, Vector3 offset = default, int segMajor = 48, int segMinor = 16)
         => Append(offset, (v, i) => WriteTorus(v, i, majorRadius, minorRadius, segMajor, segMinor));
 
@@ -203,7 +203,7 @@ public class MeshBuilder
 
     /// <summary>Builds a flat disc on the XZ plane (triangle fan around a center vertex). segments+2 vertices / segments*3 indices.</summary>
     /// <param name="radius">Disc radius.</param>
-    /// <param name="segments">Number of outer segments (≥ 3).</param>
+    /// <param name="segments">Number of outer segments (>= 3).</param>
     public static MeshData Disc(float radius = 0.5f, int segments = 48)
     {
         var v = new List<Vertex3D>(segments + 2);
@@ -231,7 +231,7 @@ public class MeshBuilder
     /// <summary>Builds a flat ring (donut) on the XZ plane. 2*(segments+1) vertices / segments*6 indices.</summary>
     /// <param name="innerRadius">Inner radius.</param>
     /// <param name="outerRadius">Outer radius.</param>
-    /// <param name="segments">Number of segments (≥ 3).</param>
+    /// <param name="segments">Number of segments (>= 3).</param>
     public static MeshData Ring(float innerRadius, float outerRadius, int segments = 64)
     {
         var v = new List<Vertex3D>((segments + 1) * 2);
@@ -265,7 +265,7 @@ public class MeshBuilder
     /// <param name="halfAngleRad">Half of the slice's opening angle, in radians.</param>
     /// <param name="innerRadius">Inner radius (0 for a full pie slice).</param>
     /// <param name="outerRadius">Outer radius.</param>
-    /// <param name="segments">Number of arc segments (≥ 1).</param>
+    /// <param name="segments">Number of arc segments (>= 1).</param>
     public static MeshData Sector(float halfAngleRad, float innerRadius, float outerRadius, int segments = 32)
     {
         var v = new List<Vertex3D>((segments + 1) * 2);
@@ -300,8 +300,8 @@ public class MeshBuilder
 
     /// <summary>Builds a UV sphere. (stacks+1)*(slices+1) vertices / stacks*slices*6 indices (pole quads degenerate harmlessly).</summary>
     /// <param name="radius">Sphere radius.</param>
-    /// <param name="slices">Longitudinal segments (≥ 3).</param>
-    /// <param name="stacks">Latitudinal segments (≥ 2).</param>
+    /// <param name="slices">Longitudinal segments (>= 3).</param>
+    /// <param name="stacks">Latitudinal segments (>= 2).</param>
     public static MeshData Sphere(float radius = 0.5f, int slices = 24, int stacks = 16)
     {
         var v = new List<Vertex3D>((stacks + 1) * (slices + 1));
@@ -343,7 +343,7 @@ public class MeshBuilder
     /// <summary>Builds a cylinder along Y, centered on the origin.</summary>
     /// <param name="radius">Cylinder radius.</param>
     /// <param name="height">Cylinder height.</param>
-    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="segments">Radial segments (>= 3).</param>
     /// <param name="caps">Whether to close the top and bottom.</param>
     public static MeshData Cylinder(float radius = 0.5f, float height = 1f, int segments = 24, bool caps = true)
     {
@@ -402,7 +402,7 @@ public class MeshBuilder
     /// <summary>Builds a cone along Y (apex at +height/2, base at -height/2).</summary>
     /// <param name="radius">Base radius.</param>
     /// <param name="height">Cone height.</param>
-    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="segments">Radial segments (>= 3).</param>
     /// <param name="cap">Whether to close the base.</param>
     public static MeshData Cone(float radius = 0.5f, float height = 1f, int segments = 24, bool cap = true)
     {
@@ -441,8 +441,8 @@ public class MeshBuilder
     /// <summary>Builds a 3D torus (donut) around the Y axis. (segMajor+1)*(segMinor+1) vertices / segMajor*segMinor*6 indices.</summary>
     /// <param name="majorRadius">Distance from the origin to the tube center.</param>
     /// <param name="minorRadius">Tube radius.</param>
-    /// <param name="segMajor">Segments around the main ring (≥ 3).</param>
-    /// <param name="segMinor">Segments around the tube (≥ 3).</param>
+    /// <param name="segMajor">Segments around the main ring (>= 3).</param>
+    /// <param name="segMinor">Segments around the tube (>= 3).</param>
     public static MeshData Torus(float majorRadius, float minorRadius, int segMajor = 48, int segMinor = 16)
     {
         var v = new List<Vertex3D>((segMajor + 1) * (segMinor + 1));
@@ -487,7 +487,7 @@ public class MeshBuilder
     /// <param name="shaftRadius">Shaft radius.</param>
     /// <param name="headRadius">Head base radius.</param>
     /// <param name="headLength">Head length (clamped below <paramref name="length"/>).</param>
-    /// <param name="segments">Radial segments (≥ 3).</param>
+    /// <param name="segments">Radial segments (>= 3).</param>
     public static MeshData Arrow(float length = 1f, float shaftRadius = 0.05f, float headRadius = 0.12f, float headLength = 0.25f, int segments = 16)
     {
         var v = new List<Vertex3D>();
@@ -525,7 +525,7 @@ public class MeshBuilder
     /// Builds a flat ribbon along a polyline (mitered corners, beveled above a ~150° turn to avoid spikes).<br/>
     /// The ribbon lies flat (+Y normal); point Y coordinates are honored, with the width applied horizontally.
     /// </summary>
-    /// <param name="points">Polyline points (≥ 2).</param>
+    /// <param name="points">Polyline points (>= 2).</param>
     /// <param name="width">Ribbon width.</param>
     /// <param name="closed">Whether the last point connects back to the first.</param>
     public static MeshData ExtrudePath(IReadOnlyList<Vector3> points, float width, bool closed = false)
@@ -626,7 +626,7 @@ public class MeshBuilder
 
         static void AddStrip(List<ushort> indices, int b, int s0, int s1)
         {
-            // Station vertex 0 sits at p - perp·hw (the +X side on a +Z path), so clockwise-front
+            // Station vertex 0 sits at p - perp*hw (the +X side on a +Z path), so clockwise-front
             // with normal +Y is (v0, r1, r0) / (v0, v0', r1).
             int l0 = s0 - b, r0 = s0 - b + 1, l1 = s1 - b, r1 = s1 - b + 1;
             AddTri(indices, b, l0, r1, r0);

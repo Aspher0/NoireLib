@@ -40,7 +40,7 @@ public struct Camera3D
         var up = Up.LengthSquared() > 1e-9f ? Up : Vector3.UnitY;
         var view = Matrix4x4.CreateLookAtLeftHanded(Position, Target, up);
 
-        // Row-vector reversed-Z infinite-far projection (Appendix C.2 form).
+        // Row-vector reversed-Z infinite-far projection.
         var g = 1f / MathF.Tan(VerticalFov * 0.5f);
         var proj = new Matrix4x4(
             g / MathF.Max(aspect, 1e-6f), 0, 0, 0,

@@ -24,7 +24,8 @@ You are reading the documentation for the `NoireLib.UI` helpers.
   - [Plugging in the Hotkey Manager](#plugging-in-the-hotkey-manager)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
-- [Not there yet](#not-there-yet)
+- [The UI scale](#the-ui-scale)
+- [Text at any size (NoireText)](#text-at-any-size-noiretext)
 
 ---
 
@@ -34,13 +35,14 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 
 **Foundations**
 
-- **`NoireUI`** - The hub. Owns the automatic-drawing policy, the element registry, the draw-thread queue (`RunOnDraw`), the frame clock, the reduced-motion switch and diagnostics.
+- **`NoireUI`** - The hub. Owns the automatic-drawing policy, the element registry, the draw-thread queue (`RunOnDraw`), the frame clock, the UI scale, the reduced-motion switch and diagnostics.
 - **`NoireLayout` / `NoireStyle`** - Containers and style scopes that take their body. No `using`, no `Dispose`, no `End()` anywhere, and an unbalanced raw-ImGui push inside a body is unwound at the boundary and logged once.
 - **`NoireAnim`** - Time-based animation keyed by id: easing over twenty-one curves (or one of your own), springs, presence, pulses, sweeps and one-shots. Nothing to register or dispose.
 - **`UiFrameState`** - Id-keyed transient state for immediate-mode helpers, typed per value and pruned automatically.
 - **`NoireUiState`** - The small amount of widget memory that survives a reload (a dragged position, a collapsed section). One JSON file; every `Persist` switch defaults off.
 - **`UiDiagnostics`** - Live counts, recent faults, the fault ladder, and the stack-leak net. Answers "why did nothing draw".
-- **`NoireTheme`** - One palette the whole library follows. An unset token falls through to the ImGui style, so a plugin that never touches it looks unchanged; set an accent and every widget re-tints at once.
+- **`NoireTheme`** - One palette the whole library follows, plus the type scale. An unset token falls through to the ImGui style, so a plugin that never touches it looks unchanged; set an accent and every widget re-tints at once.
+- **`NoireText`** - Text at any size without ImGui's resampled-atlas blur: a real font built at the size asked for, behind a four-step type scale the theme owns.
 
 **Widgets and elements**
 
@@ -962,17 +964,86 @@ File/game sources go through Dalamud's shared texture cache: they are cheap to r
 
 ---
 
-## Not there yet
+## The UI scale
 
-Two things NoireUI does not do, written down because both are invisible until they are not.
+Dalamud lets the user pick how large the interface is, and applies that scale to the ImGui style: text, frame padding and everything else you read out of `ImGui.GetStyle()` already arrives at the right size. Numbers a library ships do not. NoireUI handles this in one place, and the rule is worth knowing because getting it wrong is invisible on the machine you develop on.
 
-**The user's UI scale is not honoured yet.** Dalamud exposes a user-set scale as `ImGuiHelpers.GlobalScale` and applies it to the ImGui style, so text and frame padding already arrive scaled. Every pixel value NoireUI ships is a bare number authored at 100%: a toast is 340 wide, its padding is (12, 10), a modal is 420, a splitter's minimum is 40. At 150% the text inside a toast grows and the toast does not, so it crowds and then clips.
+```csharp
+NoireUI.Scale                       // the user's scale, where 1 is 100%
+NoireUI.Scaled(12f)                 // a pixel value of your own, authored at 100%
+NoireUI.Scaled(new Vector2(12, 10))
+```
 
-Until that is fixed, **a layout of your own that has to hold up at other scales should multiply its own pixel values by `ImGuiHelpers.GlobalScale`**, the way `NoireUIDemoPlugin` does. Values you read out of `ImGui.GetStyle()` are already scaled and must not be scaled again.
+**A number NoireUI has an opinion about is written at 100% and scaled for you.** Everything on `NoireTheme`, on any `*Style`, on `ModalOptions`, on a `UiPosition`, plus `NoireToastArea.Width` and `NoireOverlayButton.Size`. Set a toast width of 340 and it is 340 pixels at 100% and 510 at 150%, without your code knowing the scale exists. Each value is multiplied once, where it resolves, so it cannot be scaled twice by two call sites each being careful.
 
-**There is no way to draw larger text well.** A font in ImGui is a bitmap atlas rasterized once at a fixed size, so `SetWindowFontScale` and friends do not rasterize anything larger, they sample that bitmap larger. A heading at twice the base size is a blurry upscale of a small glyph, and no ImGui setting fixes it. The real answer is a second font built at the target pixel size through Dalamud's font atlas (`UiBuilder.FontAtlas`, `NewDelegateFontHandle` with a `SafeFontConfig`, or `NewGameFontHandle`), which is a piece of machinery with its own rules: handles build asynchronously and are unusable until `IFontHandle.Available`, an atlas rebuild dangles every cached `ImFontPtr`, and one atlas entry per distinct size means the cache has to be bounded and disposed.
+**A number NoireUI only hands to ImGui is already in real pixels and is left alone.** A `size` argument on `NoireButtons.Button`, `NoireComboBox.Width`, a `Splitter`'s `size` and its bounds, the `width` of a `Flow` or `WrapText`, the amount given to `NoireLayout.Indent`. These sit in the same space as the `CalcTextSize` and `GetContentRegionAvail` they are usually computed from, and scaling them would break the arithmetic they are part of. NoireUI's own defaults inside those calls (a splitter's minimum, a button's smallest size) do scale.
 
-That machinery belongs in the library rather than in every plugin that wants a heading, so `NoireText` is the planned home for it. Until then, treat the base font size as the only size NoireUI can render well.
+**Anything a `Resolve` method gives back is finished.** `theme.ResolveFramePadding()`, `theme.ResolveRounding()` and the rest return real pixels. Passing one through `NoireUI.Scaled` is the one way to get this wrong, and at 100% it looks perfect.
+
+For pixel values of your own, use `NoireUI.Scaled` rather than reading Dalamud's scale a second time, so your drawing and the widgets beside it cannot disagree about how large the interface is. `NoireUIDemoPlugin` does exactly this for its own bespoke shapes.
+
+---
+
+## Text at any size (NoireText)
+
+An ImGui font is a bitmap atlas rasterized once at one size. `SetWindowFontScale` and a scaled font push do not rasterize anything larger, they sample that bitmap larger, so a heading at twice the base size is a pixel-crawled upscale of a small glyph. No ImGui setting fixes it. `NoireText` builds a real font at the size asked for and draws with that.
+
+```csharp
+NoireText.Draw("Settings", TextSize.Heading);
+NoireText.Muted("3 profiles loaded", TextSize.Caption);
+NoireText.Colored(theme.Resolve(ThemeColor.Danger), "Not connected", TextSize.Body);
+
+NoireText.At(TextSize.Display, () =>
+{
+    ImGui.TextUnformatted("Noire");   // raw ImGui inside the scope draws at the size too
+    NoireText.Draw("Deco");
+});
+```
+
+`Draw`, `Colored`, `Muted`, `Disabled`, `Wrapped`, `Bullet`, `Centered`, `CalcSize`, `LineHeight`, and the `At` scopes. Sizes are logical pixels at 100%, like every other measurement here.
+
+### Ask by role, not by number
+
+`TextSize` has four steps: `Display`, `Heading`, `Body`, `Caption`. They resolve through `NoireTheme`, and every step except the body derives from the body size by a shipped proportion, so one number moves the whole scale:
+
+```csharp
+NoireTheme.Current.BodySize = 20f;      // the whole scale grows with it
+NoireTheme.Current.HeadingSize = 24f;   // this step opts out; the others keep following
+NoireTheme.Current.HeadingSize = null;  // and back onto the proportion
+```
+
+`BodySize` left unset is the host's own default font size (`NoireTheme.DefaultBodySize`), so an untouched theme is indistinguishable from ordinary `ImGui.TextUnformatted` beside it, and costs no atlas space at all.
+
+An explicit `NoireText.Draw(text, 22f)` is there when you need it, and is the thing to avoid at thirty call sites: a number at a call site is a number the next thirty will each pick differently.
+
+### What it costs, and the limit
+
+Every distinct size is a full glyph atlas. NoireUI builds them into an atlas of its own, so adding a heading never forces the host plugin's fonts to rebuild alongside it, and caches one entry per size for the life of the plugin.
+
+**The cache is bounded at 16 distinct sizes.** Past that it refuses to build more, draws at the nearest size it already has, and logs once naming the limit. It refuses rather than evicting because something may be mid-draw with the handle it would have thrown away. An interface with more than sixteen genuinely different text sizes has a type scale that has stopped being one, and running out of texture memory is the wrong place to find that out. `NoireUI.Diagnostics.Snapshot().TextFontSizes` reports the count.
+
+### While a size is still building
+
+Rasterizing a size takes a moment, and NoireUI does two things so you never watch it happen.
+
+**The whole scale is built in one go.** Registering a font asks the atlas to rebuild, so building the four steps as they were each first drawn meant four rebuilds back to back, which is a second or two of interface at the wrong size. Any miss builds every step of the current theme's scale at once instead.
+
+**The wait is the right size, not the right sharpness.** Until the real font is ready the text is drawn by stretching the font already loaded to the size asked for. That is the blurry scaling this whole section exists to replace, used deliberately and briefly, because the alternative is worse in the way that shows: text that starts small and jumps when its font arrives takes the layout around it along with it. Right size and briefly soft beats right sharpness and briefly wrong.
+
+**`NoireText.Prewarm()` removes even that.** Call it when your plugin loads, or after setting a theme, and the scale is rasterized before anything asks to draw with it. Safe to call repeatedly; a size already built is not built again.
+
+```csharp
+public Plugin()
+{
+    NoireLibMain.Initialize(PluginInterface, this);
+    NoireTheme.Current = NoireTheme.FromAccent("#C8A96A");
+    NoireText.Prewarm();
+}
+```
+
+**`CalcSize` measures whatever would draw.** It pushes the same font first, stand-in included, so a layout built on it cannot end up a few pixels wrong everywhere with neither font looking like the one lying.
+
+---
 
 ## See Also
 

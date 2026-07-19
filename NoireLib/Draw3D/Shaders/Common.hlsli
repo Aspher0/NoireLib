@@ -1,4 +1,4 @@
-﻿// NoireLib Draw3D - shared shader header (see docs/Draw3D V2 Proposal.md §10.2).
+﻿// NoireLib Draw3D - shared shader header: the constant buffer layouts every Draw3D shader binds.
 // All matrices in cbuffers are pre-transposed on the CPU; consume with mul(v, M) only.
 
 // ---- b0: per frame -------------------------------------------------------

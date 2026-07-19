@@ -90,7 +90,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>The resolved local→world matrix (lazily recomputed via dirty flags).</summary>
+    /// <summary>The resolved local-to-world matrix (lazily recomputed via dirty flags).</summary>
     public Matrix4x4 WorldMatrix
     {
         get
@@ -329,7 +329,7 @@ public sealed partial class SceneNode
             // decomposes the world matrix on drag, so a reflected wall decal collapses the moment it is moved/rotated/scaled).
             nx = tangent * sx;  // footprint width  (horizontal along the wall)
             ny = -facing * sy;  // sweep: horizontally through the wall (thin axis = depth); sign keeps det +1
-            nz = up * sz;       // footprint height (world up) -> the shape stands upright
+            nz = up * sz;       // footprint height (world up), so the shape stands upright
         }
         else // Ground
         {

@@ -69,7 +69,7 @@ public static class InteractMath
     /// <param name="rayDir">Ray direction, normalized.</param>
     /// <param name="a">Segment start.</param>
     /// <param name="b">Segment end.</param>
-    /// <param name="rayT">Receives the (clamped ≥ 0) ray parameter at the closest approach.</param>
+    /// <param name="rayT">Receives the (clamped >= 0) ray parameter at the closest approach.</param>
     public static float RaySegmentDistance(Vector3 rayOrigin, Vector3 rayDir, Vector3 a, Vector3 b, out float rayT)
     {
         var u = b - a;
@@ -232,11 +232,11 @@ public static class InteractMath
         return len > 1e-9f ? v / len : fallback;
     }
 
-    /// <summary>Rounds <paramref name="value"/> to the nearest multiple of <paramref name="step"/> (no-op when step ≤ 0).</summary>
+    /// <summary>Rounds <paramref name="value"/> to the nearest multiple of <paramref name="step"/> (no-op when step <= 0).</summary>
     public static float Snap(float value, float step)
         => step > 1e-9f ? MathF.Round(value / step) * step : value;
 
-    /// <summary>Per-component snap of a translation to a grid (components with step ≤ 0 pass through).</summary>
+    /// <summary>Per-component snap of a translation to a grid (components with step <= 0 pass through).</summary>
     public static Vector3 Snap(Vector3 value, Vector3 step)
         => new(Snap(value.X, step.X), Snap(value.Y, step.Y), Snap(value.Z, step.Z));
 }

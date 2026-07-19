@@ -1,6 +1,6 @@
 # NoireInteract & NoireGizmo
 
-The interaction layer for [NoireDraw3D](../README.md). The renderer is **deaf by design** (Law 11: it draws, it reads no input); it only exposes `NoireDraw3D.Pick(screenPx)`, a raw ray query you call yourself. This layer is the half the renderer refuses to own: a UI-thread state machine that reads the mouse, tracks gestures across frames, and turns raw input into **hover / click / drag** events on scene nodes and gizmos.
+The interaction layer for [NoireDraw3D](../README.md). The renderer is **deaf by design**: it draws, it reads no input; it only exposes `NoireDraw3D.Pick(screenPx)`, a raw ray query you call yourself. This layer is the half the renderer refuses to own: a UI-thread state machine that reads the mouse, tracks gestures across frames, and turns raw input into **hover / click / drag** events on scene nodes and gizmos.
 
 It is the single file group under `Draw3D/` allowed to touch ImGui; the renderer core stays ImGui-free, enforced by a contract test.
 
@@ -16,7 +16,7 @@ Both are guaranteed regardless of frame-rate, and the whole decision table is un
 
 ## Clickable objects
 
-The easy path: spawn a node and make it selectable in one call. `MakeSelectable` opts the node into interaction, adds a built-in hover highlight (brightens the tint ×1.2 by default), and routes a left-click into the node's **scene selection**. `MakeInteractable` is the hover/click-only variant (no selection). Both leave any `OnHoverEnter` / `OnClick` you set completely alone - the highlight is applied *around* your handlers, never composed into them, so you can set (or replace) your callbacks before or after and the highlight still works:
+The easy path: spawn a node and make it selectable in one call. `MakeSelectable` opts the node into interaction, adds a built-in hover highlight (brightens the tint x1.2 by default), and routes a left-click into the node's **scene selection**. `MakeInteractable` is the hover/click-only variant (no selection). Both leave any `OnHoverEnter` / `OnClick` you set completely alone - the highlight is applied *around* your handlers, never composed into them, so you can set (or replace) your callbacks before or after and the highlight still works:
 
 ```csharp
 var node = scene.Spawn(MeshBuilder.Box(), material, pos, "switch")

@@ -13,7 +13,7 @@ namespace NoireLib.Draw3D.World;
 /// of the screen-space depth-buffer decal.<br/>
 /// <b>Threading:</b> the collision scene is owned by the game's framework-thread update, so every method here MUST be
 /// called on the framework thread (e.g. from a command handler, <c>IFramework.Update</c>, or
-/// <c>NoireService.Framework.RunOnFrameworkThread</c>). All methods fail soft: no surface ⇒ null, never a throw.
+/// <c>NoireService.Framework.RunOnFrameworkThread</c>). All methods fail soft: no surface means null, never a throw.
 /// </summary>
 public static class WorldGeometry
 {
@@ -161,7 +161,7 @@ public static class WorldGeometry
         (a, b) = (b, a);
     }
 
-    /// <summary>Sutherland-Hodgman clip of a convex polygon against one axis half-space (component ≤ limit, or ≥ limit).</summary>
+    /// <summary>Sutherland-Hodgman clip of a convex polygon against one axis half-space (component <= limit, or >= limit).</summary>
     private static void ClipComponent(List<Vector3> input, List<Vector3> output, int axis, float limit, bool keepGreater)
     {
         output.Clear();

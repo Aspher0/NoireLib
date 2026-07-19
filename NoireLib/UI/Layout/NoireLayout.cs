@@ -100,7 +100,7 @@ public static partial class NoireLayout
     /// The current ImGui indent step in pixels, for passing to <see cref="Indent(float, Action)"/> when you want the
     /// standard amount rather than a measured one.
     /// </summary>
-    public static float DefaultIndent => NoireService.IsInitialized() ? ImGui.GetStyle().IndentSpacing : 21f;
+    public static float DefaultIndent => NoireService.IsInitialized() ? ImGui.GetStyle().IndentSpacing : NoireUI.Scaled(21f);
 
     /// <summary>
     /// Puts the body in its own id namespace, so two copies of the same widget code can coexist without colliding.

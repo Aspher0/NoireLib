@@ -38,13 +38,13 @@ public sealed class ButtonStyle
     /// <summary>The border color. When <see langword="null"/>, the theme border color is used.</summary>
     public Vector4? BorderColor { get; set; }
 
-    /// <summary>The border thickness in pixels. When <see langword="null"/>, the theme border size is used.</summary>
+    /// <summary>The border thickness at 100%. When <see langword="null"/>, the theme border size is used.</summary>
     public float? BorderSize { get; set; }
 
-    /// <summary>The corner radius. When <see langword="null"/>, the theme rounding is used.</summary>
+    /// <summary>The corner radius at 100%. When <see langword="null"/>, the theme rounding is used.</summary>
     public float? Rounding { get; set; }
 
-    /// <summary>The padding between the label and the button edge. When <see langword="null"/>, the theme frame padding is used.</summary>
+    /// <summary>The padding between the label and the button edge, at 100%. When <see langword="null"/>, the theme frame padding is used.</summary>
     public Vector2? Padding { get; set; }
 
     /// <summary>An icon drawn before the label.</summary>
@@ -76,7 +76,7 @@ public sealed class ButtonStyle
     public Vector4? HoldFillColor { get; set; }
 
     /// <summary>
-    /// The thickness of the traced outline when <see cref="HoldFill"/> is <see cref="HoldFillMode.Border"/>.
+    /// The thickness at 100% of the traced outline when <see cref="HoldFill"/> is <see cref="HoldFillMode.Border"/>.
     /// </summary>
     public float HoldBorderThickness { get; set; } = 2.5f;
 
@@ -90,6 +90,20 @@ public sealed class ButtonStyle
     /// The label is not drawn for you when this is set. Draw it yourself from the arguments, or leave it out.
     /// </remarks>
     public Action<UiButtonDraw>? CustomDraw { get; set; }
+
+    // What the painter actually draws from. Each logical value above is scaled here and nowhere else, so a value cannot
+    // end up scaled twice by two call sites each being careful, and a new one is not silently left unscaled.
+
+    internal float ResolveBorderSize()
+        => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : NoireTheme.Current.ResolveBorderSize();
+
+    internal float ResolveRounding()
+        => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : NoireTheme.Current.ResolveRounding();
+
+    internal Vector2 ResolvePadding()
+        => Padding.HasValue ? NoireUI.Scaled(Padding.Value) : NoireTheme.Current.ResolveFramePadding();
+
+    internal float ScaledHoldBorderThickness => NoireUI.Scaled(HoldBorderThickness);
 
     /// <summary>
     /// Creates an independent copy, so a variant can be adjusted without touching the original.

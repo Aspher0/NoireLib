@@ -88,8 +88,8 @@ internal sealed unsafe class RenderTarget : IDisposable
 }
 
 /// <summary>
-/// The private D32_FLOAT depth buffer for Draw3D↔Draw3D depth (Law 5: the game's depth is never written).
-/// Cleared to 0.0 - reversed-Z "far".
+/// The private D32_FLOAT depth buffer for depth testing among Draw3D's own objects, kept separate from
+/// the game's depth buffer, which Draw3D never writes. Cleared to 0.0 (reversed-Z "far").
 /// </summary>
 internal sealed unsafe class DepthTarget : IDisposable
 {

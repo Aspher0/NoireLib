@@ -55,7 +55,7 @@ float4 ps(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
         }
     }
 
-    // Rim = a covered neighbour where this pixel is itself (mostly) uncovered → an outer outline in the neighbour's colour.
+    // Rim = a covered neighbour where this pixel is itself (mostly) uncovered, producing an outer outline in the neighbour's colour.
     float rim = bestA * saturate(1.0 - center.a);
     // Occlude the finished outline: hide the rim where the nearest silhouette pixel is behind the world (a wall /
     // character). The outline shape itself was computed ignoring occlusion, so it still traces the whole object.

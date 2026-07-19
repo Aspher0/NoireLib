@@ -10,7 +10,7 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Interaction.Gizmo;
 
 /// <summary>
-/// A move / rotate / scale gizmo for the V2 renderer: grab any <see cref="SceneNode"/> (or any world matrix) and
+/// A move / rotate / scale gizmo for Draw3D: grab any <see cref="SceneNode"/> (or any world matrix) and
 /// transform it with axis / plane / center handles, snapping and Local/World space. Handles are <b>real
 /// geometry</b> drawn through <see cref="ImDraw3D"/> and hit-tested in screen space against the render-time camera, so
 /// detection stays reliable at any camera angle; by default (<see cref="GizmoOptions.Depth"/>) they draw on top of other

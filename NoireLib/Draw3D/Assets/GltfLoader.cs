@@ -12,12 +12,12 @@ using Mesh = NoireLib.Draw3D.Geometry.Mesh;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// glTF 2.0 importer - the "FF14 Blender" on-ramp. Decoding runs on the thread pool; meshes and
-/// textures are created synchronously wherever decoding finishes (devices are free-threaded), so the
-/// returned <see cref="Model3D"/> is ready to attach.<br/>
-/// Mapping: node tree → <see cref="SceneNode"/> subtree; one mesh+renderer per primitive;
-/// baseColor factor/texture → material color/texture; alphaMode BLEND → translucent; doubleSided →
-/// no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
+/// glTF 2.0 importer, the interchange point for models built in external 3D tools. Decoding runs on
+/// the thread pool; meshes and textures are created synchronously wherever decoding finishes (devices
+/// are free-threaded), so the returned <see cref="Model3D"/> is ready to attach.<br/>
+/// Mapping: node tree to <see cref="SceneNode"/> subtree; one mesh+renderer per primitive;
+/// baseColor factor/texture maps to material color/texture; alphaMode BLEND maps to translucent;
+/// doubleSided maps to no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
 /// are ignored (logged once per file so users know exactly what was dropped).<br/>
 /// Handedness: glTF is right-handed (CCW-front), this renderer is left-handed (CW-front). The loader
 /// negates Z on positions, normals and transforms - <b>one</b> reflection, which by itself flips the
@@ -145,7 +145,7 @@ public static class GltfLoader
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
     {
-        // Right-handed → left-handed: M' = F · M · F with F = diag(1, 1, -1, 1).
+        // Right-handed to left-handed: M' = F * M * F with F = diag(1, 1, -1, 1).
         local.M13 = -local.M13;
         local.M23 = -local.M23;
         local.M43 = -local.M43;

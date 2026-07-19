@@ -27,6 +27,18 @@ public class QueuedTask
     public TaskBatch? ParentBatch { get; internal set; }
 
     /// <summary>
+    /// Whether the queue has already run its finalization for this task.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Status"/> is public and settable, so a consumer can resolve a task by writing a terminal status
+    /// directly. Such a write is invisible to the queue's own completion, failure and cancellation paths, which
+    /// is what used to make it lose its callback and its statistics. The queue sets this whenever it finalizes a
+    /// task itself, so the reconciliation at the end of each pass can tell a status it produced from one it did
+    /// not, and finish the second kind properly.
+    /// </remarks>
+    internal bool QueueFinalized { get; set; }
+
+    /// <summary>
     /// Optional user-defined identifier for this task.
     /// </summary>
     public string? CustomId { get; set; }

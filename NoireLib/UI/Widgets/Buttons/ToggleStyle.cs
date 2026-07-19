@@ -23,10 +23,10 @@ public sealed class ToggleStyle
     /// <summary>The track border color. When <see langword="null"/>, the theme border color is used.</summary>
     public Vector4? BorderColor { get; set; }
 
-    /// <summary>The track border thickness in pixels. When <see langword="null"/>, the theme border size is used.</summary>
+    /// <summary>The track border thickness at 100%. When <see langword="null"/>, the theme border size is used.</summary>
     public float? BorderSize { get; set; }
 
-    /// <summary>The track height in pixels. When <see langword="null"/>, it matches the current line height.</summary>
+    /// <summary>The track height at 100%. When <see langword="null"/>, it matches the current line height.</summary>
     public float? Height { get; set; }
 
     /// <summary>
@@ -35,7 +35,8 @@ public sealed class ToggleStyle
     public float WidthRatio { get; set; } = 1.85f;
 
     /// <summary>
-    /// The track corner radius. When <see langword="null"/>, the track is a full pill. Set it to 0 for a square switch.
+    /// The track corner radius at 100%. When <see langword="null"/>, the track is a full pill. Set it to 0 for a square
+    /// switch.
     /// </summary>
     public float? Rounding { get; set; }
 
@@ -55,6 +56,20 @@ public sealed class ToggleStyle
     /// and the animation.
     /// </summary>
     public Action<UiToggleDraw>? CustomDraw { get; set; }
+
+    // What the painter actually draws from. Each logical value above is scaled here and nowhere else.
+
+    internal float ResolveHeight()
+        => Height.HasValue ? NoireUI.Scaled(Height.Value) : ImGui.GetFrameHeight();
+
+    internal float ResolveBorderSize()
+        => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : NoireTheme.Current.ResolveBorderSize();
+
+    /// <summary>
+    /// The track corner radius, defaulting to a full pill at whatever height the track resolved to.
+    /// </summary>
+    internal float ResolveRounding(float trackHeight)
+        => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : trackHeight * 0.5f;
 
     /// <summary>
     /// Creates an independent copy, so a variant can be adjusted without touching the original.

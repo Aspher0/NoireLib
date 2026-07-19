@@ -4,7 +4,7 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// Frustum planes extracted from a row-vector ViewProj (Gribb–Hartmann, our convention).<br/>
+/// Frustum planes extracted from a row-vector ViewProj (Gribb-Hartmann derivation).<br/>
 /// Five planes only: the far plane is degenerate under the game's infinite-far projection and is skipped.
 /// </summary>
 internal readonly struct FrustumPlanes
@@ -20,7 +20,7 @@ internal readonly struct FrustumPlanes
         near = n;
     }
 
-    /// <summary>Extracts normalized planes from a row-vector view-projection matrix (inside ⇔ a·x+b·y+c·z+d ≥ 0).</summary>
+    /// <summary>Extracts normalized planes from a row-vector view-projection matrix (inside means a*x + b*y + c*z + d is at least zero).</summary>
     public static FrustumPlanes FromViewProj(in Matrix4x4 m) => new(
         Normalize(new Vector4(m.M14 + m.M11, m.M24 + m.M21, m.M34 + m.M31, m.M44 + m.M41)),
         Normalize(new Vector4(m.M14 - m.M11, m.M24 - m.M21, m.M34 - m.M31, m.M44 - m.M41)),

@@ -19,8 +19,8 @@ public sealed partial class SceneNode
 
     /// <summary>
     /// Excludes game objects the predicate accepts. You decide what counts (a player? a minion? by name,
-    /// owner, distance, sub-kind, …). Each accepted object contributes a cylinder at its position sized by its hitbox
-    /// radius × <paramref name="radiusScale"/>. Refreshed by the library each frame on the framework thread. Fluent.
+    /// owner, distance, sub-kind, ...). Each accepted object contributes a cylinder at its position sized by its hitbox
+    /// radius * <paramref name="radiusScale"/>. Refreshed by the library each frame on the framework thread. Fluent.
     /// </summary>
     /// <param name="predicate">Returns true for objects the decal should not paint on.</param>
     /// <param name="radiusScale">Multiplier on each accepted object's hitbox radius (default 1).</param>

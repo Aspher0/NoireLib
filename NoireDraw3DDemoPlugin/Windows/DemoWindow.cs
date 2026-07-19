@@ -25,6 +25,7 @@ public sealed class DemoWindow : Window, IDisposable
     private readonly RendererPage rendererPage;
     private readonly ShowcasePage showcasePage = new();
     private readonly ScenesPage scenesPage = new();
+    private readonly GameAssetsPage gameAssetsPage = new();
     private readonly DecalsPage decalsPage = new();
     private readonly NativeUiPage nativeUiPage = new();
     private readonly LightingPage lightingPage = new();
@@ -240,6 +241,7 @@ public sealed class DemoWindow : Window, IDisposable
         switch (shell.Current)
         {
             case DemoPage.Showcase: showcasePage.Draw(); break;
+            case DemoPage.GameAssets: gameAssetsPage.Draw(); break;
             case DemoPage.Renderer: rendererPage.Draw(); break;
             case DemoPage.Decals: decalsPage.Draw(); break;
             case DemoPage.NativeUi: nativeUiPage.Draw(); break;
@@ -254,6 +256,7 @@ public sealed class DemoWindow : Window, IDisposable
     {
         showcasePage.Dispose();
         scenesPage.Dispose();
+        gameAssetsPage.Dispose();
         diagnosticsPage.Dispose();
     }
 }

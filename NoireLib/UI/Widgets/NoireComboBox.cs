@@ -67,7 +67,9 @@ public class NoireComboBox<T>
     public string? Label { get; set; } = null;
 
     /// <summary>
-    /// The width of the combo box. When <see langword="null"/>, the default ImGui item width is used.
+    /// The width of the combo box. When <see langword="null"/>, the default ImGui item width is used.<br/>
+    /// In real pixels, not scaled: this is handed straight to ImGui as the next item width, so it belongs in the same
+    /// space as the <c>GetContentRegionAvail</c> it is usually set from. See <see cref="NoireUI.Scale"/>.
     /// </summary>
     public float? Width { get; set; } = null;
 

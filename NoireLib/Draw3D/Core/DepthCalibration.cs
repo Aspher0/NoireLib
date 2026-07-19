@@ -6,7 +6,7 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Runtime self-calibration of the game's depth-buffer value convention.<br/>
-/// Every perspective depth mapping is affine in 1/w (w = clip-space w after <c>v·ViewProj</c>):
+/// Every perspective depth mapping is affine in 1/w (w = clip-space w after <c>v*ViewProj</c>):
 /// reversed-Z infinite far is <c>z = near/w</c>, reversed finite and standard finite are
 /// <c>z = a + b/w</c> with other constants. Instead of trusting any camera field to tell us which,
 /// this fits (a, b) from ground truth - the game's own collision raycasts vs. actual depth texels -
@@ -15,7 +15,7 @@ namespace NoireLib.Draw3D.Core;
 /// </summary>
 internal sealed class DepthCalibration
 {
-    private const int GridN = 5;                 // 5×5 sample grid across the screen interior
+    private const int GridN = 5;                 // 5x5 sample grid across the screen interior
     private const int MinInliers = 8;
     private const float MinSpread = 1.3f;        // max(w)/min(w) - a flat wall can't calibrate
     private const float MaxMedianResidual = 5e-4f;
@@ -128,7 +128,7 @@ internal sealed class DepthCalibration
         if (xs.Count < MinInliers)
             return Fail($"only {xs.Count} readable depth texels");
         if (wMax / wMin < MinSpread)
-            return Fail($"insufficient depth spread ({wMin:F1}–{wMax:F1})");
+            return Fail($"insufficient depth spread ({wMin:F1}-{wMax:F1})");
 
         if (!TrySolve(xs, ys, out var a, out var b, out var medianResidual, out var inliers)
             || inliers < MinInliers
@@ -174,19 +174,19 @@ internal sealed class DepthCalibration
     /// </summary>
     /// <param name="near">Camera near-plane distance.</param>
     /// <param name="far">Camera far-plane distance (ignored unless <paramref name="finiteFar"/>).</param>
-    /// <param name="standardZ">True when the projection maps near→0/far→1; false = reversed-Z (near→1/far→0).</param>
+    /// <param name="standardZ">True when the projection maps near to 0 and far to 1; false = reversed-Z (near to 1, far to 0).</param>
     /// <param name="finiteFar">True when the projection has a finite far plane; false = infinite far.</param>
     internal static Vector4 AnalyticMap(float near, float far, bool standardZ, bool finiteFar)
     {
         near = near > 1e-6f ? near : 0.1f;
         var hasFar = finiteFar && far > near;
         float a, b;
-        if (!standardZ) // reversed-Z: near→1, far→0
+        if (!standardZ) // reversed-Z: near to 1, far to 0
         {
             if (hasFar) { b = near * far / (far - near); a = -near / (far - near); }
             else { a = 0f; b = near; }                    // infinite far: sample = near/w
         }
-        else            // standard-Z: near→0, far→1
+        else            // standard-Z: near to 0, far to 1
         {
             if (hasFar) { a = far / (far - near); b = -near * far / (far - near); }
             else { a = 1f; b = -near; }                   // infinite far: sample = 1 - near/w
@@ -209,7 +209,7 @@ internal sealed class DepthCalibration
     }
 
     /// <summary>
-    /// Robust least squares of <c>y = a + b·x</c>: one plain fit, one outlier-rejected refit
+    /// Robust least squares of <c>y = a + b*x</c>: one plain fit, one outlier-rejected refit
     /// (collision raycasts can hit invisible walls the depth buffer never saw).
     /// Exposed for unit tests.
     /// </summary>

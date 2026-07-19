@@ -1,8 +1,8 @@
 ﻿namespace NoireLib.Draw3D;
 
 /// <summary>
-/// A point-in-time snapshot of the renderer's counters. Draw3D renders no stats UI itself (Law 11) -
-/// consumers may display this anywhere they like, and <c>/noire3d stats</c> prints it to the log.
+/// A point-in-time snapshot of the renderer's counters. Draw3D renders no stats UI of its own; consumers may
+/// display this anywhere they like, and <c>/noire3d stats</c> prints it to the log.
 /// </summary>
 public readonly struct Draw3DStats
 {
@@ -69,7 +69,7 @@ public readonly struct Draw3DStats
     /// <summary>Whether the wholesale VP camera fallback was active last frame.</summary>
     public required bool UsedFallbackCamera { get; init; }
 
-    /// <summary>Whether last frame projected with the captured GPU camera constants (the swim-free source).</summary>
+    /// <summary>Whether last frame projected with the captured GPU camera constants (the drift-free source).</summary>
     public required bool UsedGpuCamera { get; init; }
 
     /// <summary>Frames projected with the captured GPU camera constants since the last counter reset.</summary>

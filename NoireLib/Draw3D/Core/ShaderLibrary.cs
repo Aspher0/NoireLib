@@ -150,7 +150,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Registers a custom pipeline by name (the §14.2 seam). The source may include "Common.hlsli".</summary>
+    /// <summary>Registers a custom pipeline by name, the seam through which callers supply their own HLSL. The source may include "Common.hlsli".</summary>
     public bool RegisterCustom(string name, string hlslSource)
     {
         if (string.IsNullOrWhiteSpace(name))

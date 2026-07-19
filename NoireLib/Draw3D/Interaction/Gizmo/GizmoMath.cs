@@ -75,7 +75,7 @@ public static class GizmoMath
     /// </summary>
     /// <param name="axis">Handle axis, normalized.</param>
     /// <param name="origin">Gizmo origin.</param>
-    /// <param name="referenceLength">The handle's world length (a full drag of this length ⇒ factor 2).</param>
+    /// <param name="referenceLength">The handle's world length (a full drag of this length gives a factor of 2).</param>
     public static float AxisScaleFactor(Vector3 axis, Vector3 origin, float referenceLength, Vector3 pressRayO, Vector3 pressRayD, Vector3 curRayO, Vector3 curRayD)
     {
         if (referenceLength < 1e-6f)
@@ -99,7 +99,7 @@ public static class GizmoMath
     /// <summary>Applies per-component translation snapping (used on the final position, so axis drags land on the grid).</summary>
     public static Vector3 SnapTranslation(Vector3 position, Vector3 snap) => InteractMath.Snap(position, snap);
 
-    /// <summary>Rounds a rotation angle (radians) to the nearest snap increment given in degrees (≤ 0 = free).</summary>
+    /// <summary>Rounds a rotation angle (radians) to the nearest snap increment given in degrees (<= 0 = free).</summary>
     public static float SnapAngle(float radians, float snapDegrees)
     {
         if (snapDegrees <= 1e-4f)
@@ -109,7 +109,7 @@ public static class GizmoMath
         return MathF.Round(radians / step) * step;
     }
 
-    /// <summary>Rounds a scale component to the nearest snap increment (≤ 0 = free), never below the increment itself.</summary>
+    /// <summary>Rounds a scale component to the nearest snap increment (<= 0 = free), never below the increment itself.</summary>
     public static float SnapScale(float value, float snap)
     {
         if (snap <= 1e-6f)

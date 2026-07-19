@@ -11,9 +11,8 @@ namespace NoireLib.Draw3D.Core;
 /// colour changed between the two is a pixel the native UI painted, so the difference IS the UI - letter-exact,
 /// antialiased edges included, with no rectangles anywhere.
 /// <br/>
-/// This replaces an earlier design that masked by the backbuffer's alpha channel on the assumption it carried UI
-/// coverage. FFXIV writes no such coverage, so that mask was inert in every frame it ever ran. Both snapshots here
-/// are of the same texture, so they always agree on format and resolution and the difference needs no rescaling.
+/// Both snapshots are of the same texture, so they always agree on format and resolution and the difference needs
+/// no rescaling.
 /// </summary>
 internal sealed unsafe class UiDiffMask : IDisposable
 {

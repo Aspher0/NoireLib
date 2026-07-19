@@ -90,7 +90,8 @@ internal sealed unsafe class GpuBuffer : IDisposable
 
 /// <summary>
 /// A growable dynamic-buffer ring: WRITE_DISCARD on the first map of each frame or on wrap,
-/// WRITE_NO_OVERWRITE for appends within a frame. Growth doubles capacity and is logged (Law 9: amortized).
+/// WRITE_NO_OVERWRITE for appends within a frame. Growth doubles capacity and is logged, since a resize
+/// after warm-up means a steady-state frame just allocated a GPU resource, which should not happen.
 /// </summary>
 internal sealed unsafe class DynamicRing : IDisposable
 {
@@ -136,7 +137,7 @@ internal sealed unsafe class DynamicRing : IDisposable
                 newSize *= 2;
 
             if (buffer != null)
-                NoireLogger.LogDebug<DynamicRing>($"Growing {name} ring {buffer.SizeBytes} → {newSize} bytes.", "Draw3D");
+                NoireLogger.LogDebug<DynamicRing>($"Growing {name} ring {buffer.SizeBytes} to {newSize} bytes.", "Draw3D");
 
             buffer?.Dispose(); // in-flight GPU commands hold their own reference; safe.
             buffer = GpuBuffer.CreateDynamic(device, newSize, bind);

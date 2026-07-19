@@ -2,8 +2,6 @@
 
 A real D3D11 world renderer for Dalamud plugins. It draws real 3D geometry into the game's frame - glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under your plugin windows. By default it composites **under the game's native UI** so HUD and nameplates read on top (this uses a render-thread hook on the present composition); set `NativeUi.Layering = OverEverything` to composite over everything with no hook at all. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
 
-Full design rationale, invariants and acceptance gates live in [`docs/Draw3D V2 Proposal.md`](https://github.com/Aspher0/NoireLib/blob/main/docs/Draw3D%20V2%20Proposal.md).
-
 ## Quick start - markers in three lines
 
 The immediate layer redraws every frame; anything you stop requesting vanishes. Call it from any per-frame callback:
@@ -33,7 +31,7 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
 
 ## Retained scenes - the "FF14 Blender"
 
-For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node → build mesh → attach → track for disposal" into one call - the node **owns** the mesh, so there is nothing to track:
+For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node, build mesh, attach, track for disposal" into one call - the node **owns** the mesh, so there is nothing to track:
 
 ```csharp
 var scene = NoireDraw3D.MainScene;
@@ -69,12 +67,12 @@ var textured  = Material.UnlitTextured(myTexture) with { Cull = CullMode.None };
 var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // your HLSL via RegisterPipeline
 ```
 
-> A ground decal paints its shape onto the world surface, hugging terrain, stairs and walls (reconstructed from the game depth). **Characters** you list with `ExcludeObjects(pred)` are cut out along their **exact game-stencil silhouette** — legs, feet and tail included — with no volume, no collision: the decal simply is not painted on them. The `ExcludeObjects` cylinders are only a coarse gate picking *which* characters (the stencil is the cut), so the radius is safe to widen (`radiusScale`) and never holes the ground. A character you *don't* list is painted over. The stencil value that marks characters is `NoireDraw3D.CharacterStencilValue` (default `0x08`, discoverable via `/noire3d stencil`; set 0 to disable). Non-character targets (furniture, terrain) share the world's stencil value, so this excludes characters only.
+> A ground decal paints its shape onto the world surface, hugging terrain, stairs and walls (reconstructed from the game depth). **Characters** you list with `ExcludeObjects(pred)` are cut out along their **exact game-stencil silhouette** (legs, feet and tail included) with no volume, no collision: the decal simply is not painted on them. The `ExcludeObjects` cylinders are only a coarse gate picking *which* characters (the stencil is the cut), so the radius is safe to widen (`radiusScale`) and never holes the ground. A character you *don't* list is painted over. The stencil value that marks characters is `NoireDraw3D.CharacterStencilValue` (default `0x08`, discoverable via `/noire3d stencil`; set 0 to disable). Non-character targets (furniture, terrain) share the world's stencil value, so this excludes characters only.
 
-- `Surface` **locks the decal to a surface by constraining how its box may be oriented** (the projection itself is a single rule — the shape lives in the box's footprint and sweeps along the box's local Y; the box's orientation decides which surface it lands on). The mode just forbids rotating the box out of its plane, keeping heading (yaw), scale and position:
-  - `DecalSurface.Ground` (default): the box is kept **horizontal** — projects straight down onto the floor/terrain; rotating it toward vertical has no effect. The classic ground decal.
-  - `DecalSurface.Wall`: the box is kept **vertical** — projects horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
-  - `DecalSurface.Both`: **free** — rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
+- `Surface` **locks the decal to a surface by constraining how its box may be oriented** (the projection itself is a single rule - the shape lives in the box's footprint and sweeps along the box's local Y; the box's orientation decides which surface it lands on). The mode just forbids rotating the box out of its plane, keeping heading (yaw), scale and position:
+  - `DecalSurface.Ground` (default): the box is kept **horizontal**, projecting straight down onto the floor/terrain; rotating it toward vertical has no effect. The classic ground decal.
+  - `DecalSurface.Wall`: the box is kept **vertical**, projecting horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
+  - `DecalSurface.Both`: **free**, rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
 - `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `CollisionHeightMap` on (the default), `TopSurfaceThreshold` above 0, and the covering object to have collision. It is the *only* consumer of those two - they do nothing to any other decal.
 - `OutlineWidth` is the rim thickness, held **constant in world space regardless of the decal's scale** - scale the box up or down and the rim stays put, so decals of different sizes share one edge weight. `0` is a flat fill. (Immediate-mode `Im.DrawCircle(...)` etc. keep a rim proportional to the radius you pass - there is no separate scale transform to hold it against.)
 - `outlineColor:` gives the border **its own colour**, independent of the fill (`Material.Decal(shape, fill, outlineColor: rim)`, or `OutlineColor` via `with`). Leave it unset (alpha 0, the default) and the rim stays the decal's own colour, differing from the fill only in opacity - the classic look. The immediate layer has the same switch as `ImShapeStyle.OutlineColor`.
@@ -101,7 +99,7 @@ model.Root.LocalPosition = spawnPosition;
 model.Dispose();                            // detaches and releases its meshes/textures
 ```
 
-Blender → *File → Export → glTF 2.0* just works (base color + texture; PBR maps/skins/animations are skipped and logged). The import logs one summary line - primitive count, textured vs. flat materials, decode failures - so a wrong-looking model is self-diagnosing. **FBX:** convert once with `FBX2glTF` or Blender - NoireLib will never ship the FBX SDK.
+In Blender, *File > Export > glTF 2.0* just works (base color + texture; PBR maps/skins/animations are skipped and logged). The import logs one summary line - primitive count, textured vs. flat materials, decode failures - so a wrong-looking model is self-diagnosing. **FBX:** convert once with `FBX2glTF` or Blender - NoireLib will never ship the FBX SDK.
 
 > **Vertex colors are off by default.** FFXIV-derived character exports carry a per-vertex `COLOR_0` channel the game uses as shader *data* (wetness / wind / blend masks), not albedo - importing it as a tint paints the model in psychedelic colors. Pass `importVertexColors: true` (on `LoadAsync` / `scene.LoadModel`) only for assets that genuinely author vertex colors.
 
@@ -152,7 +150,7 @@ material = Material.UnlitTextured(view.Texture!); // minimap portals, mirrors, t
 
 ## World-projected decals (real collision)
 
-The screen-space `Material.Decal` projects onto whatever is in the depth buffer. When you want a decal that clips to the **actual world surface** - draping over terrain slopes, climbing onto walls and furniture, never "cut" by an actor standing in front - project it onto the game's real collision geometry instead. Everything here is **framework-thread only** (it reads the live collision scene) and fails soft (no surface ⇒ `null`):
+The screen-space `Material.Decal` projects onto whatever is in the depth buffer. When you want a decal that clips to the **actual world surface** - draping over terrain slopes, climbing onto walls and furniture, never "cut" by an actor standing in front - project it onto the game's real collision geometry instead. Everything here is **framework-thread only** (it reads the live collision scene) and fails soft (no surface returns `null`):
 
 ```csharp
 // A decal that conforms to the real ground/walls/furniture under `pos`, facing up:
@@ -180,7 +178,7 @@ var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact tr
 | Property | What it does |
 |---|---|
 | `NoireDraw3D.Enabled` | Master switch (also re-arms the renderer after a fault). |
-| `NoireDraw3D.LayerOpacity` | 0–1 fade of the whole 3D layer. |
+| `NoireDraw3D.LayerOpacity` | 0-1 fade of the whole 3D layer. |
 | `NoireDraw3D.NativeUi.Layering` | **Default `UnderGameUi`.** Where the layer lands in the game's frame. `UnderGameUi` composites via a render-thread hook on the present composition, before the game draws its UI, so the UI is always on top. `OverEverything` composites over the backbuffer at present time, which is the only mode that can decide *per element* what the layer covers. Falls back to `OverEverything` on any frame the injection can't run. |
 | `NoireDraw3D.NativeUi.KeepUiOnTop` | **Default true. Only applies under `OverEverything`.** Masks the layer per-pixel so the HUD, addons and nameplates read on top. Letter-exact and rectangle-free: the mask is the *difference* between the present buffer photographed before and after the game drew its UI into it. Rides the same render-thread hook, so a frame with no injection point has no "before" and composites unmasked. |
 | `NoireDraw3D.NativeUi.Nameplates` | **Default `DepthAware`. Honoured under both layering modes.** Whether the game's own nameplates are occluded by 3D objects in front of them. Under the game UI it stamps depth for the game's plate pass to test; over everything it gates where the `KeepUiOnTop` mask applies. `Covered` requires `OverEverything`. Fail-soft. |
@@ -224,8 +222,8 @@ A compile error disables only that pipeline and logs the full compiler output.
 
 | Command | Purpose |
 |---|---|
-| `/noire3d validate` | Projection parity vs the game's own WorldToScreen over 10 frames (gate: ≤ 1 px). |
-| `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: ≥ 90 % within 1e-3). |
+| `/noire3d validate` | Projection parity vs the game's own WorldToScreen over 10 frames (gate: <= 1 px). |
+| `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: >= 90 % within 1e-3). |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead - the same line `ShowDecalShape()` draws. |
 | `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike. The global "where is this decal actually landing"; an `ImDraw3D` shape has no node to call `ShowDecalShape()` on, so this is the only way to outline one. Implied by `wire`. |

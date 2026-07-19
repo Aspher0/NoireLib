@@ -12,7 +12,7 @@ namespace NoireLib.Draw3D.Im;
 /// <summary>
 /// The immediate-mode drawing layer: call <c>Draw*</c> every frame; anything not re-requested vanishes.<br/>
 /// "Im" means <i>immediate-mode pattern</i> - nothing to do with ImGui: every call becomes real meshes
-/// through the same D3D scene pass as retained content (Law 11).<br/>
+/// through the same D3D scene pass as retained content, with no ImGui involved.<br/>
 /// <b>Timing contract:</b> calls made inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an
 /// <see cref="Scene.ISceneFeature"/> render <b>this frame, always</b>. Calls made anywhere else in a draw
 /// cycle render at most one frame late (buffered) - imperceptible for markers, documented so nobody

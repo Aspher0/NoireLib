@@ -52,7 +52,7 @@ internal static unsafe class DepthReadback
                     var values = new float[screens.Count];
                     for (var i = 0; i < screens.Count; i++)
                     {
-                        // displayUv × ActualSize = the texel the shader's scaled sample lands on.
+                        // displayUv * ActualSize = the texel the shader's scaled sample lands on.
                         var px = Math.Clamp((int)(screens[i].X / displaySize.X * info.ActualWidth), 0, (int)info.AllocatedWidth - 1);
                         var py = Math.Clamp((int)(screens[i].Y / displaySize.Y * info.ActualHeight), 0, (int)info.AllocatedHeight - 1);
                         values[i] = ReadDepthTexel(mapped, desc.Format, px, py) ?? float.NaN;

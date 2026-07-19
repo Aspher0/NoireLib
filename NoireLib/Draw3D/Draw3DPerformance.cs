@@ -28,7 +28,7 @@ public sealed class Draw3DPerformance
 
     /// <summary>
     /// Global multiplier on the LOD switch distances (<see cref="LodScreenRadii"/>). 1 = as configured; &gt;1 drops to a
-    /// coarser LOD sooner (more aggressive, faster, softer); &lt;1 keeps detail longer. Default 1. Clamped to ≥ 0.01.
+    /// coarser LOD sooner (more aggressive, faster, softer); &lt;1 keeps detail longer. Default 1. Clamped to >= 0.01.
     /// </summary>
     public float LodBias { get; set; } = 1f;
 

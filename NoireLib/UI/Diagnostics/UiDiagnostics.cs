@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NoireLib.UI;
@@ -82,7 +82,8 @@ public sealed class UiDiagnostics
         NoireUI.DroppedDrawActions,
         StackRepairCount,
         FaultCount,
-        DisabledDrawableCount);
+        DisabledDrawableCount,
+        UiFontCache.BuiltSizeCount);
 
     /// <summary>
     /// Reports a fault: logs it, records it, and hands it to <see cref="OnFault"/>.

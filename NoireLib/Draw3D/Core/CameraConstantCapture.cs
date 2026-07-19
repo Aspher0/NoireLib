@@ -12,15 +12,15 @@ namespace NoireLib.Draw3D.Core;
 /// Captures the exact camera constants the GPU rasterizes the world with, at the D3D boundary.<br/>
 /// The world pixels are drawn from constant-buffer bytes the game uploads through the immediate context; any read of
 /// the CPU camera struct - at any moment - is a guess about when the game copied that struct into the upload, and
-/// under load the struct advances mid-frame, so every struct-timed snapshot swims by camera-velocity times an unknown
-/// dt. This class removes the guess: it taps the upload paths (<c>UpdateSubresource</c>, <c>Map</c>/<c>Unmap</c>,
-/// the same sanctioned vtable-tap mechanism as <see cref="RenderTargetTap"/>), discovers at runtime where the
-/// view-projection is uploaded, and each frame commits the newest validated upload pending at the main scene pass.
-/// The overlay then projects with exactly the matrix the pixels were drawn with - including any projection jitter
-/// the struct never exposes.<br/>
+/// under load the struct advances mid-frame, so every struct-timed snapshot drifts from the rasterized frame by
+/// camera-velocity times an unknown dt. This class removes the guess: it taps the upload paths
+/// (<c>UpdateSubresource</c>, <c>Map</c>/<c>Unmap</c>, the same sanctioned vtable-tap mechanism as
+/// <see cref="RenderTargetTap"/>), discovers at runtime where the view-projection is uploaded, and each frame commits
+/// the newest validated upload pending at the main scene pass. The overlay then projects with exactly the matrix the
+/// pixels were drawn with - including any projection jitter the struct never exposes.<br/>
 /// The lock identity is an (offset, layout) <b>family across a set of member buffers</b>, not a single buffer: the
-/// game rotates its per-view camera writes round-robin over a small ring of physical cbuffers (observed in-game as
-/// three 64-byte buffers at VS b0), so a single-pointer lock can never hold. Windows are scored <b>at capture time
+/// game rotates its per-view camera writes round-robin over a small ring of physical cbuffers (for example, three
+/// 64-byte buffers at VS b0), so a single-pointer lock can never hold. Windows are scored <b>at capture time
 /// against a same-instant struct read</b>, which removes the temporal skew from the match itself; matching and
 /// validation use the X/Y/W columns only, because the game's uploaded Z column differs from the struct's by design
 /// (the render path rebuilds Z analytically anyway).<br/>
@@ -38,8 +38,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private const int SlotUpdateSubresource = 48;
 
     // Discovery bounds. A per-view camera cbuffer is small; anything larger than TrackedBytes is counted for the
-    // probe report but never copied. Buffers up to SmallScanBytes are scored per update (the camera family found
-    // in-game is 64 B); larger tracked buffers keep the cheaper last-write scan at commit time as a backstop.
+    // probe report but never copied. Buffers up to SmallScanBytes are scored per update (the camera family is
+    // typically 64 B); larger tracked buffers keep the cheaper last-write scan at commit time as a backstop.
     private const int MaxTrackedBuffers = 48;
     private const int TrackedBytes = 4096;
     private const int MinTrackedBytes = 64;
@@ -56,9 +56,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     // table; LockErr keeps a winning streak alive; StrongErr must be reached at least once before locking; SteadyErr
     // is the per-commit validation gate once locked. The floors these gates sit above are temporal: the uploads
     // derive from the game's own view setup, up to a frame before any reference read, so under fast camera motion
-    // the best achievable match is a fraction of the inter-frame camera delta (measured in-game: a few e-3 at
-    // ordinary speeds). A foreign view's constants (shadow/water/portrait) differ by orders of magnitude, so the
-    // gates stay far from ambiguity even this wide open.
+    // the best achievable match is a fraction of the inter-frame camera delta (typically a few e-3 at ordinary
+    // speeds). A foreign view's constants (shadow/water/portrait) differ by orders of magnitude, so the gates stay
+    // far from ambiguity even this wide open.
     private const float CandidateErr = 2e-2f;
     private const float LockErr = 1e-2f;
     private const float StrongErr = 3e-3f;
@@ -218,7 +218,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     // Locked state. All writes happen on the render thread (detours and the main-pass commit run there); the
     // consumers (inject and present-time paths) run on the same thread, so plain fields are safe by construction.
     // Membership is a SIZE CLASS, not a pointer set: the game rotates its camera block round-robin across a ring
-    // of same-size physical buffers (measured in-game: five 1024 B buffers, each written every ~5th frame), so a
+    // of same-size physical buffers (for example, five 1024 B buffers each written every ~5th frame), so a
     // pointer-set lock starves - most frames the main-view write lands in a buffer outside the set, the commit
     // goes stale, and the overlay projects with a frames-old camera. Extracting the locked window from every
     // tracked buffer of the locked byte-width lets validation decide which windows are the main view.
@@ -352,9 +352,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     /// <summary>
     /// Signal from the tap's OM detour at the first main-scene-pass bind: arms the commit for the pass's draws.
-    /// Committing at the bind itself was measured wrong in-game - the game binds and uploads its camera block
-    /// between the OM bind and the pass's draws, so at the bind the VS slots still hold the previous pass's
-    /// buffers and the newest camera upload may not exist yet.
+    /// Committing at the bind itself would be wrong: the game binds and uploads its camera block between the OM
+    /// bind and the pass's draws, so at the bind the VS slots still hold the previous pass's buffers and the
+    /// newest camera upload may not exist yet.
     /// </summary>
     public void OnMainPassBind()
     {
@@ -368,8 +368,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>
     /// Signal from the tap's draw detours (render thread, every game draw while active). Locked, the commit runs
     /// at the first draw at-or-after the frame's fresh main-view upload: a small fraction of frames put a draw
-    /// (clear, sky, query) between the pass bind and the camera upload (measured in-game as ~2% commit misses,
-    /// each a one-frame fallback pop), so a failed attempt keeps retrying on subsequent draws, bounded by
+    /// (clear, sky, query) between the pass bind and the camera upload (typically a couple of percent of frames,
+    /// each recovering within the same frame), so a failed attempt keeps retrying on subsequent draws, bounded by
     /// <see cref="CommitRetryDraws"/>. Discovering, the first draw learns the VS-bound buffers and advances the
     /// lock state machine. Fast no-op on every other draw.
     /// </summary>
@@ -835,9 +835,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             return;
 
         // Buffers seen bound to the VS at the main pass are scored unconditionally: they are the only lock
-        // candidates (the bound gate) and there are few of them. Unbound buffers spend the per-frame budget -
-        // in-game the per-draw upload stream is large enough to drain any budget every frame before the camera
-        // writes arrive, so the bound set must never compete with it for scoring.
+        // candidates (the bound gate) and there are few of them. Unbound buffers spend the per-frame budget: the
+        // per-draw upload stream is large enough to drain any budget every frame before the camera writes arrive,
+        // so the bound set must never compete with it for scoring.
         if (slot.LastBoundSlot < 0)
         {
             if (scoreBudget < windows * 2)
@@ -920,9 +920,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// Learns and marks the buffers bound to the VS at the main pass's first draw (discovery only). This is the
     /// primary discovery source, not just ranking: the camera constants must be bound here to be read by the world
     /// pass at all, so enrolling the bound buffers directly makes discovery immune to upload-stream noise starving
-    /// the learn budget. The draw moment matters as much as the enrollment: sampled at the OM bind instead, the VS
-    /// slots still held the previous pass's buffers (measured in-game - the camera block is bound between the OM
-    /// bind and the first draw), which mislabelled leftovers as bound and hid the real camera family.
+    /// the learn budget. The draw moment matters as much as the enrollment: at the OM bind, the VS slots still hold
+    /// the previous pass's buffers, since the game binds its camera block between the OM bind and the first draw;
+    /// sampling there would mislabel those leftovers as bound and hide the real camera family.
     /// </summary>
     private void LearnBoundBuffers(ID3D11DeviceContext* ctx)
     {
@@ -1227,12 +1227,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// to this frame's commit; false when none exists yet (the caller retries on the next draw). Newest wins by
     /// design: the game uploads the other views first and the main view last, before the pass draws.
     /// Validation runs against BOTH the draw-moment reference and the previous commit's reference: the uploads
-    /// carry the previous frame's camera phase (measured in-game - the captured constants equal the struct one
-    /// frame back), so under extreme motion the draw-moment reference alone is a full frame ahead and would
-    /// reject the true main view. Foreign views (shadow/water/portrait) differ by orders of magnitude from either.
+    /// carry the previous frame's camera phase, so the captured constants equal the struct camera one frame back,
+    /// and under extreme motion the draw-moment reference alone is a full frame ahead and would reject the true
+    /// main view. Foreign views (shadow/water/portrait) differ by orders of magnitude from either.
     /// A pending already committed once is never re-committed: a frame whose fresh upload never arrives produces
-    /// NO commit and falls back to the struct snapshot - projecting a frames-old camera is the one failure mode
-    /// worse than the fallback (measured in-game as amplified swim when a pointer-set lock starved the pendings).
+    /// NO commit and falls back to the struct snapshot. Projecting a frames-old camera, which is what a starved
+    /// pointer-set lock would do, is the one failure mode worse than the fallback.
     /// </summary>
     private bool TryCommitLocked(in Matrix4x4 refVp, bool firstAttempt)
     {

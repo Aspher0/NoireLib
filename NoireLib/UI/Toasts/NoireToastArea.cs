@@ -91,9 +91,14 @@ public class NoireToastArea : NoireDrawable
     public UiPosition Position { get; set; } = UiPosition.AtAnchor(UiAnchor.BottomRight, new Vector2(-20f, -20f));
 
     /// <summary>
-    /// The width of a toast in pixels.
+    /// The width of a toast, at 100%. See <see cref="NoireUI.Scale"/>.
     /// </summary>
     public float Width { get; set; } = 340f;
+
+    /// <summary>
+    /// The width a toast is actually drawn at.
+    /// </summary>
+    private float ScaledWidth => NoireUI.Scaled(Width);
 
     /// <summary>
     /// How many toasts are shown at once. The rest wait their turn rather than filling the screen.
@@ -222,7 +227,7 @@ public class NoireToastArea : NoireDrawable
         // last frame. An auto-resizing window is always one frame behind its own contents, which a bottom-anchored
         // stack turns into visible jitter: the whole column chases the animation upwards as it grows and downwards as
         // it shrinks.
-        var size = new Vector2(Width, MathF.Max(1f, total));
+        var size = new Vector2(ScaledWidth, MathF.Max(1f, total));
         var viewport = ImGui.GetMainViewport();
 
         ImGui.SetNextWindowPos(Position.Resolve(size, viewport.Pos, viewport.Size), ImGuiCond.Always);
@@ -289,7 +294,7 @@ public class NoireToastArea : NoireDrawable
             var full = toast.LastHeight > 0f ? toast.LastHeight : EstimateHeight(toast);
             toast.Reserved = MathF.Max(1f, full * toast.Presence);
 
-            total += toast.Reserved + (visible.Count > 0 ? Style.Gap : 0f);
+            total += toast.Reserved + (visible.Count > 0 ? Style.ScaledGap : 0f);
             visible.Add(toast);
         }
 
@@ -325,7 +330,7 @@ public class NoireToastArea : NoireDrawable
         for (var index = 0; index < visible.Count; index++)
         {
             if (index > 0)
-                top += Style.Gap;
+                top += Style.ScaledGap;
 
             DrawToast(visible[index], top);
             top += visible[index].Reserved;
@@ -343,15 +348,15 @@ public class NoireToastArea : NoireDrawable
         var accent = SeverityColor(toast.Severity, theme);
 
         var alpha = toast.Presence;
-        var slide = (1f - alpha) * Style.SlideDistance * SlideDirection();
+        var slide = (1f - alpha) * Style.ScaledSlideDistance * SlideDirection();
 
         var left = ImGui.GetWindowPos().X + slide;
         var min = new Vector2(left, top);
-        var max = new Vector2(left + Width, top + toast.Reserved);
+        var max = new Vector2(left + ScaledWidth, top + toast.Reserved);
 
         var hovered = ImGui.IsMouseHoveringRect(min, max);
         var drawList = ImGui.GetWindowDrawList();
-        var rounding = Style.Rounding ?? theme.ResolveSurfaceRounding();
+        var rounding = Style.ResolveRounding();
 
         // The slot is shorter than the toast while it is arriving or leaving, so everything is clipped to it. Without
         // this the contents would spill over the toast above and below during the transition.
@@ -368,7 +373,7 @@ public class NoireToastArea : NoireDrawable
             PaintBackground(drawList, min, painted, accent, alpha, rounding, theme);
             PaintTimer(drawList, min, max, toast, accent, alpha, rounding);
 
-            ImGui.SetCursorScreenPos(min + Style.Padding + new Vector2(Style.StripeWidth, 0f));
+            ImGui.SetCursorScreenPos(min + Style.ScaledPadding + new Vector2(Style.ScaledStripeWidth, 0f));
             ImGui.BeginGroup();
 
             using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, alpha))
@@ -376,7 +381,7 @@ public class NoireToastArea : NoireDrawable
 
             ImGui.EndGroup();
 
-            toast.LastHeight = MathF.Max(1f, ImGui.GetItemRectSize().Y + Style.Padding.Y * 2f);
+            toast.LastHeight = MathF.Max(1f, ImGui.GetItemRectSize().Y + Style.ScaledPadding.Y * 2f);
         }
         finally
         {
@@ -413,16 +418,18 @@ public class NoireToastArea : NoireDrawable
         var background = ColorHelper.ScaleAlpha(Style.BackgroundColor ?? theme.Resolve(ThemeColor.SurfaceRaised), alpha);
         drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(background), rounding);
 
-        if (Style.StripeWidth > 0f)
+        var stripeWidth = Style.ScaledStripeWidth;
+        if (stripeWidth > 0f)
         {
             drawList.AddRectFilled(
                 min,
-                new Vector2(min.X + Style.StripeWidth, max.Y),
+                new Vector2(min.X + stripeWidth, max.Y),
                 ColorHelper.Vector4ToUint(ColorHelper.ScaleAlpha(accent, alpha)),
                 rounding);
         }
 
-        if (Style.BorderSize > 0f)
+        var borderSize = Style.ScaledBorderSize;
+        if (borderSize > 0f)
         {
             drawList.AddRect(
                 min,
@@ -430,7 +437,7 @@ public class NoireToastArea : NoireDrawable
                 ColorHelper.Vector4ToUint(ColorHelper.ScaleAlpha(Style.BorderColor ?? theme.Resolve(ThemeColor.Border), alpha)),
                 rounding,
                 ImDrawFlags.None,
-                Style.BorderSize);
+                borderSize);
         }
     }
 
@@ -456,7 +463,7 @@ public class NoireToastArea : NoireDrawable
             return;
 
         var color = ColorHelper.ScaleAlpha(Style.TimerColor ?? accent, alpha);
-        var thickness = MathF.Max(1f, Style.TimerThickness);
+        var thickness = MathF.Max(1f, Style.ScaledTimerThickness);
         var width = max.X - min.X;
 
         switch (Style.Timer)
@@ -479,7 +486,7 @@ public class NoireToastArea : NoireDrawable
                 // Placed after the severity stripe rather than over it, so the two read as two things and the
                 // thickness means what it says: sharing the stripe's column would swallow anything thinner than it.
                 var height = max.Y - min.Y;
-                var stripeLeft = min.X + Style.StripeWidth;
+                var stripeLeft = min.X + Style.ScaledStripeWidth;
                 drawList.AddRectFilled(
                     new Vector2(stripeLeft, max.Y - height * fraction),
                     new Vector2(stripeLeft + thickness, max.Y),
@@ -517,7 +524,7 @@ public class NoireToastArea : NoireDrawable
         // the host's ImGui text colour it stays near-white, which is invisible the moment the palette turns light.
         using var textColor = ImRaii.PushColor(ImGuiCol.Text, Style.TextColor ?? theme.Resolve(ThemeColor.Text));
 
-        var contentWidth = Width - Style.Padding.X * 2f - Style.StripeWidth;
+        var contentWidth = ScaledWidth - Style.ScaledPadding.X * 2f - Style.ScaledStripeWidth;
         var closeWidth = toast.Closable ? ImGui.GetFrameHeight() : 0f;
 
         if (Style.ShowIcon)
@@ -537,7 +544,7 @@ public class NoireToastArea : NoireDrawable
 
         ImGui.BeginGroup();
 
-        var textWidth = MathF.Max(40f, contentWidth - closeWidth);
+        var textWidth = MathF.Max(NoireUI.Scaled(40f), contentWidth - closeWidth);
 
         if (!string.IsNullOrEmpty(toast.Title))
         {
@@ -549,13 +556,13 @@ public class NoireToastArea : NoireDrawable
         if (toast.Progress != null)
         {
             var value = ReadProgress(toast);
-            ImGui.Dummy(new Vector2(1f, 2f));
+            ImGui.Dummy(new Vector2(1f, NoireUI.Scaled(2f)));
             DrawProgressBar(textWidth, value, accent, theme);
         }
 
         if (toast.Actions.Count > 0)
         {
-            ImGui.Dummy(new Vector2(1f, 2f));
+            ImGui.Dummy(new Vector2(1f, NoireUI.Scaled(2f)));
             DrawActions(toast);
         }
 
@@ -613,7 +620,7 @@ public class NoireToastArea : NoireDrawable
 
     private void DrawProgressBar(float width, float value, Vector4 accent, NoireTheme theme)
     {
-        var height = MathF.Max(2f, Style.ProgressHeight ?? Style.TimerThickness * 2f);
+        var height = MathF.Max(1f, Style.ScaledProgressHeight);
         var origin = ImGui.GetCursorScreenPos();
         ImGui.Dummy(new Vector2(width, height));
 
@@ -693,7 +700,7 @@ public class NoireToastArea : NoireDrawable
         if (toast.Actions.Count > 0)
             lines++;
 
-        return Style.Padding.Y * 2f + ImGui.GetTextLineHeightWithSpacing() * lines;
+        return Style.ScaledPadding.Y * 2f + ImGui.GetTextLineHeightWithSpacing() * lines;
     }
 
     private static Vector4 SeverityColor(ToastSeverity severity, NoireTheme theme) => severity switch

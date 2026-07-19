@@ -21,7 +21,7 @@ public static class TextureLoader
     /// <summary>
     /// Bridges an existing Dalamud texture wrap into a material-ready texture.<br/>
     /// The wrap's low-level resource is shared (independent reference), then QueryInterface proves the
-    /// handle really is a shader resource view - never assumed (Law 8).
+    /// handle really is a shader resource view, never assumed.
     /// </summary>
     /// <param name="wrap">The source wrap. It can be disposed freely after this call.</param>
     /// <returns>The bridged texture, or null when the handle is not a D3D11 SRV (logged once).</returns>

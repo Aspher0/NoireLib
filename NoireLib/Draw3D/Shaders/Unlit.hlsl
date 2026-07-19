@@ -56,6 +56,6 @@ float4 ps(PsIn i) : SV_Target
     return float4(c.rgb, 1.0);
 #else
     c.a *= vis;
-    return float4(c.rgb * c.a, c.a);                     // Law 4: premultiplied out
+    return float4(c.rgb * c.a, c.a);                     // premultiplied output: rgb already scaled by alpha
 #endif
 }

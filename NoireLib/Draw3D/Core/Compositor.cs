@@ -22,8 +22,8 @@ internal struct OutlineCBData
 }
 
 /// <summary>
-/// Blits the premultiplied scene layer onto the target with one fullscreen triangle - Law 11 at the
-/// pixel level: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
+/// Blits the premultiplied scene layer onto the target with one fullscreen triangle, with no ImGui
+/// involvement: the entire visible output of Draw3D reaches the screen without a single ImGui call.<br/>
 /// On the over-everything path it also applies per-pixel game-UI-on-top masking (the difference between the
 /// pre-UI and post-UI present-buffer snapshots) and the nameplate policy rects in the same pass. The blend
 /// writes RGB only, leaving the target's alpha channel untouched.

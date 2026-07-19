@@ -37,7 +37,7 @@ public sealed class SceneEditor : IDisposable
         OnSelectionChanged(); // sync to whatever is already selected
     }
 
-    /// <summary>The gizmo the editor drives. Configure it via the flattened surface (<c>editor.Gizmo.Space = …</c>, <c>editor.Gizmo.Snap = 0.5f</c>) or its <see cref="NoireGizmo.Options"/>.</summary>
+    /// <summary>The gizmo the editor drives. Configure it via the flattened surface (<c>editor.Gizmo.Space = ...</c>, <c>editor.Gizmo.Snap = 0.5f</c>) or its <see cref="NoireGizmo.Options"/>.</summary>
     public NoireGizmo Gizmo { get; }
 
     /// <summary>The selection the editor follows - the scene's own <see cref="Scene3D.Selection"/>.</summary>

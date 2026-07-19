@@ -1,10 +1,12 @@
+﻿using Dalamud.Bindings.ImGui;
 using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
 /// Visual options for a <see cref="NoireOverlayButton"/>.<br/>
-/// Every <see langword="null"/> value falls back to the corresponding current ImGui style value.
+/// Every <see langword="null"/> value falls back to the corresponding current ImGui style value.<br/>
+/// Every pixel value here is written at 100% and scaled when it is drawn. See <see cref="NoireUI.Scale"/>.
 /// </summary>
 public sealed class OverlayButtonStyle
 {
@@ -44,12 +46,12 @@ public sealed class OverlayButtonStyle
     public Vector4? BorderColor { get; set; } = null;
 
     /// <summary>
-    /// The border thickness of the button. Defaults to 0 (no border).
+    /// The border thickness of the button, at 100%. Defaults to 0 (no border).
     /// </summary>
     public float BorderSize { get; set; } = 0f;
 
     /// <summary>
-    /// The corner rounding of the button. When <see langword="null"/>, the current ImGui frame rounding is used.
+    /// The corner rounding of the button, at 100%. When <see langword="null"/>, the current ImGui frame rounding is used.
     /// </summary>
     public float? Rounding { get; set; } = null;
 
@@ -60,7 +62,7 @@ public sealed class OverlayButtonStyle
     public Vector2? Padding { get; set; } = null;
 
     /// <summary>
-    /// The horizontal spacing between the icon, text and image parts of the content. Defaults to 4 pixels.
+    /// The horizontal spacing between the icon, text and image parts of the content, at 100%. Defaults to 4 pixels.
     /// </summary>
     public float ContentSpacing { get; set; } = 4f;
 
@@ -78,4 +80,16 @@ public sealed class OverlayButtonStyle
     /// The font scale applied to the text and icon content of the button. Defaults to 1.
     /// </summary>
     public float FontScale { get; set; } = 1f;
+
+    // What the button actually draws from. Each logical value above is scaled here and nowhere else.
+
+    internal float ScaledBorderSize => NoireUI.Scaled(BorderSize);
+
+    internal float ScaledContentSpacing => NoireUI.Scaled(ContentSpacing);
+
+    internal float ResolveRounding()
+        => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : ImGui.GetStyle().FrameRounding;
+
+    internal Vector2 ResolvePadding()
+        => Padding.HasValue ? NoireUI.Scaled(Padding.Value) : ImGui.GetStyle().FramePadding;
 }

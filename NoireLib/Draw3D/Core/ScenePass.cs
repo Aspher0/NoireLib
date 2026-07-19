@@ -75,7 +75,7 @@ internal unsafe struct ActorCBData
 
 /// <summary>
 /// The world pass: collects visible items (retained scenes + immediate layer), sorts them into
-/// opaque → decal → transparent buckets, batches identical runs into instanced draws, and renders
+/// opaque, decal, and transparent buckets (in that draw order), batches identical runs into instanced draws, and renders
 /// into the offscreen premultiplied scene target.
 /// </summary>
 internal sealed unsafe class ScenePass : IDisposable
@@ -154,7 +154,7 @@ internal sealed unsafe class ScenePass : IDisposable
         => item.Mat.Domain == MaterialDomain.GroundDecal && item.Mat.ProjectionMode > 0.5f;
 
     /// <summary>World-space top Y of a decal's unit box (local [-0.5,0.5]³ transformed by <paramref name="world"/>): the
-    /// AABB-max Y, i.e. the vertical bound of what the decal paints. Row-vector convention (world = local·M).</summary>
+    /// AABB-max Y, i.e. the vertical bound of what the decal paints. Row-vector convention (world = local*M).</summary>
     private static float BoxTopY(in Matrix4x4 world)
         => world.M42 + 0.5f * (MathF.Abs(world.M12) + MathF.Abs(world.M22) + MathF.Abs(world.M32));
 
@@ -189,7 +189,7 @@ internal sealed unsafe class ScenePass : IDisposable
         hasOutlined = false;
         maxOutlineWidth = 0f;
 
-        // Snapshot the performance settings once (Law 2 in spirit: a mid-frame settings change never tears the pass).
+        // Snapshot the performance settings once so a mid-frame settings change never tears the pass.
         perfSnapshot = NoireDraw3D.Performance.Take();
         projFocalY = frame.Proj.M22;
         halfViewportH = frame.ViewportSize.Y * 0.5f;
@@ -291,7 +291,7 @@ internal sealed unsafe class ScenePass : IDisposable
         if (texture != null && texture.HasKeyedMutex && collectingForMainPass && !KeyedTextures.Contains(texture))
             KeyedTextures.Add(texture);
 
-        // Only solid meshes are outlined; a ground decal's OutlineColor is inert (decal outlining was removed).
+        // Only solid meshes are outlined; a ground decal's OutlineColor has no effect here.
         if (outlineColor.W > 0f && mat.Domain != MaterialDomain.GroundDecal)
         {
             hasOutlined = true;
@@ -444,7 +444,7 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>
-    /// Renders the collected items into the scene target (§9.8 draw-call anatomy). The caller has
+    /// Renders the collected items into the scene target. The caller has
     /// already captured the StateGuard and bound nothing - this method owns all bindings it makes.
     /// </summary>
     public void Execute(
@@ -495,9 +495,9 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
-        // Frame constants (transpose-on-upload - the One Convention, §7.2).
+        // Frame constants (matrices are transposed on upload to match HLSL's expected layout).
         // DepthUv.zw carries OUR projection's z map (deviceZ = z + w/clipW). It must match the reversed-Z
-        // Z column rebuilt in NoireDraw3D.RenderMainScene (clip.z = near ⇒ deviceZ = 0 + near/clipW), NOT the
+        // Z column rebuilt in NoireDraw3D.RenderMainScene (clip.z = near gives deviceZ = 0 + near/clipW), NOT the
         // game's exposed projection whose device-z we discard - so SceneWorldPos round-trips through
         // InvViewProj exactly.
         var frameData = new FrameCBData
@@ -505,8 +505,8 @@ internal sealed unsafe class ScenePass : IDisposable
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
             InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            // Viewport is the RENDER target size (= display size × supersample), not the display size, so DisplayUv
-            // (svPos.xy · Viewport.zw) is a correct [0,1] UV at any supersample factor; the game-depth sample then
+            // Viewport is the RENDER target size (= display size * supersample), not the display size, so DisplayUv
+            // (svPos.xy * Viewport.zw) is a correct [0,1] UV at any supersample factor; the game-depth sample then
             // scales that UV by DepthUv into the game buffer, which is resolution-independent.
             Viewport = new Vector4(sceneRt.Width, sceneRt.Height, 1f / sceneRt.Width, 1f / sceneRt.Height),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
@@ -531,7 +531,8 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
-        // Targets: scene RT always; private depth only on frames with opaque content (stale-depth rule §9.3).
+        // Targets: scene RT always; private depth only on frames with opaque content, so a frame with none
+        // never treats a previous frame's leftover depth as valid.
         var dsv = (ID3D11DepthStencilView*)null;
         if (hasOpaque && privateDepth.EnsureSize(device, sceneRt.Width, sceneRt.Height))
             dsv = privateDepth.Dsv;
@@ -636,9 +637,9 @@ internal sealed unsafe class ScenePass : IDisposable
                 1 => DepthKey.ReadGE,
                 _ => hasDepthWrites ? DepthKey.ReadGE : DepthKey.Disabled,
             };
-            // A transparent item that opts out of the private V2↔V2 depth test stays in front of other 3D objects:
-            //  • DepthMode.Ignore   - full x-ray: also skips the world-depth SRV below, so it draws over everything.
-            //  • DepthMode.WorldOnly - on top of objects but STILL world-occluded: it keeps the world-depth SRV, so a
+            // A transparent item that opts out of the private object-to-object depth test stays in front of other 3D objects:
+            //  - DepthMode.Ignore   - full x-ray: also skips the world-depth SRV below, so it draws over everything.
+            //  - DepthMode.WorldOnly - on top of objects but STILL world-occluded: it keeps the world-depth SRV, so a
             //    wall/terrain hides it while a nearer 3D object does not (the editor-gizmo mix).
             // Opaque (must write depth) and decal (projects via device-z) buckets are unaffected.
             if (bucket == 2 && item.Mat.Depth is DepthMode.Ignore or DepthMode.WorldOnly)
@@ -675,7 +676,7 @@ internal sealed unsafe class ScenePass : IDisposable
                 dynBound = false;
             }
 
-            // Scene depth SRV: null for DepthMode.Ignore materials (sampling null returns 0 ⇒ fully visible).
+            // Scene depth SRV: null for DepthMode.Ignore materials (sampling null returns 0, so it reads as fully visible).
             var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore && item.Mat.Domain != MaterialDomain.GroundDecal ? null : sceneDepthSrv;
             if ((nint)wantDepthSrv != curDepthSrv)
             {
@@ -945,7 +946,7 @@ internal sealed unsafe class ScenePass : IDisposable
     /// floor) is discarded so it never masks the ground below. A <see cref="DecalProjection.HighestOnly"/> decal samples
     /// it (bounded further to its own box top) to skip surfaces below its column's topmost one - the floor under a table.
     /// Nothing else reads it. Standalone (own target and states) so it runs before <see cref="Execute"/>.
-    /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ→clip map (matching <c>WorldHeightRegion</c>);
+    /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ-to-clip map (matching <c>WorldHeightRegion</c>);
     /// the mesh's vertices are relative to <paramref name="meshCenter"/>.
     /// <br/>
     /// Returns false when the map could not be drawn (no mesh, no target, pipeline self-disabled). The caller must then
@@ -1122,7 +1123,7 @@ internal sealed unsafe class ScenePass : IDisposable
         {
             ref var item = ref items[i];
             // Only solid meshes are outlined - ground decals are not (their projected footprint has no meaningful
-            // screen silhouette; a decal outline is being redesigned separately). Immediate markers are not outlined.
+            // screen silhouette). Immediate markers are not outlined.
             if (item.OutlineColor.W <= 0f || item.Mesh == null || item.Mat.Domain == MaterialDomain.GroundDecal)
                 continue;
 

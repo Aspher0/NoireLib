@@ -29,7 +29,8 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// (the same overlay the native backend draws): ImGuizmo's built-in info text is a world-space delta that reads wrong in
 /// Local space, so it is hidden for the span of each manipulate call - its shared style restored immediately after, so
 /// any other ImGuizmo consumer is untouched - and the space-correct readout is drawn in its place. This file is the only
-/// part of the gizmo that touches ImGui/ImGuizmo, kept out of the renderer core per Law 11.
+/// part of the gizmo that touches ImGui/ImGuizmo: the renderer core itself never does, since it reads no input and this
+/// interaction layer is the sanctioned exception that does.
 /// </summary>
 public sealed partial class NoireGizmo
 {

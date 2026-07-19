@@ -9,7 +9,7 @@ namespace NoireLib.Draw3D.Core;
 /// <summary>
 /// The collision-geometry sibling of <see cref="GameRenderSources"/>: the only other Draw3D file that touches
 /// FFXIVClientStructs, and it touches only the collision scene. Everything is read through named struct fields on
-/// the singletons (Law 8: zero signatures, zero offsets) - the single virtual call is <c>Collider.GetColliderType()</c>,
+/// the singletons, no signatures and no offsets - the single virtual call is <c>Collider.GetColliderType()</c>,
 /// dispatched through the object's own vtable, never a scanned address.<br/>
 /// It walks the game's real collision world - streamed terrain, placed background parts, housing furniture and any
 /// dynamic object that registers a collider - and yields world-space triangles for surface-projected geometry.<br/>
@@ -179,7 +179,7 @@ internal static unsafe class WorldCollisionSource
         }
     }
 
-    // ---------------------------------------------------------------- analytic-collider tessellation (unit shapes → world)
+    // ---------------------------------------------------------------- analytic-collider tessellation (unit shapes to world)
 
     private static void AppendUnitBox(Matrix4x4 world, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {

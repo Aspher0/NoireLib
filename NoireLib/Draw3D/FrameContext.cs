@@ -3,18 +3,18 @@ using System.Numerics;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// The immutable per-frame snapshot every part of the renderer consumes (Law 2: one camera snapshot
-/// per presented frame, taken at a stable point, passed by <c>in</c> reference - nothing reads camera
-/// state after it is built).<br/>
+/// The immutable per-frame snapshot every part of the renderer consumes: one camera snapshot per presented
+/// frame, taken at a stable point and passed by <c>in</c> reference, so nothing reads camera state after it
+/// is built.<br/>
 /// Shaders consume only <see cref="ViewProj"/>/<see cref="InvViewProj"/> (the VP-only contract);
 /// <see cref="View"/>/<see cref="Proj"/> exist for diagnostics only.
 /// </summary>
 public readonly struct FrameContext
 {
-    /// <summary>Combined view-projection matrix (row-vector convention: <c>clip = v · VP</c>).</summary>
+    /// <summary>Combined view-projection matrix (row-vector convention: <c>clip = v * VP</c>).</summary>
     public readonly Matrix4x4 ViewProj;
 
-    /// <summary>Inverse of <see cref="ViewProj"/> (clip → world; decal reconstruction, picking, unprojection).</summary>
+    /// <summary>Inverse of <see cref="ViewProj"/> (clip to world; decal reconstruction, picking, unprojection).</summary>
     public readonly Matrix4x4 InvViewProj;
 
     /// <summary>View matrix - diagnostics only (identity when the wholesale VP fallback is active).</summary>
@@ -35,7 +35,7 @@ public readonly struct FrameContext
     /// <summary>UV scale mapping display UVs into the depth texture's actual (in-use) region - handles dynamic resolution and upscalers.</summary>
     public readonly Vector2 DepthUvScale;
 
-    /// <summary>True when the game runs reversed-Z (near = 1, far → 0). Expected true; carried so an engine flip degrades to one constant.</summary>
+    /// <summary>True when the game runs reversed-Z (near = 1, far to 0). Expected true; carried so an engine flip degrades to one constant.</summary>
     public readonly bool ReversedZ;
 
     /// <summary>Camera near-plane distance (reversed-Z linearization).</summary>
@@ -71,7 +71,7 @@ public readonly struct FrameContext
     }
 
     /// <summary>
-    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w ≤ 0).<br/>
+    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w <= 0).<br/>
     /// This is the same math the GPU performs - used by the parity validator and available to consumers for labels/anchors.
     /// </summary>
     /// <param name="world">World-space position.</param>

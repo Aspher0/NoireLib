@@ -2,7 +2,7 @@ namespace NoireLib.Draw3D.Materials;
 
 /// <summary>
 /// How a material's pixels blend into the Draw3D layer.<br/>
-/// Everything inside Draw3D is premultiplied-alpha end to end (Law 4).
+/// Everything inside Draw3D is premultiplied-alpha end to end; blending is always (ONE, INV_SRC_ALPHA).
 /// </summary>
 public enum BlendMode
 {

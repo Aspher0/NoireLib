@@ -31,6 +31,15 @@ public class TaskBatch
     public bool IsBlocking { get; set; }
 
     /// <summary>
+    /// Whether the queue has already run its finalization for this batch.
+    /// </summary>
+    /// <remarks>
+    /// The counterpart of <see cref="QueuedTask.QueueFinalized"/>, for the same reason: writing a terminal
+    /// <see cref="Status"/> directly used to strand every task the batch held.
+    /// </remarks>
+    internal bool QueueFinalized { get; set; }
+
+    /// <summary>
     /// The current status of the batch.
     /// </summary>
     public BatchStatus Status { get; set; } = BatchStatus.Queued;

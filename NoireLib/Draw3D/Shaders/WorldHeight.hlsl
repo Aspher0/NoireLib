@@ -1,5 +1,5 @@
 // NoireLib Draw3D - top-down collision height-map. Renders the cached collision mesh through a direct affine
-// world->clip map (ViewProj set on the CPU so world XZ maps linearly to the target, no perspective) and outputs the
+// world-to-clip map (ViewProj set on the CPU so world XZ maps linearly to the target, no perspective) and outputs the
 // vertex's world Y. Drawn with MAX blend, so each texel holds the highest collision Y in that XZ column - but ONLY up
 // to DepthCal.x, the tallest ground-decal box top this frame: anything above it (a ceiling / roof / overhead floor)
 // is discarded, so a covered room's roof never masks the ground below. Each decal further bounds the search to its
@@ -25,7 +25,7 @@ PsIn vs(VsIn v)
 {
     PsIn o;
     float4 wp = mul(float4(v.pos, 1.0), World);   // World = translate(region centre): verts are region-relative
-    o.svPos   = mul(wp, ViewProj);                // ViewProj = CPU-built affine XZ->clip map (see BuildHeightMapMatrix)
+    o.svPos   = mul(wp, ViewProj);                // ViewProj = CPU-built affine XZ-to-clip map (see BuildHeightMapMatrix)
     o.worldY  = wp.y;
     return o;
 }
