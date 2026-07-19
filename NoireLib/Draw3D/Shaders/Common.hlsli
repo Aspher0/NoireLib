@@ -52,6 +52,8 @@ Texture2D       SceneDepth   : register(t0);
 Texture2D       BaseTex      : register(t1);
 Texture2D       WorldHeight  : register(t2); // top-down highest collision Y per XZ (ground decals; see WorldHeightRegion)
 Texture2D<uint2> SceneStencil : register(t3); // game depth-stencil's STENCIL plane (uint; .g = stencil), marks characters
+Texture2D       AuxTex0      : register(t4); // custom pipelines only: second material texture (game materials: normal map)
+Texture2D       AuxTex1      : register(t5); // custom pipelines only: third material texture (game materials: specular map)
 SamplerState    PointClamp   : register(s0);
 SamplerState    BaseSamp     : register(s1);
 

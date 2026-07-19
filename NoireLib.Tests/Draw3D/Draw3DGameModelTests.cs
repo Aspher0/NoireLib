@@ -107,6 +107,154 @@ public class Draw3DGameModelTests
         decoded.Should().BeGreaterThan(0);
     }
 
+    /// <summary>Materials covering both shader packages and both color table layouts.</summary>
+    private static readonly string[] SampleMaterials =
+    [
+        "bgcommon/hou/indoor/general/0001/material/fun_b0_m0001_1a.mtrl",
+        "bgcommon/hou/indoor/general/0002/material/fun_b0_m0002_1a.mtrl",
+        "chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl",
+        "chara/monster/m0001/obj/body/b0001/material/v0001/mt_m0001b0001_a.mtrl",
+    ];
+
+    [Fact]
+    public void LoadFile_RealGameMaterials_WalksLayoutExactly()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var parsed = 0;
+        foreach (var path in SampleMaterials)
+        {
+            if (!game.FileExists(path))
+                continue;
+
+            // A mis-sized block makes LoadFile throw, because the walk must end on the declared file size.
+            var file = game.GetFile<GameMaterialFile>(path);
+
+            file.Should().NotBeNull();
+            file!.ShaderPackage.Should().EndWith(".shpk", because: "every material names the package it draws with");
+            file.Textures.Should().NotBeEmpty();
+            file.Samplers.Should().NotBeEmpty();
+            parsed++;
+        }
+
+        parsed.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void GameShaderNames_ResolvesEverySamplerInRealMaterials()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var checkedSamplers = 0;
+        foreach (var path in SampleMaterials)
+        {
+            if (!game.FileExists(path))
+                continue;
+
+            var file = game.GetFile<GameMaterialFile>(path)!;
+            foreach (var sampler in file.Samplers)
+            {
+                // Sampler identifiers are a checksum of the sampler's name, so a shipped name list
+                // reproduces them exactly. A miss means either the derivation or the list has drifted.
+                GameShaderNames.NameOf(sampler.SamplerId).Should().NotBeNull(
+                    because: $"sampler 0x{sampler.SamplerId:X8} in '{path}' should resolve from the shipped name list");
+                checkedSamplers++;
+            }
+        }
+
+        checkedSamplers.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void BaseColorPath_RealMaterials_FindsATexture()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var resolved = 0;
+        foreach (var path in SampleMaterials)
+        {
+            if (!game.FileExists(path))
+                continue;
+
+            var file = game.GetFile<GameMaterialFile>(path)!;
+            var texture = GameMaterialLoader.BaseColorPath(file);
+
+            texture.Should().NotBeNull(because: $"'{path}' binds a base color sampler");
+            game.FileExists(texture!).Should().BeTrue(because: "the resolved texture path must exist in the archives");
+            resolved++;
+        }
+
+        resolved.Should().BeGreaterThan(0);
+    }
+
+    [Fact]
+    public void ConstantValue_DyeableFurnitureMaterial_ReadsItsDiffuseColor()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string Path = "bgcommon/hou/indoor/general/0681/material/fun_b0_m0681_0a.mtrl";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample dyeable material not present.");
+            return;
+        }
+
+        var file = game.GetFile<GameMaterialFile>(Path)!;
+        var diffuse = file.ConstantValue("g_DiffuseColor");
+
+        // The dyeable shader packages author their color texture near white wherever a surface takes a
+        // color and multiply this constant in at draw time. Without it those surfaces render blown out.
+        diffuse.Should().NotBeNull(because: "a dyeable material carries the color its texture is tinted by");
+        diffuse!.Length.Should().Be(3);
+        foreach (var channel in diffuse)
+            channel.Should().BeInRange(0f, 1f);
+
+        // Most materials leave this white, where it changes nothing. This one is a dyeable piece and sets a
+        // real color, which is what makes it a useful sample: an all-white read would mean the value was missed.
+        diffuse.Should().NotBeEquivalentTo(new[] { 1f, 1f, 1f });
+    }
+
+    [Fact]
+    public void ResolvePath_RelativeCharacterMaterial_LandsOnTheVariantFolder()
+    {
+        // Character models store material paths relative, and they resolve beside the model directory
+        // rather than under it. Getting this wrong yields a path that simply does not exist.
+        var resolved = GameMaterialLoader.ResolvePath(
+            "chara/equipment/e0001/model/c0101e0001_top.mdl",
+            "/mt_c0101e0001_top_a.mtrl");
+
+        resolved.Should().Be("chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl");
+    }
+
+    [Fact]
+    public void ResolvePath_AbsoluteBackgroundMaterial_IsUnchanged()
+    {
+        const string Absolute = "bgcommon/hou/indoor/general/0001/material/fun_b0_m0001_1a.mtrl";
+
+        GameMaterialLoader.ResolvePath("bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl", Absolute)
+            .Should().Be(Absolute);
+    }
+
     [Fact]
     public void Decode_EquipmentModel_LandsAtTorsoHeight()
     {
@@ -140,6 +288,58 @@ public class Draw3DGameModelTests
         // the origin instead would mean the vertex stride was misread and every offset drifted.
         lowest.Should().BeInRange(0.5f, 1.5f, because: "a torso garment starts around waist height");
         highest.Should().BeInRange(1.2f, 2.0f, because: "a torso garment ends around shoulder height");
+    }
+
+    /// <summary>
+    /// Background models declare no vertex color element, so importing vertex colors cannot change how one
+    /// is drawn. This is worth pinning down because the option is visible next to settings that do change
+    /// the result, which invites reading a coincidence as cause and effect.
+    /// </summary>
+    [Fact]
+    public void Decode_BackgroundModels_CarryNoVertexColorChannel()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var checkedModels = 0;
+        foreach (var path in SampleModels)
+        {
+            if (!path.StartsWith("bgcommon/", StringComparison.Ordinal) || !game.FileExists(path))
+                continue;
+
+            var file = game.GetFile<GameModelFile>(path);
+            file.Should().NotBeNull();
+
+            foreach (var declaration in file!.Declarations)
+            {
+                foreach (var element in declaration)
+                {
+                    element.Usage.Should().NotBe(
+                        GameVertexUsage.Color,
+                        because: $"'{path}' is a background model and should declare no vertex color");
+                }
+            }
+
+            // The decoder must then produce the same geometry either way, since there is nothing to import.
+            var without = GameModelLoader.Decode(file, 0, importVertexColors: false);
+            var with = GameModelLoader.Decode(file, 0, importVertexColors: true);
+
+            with.Length.Should().Be(without.Length);
+            for (var i = 0; i < with.Length; i++)
+            {
+                with[i].Geometry.Vertices.Should().Equal(
+                    without[i].Geometry.Vertices,
+                    because: "a model with no color channel decodes identically whether or not colors are imported");
+            }
+
+            checkedModels++;
+        }
+
+        checkedModels.Should().BeGreaterThan(0, because: "the background sample paths should exist in any complete installation");
     }
 }
 

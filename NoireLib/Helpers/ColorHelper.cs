@@ -12,40 +12,94 @@ public static class ColorHelper
     /// <summary>
     /// Converts a HEX color string to a Vector3 representing RGB values between 0 and 1.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456". "#" Optionnal. Alpha value will be ignored if provided.</param>
+    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. Alpha value will be ignored if provided.</param>
     /// <returns>A Vector3 representation of the HEX string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static Vector3 HexToVector3(string hex)
+        => Vector4ToVector3(HexToVector4(hex));
+
+    /// <summary>
+    /// Reads a HEX color string without throwing when it is not one.
+    /// </summary>
+    /// <remarks>
+    /// This is the form to use behind a text field. A hex being typed is invalid for most of the keystrokes it takes to
+    /// write, so the throwing form would raise an exception on nearly every frame of the entry.<br/>
+    /// Accepts the three-digit and four-digit shorthands as well as the full six and eight, with or without the "#",
+    /// because those are what people paste.
+    /// </remarks>
+    /// <param name="hex">The HEX value of the color, for example "#123456", "#123", or "1234abcd".</param>
+    /// <param name="color">The color, or <see cref="Vector4.Zero"/> when the string was not a HEX color.</param>
+    /// <returns>True when the string was read.</returns>
+    public static bool TryHexToVector4(string? hex, out Vector4 color)
     {
+        color = Vector4.Zero;
+
         if (string.IsNullOrWhiteSpace(hex))
-            throw new ArgumentException("HEX color string cannot be null or empty.", nameof(hex));
+            return false;
 
-        hex = hex.TrimStart('#');
+        var digits = hex.AsSpan().Trim().TrimStart('#');
 
-        if (hex.Length != 6 && hex.Length != 8)
-            throw new ArgumentException("HEX color string must be 6 or 8 characters long (excluding '#').", nameof(hex));
+        if (digits.Length is not (3 or 4 or 6 or 8))
+            return false;
 
-        try
+        // The shorthands repeat each digit rather than padding it, so "#f00" is pure red and not a very dark one.
+        var shorthand = digits.Length <= 4;
+        Span<byte> channels = stackalloc byte[4];
+        channels[3] = 255;
+
+        for (var i = 0; i < digits.Length; i++)
         {
-            byte r = Convert.ToByte(hex.Substring(0, 2), 16);
-            byte g = Convert.ToByte(hex.Substring(2, 2), 16);
-            byte b = Convert.ToByte(hex.Substring(4, 2), 16);
-            return new Vector3(r / 255f, g / 255f, b / 255f);
+            if (!TryReadNibble(digits[i], out var nibble))
+                return false;
+
+            if (shorthand)
+                channels[i] = (byte)((nibble << 4) | nibble);
+            else if ((i & 1) == 0)
+                channels[i >> 1] = (byte)(nibble << 4);
+            else
+                channels[i >> 1] |= nibble;
         }
-        catch (FormatException ex)
+
+        color = new Vector4(channels[0] / 255f, channels[1] / 255f, channels[2] / 255f, channels[3] / 255f);
+        return true;
+    }
+
+    /// <inheritdoc cref="TryHexToVector4(string?, out Vector4)"/>
+    /// <param name="hex">The HEX value of the color. Any alpha in it is ignored.</param>
+    /// <param name="color">The color, or <see cref="Vector3.Zero"/> when the string was not a HEX color.</param>
+    /// <returns>True when the string was read.</returns>
+    public static bool TryHexToVector3(string? hex, out Vector3 color)
+    {
+        if (TryHexToVector4(hex, out var rgba))
         {
-            throw new ArgumentException("HEX color string contains invalid characters.", nameof(hex), ex);
+            color = Vector4ToVector3(rgba);
+            return true;
         }
-        catch (OverflowException ex)
+
+        color = Vector3.Zero;
+        return false;
+    }
+
+    /// <summary>
+    /// Reads one hexadecimal digit.
+    /// </summary>
+    private static bool TryReadNibble(char digit, out byte value)
+    {
+        value = digit switch
         {
-            throw new ArgumentException("HEX color string contains values that are out of range.", nameof(hex), ex);
-        }
+            >= '0' and <= '9' => (byte)(digit - '0'),
+            >= 'a' and <= 'f' => (byte)(digit - 'a' + 10),
+            >= 'A' and <= 'F' => (byte)(digit - 'A' + 10),
+            _ => byte.MaxValue,
+        };
+
+        return value != byte.MaxValue;
     }
 
     /// <summary>
     /// Converts a HEX color string to a Vector4 representing RGBA values between 0 and 1.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
+    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
     /// <returns>A Vector4 representation of the HEX string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static Vector4 HexToVector4(string hex)
@@ -53,27 +107,10 @@ public static class ColorHelper
         if (string.IsNullOrWhiteSpace(hex))
             throw new ArgumentException("HEX color string cannot be null or empty.", nameof(hex));
 
-        hex = hex.TrimStart('#');
+        if (!TryHexToVector4(hex, out var color))
+            throw new ArgumentException("HEX color string must be 3, 4, 6 or 8 hexadecimal digits (excluding '#').", nameof(hex));
 
-        if (hex.Length != 6 && hex.Length != 8)
-            throw new ArgumentException("HEX color string must be 6 or 8 characters long (excluding '#').", nameof(hex));
-
-        try
-        {
-            byte r = Convert.ToByte(hex.Substring(0, 2), 16);
-            byte g = Convert.ToByte(hex.Substring(2, 2), 16);
-            byte b = Convert.ToByte(hex.Substring(4, 2), 16);
-            byte a = hex.Length == 8 ? Convert.ToByte(hex.Substring(6, 2), 16) : (byte)255;
-            return new Vector4(r / 255f, g / 255f, b / 255f, a / 255f);
-        }
-        catch (FormatException ex)
-        {
-            throw new ArgumentException("HEX color string contains invalid characters.", nameof(hex), ex);
-        }
-        catch (OverflowException ex)
-        {
-            throw new ArgumentException("HEX color string contains values that are out of range.", nameof(hex), ex);
-        }
+        return color;
     }
 
     /// <summary>
@@ -157,7 +194,7 @@ public static class ColorHelper
     /// <summary>
     /// Converts a hexadecimal color string to its equivalent 32-bit unsigned integer representation.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
+    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
     /// <returns>A uint representation of the HEX color string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static uint HexToUint(string hex)

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
@@ -27,12 +27,17 @@ public class NoireComboBox<T>
 {
     private readonly List<T> items = new();
     private readonly List<int> filteredIndices = new();
+    private readonly List<(int Index, int Score)> scored = new();
 
     private string filterText = string.Empty;
     private int selectedIndex = -1;
     private int highlightIndex = -1;
     private bool scrollToHighlight;
     private bool changedThisFrame;
+    private bool showMatches;
+    private UiMemoryScope filterMemory;
+    private bool persistRefusalLogged;
+    private bool filterRestored;
 
     private NoireHotkeyManager? wheelCycleHotkeyManager;
     private string? wheelCycleHotkeyId;
@@ -49,12 +54,20 @@ public class NoireComboBox<T>
     /// <param name="displayFunc">How an item is converted to its display text. Defaults to <c>ToString()</c>.</param>
     public NoireComboBox(string? id = null, IEnumerable<T>? items = null, Func<T, string>? displayFunc = null)
     {
-        Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
+        HasGeneratedId = string.IsNullOrWhiteSpace(id);
+        Id = HasGeneratedId ? RandomGenerator.GenerateGuidString() : id!;
         DisplayFunc = displayFunc;
 
         if (items != null)
             this.items.AddRange(items);
     }
+
+    /// <summary>
+    /// Whether this combo's id was generated rather than given. A generated id is a new GUID every session, so nothing
+    /// keyed on it can be restored, and <see cref="FilterMemory"/> refuses to persist against one rather than writing
+    /// entries nothing reads back. Session-scoped memory is unaffected: it expires with the id it is keyed on.
+    /// </summary>
+    public bool HasGeneratedId { get; }
 
     /// <summary>
     /// The unique identifier of this combo box, used for the ImGui ids.
@@ -120,11 +133,135 @@ public class NoireComboBox<T>
     /// <summary>
     /// Whether the filter text is cleared every time the dropdown opens. Defaults to <see langword="true"/>.
     /// </summary>
+    /// <remarks>
+    /// Turn it off to keep the search between openings of one live combo. <see cref="FilterMemory"/> is the stronger
+    /// form, surviving the widget itself, and setting it to anything but None turns this off on its own.
+    /// </remarks>
     public bool ClearFilterOnOpen { get; set; } = true;
 
     /// <summary>
-    /// How an item is matched against the filter text. When <see langword="null"/>, a case-insensitive "contains" match on the display text is used.
+    /// How long the search text is remembered. Defaults to <see cref="UiMemoryScope.None"/>.
     /// </summary>
+    /// <remarks>
+    /// For a combo whose filter is a working set rather than a lookup: a long list the user keeps narrowed to the same
+    /// handful of entries. <see cref="UiMemoryScope.Session"/> keeps it until the plugin reloads;
+    /// <see cref="UiMemoryScope.Persisted"/> keeps it across reloads and needs a stable id.<br/>
+    /// Anything other than <see cref="UiMemoryScope.None"/> implies <see cref="ClearFilterOnOpen"/> being off, since a
+    /// search restored and then cleared on the first opening would have been restored for nothing.
+    /// </remarks>
+    public UiMemoryScope FilterMemory
+    {
+        get => filterMemory;
+        set
+        {
+            if (filterMemory == value)
+                return;
+
+            filterMemory = value;
+
+            // Restored on the next draw rather than here, because this is usually set in a constructor, before the
+            // state file has been read and possibly before there is a plugin interface to read it with.
+            if (value != UiMemoryScope.None)
+                filterRestored = false;
+        }
+    }
+
+    /// <summary>
+    /// Whether the closed-combo wheel shortcut cycles only what the current search matches.
+    /// </summary>
+    /// <remarks>
+    /// The pairing that makes a persisted search worth having: narrow a long list once, then wheel through those few
+    /// entries on the closed combo without opening it again.<br/>
+    /// With no search text this changes nothing, because everything matches. When the current selection is not itself
+    /// a match, cycling enters the matches at one end rather than refusing, so the shortcut always goes somewhere.
+    /// </remarks>
+    public bool WheelCycleFiltered { get; set; }
+
+    /// <summary>
+    /// Whether the filter matches fuzzily and orders the options by how well they matched. Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// Fuzzy means the typed characters need only appear in order, so "cmbl" finds "Combat Log", and the best match is
+    /// listed first. See <see cref="FuzzyMatcher"/>.<br/>
+    /// Turn it off for a plain case-insensitive "contains" match that leaves the options in the order they were given.
+    /// A <see cref="FilterPredicate"/> of your own overrides both.
+    /// </remarks>
+    public bool FilterFuzzy { get; set; } = true;
+
+    /// <summary>
+    /// Whether the characters the filter matched are picked out in the option list. Defaults to <see langword="true"/>.
+    /// </summary>
+    /// <remarks>
+    /// Only applies while <see cref="FilterFuzzy"/> is on and something has been typed. It is most of what makes a
+    /// fuzzy list feel trustworthy rather than arbitrary: an order nobody can account for reads as a guess.
+    /// </remarks>
+    public bool FilterHighlight { get; set; } = true;
+
+    /// <summary>
+    /// The color the matched characters are drawn in. When <see langword="null"/>, the theme's accent is used.
+    /// </summary>
+    public Vector4? FilterHighlightColor { get; set; }
+
+    /// <summary>
+    /// Draws each option yourself: an icon and a label, a second line, a badge, anything.
+    /// </summary>
+    /// <remarks>
+    /// The combo keeps the row and everything about it that is not paint: its size, its hit testing, its selection and
+    /// keyboard state, its filtering and its scrolling. Call <see cref="UiComboItemDraw{T}.DrawLabel"/> for the
+    /// ordinary text, filter highlighting included, rather than reimplementing it.<br/>
+    /// Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line, or virtualization will
+    /// place them wrongly. An exception thrown here is caught and logged once rather than taking the frame down.
+    /// </remarks>
+    public Action<UiComboItemDraw<T>>? ItemRenderer { get; set; }
+
+    /// <summary>
+    /// The height of one option at 100%. When <see langword="null"/>, one line of text.
+    /// </summary>
+    /// <remarks>
+    /// Only worth setting alongside an <see cref="ItemRenderer"/> that draws taller rows. Virtualization positions
+    /// rows arithmetically rather than by measuring them, so a row that does not match this value scrolls out of step
+    /// with the list.
+    /// </remarks>
+    public float? ItemHeight { get; set; }
+
+    /// <summary>
+    /// Whether the option list is drawn through a clipper, so only the visible rows cost anything.<br/>
+    /// When <see langword="null"/>, the default, it turns itself on past <see cref="VirtualizeThreshold"/> options.
+    /// </summary>
+    /// <remarks>
+    /// A dropdown over every item in the game is forty thousand rows, and drawing all of them every frame to show
+    /// fifteen is what makes a picker unusable. Virtualizing draws only what is on screen.<br/>
+    /// It requires every row to be the same height. That is free for ordinary text options and is why an
+    /// <see cref="ItemRenderer"/> drawing something taller has to declare <see cref="ItemHeight"/>. Force it off here
+    /// if your rows genuinely vary.
+    /// </remarks>
+    public bool? Virtualize { get; set; }
+
+    /// <summary>
+    /// How many options it takes before <see cref="Virtualize"/> turns itself on. Defaults to 100.
+    /// </summary>
+    public int VirtualizeThreshold { get; set; } = 100;
+
+    /// <summary>
+    /// How many option rows were actually drawn the last time the dropdown was open.
+    /// </summary>
+    /// <remarks>
+    /// The number virtualization exists to keep small, and the only honest way to see whether it is doing anything:
+    /// ImGui already skips the drawing of an off-screen item on its own, so an unvirtualized long list costs less than
+    /// it looks like it should and the difference is easy to mistake for nothing. What a clipper removes is the work
+    /// done <i>per row before</i> ImGui gets to decide it is off screen, which here is a display string, a fuzzy match
+    /// and a font push.
+    /// </remarks>
+    public int DrawnRowCount { get; private set; }
+
+    /// <summary>
+    /// How an item is matched against the filter text. When <see langword="null"/>, <see cref="FilterFuzzy"/> decides.
+    /// </summary>
+    /// <remarks>
+    /// Setting this takes the decision over completely, including from <see cref="FilterFuzzy"/>: a predicate answers
+    /// yes or no and has no score to order by, so the options keep the order they were given and nothing is
+    /// highlighted.
+    /// </remarks>
     public Func<T, string, bool>? FilterPredicate { get; set; } = null;
 
     /// <summary>
@@ -375,6 +512,7 @@ public class NoireComboBox<T>
     public bool Draw()
     {
         changedThisFrame = false;
+        RestorePersistedFilter();
         ClampSelection();
 
         if (Width.HasValue)
@@ -445,7 +583,7 @@ public class NoireComboBox<T>
     {
         var style = ImGui.GetStyle();
         var visibleCount = Math.Max(1, VisibleItemCount);
-        var height = (visibleCount * ImGui.GetTextLineHeightWithSpacing()) - style.ItemSpacing.Y + (style.WindowPadding.Y * 2f);
+        var height = (visibleCount * ResolveRowStep()) - style.ItemSpacing.Y + (style.WindowPadding.Y * 2f);
 
         if (FilterEnabled)
         {
@@ -466,7 +604,9 @@ public class NoireComboBox<T>
         var appearing = ImGui.IsWindowAppearing();
         if (appearing)
         {
-            if (ClearFilterOnOpen)
+            // A search restored from disk and then cleared on the first opening would have been restored for nothing,
+            // so persisting it implies keeping it.
+            if (ClearFilterOnOpen && filterMemory == UiMemoryScope.None)
                 filterText = string.Empty;
 
             RebuildFilteredIndices();
@@ -487,6 +627,7 @@ public class NoireComboBox<T>
             if (ImGui.IsItemEdited())
             {
                 RebuildFilteredIndices();
+                SavePersistedFilter();
                 highlightIndex = 0;
                 scrollToHighlight = true;
             }
@@ -527,7 +668,7 @@ public class NoireComboBox<T>
         // Sized to the options it holds rather than to the space left over, so a short list shrinks the dropdown instead
         // of leaving it padded out with dead space.
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
-        var listHeight = (visibleCount * ImGui.GetTextLineHeightWithSpacing()) - ImGui.GetStyle().ItemSpacing.Y;
+        var listHeight = (visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y;
 
         // NoBackground: the dropdown's own background is the backdrop here, and the list must not paint a second panel of
         // its own over it out of whatever ImGuiCol.ChildBg the consumer happens to have pushed around the combo.
@@ -547,31 +688,153 @@ public class NoireComboBox<T>
         }
 
         var mouseMoved = ImGui.GetIO().MouseDelta != Vector2.Zero;
+        showMatches = FilterHighlight && FilterFuzzy && FilterPredicate == null && FilterEnabled && filterText.Length > 0;
+        DrawnRowCount = 0;
 
-        for (var filteredPosition = 0; filteredPosition < filteredIndices.Count; filteredPosition++)
+        if (!IsVirtualizing)
         {
-            var itemIndex = filteredIndices[filteredPosition];
-            if (itemIndex >= items.Count)
-                continue; // The items changed while the dropdown was open.
+            for (var position = 0; position < filteredIndices.Count; position++)
+                DrawItemRow(position, mouseMoved);
 
-            var isSelected = itemIndex == selectedIndex;
-            var isHighlighted = filteredPosition == highlightIndex;
-
-            if (ImGui.Selectable($"{DisplayOf(items[itemIndex])}###NoireComboItem_{Id}_{itemIndex}", isSelected || isHighlighted))
-            {
-                SelectFromUi(itemIndex);
-                ImGui.CloseCurrentPopup();
-            }
-
-            if (isHighlighted && scrollToHighlight)
-            {
-                ImGui.SetScrollHereY(0.5f);
-                scrollToHighlight = false;
-            }
-
-            if (mouseMoved && ImGui.IsItemHovered())
-                highlightIndex = filteredPosition;
+            return;
         }
+
+        // A clipper is told the row height rather than left to measure it, which costs it a pass and needs every row
+        // drawn once anyway. That is only correct while the rows are a uniform height, which is why a renderer that
+        // draws taller ones has to say so through ItemHeight.
+        var clipper = new ImGuiListClipper();
+        clipper.Begin(filteredIndices.Count, ResolveRowStep());
+
+        // Without this the row the arrow keys are on is simply not drawn once it scrolls out of view, so the call
+        // that scrolls the list to it never runs and keyboard navigation stops at the edge of the visible range.
+        if (highlightIndex >= 0 && highlightIndex < filteredIndices.Count)
+            clipper.ForceDisplayRangeByIndices(highlightIndex, highlightIndex + 1);
+
+        while (clipper.Step())
+        {
+            for (var position = clipper.DisplayStart; position < clipper.DisplayEnd; position++)
+                DrawItemRow(position, mouseMoved);
+        }
+
+        clipper.End();
+    }
+
+    /// <summary>
+    /// Draws one option of the filtered list.
+    /// </summary>
+    /// <param name="position">The option's position in the filtered list.</param>
+    /// <param name="mouseMoved">Whether the mouse moved this frame, so hovering only takes the highlight when it did.</param>
+    private void DrawItemRow(int position, bool mouseMoved)
+    {
+        var itemIndex = filteredIndices[position];
+
+        if (itemIndex >= items.Count)
+            return; // The items changed while the dropdown was open.
+
+        DrawnRowCount++;
+
+        var item = items[itemIndex];
+        var isSelected = itemIndex == selectedIndex;
+        var isHighlighted = position == highlightIndex;
+        var display = DisplayOf(item);
+
+        // The selectable carries no label of its own and the content is drawn over it, because a label is one colour
+        // and one font, and this needs the theme's type scale, the filter highlighting and possibly a renderer's
+        // icons. The content lands where the label would have, since a selectable renders its own at the cursor it
+        // was given.
+        var start = ImGui.GetCursorPos();
+
+        if (ImGui.Selectable($"###NoireComboItem_{Id}_{itemIndex}", isSelected || isHighlighted, ImGuiSelectableFlags.None, new Vector2(0f, ResolveItemHeight())))
+            Choose(itemIndex);
+
+        // Read before anything is drawn on top, so the hover stays the row rather than the last piece of text in it.
+        var hovered = ImGui.IsItemHovered();
+        var after = ImGui.GetCursorPos();
+
+        ImGui.SetCursorPos(start);
+
+        if (ItemRenderer is { } renderer)
+        {
+            try
+            {
+                renderer(new UiComboItemDraw<T>(this, item, itemIndex, display, isSelected, isHighlighted));
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(this, ex, $"The item renderer of combo box '{Id}' threw an exception.");
+            }
+        }
+        else
+        {
+            DrawItemLabel(display);
+        }
+
+        ImGui.SetCursorPos(after);
+
+        if (isHighlighted && scrollToHighlight)
+        {
+            ImGui.SetScrollHereY(0.5f);
+            scrollToHighlight = false;
+        }
+
+        if (mouseMoved && hovered)
+            highlightIndex = position;
+    }
+
+    /// <summary>
+    /// Draws an option's label the way the combo would, filter highlighting included. Called by
+    /// <see cref="UiComboItemDraw{T}.DrawLabel"/>.
+    /// </summary>
+    /// <param name="display">The display text.</param>
+    internal void DrawItemLabel(string display)
+    {
+        if (!showMatches)
+        {
+            NoireText.Draw(display);
+            return;
+        }
+
+        Span<int> matched = stackalloc int[FuzzyMatcher.MaxQueryLength];
+
+        if (FuzzyMatcher.TryMatch(display, filterText, matched, out var match))
+            NoireText.Highlighted(display, matched[..match.MatchedCount], FilterHighlightColor);
+        else
+            NoireText.Draw(display);
+    }
+
+    /// <summary>
+    /// Whether the option list is drawn through a clipper this frame.
+    /// </summary>
+    internal bool IsVirtualizing => Virtualize ?? filteredIndices.Count >= VirtualizeThreshold;
+
+    /// <summary>
+    /// The height one option occupies, which every row must share for virtualization to place them correctly.
+    /// </summary>
+    /// <remarks>
+    /// Measured through <see cref="NoireText"/> rather than from ImGui's current font, because that is what draws the
+    /// labels: a theme that moves its body size moves the rows with it, and a row sized from the other font would be
+    /// wrong by exactly the difference.
+    /// </remarks>
+    private float ResolveItemHeight() => ItemHeight.HasValue ? NoireUI.Scaled(ItemHeight.Value) : NoireText.LineHeight();
+
+    /// <summary>
+    /// The vertical distance from one option to the next: the option itself plus the spacing after it.
+    /// </summary>
+    /// <remarks>
+    /// The one number the dropdown's height, the option list's height and the clipper all have to agree on. A clipper
+    /// given the bare row height instead positions rows closer together than they are drawn, and the list slides out
+    /// of step with its own scrollbar as it goes.
+    /// </remarks>
+    private float ResolveRowStep() => ResolveItemHeight() + ImGui.GetStyle().ItemSpacing.Y;
+
+    /// <summary>
+    /// Selects an option from the list and closes the dropdown.
+    /// </summary>
+    /// <param name="itemIndex">The index of the option chosen.</param>
+    private void Choose(int itemIndex)
+    {
+        SelectFromUi(itemIndex);
+        ImGui.CloseCurrentPopup();
     }
 
     /// <summary>
@@ -598,9 +861,31 @@ public class NoireComboBox<T>
         if (wheel == 0f)
             return;
 
-        var newIndex = ComputeCycledIndex(selectedIndex, wheel > 0f ? -1 : 1, items.Count, WheelCycleLoop);
-        if (newIndex != selectedIndex)
+        var direction = wheel > 0f ? -1 : 1;
+        var newIndex = WheelCycleFiltered
+            ? ComputeFilteredCycleTarget(selectedIndex, direction)
+            : ComputeCycledIndex(selectedIndex, direction, items.Count, WheelCycleLoop);
+
+        if (newIndex >= 0 && newIndex != selectedIndex)
             SelectFromUi(newIndex);
+    }
+
+    /// <summary>
+    /// The item index the wheel lands on when cycling is scoped to what the search matches.
+    /// </summary>
+    /// <param name="currentIndex">The currently selected item index, or -1.</param>
+    /// <param name="direction">+1 for the next match, -1 for the previous one.</param>
+    /// <returns>The item index to select, or -1 when there is nothing to move to.</returns>
+    private int ComputeFilteredCycleTarget(int currentIndex, int direction)
+    {
+        // The filtered set is rebuilt when the dropdown opens or the search changes, and the search can outlive both
+        // when it is persisted, so it is refreshed here rather than assumed current.
+        RebuildFilteredIndices();
+
+        var position = filteredIndices.IndexOf(currentIndex);
+        var next = ComputeCycledIndex(position, direction, filteredIndices.Count, WheelCycleLoop);
+
+        return next >= 0 && next < filteredIndices.Count ? filteredIndices[next] : -1;
     }
 
     #endregion
@@ -639,25 +924,130 @@ public class NoireComboBox<T>
         => displayText.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
+    /// Applies the remembered search, once, the first time the combo draws after <see cref="FilterMemory"/> is set.
+    /// </summary>
+    private void RestorePersistedFilter()
+    {
+        if (filterMemory == UiMemoryScope.None || filterRestored)
+            return;
+
+        filterRestored = true;
+
+        if (!TryGetFilterKey(out var key))
+            return;
+
+        var found = filterMemory == UiMemoryScope.Session
+            ? NoireUiSession.TryGet<string>(key, out var saved)
+            : NoireUiState.TryGet(key, out saved);
+
+        if (found && !string.IsNullOrEmpty(saved))
+        {
+            filterText = saved;
+            RebuildFilteredIndices();
+        }
+    }
+
+    /// <summary>
+    /// Remembers the current search.
+    /// </summary>
+    private void SavePersistedFilter()
+    {
+        if (filterMemory == UiMemoryScope.None || !TryGetFilterKey(out var key))
+            return;
+
+        if (filterMemory == UiMemoryScope.Session)
+            NoireUiSession.Set(key, filterText);
+        else
+            NoireUiState.Set(key, filterText);
+    }
+
+    /// <summary>
+    /// Builds the key the search is remembered under.
+    /// </summary>
+    /// <remarks>
+    /// A generated id is refused only for the persisted scope. Session memory lasts exactly as long as that generated
+    /// id does, so keying on one is safe there and refusing it would deny the feature to every widget built without a
+    /// name for no benefit at all.
+    /// </remarks>
+    private bool TryGetFilterKey(out string key)
+    {
+        if (filterMemory == UiMemoryScope.Session)
+        {
+            key = $"ComboBox.{Id}.filter";
+            return true;
+        }
+
+        return UiPersistKey.TryBuild("ComboBox", Id, HasGeneratedId, "filter", ref persistRefusalLogged, out key);
+    }
+
+    internal bool TryGetFilterKeyForTests(out string key) => TryGetFilterKey(out key);
+
+    internal int CycleFiltered(int direction) => ComputeFilteredCycleTarget(selectedIndex, direction);
+
+    /// <summary>
     /// Rebuilds the list of item indices matching the current filter text.
     /// </summary>
     internal void RebuildFilteredIndices()
     {
         filteredIndices.Clear();
 
+        if (!FilterEnabled || string.IsNullOrEmpty(filterText))
+        {
+            for (var i = 0; i < items.Count; i++)
+                filteredIndices.Add(i);
+
+            return;
+        }
+
+        if (FilterPredicate != null || !FilterFuzzy)
+        {
+            for (var i = 0; i < items.Count; i++)
+            {
+                if (MatchesFilter(items[i]))
+                    filteredIndices.Add(i);
+            }
+
+            return;
+        }
+
+        scored.Clear();
+
         for (var i = 0; i < items.Count; i++)
         {
-            if (!FilterEnabled || string.IsNullOrEmpty(filterText) || MatchesFilter(items[i]))
-                filteredIndices.Add(i);
+            var score = FuzzyMatcher.Score(DisplayOf(items[i]), filterText);
+
+            if (score > 0)
+                scored.Add((i, score));
         }
+
+        // Ties keep the order the items were given in, so a list does not reshuffle itself between keystrokes that
+        // happen to score the same.
+        scored.Sort(static (left, right) => right.Score != left.Score
+            ? right.Score.CompareTo(left.Score)
+            : left.Index.CompareTo(right.Index));
+
+        foreach (var entry in scored)
+            filteredIndices.Add(entry.Index);
     }
 
     internal IReadOnlyList<int> FilteredIndices => filteredIndices;
 
-    internal string FilterText
+    /// <summary>
+    /// The current search text.
+    /// </summary>
+    /// <remarks>
+    /// Readable so a plugin can show or save what the user narrowed the list to, and settable so it can put one back.
+    /// Setting it rebuilds the matches immediately, so <see cref="WheelCycleFiltered"/> is scoped correctly even if
+    /// the dropdown is never opened.
+    /// </remarks>
+    public string FilterText
     {
         get => filterText;
-        set => filterText = value ?? string.Empty;
+        set
+        {
+            filterText = value ?? string.Empty;
+            RebuildFilteredIndices();
+        }
     }
 
     private bool MatchesFilter(T item)

@@ -1,5 +1,6 @@
 using NoireLib.Hooking;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -100,6 +101,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         public long UpdatesSeen;
         public byte Mechanisms;        // bit 1 = UpdateSubresource, bit 2 = Map/Unmap
         public bool UpdatedSinceScan;
+        public long FullCaptures;      // whole-payload copies into Bytes; lets a reader tell fresh bytes from frozen ones
         public int LastBoundSlot;      // -1 until seen bound to the VS at a main-pass commit
         public float BestVpErr;        // best window error ever seen for either lock form (probe report)
 
@@ -253,6 +255,13 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private long statLocks;
 
     private int probeFramesRemaining;
+    private int fullCaptureFramesRemaining;
+
+    /// <summary>
+    /// Records every payload rather than only the last, for finding data the game writes many times per frame.
+    /// Idle unless armed, and it never touches the camera path's state.
+    /// </summary>
+    private readonly ConstantWriteLog writeLog = new();
     private bool probeArmed;
 
     /// <summary>True once the upload-path hooks are installed (they may still be disabled).</summary>
@@ -260,6 +269,97 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     /// <summary>Whether a camera constant window family is currently locked and producing per-frame commits.</summary>
     public bool IsLocked => lockedOn;
+
+    /// <summary>
+    /// Classifies the contents of every tracked constant buffer, for finding values the game uploads that this
+    /// renderer has no other way to learn - its lighting above all.<br/>
+    /// The buffers are already being tracked for the camera window; this reads the same bytes without disturbing
+    /// that. Snapshots are copies, so two taken at different moments can be compared.
+    /// </summary>
+    /// <param name="lockedOnly">Restrict to buffers of the locked size class, which is where the camera lives and most likely the frame constants with it.</param>
+    public IReadOnlyList<ConstantSnapshot> SnapshotConstants(bool lockedOnly = false)
+    {
+        var snapshots = new List<ConstantSnapshot>();
+
+        for (var i = 0; i < trackedCount; i++)
+        {
+            ref var slot = ref tracked[i];
+            if (slot.Bytes is null || slot.ValidBytes < MinTrackedBytes)
+                continue;
+
+            if (lockedOnly && (!lockedOn || slot.ByteWidth != lockedByteWidth))
+                continue;
+
+            snapshots.Add(LightConstantProbe.Classify(slot.Ptr, slot.Bytes, slot.ValidBytes, slot.FullCaptures));
+        }
+
+        return snapshots;
+    }
+
+    /// <summary>Whether whole payloads are currently being copied, which is what makes a constant snapshot live.</summary>
+    public bool FullCaptureArmed => fullCaptureFramesRemaining > 0;
+
+    /// <summary>
+    /// Asks for whole upload payloads to be copied for the next <paramref name="frames"/> world frames.<br/>
+    /// The tracker stops copying them once it locks, because the camera window is all it needs from then on.
+    /// Reading those bytes for anything else - finding the game's lighting - requires turning the copies back on,
+    /// and it is time-boxed because it costs a memcpy per upload of every tracked buffer.
+    /// </summary>
+    /// <param name="frames">How many world frames to keep copying for.</param>
+    public void ArmFullCapture(int frames) => fullCaptureFramesRemaining = Math.Max(frames, 0);
+
+    /// <summary>
+    /// Records every payload written to tracked buffers for the next few frames, instead of only the last one
+    /// per buffer.<br/>
+    /// This is how data the game writes repeatedly within a frame becomes visible. A deferred renderer's light
+    /// list is the case in point: one buffer, rewritten per light, which the tracking table can only ever show
+    /// as a single value that changes constantly.
+    /// </summary>
+    /// <param name="frames">How many world frames to record.</param>
+    /// <param name="byteWidth">When above zero, record only buffers of exactly this size.</param>
+    public void ArmWriteLog(int frames, int byteWidth = 0)
+    {
+        // The log can only record payloads for buffers the table already knows, so whole-payload copying has to
+        // be on for it to have anything to see.
+        if (fullCaptureFramesRemaining <= 0)
+            fullCaptureFramesRemaining = Math.Max(frames, 0) + 1;
+
+        writeLog.Arm(frames, byteWidth);
+    }
+
+    /// <summary>Whether the write log hit its cap, meaning the end of the frame was never recorded.</summary>
+    public bool WriteLogTruncated => writeLog.Truncated;
+
+    /// <summary>The distinct buffer sizes currently tracked, for choosing what to restrict a write log to.</summary>
+    public IReadOnlyList<int> TrackedSizes()
+    {
+        var sizes = new SortedSet<int>();
+        for (var i = 0; i < trackedCount; i++)
+        {
+            if (tracked[i].Bytes is not null)
+                sizes.Add(tracked[i].ByteWidth);
+        }
+
+        return new List<int>(sizes);
+    }
+
+    /// <summary>Whether the write log is currently recording.</summary>
+    public bool WriteLogArmed => writeLog.Armed;
+
+    /// <summary>How many payloads the write log has recorded.</summary>
+    public int WriteLogCount => writeLog.Count;
+
+    /// <summary>Reports what the write log recorded, grouped by buffer and ordered by how varied each one is.</summary>
+    public string DescribeWriteLog() => writeLog.Describe();
+
+    /// <summary>
+    /// The distinct payloads from the last write-log run, for comparing one run against another across a change
+    /// made in the world.
+    /// </summary>
+    public List<byte[]> WriteLogPayloads() => writeLog.DistinctPayloads();
+
+    /// <summary>The buffer size the last write-log run was restricted to, or zero for all of them.</summary>
+    public int WriteLogSize => writeLog.SizeFilter;
 
     /// <summary>Installs the upload-path hooks (disabled) on the immediate context's vtable. One-time, fail-soft.</summary>
     public bool Install(RenderDevice device, RenderTargetTap ownerTap)
@@ -324,6 +424,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     {
         presentIndex++;
         awaitingMainDraw = false; // a frame whose main pass never drew must not commit on an unrelated later draw
+        if (fullCaptureFramesRemaining > 0)
+            fullCaptureFramesRemaining--;
+
+        writeLog.OnFrameBoundary();
         if (learnBudget <= 0 && !lockedOn)
             statBudgetExhaustedFrames++;
         learnBudget = LearnBudgetPerFrame;
@@ -762,6 +866,20 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// </summary>
     private void CapturePayload(nint resource, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
+        // Recorded before anything else, and independently of the tracking table: a buffer written once per
+        // light is exactly the case the table cannot represent, since it only ever holds the final write.
+        if (writeLog.Armed)
+        {
+            for (var i = 0; i < trackedCount; i++)
+            {
+                if (tracked[i].Ptr == resource)
+                {
+                    writeLog.Record(resource, tracked[i].ByteWidth, data, sourceLength);
+                    break;
+                }
+            }
+        }
+
         if (lockedOn)
         {
             // Size-class membership: any tracked buffer of the locked byte-width is a potential ring member (the
@@ -787,6 +905,13 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 pendingCursor = (pendingCursor + 1) % PendingRingLength;
                 lockedMechanisms |= mechanism;
                 tracked[i].UpdatesSeen++; // keeps live ring members protected from slot eviction
+
+                // Once locked the tracker has no reason to keep whole payloads, so it stops copying them and the
+                // stored bytes freeze at whatever discovery last saw. Anything reading those bytes for another
+                // purpose - the light search - needs them live, and asks for it by arming a window.
+                if (fullCaptureFramesRemaining > 0)
+                    CopyPayloadBytes(ref tracked[i], data, sourceOffset, sourceLength, mechanism);
+
                 return;
             }
 
@@ -799,20 +924,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 continue;
 
             ref var slot = ref tracked[i];
-            if (slot.Bytes == null)
+            if (!CopyPayloadBytes(ref slot, data, sourceOffset, sourceLength, mechanism))
                 return;
 
-            var copyLength = Math.Min(sourceLength, Math.Min(slot.ByteWidth - sourceOffset, TrackedBytes - sourceOffset));
-            if (copyLength <= 0)
-                return;
-
-            fixed (byte* dst = slot.Bytes)
-                Buffer.MemoryCopy((void*)data, dst + sourceOffset, TrackedBytes - sourceOffset, copyLength);
-
-            slot.ValidBytes = Math.Max(slot.ValidBytes, sourceOffset + copyLength);
             slot.UpdatesSeen++;
-            slot.Mechanisms |= mechanism;
-            slot.UpdatedSinceScan = true;
 
             // Small buffers are scored at capture time against a same-instant struct read: the per-view ring
             // overwrites each physical buffer several times per frame, so only scoring every write can see the
@@ -821,6 +936,28 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 ScoreBufferNow(ref slot);
             return;
         }
+    }
+
+    /// <summary>
+    /// Copies an upload payload into a tracked buffer's byte store. Returns false when there was nothing to copy.
+    /// </summary>
+    private bool CopyPayloadBytes(ref TrackedBuffer slot, nint data, int sourceOffset, int sourceLength, byte mechanism)
+    {
+        if (slot.Bytes == null || sourceOffset < 0 || sourceOffset >= TrackedBytes)
+            return false;
+
+        var copyLength = Math.Min(sourceLength, Math.Min(slot.ByteWidth - sourceOffset, TrackedBytes - sourceOffset));
+        if (copyLength <= 0)
+            return false;
+
+        fixed (byte* dst = slot.Bytes)
+            Buffer.MemoryCopy((void*)data, dst + sourceOffset, TrackedBytes - sourceOffset, copyLength);
+
+        slot.ValidBytes = Math.Max(slot.ValidBytes, sourceOffset + copyLength);
+        slot.Mechanisms |= mechanism;
+        slot.UpdatedSinceScan = true;
+        slot.FullCaptures++;
+        return true;
     }
 
     /// <summary>

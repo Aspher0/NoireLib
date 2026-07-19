@@ -576,6 +576,8 @@ internal sealed unsafe class ScenePass : IDisposable
         ID3D11RasterizerState* curRaster = null;
         ShaderPipeline? curPipeline = null;
         nint curTexture = -1;
+        nint curAux0 = -1;
+        nint curAux1 = -1;
         nint curDepthSrv = -1;
         Mesh? curMesh = null;
         var dynBound = false;
@@ -691,6 +693,22 @@ internal sealed unsafe class ScenePass : IDisposable
                 curTexture = item.Mat.TexSrv;
             }
 
+            // Auxiliary textures for custom pipelines. Unbound when the material carries none, so a pipeline
+            // that samples one never reads whatever the previous draw happened to leave in the slot.
+            if (item.Mat.AuxSrv0 != curAux0)
+            {
+                var auxSrv = (ID3D11ShaderResourceView*)item.Mat.AuxSrv0;
+                ctx->PSSetShaderResources(4, 1, &auxSrv);
+                curAux0 = item.Mat.AuxSrv0;
+            }
+
+            if (item.Mat.AuxSrv1 != curAux1)
+            {
+                var auxSrv = (ID3D11ShaderResourceView*)item.Mat.AuxSrv1;
+                ctx->PSSetShaderResources(5, 1, &auxSrv);
+                curAux1 = item.Mat.AuxSrv1;
+            }
+
             // Geometry.
             uint indexCount;
             int startIndex, baseVertex;
@@ -768,6 +786,7 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = new Vector4(1f, 1f, 1f, 1f),
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
+                    Params2 = item.Mat.SurfaceParams,
                 };
                 objectCb.UpdateConstant(ctx, in objData);
 
@@ -790,9 +809,13 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = item.Color,
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
+                    // Decals need this register for projection data, so a decal's own values win; every other
+                    // material passes the caller's surface parameters straight through to a custom pipeline.
                     // x = projection mode; y = this decal's box top world Y (the height-map's vertical search bound);
                     // z = outline reference footprint scale (0 = constant-thickness rim; see MaterialData.OutlineScaleRef).
-                    Params2 = new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), item.Mat.OutlineScaleRef, 0f),
+                    Params2 = item.Mat.Domain == MaterialDomain.GroundDecal
+                        ? new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), item.Mat.OutlineScaleRef, 0f)
+                        : item.Mat.SurfaceParams,
                     OutlineColor = item.Mat.DecalOutlineColor,
                 };
                 objectCb.UpdateConstant(ctx, in objData);
@@ -932,6 +955,7 @@ internal sealed unsafe class ScenePass : IDisposable
                 BaseColor = item.Color,
                 Params0 = item.Mat.Params0,
                 Params1 = item.Mat.Params1,
+                Params2 = item.Mat.SurfaceParams,
             };
             objectCb.UpdateConstant(ctx, in objData);
 

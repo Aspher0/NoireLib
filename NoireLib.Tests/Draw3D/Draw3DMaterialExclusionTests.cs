@@ -35,6 +35,36 @@ public class Draw3DMaterialExclusionTests
     }
 
     [Fact]
+    public void Resolve_CarriesSurfaceParams_ForCustomPipelines()
+    {
+        var surface = new Vector4(0.25f, 0.5f, 0.75f, 1f);
+        var mat = Material.Custom("hologram", Vector4.One) with { SurfaceParams = surface };
+
+        MaterialData.TryFrom(mat, out var data).Should().BeTrue();
+        data.SurfaceParams.Should().Be(surface);
+    }
+
+    /// <summary>
+    /// Surface parameters take part in the batching key. Without this, two materials that shade differently
+    /// would compare equal and the second would be drawn with the first one's constants.
+    /// </summary>
+    [Fact]
+    public void Resolve_SurfaceParams_ParticipateInMaterialIdentity()
+    {
+        var plain = Material.Custom("hologram", Vector4.One);
+        var shaded = plain with { SurfaceParams = new Vector4(1f, 0f, 0f, 0f) };
+
+        MaterialData.TryFrom(plain, out var a).Should().BeTrue();
+        MaterialData.TryFrom(shaded, out var b).Should().BeTrue();
+
+        a.Equals(b).Should().BeFalse(because: "materials that shade differently must not batch together");
+
+        MaterialData.TryFrom(plain, out var again).Should().BeTrue();
+        a.Equals(again).Should().BeTrue(because: "the same material must resolve to the same batching key");
+        a.GetHashCode().Should().Be(again.GetHashCode());
+    }
+
+    [Fact]
     public void ExcludeObjects_RegistersACollector_ThatIsSafeHeadless()
     {
         var scene = new Scene3D("t");

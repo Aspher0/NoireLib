@@ -218,6 +218,18 @@ var mat = new Material { CustomPipeline = "MyPulse", Color = ... };
 
 A compile error disables only that pipeline and logs the full compiler output.
 
+A custom pipeline gets more inputs than the standard shaders use:
+
+| Material member | Shader | Notes |
+|---|---|---|
+| `Texture` | `BaseTex` (t1) | Also used by the standard textured variants. |
+| `AuxTexture0` | `AuxTex0` (t4) | Ignored by the standard shaders. Unbound when null, never left over from the previous draw. |
+| `AuxTexture1` | `AuxTex1` (t5) | As above. |
+| `ShapeParams` | `Params0` | Shared with the decal shape parameters. |
+| `SurfaceParams` | `Params2` | **Not available to `GroundDecal`**, whose shader needs that register for projection data. |
+
+A disposed texture in any slot skips the draw rather than binding a stale pointer.
+
 ## Diagnostics - `/noire3d`
 
 | Command | Purpose |

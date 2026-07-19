@@ -20,8 +20,11 @@ internal struct MaterialData : IEquatable<MaterialData>
     public bool Textured;
     public bool UnorderedBatching;
     public nint TexSrv;
+    public nint AuxSrv0;
+    public nint AuxSrv1;
     public Vector4 Params0;
     public Vector4 Params1; // x = DepthFade, y = shapeKind, z = outlineWidth, w = heightFade
+    public Vector4 SurfaceParams; // custom pipelines only: arrives as Params2 (decals need that register themselves)
     public float ProjectionMode; // ground decals: (float)DecalProjection (0 = AllSurfaces, 1 = HighestOnly)
     public float OutlineScaleRef; // ground decals: reference footprint scale for the outline rim - 0 keeps the rim a
                                   // constant world thickness under any scale (scene decals); the immediate layer passes
@@ -47,6 +50,11 @@ internal struct MaterialData : IEquatable<MaterialData>
                 return false; // disposed texture - skip and count, never bind a stale pointer
         }
 
+        // Auxiliary textures follow the same rule: a disposed one skips the draw rather than binding a
+        // stale pointer, since a custom pipeline sampling freed memory is not a recoverable state.
+        if (!TryResolveAux(material.AuxTexture0, out data.AuxSrv0) || !TryResolveAux(material.AuxTexture1, out data.AuxSrv1))
+            return false;
+
         var domain = material.Domain;
         data.Domain = domain;
         // Decals cannot be opaque (they blend a projected footprint), so only Additive or Premultiplied are meaningful:
@@ -64,10 +72,22 @@ internal struct MaterialData : IEquatable<MaterialData>
             : srv != 0;
         data.Params0 = material.ShapeParams;
         data.Params1 = new Vector4(material.DepthFade, (float)material.Shape, material.OutlineWidth, material.HeightFade);
+        data.SurfaceParams = material.SurfaceParams;
         data.ProjectionMode = (float)material.Projection;
         data.DecalOutlineColor = material.OutlineColor;
         data.CustomPipeline = material.CustomPipeline;
         return true;
+    }
+
+    /// <summary>Resolves an optional auxiliary texture. Returns false when it exists but has been disposed.</summary>
+    private static bool TryResolveAux(Assets.GpuTexture? texture, out nint srv)
+    {
+        srv = 0;
+        if (texture == null)
+            return true;
+
+        srv = texture.SrvPointer;
+        return srv != 0;
     }
 
     /// <inheritdoc/>
@@ -80,8 +100,11 @@ internal struct MaterialData : IEquatable<MaterialData>
         && Textured == other.Textured
         && UnorderedBatching == other.UnorderedBatching
         && TexSrv == other.TexSrv
+        && AuxSrv0 == other.AuxSrv0
+        && AuxSrv1 == other.AuxSrv1
         && Params0 == other.Params0
         && Params1 == other.Params1
+        && SurfaceParams == other.SurfaceParams
         && ProjectionMode == other.ProjectionMode
         && OutlineScaleRef == other.OutlineScaleRef
         && DecalOutlineColor == other.DecalOutlineColor
@@ -92,5 +115,13 @@ internal struct MaterialData : IEquatable<MaterialData>
 
     /// <inheritdoc/>
     public readonly override int GetHashCode()
-        => HashCode.Combine((int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12), TexSrv, Params0, Params1, ProjectionMode, OutlineScaleRef, DecalOutlineColor, CustomPipeline);
+        => HashCode.Combine(
+            (int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12),
+            HashCode.Combine(TexSrv, AuxSrv0, AuxSrv1),
+            Params0,
+            HashCode.Combine(Params1, SurfaceParams),
+            ProjectionMode,
+            OutlineScaleRef,
+            DecalOutlineColor,
+            CustomPipeline);
 }

@@ -110,26 +110,7 @@ public abstract class NoireDrawable : IDisposable
     /// <param name="key">The state key, or an empty string when persisting is refused.</param>
     /// <returns>True when the state may be persisted.</returns>
     protected bool TryGetPersistKey(string subKey, out string key)
-    {
-        if (!HasGeneratedId)
-        {
-            key = $"{Kind}.{Id}.{subKey}";
-            return true;
-        }
-
-        key = string.Empty;
-
-        if (!persistRefusalLogged)
-        {
-            persistRefusalLogged = true;
-            NoireLogger.LogWarning(
-                $"This {Kind} was created without an id, so its id is a new GUID every session and nothing keyed on it can be restored. " +
-                "Its persisted state is being skipped. Give it a stable id in the constructor to persist it.",
-                nameof(NoireDrawable));
-        }
-
-        return false;
-    }
+        => UiPersistKey.TryBuild(Kind, Id, HasGeneratedId, subKey, ref persistRefusalLogged, out key);
 
     /// <summary>
     /// Registers this drawable with the hub and for automatic disposal. Called by the derived constructor once the

@@ -1,5 +1,6 @@
 using NoireLib.Hooking;
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using TerraFX.Interop.DirectX;
@@ -34,6 +35,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private const int SlotDrawInstanced = 21;
     private const int SlotOmSetRenderTargets = 33;
     private const int MaxBinds = 640; // a full frame including the late UI stage
+    private const int MaxMultiBinds = 32;    // multi-target binds in a frame: the G-buffer plus the post-process ones
+    private const int MaxTargetsPerBind = 8; // D3D11's simultaneous render target limit
     private const int CaptureWarmupFrames = 6; // let the swapchain flip through all its buffers first
     private const int InjectOrdinal = 2; // present-buffer bind #: 1 = world copy, 2 = after world / before UI
 
@@ -50,6 +53,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private readonly record struct Bind(uint NumViews, nint Rtv0Resource, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
 
+    /// <summary>One target of a multi-target bind, for reading a G-buffer's layout.</summary>
+    private readonly record struct TargetInfo(nint Resource, DXGI_FORMAT Format, uint Width, uint Height);
+
     private HookWrapper<OmSetRenderTargetsFn>? omHook;
     private HookWrapper<DrawIndexedFn>? drawIndexedHook;
     private HookWrapper<DrawFn>? drawHook;
@@ -64,6 +70,15 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private readonly Bind[] binds = new Bind[MaxBinds];
     private int bindCount;
+
+    // Multi-target binds get their whole target set recorded, not just the first one. A deferred renderer's
+    // G-buffer is only legible as a set: which channel carries the normal, and in what precision, is the
+    // difference between writing into it correctly and writing plausible nonsense. Sized flat and up front so
+    // the render thread never allocates.
+    private readonly int[] multiBindAt = new int[MaxMultiBinds];
+    private readonly TargetInfo[] multiBindTargets = new TargetInfo[MaxMultiBinds * MaxTargetsPerBind];
+    private readonly int[] multiBindCounts = new int[MaxMultiBinds];
+    private int multiBindCount;
     private int drawCounter;
     private volatile int state; // 0 = idle, 1 = warming up, 2 = capturing
     private int warmupLeft;
@@ -190,6 +205,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             return;
 
         bindCount = 0;
+        multiBindCount = 0;
         warmupLeft = CaptureWarmupFrames;
         state = 1;
         RefreshOmHookState();
@@ -222,6 +238,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                 if (--warmupLeft <= 0)
                 {
                     bindCount = 0;
+                    multiBindCount = 0;
                     drawCounter = 0;
                     state = 2;
                     RefreshOmHookState(); // also enables the draw hooks for the capture frame
@@ -338,7 +355,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
 
         if (state == 2 && bindCount < MaxBinds)
-            Record(numViews, rtv0, pDsv);
+            Record(numViews, rtv0, pDsv, ppRtvs);
 
         // Pre-UI injection: at the present buffer's Nth bind (after the world copy, before the UI burst).
         if (InjectionEnabled && presentBuffer != 0 && rtv0 == presentBuffer && Injector != null)
@@ -438,7 +455,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return match;
     }
 
-    private void Record(uint numViews, nint rtv0, nint pDsv)
+    private void Record(uint numViews, nint rtv0, nint pDsv, nint ppRtvs)
     {
         uint w = 0, h = 0;
         if (rtv0 != 0 && ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)rtv0, out var tex))
@@ -450,7 +467,152 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             tex.Dispose();
         }
 
+        if (numViews > 1)
+            RecordMultiTarget(numViews, ppRtvs);
+
         binds[bindCount++] = new Bind(numViews, rtv0, w, h, pDsv != 0, IsBackbuffer(rtv0), drawCounter);
+    }
+
+    /// <summary>
+    /// The G-buffer's target resources from the last capture, in bind order.<br/>
+    /// Chosen as the multi-target bind with the most draws behind it: a G-buffer pass is where the world is
+    /// drawn, so it carries hundreds of draws, while the post-process binds that share the frame carry one
+    /// apiece. Counting draws rather than targets is what separates them - the frame's widest bind is an
+    /// eight-target post-process pass at quarter resolution, not the G-buffer.
+    /// </summary>
+    public List<nint> GBufferTargets()
+    {
+        var result = new List<nint>();
+        var best = -1;
+        var bestDraws = 0;
+
+        for (var i = 0; i < multiBindCount; i++)
+        {
+            var at = multiBindAt[i];
+            if (at + 1 >= bindCount)
+                continue;
+
+            var draws = binds[at + 1].DrawCount - binds[at].DrawCount;
+            if (draws <= bestDraws)
+                continue;
+
+            bestDraws = draws;
+            best = i;
+        }
+
+        if (best < 0)
+            return result;
+
+        for (var t = 0; t < multiBindCounts[best]; t++)
+            result.Add(multiBindTargets[(best * MaxTargetsPerBind) + t].Resource);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Reports the target set of every multi-target bind.<br/>
+    /// The G-buffer pass is the one to look for: several full-resolution targets with a depth-stencil, followed
+    /// by a burst of draws. Its formats say what may be written into each channel, which is what an injected
+    /// draw has to match exactly - a normal written into the wrong precision is lit, just lit wrongly.
+    /// </summary>
+    private void AppendMultiTargets(StringBuilder sb)
+    {
+        if (multiBindCount == 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("No multi-target binds this frame. With only one target ever bound the renderer is forward, not deferred.");
+            return;
+        }
+
+        sb.AppendLine();
+        sb.AppendLine($"Multi-target binds ({multiBindCount}). The G-buffer is the full-resolution one followed by a burst of draws:");
+
+        for (var i = 0; i < multiBindCount; i++)
+        {
+            var count = multiBindCounts[i];
+            var at = multiBindAt[i];
+
+            // The draws that followed this bind are what separate a geometry pass from a post-process blit.
+            var following = at + 1 < bindCount ? binds[at + 1].DrawCount - binds[at].DrawCount : 0;
+
+            sb.AppendLine($"  idx {at,3}: {count} target(s), {following} draw(s) follow");
+            for (var t = 0; t < count; t++)
+            {
+                var info = multiBindTargets[(i * MaxTargetsPerBind) + t];
+                sb.AppendLine($"      rtv{t} | {FormatName(info.Format),-28} | {info.Width,4}x{info.Height,-4} | 0x{info.Resource:X}");
+            }
+        }
+    }
+
+    /// <summary>Names a DXGI format, falling back to its numeric value so an unlisted one is still reportable.</summary>
+    private static string FormatName(DXGI_FORMAT format) => format switch
+    {
+        DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => "R8G8B8A8_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => "R8G8B8A8_UNORM_SRGB",
+        DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_TYPELESS => "R8G8B8A8_TYPELESS",
+        DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM => "B8G8R8A8_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => "B8G8R8A8_UNORM_SRGB",
+        DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM => "R10G10B10A2_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_FLOAT => "R16G16B16A16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_UNORM => "R16G16B16A16_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT => "R11G11B10_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT => "R16G16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16G16_UNORM => "R16G16_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => "R8G8_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT => "R32_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16_FLOAT => "R16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R8_UNORM => "R8_UNORM",
+        _ => $"format {(int)format}",
+    };
+
+    /// <summary>Records every target of a multi-target bind, so a G-buffer's channel layout is readable.</summary>
+    private void RecordMultiTarget(uint numViews, nint ppRtvs)
+    {
+        if (multiBindCount >= MaxMultiBinds || ppRtvs == 0)
+            return;
+
+        var slot = multiBindCount;
+        var written = 0;
+        var views = (ID3D11RenderTargetView**)ppRtvs;
+
+        for (var i = 0; i < numViews && i < MaxTargetsPerBind; i++)
+        {
+            var view = views[i];
+            if (view == null)
+                continue;
+
+            // The view's own format is the one that matters. A typeless texture can be viewed as UNORM by one
+            // pass and as SRGB by another, and writing through the wrong one shifts every colour.
+            D3D11_RENDER_TARGET_VIEW_DESC viewDesc;
+            view->GetDesc(&viewDesc);
+
+            ID3D11Resource* resource = null;
+            view->GetResource(&resource);
+            if (resource == null)
+                continue;
+
+            uint w = 0, h = 0;
+            if (ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var tex))
+            {
+                D3D11_TEXTURE2D_DESC desc;
+                tex.Get()->GetDesc(&desc);
+                w = desc.Width;
+                h = desc.Height;
+                tex.Dispose();
+            }
+
+            multiBindTargets[(slot * MaxTargetsPerBind) + written] = new TargetInfo((nint)resource, viewDesc.Format, w, h);
+            written++;
+
+            resource->Release(); // for-comparison only; the view keeps the resource alive
+        }
+
+        if (written == 0)
+            return;
+
+        multiBindAt[slot] = bindCount;
+        multiBindCounts[slot] = written;
+        multiBindCount++;
     }
 
     private void Flush()
@@ -477,6 +639,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             var draws = i == 0 ? b.DrawCount : b.DrawCount - binds[i - 1].DrawCount;
             sb.AppendLine($"  {i,3} | {draws,5} |  {b.NumViews,2}  |    {(b.IsBackbuffer ? "YES" : " - ")}    | {(b.HasDsv ? "yes" : " - ")} | {b.Width,4}x{b.Height,-4} | 0x{b.Rtv0Resource:X}");
         }
+
+        AppendMultiTargets(sb);
 
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
         DiagnosticChat.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame - paste the log (/xllog).");

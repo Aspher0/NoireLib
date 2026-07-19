@@ -12,6 +12,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using System.Text;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
 
@@ -1754,13 +1755,292 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
+    /// <summary>Snapshots taken by <c>/noire3d lights mark</c>, keyed by buffer, so a later dump can be diffed against them.</summary>
+    private static IReadOnlyList<Core.ConstantSnapshot>? markedConstants;
+
+    /// <summary>
+    /// Rows found to change with nothing deliberately altered, from <c>/noire3d lights baseline</c>.<br/>
+    /// The game jitters sample kernels and animates constants per frame, and those rows move across any
+    /// comparison. Subtracting them is what separates a row that moved for a reason from one that always moves.
+    /// </summary>
+    private static IReadOnlySet<(nint Pointer, int Offset)>? volatileConstantRows;
+
+    /// <summary>
+    /// A whole write-log run kept by <c>/noire3d lights writes base</c>, to compare a later run against.<br/>
+    /// The snapshot table cannot hold this: a buffer rewritten once per light shows only its final contents there,
+    /// so a room full of lamps collapses into one value that looks like noise. Keeping the set of payloads instead
+    /// is what lets a light be identified by responding to a switch rather than by resembling one.
+    /// </summary>
+    private static IReadOnlyList<byte[]>? writeLogBaseline;
+
+    /// <summary>The buffer size the kept run covered, since runs over different sizes are not comparable.</summary>
+    private static int writeLogBaselineSize;
+
+    /// <summary>
+    /// Reports what the game is uploading in its constant buffers, for finding the values that drive its
+    /// lighting.<br/>
+    /// A single dump cannot identify a light: too many rows share the shape of a colour or a direction. The
+    /// discriminating step is <c>mark</c>, then changing the light (walk outside, change the time of day, enter
+    /// a lit room), then <c>diff</c> - the rows that moved with the light are the short list.
+    /// </summary>
+    private static void HandleLightsCommand(string rest)
+    {
+        if (cameraCapture is not { Installed: true } capture)
+        {
+            Print("Draw3D: the constant capture is not installed (no device / hook failure) - see the log.");
+            return;
+        }
+
+        if (!capture.IsLocked)
+        {
+            Print($"Draw3D: the constant capture has not locked yet, so the frame buffers are not identified. State: {capture.Describe()}. Move the camera for a few seconds and retry.");
+            return;
+        }
+
+        var mode = rest.Trim().ToLowerInvariant();
+
+        // Whole payloads stop being copied once the capture locks, so the stored bytes freeze. Every path here
+        // needs them live, and the arming window has to span the whole mark-to-diff comparison rather than each
+        // command separately, or both ends read the same frozen bytes and every row looks unchanged.
+        const int ArmedFrames = 36000;   // about ten minutes at 60 fps: long enough to walk somewhere, not permanent
+
+        if (mode == "off")
+        {
+            capture.ArmFullCapture(0);
+            capture.ArmWriteLog(0);
+            markedConstants = null;
+            volatileConstantRows = null;
+            writeLogBaseline = null;
+            writeLogBaselineSize = 0;
+            Print("Draw3D lights: constant capture disarmed.");
+            return;
+        }
+
+        if (!capture.FullCaptureArmed)
+        {
+            capture.ArmFullCapture(ArmedFrames);
+
+            // The first armed frame has not happened yet, so there is nothing fresh to read this instant.
+            if (mode is "mark" or "diff" or "baseline" || mode.StartsWith("writes", StringComparison.Ordinal) || mode.StartsWith("log", StringComparison.Ordinal))
+            {
+                Print("Draw3D lights: the capture had stopped storing whole buffers once it locked, so it has just been armed. Give it a second, then run the same command again.");
+                return;
+            }
+        }
+
+        // Every tracked buffer, not just the camera's size class. Restricting to it was the first attempt and it
+        // only ever returned view matrices, which is what that class is for; the lighting is somewhere else.
+        if (mode == "mark")
+        {
+            markedConstants = capture.SnapshotConstants();
+            volatileConstantRows = null;
+            Print($"Draw3D: marked {markedConstants.Count} constant buffer(s). Now WITHOUT changing anything, wait a few seconds and run /noire3d lights baseline - that measures what moves on its own. Then change the lighting and run diff or candidates.");
+            return;
+        }
+
+        var current = capture.SnapshotConstants();
+
+        // The control: with nothing altered, whatever differs is something the game moves by itself. Those rows
+        // are subtracted from every later comparison, and the mark is advanced so the lighting change is measured
+        // from here rather than from before the control.
+        if (mode == "baseline")
+        {
+            if (markedConstants is null)
+            {
+                Print("Draw3D lights: nothing marked yet - run /noire3d lights mark first.");
+                return;
+            }
+
+            volatileConstantRows = Core.LightConstantProbe.VolatileRows(markedConstants, current);
+            markedConstants = current;
+            Print($"Draw3D lights: {volatileConstantRows.Count} row(s) change on their own and will be ignored from now on. Change the lighting, then run /noire3d lights candidates.");
+            return;
+        }
+        var sb = new StringBuilder();
+
+        if (mode == "diff")
+        {
+            if (markedConstants is null)
+            {
+                Print("Draw3D: nothing marked yet - run /noire3d lights mark first, change the lighting, then diff.");
+                return;
+            }
+
+            sb.AppendLine("Draw3D lights diff: rows that moved between the mark and now. A light's direction or colour is in here; anything that did not move is not one.");
+            var compared = 0;
+            foreach (var after in current)
+            {
+                foreach (var before in markedConstants)
+                {
+                    if (before.Pointer != after.Pointer)
+                        continue;
+
+                    sb.AppendLine(Core.LightConstantProbe.DescribeChanges(before, after));
+                    compared++;
+                    break;
+                }
+            }
+
+            if (compared == 0)
+                sb.AppendLine("  (no buffer from the mark is still tracked - the game rotates its buffers; mark and diff closer together)");
+
+            sb.AppendLine();
+            sb.AppendLine("A buffer reported as NOT RE-CAPTURED holds the same bytes at both ends, so its rows say nothing either way.");
+            sb.AppendLine("Rotation rows are filtered out: a view matrix is three perpendicular unit vectors, and without that test every one of them reads as a possible light direction.");
+            sb.AppendLine("If nearly every buffer still changed, the camera moved between the mark and the diff - repeat it standing still, so only the light differs.");
+
+            Print($"Draw3D lights: compared {compared} buffer(s) against the mark - details in the log.");
+            NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+            return;
+        }
+
+        // Every write rather than the last: the case the snapshot table cannot represent, which is exactly the
+        // case a list of many lights falls into.
+        if (mode.StartsWith("writes", StringComparison.Ordinal) || mode.StartsWith("log", StringComparison.Ordinal))
+        {
+            if (capture.WriteLogArmed)
+            {
+                Print($"Draw3D lights: still recording ({capture.WriteLogCount} write(s) so far) - run this again in a second.");
+                return;
+            }
+
+            var parts = mode.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var argument = parts.Length > 1 ? parts[1] : string.Empty;
+
+            // Keeping a run and comparing the next one against it is what separates a light from something merely
+            // shaped like one. Shape alone has already produced two confident wrong readings; a payload that moves
+            // when a lamp is switched cannot be wrong in the same way.
+            if (argument is "base" or "diff")
+            {
+                if (capture.WriteLogCount == 0)
+                {
+                    Print($"Draw3D lights: nothing recorded to take a {argument} from. Run '/noire3d lights writes 512' first, wait a second, then run this.");
+                    return;
+                }
+
+                var payloads = capture.WriteLogPayloads();
+                var recordedSize = capture.WriteLogSize;
+
+                if (argument == "base")
+                {
+                    writeLogBaseline = payloads;
+                    writeLogBaselineSize = recordedSize;
+                    capture.ArmWriteLog(0);
+                    Print($"Draw3D lights: kept {payloads.Count} distinct payload(s) from the {recordedSize} B class as the baseline. "
+                        + "Now change ONE light in the room - switching a lamp off reads far more clearly than dimming it - then record again "
+                        + "with the same size and run '/noire3d lights writes diff'.");
+                    return;
+                }
+
+                if (writeLogBaseline is null)
+                {
+                    Print("Draw3D lights: no baseline kept yet - record a run, take '/noire3d lights writes base', change a light, record again, then diff.");
+                    return;
+                }
+
+                // Two runs restricted to different sizes describe different buffers entirely, so every payload would
+                // read as new and the whole comparison would be an artefact of the filter.
+                if (writeLogBaselineSize != recordedSize)
+                {
+                    Print($"Draw3D lights: the baseline covers {writeLogBaselineSize} B buffers and this run covers {recordedSize} B, so they cannot be compared. Record again with '/noire3d lights writes {writeLogBaselineSize}'.");
+                    return;
+                }
+
+                Print($"Draw3D lights: compared {payloads.Count} payload(s) against the baseline - details in the log.");
+                NoireLogger.LogInfo(Core.ConstantWriteLog.DescribeDiff(writeLogBaseline, payloads), "Draw3D");
+                capture.ArmWriteLog(0);
+                return;
+            }
+
+            // The payoff of the comparison above: once a record's layout is known, a run can be read as lights
+            // rather than as bytes.
+            if (argument == "list")
+            {
+                if (capture.WriteLogCount == 0)
+                {
+                    capture.ArmWriteLog(2, Core.GameLightHarvest.RecordBytes);
+                    Print("Draw3D lights: recording for 2 frames. Run '/noire3d lights writes list' again to read the lights out of it.");
+                    return;
+                }
+
+                var payloads = capture.WriteLogPayloads();
+                var lights = Core.GameLightHarvest.FromPayloads(payloads);
+
+                Print($"Draw3D lights: {lights.Count} light record(s) from {payloads.Count} payload(s) - details in the log.");
+                NoireLogger.LogInfo(Core.GameLightHarvest.Describe(lights, payloads.Count), "Draw3D");
+                capture.ArmWriteLog(0);
+                return;
+            }
+
+            if (capture.WriteLogCount == 0)
+            {
+                // An optional size restricts what gets recorded. Without it a frame's early passes spend the whole
+                // budget on object transforms and the log never reaches the lighting pass at the end of the frame.
+                var width = int.TryParse(argument, out var parsedWidth) ? parsedWidth : 0;
+
+                capture.ArmWriteLog(2, width);
+                Print(width > 0
+                    ? $"Draw3D lights: recording writes to {width} B buffers for 2 frames. Run '/noire3d lights writes' to read it, or '/noire3d lights writes base' to keep it for a comparison."
+                    : $"Draw3D lights: recording every constant write for 2 frames. Sizes tracked: {string.Join(", ", capture.TrackedSizes())} B - pass one (for example '/noire3d lights writes 512') if this truncates. Run the command again to read it.");
+                return;
+            }
+
+            Print(capture.WriteLogTruncated
+                ? $"Draw3D lights: {capture.WriteLogCount} write(s) recorded but the cap was hit, so the END of the frame is missing - and that is where lighting runs. Re-run restricted to one size, e.g. /noire3d lights writes 512."
+                : $"Draw3D lights: {capture.WriteLogCount} recorded write(s) - details in the log. A buffer rewritten many times with different contents is a per-item list.");
+
+            NoireLogger.LogInfo(capture.DescribeWriteLog(), "Draw3D");
+            capture.ArmWriteLog(0);
+            return;
+        }
+
+        if (mode == "candidates")
+        {
+            // The mark is passed in when there is one: a row that moved when the lighting moved is evidence,
+            // and everything else here is only shape.
+            Print(markedConstants is null
+                ? $"Draw3D lights: ranked {current.Count} buffer(s) by shape alone - details in the log. Mark, baseline, change the lighting, then run this again for a ranking with evidence behind it."
+                : volatileConstantRows is null
+                    ? $"Draw3D lights: ranked {current.Count} buffer(s) against the mark, with NO control - rows that change every frame are still in the list. Run baseline next time."
+                    : $"Draw3D lights: ranked {current.Count} buffer(s) against the mark, ignoring {volatileConstantRows.Count} self-changing row(s) - details in the log.");
+
+            NoireLogger.LogInfo(Core.LightConstantProbe.DescribeCandidates(current, markedConstants, volatileConstantRows), "Draw3D");
+            return;
+        }
+
+        sb.AppendLine("Draw3D lights: rows of a light-like shape in the game's constant buffers, with rotation rows filtered out.");
+        sb.AppendLine("A unit vector may be a light direction; a value in 0..1 may be a colour. Neither is proof - use mark/diff across a lighting change to narrow it.");
+
+        // Which size classes exist is itself worth knowing: the camera lives in one of them and the lighting
+        // does not, so the sizes that are not the camera's are where to look next.
+        var sizes = new SortedDictionary<int, int>();
+        foreach (var snapshot in current)
+        {
+            sizes.TryGetValue(snapshot.ByteWidth, out var n);
+            sizes[snapshot.ByteWidth] = n + 1;
+        }
+
+        var sizeList = new List<string>(sizes.Count);
+        foreach (var pair in sizes)
+            sizeList.Add($"{pair.Key} B x{pair.Value}");
+
+        sb.AppendLine($"Size classes tracked: {string.Join(", ", sizeList)}.");
+        sb.AppendLine();
+
+        foreach (var snapshot in current)
+            sb.AppendLine(Core.LightConstantProbe.Describe(snapshot));
+
+        Print($"Draw3D lights: dumped {current.Count} constant buffer(s) to the log. Run /noire3d lights mark, change the lighting, then /noire3d lights diff to find which rows follow it.");
+        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
+    }
+
     private static void RegisterCommand()
     {
         // Commands are global and NoireLib is statically linked per plugin - registration is best-effort;
         // the Diagnostics facade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | gbuffer | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -1802,6 +2082,9 @@ public static unsafe partial class NoireDraw3D
                 }
 
                 break;
+            case "lights":
+                HandleLightsCommand(rest);
+                break;
             case "gpucam":
                 Diagnostics.PreferCapturedCamera = !Diagnostics.PreferCapturedCamera;
                 Print(Diagnostics.PreferCapturedCamera
@@ -1838,6 +2121,32 @@ public static unsafe partial class NoireDraw3D
                 renderStats?.ResetCounters();
                 Enabled = true;
                 Print("Draw3D: counters reset, renderer re-armed.");
+                break;
+            case "gbuffer":
+                // Read-only: the G-buffer textures still hold this frame's contents when this runs, because the
+                // game does not clear them until the next frame's first pass.
+                if (EnsureRenderTargetTap() is not { } gbufTap)
+                {
+                    Print("Draw3D: the render-target tap could not be installed (see the log).");
+                    break;
+                }
+
+                if (renderDevice is null)
+                {
+                    Print("Draw3D: no render device.");
+                    break;
+                }
+
+                var gbufTargets = gbufTap.GBufferTargets();
+                if (gbufTargets.Count == 0)
+                {
+                    Print("Draw3D: no G-buffer identified yet - run /noire3d rtlog first, then this.");
+                    break;
+                }
+
+                var gbufFolder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NoireLib_GBuffer");
+                Print($"Draw3D: reading back {gbufTargets.Count} G-buffer target(s) - images in {gbufFolder}, details in the log.");
+                NoireLogger.LogInfo(Core.GBufferProbe.Describe(renderDevice, gbufTargets, gbufFolder), "Draw3D");
                 break;
             case "rtlog":
                 if (EnsureRenderTargetTap() is { } tap)

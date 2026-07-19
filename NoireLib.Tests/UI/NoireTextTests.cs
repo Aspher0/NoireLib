@@ -147,12 +147,82 @@ public class NoireTextTests : IDisposable
         ran.Should().BeTrue("because a body that silently does not run is the one failure a text helper must not have");
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Prewarm_IsANoOp_WhenThereIsNoImGuiContext(bool wait)
+    {
+        // Including the blocking form: a plugin constructor that prewarms must not hang, or fail, on a machine where
+        // the UI never came up.
+        var act = () => NoireText.Prewarm(wait);
+
+        act.Should().NotThrow();
+    }
+
     [Fact]
     public void At_RejectsANullBody()
     {
         var act = () => NoireText.At(TextSize.Body, null!);
 
         act.Should().Throw<ArgumentNullException>();
+    }
+
+    #endregion
+
+    #region Optical centre
+
+    /// <summary>
+    /// The bands are real, read off the fonts headless: ProggyClean at 13 px, and a proportional face at 17 and 24.
+    /// Each case is the capital band, then the centre it must produce, which is one to one and a half pixels below the
+    /// line's geometric centre. That gap is the whole reason the method exists.
+    /// </summary>
+    [Theory]
+    [InlineData(3f, 11f, 13f, 7f)]
+    [InlineData(5f, 14f, 17f, 9.5f)]
+    [InlineData(7f, 20f, 24f, 13.5f)]
+    public void CenterRatio_PutsTheCentreOnTheCapitalBand(float top, float bottom, float lineHeight, float expected)
+    {
+        var centre = NoireText.CenterRatio(top, bottom, lineHeight) * lineHeight;
+
+        centre.Should().BeApproximately(expected, 0.001f,
+            "because a line reserves descender room a label rarely uses, so its optical centre sits below the box's");
+    }
+
+    [Fact]
+    public void CenterRatio_IsIndependentOfScale()
+    {
+        // The ratio is applied to whatever size is actually being drawn, which is not the size the glyphs were
+        // measured at while a font is still building and the stretched stand-in is drawing.
+        var measured = NoireText.CenterRatio(5f, 14f, 17f);
+        var doubled = NoireText.CenterRatio(10f, 28f, 34f);
+
+        doubled.Should().BeApproximately(measured, 0.001f, "because a fraction of the line height cannot depend on it");
+    }
+
+    [Theory]
+    [InlineData(0f, 0f, 0f)]
+    [InlineData(5f, 14f, 0f)]
+    [InlineData(14f, 5f, 17f)]
+    [InlineData(9f, 9f, 17f)]
+    public void CenterRatio_FallsBackToTheGeometricCentre_WhenTheBandIsUnusable(float top, float bottom, float lineHeight)
+    {
+        NoireText.CenterRatio(top, bottom, lineHeight).Should().Be(0.5f,
+            "because a font that cannot report a band should cost a label a pixel, not put it outside the widget");
+    }
+
+    [Theory]
+    [InlineData(-40f, -30f, 17f)]
+    [InlineData(80f, 120f, 17f)]
+    public void CenterRatio_StaysInsideTheLine_ForABandOutsideIt(float top, float bottom, float lineHeight)
+    {
+        NoireText.CenterRatio(top, bottom, lineHeight).Should().BeInRange(0.25f, 0.75f,
+            "because a shape lined up on a nonsense band should still land on the row it belongs to");
+    }
+
+    [Fact]
+    public void CenterOffset_IsZero_WhenThereIsNoImGuiContext()
+    {
+        NoireText.CenterOffset(TextSize.Body).Should().Be(0f);
     }
 
     #endregion

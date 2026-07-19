@@ -286,6 +286,22 @@ public static partial class NoireLayout
     /// nothing left to infer from and the window's content edge is the honest answer, which is why the explicit
     /// <paramref name="width"/> exists: a panel that owns a width nobody else can see should say so.
     /// </remarks>
+    /// <summary>
+    /// How wide the content is allowed to be from where the cursor is, which is not always what
+    /// <c>GetContentRegionAvail</c> answers.
+    /// </summary>
+    /// <remarks>
+    /// This is the question every widget that defaults to "the space available" is really asking, and ImGui has no
+    /// direct answer for it: the content region always reports the *window's* right edge, so a widget inside a page
+    /// that centres its content in a narrower column runs straight past it.<br/>
+    /// The one narrower right edge ImGui carries is the text wrap position, so a widget inside a
+    /// <see cref="WrapText(float, Action)"/> or a hand-rolled <c>PushTextWrapPos</c> column stops where the prose
+    /// around it stops. Failing that, the window's content edge is the honest answer.
+    /// </remarks>
+    /// <returns>The width available in real pixels.</returns>
+    public static float ContentWidth()
+        => MathF.Max(0f, ResolveRowRightEdge(0f) - ImGui.GetCursorScreenPos().X);
+
     /// <param name="width">An explicit row width, or zero to work it out.</param>
     /// <returns>The screen x coordinate the row must not cross.</returns>
     private static float ResolveRowRightEdge(float width)

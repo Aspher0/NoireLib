@@ -36,8 +36,21 @@ public sealed record Material
     /// <summary>Base color multiplier (straight alpha; premultiplication happens inside the shader).</summary>
     public Vector4 Color { get; init; } = new(1f, 1f, 1f, 1f);
 
-    /// <summary>Optional texture sampled by textured shader variants. Referenced, never owned.</summary>
+    /// <summary>Optional texture sampled by textured shader variants (<c>BaseTex</c>). Referenced, never owned.</summary>
     public GpuTexture? Texture { get; init; }
+
+    /// <summary>
+    /// Optional second texture, for custom pipelines that need more than a base color (<c>AuxTex0</c>).<br/>
+    /// The standard shaders ignore it; what it means is the pipeline's business. Game materials bind their
+    /// normal map here. Referenced, never owned.
+    /// </summary>
+    public GpuTexture? AuxTexture0 { get; init; }
+
+    /// <summary>
+    /// Optional third texture, for custom pipelines that need more than two (<c>AuxTex1</c>).<br/>
+    /// The standard shaders ignore it. Game materials bind their specular map here. Referenced, never owned.
+    /// </summary>
+    public GpuTexture? AuxTexture1 { get; init; }
 
     /// <summary>
     /// Soft-edge width, in world units, where the material meets world geometry. 0 = hard edge.<br/>
@@ -73,6 +86,13 @@ public sealed record Material
 
     /// <summary><see cref="MaterialDomain.GroundDecal"/> only: locks the decal to a surface by constraining the box's orientation - <see cref="DecalSurface.Ground"/> (kept horizontal, projects down onto the floor), <see cref="DecalSurface.Wall"/> (kept vertical, projects into the wall it faces), or <see cref="DecalSurface.Both"/> (free - orientation decides). Default <see cref="DecalSurface.Ground"/>.</summary>
     public DecalSurface Surface { get; init; } = DecalSurface.Ground;
+
+    /// <summary>
+    /// Extra per-material values for custom pipelines, arriving in the shader as <c>Params2</c>.<br/>
+    /// The standard shaders ignore it, and <see cref="MaterialDomain.GroundDecal"/> cannot use it because its
+    /// own shader needs that register for projection data.
+    /// </summary>
+    public Vector4 SurfaceParams { get; init; }
 
     /// <summary>Optional name of a custom pipeline registered via <see cref="NoireDraw3D.RegisterPipeline"/>. When set, it replaces the <see cref="Domain"/> shader.</summary>
     public string? CustomPipeline { get; init; }
@@ -135,7 +155,23 @@ public sealed record Material
     /// <param name="pipeline">The registered pipeline name (see <see cref="NoireDraw3D.RegisterPipeline"/>).</param>
     /// <param name="color">Base color multiplier, straight alpha.</param>
     /// <param name="blend">How pixels blend into the layer (default premultiplied translucent).</param>
-    /// <param name="texture">Optional texture for textured custom shaders. Referenced, never owned.</param>
-    public static Material Custom(string pipeline, Vector4 color, BlendMode blend = BlendMode.Premultiplied, GpuTexture? texture = null)
-        => new() { CustomPipeline = pipeline, Color = color, Blend = blend, Texture = texture };
+    /// <param name="texture">Optional texture for textured custom shaders (<c>BaseTex</c>). Referenced, never owned.</param>
+    /// <param name="auxTexture0">Optional second texture (<c>AuxTex0</c>). Referenced, never owned.</param>
+    /// <param name="auxTexture1">Optional third texture (<c>AuxTex1</c>). Referenced, never owned.</param>
+    public static Material Custom(
+        string pipeline,
+        Vector4 color,
+        BlendMode blend = BlendMode.Premultiplied,
+        GpuTexture? texture = null,
+        GpuTexture? auxTexture0 = null,
+        GpuTexture? auxTexture1 = null)
+        => new()
+        {
+            CustomPipeline = pipeline,
+            Color = color,
+            Blend = blend,
+            Texture = texture,
+            AuxTexture0 = auxTexture0,
+            AuxTexture1 = auxTexture1,
+        };
 }

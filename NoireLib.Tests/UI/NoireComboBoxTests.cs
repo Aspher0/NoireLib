@@ -137,6 +137,200 @@ public class NoireComboBoxTests : IDisposable
         combo.FilteredIndices.Should().Equal(1, 2); // Banana and Cherry both have 6 characters.
     }
 
+    [Fact]
+    public void RebuildFilteredIndices_MatchesCharactersInOrder_WhenFuzzy()
+    {
+        var combo = CreateCombo("Combat Log", "Banana", "Cherry");
+        combo.FilterEnabled = true;
+        combo.FilterText = "cmbl";
+        combo.RebuildFilteredIndices();
+
+        combo.FilteredIndices.Should().Equal(new[] { 0 }, "because a contains match would have found nothing at all");
+    }
+
+    [Fact]
+    public void RebuildFilteredIndices_OrdersByHowWellEachMatched_WhenFuzzy()
+    {
+        var combo = CreateCombo("Pineapple", "Apple");
+        combo.FilterEnabled = true;
+        combo.FilterText = "apple";
+        combo.RebuildFilteredIndices();
+
+        combo.FilteredIndices.Should().Equal(new[] { 1, 0 }, "because the best match leads, whatever order the items were given in");
+    }
+
+    [Fact]
+    public void RebuildFilteredIndices_FallsBackToContains_WhenFuzzyIsOff()
+    {
+        var combo = CreateCombo("Pineapple", "Apple", "Combat Log");
+        combo.FilterEnabled = true;
+        combo.FilterFuzzy = false;
+        combo.FilterText = "apple";
+        combo.RebuildFilteredIndices();
+
+        combo.FilteredIndices.Should().Equal(new[] { 0, 1 }, "because a contains match leaves the items in the order they were given");
+    }
+
+    [Fact]
+    public void RebuildFilteredIndices_LetsAPredicateOverrideFuzzy()
+    {
+        var combo = CreateCombo("Apple", "Banana", "Cherry");
+        combo.FilterEnabled = true;
+        combo.FilterFuzzy = true;
+        combo.FilterPredicate = (item, filter) => item.Length == int.Parse(filter);
+        combo.FilterText = "6";
+        combo.RebuildFilteredIndices();
+
+        combo.FilteredIndices.Should().Equal(new[] { 1, 2 }, "because a predicate answers yes or no and has no score to order by");
+    }
+
+    #endregion
+
+    #region Wheel cycling scoped to the search
+
+    /// <summary>
+    /// Builds a combo whose search leaves exactly the "Co" entries, at item indices 1 and 3.
+    /// </summary>
+    private static NoireComboBox<string> CreateFiltered()
+    {
+        var combo = new NoireComboBox<string>("WheelCombo", ["Apple", "Combat Log", "Banana", "Copy Link"])
+        {
+            FilterEnabled = true,
+            FilterFuzzy = false,
+            WheelCycleFiltered = true,
+            WheelCycleLoop = true,
+        };
+
+        combo.FilterText = "Co";
+        combo.RebuildFilteredIndices();
+        return combo;
+    }
+
+    [Fact]
+    public void FilteredCycle_StepsBetweenMatchesOnly()
+    {
+        var combo = CreateFiltered();
+        combo.FilteredIndices.Should().Equal(new[] { 1, 3 }, "because only those two contain the search");
+
+        combo.Select(1);
+
+        combo.CycleFiltered(1).Should().Be(3, "because the next match after Combat Log is Copy Link, skipping Banana");
+    }
+
+    [Fact]
+    public void FilteredCycle_LoopsWithinTheMatches()
+    {
+        var combo = CreateFiltered();
+        combo.Select(3);
+
+        combo.CycleFiltered(1).Should().Be(1, "because looping wraps to the first match, not to the first item");
+    }
+
+    [Fact]
+    public void FilteredCycle_EntersTheMatches_WhenTheSelectionIsNotOne()
+    {
+        var combo = CreateFiltered();
+        combo.Select(0);   // "Apple", which the search excludes
+
+        combo.CycleFiltered(1).Should().Be(1, "because the shortcut has to go somewhere rather than refuse");
+        combo.CycleFiltered(-1).Should().Be(3, "because entering backwards starts at the last match");
+    }
+
+    [Fact]
+    public void FilteredCycle_GoesNowhere_WhenNothingMatches()
+    {
+        var combo = CreateFiltered();
+        combo.FilterText = "zzzz";
+        combo.RebuildFilteredIndices();
+
+        combo.CycleFiltered(1).Should().Be(-1);
+    }
+
+    [Fact]
+    public void FilteredCycle_WalksEverything_WhenThereIsNoSearch()
+    {
+        var combo = CreateFiltered();
+        combo.FilterText = string.Empty;
+        combo.RebuildFilteredIndices();
+        combo.Select(0);
+
+        combo.CycleFiltered(1).Should().Be(1, "because with nothing typed every item matches and this is ordinary cycling");
+    }
+
+    #endregion
+
+    #region Persisting the search
+
+    [Fact]
+    public void FilterMemory_RefusesToPersist_WhenTheIdWasGenerated()
+    {
+        var combo = new NoireComboBox<string>(null, ["Apple"]) { FilterEnabled = true, FilterMemory = UiMemoryScope.Persisted };
+
+        combo.HasGeneratedId.Should().BeTrue();
+        combo.TryGetFilterKeyForTests(out _).Should().BeFalse(
+            "because a generated id is a new GUID every session, so the entry could never be read back");
+    }
+
+    [Fact]
+    public void FilterMemory_BuildsAStableKey_WhenTheIdWasGiven()
+    {
+        var combo = new NoireComboBox<string>("MyCombo", ["Apple"]) { FilterMemory = UiMemoryScope.Persisted };
+
+        combo.TryGetFilterKeyForTests(out var key).Should().BeTrue();
+        key.Should().Be("ComboBox.MyCombo.filter");
+    }
+
+    #endregion
+
+    #region Virtualization
+
+    private static NoireComboBox<string> CreateLargeCombo(int count)
+    {
+        var items = new string[count];
+
+        for (var i = 0; i < count; i++)
+            items[i] = $"Item {i}";
+
+        var combo = new NoireComboBox<string>("BigCombo", items);
+        combo.RebuildFilteredIndices();
+        return combo;
+    }
+
+    [Fact]
+    public void IsVirtualizing_TurnsItselfOn_PastTheThreshold()
+    {
+        CreateLargeCombo(200).IsVirtualizing.Should().BeTrue("because drawing every row of a long list to show fifteen is what makes a picker unusable");
+    }
+
+    [Fact]
+    public void IsVirtualizing_StaysOff_ForAShortList()
+    {
+        CreateLargeCombo(10).IsVirtualizing.Should().BeFalse("because a short list gains nothing and the uniform-height constraint costs something");
+    }
+
+    [Fact]
+    public void IsVirtualizing_HonoursAnExplicitChoice_InEitherDirection()
+    {
+        var big = CreateLargeCombo(500);
+        big.Virtualize = false;
+        big.IsVirtualizing.Should().BeFalse("because rows of genuinely varying height cannot be virtualized");
+
+        var small = CreateLargeCombo(3);
+        small.Virtualize = true;
+        small.IsVirtualizing.Should().BeTrue();
+    }
+
+    [Fact]
+    public void IsVirtualizing_FollowsTheFilteredCount_NotTheItemCount()
+    {
+        var combo = CreateLargeCombo(500);
+        combo.FilterEnabled = true;
+        combo.FilterText = "Item 47";
+        combo.RebuildFilteredIndices();
+
+        combo.IsVirtualizing.Should().BeFalse("because what is drawn is what survived the filter, not what was given");
+    }
+
     #endregion
 
     #region Selection
