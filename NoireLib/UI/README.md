@@ -1,22 +1,53 @@
-# Helper Documentation : NoireLib.UI
+﻿# Helper Documentation : NoireLib.UI
 
 You are reading the documentation for the `NoireLib.UI` helpers.
 
 ## Table of Contents
 - [Overview](#overview)
+- [The hub (NoireUI)](#the-hub-noireui)
+  - [Automatic drawing](#automatic-drawing)
+  - [Running work on the draw thread](#running-work-on-the-draw-thread)
+  - [Reduced motion and strings](#reduced-motion-and-strings)
+- [Scopes that take their body](#scopes-that-take-their-body)
+- [Motion (NoireAnim)](#motion-noireanim)
+- [Transient widget state (UiFrameState)](#transient-widget-state-uiframestate)
+- [Persisted widget memory (NoireUiState)](#persisted-widget-memory-noireuistate)
+- [Diagnostics](#diagnostics)
+- [Theming (NoireTheme)](#theming-noiretheme)
+- [Buttons (NoireButtons)](#buttons-noirebuttons)
+- [Layout structures](#layout-structures)
+- [Toasts (NoireToast)](#toasts-noiretoast)
+- [Dialogs you await (NoireModal)](#dialogs-you-await-noiremodal)
 - [Overlay Buttons](#overlay-buttons)
 - [Positioning (UiPosition)](#positioning-uiposition)
 - [Combo Box](#combo-box)
   - [Plugging in the Hotkey Manager](#plugging-in-the-hotkey-manager)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
+- [Not there yet](#not-there-yet)
 
 ---
 
 ## Overview
 
-`NoireLib.UI` is a set of ImGui UI helpers:
+`NoireLib.UI` is a set of ImGui UI helpers, built on a small shared foundation.
 
+**Foundations**
+
+- **`NoireUI`** - The hub. Owns the automatic-drawing policy, the element registry, the draw-thread queue (`RunOnDraw`), the frame clock, the reduced-motion switch and diagnostics.
+- **`NoireLayout` / `NoireStyle`** - Containers and style scopes that take their body. No `using`, no `Dispose`, no `End()` anywhere, and an unbalanced raw-ImGui push inside a body is unwound at the boundary and logged once.
+- **`NoireAnim`** - Time-based animation keyed by id: easing over twenty-one curves (or one of your own), springs, presence, pulses, sweeps and one-shots. Nothing to register or dispose.
+- **`UiFrameState`** - Id-keyed transient state for immediate-mode helpers, typed per value and pruned automatically.
+- **`NoireUiState`** - The small amount of widget memory that survives a reload (a dragged position, a collapsed section). One JSON file; every `Persist` switch defaults off.
+- **`UiDiagnostics`** - Live counts, recent faults, the fault ladder, and the stack-leak net. Answers "why did nothing draw".
+- **`NoireTheme`** - One palette the whole library follows. An unset token falls through to the ImGui style, so a plugin that never touches it looks unchanged; set an accent and every widget re-tints at once.
+
+**Widgets and elements**
+
+- **`NoireButtons`** - The buttons ImGui does not ship: hold-to-confirm, an asynchronous button that disables and reports, a split button, an animated toggle, a segmented control and a spinner. Each takes a full `*Style` object and a custom-draw hook.
+- **`NoireLayout`** (structures) - A draggable splitter, a collapsible section that can remember whether it was open, and a row that wraps.
+- **`NoireToast` / `NoireToastArea`** - Real notifications: anchored, stacked, animated, actionable, with live progress, an undo pattern and a countdown that pauses on hover.
+- **`NoireModal`** - Dialogs you `await`. Confirm, prompt and choice tiers, hold-to-confirm for destructive answers, and an optional "don't ask again".
 - **`NoireOverlayButton`** - A standalone button overlayed on the game screen, drawn independently from any window. Anchorable anywhere (nine anchors, absolute pixels or screen ratio), with click/scroll callbacks, a hover mouse cursor, tooltips, a visibility condition evaluated on draw, per-state draw conditions (cutscene / gpose / hidden UI / always), drag-to-reposition, optional manual drawing, and full styling. Auto-disposed with NoireLib.
 - **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input (pinned above the options or scrolling with them), arrow-key cycling of the highlighted option inside the dropdown, and an optional "hold a binding + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping). The shortcut is a `HotkeyBinding` matched with the same rules as a hotkey, and can be driven straight from the Hotkey Manager so the user can rebind it.
 - **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content built from `NoireContent`.
@@ -24,9 +55,479 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 
 ---
 
+## The hub (NoireUI)
+
+`NoireUI` is static and needs no setup. It installs its per-frame pass the first time anything needs one, and tears it down with NoireLib.
+
+### Automatic drawing
+
+Screen-anchored elements (everything deriving `NoireDrawable`, `NoireOverlayButton` today) can draw themselves. Whether one does is a single rule:
+
+```
+effective = component.AutoDraw ?? NoireUI.AutoDraw
+```
+
+```csharp
+NoireUI.AutoDraw = true;     // master DEFAULT: everything draws itself, unless it says otherwise
+button.AutoDraw = false;     // ...except this one
+button.AutoDraw = true;      // opt a single element in without flipping the master
+button.AutoDraw = null;      // follow the master again
+```
+
+- **`NoireUI.AutoDraw`** is a `bool`, default `false`. It is the default policy every element inherits, **not** a kill switch.
+- **`component.AutoDraw`** is a `bool?`, default `null`, meaning "follow the master". An explicit value always wins, in either direction, including over a master that is off. Every one of those values was set by the same plugin, so a master that overrode an explicit request would only be lying to its author.
+- `NoireOverlayButton` ships with an explicit `true`, because an overlay exists precisely so nothing has to draw it. Set it to `null` to follow the master instead.
+- **`Draw()` always works**, whatever the policy says. Call it from your own draw code to control layering; the hub skips anything already drawn manually on the same frame, so the two modes compose instead of doubling up.
+- Draw order is yours by construction: if you call them, you ordered them. The hub only orders what you left to it.
+
+```csharp
+foreach (var element in NoireUI.GetDrawables())
+    Log(element.Kind, element.Id, element.EffectiveAutoDraw);
+
+NoireUI.RemoveAllDrawables();   // or RemoveAllOverlayButtons() for that one kind
+```
+
+### Running work on the draw thread
+
+```csharp
+NoireUI.RunOnDraw(() => combo.Select(index));   // safe from any thread
+```
+
+Anything touching ImGui or a widget from a timer, a socket, a hotkey callback or a background task goes through here. The queue is bounded (`NoireUI.RunOnDrawCapacity`, default 512) and drops the oldest rather than growing, and a frame drains only what was queued when it began, so an action that posts more work cannot stretch the frame. When NoireLib is not initialized there is no draw thread to marshal onto and the action runs inline.
+
+```csharp
+NoireUI.PendingDrawActions;   // waiting for the next frame
+NoireUI.DroppedDrawActions;   // dropped because the queue was full, since startup
+```
+
+### Reduced motion and strings
+
+```csharp
+NoireUI.ReducedMotion = config.ReducedMotion;   // eased values snap, decorative motion stops
+NoireUI.StringProvider = key => myLocalizer.GetOrNull(key);   // null falls back to the shipped English
+```
+
+`ReducedMotion` is manual: Dalamud exposes no accessibility signal to seed it from, so a plugin that wants to offer the option sets it from its own settings. NoireLib depends on no localization system and ships no locale files.
+
+---
+
+## Scopes that take their body
+
+There is **no `using`, no `Dispose` and no `End()`** in this API. A container takes its body, nesting is the scope, and the layout the container implies comes with it.
+
+```csharp
+NoireLayout.Section("Filters", () =>
+{
+    NoireLayout.Disabled(!enabled, () => ImGui.SliderInt("Interval", ref interval, 0, 100));
+
+    NoireLayout.Child("list", new Vector2(0f, 120f), () =>
+    {
+        // Simply not called if the region is entirely clipped. There is no success flag to check.
+    }, border: true);
+});
+
+NoireStyle.With(new UiStyle { TextColor = theme.Danger }, () => ImGui.TextUnformatted("Careful"));
+NoireStyle.WithAlpha(0.5f, DrawPreview);
+```
+
+Containers: `Group`, `Indent`, `Id`, `Disabled`, `ItemWidth`, `WrapText`, `Child`, `Tooltip`, `TooltipOnItemHover`, `Section`. Style scopes: `NoireStyle.With`, `WithColor`, `WithAlpha`.
+
+- **Nothing to forget.** No dispose exists, so no dispose can be missed. An exception thrown inside a body unwinds the scope on its way out and keeps travelling, so a bug in your drawing code still surfaces as a bug.
+- **`WrapText` takes a width, not a wrap position.** ImGui's own `PushTextWrapPos` wants a window-local x coordinate; passing it a screen coordinate (the natural mistake, since laying a panel out uses screen coordinates) puts the wrap point off to the right where it silently does nothing and the text never wraps. The container does the conversion, so the mistake is not reachable.
+- **`Indent` means pixels.** `NoireLayout.Indent(0f, ...)` indents by nothing, deliberately unlike ImGui's own `Indent`, which reads zero as "use the default step". An animated indent easing down to zero would otherwise jump a whole step outwards on its final frame, which looks like the block teleporting into place. Ask for the standard amount by name with `NoireLayout.DefaultIndent`.
+- **Raw ImGui stays fully available** inside a body, and is the real escape hatch. If you push and forget to pop, NoireUI unwinds it at the container boundary and logs **once**, naming the container. A leak becomes a log line instead of a week of "why is everything red". Turn it off with `NoireUI.Diagnostics.RepairStackLeaks = false`.
+
+`UiStyle` carries named properties for what widgets usually touch (`TextColor`, `ButtonColor`, `FrameRounding`, `FramePadding`, ...) over three maps that reach everything ImGui has:
+
+```csharp
+var style = new UiStyle { TextColor = theme.Danger, FrameRounding = 0f };
+style.Colors[ImGuiCol.PlotHistogram] = theme.Danger;   // anything without a named property
+style.With(ImGuiStyleVar.ScrollbarSize, 14f);
+var softer = style.Clone();
+```
+
+### Allocation
+
+A body lambda allocates one delegate per call per frame (a few dozen bytes, invisible in most UIs). Where it matters, every container has a state overload that keeps the body `static` and allocates nothing:
+
+```csharp
+NoireLayout.Section("Filters", this, static (self) => self.DrawFilters());
+```
+
+---
+
+## Motion (NoireAnim)
+
+Time-based and keyed by id. Nothing is registered, created or disposed: each call reads the value for this frame and stores what it needs in [`UiFrameState`](#transient-widget-state-uiframestate). A widget that stops calling stops animating, and its state is pruned on its own.
+
+```csharp
+// Eased: changing the target continues from where the value is, so a reversed hover never snaps.
+var hover = NoireAnim.Ease("save-button", "hover", ImGui.IsItemHovered() ? 1f : 0f);
+
+// Spring: carries momentum, so a target that keeps moving is followed rather than restarted.
+var offset = NoireAnim.Spring("panel", "slide", expanded ? 220f : 0f);
+
+// Presence: draw while it is above zero, rather than while the flag is true.
+var presence = NoireAnim.Presence("panel", "shown", isOpen);
+if (presence > 0.001f)
+    NoireStyle.WithAlpha(presence, DrawPanel);
+
+// Stateless periodic reads of the shared clock.
+var glow = NoireAnim.Pulse(period: 1.5f, min: 0.3f, max: 1f);
+var shimmer = NoireAnim.Sweep(period: 2f);
+
+// One-shots: start once, run themselves out.
+if (saved)
+    NoireAnim.Trigger("save-button", "saved");
+
+var flash = NoireAnim.Flash("save-button", "saved");    // 1 down to 0
+var nudge = NoireAnim.Shake("name-field", "rejected");  // pixels, dying out
+```
+
+Curves are `UiEasing` (21 of them, `OutCubic` by default), and `easing.Apply(t)` is pure so it composes with anything. A curve of your own is an overload, never a fork:
+
+```csharp
+var value = NoireAnim.Ease("id", "sub", target, duration: 0.3f, curve: t => t * t);
+```
+
+**Two-part ids are the point.** Pass the widget id and the property separately rather than interpolating them: two existing strings cost nothing to look up, while `$"{id}.hover"` allocates on every property of every widget, every frame.
+
+Everything degrades under `NoireUI.ReducedMotion`: eased values and springs snap to their target, `Pulse` holds at its high end, `Sweep` returns 1, and `Flash`/`Shake` return 0. Nothing becomes unusable; only the movement goes away.
+
+---
+
+## Transient widget state (UiFrameState)
+
+The small amount of memory a stateless-looking widget needs between frames: a hold progress, a drag origin, an animation phase. Entries are keyed by a caller id plus a sub key, **typed per value** (so a `float` and an `int` on the same key never collide), and pruned once they have gone untouched for `PruneAfterFrames` frames.
+
+```csharp
+var held = UiFrameState.Get<float>("delete-button", "hold");
+UiFrameState.Set("delete-button", "hold", held + ImGui.GetIO().DeltaTime);
+
+var origin = UiFrameState.GetOrAdd("splitter", "origin", () => ImGui.GetMousePos());
+
+UiFrameState.Update<DragState>("row", "drag", (ref DragState s) => s.Offset += delta);
+```
+
+It is not a configuration store: nothing is persisted, and everything is lost on reload. **Draw thread only.**
+
+No member returns a `ref` into the store, deliberately. A `ref` into a dictionary is invalidated by the next insert (growing abandons the backing array), so a write through a stale one vanishes silently, triggered by an unrelated widget happening to exist on the same frame. `Update` covers that case safely by copying out, mutating, and writing back.
+
+---
+
+## Persisted widget memory (NoireUiState)
+
+Where `UiFrameState` forgets everything between sessions, `NoireUiState` is the small amount that has to survive one: where a user dragged an overlay, which sections they left collapsed, which column they last sorted by. One JSON file beside your configuration, one flat key space, written on a debounce and again on shutdown.
+
+```csharp
+NoireUiState.Set("myplugin.rows.sort", "name");
+var sort = NoireUiState.Get("myplugin.rows.sort", "date");
+
+NoireUiState.RemoveAll("myplugin.rows.");   // forget one widget
+NoireUiState.Save();                        // write now instead of waiting out SaveDelay
+```
+
+**This is not a replacement for your configuration.** Nothing here is versioned, migrated, validated or backed up, and it is deleted without ceremony when a user resets their layout. Anything a user would be upset to lose belongs in the configuration system, which does all of that. What belongs here is state a widget would rebuild without complaint, and which is only worth keeping because rebuilding it is mildly annoying.
+
+A stored value of the wrong shape reads as absent rather than throwing: the file is editable by hand, and one bad entry must not take a window down.
+
+### Widgets that persist
+
+Every `Persist` switch on a widget defaults to **off**, so a plugin that never opts in never grows a state file.
+
+```csharp
+var button = new NoireOverlayButton("my-toggle")   // a stable id, not a generated one
+{
+    Draggable = true,
+    PersistPosition = true,     // remembers where the user dragged it
+};
+```
+
+**Persisting needs a stable id.** A widget created without one gets a fresh GUID every session, so an entry keyed on it could never be read back: the file would grow forever and restore nothing, and the symptom (a position that silently never sticks) points nowhere near the cause. NoireUI refuses to persist against a generated id and logs once, naming the fix.
+
+---
+
+## Diagnostics
+
+```csharp
+var stats = NoireUI.Diagnostics.Snapshot();
+// Frame, Drawables, AutoDrawn, StateEntries, PendingDrawActions,
+// DroppedDrawActions, StackRepairs, Faults, DisabledDrawables
+
+NoireUI.Diagnostics.OnFault = fault => myLog.Add($"{fault.Source}: {fault.Message}");
+NoireUI.Diagnostics.RecentFaults;   // the last 32, oldest first
+```
+
+Faults are logged before they reach `OnFault`, and an exception thrown by the handler is swallowed so a broken reporter cannot take the frame down.
+
+**The fault ladder** disables the narrowest broken thing rather than logging forever. An element that throws on `FaultTolerance` consecutive frames (default 10) has its `AutoDraw` switched off, alone, with one error explaining why. `Draw()` still works, so nothing is unrecoverable. Set `FaultTolerance = 0` to never switch anything off.
+
+---
+
+## Theming (NoireTheme)
+
+`NoireTheme.Current` is the palette every widget resolves against. Nothing is required: a token left `null` falls through to the host's ImGui style, so a plugin that never touches this looks exactly as it did before.
+
+```csharp
+NoireTheme.Current = NoireTheme.FromAccent("#C8A96A");   // one color in, a whole palette out
+NoireTheme.Current.Danger = myRed;                       // override one token, inherit the rest
+```
+
+Resolution runs in three steps, always in this order: **the value the widget was given, then the theme, then the ImGui style.** That is what lets one theme set two colors and leave everything else alone.
+
+**Derived states, not stored ones.** `Hover()` and `Active()` derive from the base color instead of holding separate values, so a re-skin can never leave a stale hover color behind.
+
+`TintSource` decides which way they move:
+
+| `ThemeTintSource` | What decides the direction |
+|---|---|
+| `Item` (default) | Each color decides for itself: a dark button brightens, a pale accent one darkens. Both visibly respond. |
+| `Surface` | The theme decides for everything: a dark theme brightens, a light one darkens. Consistent, but washes out a color already close to that direction. |
+| `Lighten` / `Darken` | Always that direction, whatever the color. |
+
+The default is `Item` because a single fixed direction does not survive a whole palette: brightening looks right on a dark neutral button and washes out a pale accent one.
+
+```csharp
+var theme = NoireTheme.Current;
+theme.Resolve(ThemeColor.Accent);      // never null, whatever is or is not set
+theme.Hover(theme.Resolve(ThemeColor.Accent));
+theme.On(fill);                        // a text color legible on that fill
+theme.Muted(color);                    // faded to MutedAlpha
+theme.CustomColors["deco.hairline"] = c;   // tokens the library does not define
+```
+
+Shape lives here too (`Rounding`, `SurfaceRounding`, `BorderSize`, `FramePadding`, `ItemSpacing`), each resolving the same way. `ToStyle()` returns a `UiStyle` that paints raw ImGui with the theme, for your own `ImGui.Button` calls sitting beside NoireUI widgets:
+
+```csharp
+NoireStyle.With(NoireTheme.Current.ToStyle(), () => DrawMyWindowBody());
+```
+
+**Sharing.** A theme travels as an ordinary share code, tagged with its own kind:
+
+```csharp
+var code = NoireTheme.Current.ToShareCode();
+
+var result = NoireTheme.FromShareCode(pasted);
+if (result.Success)
+    NoireTheme.Current = result.Value!;
+else
+    ShowError(result.Message);      // never throws on a bad paste
+```
+
+Decoding targets an inert `ThemeSnapshot`, never the live theme, and a color name this version does not know is skipped rather than failing the import. See the [ShareCodeHelper README](../Helpers/ShareCode/README.md).
+
+---
+
+## Buttons (NoireButtons)
+
+Immediate, nothing to construct or dispose, all of it themed.
+
+```csharp
+if (NoireButtons.Button("Save", ButtonTone.Accent))
+    Save();
+```
+
+A **tone** is what a button means (`Neutral`, `Accent`, `Success`, `Warning`, `Danger`, `Ghost`), which is what decides its colors. Passing a tone allocates nothing; pass a `ButtonStyle` when you want to override individual values.
+
+**Hold to confirm** is the alternative to a confirmation dialog for a destructive action. The pause is the confirmation.
+
+```csharp
+if (NoireButtons.HoldToConfirm("Hold to delete everything"))
+    DeleteEverything();
+
+// The fill is the whole interface of a hold button, so its shape is a setting.
+new ButtonStyle { Tone = ButtonTone.Danger, HoldFill = HoldFillMode.CenterOut };
+```
+
+`HoldFillMode` covers `LeftToRight`, `RightToLeft`, `CenterOut`, `BottomUp` and `Border` (which traces the outline clockwise instead of filling). `HoldFillColor` overrides the fill, which otherwise defaults to a markedly brighter form of the button's own color: one derived state along is invisible on a colored button, and a hold nobody can see reads as a button that does not work.
+
+It fires once per press, not once per frame, and the fill runs off wall-clock time so it takes the same real duration whatever the frame rate. It deliberately ignores `ReducedMotion`: the delay is a safety mechanism, not decoration.
+
+**Async** disables itself and shows a spinner until the task finishes. Clicking twice cannot start the work twice, and a failure is reported through `UiDiagnostics` rather than becoming an unobserved exception.
+
+```csharp
+NoireButtons.Async("Upload", () => UploadAsync(), onCompleted: failure =>
+{
+    if (failure != null)
+        NoireToast.Error($"Upload failed: {failure.Message}");
+});
+```
+
+**Split**, **Toggle** and **Segmented** round it out. The menu of a split button takes its body, so nothing is drawn while it is closed:
+
+```csharp
+if (NoireButtons.Split("Export", () => { if (ImGui.MenuItem("Export as CSV")) ExportCsv(); }))
+    ExportDefault();
+
+NoireButtons.Toggle("Enabled", ref config.Enabled);
+NoireButtons.Segmented("quality", ref config.Quality, new[] { "Low", "Medium", "High" });
+```
+
+**Drawing it yourself.** Every style carries a custom-draw hook. NoireUI keeps doing the sizing, the hit testing and the state; the hook paints. A bespoke button is configuration, not a fork:
+
+```csharp
+var deco = new ButtonStyle
+{
+    Tone = ButtonTone.Accent,
+    CustomDraw = args =>
+    {
+        args.DrawList.AddRectFilled(args.Min, args.Max, ColorHelper.Vector4ToUint(args.Color));
+        args.DrawList.AddText(args.Center - ImGui.CalcTextSize(args.Label) * 0.5f,
+            ColorHelper.Vector4ToUint(args.TextColor), args.Label);
+    },
+};
+```
+
+`UiButtonDraw` carries the geometry, the hover and held flags, the resolved colors and the hold progress, so a custom button still follows the theme. `ToggleStyle.CustomDraw` works the same way through `UiToggleDraw`.
+
+---
+
+## Layout structures
+
+Beside the containers that take their body, `NoireLayout` ships the three pieces ImGui leaves to you.
+
+**Splitter.** ImGui has none, so every plugin that wants a resizable sidebar writes the same invisible button, mouse-delta and cursor dance.
+
+```csharp
+NoireLayout.Child("left", new Vector2(paneWidth, paneHeight), DrawLeft, border: true);
+ImGui.SameLine(0f, 0f);
+NoireLayout.Splitter("split", ref paneWidth, minSize: 120f, maxSize: 420f, length: paneHeight);
+ImGui.SameLine(0f, 0f);
+NoireLayout.Child("right", new Vector2(0f, paneHeight), DrawRight, border: true);
+```
+
+Give it a `length` whenever the panes are a fixed size. Left at zero it fills the rest of the region, which is right for panes that do the same and visibly wrong for panes that do not: the divider runs past them down the window.
+
+The value is clamped every frame, not only while dragging, so a width restored from a config written on a wider screen is corrected on the first frame instead of leaving a pane off the edge.
+
+**Collapsible sections** fold their body away, and can remember whether they were open.
+
+```csharp
+NoireLayout.Collapsible("filters", "Filters", DrawFilters, new CollapsibleOptions
+{
+    Persist = true,                       // survives a reload; off by default
+    HeaderExtras = () => DrawActiveFilterCount(),
+    HeaderExtrasWidth = 120f,
+    Danger = false,
+});
+```
+
+Header extras are drawn open or closed, so a summary survives the fold. Persistence is keyed on the section id, so **the id has to be stable across sessions**; a section that asks to persist against a blank id is refused with one log line rather than filling the state file with entries nothing will ever read back.
+
+**Wrapping rows.** `SameLine` alone cannot know whether the item after it fits, so a hand-written row either overflows or breaks early.
+
+```csharp
+NoireLayout.Flow(tags, tag => ImGui.CalcTextSize(tag) + padding * 2f, DrawChip);
+```
+
+`NoireLayout.FlowItem(width, first)` is the primitive underneath, for a loop that is not a list you can hand over.
+
+**Where a row wraps.** ImGui has no concept of a right margin: indenting moves the left edge only, and the content region keeps reporting the *window's* right edge however deeply nested the drawing is. So a row inside a hand-drawn panel has nothing to wrap against and overflows it. Both calls take an optional `width` for exactly that case:
+
+```csharp
+NoireLayout.Flow(tags, Measure, DrawChip, width: myPanelWidth);
+```
+
+Left at zero they use the text wrap position if one is set (which is what `NoireLayout.WrapText` sets, so a row inside one wraps where its text does), and the window's content edge otherwise. **A panel that owns a width nobody else can see has to say so.**
+
+---
+
+## Toasts (NoireToast)
+
+Real notifications: anchored, stacked, animated, actionable.
+
+```csharp
+NoireToast.Success("Preset saved");
+NoireToast.Error("Could not reach the server")
+    .WithTitle("Sync failed")
+    .WithAction("Retry", _ => Retry(), ButtonTone.Accent);
+```
+
+Raising a toast is safe from any thread and needs no wiring: `NoireToastArea.Default` draws itself, so a toast from a command handler, a background task or a hotkey callback appears on its own. Nothing touches ImGui off the draw thread; the toast queues and the area picks it up on its next frame, which is also when its clock starts. A toast raised while the interface is hidden therefore still gets its full duration rather than expiring unseen.
+
+**The undo pattern** replaces a confirmation dialog for anything reversible: do the thing, then offer a way back.
+
+```csharp
+DeletePresets(selected);
+NoireToast.Undo($"{selected.Count} presets deleted", () => RestorePresets(selected));
+```
+
+**The countdown.** `ToastStyle.Timer` decides how a toast shows the time it has left: `BottomBar` (the default), `TopBar`, `Stripe` (beside the severity stripe, not over it), `Border` (traced clockwise from the top left, half a thickness inside the edge so all four sides come out the same weight), `TintLeftToRight`, `TintRightToLeft`, or `None`. `TimerThickness`, `TimerColor`, `TimerTintAlpha` and `TimerDrains` tune it. It is inert on a toast with no duration, which has nothing to count down to.
+
+A toast that vanishes with no warning reads as a glitch, and one that is visibly about to vanish while being read is worth reaching for, which is what the hover pause is for.
+
+**Live progress** for work in flight, coloured by `ProgressColor` / `ProgressTrackColor` / `ProgressHeight`. The filled part defaults to a slightly darker form of the severity colour (`ProgressDarken`), so the bar sits under the message rather than competing with the stripe and the icon, which are already showing that colour at full strength. A toast with a progress reading stays until you dismiss it:
+
+```csharp
+var toast = new NoireToast("Importing presets").WithProgress(() => importProgress).Show();
+// ...when the work finishes:
+NoireUI.RunOnDraw(() => toast.Dismiss());
+```
+
+The countdown **pauses while a toast is hovered**, so a message cannot expire while it is being read. Errors stay noticeably longer than the rest by default.
+
+**Placing the stack yourself.** Construct an area to put a second stack somewhere else, or to draw one inside a window of your own. An area you construct follows the `NoireUI.AutoDraw` master default, because constructing one is how you say where the stack goes:
+
+```csharp
+var area = new NoireToastArea("Sidebar")
+{
+    Position = UiPosition.AtAnchor(UiAnchor.TopRight, new Vector2(-20f, 20f)),
+    Width = 300f,
+    MaxVisible = 3,
+};
+new NoireToast("Only in this corner").Show(area);
+```
+
+`AlwaysOnTop` is on by default: a notification hidden behind the window that raised it has not notified anyone.
+
+**Being on top is two orders in ImGui, and `AlwaysOnTop` moves both.** Drawing is decided by the draw layer first and the display list second; input is decided by the display list alone. Promote only the layer (`ImGuiWindowFlags.Tooltip`) and the element is painted over everything while receiving none of the clicks aimed at it. Reorder only the display list and clicking a window behind moves it in front for one frame before the next frame puts things back, which shows up as a flicker. `AlwaysOnTop` does both: the layer keeps the drawing immune to that churn, the reorder keeps the input right.
+
+It deliberately does not take keyboard focus, which would make text fields in every other window impossible to type in. Within the top layer the last window to ask each frame wins, which is what keeps a tooltip above an always-on-top element it overlaps.
+
+The queue is bounded (`Capacity`, drop-oldest, counted in `DroppedCount`): an unbounded queue in front of an interface that has stopped drawing is a memory leak.
+
+---
+
+## Dialogs you await (NoireModal)
+
+Asking the user a question is a question, so it reads like one. No popup-open boolean, no pending-action field to stash the answer against, no callback three frames later somewhere else in the file.
+
+```csharp
+if (await NoireModal.ConfirmAsync("Delete preset", $"Delete '{name}'? This cannot be undone.",
+        new ModalOptions { Danger = true, HoldSeconds = 1f }))
+    DeletePreset(name);
+
+var newName = await NoireModal.PromptAsync("Rename", "What should it be called?", name);
+if (newName != null)
+    Rename(newName);
+
+var choice = await NoireModal.ChoiceAsync("Unsaved changes", "You have unsaved changes.",
+    new[] { "Save", "Discard", "Keep editing" });
+```
+
+`ConfirmAsync` returns `false` when the dialog is dismissed with Escape or by clicking away, `PromptAsync` returns `null`, and `ChoiceAsync` returns `-1`. Dialogs queue, and raising one from any thread is safe.
+
+**Two rules worth stating plainly:**
+
+- **Never block on one of these from the draw or framework thread.** The task completes on the draw thread, so waiting on it there waits for a frame that cannot start until the wait ends. `await` it, or hang the game.
+- **Every pending dialog is completed as cancelled when NoireLib is disposed**, so a plugin unload can never leave an `await` suspended forever.
+
+**"Don't ask again"** is available through `RememberKey`, stored in `NoireUiState` and cleared with `NoireModal.Forget(key)`:
+
+```csharp
+await NoireModal.ConfirmAsync("Close to tray", "Keep running in the background?",
+    new ModalOptions { RememberKey = "close-to-tray" });
+```
+
+Only for confirmations whose answer is genuinely stable. **Never offer it for a destructive action or for applying content from outside the plugin**: a remembered yes turns the confirmation into no confirmation at all, which is exactly what those dialogs exist to prevent. An answer is only remembered when the user ticked the box, and a cancelled dialog remembers nothing.
+
+`NoireModal.Host` presents the dialogs and draws itself, because an awaited dialog nobody drew would never return and the symptom is a hang with nothing on screen to explain it. Set its `AutoDraw` to `false` and call `NoireModal.Draw()` to place it in your own draw order.
+
+---
+
 ## Overlay Buttons
 
-An overlay button lives on its own, on top of the game. Create it once and keep the instance - no per-frame call is needed on your side. It is disposed automatically when NoireLib is disposed; dispose it yourself earlier if you no longer need it (see [Lifetime & disposal](#lifetime--disposal)).
+An overlay button lives on its own, on top of the game. `AlwaysOnTop` keeps it in front of other windows for clicks as well as for drawing (see the note under [Toasts](#toasts-noiretoast) for why those are separate in ImGui). Create it once and keep the instance - no per-frame call is needed on your side. It is disposed automatically when NoireLib is disposed; dispose it yourself earlier if you no longer need it (see [Lifetime & disposal](#lifetime--disposal)).
 
 ### Quick start
 
@@ -176,6 +677,10 @@ button.AutoDraw = false;
 // In your own UiBuilder.Draw handler / window:
 button.Draw();
 ```
+
+`AutoDraw` is a `bool?`: `null` follows the `NoireUI.AutoDraw` master default instead of deciding for itself. An overlay button starts at an explicit `true` because that is what an overlay is for. See [Automatic drawing](#automatic-drawing) for the full rule.
+
+`Draw()` is available whatever the setting is, and the hub skips anything already drawn manually on the same frame, so calling it yourself once in a while does not double-draw.
 
 ### Lifetime & disposal
 
@@ -456,6 +961,18 @@ UiImageSource.FromWrap(myTextureWrap);           // From a texture wrap you own 
 File/game sources go through Dalamud's shared texture cache: they are cheap to resolve every frame and load asynchronously (an empty placeholder is drawn while loading).
 
 ---
+
+## Not there yet
+
+Two things NoireUI does not do, written down because both are invisible until they are not.
+
+**The user's UI scale is not honoured yet.** Dalamud exposes a user-set scale as `ImGuiHelpers.GlobalScale` and applies it to the ImGui style, so text and frame padding already arrive scaled. Every pixel value NoireUI ships is a bare number authored at 100%: a toast is 340 wide, its padding is (12, 10), a modal is 420, a splitter's minimum is 40. At 150% the text inside a toast grows and the toast does not, so it crowds and then clips.
+
+Until that is fixed, **a layout of your own that has to hold up at other scales should multiply its own pixel values by `ImGuiHelpers.GlobalScale`**, the way `NoireUIDemoPlugin` does. Values you read out of `ImGui.GetStyle()` are already scaled and must not be scaled again.
+
+**There is no way to draw larger text well.** A font in ImGui is a bitmap atlas rasterized once at a fixed size, so `SetWindowFontScale` and friends do not rasterize anything larger, they sample that bitmap larger. A heading at twice the base size is a blurry upscale of a small glyph, and no ImGui setting fixes it. The real answer is a second font built at the target pixel size through Dalamud's font atlas (`UiBuilder.FontAtlas`, `NewDelegateFontHandle` with a `SafeFontConfig`, or `NewGameFontHandle`), which is a piece of machinery with its own rules: handles build asynchronously and are unusable until `IFontHandle.Available`, an atlas rebuild dangles every cached `ImFontPtr`, and one atlas entry per distinct size means the cache has to be bounded and disposed.
+
+That machinery belongs in the library rather than in every plugin that wants a heading, so `NoireText` is the planned home for it. Until then, treat the base font size as the only size NoireUI can render well.
 
 ## See Also
 

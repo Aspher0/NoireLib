@@ -176,4 +176,91 @@ public static class ColorHelper
         Vector4 colorWithAlpha = Vector3ToVector4(color);
         return Vector4ToUint(colorWithAlpha);
     }
+
+    /// <summary>
+    /// Blends two colors together, including their alpha.
+    /// </summary>
+    /// <param name="from">The color returned when <paramref name="amount"/> is 0.</param>
+    /// <param name="to">The color returned when <paramref name="amount"/> is 1.</param>
+    /// <param name="amount">How far to blend, from 0 to 1. Values outside that range are clamped.</param>
+    /// <returns>The blended color.</returns>
+    public static Vector4 Mix(Vector4 from, Vector4 to, float amount)
+        => Vector4.Lerp(from, to, Math.Clamp(amount, 0f, 1f));
+
+    /// <summary>
+    /// Moves a color towards white, leaving its alpha untouched.
+    /// </summary>
+    /// <param name="color">The color to lighten.</param>
+    /// <param name="amount">How far towards white to move, from 0 (unchanged) to 1 (white).</param>
+    /// <returns>The lightened color.</returns>
+    public static Vector4 Lighten(Vector4 color, float amount)
+    {
+        var t = Math.Clamp(amount, 0f, 1f);
+        return new Vector4(
+            color.X + (1f - color.X) * t,
+            color.Y + (1f - color.Y) * t,
+            color.Z + (1f - color.Z) * t,
+            color.W);
+    }
+
+    /// <summary>
+    /// Moves a color towards black, leaving its alpha untouched.
+    /// </summary>
+    /// <param name="color">The color to darken.</param>
+    /// <param name="amount">How far towards black to move, from 0 (unchanged) to 1 (black).</param>
+    /// <returns>The darkened color.</returns>
+    public static Vector4 Darken(Vector4 color, float amount)
+    {
+        var t = 1f - Math.Clamp(amount, 0f, 1f);
+        return new Vector4(color.X * t, color.Y * t, color.Z * t, color.W);
+    }
+
+    /// <summary>
+    /// Returns the same color at a different opacity.
+    /// </summary>
+    /// <param name="color">The color to change.</param>
+    /// <param name="alpha">The opacity to use, from 0 to 1.</param>
+    /// <returns>The color at the given opacity.</returns>
+    public static Vector4 WithAlpha(Vector4 color, float alpha)
+        => new(color.X, color.Y, color.Z, Math.Clamp(alpha, 0f, 1f));
+
+    /// <summary>
+    /// Scales the opacity of a color, keeping whatever transparency it already had.<br/>
+    /// Use this rather than <see cref="WithAlpha"/> to fade something out, so an already translucent color does not
+    /// become more opaque than it started.
+    /// </summary>
+    /// <param name="color">The color to fade.</param>
+    /// <param name="factor">The multiplier to apply to the alpha channel.</param>
+    /// <returns>The faded color.</returns>
+    public static Vector4 ScaleAlpha(Vector4 color, float factor)
+        => new(color.X, color.Y, color.Z, Math.Clamp(color.W * factor, 0f, 1f));
+
+    /// <summary>
+    /// Gets the perceived brightness of a color, from 0 (black) to 1 (white).<br/>
+    /// Uses the Rec. 709 weighting, so it tracks how bright a color looks rather than the average of its channels:
+    /// pure green reads far brighter than pure blue, which a plain average would miss.
+    /// </summary>
+    /// <param name="color">The color to measure. Its alpha is ignored.</param>
+    /// <returns>The perceived brightness.</returns>
+    public static float Luminance(Vector4 color)
+        => 0.2126f * color.X + 0.7152f * color.Y + 0.0722f * color.Z;
+
+    /// <summary>
+    /// Whether a color reads as dark, and so wants light text on top of it.
+    /// </summary>
+    /// <param name="color">The color to test. Its alpha is ignored.</param>
+    /// <returns>True when the color is dark.</returns>
+    public static bool IsDark(Vector4 color) => Luminance(color) < 0.5f;
+
+    /// <summary>
+    /// Picks whichever of two foreground colors is legible on a background.
+    /// </summary>
+    /// <param name="background">The background the text sits on.</param>
+    /// <param name="onDark">The color to use on a dark background. Defaults to near-white.</param>
+    /// <param name="onLight">The color to use on a light background. Defaults to near-black.</param>
+    /// <returns>The legible foreground color.</returns>
+    public static Vector4 Readable(Vector4 background, Vector4? onDark = null, Vector4? onLight = null)
+        => IsDark(background)
+            ? onDark ?? new Vector4(0.96f, 0.96f, 0.96f, 1f)
+            : onLight ?? new Vector4(0.06f, 0.06f, 0.06f, 1f);
 }

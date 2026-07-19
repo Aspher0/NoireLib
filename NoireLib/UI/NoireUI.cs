@@ -7,11 +7,14 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The central hub of the NoireLib UI helpers.<br/>
-/// Draws the registered <see cref="NoireOverlayButton"/> instances, keeping them independent of the host plugin's own UI so that an overlay's
-/// <see cref="NoireOverlayButton.DrawConditions"/> answer for that overlay alone (see <see cref="OverlaysDrawIndependently"/>), and provides
-/// frame-scoped services to the other UI helpers.
+/// It owns the per-frame pass every other helper leans on: the drawable registry and the automatic-drawing policy
+/// (<see cref="AutoDraw"/>), the draw-thread queue (<see cref="RunOnDraw"/>), the frame clock, transient widget state,
+/// the reduced-motion switch and <see cref="Diagnostics"/>.<br/>
+/// Registered <see cref="NoireOverlayButton"/> instances are drawn from a hook of NoireLib's own rather than from the
+/// host plugin's draw callback, so an overlay's <see cref="NoireOverlayButton.DrawConditions"/> answer for that overlay
+/// alone. See <see cref="OverlaysDrawIndependently"/>.
 /// </summary>
-public static class NoireUI
+public static partial class NoireUI
 {
     private const string DisposeCallbackKey = "NoireLib.UI.NoireUI";
 
@@ -21,9 +24,6 @@ public static class NoireUI
     // field holding the object that raises it. See TryHookIndependently.
     private const string InterfaceManagerFieldName = "interfaceManager";
     private const string InterfaceManagerDrawEventName = "Draw";
-
-    private static readonly object SyncRoot = new();
-    private static readonly List<NoireOverlayButton> OverlayButtons = new();
 
     private static OverlayHookMode hookMode = OverlayHookMode.None;
     private static Action? removeIndependentHook;
@@ -38,23 +38,23 @@ public static class NoireUI
     private static int tooltipCounter;
 
     /// <summary>
-    /// How the registered overlay buttons reach the screen.
+    /// How the hub's per-frame pass reaches the screen.
     /// </summary>
     private enum OverlayHookMode
     {
         /// <summary>
-        /// Nothing is registered, so no hook is installed.
+        /// Nothing needs a frame yet, so no hook is installed.
         /// </summary>
         None,
 
         /// <summary>
-        /// Overlays are drawn straight from Dalamud's own frame, independently of the host plugin's draw callback.
-        /// Dalamud's per-plugin UI hiding therefore never applies to them, and each overlay decides for itself.
+        /// The pass runs straight from Dalamud's own frame, independently of the host plugin's draw callback.
+        /// Dalamud's per-plugin UI hiding therefore never applies to overlays, and each one decides for itself.
         /// </summary>
         Independent,
 
         /// <summary>
-        /// Overlays are drawn from the host plugin's draw callback, which Dalamud gates for the whole plugin at once.
+        /// The pass runs from the host plugin's draw callback, which Dalamud gates for the whole plugin at once.
         /// Only used when the independent hook could not be installed.
         /// </summary>
         Shared,
@@ -69,8 +69,8 @@ public static class NoireUI
     /// the plugin's own draw callback, where Dalamud decides for the whole plugin at once. In that mode, and only in that
     /// mode, setting a draw condition on any single overlay also keeps the rest of the plugin's UI visible in that state.
     /// The reason is logged once when it happens.<br/>
-    /// The hook is installed with the first overlay button, so this only answers for something once one exists: it reads
-    /// <see langword="false"/> before that, when there is no hook of either kind rather than a fallback.
+    /// The hook is installed the first time anything needs a frame, so this only answers for something once that has
+    /// happened: it reads <see langword="false"/> before that, when there is no hook of either kind rather than a fallback.
     /// </summary>
     public static bool OverlaysDrawIndependently => hookMode == OverlayHookMode.Independent;
 
@@ -80,8 +80,18 @@ public static class NoireUI
     /// <returns>A snapshot list of the registered overlay buttons.</returns>
     public static IReadOnlyList<NoireOverlayButton> GetOverlayButtons()
     {
+        var overlays = new List<NoireOverlayButton>();
+
         lock (SyncRoot)
-            return OverlayButtons.ToArray();
+        {
+            foreach (var drawable in Drawables)
+            {
+                if (drawable is NoireOverlayButton button)
+                    overlays.Add(button);
+            }
+        }
+
+        return overlays;
     }
 
     /// <summary>
@@ -94,36 +104,12 @@ public static class NoireUI
     }
 
     /// <summary>
-    /// Registers an overlay button so it gets drawn every frame. Called automatically by the <see cref="NoireOverlayButton"/> constructor.
+    /// Disposes and unregisters every registered drawable, overlay buttons included.
     /// </summary>
-    /// <param name="button">The overlay button to register.</param>
-    /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
-    internal static void RegisterOverlayButton(NoireOverlayButton button)
+    public static void RemoveAllDrawables()
     {
-        if (!NoireService.IsInitialized())
-            throw new InvalidOperationException("NoireLib must be initialized before using NoireLib.UI overlay buttons.");
-
-        lock (SyncRoot)
-        {
-            if (!OverlayButtons.Contains(button))
-                OverlayButtons.Add(button);
-
-            EnsureDrawHook();
-        }
-
-        RefreshUiHideOverrides();
-    }
-
-    /// <summary>
-    /// Unregisters an overlay button so it stops being drawn. Called automatically by <see cref="NoireOverlayButton.Dispose"/>.
-    /// </summary>
-    /// <param name="button">The overlay button to unregister.</param>
-    internal static void UnregisterOverlayButton(NoireOverlayButton button)
-    {
-        lock (SyncRoot)
-            OverlayButtons.Remove(button);
-
-        RefreshUiHideOverrides();
+        foreach (var drawable in GetDrawables())
+            drawable.Dispose();
     }
 
     /// <summary>
@@ -162,8 +148,11 @@ public static class NoireUI
 
         lock (SyncRoot)
         {
-            foreach (var button in OverlayButtons)
+            foreach (var drawable in Drawables)
             {
+                if (drawable is not NoireOverlayButton button)
+                    continue;
+
                 var conditions = button.DrawConditions;
                 needCutscene |= (conditions & OverlayDrawConditions.DrawInCutscenes) != 0;
                 needGpose |= (conditions & OverlayDrawConditions.DrawInGpose) != 0;
@@ -198,7 +187,10 @@ public static class NoireUI
         }
     }
 
-    private static void EnsureDrawHook()
+    /// <summary>
+    /// Installs the hub's per-frame hook if it is not installed yet. Callers hold <see cref="SyncRoot"/>.
+    /// </summary>
+    private static void EnsureFrameHook()
     {
         if (hookMode != OverlayHookMode.None)
             return;
@@ -209,7 +201,7 @@ public static class NoireUI
         }
         else
         {
-            NoireService.PluginInterface.UiBuilder.Draw += DrawOverlayButtons;
+            NoireService.PluginInterface.UiBuilder.Draw += OnFrame;
             hookMode = OverlayHookMode.Shared;
 
             NoireLogger.LogWarning(
@@ -255,7 +247,7 @@ public static class NoireUI
             if (drawEvent?.EventHandlerType == null)
                 return false;
 
-            var handler = Delegate.CreateDelegate(drawEvent.EventHandlerType, typeof(NoireUI), nameof(DrawOverlayButtons), ignoreCase: false, throwOnBindFailure: false);
+            var handler = Delegate.CreateDelegate(drawEvent.EventHandlerType, typeof(NoireUI), nameof(OnFrame), ignoreCase: false, throwOnBindFailure: false);
             if (handler == null)
                 return false;
 
@@ -270,43 +262,15 @@ public static class NoireUI
         }
     }
 
-    /// <summary>
-    /// Draws every registered overlay button that asks to be drawn automatically.<br/>
-    /// In <see cref="OverlayHookMode.Independent"/> this is called by Dalamud directly rather than through the host
-    /// plugin, so nothing above it will catch an exception on the plugin's behalf: every button is contained on its own.
-    /// </summary>
-    private static void DrawOverlayButtons()
-    {
-        if (!NoireService.IsInitialized())
-            return;
-
-        NoireOverlayButton[] snapshot;
-        lock (SyncRoot)
-            snapshot = OverlayButtons.ToArray();
-
-        foreach (var button in snapshot)
-        {
-            if (!button.AutoDraw)
-                continue;
-
-            try
-            {
-                button.Draw();
-            }
-            catch (Exception ex)
-            {
-                NoireLogger.LogError(ex, $"Failed to draw overlay button '{button.Id}'.", nameof(NoireUI));
-            }
-        }
-    }
-
     private static void Cleanup()
     {
         var previousMode = hookMode;
 
         lock (SyncRoot)
         {
-            OverlayButtons.Clear();
+            Drawables.Clear();
+            DrawPump.Clear();
+            frameServicesReady = false;
 
             switch (hookMode)
             {
@@ -327,12 +291,14 @@ public static class NoireUI
 
                 case OverlayHookMode.Shared:
                     if (NoireService.IsInitialized())
-                        NoireService.PluginInterface.UiBuilder.Draw -= DrawOverlayButtons;
+                        NoireService.PluginInterface.UiBuilder.Draw -= OnFrame;
                     break;
             }
 
             hookMode = OverlayHookMode.None;
         }
+
+        UiFrameState.Clear();
 
         // No buttons remain, so revert any UiBuilder switch NoireLib forced on. The mode is cleared above, so this is
         // resolved against the mode that was actually in effect.

@@ -1,7 +1,6 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
-using NoireLib.Helpers;
 using System;
 using System.Numerics;
 
@@ -13,10 +12,10 @@ namespace NoireLib.UI;
 /// react to left/right/middle clicks and mouse wheel, change the mouse cursor on hover (see <see cref="HoverCursor"/>),
 /// show a regular and/or a custom tooltip, be conditionally displayed through <see cref="VisibleCondition"/>,
 /// keep being drawn in normally-hidden game states (see <see cref="DrawConditions"/>), and optionally be repositioned by dragging.<br/>
-/// The button registers itself on creation and is drawn by NoireLib until it is disposed, unless <see cref="AutoDraw"/> is turned off
-/// to handle the drawing manually. It is disposed automatically when NoireLib is disposed, or earlier through <see cref="Dispose"/>.
+/// The button registers itself on creation and is drawn by NoireLib until it is disposed, unless <see cref="NoireDrawable.AutoDraw"/> is turned off
+/// to handle the drawing manually. It is disposed automatically when NoireLib is disposed, or earlier through <see cref="NoireDrawable.Dispose"/>.
 /// </summary>
-public class NoireOverlayButton : IDisposable
+public class NoireOverlayButton : NoireDrawable
 {
     private const ImGuiWindowFlags OverlayWindowFlags =
         ImGuiWindowFlags.NoTitleBar |
@@ -30,37 +29,28 @@ public class NoireOverlayButton : IDisposable
         ImGuiWindowFlags.NoNav |
         ImGuiWindowFlags.NoBackground;
 
-    private bool disposed;
     private bool isDragging;
     private Vector2 dragGrabOffset;
     private bool visibleConditionFaultLogged;
+    private bool persistPosition;
+    private bool positionRestored;
     private OverlayDrawConditions drawConditions = OverlayDrawConditions.None;
 
     /// <summary>
     /// Initializes a new overlay button and registers it for drawing.<br/>
     /// The button is automatically disposed when NoireLib is disposed (through <see cref="NoireLibMain.RegisterOnDispose(string, Action, int)"/>);
-    /// call <see cref="Dispose"/> to remove it earlier.
+    /// call <see cref="NoireDrawable.Dispose"/> to remove it earlier.
     /// </summary>
     /// <param name="id">An optional unique identifier. When <see langword="null"/>, a random one is generated.</param>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public NoireOverlayButton(string? id = null)
+        : base(id, "OverlayButton")
     {
-        Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
-        DisposeKey = $"NoireLib.UI.OverlayButton.{Id}";
-
-        NoireUI.RegisterOverlayButton(this);
-        NoireLibMain.RegisterOnDispose(DisposeKey, Dispose);
+        // An overlay exists precisely so that nothing has to draw it, so it opts itself in rather than waiting for the
+        // NoireUI.AutoDraw master default. Set it to null to follow that default instead, or to false to draw it yourself.
+        AutoDraw = true;
+        Register();
     }
-
-    /// <summary>
-    /// The unique identifier of this overlay button.
-    /// </summary>
-    public string Id { get; }
-
-    /// <summary>
-    /// The key under which this button is registered for automatic disposal. See <see cref="NoireLibMain.RegisterOnDispose(string, Action, int)"/>.
-    /// </summary>
-    private string DisposeKey { get; }
 
     #region Position & Visibility
 
@@ -86,8 +76,12 @@ public class NoireOverlayButton : IDisposable
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Whether the button is drawn on the topmost display layer, above every regular window.
+    /// Whether the button is kept in front of every other window, for clicks as well as for drawing.
     /// </summary>
+    /// <remarks>
+    /// Being drawn on top and receiving the mouse are two different orders in ImGui, and moving only the first is what
+    /// produces a button that is plainly visible above a window and completely dead under it. This moves both.
+    /// </remarks>
     public bool AlwaysOnTop { get; set; } = false;
 
     /// <summary>
@@ -106,17 +100,10 @@ public class NoireOverlayButton : IDisposable
 
             drawConditions = value;
 
-            if (!disposed)
+            if (!IsDisposed)
                 NoireUI.RefreshUiHideOverrides();
         }
     }
-
-    /// <summary>
-    /// Whether NoireLib draws the button automatically every frame (the default).<br/>
-    /// When set to <see langword="false"/>, NoireLib stops drawing the button and you become responsible for calling <see cref="Draw"/>
-    /// yourself, from your own ImGui draw code. The button stays registered (and auto-disposed) either way.
-    /// </summary>
-    public bool AutoDraw { get; set; } = true;
 
     /// <summary>
     /// The mouse cursor shown while the button is hovered. When <see langword="null"/>, the cursor is left unchanged.<br/>
@@ -129,6 +116,30 @@ public class NoireOverlayButton : IDisposable
     /// After a drag, <see cref="Position"/> is replaced by an absolute position and <see cref="OnDragEnd"/> is invoked.
     /// </summary>
     public bool Draggable { get; set; } = false;
+
+    /// <summary>
+    /// Whether the position the user dragged the button to is remembered across reloads, through
+    /// <see cref="NoireUiState"/>.<br/>
+    /// Off by default. Turning it on restores the saved position on the next draw and saves it again after every drag,
+    /// so the usual <see cref="OnDragEnd"/> plus your own configuration is no longer needed for the common case.<br/>
+    /// Requires a stable <see cref="NoireDrawable.Id"/>: a button created without one gets a new id every session, so
+    /// nothing keyed on it could be restored, and its position is not persisted (logged once).
+    /// </summary>
+    public bool PersistPosition
+    {
+        get => persistPosition;
+        set
+        {
+            if (persistPosition == value)
+                return;
+
+            persistPosition = value;
+
+            // Turning it on asks for the saved position, whenever that happens relative to the first draw.
+            if (value)
+                positionRestored = false;
+        }
+    }
 
     #endregion
 
@@ -251,32 +262,14 @@ public class NoireOverlayButton : IDisposable
 
     #endregion
 
-    /// <summary>
-    /// Unregisters the button so it stops being drawn. Safe to call multiple times.<br/>
-    /// Called automatically when NoireLib is disposed; call it earlier to remove the button yourself.
-    /// </summary>
-    public void Dispose()
-    {
-        if (disposed)
-            return;
-
-        disposed = true;
-        NoireUI.UnregisterOverlayButton(this);
-        NoireLibMain.UnregisterOnDispose(DisposeKey);
-        GC.SuppressFinalize(this);
-    }
-
     #region Drawing
 
-    /// <summary>
-    /// Draws the button for the current frame.<br/>
-    /// When <see cref="AutoDraw"/> is <see langword="true"/> (the default), NoireLib calls this every frame for you.
-    /// Call it yourself only when you set <see cref="AutoDraw"/> to <see langword="false"/> to handle the drawing manually,
-    /// from inside your own ImGui draw code.
-    /// </summary>
-    public void Draw()
+    /// <inheritdoc/>
+    protected override void DrawCore()
     {
-        if (disposed || !Visible || ShouldHideForGameState() || !EvaluateVisibleCondition())
+        RestorePersistedPosition();
+
+        if (!Visible || ShouldHideForGameState() || !EvaluateVisibleCondition())
         {
             isDragging = false;
             return;
@@ -313,10 +306,13 @@ public class NoireOverlayButton : IDisposable
 
         var flags = OverlayWindowFlags;
         if (AlwaysOnTop)
-            flags |= ImGuiWindowFlags.Tooltip;
+            flags |= UiWindowOrder.TopLayerFlag;
 
-        if (ImGui.Begin($"###NoireOverlayButton_{Id}", flags))
+        if (ImGui.Begin(ImGuiId, flags))
         {
+            if (AlwaysOnTop)
+                UiWindowOrder.KeepInFront();
+
             if (Style.FontScale != 1f)
                 ImGui.SetWindowFontScale(Style.FontScale);
 
@@ -545,6 +541,7 @@ public class NoireOverlayButton : IDisposable
             Position = UiPosition.AtAbsolute(ImGui.GetWindowPos() - viewport.Pos)
                 .WithClampToViewport(Position.ClampToViewport);
 
+            SavePersistedPosition();
             InvokeSafely(OnDragEnd, "drag end");
             return true;
         }
@@ -594,6 +591,36 @@ public class NoireOverlayButton : IDisposable
             return true;
 
         return false;
+    }
+
+    /// <summary>
+    /// Applies the saved dragged position, once, the first time the button draws after <see cref="PersistPosition"/> is
+    /// turned on. Nothing saved means the position set in code stands.
+    /// </summary>
+    private void RestorePersistedPosition()
+    {
+        if (!persistPosition || positionRestored)
+            return;
+
+        positionRestored = true;
+
+        if (!TryGetPersistKey("position", out var key))
+            return;
+
+        if (NoireUiState.TryGet<Vector2>(key, out var saved))
+            Position = UiPosition.AtAbsolute(saved).WithClampToViewport(Position.ClampToViewport);
+    }
+
+    /// <summary>
+    /// Remembers where the button was dragged to. Only the absolute position is stored, because a drag is the only
+    /// thing that produces one; an anchored or ratio position set in code is the plugin's decision, not the user's.
+    /// </summary>
+    private void SavePersistedPosition()
+    {
+        if (!persistPosition || !TryGetPersistKey("position", out var key))
+            return;
+
+        NoireUiState.Set(key, Position.AbsolutePosition);
     }
 
     private bool EvaluateVisibleCondition()

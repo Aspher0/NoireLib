@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
@@ -221,6 +221,7 @@ public sealed class NoireContent
         {
             if (segment.Kind == SegmentKind.NewLine || segment.Kind == SegmentKind.Separator)
             {
+                SpaceBeforeLine(firstLine);
                 FlushLine(line, firstLine);
                 firstLine = false;
                 line.Clear();
@@ -234,7 +235,24 @@ public sealed class NoireContent
             line.Add(segment);
         }
 
+        SpaceBeforeLine(firstLine);
         FlushLine(line, firstLine);
+    }
+
+    /// <summary>
+    /// Puts the gap between two lines in front of the second one rather than after the first.
+    /// </summary>
+    /// <remarks>
+    /// Trailing spacing after the last line is not free here: the line advance is a <c>SetCursorPosY</c> rather than a
+    /// real item, and ImGui grows a window's content height to any cursor position set inside it without the
+    /// compensation it applies to items. Spacing after the final line therefore became a permanent extra strip of
+    /// padding along the bottom of every tooltip, leaving them visibly heavier underneath than on top.
+    /// </remarks>
+    /// <param name="isFirstLine">Whether the line about to be drawn is the first, which needs no gap in front of it.</param>
+    private static void SpaceBeforeLine(bool isFirstLine)
+    {
+        if (!isFirstLine)
+            ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ImGui.GetStyle().ItemSpacing.Y);
     }
 
     private static void FlushLine(List<Segment> line, bool isFirstLine)
@@ -264,8 +282,9 @@ public sealed class NoireContent
             first = false;
         }
 
-        // Realign the cursor under the tallest segment of the line so the next line starts below it.
-        ImGui.SetCursorPosY(startY + maxHeight + ImGui.GetStyle().ItemSpacing.Y);
+        // Realign the cursor under the tallest segment of the line so the next line starts below it. The gap between
+        // lines is added in front of the next one by SpaceBeforeLine, never here.
+        ImGui.SetCursorPosY(startY + maxHeight);
     }
 
     private static float MeasureHeight(Segment segment)

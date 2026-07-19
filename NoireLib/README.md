@@ -1,4 +1,4 @@
-# NoireLib Documentation - A library for Dalamud plugins development
+﻿# NoireLib Documentation - A library for Dalamud plugins development
 
 The first thing you need to do to use this library is to initialize it.<br/>
 To do so, call `NoireLibMain.Initialize(PluginInterface, this)` in the constructor of your Plugin.<br/>
@@ -145,7 +145,12 @@ For a list of modules, see the [Modules Section](#modules)
 
 ## UI Helpers
 
-- [NoireLib.UI](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md) - Overlay buttons, filterable combo boxes with wheel cycling, and custom tooltips
+- [NoireLib.UI](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md) - The NoireUI hub, one theme the whole library follows, containers and style scopes that take their body (no `using`, no `Dispose`), id-keyed animation, transient and persisted widget state, diagnostics, and the widgets on top: hold-to-confirm and async buttons, toggles, splitters and collapsible sections, stacked toasts, dialogs you `await`, overlay buttons, filterable combo boxes with wheel cycling, and custom tooltips
+
+## Documented Helpers
+
+- [EncryptionHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/EncryptionHelper/README.md) - Encoding, hashing, password hashing, and AES encryption for memory and files
+- [ShareCodeHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/ShareCode/README.md) - One versioned, compressed, checksummed and kind-tagged share string for anything serializable
 
 ## 3D Rendering
 

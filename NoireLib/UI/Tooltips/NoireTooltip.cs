@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Collections.Generic;
@@ -113,6 +113,11 @@ public static class NoireTooltip
 
         if (ImGui.Begin(windowId, TooltipWindowFlags))
         {
+            // A tooltip shares the top draw layer with any always-on-top element it might overlap, and within a layer
+            // the last window to ask is the one in front. Asking here, after the thing being annotated has drawn, is
+            // what keeps the tooltip above it rather than behind.
+            UiWindowOrder.KeepInFront();
+
             content.Draw();
 
             // The size an appearing window reports is derived from a content size it has not measured yet, so it is
