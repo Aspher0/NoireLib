@@ -21,9 +21,17 @@ internal static class UiWindowOrder
 {
     /// <summary>
     /// The window flag that promotes a window to the topmost draw layer.<br/>
-    /// Named for what it does here rather than for the tooltips ImGui uses it for: it carries no tooltip behaviour, and
-    /// nothing about it prevents a window from taking input.
+    /// Named for what it does here rather than for the tooltips ImGui uses it for: it brings no tooltip behaviour with
+    /// it, and nothing about it prevents a window from taking input.
     /// </summary>
+    /// <remarks>
+    /// It does carry one thing, and it is worth knowing before putting this on a window with a background. ImGui reads a
+    /// window's background colour from an index it picks by flag, and this flag selects <c>PopupBg</c> where an ordinary
+    /// window would use <c>WindowBg</c>. A window that pushes <c>WindowBg</c> and then sets this flag is drawn in the
+    /// theme's popup colour instead, silently and only once it is promoted.<br/>
+    /// Windows that draw no background of their own (<c>NoBackground</c>) are unaffected, which is most of the ones
+    /// using this. Anything else has to push the colour to the index the flag actually selects.
+    /// </remarks>
     internal const ImGuiWindowFlags TopLayerFlag = ImGuiWindowFlags.Tooltip;
 
     /// <summary>

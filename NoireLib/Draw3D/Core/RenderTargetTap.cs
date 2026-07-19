@@ -37,6 +37,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private const int MaxBinds = 640; // a full frame including the late UI stage
     private const int MaxMultiBinds = 32;    // multi-target binds in a frame: the G-buffer plus the post-process ones
     private const int MaxTargetsPerBind = 8; // D3D11's simultaneous render target limit
+    // The measured G-buffer pass binds five. A lower floor is actively dangerous rather than merely loose: the
+    // frame also contains a THREE-target bind on the same scene depth, carrying a different target set - its
+    // third slot is the half-float buffer, where the five-target pass has albedo. Arming on that one and then
+    // firing on a draw issued while it is still bound would write albedo into a half-float target and the
+    // material scalars into the normal buffer.
+    private const int GBufferMinTargets = 5;
     private const int CaptureWarmupFrames = 6; // let the swapchain flip through all its buffers first
     private const int InjectOrdinal = 2; // present-buffer bind #: 1 = world copy, 2 = after world / before UI
 
@@ -51,7 +57,14 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void DrawInstancedFn(nint context, uint vertexCountPerInstance, uint instanceCount, uint startVertex, uint startInstance);
 
-    private readonly record struct Bind(uint NumViews, nint Rtv0Resource, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
+    /// <summary>
+    /// One render-target bind. <see cref="Format"/> is the VIEW's format, not the texture's: a typeless
+    /// texture is viewed as UNORM by one pass and SRGB by another, and it is recorded for single-target binds
+    /// too because that is the only way a pass is identifiable by what it writes rather than by its size. The
+    /// velocity buffer a temporal resolve consumes is exactly that case - one target, half resolution, and
+    /// nothing but its format distinguishes it from any other half-resolution post-process step.
+    /// </summary>
+    private readonly record struct Bind(uint NumViews, nint Rtv0Resource, DXGI_FORMAT Format, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
 
     /// <summary>One target of a multi-target bind, for reading a G-buffer's layout.</summary>
     private readonly record struct TargetInfo(nint Resource, DXGI_FORMAT Format, uint Width, uint Height);
@@ -61,6 +74,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private HookWrapper<DrawFn>? drawHook;
     private HookWrapper<DrawIndexedInstancedFn>? drawIndexedInstancedHook;
     private HookWrapper<DrawInstancedFn>? drawInstancedHook;
+    // Kept for the frame walker, which copies a target mid-frame and therefore needs a device of its own; every
+    // other job here reads the bind sequence and needs none.
+    private RenderDevice? device;
     private OmSetRenderTargetsFn? omDetour;
     private DrawIndexedFn? drawIndexedDetour;
     private DrawFn? drawDetour;
@@ -82,6 +98,15 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private int drawCounter;
     private volatile int state; // 0 = idle, 1 = warming up, 2 = capturing
     private int warmupLeft;
+
+    // Frame walker: write out what a span of binds produced. Each one is a full-resolution copy plus a
+    // synchronous map, so the frame it runs on stalls badly - it is a one-shot diagnostic and the span is
+    // capped rather than left to a caller's arithmetic.
+    private const int MaxFrameDumps = 12;
+    private int dumpFrom = -1;
+    private int dumpCount;
+    private int dumpsWritten;
+    private string dumpFolder = string.Empty;
 
     // The swapchain rotates through several backbuffer textures (flip model); a bind is "to the
     // backbuffer" if its target matches ANY of them. Accumulated from the per-present current buffer.
@@ -106,6 +131,42 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private volatile bool hasWorldCamera;
     private bool mainDepthSeen;      // the main-scene depth (RTM.DepthStencil) was captured this frame - locked, later binds ignored
     private nint frameSceneDepthTex; // RTM.DepthStencil texture pointer, cached per present for the main-pass fingerprint
+
+    /// <summary>
+    /// Fired inside the game's G-buffer pass, at its FIRST draw, with the pass's targets already bound.<br/>
+    /// Firing at the bind instead would be too early: the game clears and sets up between binding the targets
+    /// and issuing the first draw, so anything written at bind time can be wiped. Firing at the first draw also
+    /// puts the callback after the frame's camera-constant commit, which is what the injected geometry needs to
+    /// be projected with.<br/>
+    /// The callback must leave the pipeline exactly as it found it. It draws into the game's own targets, so
+    /// unrestored state corrupts the game's frame rather than Draw3D's.
+    /// </summary>
+    public Action? GBufferInjector { get; set; }
+
+    /// <summary>
+    /// Whether the G-buffer injection is wanted this frame.<br/>
+    /// Setting it keeps the four per-draw hooks enabled, and those fire a managed callback on EVERY draw the
+    /// game makes - hundreds to thousands per frame. It must therefore track whether there is actually work
+    /// queued, not latch on at the first use and stay on.
+    /// </summary>
+    public bool GBufferInjectionEnabled
+    {
+        get => gbufferInjectionEnabled;
+        set
+        {
+            if (gbufferInjectionEnabled == value)
+                return;
+
+            gbufferInjectionEnabled = value;
+            RefreshOmHookState();
+        }
+    }
+
+    private bool gbufferInjectionEnabled;
+
+    // Set at the G-buffer bind, consumed at that pass's first draw.
+    private bool gbufferPassArmed;
+    private bool gbufferDoneThisFrame;
 
     /// <summary>When true the detour skips its work - set around Draw3D's OWN binds so they never interfere.</summary>
     public bool SuppressSelf;
@@ -165,6 +226,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             return false;
 
         gameContext = (nint)ctx;
+        this.device = device;
         var vtable = *(void***)ctx;
 
         try
@@ -208,7 +270,60 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         multiBindCount = 0;
         warmupLeft = CaptureWarmupFrames;
         state = 1;
+        dumpFrom = -1;
+        dumpCount = 0;
         RefreshOmHookState();
+    }
+
+    /// <summary>
+    /// Arms a capture that also writes out what a span of binds actually produced, as images.<br/>
+    /// <b>Why this exists.</b> A wrong pixel in the final image says nothing about which pass made it wrong, and
+    /// naming a suspect pass and toggling its game setting only ever rules out the passes a setting exposes.
+    /// Reading the intermediate targets walks the frame in order and finds the first one where the pixel is
+    /// already wrong, which identifies the pass by observation rather than by elimination.
+    /// </summary>
+    /// <param name="from">First bind index to write out (indices come from a <c>rtlog</c> run).</param>
+    /// <param name="count">How many consecutive binds to write out.</param>
+    /// <param name="folder">Where the images go.</param>
+    public void ArmFrameDump(int from, int count, string folder)
+    {
+        if (omHook == null)
+            return;
+
+        ArmCapture();
+        dumpFrom = Math.Max(0, from);
+        dumpCount = Math.Clamp(count, 1, MaxFrameDumps);
+        dumpsWritten = 0;
+        dumpFolder = folder;
+    }
+
+    /// <summary>
+    /// Writes out the target that has just finished being drawn into, when it falls in the armed span.<br/>
+    /// Runs before the game's new bind is applied, which is the only moment the previous target's contents are
+    /// final: once the next pass starts drawing, whatever it produced is gone.
+    /// </summary>
+    private void DumpFinishedBind()
+    {
+        var finished = bindCount - 1;
+        if (dumpFrom < 0 || finished < dumpFrom || finished >= dumpFrom + dumpCount || dumpsWritten >= MaxFrameDumps)
+            return;
+
+        var resource = binds[finished].Rtv0Resource;
+        if (resource == 0 || device is not { } dev)
+            return;
+
+        dumpsWritten++;
+
+        try
+        {
+            var path = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}.bmp");
+            var note = GBufferProbe.Dump(dev, resource, path);
+            NoireLogger.LogInfo($"[FrameDump] bind {finished}: {note}", "Draw3D");
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Draw3D: frame dump of bind {finished} failed.", "Draw3D");
+        }
     }
 
     /// <summary>
@@ -228,6 +343,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         presentBufferBinds = 0;
         hasWorldCamera = false; // re-snapshot at the next frame's main scene pass
         mainDepthSeen = false;
+
+        // Once per frame: the pass is re-armed at its next bind, so a frame that never runs one injects nothing.
+        gbufferPassArmed = false;
+        gbufferDoneThisFrame = false;
         // Cache the main scene-depth texture for next frame's main-pass fingerprint (stable across frames; a resize just
         // costs one frame of first-depth fallback until it is refreshed here).
         frameSceneDepthTex = GameRenderSources.TryGetDepthTexture(out var sceneDepth) ? sceneDepth.Texture : 0;
@@ -267,7 +386,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>Draw hooks serve two masters: the one-frame rtlog capture, and the camera-constant commit signal.</summary>
     private void RefreshDrawHookState()
-        => SetDrawHooksEnabled(state == 2 || (Capture?.WantsDrawSignal ?? false));
+        => SetDrawHooksEnabled(state == 2 || GBufferInjectionEnabled || (Capture?.WantsDrawSignal ?? false));
 
     private void SetDrawHooksEnabled(bool enabled)
     {
@@ -307,6 +426,11 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void OmDetour(nint context, uint numViews, nint ppRtvs, nint pDsv)
     {
+        // Before the game's bind is applied: the target it is about to replace has just received its last draw,
+        // so this is the only point at which what that pass produced can still be read.
+        if (state == 2 && dumpFrom >= 0 && !injecting && !SuppressSelf && context == gameContext)
+            DumpFinishedBind();
+
         omHook!.Original(context, numViews, ppRtvs, pDsv); // apply the game's bind first
 
         if (injecting || SuppressSelf || context != gameContext)
@@ -354,6 +478,11 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             }
         }
 
+        // The G-buffer pass: several targets bound together with the main scene depth. Post-process passes also
+        // bind multiple targets, but never with the scene's depth-stencil, which is what separates them.
+        if (GBufferInjectionEnabled && !gbufferDoneThisFrame && numViews >= GBufferMinTargets && pDsv != 0 && IsMainSceneDepth(pDsv))
+            gbufferPassArmed = true;
+
         if (state == 2 && bindCount < MaxBinds)
             Record(numViews, rtv0, pDsv, ppRtvs);
 
@@ -380,11 +509,43 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
+    /// <summary>
+    /// Runs at every game draw: the camera commit, then the G-buffer injection if this is the injected pass's
+    /// first draw. Order matters - the injected geometry is projected with the camera the commit establishes.
+    /// </summary>
+    private void OnDraw(nint context)
+    {
+        Capture?.OnGameDraw(context); // no-op except at the main pass's first draw (the commit moment)
+
+        if (!gbufferPassArmed || GBufferInjector is not { } injector)
+            return;
+
+        // Once per frame regardless of outcome: a callback that throws must not be retried against every
+        // remaining draw of the pass.
+        gbufferPassArmed = false;
+        gbufferDoneThisFrame = true;
+
+        injecting = true;
+        try
+        {
+            injector();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Draw3D: G-buffer injection callback threw - injection disabled for safety.", "Draw3D");
+            GBufferInjectionEnabled = false;
+        }
+        finally
+        {
+            injecting = false;
+        }
+    }
+
     private void DrawIndexedDetour(nint context, uint indexCount, uint startIndex, int baseVertex)
     {
         if (Counting(context))
             drawCounter++;
-        Capture?.OnGameDraw(context); // no-op except at the main pass's first draw (the commit moment)
+        OnDraw(context);
 
         drawIndexedHook!.Original(context, indexCount, startIndex, baseVertex);
     }
@@ -393,7 +554,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
-        Capture?.OnGameDraw(context);
+        OnDraw(context);
 
         drawHook!.Original(context, vertexCount, startVertex);
     }
@@ -402,7 +563,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
-        Capture?.OnGameDraw(context);
+        OnDraw(context);
 
         drawIndexedInstancedHook!.Original(context, indexCountPerInstance, instanceCount, startIndex, baseVertex, startInstance);
     }
@@ -411,7 +572,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         if (Counting(context))
             drawCounter++;
-        Capture?.OnGameDraw(context);
+        OnDraw(context);
 
         drawInstancedHook!.Original(context, vertexCountPerInstance, instanceCount, startVertex, startInstance);
     }
@@ -467,10 +628,22 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             tex.Dispose();
         }
 
+        var format = DXGI_FORMAT.DXGI_FORMAT_UNKNOWN;
+        if (numViews > 0 && ppRtvs != 0)
+        {
+            var view = ((ID3D11RenderTargetView**)ppRtvs)[0];
+            if (view != null)
+            {
+                D3D11_RENDER_TARGET_VIEW_DESC viewDesc;
+                view->GetDesc(&viewDesc);
+                format = viewDesc.Format;
+            }
+        }
+
         if (numViews > 1)
             RecordMultiTarget(numViews, ppRtvs);
 
-        binds[bindCount++] = new Bind(numViews, rtv0, w, h, pDsv != 0, IsBackbuffer(rtv0), drawCounter);
+        binds[bindCount++] = new Bind(numViews, rtv0, format, w, h, pDsv != 0, IsBackbuffer(rtv0), drawCounter);
     }
 
     /// <summary>
@@ -484,18 +657,36 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         var result = new List<nint>();
         var best = -1;
-        var bestDraws = 0;
+        var bestTargets = 0;
+        var bestWidth = 0u;
+        var bestDraws = -1;
 
         for (var i = 0; i < multiBindCount; i++)
         {
             var at = multiBindAt[i];
-            if (at + 1 >= bindCount)
+            if (at + 1 >= bindCount || !binds[at].HasDsv)
                 continue;
 
+            var targets = multiBindCounts[i];
+            var width = multiBindTargets[i * MaxTargetsPerBind].Width;
             var draws = binds[at + 1].DrawCount - binds[at].DrawCount;
-            if (draws <= bestDraws)
+
+            // Ranked on target count first, then resolution, then draws - in that order deliberately. Draws
+            // alone picked a two-target post-process bind over the five-target G-buffer, because a
+            // post-process pass can carry more draws than a sparsely populated geometry pass. Target count is
+            // the stable discriminator; resolution then rejects the wide half- and quarter-resolution
+            // post-process binds, which have as many targets as the G-buffer but never its size.
+            if (targets < bestTargets)
                 continue;
 
+            if (targets == bestTargets)
+            {
+                if (width < bestWidth || (width == bestWidth && draws <= bestDraws))
+                    continue;
+            }
+
+            bestTargets = targets;
+            bestWidth = width;
             bestDraws = draws;
             best = i;
         }
@@ -632,12 +823,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
         sb.AppendLine($"  backbuffer binds at idx: {(bbIdx.Length == 0 ? "(none learned - re-run)" : bbIdx.ToString())}");
         sb.AppendLine("  'draws' = draw calls made into the PREVIOUS row's target (1 = a blit; a burst = a real pass, e.g. the UI).");
-        sb.AppendLine("  idx | draws | #rtv | backbuffer | dsv |  size    | rtv0 resource");
+        sb.AppendLine("  A single-target two-channel float at half the display size is the shape of a velocity buffer.");
+        sb.AppendLine("  idx | draws | #rtv | backbuffer | dsv |  size    | format                       | rtv0 resource");
         for (var i = 0; i < bindCount; i++)
         {
             var b = binds[i];
             var draws = i == 0 ? b.DrawCount : b.DrawCount - binds[i - 1].DrawCount;
-            sb.AppendLine($"  {i,3} | {draws,5} |  {b.NumViews,2}  |    {(b.IsBackbuffer ? "YES" : " - ")}    | {(b.HasDsv ? "yes" : " - ")} | {b.Width,4}x{b.Height,-4} | 0x{b.Rtv0Resource:X}");
+            sb.AppendLine($"  {i,3} | {draws,5} |  {b.NumViews,2}  |    {(b.IsBackbuffer ? "YES" : " - ")}    | {(b.HasDsv ? "yes" : " - ")} | {b.Width,4}x{b.Height,-4} | {FormatName(b.Format),-28} | 0x{b.Rtv0Resource:X}");
         }
 
         AppendMultiTargets(sb);

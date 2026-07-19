@@ -26,6 +26,12 @@ internal static unsafe class GBufferProbe
     private readonly record struct ChannelStats(float[] Min, float[] Max, float[] Mean, int DistinctApprox);
 
     /// <summary>
+    /// Decode buffer, reused across targets and across runs. See <see cref="ReadPixels"/> for why it is not
+    /// allocated per call.
+    /// </summary>
+    private static float[]? scratch;
+
+    /// <summary>
     /// Copies each target, measures it, and writes it out as a viewable image.
     /// </summary>
     /// <param name="device">The render device whose context performs the copy.</param>
@@ -60,17 +66,37 @@ internal static unsafe class GBufferProbe
             sb.Append($"rtv{i} 0x{targets[i]:X}: ");
 
             var path = Path.Combine(folder, $"gbuffer_rtv{i}.bmp");
-            sb.AppendLine(ReadOne(device, targets[i], path));
+            sb.AppendLine(Dump(device, targets[i], path));
         }
 
         return sb.ToString();
     }
 
-    /// <summary>Copies one target to staging, measures it, and writes a BMP of it.</summary>
-    private static string ReadOne(RenderDevice device, nint resource, string path)
+    /// <summary>
+    /// Copies one render target to staging, measures it, and writes a BMP of it.<br/>
+    /// Usable against any target at any point in the frame, not only the G-buffer: finding which pass first
+    /// produces a wrong pixel means reading the intermediate targets, not the final image.
+    /// </summary>
+    /// <param name="device">The render device whose context performs the copy.</param>
+    /// <param name="resource">The texture to read.</param>
+    /// <param name="path">Where to write the image; the alpha channel goes beside it.</param>
+    internal static string Dump(RenderDevice device, nint resource, string path)
     {
         if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
             return "not a texture, skipped";
+
+        // Every caller writes into a folder of its own, and a dump that decodes correctly and then fails to
+        // land is the same as no dump at all.
+        try
+        {
+            var folder = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(folder))
+                Directory.CreateDirectory(folder);
+        }
+        catch (Exception ex)
+        {
+            return $"could not create the output folder: {ex.Message}";
+        }
 
         using (source)
         {
@@ -133,12 +159,27 @@ internal static unsafe class GBufferProbe
     /// <summary>The companion path for a target's alpha channel, which carries its own quantity and needs its own image.</summary>
     private static string AlphaPath(string path) => Path.ChangeExtension(path, null) + "_alpha.bmp";
 
-    /// <summary>Decodes a mapped target into RGBA floats. Half-float targets keep their range, so values above 1 survive.</summary>
+    /// <summary>
+    /// Decodes a mapped target into RGBA floats. Half-float targets keep their range, so values above 1 survive.
+    /// </summary>
+    /// <remarks>
+    /// <b>The buffer is reused, and that matters more than it looks.</b> A decoded 1920x1009 target is a 31 MB
+    /// float array, so allocating one per target put 155 MB onto the large object heap per invocation. A handful
+    /// of runs in a session was enough to leave the process permanently slower, and since frame time is what
+    /// drives every camera-timing artefact in this renderer, a diagnostic that degrades frame rate corrupts the
+    /// very thing the rest of the diagnostics measure. One buffer, grown when needed, reused for every target
+    /// and every later run.
+    /// </remarks>
     private static float[] ReadPixels(in D3D11_MAPPED_SUBRESOURCE mapped, in D3D11_TEXTURE2D_DESC desc, out bool supported)
     {
         var width = (int)desc.Width;
         var height = (int)desc.Height;
-        var pixels = new float[width * height * 4];
+        var needed = width * height * 4;
+
+        if (scratch is null || scratch.Length < needed)
+            scratch = new float[needed];
+
+        var pixels = scratch;
         supported = true;
 
         var row = (byte*)mapped.pData;
@@ -191,12 +232,133 @@ internal static unsafe class GBufferProbe
 
                 break;
 
+            case DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = (Half*)(row + (y * mapped.RowPitch));
+                    for (var x = 0; x < width; x++)
+                        Store(pixels, ((y * width) + x) * 4, (float)src[(x * 2) + 0], (float)src[(x * 2) + 1], 0f);
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = (float*)(row + (y * mapped.RowPitch));
+                    for (var x = 0; x < width; x++)
+                        StoreGrey(pixels, ((y * width) + x) * 4, src[x]);
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R16_FLOAT:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = (Half*)(row + (y * mapped.RowPitch));
+                    for (var x = 0; x < width; x++)
+                        StoreGrey(pixels, ((y * width) + x) * 4, (float)src[x]);
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R8_UNORM:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = row + (y * mapped.RowPitch);
+                    for (var x = 0; x < width; x++)
+                        StoreGrey(pixels, ((y * width) + x) * 4, src[x] / 255f);
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = row + (y * mapped.RowPitch);
+                    for (var x = 0; x < width; x++)
+                        Store(pixels, ((y * width) + x) * 4, src[(x * 2) + 0] / 255f, src[(x * 2) + 1] / 255f, 0f);
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = (uint*)(row + (y * mapped.RowPitch));
+                    for (var x = 0; x < width; x++)
+                    {
+                        var packed = src[x];
+                        Store(
+                            pixels,
+                            ((y * width) + x) * 4,
+                            UnpackSmallFloat(packed & 0x7FF, 6),
+                            UnpackSmallFloat((packed >> 11) & 0x7FF, 6),
+                            UnpackSmallFloat((packed >> 22) & 0x3FF, 5));
+                    }
+                }
+
+                break;
+
+            case DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM:
+                for (var y = 0; y < height; y++)
+                {
+                    var src = (uint*)(row + (y * mapped.RowPitch));
+                    for (var x = 0; x < width; x++)
+                    {
+                        var packed = src[x];
+                        var o = ((y * width) + x) * 4;
+                        pixels[o + 0] = (packed & 0x3FF) / 1023f;
+                        pixels[o + 1] = ((packed >> 10) & 0x3FF) / 1023f;
+                        pixels[o + 2] = ((packed >> 20) & 0x3FF) / 1023f;
+                        pixels[o + 3] = ((packed >> 30) & 0x3) / 3f;
+                    }
+                }
+
+                break;
+
             default:
                 supported = false;
                 break;
         }
 
         return pixels;
+    }
+
+    /// <summary>Writes a colour with an opaque alpha, so a target carrying fewer than four channels still reads as an image.</summary>
+    private static void Store(float[] pixels, int offset, float r, float g, float b)
+    {
+        pixels[offset + 0] = r;
+        pixels[offset + 1] = g;
+        pixels[offset + 2] = b;
+        pixels[offset + 3] = 1f;
+    }
+
+    /// <summary>
+    /// Writes a single-channel value across all three colour channels. Depth, occlusion and mask buffers are
+    /// read by eye, and a one-channel target written as pure red is far harder to compare against another than
+    /// the same data as grey.
+    /// </summary>
+    private static void StoreGrey(float[] pixels, int offset, float value) => Store(pixels, offset, value, value, value);
+
+    /// <summary>
+    /// Decodes one channel of a packed small float (the 11- and 10-bit channels of
+    /// <c>R11G11B10_FLOAT</c>): five exponent bits, no sign bit, bias 15.
+    /// </summary>
+    /// <param name="bits">The channel's raw bits, already shifted down and masked.</param>
+    /// <param name="mantissaBits">6 for an 11-bit channel, 5 for a 10-bit one.</param>
+    private static float UnpackSmallFloat(uint bits, int mantissaBits)
+    {
+        var exponent = (int)(bits >> mantissaBits) & 0x1F;
+        var mantissa = bits & ((1u << mantissaBits) - 1);
+        var scale = 1f / (1 << mantissaBits);
+
+        return exponent switch
+        {
+            0 => mantissa == 0 ? 0f : mantissa * scale * MathF.Pow(2f, -14f),
+            0x1F => mantissa == 0 ? float.PositiveInfinity : float.NaN,
+            _ => (1f + (mantissa * scale)) * MathF.Pow(2f, exponent - 15),
+        };
     }
 
     /// <summary>Measures the channels, including how many distinct values red takes.</summary>
@@ -315,6 +477,13 @@ internal static unsafe class GBufferProbe
         DXGI_FORMAT.DXGI_FORMAT_B8G8R8A8_UNORM => "B8G8R8A8_UNORM",
         DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => "R8G8B8A8_UNORM",
         DXGI_FORMAT.DXGI_FORMAT_R16G16B16A16_FLOAT => "R16G16B16A16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R11G11B10_FLOAT => "R11G11B10_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16G16_FLOAT => "R16G16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R8G8_UNORM => "R8G8_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R10G10B10A2_UNORM => "R10G10B10A2_UNORM",
+        DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT => "R32_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R16_FLOAT => "R16_FLOAT",
+        DXGI_FORMAT.DXGI_FORMAT_R8_UNORM => "R8_UNORM",
         _ => format.ToString(),
     };
 }

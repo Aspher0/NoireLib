@@ -146,6 +146,203 @@ public class UiPositionTests
 
     #endregion
 
+    #region Addon mode
+
+    private static readonly UiRect PartyList = new(200f, 100f, 300f, 200f);
+
+    private static UiRect? Rects(string name) => name == "_PartyList" ? PartyList : null;
+
+    [Fact]
+    public void Addon_TopLeft_PinsElementToAddonCorner()
+    {
+        var position = UiPosition.AtAddon("_PartyList");
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(200f, 100f));
+    }
+
+    [Fact]
+    public void Addon_BottomRight_PinsElementBottomRightToAddonBottomRight()
+    {
+        var position = UiPosition.AtAddon("_PartyList", UiAnchor.BottomRight);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(400f, 250f), "the element sits inside the corner, as a screen anchor does");
+    }
+
+    [Fact]
+    public void Addon_IsRelativeToViewportOrigin()
+    {
+        var viewportPos = new Vector2(50f, 60f);
+        var position = UiPosition.AtAddon("_PartyList");
+
+        position.TryResolve(ElementSize, viewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(250f, 160f), "addon rects are relative to the game window, not the desktop");
+    }
+
+    [Fact]
+    public void Addon_WithOffset_AppliesOffset()
+    {
+        var position = UiPosition.AtAddon("_PartyList", UiAnchor.TopLeft, new Vector2(10f, -5f));
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(210f, 95f));
+    }
+
+    [Fact]
+    public void Addon_WithRatio_OverridesTheAnchor()
+    {
+        var position = UiPosition.AtAddon("_PartyList", UiAnchor.BottomRight);
+        position.AddonRatio = new Vector2(0f, 0.5f);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(200f, 175f));
+    }
+
+    [Fact]
+    public void Addon_MissingAddon_DoesNotResolve()
+    {
+        var position = UiPosition.AtAddon("_ItemDetail");
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeFalse();
+        resolved.Should().Be(Vector2.Zero);
+    }
+
+    [Fact]
+    public void Addon_EmptyRect_DoesNotResolve()
+    {
+        var position = UiPosition.AtAddon("_Collapsed");
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, _ => UiRect.Empty, out _)
+            .Should().BeFalse("an addon collapsed to nothing is not somewhere to put an element");
+    }
+
+    [Fact]
+    public void Addon_Resolve_FallsBackToTheEquivalentScreenAnchor()
+    {
+        var position = UiPosition.AtAddon("_ItemDetail", UiAnchor.BottomRight);
+
+        position.Resolve(ElementSize, ViewportPos, ViewportSize)
+            .Should().Be(new Vector2(900f, 450f), "Resolve always answers, and the screen corner is the honest fallback");
+    }
+
+    [Theory]
+    [InlineData(UiPositionMode.Anchor)]
+    [InlineData(UiPositionMode.Absolute)]
+    [InlineData(UiPositionMode.Ratio)]
+    public void TryResolve_NonAddonModes_AlwaysResolve(UiPositionMode mode)
+    {
+        var position = mode switch
+        {
+            UiPositionMode.Absolute => UiPosition.AtAbsolute(10f, 10f),
+            UiPositionMode.Ratio => UiPosition.AtRatio(0.5f, 0.5f),
+            _ => UiPosition.AtAnchor(UiAnchor.TopLeft),
+        };
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, _ => null, out _).Should().BeTrue();
+    }
+
+    #endregion
+
+    #region Side placement
+
+    [Fact]
+    public void NextToAddon_Right_PutsElementOutsideTheRightEdge()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Right);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(500f, 100f), "the element's left edge meets the addon's right edge");
+    }
+
+    [Fact]
+    public void NextToAddon_Left_PutsElementOutsideTheLeftEdge()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Left);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(100f, 100f));
+    }
+
+    [Fact]
+    public void NextToAddon_Below_PutsElementUnderTheBottomEdge()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Below);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(200f, 300f));
+    }
+
+    [Fact]
+    public void NextToAddon_Above_PutsElementOverTheTopEdge()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Above);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(200f, 50f));
+    }
+
+    [Fact]
+    public void NextToAddon_RightCenter_CentersOnTheEdge()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Right, UiAlign.Center);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(500f, 175f));
+    }
+
+    [Fact]
+    public void NextToAddon_RightEnd_AlignsBottomEdges()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Right, UiAlign.End);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(500f, 250f));
+    }
+
+    [Fact]
+    public void NextToAddon_WithGap_SeparatesTheTwo()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Right, UiAlign.Start, new Vector2(8f, 0f));
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(508f, 100f));
+    }
+
+    [Fact]
+    public void NextToAddon_Over_SharesTheAddonArea()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Over, UiAlign.Center);
+
+        position.TryResolve(ElementSize, ViewportPos, ViewportSize, Rects, out var resolved).Should().BeTrue();
+        resolved.Should().Be(new Vector2(300f, 175f), "centred over the addon in both axes");
+    }
+
+    [Theory]
+    [InlineData(UiSide.Left, 0f, 1f)]
+    [InlineData(UiSide.Right, 1f, 0f)]
+    [InlineData(UiSide.Above, 0f, 1f)]
+    [InlineData(UiSide.Below, 1f, 0f)]
+    public void GetSidePlacement_MirrorsAlongThePlacementAxis(UiSide side, float target, float pivot)
+    {
+        var (targetRatio, pivotRatio) = UiPosition.GetSidePlacement(side);
+        var axis = side is UiSide.Left or UiSide.Right;
+
+        (axis ? targetRatio.X : targetRatio.Y).Should().Be(target);
+        (axis ? pivotRatio.X : pivotRatio.Y).Should().Be(pivot);
+    }
+
+    [Fact]
+    public void NextToAddon_DoesNotClampByDefault()
+    {
+        var position = UiPosition.NextToAddon("_PartyList", UiSide.Right);
+
+        position.ClampToViewport.Should().BeFalse(
+            "an element that follows a window has to be allowed to follow it off the edge, not snap back");
+    }
+
+    #endregion
+
     #region Anchor ratios
 
     [Theory]

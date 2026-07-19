@@ -166,6 +166,33 @@ var decal = WorldGeometry.ProjectDecal(pos, Vector3.UnitY, 6f, 6f);        // cl
 
 The source is the same collision world a navmesh tool walks (streamed terrain, placed background models, housing furniture, and any dynamic object that registers a collider). `includeAnalytic: true` also pulls in box/cylinder/sphere/plane colliders (invisible walls, trigger volumes). `/noire3d worldgeo` toggles a live preview of it around you.
 
+## Lighting an object with the game's own lights (experimental)
+
+A node drawn the normal way is lit by this renderer's ambient and directional light, so a house lamp switched off changes nothing on it. `DrawGameLit` instead draws the node into the **game's own G-buffer**, inside the game's geometry pass, and the game's deferred lighting pass then lights it - every lamp, the sun, the ambient term, shadow-map lookups, tonemapping and exposure, all identical to the wall beside it rather than approximated:
+
+```csharp
+// Once per frame, for as long as the node should be game-lit. Nothing is retained between frames.
+node.Visible = false;               // or it draws twice: once here, once on the normal path
+NoireDraw3D.DrawGameLit(node);
+```
+
+Submit it from `Scene3D.OnPrepareFrame` rather than from a UI callback, or the object vanishes whenever that window is closed.
+
+**What it costs.** Everything that lives in this renderer's own pass is unavailable: outlines and rims, transparency and fade, ground decals, and drawing above everything. Deferred geometry is opaque. An object that needs any of those stays on the normal path. It also **casts no shadow** - shadow maps are rendered in an earlier pass this geometry is not part of, so an injected object is lit and shadowed correctly but casts nothing.
+
+**This is the only part of Draw3D that draws inside the game's frame rather than into its own target**, so it does nothing until a caller opts in, and it lapses again a few frames after the last submission.
+
+`NoireDraw3D.GameLit` holds what gets written into each channel of the game's buffer. Every default is a value measured off the game's own geometry, so an object that looks right needs none of it; the properties exist because several of those channels have a known value and an unknown meaning, and the way to settle one is to change it and see what responds:
+
+| Property | What it is |
+|---|---|
+| `Misc` | rtv3's four channels, written verbatim. Red is the half-float ceiling on world geometry - the only value written anywhere near that magnitude. |
+| `ShadingModelId` | rtv0's alpha: which of the game's shading models runs over these pixels. `128` is furniture and architecture, `32` is characters. |
+| `MaterialParams`, `MaterialOverride` | rtv1's scalars, and how much they replace the specular map a material samples. rtv1 feeds the specular response, the one lighting term that ignores albedo and moves with the camera. |
+| `Stencil` | The category stamped into the stencil plane. World geometry measures `0x00`, which is what an unwritten pixel already holds, so the default matches the furniture beside it. |
+| `AlbedoOverride` | Forces a flat albedo. Black is the test that separates a wrong G-buffer from a downstream pass that never reads it. |
+| `WriteColor`, `WriteDepth` | Turn off each half of what the injection puts into the game's frame. Not independent in practice: the depth write is what makes the colour write survive the rest of the pass, so with depth off the world simply draws over the object. |
+
 ## Picking
 
 ```csharp
@@ -250,7 +277,8 @@ A disposed texture in any slot skips the draw rather than binding a stale pointe
 | `/noire3d platedepth` | Toggles `NativeUi.Nameplates` (depth-aware vs always-visible nameplates). |
 | `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. The answer to "is keeping the UI on top actually doing anything". |
 | `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Separates the two ways nameplate layering looks broken on screen but is not the same bug: factor 1 on a covered plate means the mask never found its pixels; factor 0 on a plate that should read on top means the occlusion test decided wrongly. |
-| `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log (injection-point diagnostics). |
+| `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log, with every bind's pixel format (injection-point diagnostics). |
+| `/noire3d framedump <from> [count]` | Writes out what a span of those binds actually produced, as images, one per bind index. Walks the frame in order to find the first pass where a pixel is already wrong - which a wrong final image cannot tell you, and which toggling graphics settings can only answer for the passes a setting exposes. Each dump stalls the frame; keep the span small. |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
 

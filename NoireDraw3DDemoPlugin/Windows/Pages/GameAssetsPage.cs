@@ -33,7 +33,40 @@ internal sealed class GameAssetsPage : IDisposable
     ];
 
     private readonly List<SceneNode> spawned = [];
+
+    /// <summary>
+    /// Draw the spawned meshes into the game's own G-buffer instead of Draw3D's layer, so the game's deferred
+    /// lighting pass lights them with every lamp, the sun and the ambient term, and walls occlude them at pixel
+    /// precision. Off by default: this is the one path that draws inside the game's frame.
+    /// </summary>
+    private bool gameLit;
+
+    /// <summary>Whether the albedo is being forced flat, which separates a wrong G-buffer from a downstream pass that never reads it.</summary>
+    private bool flatAlbedo;
+
+    /// <summary>The colour the albedo is forced to while <see cref="flatAlbedo"/> is on.</summary>
+    private Vector3 flatAlbedoColor = Vector3.Zero;
+
     private readonly Dictionary<string, GameMaterial> materials = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The three values worth writing into rtv3's red channel. A slider is the wrong control for it: the game
+    /// writes the half-float ceiling there and every other value in that span is one no surface holds, so the
+    /// choice is between the measured value and the two that would show a channel driving an intensity term.
+    /// </summary>
+    private enum MiscRed
+    {
+        /// <summary>65504, the value the game's own world geometry carries.</summary>
+        Sentinel,
+
+        /// <summary>1, the top of the range every other channel uses.</summary>
+        One,
+
+        /// <summary>0, the value the game's characters carry.</summary>
+        Zero,
+    }
+
+    private MiscRed miscRed = MiscRed.Sentinel;
 
     /// <summary>
     /// How a loaded material is turned into something this renderer draws. One choice rather than several
@@ -118,6 +151,8 @@ internal sealed class GameAssetsPage : IDisposable
             DrawStainPicker();
             Ui.Color3("Dye color", () => dye, v => dye = v,
                 "What the dyeable area is tinted with when the toggle above is on; Game shading uses it and the other modes ignore it. Picking a dye above sets this to that dye's exact color.");
+            Ui.Toggle("Light with the game's lights", () => gameLit, v => gameLit = v,
+                "Draws into the game's own G-buffer so the game lights it: every lamp, the sun, ambient, and walls occluding it properly. The object turns opaque and loses outlines, fades and above-everything while this is on, and it casts no shadow of its own yet.");
             Ui.Toggle("Ignore this renderer's light", () => ignoreSceneLight, v => ignoreSceneLight = v,
                 "Removes this renderer's lighting from Game shading, leaving the surface at the colors its texture and dye give it. This is the absence of our light, not the presence of the game's: use it to judge a color question without lighting confusing the comparison, since the two are impossible to tell apart by eye otherwise.");
             Ui.Slider("Dye reference", () => dyeReference, v => dyeReference = v, 0f, 1f,
@@ -147,6 +182,12 @@ internal sealed class GameAssetsPage : IDisposable
                 ImGuiColors.DalamudOrange);
         }
 
+        if (gameLit)
+        {
+            Ui.Gap();
+            DrawGameLitChannels();
+        }
+
         Ui.Gap();
         DrawActions();
 
@@ -161,6 +202,93 @@ internal sealed class GameAssetsPage : IDisposable
 
         DrawDecoded();
     }
+
+    /// <summary>
+    /// The values the injection writes into the channels the game authored. Every one of them defaults to what
+    /// was measured off the game's own geometry, so this section is for identifying the channels whose meaning
+    /// is still unknown: change one, look at the object, and a channel that moves the result is a channel that
+    /// matters. Reading a value off a shape has been wrong every time on this workstream; watching what
+    /// responds has been right every time.
+    /// </summary>
+    private void DrawGameLitChannels()
+    {
+        Ui.Section("Game-lit G-buffer channels");
+        Ui.Note("What the object writes into the game's own frame. The defaults are the measured ones, so an object that looks right needs none of this.");
+        Ui.Gap();
+
+        Ui.Note("The injection puts two things into the game's frame: a description of the surface, in five color targets, and a depth value. Neither switch below isolates one cleanly. Turning the color off does not leave a neutral object, it leaves a depth surface with no material under it, which is its own separate defect. Turning depth off removes the object entirely, because it is drawn first in the pass and everything the game draws afterwards paints over the pixels it would have held.");
+        Ui.Gap();
+
+        using (Ui.Form("assets.gamelit.writes"))
+        {
+            Ui.Toggle("Write the color targets", () => NoireDraw3D.GameLit.WriteColor, v => NoireDraw3D.GameLit.WriteColor = v,
+                "Off writes depth only and nothing into the five targets. Read the result carefully: an object with a depth value and an undescribed surface is not the same experiment as an object that describes itself correctly.");
+            Ui.Toggle("Write depth", () => NoireDraw3D.GameLit.WriteDepth, v => NoireDraw3D.GameLit.WriteDepth = v,
+                "Off leaves the game's depth buffer untouched, and the object then vanishes completely: the world draws over the pixels it would have occupied. Useful for removing the object without removing the injection, not for testing depth on its own.");
+        }
+
+        Ui.Gap();
+        Ui.Note("Below: the individual channels of the surface description. Material is the one that drives the specular response, which is the only lighting term that ignores albedo and shifts as the camera moves.");
+        Ui.Gap();
+
+        using (Ui.Form("assets.gamelit"))
+        {
+            Ui.Enum<MiscRed>("Misc red", () => miscRed, v =>
+            {
+                miscRed = v;
+                var misc = NoireDraw3D.GameLit.Misc;
+                NoireDraw3D.GameLit.Misc = misc with { X = RedValue(v) };
+            }, "rtv3's red channel. The game writes the half-float ceiling (65504) on world geometry and 0 on characters, which reads as a marker rather than a measurement - but it is also the only value the injection writes that is nowhere near 0 to 1, so a pass that multiplies by it instead of testing it would blow the object out while every other channel still reads correctly. This is the first thing to try.");
+
+            Ui.Slider("Misc green", () => NoireDraw3D.GameLit.Misc.Y, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { Y = v }, 0f, 1f,
+                "Measured at zero everywhere in the game's own buffer, so this is here to confirm that rather than to tune it.");
+            Ui.Slider("Misc blue", () => NoireDraw3D.GameLit.Misc.Z, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { Z = v }, 0f, 1f,
+                "Carries data in 0.25 to 1.0 in the game's buffer; what it means is unmeasured.");
+            Ui.Slider("Misc alpha", () => NoireDraw3D.GameLit.Misc.W, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { W = v }, 0f, 1f,
+                "Carries data in 0.8 to 1.0 in the game's buffer; what it means is unmeasured.");
+
+            Ui.Slider("Replace the material map", () => NoireDraw3D.GameLit.MaterialOverride, v => NoireDraw3D.GameLit.MaterialOverride = v, 0f, 1f,
+                "How much the three values below replace the specular map this material samples into rtv1. 0 writes the map as its author drew it. 1 writes the flat values instead, which is the test for whether the map's channels are being written into the wrong slots: rtv1 drives the specular response, and the object going bright under room lights while its albedo is black points here rather than at the albedo.");
+            Ui.Slider3("Material values", () => NoireDraw3D.GameLit.MaterialParams, v => NoireDraw3D.GameLit.MaterialParams = v, 0f, 1f,
+                "The three rtv1 scalars, used whenever the slider above is above 0 and always on a material with no specular map. All three at 0 is the decisive setting: a material that reflects nothing cannot produce a specular highlight, so if the object is still blown out with these at zero, rtv1 is not the cause.");
+
+            Ui.Int("Shading model", () => NoireDraw3D.GameLit.ShadingModelId, v => NoireDraw3D.GameLit.ShadingModelId = (byte)Math.Clamp(v, 0, 255),
+                "rtv0's alpha: which of the game's shading models runs over these pixels. 128 is what furniture and architecture carry and is the default; 32 is what characters carry. Six ids exist in total, and one the game does not use is not a neutral value.");
+
+            Ui.Int("Stencil value", () => (int)NoireDraw3D.GameLit.Stencil, v => NoireDraw3D.GameLit.Stencil = (uint)Math.Clamp(v, 0, 255),
+                "The category stamped into the stencil plane alongside the geometry. 0 writes none, which leaves the object's pixels holding whatever the pass began with - a category the object is not. Run /noire3d stencil, look at what the furniture around you carries, and put that here.");
+
+            Ui.Toggle("Force a flat albedo", () => flatAlbedo, v =>
+            {
+                flatAlbedo = v;
+                NoireDraw3D.GameLit.AlbedoOverride = new Vector4(flatAlbedoColor, v ? 1f : 0f);
+            }, "Replaces the material's albedo with the color below. Black is the decisive test: an object whose albedo is black and which is still bright on screen is not being lit from the albedo it wrote, which moves the fault out of the G-buffer entirely.");
+
+            Ui.Color3("Flat albedo color", () => flatAlbedoColor, v =>
+            {
+                flatAlbedoColor = v;
+                if (flatAlbedo)
+                    NoireDraw3D.GameLit.AlbedoOverride = new Vector4(v, 1f);
+            }, "What the albedo is forced to. Black answers the question above; a saturated color confirms the write is landing at all.");
+        }
+
+        Ui.Gap();
+        if (Ui.IconButton(FontAwesomeIcon.Undo, "Restore the measured defaults"))
+        {
+            NoireDraw3D.GameLit.Reset();
+            miscRed = MiscRed.Sentinel;
+            flatAlbedo = false;
+            flatAlbedoColor = Vector3.Zero;
+        }
+    }
+
+    /// <summary>The rtv3 red value each choice writes.</summary>
+    private static float RedValue(MiscRed choice) => choice switch
+    {
+        MiscRed.One => 1f,
+        MiscRed.Zero => 0f,
+        _ => Draw3DGameLit.MiscRedSentinel,
+    };
 
     /// <summary>
     /// Picks one of the game's own dyes, so the color applied is a value the game stains with rather than one
@@ -436,6 +564,11 @@ internal sealed class GameAssetsPage : IDisposable
             return scene;
 
         scene = NoireDraw3D.CreateScene("Draw3DDemo.GameAssets");
+
+        // Per frame, not per UI draw: the injection queue is rebuilt every frame, and a page only draws while
+        // its window is open, so submitting from Draw would make a game-lit object vanish when the window is
+        // closed.
+        scene.OnPrepareFrame += _ => SubmitGameLit();
         return scene;
     }
 
@@ -479,5 +612,28 @@ internal sealed class GameAssetsPage : IDisposable
         target?.Dispose();
         spawned.Clear();
         DisposeMaterials();
+    }
+
+    /// <summary>
+    /// Routes the spawned meshes to whichever pass is selected, every frame. A game-lit node is hidden from the
+    /// normal path first: the injection is an additional draw, not a replacement one, so leaving it visible
+    /// draws the mesh twice, once lit by the game and once by Draw3D.<br/>
+    /// Driven from the scene's per-frame event rather than from <see cref="Draw"/>, because the injection queue
+    /// is rebuilt every frame and a UI page only draws while its window is open - submitting from there makes
+    /// the object vanish the moment the window is closed.
+    /// </summary>
+    public void SubmitGameLit()
+    {
+        for (var i = 0; i < spawned.Count; i++)
+        {
+            var node = spawned[i];
+            if (node.IsDestroyed)
+                continue;
+
+            node.Visible = !gameLit;
+
+            if (gameLit)
+                NoireDraw3D.DrawGameLit(node);
+        }
     }
 }

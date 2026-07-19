@@ -43,6 +43,18 @@ public static unsafe partial class NoireDraw3D
     private static StateGuard? stateGuard;
     private static StateCache? stateCache;
     private static ShaderLibrary? shaderLibrary;
+
+    /// <summary>
+    /// The G-buffer injection pass: meshes drawn into the game's own geometry pass so the game's deferred
+    /// lighting lights them. Null until the first object opts in.
+    /// </summary>
+    private static Core.GBufferInject? gbufferInject;
+
+    /// <summary>Frames since anything was submitted for injection; the injection lapses after a few.</summary>
+    private static int gbufferIdleFrames;
+
+    /// <summary>How many idle frames before the per-draw hooks are released.</summary>
+    private const int GBufferIdleFramesBeforeOff = 3;
     private static ScenePass? scenePass;
     private static Compositor? compositor;
     private static RenderTarget? sceneRt;
@@ -350,6 +362,9 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>Performance knobs: automatic model level-of-detail, and optional distance / screen-size culling.</summary>
     public static Draw3DPerformance Performance { get; } = new();
+
+    /// <summary>What <see cref="DrawGameLit(Scene.SceneNode)"/> writes into the game's G-buffer. The defaults are the measured ones.</summary>
+    public static Draw3DGameLit GameLit { get; } = new();
 
     /// <summary>A snapshot of the renderer's counters (see <see cref="Draw3DStats"/>).</summary>
     public static Draw3DStats Stats => BuildStats();
@@ -746,6 +761,8 @@ public static unsafe partial class NoireDraw3D
             compositor = null;
             shaderLibrary?.Dispose();
             shaderLibrary = null;
+            gbufferInject?.Dispose();
+            gbufferInject = null;
             stateCache?.Dispose();
             stateCache = null;
             sceneRt?.Dispose();
@@ -906,6 +923,15 @@ public static unsafe partial class NoireDraw3D
         // frame's injection and resets its per-frame counters. Must run every present - this is why the layer
         // has to keep drawing while the UI is hidden (see KeepDrawingWhenUiHidden), or injection would stall.
         renderTargetTap?.OnPresent((nint)backBuffer.Texture);
+
+        // Age the injection out when nothing is being submitted, so a session that used it once does not carry
+        // a per-draw managed callback for the rest of its life. A few frames of slack keeps a caller that
+        // submits slightly late from thrashing the hooks on and off.
+        if (renderTargetTap is { GBufferInjectionEnabled: true } gbufTap && ++gbufferIdleFrames > GBufferIdleFramesBeforeOff)
+        {
+            gbufTap.GBufferInjectionEnabled = false;
+            gbufferInject?.Clear();
+        }
 
         // The render-thread injection already rendered + composited this frame's scene under the native UI,
         // with the same camera the world was drawn with (zero latency). Compositing again here would just paint
@@ -1478,6 +1504,101 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
+    /// Draws a node into the game's G-buffer for this frame, so the game's own lighting pass lights it.<br/>
+    /// Call once per frame for as long as the node should be game-lit; nothing is retained between frames.<br/>
+    /// <b>Set <see cref="Scene.SceneNode.Visible"/> to false on the node as well</b>, or it is drawn twice: once
+    /// here and once by the normal path.<br/>
+    /// A game-lit node is opaque and cannot carry an outline, a fade or a ground decal, and cannot be drawn
+    /// above everything. Those live in Draw3D's own pass, which this bypasses. Picking, hover and click events
+    /// are unaffected - they never depended on which pass drew the node.
+    /// </summary>
+    /// <param name="node">The node to inject. Ignored when it has no mesh.</param>
+    /// <returns>Whether the node was queued.</returns>
+    public static bool DrawGameLit(Scene.SceneNode node)
+    {
+        if (node?.Renderer?.Mesh is not { } mesh)
+            return false;
+
+        var material = node.Renderer.Material;
+        var texture = material.Texture;
+        var textured = texture is { IsDisposed: false };
+
+        // A game material carries its normal map in AuxTexture0 and its specular map in AuxTexture1. Both are
+        // needed: without them the object is written as a flat surface with a constant material response, which
+        // is visibly wrong beside the game's own copy of the same model.
+        var normal = material.AuxTexture0;
+        var specular = material.AuxTexture1;
+        var hasMaps = normal is { IsDisposed: false } && specular is { IsDisposed: false };
+
+        EnqueueGameLit(
+            mesh,
+            node.WorldMatrix,
+            material.Color,
+            textured,
+            textured ? texture!.SrvPointer : 0,
+            hasMaps ? normal!.SrvPointer : 0,
+            hasMaps ? specular!.SrvPointer : 0,
+            material.SurfaceParams.X > 0f ? material.SurfaceParams.X : 1f);
+        return true;
+    }
+
+    /// <summary>
+    /// Queues one mesh for the next G-buffer pass. The queue is drained on the render thread inside that pass
+    /// and cleared either way, so a frame that never reaches it drops its queue rather than carrying it forward.
+    /// </summary>
+    /// <param name="mesh">The geometry.</param>
+    /// <param name="world">Its world transform.</param>
+    /// <param name="color">Albedo tint, multiplied into the vertex colour.</param>
+    /// <param name="textured">Whether the mesh samples a base texture into its albedo.</param>
+    /// <param name="srv">The base texture, when textured.</param>
+    /// <param name="normalSrv">The material's normal map, which supplies the surface relief the game's own normal buffer shows.</param>
+    /// <param name="specularSrv">The material's specular map, which supplies rtv1's per-pixel material response.</param>
+    /// <param name="normalStrength">How strongly the normal map perturbs the surface normal.</param>
+    internal static void EnqueueGameLit(Geometry.Mesh mesh, in Matrix4x4 world, Vector4 color, bool textured = false, nint srv = 0, nint normalSrv = 0, nint specularSrv = 0, float normalStrength = 1f)
+    {
+        if (renderTargetTap is not { } tap || shaderLibrary is null || renderDevice is null)
+            return;
+
+        gbufferInject ??= new Core.GBufferInject();
+
+        // Bound once. The callback runs on the render thread at the game's own geometry pass.
+        tap.GBufferInjector ??= RunGBufferInjection;
+
+        // Re-armed on every submission and allowed to lapse when submissions stop, because being enabled keeps
+        // a managed callback on every draw the game makes. Latching it on at first use would leave that cost in
+        // place for the rest of the session after a single game-lit object.
+        tap.GBufferInjectionEnabled = true;
+        gbufferIdleFrames = 0;
+
+        gbufferInject.Enqueue(new Core.GBufferInject.Item(
+            mesh, world, color, textured, srv, normalSrv, specularSrv, normalStrength));
+    }
+
+    /// <summary>
+    /// Draws the queued game-lit meshes. Runs on the render thread, inside the game's geometry pass, with the
+    /// game's own targets bound.<br/>
+    /// The camera must be the COMMITTED capture, not a struct read: this geometry lands in the game's own
+    /// pixels, so any mismatch against the camera the game rasterized with puts it in the wrong ones. That is
+    /// the same failure the overlay path spent a long time eliminating, and it is worse here, because there is
+    /// no compositing step left in which it could be corrected.
+    /// </summary>
+    private static void RunGBufferInjection()
+    {
+        if (gbufferInject is not { HasWork: true } inject || renderDevice is null || shaderLibrary is null)
+            return;
+
+        if (cameraCapture is null || !cameraCapture.TryGetCommitted(presentTimePath: false, out var viewProj))
+        {
+            // No committed camera means no way to place the geometry correctly. Drawing it anyway would put it
+            // in the wrong pixels of the game's own buffer, which is worse than not drawing it.
+            inject.Clear();
+            return;
+        }
+
+        inject.Execute(renderDevice, shaderLibrary, Matrix4x4.Transpose(viewProj), GameLit);
+    }
+
+    /// <summary>
     /// The camera to project the injected layer with. <paramref name="gpuViewProj"/> receives the frame's committed
     /// GPU camera constants when the capture has them - the exact uploaded bytes the world pixels were rasterized
     /// from, the source that eliminates the camera swim at any load. <paramref name="cam"/> is the render-thread
@@ -2034,13 +2155,42 @@ public static unsafe partial class NoireDraw3D
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 
+    /// <summary>
+    /// Writes out what a span of the frame's render-target binds actually produced.<br/>
+    /// The frame walker answers a question no amount of toggling can: <i>which pass first produces the wrong
+    /// pixel</i>. Turning a graphics setting off can only rule out the passes a setting exposes, and a wrong
+    /// pixel in the final image carries no record of where it came from. Walking the binds in order and looking
+    /// at each one finds the first image where the pixel is already wrong, and that names the pass.
+    /// </summary>
+    /// <param name="rest">"from [count]" - indices as printed by <c>/noire3d rtlog</c>.</param>
+    private static void HandleFrameDumpCommand(string rest)
+    {
+        if (EnsureRenderTargetTap() is not { } dumpTap)
+        {
+            Print("Draw3D: the render-target tap could not be installed (see the log).");
+            return;
+        }
+
+        var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 0 || !int.TryParse(parts[0], out var from))
+        {
+            Print("Draw3D: /noire3d framedump <from> [count] - run /noire3d rtlog first, then walk its bind indices. Each dump stalls the frame, so keep the span small.");
+            return;
+        }
+
+        var count = parts.Length > 1 && int.TryParse(parts[1], out var parsed) ? parsed : 4;
+        var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NoireLib_FrameDump");
+        dumpTap.ArmFrameDump(from, count, folder);
+        Print($"Draw3D: dumping binds {from}..{from + count - 1} on the next frame - images in {folder}, one per bind, named by index. The frame will hitch.");
+    }
+
     private static void RegisterCommand()
     {
         // Commands are global and NoireLib is statically linked per plugin - registration is best-effort;
         // the Diagnostics facade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | gbuffer | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump <from> [count] | gbuffer | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -2159,6 +2309,9 @@ public static unsafe partial class NoireDraw3D
                     Print("Draw3D: the render-target tap could not be installed (see the log).");
                 }
 
+                break;
+            case "framedump":
+                HandleFrameDumpCommand(rest);
                 break;
             case "ontop":
                 NativeUi.Layering = NativeUi.Layering == Draw3DLayering.UnderGameUi ? Draw3DLayering.OverEverything : Draw3DLayering.UnderGameUi;

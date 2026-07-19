@@ -115,6 +115,31 @@ internal sealed unsafe class ShaderLibrary : IDisposable
     }
 
     /// <summary>Gets the outline coverage-mask pipeline for a solid mesh silhouette (non-instanced, standard vertex layout), or null on compile failure.</summary>
+    /// <summary>
+    /// Gets the pipeline that writes a mesh into the GAME's G-buffer, so the game's own lighting pass lights
+    /// it. Null on compile failure, which leaves the object on its normal path rather than failing the frame.
+    /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="textured">Whether the mesh samples a base texture into its albedo.</param>
+    /// <param name="maps">Whether the material's normal and specular maps are bound, giving per-pixel detail.</param>
+    public ShaderPipeline? GetGameGBuffer(RenderDevice device, bool textured, bool maps)
+    {
+        var key = $"GameGBuffer{(textured ? "_T" : string.Empty)}{(maps ? "_M" : string.Empty)}";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var defineList = new List<(string, string)>(2);
+        if (textured)
+            defineList.Add(("GBUFFER_TEXTURED", "1"));
+        if (maps)
+            defineList.Add(("GBUFFER_MAPS", "1"));
+
+        var defines = defineList.Count > 0 ? defineList : null;
+        var pipeline = Compile(device, key, GetSource("GameGBuffer.hlsl"), defines, instanced: false, createLayout: true);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
     public ShaderPipeline? GetOutlineMaskMesh(RenderDevice device)
     {
         const string key = "OutlineMaskMesh";

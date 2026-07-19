@@ -21,6 +21,10 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Dialogs you await (NoireModal)](#dialogs-you-await-noiremodal)
 - [Overlay Buttons](#overlay-buttons)
 - [Positioning (UiPosition)](#positioning-uiposition)
+  - [Targets that may not be there](#targets-that-may-not-be-there)
+- [Pinning a window to the game (NoireAddonAttach)](#pinning-a-window-to-the-game-noireaddonattach)
+- [Labels in the world (NoireWorldLabel)](#labels-in-the-world-noireworldlabel)
+- [Gauges and sparklines (NoireGauges)](#gauges-and-sparklines-noiregauges)
 - [Combo Box](#combo-box)
   - [Keeping the search](#keeping-the-search)
   - [Long lists](#long-lists)
@@ -762,7 +766,7 @@ button.AlwaysOnTop = true; // Draws above every regular ImGui window
 
 ## Positioning (UiPosition)
 
-`UiPosition` is used by the overlay button and describes a screen position in one of three modes:
+`UiPosition` is used by the overlay button and describes a screen position in one of four modes:
 
 ```csharp
 // 1. One of the nine screen anchors, plus an optional pixel offset:
@@ -773,6 +777,12 @@ UiPosition.AtAbsolute(100f, 250f);
 
 // 3. Screen ratio: 10% from the left, 10% from the top:
 UiPosition.AtRatio(0.1f, 0.1f);
+
+// 4. A corner of a native game window, followed as the player moves or rescales it:
+UiPosition.AtAddon("_PartyList", UiAnchor.TopRight);
+
+// ...or alongside one rather than over it:
+UiPosition.NextToAddon("_PartyList", UiSide.Right, UiAlign.Start);
 ```
 
 Options:
@@ -784,7 +794,201 @@ UiPosition.AtRatio(0.5f, 0.5f)
     .WithClampToViewport(false);        // Clamping is enabled by default: the element always stays fully on screen
 ```
 
-In `Anchor` mode the pivot is automatic and intuitive: `BottomRight` pins the bottom right corner of the element to the bottom right corner of the screen, `MiddleCenter` centers it, etc.
+In `Anchor` mode the pivot is automatic and intuitive: `BottomRight` pins the bottom right corner of the element to the bottom right corner of the screen, `MiddleCenter` centers it, etc. `Addon` mode reads the same way against the game window's own rectangle instead of the screen's.
+
+### Targets that may not be there
+
+`Addon` mode is the only mode that can fail to resolve, because the game window may not be on screen. `TryResolve` says so, and returning `false` is the signal to draw nothing:
+
+```csharp
+if (position.TryResolve(size, out var topLeft))
+    ImGui.SetNextWindowPos(topLeft);
+```
+
+That is the whole of "a button that exists only while the Duty Finder is open": name the addon, and skip the frame when it is not there. The overlay button already does this, so `button.Position = UiPosition.AtAddon("ContentsFinder")` is enough on its own.
+
+`Resolve` always answers, falling back to the equivalent screen anchor when the game window is missing, and stays the right call where hiding would be worse than being in the wrong place (the toast area, for one).
+
+Every overload takes an optional source of rectangles, so a position can be resolved against something other than the live game:
+
+```csharp
+position.TryResolve(size, viewportPos, viewportSize, name => myRects[name], out var topLeft);
+```
+
+`UiAddon` is the live source, and is public for its own sake:
+
+```csharp
+if (UiAddon.TryGetRect("_PartyList", out var rect))
+    // rect.Position is relative to the game window, rect.Size is in real pixels
+```
+
+---
+
+## Pinning a window to the game (NoireAddonAttach)
+
+Docks one of your windows to a native game window. It writes the window's own position rather than drawing anything, so it composes with whatever the window already does.
+
+```csharp
+new NoireAddonAttach(myWindow, "_PartyList", UiSide.Right) { Gap = 8f };
+```
+
+That is the whole setup. The attachment registers itself and applies every frame.
+
+| Property | Default | What it does |
+|---|---|---|
+| `AddonName` | ctor | The game window to follow. |
+| `Side` | `Right` | Which side to sit on. `Over` shares its area instead. |
+| `Align` | `Start` | How to line up along that side. |
+| `Gap` | `0` | Distance from the game window, always measured away from it. |
+| `Offset` | zero | An additional nudge, taken verbatim. |
+| `MatchWidth` / `MatchHeight` | off | Resize to the game window on that axis. Independent of each other. |
+| `FollowVisibility` | on | Close while the game window is not on screen. |
+| `RestoreOnReappear` | on | Reopen when it comes back. |
+| `Enabled` | on | Turning it off hands the window straight back. |
+| `PositionOverride` | none | A `UiPosition` used instead of the side/align/gap trio. |
+| `IsAttached` | - | Whether the game window was found last frame. |
+| `IsAddonVisible` | - | Whether it is on screen right now, asked directly. |
+| `OnAttachedChanged` | none | Raised when that changes. |
+
+### Matched axes are independent
+
+| `MatchWidth` | `MatchHeight` | The window |
+|---|---|---|
+| off | off | resizes freely on both axes |
+| on | off | is pinned to the game window's width, and still resizes vertically |
+| off | on | is pinned to its height, and still resizes horizontally |
+| on | on | does not resize |
+
+Matching is written as `SizeConstraints`, not as `Size`, and that is what makes the axes independent. A `Size` is both axes at once: matching only the width would still have to write *some* height, and the only height available to write is the one it last wrote. That pins the axis nobody asked to match to itself, forever — a feedback loop rather than a setting. A minimum and maximum can speak per axis, so a matched axis is the two meeting and a free axis spans nothing to everything, which is the same "no constraint" Dalamud writes itself.
+
+### Taking the window, and giving it back
+
+The attachment holds a window's position and size constraints only while it is actually placing it. Turn `Enabled` off, turn both `MatchWidth` and `MatchHeight` off, or let the game window go off screen, and whatever was taken over is handed back exactly as it was found. Nothing moves on release: Dalamud only applies a position or size that is set at all, so giving them back simply stops them being reasserted.
+
+This matters because Dalamud reapplies a position and a set of constraints every single frame they are set, the position with `ImGuiCond.Always`. An attachment that merely *stopped writing* would leave the window frozen wherever it was last put, undraggable and unresizable for the rest of the session, with nothing on screen to say why.
+
+### Visibility is decided before the frame, not during it
+
+`FollowVisibility` is applied on the framework tick rather than from `Apply`. Dalamud tests whether a window is open, then calls its `PreDraw` and draws it, in that order and in one pass — so a window closed from `PreDraw` has already been let through the test and draws once anyway. Deciding a tick earlier is what makes a window that cannot be shown never appear at all, rather than flashing up for a single frame.
+
+That leaves one thing for the caller. Nothing can intercept `window.IsOpen = true`, so opening a window whose game window is absent still closes it again immediately, which looks like the button doing nothing. Ask first:
+
+```csharp
+if (attach.FollowVisibility && !attach.IsAddonVisible)
+    NoireToast.Error($"{attach.AddonName} is not on screen.");
+else
+    myWindow.IsOpen = true;
+```
+
+### Keeping up with a drag
+
+Apply it from the window's own `PreDraw` when it has to track a game window being dragged:
+
+```csharp
+public override void PreDraw() => attach.Apply();
+```
+
+Dalamud applies a window's position immediately after `PreDraw` returns, so this is frame-for-frame. The automatic pass runs elsewhere in the frame and can land one frame behind, which shows up only during a drag.
+
+---
+
+## Labels in the world (NoireWorldLabel)
+
+A label pinned to a place rather than to the screen, projected every frame.
+
+```csharp
+new NoireWorldLabel("target")
+{
+    Text = "Target",
+    WorldOffset = new Vector3(0f, 2.2f, 0f),
+    OffScreen = WorldLabelOffScreen.EdgeArrow,
+    MaxDistance = 60f,
+    FadeDistance = 40f,
+}
+.Follow(() => NoireService.TargetManager.Target);
+```
+
+| Property | Default | What it does |
+|---|---|---|
+| `WorldPosition` / `At(...)` | zero | A fixed point to pin to. |
+| `PositionSource` | none | Where to read the position each tick. |
+| `ObjectSource` / `Follow(...)` | none | Which game object to follow. |
+| `WorldOffset` | zero | Added in world space. `(0, 2.2, 0)` is about head height. |
+| `Text` / `Content` / `Renderer` | - | Plain text, rich content, or a body you draw. |
+| `Pivot` | `(0.5, 1)` | Which point of the label sits on the world point. |
+| `MaxDistance` | `0` | Where it stops being drawn. Zero means no limit and no fade. |
+| `FadeDistance` | `0` | Where it starts fading toward that. |
+| `BaseScale` | `1` | A fixed multiplier on the whole label, distance scaling aside. |
+| `ScaleWithDistance` | off | Whether distance changes the size at all. |
+| `Scaling` | `Perspective` | `Perspective` (reference distance) or `Ramp` (between two distances). |
+| `ScaleReferenceDistance` | `20` | `Perspective`: where it is drawn at its authored size. |
+| `ShrinkFromDistance` / `ShrinkToDistance` | `10` / `60` | `Ramp`: where shrinking starts and finishes. |
+| `MinScale` / `MaxScale` | `0.6` / `1.4` | The bounds, in both modes. |
+| `ScaleStep` | `0.25` | The steps the distance scale rounds to. Zero scales smoothly. |
+| `Background` / `BackgroundOpacity` | theme / `0.8` | The plate colour, and how opaque it is drawn. |
+| `OffScreen` | `Hide` | `Hide`, `Clamp`, or `EdgeArrow`. |
+| `EdgeMargin` | `24` | How far a pinned label stays clear of the edges. |
+| `ArrowSize` / `ArrowGap` | `14` / `4` | The edge arrow, and how far it stands off the label. |
+| `AlwaysOnTop` | off | Keep in front of every other window, for clicks as well as drawing. |
+| `OnClick` / `Tooltip` | none | Setting either makes the label take the mouse. |
+| `IsInView` / `IsOnScreen` / `Distance` | - | What happened last frame. |
+
+Every one of these belongs to the label it is set on. There is no page-wide or global equivalent: a plugin marking three different things wants three different markers, and they are configured one at a time.
+
+A world label draws itself: it starts at an explicit `AutoDraw = true`, because a label pinned to the world has no place inside one of your windows to be drawn from. Set `AutoDraw = false` and call `Draw()` yourself to place it in your own draw order, or `null` to follow the `NoireUI.AutoDraw` master default. See [Automatic drawing](#automatic-drawing).
+
+Two things about it are not adjustable, because getting either wrong is worse than any setting:
+
+- **What it follows is read on the framework thread** and reduced to a position there. A game object can be freed between the frame that found it and the frame that draws it, and reading one from the draw thread is an access violation rather than a wrong number.
+- **The label takes no input at all** until `OnClick` or `Tooltip` is set. Something drawn over the world that silently eats clicks is indistinguishable from a broken game.
+
+**Off screen, only the direction is read.** The game's `WorldToScreen` divides by the absolute value of the clip-space w, so a point behind the camera comes back already reflected through the centre of the screen: the direction from the centre is the true one and stays continuous as a point crosses the camera plane, while the distance means nothing. A label that has left the view is therefore cast out from the centre along that direction until it meets the edge, and pinned there by its centre. Clamping the projected point cannot do this job, because a point behind the camera routinely projects *inside* the viewport (something exactly behind you lands on the centre) and clamping leaves it exactly where it was. The arrow follows the same direction outward, so a marker for something behind you points off the bottom of the screen rather than back into the middle of it.
+
+**Two ways to shrink.** `Perspective` is the reference distance over the real one, which is how the world itself shrinks: authored size at `ScaleReferenceDistance`, half of it at twice that. `Ramp` shrinks evenly between `ShrinkFromDistance` and `ShrinkToDistance`, which is the same pair of numbers as the distance fade and answers "where does it stop shrinking" outright. Both clamp to `MinScale` and `MaxScale`. `BaseScale` multiplies on top of whichever you pick, and applies just as well with `ScaleWithDistance` off, so it is the knob for a label that is simply bigger than the rest.
+
+**Scaling is stepped, so the text stays sharp.** `NoireText` draws a size by building a real font at it; a label scaled smoothly would want one per pixel of distance, and each is a full glyph atlas out of a deliberately small cache. `ScaleStep` rounds the distance part of the scale so the whole range costs a handful of sizes, every one of them rasterized rather than resampled. Set it to zero for a smooth ramp and accept the stretch. `BaseScale` multiplies after the stepping, so it stays a free-form number without adding a size per value it could take in between. The body draws inside one `NoireText` scope, so a `Renderer` or `Content` body picks the size up too.
+
+**`AlwaysOnTop` moves two orders, not one.** ImGui decides what is drawn in front and what receives the mouse separately, and promoting only the first gives you a marker plainly visible above a window and completely dead under it. This moves both, so a label that takes input stays clickable where it overlaps a window. It is off by default: a marker that covers the window you are trying to read is worse than one behind it, and a world label appears wherever the world puts it.
+
+`UiWorldProjection` holds the arithmetic (distance fade and scale, scale stepping, the off-screen direction, edge pinning, arrow geometry) and is public, so a marker NoireUI does not ship can be built on the same pieces.
+
+---
+
+## Gauges and sparklines (NoireGauges)
+
+Small readouts that show a number as a shape. Immediate and stateless: each one draws at the cursor, reserves what it used, and remembers nothing, so it drops into a row, a table cell, a button or a world label without either side knowing about the other.
+
+```csharp
+NoireGauges.Bar(hp / (float)maxHp, new BarStyle
+{
+    Label = $"{hp} / {maxHp}",
+    Marks = [0.25f, 0.5f],
+    Thresholds =
+    [
+        new GaugeThreshold(0.5f, theme.Resolve(ThemeColor.Warning)),
+        new GaugeThreshold(0.25f, theme.Resolve(ThemeColor.Danger)),
+    ],
+});
+
+NoireGauges.Ring(0.72f, new RingStyle { Label = "72%" });
+NoireGauges.Pips(charges, 5);
+NoireGauges.Timer(remaining, total, new RingStyle { Size = 46f });
+NoireGauges.Sparkline(history, new SparklineStyle { Min = 0f, Max = 165f, Baseline = 60f });
+```
+
+Every gauge takes a fraction from 0 to 1 and clamps it, so no caller has to guard the edges.
+
+**Thresholds** apply at or below their value, and the lowest matching one wins. That reads the way the things being measured read: under a quarter is critical, under a half is a warning, above is fine. A gauge counting the other way reaches the same result with the values inverted.
+
+**Countdowns empty rather than fill.** Filling reads as progress toward something; time being spent is the opposite of that. `Timer` takes a `TimeSpan` pair and labels itself through `DurationHelper.Format` unless the style already carries a label.
+
+**Sparkline bounds default to the data**, which is the wrong default for anything you plan to compare: left to itself, every trace fills its own box, so a flat line and a violent one draw the same picture. Pin `Min` and `Max` when two sparklines sit near each other. A flat series and an empty one both get a usable range rather than a division by zero.
+
+Rings are drawn from `NoireShapes.Wedge`, so an open dial is two settings away:
+
+```csharp
+new RingStyle { StartTurns = 0.625f, SweepTurns = 0.75f }   // the speedometer sweep
+```
 
 ---
 
@@ -1116,11 +1320,17 @@ var table = new NoireTable<PlayerModel>("players", players)
 table.Draw();
 ```
 
+**Column filters match the same way the search does**, fuzzily or not, and whatever narrowed the table picks its matched characters out in the cell.
+
 A column needs a header and a `Text`, and everything follows from it: the column sorts on that text, the search reads it, a per-column filter matches it, the CSV export writes it.
 
 **`SortKey` is for when the text does not sort the way the data does.** A level written `"100"` sorts before `"80"` as text; a duration written `"1m30s"` sorts after `"1h"`. Return the underlying value and the column sorts on that while still showing the text. `Sort` takes a full `Comparison<T>` when neither is enough.
 
 **The table never copies your rows.** It holds the list you gave it and works in indices into it, so the row a renderer or a selection sees is the one you own. Filtering and sorting run when something changes rather than every frame — editing the list in place is the one thing it cannot notice, so call `Invalidate()`.
+
+**The rightmost column takes whatever width is left over**, so the table always fills itself and its cells reach the edge. Its own `Width` is ignored for that reason, and it carries no resize grip, there being nothing to its right to hand width to. Which column that is follows the *display* order, so dragging a header somewhere else takes the behaviour with it.
+
+**Every other column keeps a width of its own.** That is what makes the header menu's "size column to fit" mean anything: auto-fitting a fixed column sets an exact pixel width, while auto-fitting a stretch column sets a weight ImGui then renormalises against every other column, so each use nudges all of them by a pixel or two. Dragging a border is fine either way.
 
 **Ties break on the source index.** `List.Sort` is an introsort and promises nothing about equal elements, so sorting on a column where hundreds of rows tie would reshuffle them every time anything else changed. Sorting is deterministic here, and the order inside a group is the order the rows arrived in.
 
@@ -1129,6 +1339,8 @@ A column needs a header and a `Text`, and everything follows from it: the column
 **Selection is held by value**, not by index, for the same reason it is in `NoireMultiCombo`: an index keeps pointing at whatever moves into that slot when the rows are replaced. A plain click selects, ctrl or shift adds.
 
 **Aggregates are computed over the rows showing**, never over all of them. A total that ignores the filter above it totals something nobody is looking at.
+
+**The footer is pinned to the bottom of the table, not to the end of the list.** A table has one scroll region and ImGui can only freeze rows at the *top*, so a totals row inside the body is one you have to scroll past a hundred thousand rows to read. Body and footer are two tables inside a single bordered frame, so they read as one table with a row pinned to the bottom of it; the footer's columns take the widths the body's columns actually have that frame, read in display order so they follow a column you resized or dragged elsewhere.
 
 ```csharp
 new TableColumn<Item> { Header = "Weight", Text = i => $"{i.Weight:0.0}", SortKey = i => i.Weight,

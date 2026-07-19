@@ -28,9 +28,15 @@ internal sealed unsafe class StateGuard
     private ID3D11Buffer* vsCb0, vsCb1;
 
     // PS
+    // Six SRV slots, not two: Common.hlsli declares t0..t5 (scene depth, base texture, world height, scene
+    // stencil, and the two auxiliary material maps), and the G-buffer injection binds t4 and t5 inside the
+    // GAME's own geometry pass. A slot left bound there is not Draw3D's problem to survive - it is whatever the
+    // game draws next reading our texture.
+    private const int PsSrvSlotCount = 6;
+
     private ID3D11PixelShader* ps;
     private ID3D11Buffer* psCb0, psCb1;
-    private ID3D11ShaderResourceView* psSrv0, psSrv1;
+    private readonly void*[] psSrvs = new void*[PsSrvSlotCount];
     private ID3D11SamplerState* psSamp0, psSamp1;
 
     // RS
@@ -87,9 +93,8 @@ internal sealed unsafe class StateGuard
             ctx->PSGetShader(p, null, null);
         ctx->PSGetConstantBuffers(0, 2, cbs);
         psCb0 = cbs[0]; psCb1 = cbs[1];
-        var srvsLocal = stackalloc ID3D11ShaderResourceView*[2];
-        ctx->PSGetShaderResources(0, 2, srvsLocal);
-        psSrv0 = srvsLocal[0]; psSrv1 = srvsLocal[1];
+        fixed (void** p = psSrvs)
+            ctx->PSGetShaderResources(0, PsSrvSlotCount, (ID3D11ShaderResourceView**)p);
         var samps = stackalloc ID3D11SamplerState*[2];
         ctx->PSGetSamplers(0, 2, samps);
         psSamp0 = samps[0]; psSamp1 = samps[1];
@@ -178,8 +183,8 @@ internal sealed unsafe class StateGuard
         ctx->PSSetShader(ps, null, 0);
         var cbs = stackalloc ID3D11Buffer*[2] { psCb0, psCb1 };
         ctx->PSSetConstantBuffers(0, 2, cbs);
-        var srvsLocal = stackalloc ID3D11ShaderResourceView*[2] { psSrv0, psSrv1 };
-        ctx->PSSetShaderResources(0, 2, srvsLocal);
+        fixed (void** p = psSrvs)
+            ctx->PSSetShaderResources(0, PsSrvSlotCount, (ID3D11ShaderResourceView**)p);
         var samps = stackalloc ID3D11SamplerState*[2] { psSamp0, psSamp1 };
         ctx->PSSetSamplers(0, 2, samps);
 
@@ -234,8 +239,15 @@ internal sealed unsafe class StateGuard
         ComPtrUtil.Release(ref ps);
         ComPtrUtil.Release(ref psCb0);
         ComPtrUtil.Release(ref psCb1);
-        ComPtrUtil.Release(ref psSrv0);
-        ComPtrUtil.Release(ref psSrv1);
+        for (var i = 0; i < psSrvs.Length; i++)
+        {
+            if (psSrvs[i] != null)
+            {
+                ((IUnknown*)psSrvs[i])->Release();
+                psSrvs[i] = null;
+            }
+        }
+
         ComPtrUtil.Release(ref psSamp0);
         ComPtrUtil.Release(ref psSamp1);
         ComPtrUtil.Release(ref rasterizer);

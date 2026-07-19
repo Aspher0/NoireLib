@@ -45,7 +45,7 @@ public sealed partial class NoireTable<T>
         {
             var row = rows[index];
 
-            if (!PassesFilters(row, columns))
+            if (!PassesFilters(row, columns, fuzzy))
                 continue;
 
             if (searching && !MatchesSearch(row, columns, search, fuzzy))
@@ -58,7 +58,7 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Whether a row passes every column's filter.
     /// </summary>
-    private static bool PassesFilters(T row, IReadOnlyList<TableColumn<T>> columns)
+    private static bool PassesFilters(T row, IReadOnlyList<TableColumn<T>> columns, bool fuzzy)
     {
         for (var i = 0; i < columns.Count; i++)
         {
@@ -67,11 +67,10 @@ public sealed partial class NoireTable<T>
             if (!column.Visible)
                 continue;
 
-            if (!string.IsNullOrEmpty(column.FilterText)
-                && !column.Read(row).Contains(column.FilterText, StringComparison.OrdinalIgnoreCase))
-            {
+            // Matched the same way the global search is, so a column filter and the box above it do not behave
+            // differently for the same typing.
+            if (!string.IsNullOrEmpty(column.FilterText) && !Matches(column.Read(row), column.FilterText, fuzzy))
                 return false;
-            }
 
             if (column.Filter == null)
                 continue;
@@ -108,12 +107,18 @@ public sealed partial class NoireTable<T>
 
             var text = column.Read(row);
 
-            if (fuzzy ? FuzzyMatcher.IsMatch(text, search) : text.Contains(search, StringComparison.OrdinalIgnoreCase))
+            if (Matches(text, search, fuzzy))
                 return true;
         }
 
         return false;
     }
+
+    /// <summary>
+    /// Whether a piece of text answers a query, fuzzily or not.
+    /// </summary>
+    internal static bool Matches(string text, string query, bool fuzzy)
+        => fuzzy ? FuzzyMatcher.IsMatch(text, query) : text.Contains(query, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Orders a list of row indices by one column.

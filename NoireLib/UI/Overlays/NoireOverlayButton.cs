@@ -291,9 +291,10 @@ public class NoireOverlayButton : NoireDrawable
                     MathF.Max(viewport.Pos.Y, MathF.Min(windowPos.Y, max.Y)));
             }
         }
-        else
+        else if (!Position.TryResolve(size, viewport.Pos, viewport.Size, out windowPos))
         {
-            windowPos = Position.Resolve(size, viewport.Pos, viewport.Size);
+            // The button is pinned to a game window that is not on screen, so there is nowhere to honestly put it.
+            return;
         }
 
         ImGui.SetNextWindowPos(windowPos, ImGuiCond.Always);

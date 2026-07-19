@@ -109,6 +109,22 @@ public class NoireTableTests
     }
 
     [Fact]
+    public void BuildVisible_MatchesAColumnFilterTheSameWayAsTheSearch()
+    {
+        // A column filter and the box above it must behave identically for the same typing, or the same characters
+        // mean two different things depending on which box they were typed into.
+        var fuzzy = Columns();
+        fuzzy[1].FilterText = "zdk";
+
+        Build(Sample(), fuzzy, fuzzy: true).Should().Equal(new[] { 2, 3 }, "because 'zdk' is a subsequence of Zodiark");
+
+        var plain = Columns();
+        plain[1].FilterText = "zdk";
+
+        Build(Sample(), plain).Should().BeEmpty("because a plain filter is still a contains");
+    }
+
+    [Fact]
     public void BuildVisible_IgnoresAWhitespaceSearch()
     {
         Build(Sample(), Columns(), "   ").Should().HaveCount(4);

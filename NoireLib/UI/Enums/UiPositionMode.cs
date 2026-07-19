@@ -19,4 +19,10 @@ public enum UiPositionMode
     /// The element is positioned at a ratio of the screen size (e.g. 0.1 = 10% from the left/top).
     /// </summary>
     Ratio,
+
+    /// <summary>
+    /// The element is positioned relative to a native game addon, following it as the player moves or rescales it.
+    /// Resolving fails while the addon is not on screen, which is what lets an element exist only alongside it.
+    /// </summary>
+    Addon,
 }

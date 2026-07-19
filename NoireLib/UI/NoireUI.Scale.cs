@@ -58,4 +58,23 @@ public static partial class NoireUI
     /// <param name="logical">The pixel pair at 100%.</param>
     /// <returns>The pair at the current scale.</returns>
     public static Vector2 Scaled(Vector2 logical) => logical * Scale;
+
+    /// <summary>
+    /// Converts a real pixel value back into the logical unit it would have been authored as.
+    /// </summary>
+    /// <remarks>
+    /// The inverse of <see cref="Scaled(float)"/>, for the few places that have to hand a measured pixel value to an
+    /// API that scales it again. Dalamud's <c>Window.Size</c> is the example: it multiplies by the global scale on the
+    /// way to ImGui, so a size measured off the screen has to be divided back out first.
+    /// </remarks>
+    /// <param name="real">The pixel value at the current scale.</param>
+    /// <returns>The value at 100%.</returns>
+    public static float Unscaled(float real) => real / Scale;
+
+    /// <summary>
+    /// Converts a real pixel pair back into logical units. See <see cref="Unscaled(float)"/>.
+    /// </summary>
+    /// <param name="real">The pixel pair at the current scale.</param>
+    /// <returns>The pair at 100%.</returns>
+    public static Vector2 Unscaled(Vector2 real) => real / Scale;
 }

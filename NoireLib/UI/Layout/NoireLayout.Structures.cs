@@ -275,18 +275,6 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Works out where a wrapping row has to stop.
-    /// </summary>
-    /// <remarks>
-    /// ImGui has no concept of a right margin. Indenting moves the left edge only, and the content region keeps
-    /// reporting the window's own right edge however deeply nested the drawing is, so a row inside a hand-drawn panel
-    /// wraps against the window and overflows the panel.<br/>
-    /// The one narrower right edge ImGui does carry is the text wrap position, which is exactly what
-    /// <see cref="WrapText(float, Action)"/> sets, so a row inside one wraps where its text does. Failing that there is
-    /// nothing left to infer from and the window's content edge is the honest answer, which is why the explicit
-    /// <paramref name="width"/> exists: a panel that owns a width nobody else can see should say so.
-    /// </remarks>
-    /// <summary>
     /// How wide the content is allowed to be from where the cursor is, which is not always what
     /// <c>GetContentRegionAvail</c> answers.
     /// </summary>
@@ -302,6 +290,18 @@ public static partial class NoireLayout
     public static float ContentWidth()
         => MathF.Max(0f, ResolveRowRightEdge(0f) - ImGui.GetCursorScreenPos().X);
 
+    /// <summary>
+    /// Works out where a wrapping row has to stop.
+    /// </summary>
+    /// <remarks>
+    /// ImGui has no concept of a right margin. Indenting moves the left edge only, and the content region keeps
+    /// reporting the window's own right edge however deeply nested the drawing is, so a row inside a hand-drawn panel
+    /// wraps against the window and overflows the panel.<br/>
+    /// The one narrower right edge ImGui does carry is the text wrap position, which is exactly what
+    /// <see cref="WrapText(float, Action)"/> sets, so a row inside one wraps where its text does. Failing that there is
+    /// nothing left to infer from and the window's content edge is the honest answer, which is why the explicit
+    /// <paramref name="width"/> exists: a panel that owns a width nobody else can see should say so.
+    /// </remarks>
     /// <param name="width">An explicit row width, or zero to work it out.</param>
     /// <returns>The screen x coordinate the row must not cross.</returns>
     private static float ResolveRowRightEdge(float width)
