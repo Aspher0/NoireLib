@@ -1171,7 +1171,18 @@ if (list.Draw())
 
 **`AllowKeyboard` moves the focused row with the arrow keys.** Click a row to focus it, then press up or down; `KeyboardModifier` adds a required modifier if you want one, and defaults to none, because someone who has clicked a row and pressed an arrow has already said what they meant. The focus also follows a row you have just dropped, so a drag and then a nudge is one continuous gesture.
 
-**A focused row claims the keyboard**, via `SetNextFrameWantCaptureKeyboard`. This is not a detail: Dalamud only forwards key events to ImGui when ImGui says it wants them, and with no text field active it does not, so the game takes the arrow keys and the widget never sees a thing. Because that also means holding the arrows away from the game, the claim lasts only while a row is focused and the window is focused, and clicking anywhere else drops it. Dragging is awkward in a long list and unavailable to some people entirely; the keyboard path costs one branch and is the difference between a reorderable list and a reorderable list somebody can use.
+**The reorder keys are read the way a hotkey is, not through ImGui.** ImGui only receives key events the host forwards, and the host forwards them only when ImGui says it wants the keyboard, which with no text field active it does not: the game takes the arrow keys and the widget is never told anything happened. `KeybindsHelper.IsBindingHeld` reads the key state directly, which is the same route `NoireHotkeyManager` takes and why a hotkey works anywhere.
+
+**So the keys are a `HotkeyBinding`, with the same two modes as the combo box's wheel-cycle shortcut**: a local binding, or a hotkey id so the user can rebind them.
+
+```csharp
+list.MoveUpBinding = VirtualKey.PRIOR;                              // local
+list.BindReorderHotkeys(hotkeys, "list.moveUp", "list.moveDown");   // rebindable
+```
+
+Modifiers are matched exactly, so the default fires on the bare arrow and not on ctrl with it, and `ResolvedMoveUpBinding` reports whichever is actually in force.
+
+**With hotkeys attached, the list swallows the key from the game only while the shortcut is live**: a row focused, and the window focused. The defaults are the game's own movement keys, and a hotkey left blocking permanently would take the arrow keys away for as long as the plugin is loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf. Whatever each entry's `BlockGameInput` was set to is remembered and restored, so a hotkey a plugin deliberately blocks with keeps blocking when the list is not using it. `BlockGameInputWhileActive` turns the whole behaviour off. Dragging is awkward in a long list and unavailable to some people entirely; the keyboard path costs one branch and is the difference between a reorderable list and a reorderable list somebody can use.
 
 **`Duplicate` matters for anything mutable.** Without it the copy and the original are the same object, and editing either edits both. A record needs `step with { ... }`; a class needs a real copy.
 

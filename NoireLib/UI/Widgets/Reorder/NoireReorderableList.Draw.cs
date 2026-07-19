@@ -273,7 +273,7 @@ public sealed partial class NoireReorderableList<T>
     /// </remarks>
     private static bool Pressed(HotkeyBinding binding, ref double heldSince)
     {
-        if (binding.Key == VirtualKey.NO_KEY || !KeybindsHelper.IsBindingHeld(binding))
+        if (!IsBound(binding) || !KeybindsHelper.IsBindingHeld(binding))
         {
             heldSince = 0d;
             return false;
@@ -300,6 +300,13 @@ public sealed partial class NoireReorderableList<T>
         return ticks > previous;
     }
 
+    /// <summary>
+    /// Whether a binding names anything at all, so an unbound or disabled hotkey is simply off rather than a key
+    /// combination of no keys that reads as held.
+    /// </summary>
+    private static bool IsBound(HotkeyBinding binding)
+        => binding.VkCode != 0 || binding.GamepadButton.HasValue;
+
     /// <summary>How long a reorder key must be held before it starts repeating.</summary>
     private const double RepeatDelaySeconds = 0.35d;
 
@@ -308,6 +315,31 @@ public sealed partial class NoireReorderableList<T>
 
     private double upHeldSince;
     private double downHeldSince;
+
+    /// <summary>
+    /// Asks the host to keep the reorder keys from the game while a row is focused.
+    /// </summary>
+    /// <remarks>
+    /// Not what makes the keys arrive: they are read from the key state directly and arrive either way. This is so
+    /// that pressing the shortcut does not *also* do whatever the game does with that key, which for the default
+    /// arrows is turn the character.<br/>
+    /// Claimed only while a row is focused in a focused window, and the focus is dropped by clicking anywhere else,
+    /// because it is holding those keys away from the game.
+    /// </remarks>
+    private void ClaimKeyboardIfFocused()
+    {
+        var live = AllowKeyboard
+            && focusedIndex >= 0
+            && focusedIndex < items.Count
+            && ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
+
+        // Told either way, so the blocking comes back off the moment the shortcut stops being usable rather than
+        // waiting for something else to happen.
+        ApplyInputBlocking(live);
+
+        if (live)
+            ImGui.SetNextFrameWantCaptureKeyboard(true);
+    }
 
     #region Painting
 

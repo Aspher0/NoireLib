@@ -161,9 +161,53 @@ public sealed partial class NoireReorderableList<T>
         return this;
     }
 
+    /// <summary>
+    /// Whether an attached hotkey swallows the key from the game while the shortcut is actually live.
+    /// </summary>
+    /// <remarks>
+    /// On by default, and only while live: a row focused, the window focused, and the keys otherwise doing nothing.
+    /// A hotkey left blocking permanently takes the arrow keys away from the game for as long as the plugin is
+    /// loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf.<br/>
+    /// Whatever <see cref="HotkeyEntry.BlockGameInput"/> was set to is remembered and restored, so a hotkey a plugin
+    /// deliberately blocks with keeps blocking when the list is not using it.<br/>
+    /// Only applies with hotkeys attached through <see cref="BindReorderHotkeys"/>. A local binding has no entry to
+    /// block with.
+    /// </remarks>
+    public bool BlockGameInputWhileActive { get; set; } = true;
+
     private NoireHotkeyManager? hotkeys;
     private string? upHotkeyId;
     private string? downHotkeyId;
+    private bool? upBlockedOriginally;
+    private bool? downBlockedOriginally;
+
+    /// <summary>
+    /// Raises or restores the game-input blocking on the attached hotkeys.
+    /// </summary>
+    /// <param name="live">Whether the shortcut can currently do anything.</param>
+    internal void ApplyInputBlocking(bool live)
+    {
+        if (hotkeys == null || !BlockGameInputWhileActive)
+            return;
+
+        ApplyBlockingTo(upHotkeyId, ref upBlockedOriginally, live);
+        ApplyBlockingTo(downHotkeyId, ref downBlockedOriginally, live);
+    }
+
+    /// <summary>
+    /// Blocks one hotkey while the shortcut is live, and puts back whatever the caller had set otherwise.
+    /// </summary>
+    private void ApplyBlockingTo(string? hotkeyId, ref bool? original, bool live)
+    {
+        if (hotkeyId == null || hotkeys == null || !hotkeys.TryGetHotkey(hotkeyId, out var entry))
+            return;
+
+        // Captured the first time the entry is seen rather than when the hotkey was attached, since a hotkey can be
+        // registered after the list is built.
+        original ??= entry.BlockGameInput;
+
+        entry.BlockGameInput = live || original.Value;
+    }
 
     /// <summary>
     /// The binding in force for one of the two directions, preferring an attached hotkey over the local one.
