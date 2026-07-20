@@ -22,9 +22,13 @@ namespace NoireLib.Draw3D.Core;
 /// <b>What is inherited.</b> Depth compare, depth bias, viewport and culling all stay as the game configured
 /// them for the very map being rendered; this pass changes only the shaders, the input assembly and its own
 /// constant slots, and restores those.<br/>
-/// <b>What this cannot reach.</b> A bind that issues no draws never exposes its constants, so maps the game
-/// renders once and caches receive no injected geometry: objects cast into every map the game re-renders,
-/// which is the sun's cascades and the lights near anything moving.
+/// <b>Cached maps are the limit.</b> The game re-renders a light's map only when its own bookkeeping says
+/// something near that light changed, and injected geometry is invisible to that bookkeeping - so a cached
+/// map shows the shadow only when the game next refreshes it. Stamping cached maps from saved captures was
+/// tried and removed: a capture only exists because the slice really rendered, and that render already
+/// received the injection, so a later stamp can only add a second silhouette on top of the first - written
+/// depth cannot be unwritten. Ending the wait requires the game itself to invalidate the map; see
+/// docs/Draw3D Game Assets Status.md.
 /// </summary>
 internal sealed unsafe class ShadowInject : IDisposable
 {
@@ -92,6 +96,14 @@ internal sealed unsafe class ShadowInject : IDisposable
     /// <summary>How many meshes were drawn into the last shadow bind that ran, for diagnostics.</summary>
     public int LastInjectedCount { get; private set; }
 
+    /// <summary>
+    /// How many of last frame's drawn groups were the near-field map (the single-matrix constant layout),
+    /// for diagnostics. This is the map the game redraws every frame, so a steady non-zero count is what
+    /// says a cast appears immediately rather than waiting on a cached per-light map to refresh. Zero while
+    /// the per-light maps are being drawn into means the near-field layout is not being reached.
+    /// </summary>
+    public int LastNearFieldCount { get; private set; }
+
     /// <summary>How many shadow binds received geometry last frame, for diagnostics.</summary>
     public int LastBindCount { get; private set; }
 
@@ -108,6 +120,7 @@ internal sealed unsafe class ShadowInject : IDisposable
     private int bindsThisFrame;
     private int enteredThisFrame;
     private int skippedThisFrame;
+    private int nearFieldThisFrame;
 
     /// <summary>Whether anything is queued for the coming shadow passes.</summary>
     public bool HasWork
@@ -151,9 +164,11 @@ internal sealed unsafe class ShadowInject : IDisposable
         LastBindCount = bindsThisFrame;
         LastEnteredCount = enteredThisFrame;
         LastSkippedCount = skippedThisFrame;
+        LastNearFieldCount = nearFieldThisFrame;
         bindsThisFrame = 0;
         enteredThisFrame = 0;
         skippedThisFrame = 0;
+        nearFieldThisFrame = 0;
     }
 
     /// <summary>
@@ -266,37 +281,49 @@ internal sealed unsafe class ShadowInject : IDisposable
             var ocb = objectCb!.Buffer;
             ctx->VSSetConstantBuffers(1, 1, &ocb);
 
-            var drawn = 0;
-            lock (gate)
-            {
-                foreach (var item in active)
-                {
-                    if (item.Mesh is not { IndexCount: > 0 } mesh || mesh.Vb == null || mesh.Ib == null)
-                        continue;
-
-                    var data = default(ShadowCBData);
-                    data.World = Matrix4x4.Transpose(item.World);
-                    data.Mode = new Vector4(mode, 0f, 0f, 0f);
-                    objectCb.UpdateConstant(ctx, data);
-
-                    var vb = mesh.Vb;
-                    var stride = (uint)sizeof(Vertex3D);
-                    var offset = 0u;
-                    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
-                    ctx->IASetIndexBuffer(mesh.Ib, mesh.IndexFormat, 0);
-                    ctx->DrawIndexed((uint)mesh.IndexCount, 0, 0);
-                    drawn++;
-                }
-            }
+            var drawn = DrawActive(ctx, mode);
 
             LastInjectedCount = drawn;
             if (drawn > 0)
+            {
                 bindsThisFrame++;
+                if (mode >= 0.5f)
+                    nearFieldThisFrame++;
+            }
         }
         finally
         {
             guard.Restore(ctx);
         }
+    }
+
+    /// <summary>Draws every active mesh with the pipeline already bound, returning how many drew.</summary>
+    private int DrawActive(ID3D11DeviceContext* ctx, float mode)
+    {
+        var drawn = 0;
+        lock (gate)
+        {
+            foreach (var item in active)
+            {
+                if (item.Mesh is not { IndexCount: > 0 } mesh || mesh.Vb == null || mesh.Ib == null)
+                    continue;
+
+                var data = default(ShadowCBData);
+                data.World = Matrix4x4.Transpose(item.World);
+                data.Mode = new Vector4(mode, 0f, 0f, 0f);
+                objectCb!.UpdateConstant(ctx, data);
+
+                var vb = mesh.Vb;
+                var stride = (uint)sizeof(Vertex3D);
+                var offset = 0u;
+                ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+                ctx->IASetIndexBuffer(mesh.Ib, mesh.IndexFormat, 0);
+                ctx->DrawIndexed((uint)mesh.IndexCount, 0, 0);
+                drawn++;
+            }
+        }
+
+        return drawn;
     }
 
     /// <summary>Creates the matrix buffer, its view and the object constants once. Returns whether they are usable.</summary>

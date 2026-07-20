@@ -107,7 +107,12 @@ public static class NoireTooltip
         using var borderColor = ImRaii.PushColor(ImGuiCol.Border, style.BorderColor ?? Vector4.One, style.BorderColor.HasValue);
         using var textColor = ImRaii.PushColor(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
 
-        using var borderSize = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
+        // A tooltip's border thickness comes from PopupBorderSize, not from WindowBorderSize: ImGui picks the style
+        // field by flag, and this window carries the tooltip flag. Pushing the window one is what made a styled border
+        // never appear, whatever the style asked for.
+        // Rounding is picked by flag as well, but there the tooltip flag is not part of the popup branch, so that one
+        // genuinely is the window field.
+        using var borderSize = ImRaii.PushStyle(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
         using var rounding = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
         using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
 

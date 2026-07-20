@@ -186,13 +186,17 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private bool gbufferDoneThisFrame;
 
     /// <summary>
-    /// Fired at the END of every depth-only non-scene bind that received draws - the game's shadow passes -
-    /// with the game's context and the pass's map, viewport, raster state and constants all still bound, so
-    /// queued geometry can be drawn into the very map that was just rendered.<br/>
+    /// Fired at the END of every shadow draw group that received draws - a viewport change inside a shadow
+    /// bind, or the bind's own end - with the game's context, and the group's map, viewport, raster state
+    /// and constants all still bound, so queued geometry can be drawn into the very slice that was just
+    /// rendered.<br/>
     /// The end, not the first draw: injected at the first draw, the constants produced shadows scattered at
     /// wrong positions - a shadow bind's first draw does not reliably carry the light that owns the map. The
-    /// last draw's constants are the pass's own settled values, and they remain bound until the game applies
-    /// its next target bind, which is the moment this fires.
+    /// last draw's constants are the group's own settled values, and they remain bound until the state
+    /// change that ends the group, which is the moment this fires.<br/>
+    /// Only groups that really drew: a shadow bind the game issues no draws into is a cached map it chose
+    /// not to re-render, and it already carries this geometry from the render that cached it. Drawing into
+    /// it again would stamp a second silhouette beside the first, since written depth cannot be unwritten.
     /// </summary>
     public Action<nint>? ShadowInjector { get; set; }
 
@@ -218,9 +222,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     /// <summary>Fired once per frame on the render thread, so the shadow queue can flip its frame boundary.</summary>
     public Action? ShadowFrameBoundary { get; set; }
 
-    // Whether the CURRENT bind is a shadow-map bind, and whether the game drew into it. Consumed at the
-    // next bind, where the injection fires before the new targets are applied; a shadow bind that issued
-    // no draws is a cached static map and is skipped.
+    // Whether the CURRENT bind is a shadow-map bind, and whether the current draw group has drawn into it.
+    // Consumed at each group boundary: a group that drew gets the injection, and one that did not is a
+    // cached map the game is not re-rendering, which is left untouched.
     private bool shadowBindActive;
     private bool shadowBindSawDraw;
 
@@ -578,7 +582,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             shadowProbe.OnDepthOnlyBind(pDsv, IsMainSceneDepth(pDsv));
 
         // The shape the probe reads: depth only, and not the scene's own depth. Whether the game actually
-        // draws into it decides at the NEXT bind whether the injection fires.
+        // draws into it decides at each group boundary whether the injection fires.
         shadowBindActive = shadowInjectionEnabled && rtv0 == 0 && pDsv != 0 && !IsMainSceneDepth(pDsv);
 
         // Learn the present-composition buffer: the RTV bound right before a swapchain backbuffer bind.

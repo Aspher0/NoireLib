@@ -218,6 +218,26 @@ public static class NoireAnim
     }
 
     /// <summary>
+    /// A rotation in turns, running from 0 to 1 and starting over, for something that turns continuously. Stateless.<br/>
+    /// Returns 0 under <see cref="NoireUI.ReducedMotion"/>, so the thing stands still.
+    /// </summary>
+    /// <remarks>
+    /// The same ramp as <see cref="Sweep"/>, named for rotation and resting at 0 rather than at 1, since a rotation has
+    /// no finished position to park at. Negate the result to turn the other way.
+    /// </remarks>
+    /// <param name="secondsPerTurn">How long one full turn takes, in seconds.</param>
+    /// <param name="phase">Shifts the rotation, from 0 to 1, so two turning things can be offset from each other.</param>
+    /// <returns>The current rotation in turns, from 0 to 1.</returns>
+    public static float Spin(float secondsPerTurn, float phase = 0f)
+    {
+        if (NoireUI.ReducedMotion || secondsPerTurn <= 0f)
+            return 0f;
+
+        var position = ((Time / secondsPerTurn) + phase) % 1f;
+        return position < 0f ? position + 1f : position;
+    }
+
+    /// <summary>
     /// Starts a one-shot animation now. Call it on the frame the thing happened (a save succeeded, a value was rejected);
     /// <see cref="Progress"/>, <see cref="Flash"/> and <see cref="Shake"/> read from it.
     /// </summary>

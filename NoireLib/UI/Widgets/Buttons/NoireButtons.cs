@@ -271,10 +271,16 @@ public static class NoireButtons
         if (Button("##" + popupId, caretStyle, new Vector2(caretWidth, mainHeight)))
             ImGui.OpenPopup(popupId);
 
+        // Read before the popup opens, since inside one the current window is the popup itself.
+        var ownerInFront = UiWindowOrder.InTopLayer;
+
         if (ImGui.BeginPopup(popupId))
         {
             try
             {
+                if (ownerInFront)
+                    UiWindowOrder.KeepInFront();
+
                 UiScope.Run(nameof(Split), menuBody, static b => b());
             }
             finally

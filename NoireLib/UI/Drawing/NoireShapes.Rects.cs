@@ -280,6 +280,59 @@ public static partial class NoireShapes
 
     #endregion
 
+    #region Brackets
+
+    /// <summary>
+    /// Draws a square bracket, <c>[</c> or <c>]</c>, spanning the given rect's height at one of its edges.
+    /// </summary>
+    /// <remarks>
+    /// The short form of <see cref="Frame"/>'s corner ticks, for something too short to carry them: a strip whose ticks
+    /// would meet in the middle reads as a smaller frame rather than as corners, so a bracket at each end says the same
+    /// thing in the height available.
+    /// </remarks>
+    /// <param name="min">The top left corner of the rect the bracket spans, in screen space.</param>
+    /// <param name="max">The bottom right corner of the rect the bracket spans, in screen space.</param>
+    /// <param name="color">The line color.</param>
+    /// <param name="armLength">How far the top and bottom arms reach in from the edge, in pixels.</param>
+    /// <param name="thickness">The line thickness, in pixels.</param>
+    /// <param name="side">Which edge it sits at, and so which way its arms reach.</param>
+    public static void Bracket(Vector2 min, Vector2 max, Vector4 color, float armLength, float thickness = 1f, BracketSide side = BracketSide.Left)
+    {
+        if (color.W <= 0f || max.Y <= min.Y)
+            return;
+
+        var edge = side == BracketSide.Left ? min.X : max.X;
+        var reach = side == BracketSide.Left ? MathF.Abs(armLength) : -MathF.Abs(armLength);
+
+        // One three-segment path rather than three lines, for the reason the corner ticks are one elbow: lines meeting
+        // end to end are drawn centred on their own paths and leave the outer corner short by half the thickness.
+        Span<Vector2> path =
+        [
+            new Vector2(edge + reach, min.Y),
+            new Vector2(edge, min.Y),
+            new Vector2(edge, max.Y),
+            new Vector2(edge + reach, max.Y),
+        ];
+
+        Stroke(path, color, thickness, closed: false);
+    }
+
+    /// <summary>
+    /// Draws a matched pair of square brackets, <c>[</c> and <c>]</c>, one at each side of the given rect.
+    /// </summary>
+    /// <param name="min">The top left corner of the rect they enclose, in screen space.</param>
+    /// <param name="max">The bottom right corner of the rect they enclose, in screen space.</param>
+    /// <param name="color">The line color.</param>
+    /// <param name="armLength">How far the arms reach inwards, in pixels.</param>
+    /// <param name="thickness">The line thickness, in pixels.</param>
+    public static void Brackets(Vector2 min, Vector2 max, Vector4 color, float armLength, float thickness = 1f)
+    {
+        Bracket(min, max, color, armLength, thickness, BracketSide.Left);
+        Bracket(min, max, color, armLength, thickness, BracketSide.Right);
+    }
+
+    #endregion
+
     #region Frame
 
     /// <summary>
@@ -350,7 +403,14 @@ public static partial class NoireShapes
 
         // Two brackets that would meet or cross read as a smaller frame rather than as corner ticks.
         if (bottomRight.X - topLeft.X < length * 2f || bottomRight.Y - topLeft.Y < length * 2f)
+        {
+            // Same inset, arm, thickness and colour, so a frame that changes between the two shapes keeps its marks
+            // where they were and only their span changes.
+            if (style.TickFallback == TickFallback.Brackets && bottomRight.X - topLeft.X > length * 2f)
+                Brackets(topLeft, bottomRight, color, length, thickness);
+
             return;
+        }
 
         Span<Vector2> origins = [topLeft, new Vector2(bottomRight.X, topLeft.Y), bottomRight, new Vector2(topLeft.X, bottomRight.Y)];
         Span<Vector2> along = [new Vector2(1f, 0f), new Vector2(-1f, 0f), new Vector2(-1f, 0f), new Vector2(1f, 0f)];

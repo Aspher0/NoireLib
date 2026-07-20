@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
-using Dalamud.Interface;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using NoireLib.HotkeyManager;
@@ -574,8 +573,12 @@ public class NoireComboBox<T>
         // list's, which is the two-scrollbar case.
         var popup = BeginPopupStyle();
 
-        ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
+        ApplyPopupConstraints();
         var box = BeginBox(out var boxRect);
+
+        // Read out here, because inside the popup the current window is the popup. A dropdown opened from a window that
+        // is holding itself in front has to be held there too, or it opens underneath the combo it belongs to.
+        var ownerInFront = UiWindowOrder.InTopLayer;
 
         var comboOpen = false;
         using (var combo = ImRaii.Combo(label, preview, ComboFlags | (BoxStyle != null ? ImGuiComboFlags.NoArrowButton : ImGuiComboFlags.None)))
@@ -589,12 +592,17 @@ public class NoireComboBox<T>
             {
                 comboOpen = true;
 
+                if (ownerInFront)
+                    UiWindowOrder.KeepInFront();
+
                 // The size has to be pushed inside the popup rather than around it: a font handle pushed before Begin
                 // is not what the popup window draws with.
                 if (PopupStyle?.TextSizePx is { } size)
                     NoireText.At(size, this, static self => self.DrawPopupContent());
                 else
                     DrawPopupContent();
+
+                RecordPopupHeight();
             }
         }
 
@@ -644,10 +652,21 @@ public class NoireComboBox<T>
         if (style.TextColor is { } text)
             colors.Push(ImGuiCol.Text, text);
 
+        // Snapped to whole pixels, which is what keeps a dropdown holding fewer options than it shows from growing a
+        // scrollbar anyway. ImGui floors a window's size whenever a size constraint is present, and a combo popup
+        // always has one (if the caller sets none, BeginCombo sets its own), while the test that decides the scrollbar
+        // compares the unfloored ContentSize + WindowPadding * 2 against that floored size. ContentSize is itself
+        // floored, so the two differ by exactly the fraction in the padding: at any UI scale that is not a whole
+        // multiple, a padding of 6 becomes 7.5 and the popup is half a pixel short of its own contents forever.
+        var padding = NoireUI.Scaled(style.Padding);
+
         var vars = ImRaii.PushStyle(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize)
-            .Push(ImGuiStyleVar.WindowPadding, NoireUI.Scaled(style.Padding))
-            .Push(ImGuiStyleVar.WindowRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()))
-            .Push(ImGuiStyleVar.WindowBorderSize, style.BorderSize)
+            .Push(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(padding.X), MathF.Round(padding.Y)))
+
+            // The popup fields, not the window ones: ImGui picks the style field by window flag and this window carries
+            // the popup flag, so pushing WindowRounding and WindowBorderSize here was silent.
+            .Push(ImGuiStyleVar.PopupRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()))
+            .Push(ImGuiStyleVar.PopupBorderSize, style.BorderSize)
             .Push(ImGuiStyleVar.ScrollbarSize, NoireUI.Scaled(style.ScrollbarWidth))
             .Push(ImGuiStyleVar.ItemSpacing, NoireUI.Scaled(style.RowSpacing))
             .Push(ImGuiStyleVar.FramePadding, NoireUI.Scaled(style.RowPadding));
@@ -779,6 +798,55 @@ public class NoireComboBox<T>
     /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/> options.<br/>
     /// Mirrors how ImGui itself sizes a popup from an option count, so a dropdown holding fewer options still shrinks to fit.
     /// </summary>
+    /// <summary>
+    /// Records the height the dropdown actually needs, taken from ImGui rather than worked out.
+    /// </summary>
+    /// <remarks>
+    /// This is the exact quantity ImGui compares against the window's height to decide whether to show a scrollbar, so
+    /// asking for it back as a minimum next frame cannot disagree with it. <c>ContentSize</c> is what <c>Begin</c>
+    /// derived from the previous frame, which is the same value that test uses.
+    /// </remarks>
+    private void RecordPopupHeight()
+    {
+        if (!NoireService.IsInitialized())
+            return;
+
+        var window = ImGuiP.GetCurrentWindow();
+
+        if (!window.IsNull)
+            neededPopupHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
+    }
+
+    /// <summary>
+    /// Constrains the dropdown: never shorter than its own contents, and never taller than
+    /// <see cref="VisibleItemCount"/> options once there are more of them than that.
+    /// </summary>
+    /// <remarks>
+    /// The minimum is what stops a dropdown holding fewer options than it shows from scrolling anyway, and it is a
+    /// measurement rather than a prediction on purpose. ImGui decides the scrollbar with
+    /// <c>ContentSize + WindowPadding * 2 &gt; SizeFull.y</c>, and floors <c>SizeFull</c> whenever a size constraint is
+    /// present at all, so a height worked out in advance has to come out equal to a value that was then rounded down,
+    /// and every fraction anywhere in the layout is a scrollbar. Asking for the measured height back, rounded up,
+    /// forces the comparison the other way whatever the layout turns out to contain.
+    /// </remarks>
+    private void ApplyPopupConstraints()
+    {
+        // A list longer than the dropdown is capped and scrolls, which is the whole point of the cap. Only a list that
+        // fits gets the floor it needs to stop scrolling.
+        if (filteredIndices.Count > Math.Max(1, VisibleItemCount))
+        {
+            ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
+            return;
+        }
+
+        ImGui.SetNextWindowSizeConstraints(
+            new Vector2(0f, MathF.Ceiling(neededPopupHeight)),
+            new Vector2(float.MaxValue, float.MaxValue));
+    }
+
+    /// <summary>The height the dropdown reported needing last time it was drawn.</summary>
+    private float neededPopupHeight;
+
     private float MeasureMaxPopupHeight()
     {
         var style = ImGui.GetStyle();
@@ -787,7 +855,16 @@ public class NoireComboBox<T>
 
         if (FilterEnabled)
         {
-            height += ImGui.GetFrameHeight() + style.ItemSpacing.Y;
+            // Measured at the size the filter box is drawn at, which is the dropdown's own rather than whatever is in
+            // force out here. This runs before the popup is begun, so ImGui's frame height answers for the host's font,
+            // and a dropdown whose text is larger than its host's was budgeted a filter row shorter than the one it
+            // draws. The popup then overflowed its cap by the difference and grew a scrollbar around a list that fits,
+            // which the pinned layout hid because it carries a spacing of slack the free one does not.
+            var line = PopupStyle?.TextSizePx is { } filterSize
+                ? NoireText.CalcSize(" ", filterSize).Y
+                : ImGui.GetTextLineHeight();
+
+            height += line + (style.FramePadding.Y * 2f) + style.ItemSpacing.Y;
 
             // With the filter pinned, the options live in a fixed-height child that scrolls on its own and the popup is
             // meant to wrap it snugly. The popup then measures exactly this cap, and asking it to fit its content into a
@@ -796,7 +873,8 @@ public class NoireComboBox<T>
                 height += style.ItemSpacing.Y;
         }
 
-        return height;
+        // Rounded up for the reason the option list is: a cap carrying a fraction is a cap the content cannot fit in.
+        return MathF.Ceiling(height);
     }
 
     private void DrawPopupContent()
@@ -872,8 +950,17 @@ public class NoireComboBox<T>
 
         // Sized to the options it holds rather than to the space left over, so a short list shrinks the dropdown instead
         // of leaving it padded out with dead space.
+        // Rounded up, because ImGui floors a child's size while the content it was measured for keeps its fraction: a
+        // row step landing on anything but a whole pixel leaves the region a pixel short of the rows it was sized to
+        // hold, and a pixel short is a scrollbar on a list that fits.
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
-        var listHeight = (visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y;
+        var listHeight = MathF.Ceiling((visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y);
+
+        // And taken up to what the list actually reported needing the last time it was drawn, for the same reason the
+        // dropdown itself is: a height worked out from the row step has to come out equal to a content size ImGui
+        // measured, and the two disagree by whatever the layout rounded. The measurement cannot.
+        if (filteredIndices.Count <= VisibleItemCount)
+            listHeight = MathF.Max(listHeight, MathF.Ceiling(neededListHeight));
 
         // NoBackground: the dropdown's own background is the backdrop here, and the list must not paint a second panel of
         // its own over it out of whatever ImGuiCol.ChildBg the consumer happens to have pushed around the combo.
@@ -882,7 +969,25 @@ public class NoireComboBox<T>
             return;
 
         DrawItemRows();
+        RecordListHeight();
     }
+
+    /// <summary>
+    /// Records the height the option list actually needs, taken from ImGui rather than worked out.
+    /// </summary>
+    private void RecordListHeight()
+    {
+        if (!NoireService.IsInitialized())
+            return;
+
+        var window = ImGuiP.GetCurrentWindow();
+
+        if (!window.IsNull)
+            neededListHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
+    }
+
+    /// <summary>The height the option list reported needing last time it was drawn.</summary>
+    private float neededListHeight;
 
     private void DrawItemRows()
     {
@@ -1346,16 +1451,30 @@ public class NoireComboBox<T>
         {
             cachedHintBinding = binding;
             hasCachedHint = true;
+            // Keycaps and text rather than mouse and arrow glyphs. The icons read as decoration at tooltip size and are
+            // drawn from the icon font, so they are also the one part of the hint a consumer's font and styling cannot
+            // reach; a keycap is drawn from the theme and says "press this" more plainly than a picture of a mouse.
             cachedHintContent = new NoireContent();
 
-            if (!binding.IsEmpty)
-                cachedHintContent.AddText($"{KeybindsHelper.FormatBinding(binding)} + ");
+            if (binding.IsEmpty)
+            {
+                cachedHintContent.AddText("Scroll to cycle");
+                return cachedHintContent;
+            }
 
-            cachedHintContent
-                .AddIcon(FontAwesomeIcon.Mouse)
-                .AddSpacing(2f)
-                .AddIcon(FontAwesomeIcon.ArrowsAltV)
-                .AddText(" to cycle");
+            // One cap per key rather than one around the whole shortcut: "Ctrl + G" in a single tile reads as a key
+            // called "Ctrl + G".
+            var keys = KeybindsHelper.FormatBinding(binding).Split(" + ", StringSplitOptions.RemoveEmptyEntries);
+
+            for (var i = 0; i < keys.Length; i++)
+            {
+                if (i > 0)
+                    cachedHintContent.AddText(" + ");
+
+                cachedHintContent.AddKeyCap(keys[i]);
+            }
+
+            cachedHintContent.AddText(" + Scroll");
         }
 
         return cachedHintContent;

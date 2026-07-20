@@ -103,6 +103,18 @@ public static partial class NoireText
     }
 
     /// <summary>
+    /// Draws text that wraps at a given width, at an explicit size.
+    /// </summary>
+    /// <param name="width">The width to wrap at, in real pixels. Usually a measured one, so it is not scaled.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
+    public static void Wrapped(float width, string text, float sizePx)
+    {
+        At(sizePx, (width, text), static state =>
+            NoireLayout.WrapText(state.width, state.text, static t => ImGui.TextUnformatted(t)));
+    }
+
+    /// <summary>
     /// Draws a bulleted line at a named size.
     /// </summary>
     /// <param name="text">The text to draw.</param>
@@ -281,6 +293,46 @@ public static partial class NoireText
             if (restore.HasValue)
                 ImGui.SetWindowFontScale(restore.Value);
         }
+    }
+
+    /// <summary>
+    /// Asks for a size to be built, without drawing or measuring anything.
+    /// </summary>
+    /// <remarks>
+    /// The one text call that is safe outside a frame, and the reason it exists. Every other call here pushes a font
+    /// handle and asks ImGui to measure, both of which need a frame in progress: reaching for
+    /// <see cref="CalcSize(string, float)"/> from a constructor to warm the cache is a crash rather than a warm cache.
+    /// This only tells the cache the size is wanted, so it can be built before the frame that needs it.<br/>
+    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface always
+    /// draws are covered by <see cref="Prewarm(bool)"/>.
+    /// </remarks>
+    /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
+    public static void Request(float sizePx) => UiFontCache.Get(sizePx);
+
+    /// <summary>
+    /// How many distinct pixel sizes may be built before the cache refuses more.
+    /// </summary>
+    /// <remarks>
+    /// Every size is an atlas entry, and every rebuild re-rasterizes all of them, so this is a real budget rather than
+    /// a formality. The default suits one type scale; a host offering the reader several scales has as many sizes as
+    /// steps times scale and should raise it deliberately, rather than discover it as a heading that quietly stopped
+    /// growing because the cache had started drawing it at the nearest size it already held.
+    /// </remarks>
+    public static int MaxCachedSizes
+    {
+        get => UiFontCache.MaxSizes;
+        set => UiFontCache.MaxSizes = Math.Max(1, value);
+    }
+
+    /// <summary>
+    /// Asks for several sizes to be built, without drawing or measuring anything.
+    /// </summary>
+    /// <inheritdoc cref="Request(float)" path="/remarks"/>
+    /// <param name="sizesPx">The sizes at 100%.</param>
+    public static void Request(ReadOnlySpan<float> sizesPx)
+    {
+        foreach (var size in sizesPx)
+            UiFontCache.Get(size);
     }
 
     /// <summary>

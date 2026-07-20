@@ -83,6 +83,19 @@ public static partial class NoireShapes
         var band = Math.Clamp(width, 0.01f, 1f);
         var half = thickness * 0.5f;
 
+        // Honoured here rather than left to the caller, the way the animation helpers do it. A travelling highlight is
+        // motion whoever asked for it, and a reader who has turned motion off should not have to know which of the
+        // things on screen happens to be drawn by a shape helper rather than by an animation one.
+        if (NoireUI.ReducedMotion)
+        {
+            Rect(
+                new Vector2(MathF.Min(from.X, to.X), MathF.Min(from.Y, to.Y) - half),
+                new Vector2(MathF.Max(from.X, to.X), MathF.Max(from.Y, to.Y) + half),
+                color);
+
+            return;
+        }
+
         // Taken over a range wider than the line so the band enters and leaves rather than appearing at one end.
         var centre = (phase * (1f + (band * 2f))) - band;
 

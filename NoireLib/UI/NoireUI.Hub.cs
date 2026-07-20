@@ -41,10 +41,38 @@ public static partial class NoireUI
     /// Whether animations are reduced to their final state.<br/>
     /// When enabled, <see cref="NoireAnim"/> snaps to targets instead of easing, and decorative motion (pulse, shimmer,
     /// shake, flash) stops. Widgets stay fully functional; only the movement goes away.<br/>
-    /// Manual by design: Dalamud exposes no accessibility signal to seed it from, so a plugin that wants to offer the
-    /// option sets this from its own settings.
+    /// Follows <see cref="HostReducedMotion"/> until something assigns it. Assigning takes it over for good;
+    /// <see cref="ClearReducedMotion"/> hands it back.
     /// </summary>
-    public static bool ReducedMotion { get; set; }
+    /// <remarks>
+    /// Reading the host's preference is the default because it is an accessibility setting the user has already stated
+    /// once, to Dalamud, and a library that ignores it makes every plugin using it ask again. A plugin offering the
+    /// choice itself should offer a way back to the host's answer as well, rather than turning a preference into a
+    /// setting the user now owns in two places.
+    /// </remarks>
+    public static bool ReducedMotion
+    {
+        get => reducedMotion ?? HostReducedMotion;
+        set => reducedMotion = value;
+    }
+
+    /// <summary>
+    /// Whether Dalamud reports that the user has asked for reduced motion. False when there is no host to ask.
+    /// </summary>
+    public static bool HostReducedMotion
+        => NoireService.IsInitialized() && NoireService.PluginInterface.UiBuilder.ShouldUseReducedMotion;
+
+    /// <summary>
+    /// Whether <see cref="ReducedMotion"/> is currently a plugin's own answer rather than the host's.
+    /// </summary>
+    public static bool HasReducedMotionOverride => reducedMotion.HasValue;
+
+    /// <summary>
+    /// Drops the plugin's own answer, so <see cref="ReducedMotion"/> follows <see cref="HostReducedMotion"/> again.
+    /// </summary>
+    public static void ClearReducedMotion() => reducedMotion = null;
+
+    private static bool? reducedMotion;
 
     /// <summary>
     /// An optional translation hook for every user-facing string NoireUI shows.<br/>

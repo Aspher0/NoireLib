@@ -23,6 +23,9 @@ public static partial class NoireLayout
     /// </summary>
     private const float DefaultSplitterMinimum = 40f;
 
+    /// <summary>Where a splitter's grab offset is kept for the length of a drag.</summary>
+    private const string GrabKey = "grab";
+
     /// <summary>
     /// Draws a draggable divider that resizes the pane before it.<br/>
     /// ImGui ships no splitter at all, so every plugin that wants a resizable sidebar writes the same invisible button,
@@ -46,55 +49,109 @@ public static partial class NoireLayout
     /// they are a fixed size, or the divider will run past them.</param>
     /// <returns>True while the splitter is being dragged.</returns>
     public static bool Splitter(string id, ref float size, float minSize = 0f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
+        => Splitter(id, ref size, new SplitterOptions
+        {
+            MinSize = minSize,
+            MaxSize = maxSize,
+            Thickness = thickness,
+            Vertical = vertical,
+            Length = length,
+        });
+
+    /// <summary>
+    /// A draggable divider between two panes, with the look opened all the way up.
+    /// </summary>
+    /// <remarks>
+    /// The value is clamped every frame, not only while dragging, so a size restored from a config written on a wider
+    /// screen is corrected on the first frame rather than leaving a pane off the edge.<br/>
+    /// A design that already draws its own divider wants the handle without the line: give
+    /// <see cref="SplitterOptions.CustomDraw"/> a hook that draws nothing, and the pane becomes resizable without
+    /// anything about it changing.
+    /// </remarks>
+    /// <param name="id">A unique id for the splitter.</param>
+    /// <param name="size">The size of the pane before the splitter, read and written. In real pixels: it is driven by
+    /// the mouse, so every measurement here shares that space rather than being written at 100%.</param>
+    /// <param name="options">How it behaves and looks.</param>
+    /// <returns>True while the splitter is being dragged.</returns>
+    public static bool Splitter(string id, ref float size, SplitterOptions options)
     {
         ArgumentNullException.ThrowIfNull(id);
+        ArgumentNullException.ThrowIfNull(options);
 
         var theme = NoireTheme.Current;
-
-        if (minSize <= 0f)
-            minSize = NoireUI.Scaled(DefaultSplitterMinimum);
-
-        if (thickness <= 0f)
-            thickness = MathF.Max(NoireUI.Scaled(4f), theme.ResolveItemSpacing().X);
+        var minSize = options.MinSize > 0f ? options.MinSize : NoireUI.Scaled(DefaultSplitterMinimum);
+        var thickness = options.Thickness > 0f
+            ? options.Thickness
+            : MathF.Max(NoireUI.Scaled(4f), theme.ResolveItemSpacing().X);
 
         var available = ImGui.GetContentRegionAvail();
-        var span = length > 0f ? length : vertical ? available.Y : available.X;
+        var span = options.Length > 0f ? options.Length : options.Vertical ? available.Y : available.X;
 
-        ImGui.InvisibleButton(id, vertical ? new Vector2(thickness, MathF.Max(1f, span)) : new Vector2(MathF.Max(1f, span), thickness));
+        ImGui.InvisibleButton(id, options.Vertical
+            ? new Vector2(thickness, MathF.Max(1f, span))
+            : new Vector2(MathF.Max(1f, span), thickness));
 
         var hovered = ImGui.IsItemHovered();
         var dragging = ImGui.IsItemActive();
 
-        if (hovered || dragging)
-            ImGui.SetMouseCursor(vertical ? ImGuiMouseCursor.ResizeEw : ImGuiMouseCursor.ResizeNs);
+        if ((hovered || dragging) && options.ShowResizeCursor)
+            ImGui.SetMouseCursor(options.Vertical ? ImGuiMouseCursor.ResizeEw : ImGuiMouseCursor.ResizeNs);
+
+        var pointer = options.Vertical ? ImGui.GetMousePos().X : ImGui.GetMousePos().Y;
+
+        // The distance from the pointer to the edge it is holding, taken once when the drag starts. Everything after
+        // that is read from where the pointer IS.
+        if (ImGui.IsItemActivated())
+            UiFrameState.Set(id, GrabKey, pointer - size);
+
+        var upper = options.MaxSize > 0f ? options.MaxSize : MathF.Max(minSize, size);
 
         if (dragging)
-        {
-            var delta = ImGui.GetIO().MouseDelta;
-            size += vertical ? delta.X : delta.Y;
-        }
+            size = ResolveSize(pointer, UiFrameState.Get(id, GrabKey, pointer - size), minSize, upper);
 
-        var upper = maxSize > 0f ? maxSize : MathF.Max(minSize, size);
         size = Math.Clamp(size, minSize, upper);
 
-        var min = ImGui.GetItemRectMin();
-        var max = ImGui.GetItemRectMax();
-        var grip = dragging
-            ? theme.Resolve(ThemeColor.Accent)
+        var color = dragging
+            ? options.ActiveColor ?? theme.Resolve(ThemeColor.Accent)
             : hovered
-                ? theme.Hover(theme.Resolve(ThemeColor.Border))
-                : theme.Muted(theme.Resolve(ThemeColor.Border));
+                ? options.HoveredColor ?? theme.Hover(theme.Resolve(ThemeColor.Border))
+                : options.Color ?? theme.Muted(theme.Resolve(ThemeColor.Border));
 
-        var center = (min + max) * 0.5f;
-        var drawList = ImGui.GetWindowDrawList();
+        var args = new UiSplitterDraw(
+            ImGui.GetWindowDrawList(),
+            ImGui.GetItemRectMin(),
+            ImGui.GetItemRectMax(),
+            options.Vertical,
+            hovered,
+            dragging,
+            color,
+            NoireUI.Scaled(options.LineWidth));
 
-        if (vertical)
-            drawList.AddLine(new Vector2(center.X, min.Y), new Vector2(center.X, max.Y), ColorHelper.Vector4ToUint(grip), NoireUI.Scaled(1f));
+        if (options.CustomDraw is { } custom)
+            custom(args);
         else
-            drawList.AddLine(new Vector2(min.X, center.Y), new Vector2(max.X, center.Y), ColorHelper.Vector4ToUint(grip), NoireUI.Scaled(1f));
+            args.DrawLine();
 
         return dragging;
     }
+
+    /// <summary>
+    /// Where a splitter's pane edge belongs for a pointer at the given position, clamped to its bounds.
+    /// </summary>
+    /// <remarks>
+    /// Read from where the pointer <b>is</b>, never from how far it moved. A mouse delta that the clamp throws away is
+    /// a delta the size never received, so accumulating deltas leaves the divider ahead of the pointer by everything
+    /// that was discarded, for the rest of the drag: push past the minimum, come back, and the divider is already
+    /// moving while the cursor is still nowhere near it. Resolving against the position makes overshooting free.<br/>
+    /// Pure and separate so the arithmetic can be tested, since a drag is the one thing that cannot demonstrate it.
+    /// </remarks>
+    /// <param name="pointer">The pointer's position along the axis being resized, in screen coordinates.</param>
+    /// <param name="grabOffset">The distance from the pointer to the pane edge, taken when the drag started.</param>
+    /// <param name="minSize">The smallest the pane may be.</param>
+    /// <param name="maxSize">The largest the pane may be.</param>
+    /// <returns>The pane size.</returns>
+    internal static float ResolveSize(float pointer, float grabOffset, float minSize, float maxSize)
+        => Math.Clamp(pointer - grabOffset, minSize, MathF.Max(minSize, maxSize));
 
     #endregion
 

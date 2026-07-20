@@ -9,13 +9,13 @@
 // z floor the game's depth-only shader applies. Rows are applied by dot product, matching its dp4s.
 
 // Rows 0..2: m_ViewMatrix (world to pass view, 3x4). Rows 3..6: m_ProjectionMatrix (4x4).
-// For the near-field map's single-matrix constants, rows 3..6 hold the whole transform instead.
+// For the near-field map's single-matrix constants, rows 3..6 hold the whole world-to-clip transform instead.
 Buffer<float4> LightMat : register(t0);
 
 cbuffer ShadowCB : register(b1)
 {
     float4x4 World; // the mesh's world transform, uploaded transposed like every Draw3D matrix
-    float4 Mode;    // x > 0.5: rows 3..6 are a single row-vector transform (the near-field map's layout)
+    float4 Mode;    // x > 0.5: rows 3..6 are one whole world-to-clip transform (the near-field map's layout)
 };
 
 struct VsIn
@@ -48,8 +48,14 @@ VsOut vs(VsIn v)
     }
     else
     {
-        float4x4 m = float4x4(LightMat.Load(3), LightMat.Load(4), LightMat.Load(5), LightMat.Load(6));
-        clip = mul(wp, m);
+        // The same dot-product application as above, against world space directly: this buffer holds one
+        // whole world-to-clip transform rather than a view/projection pair. Both layouts come from the same
+        // engine and are stored the same way, so applying this one by columns instead (mul(wp, m), the
+        // transpose) sends every vertex outside the frustum and silently contributes nothing.
+        clip.x = dot(LightMat.Load(3), wp);
+        clip.y = dot(LightMat.Load(4), wp);
+        clip.z = max(dot(LightMat.Load(5), wp), 0.00001);
+        clip.w = dot(LightMat.Load(6), wp);
     }
 
     VsOut o;

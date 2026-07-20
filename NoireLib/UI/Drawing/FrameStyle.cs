@@ -77,6 +77,18 @@ public sealed class FrameStyle
     /// <summary>Which corners get a bracket. Defaults to all four.</summary>
     public RectCorners TickCorners { get; set; } = RectCorners.All;
 
+    /// <summary>
+    /// What to draw when the rect is too small for corner ticks. Defaults to <see cref="TickFallback.None"/>.
+    /// </summary>
+    /// <remarks>
+    /// Ticks are dropped once two of them would meet, because brackets crossing in the middle read as a smaller frame
+    /// rather than as corners. That is right for a rect that has merely become small and wrong for one that is meant to
+    /// be a strip, which loses its edge entirely. <see cref="TickFallback.Brackets"/> draws a full-height bracket at
+    /// each end instead, at the same inset, length, thickness and color the ticks would have had, so a frame that
+    /// changes between the two shapes does not appear to move.
+    /// </remarks>
+    public TickFallback TickFallback { get; set; } = TickFallback.None;
+
     #endregion
 
     #region Resolution

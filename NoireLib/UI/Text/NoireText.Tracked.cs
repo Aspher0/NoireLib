@@ -31,7 +31,8 @@ public static partial class NoireText
     /// and at every UI scale, so it is never scaled and never restated.
     /// </param>
     /// <param name="size">The step of the type scale to draw it at.</param>
-    public static void Tracked(string text, float tracking = CapsTracking, TextSize size = TextSize.Body)
+    /// <returns>The size the run occupies, so a caller placing something beside it need not measure it again.</returns>
+    public static Vector2 Tracked(string text, float tracking = CapsTracking, TextSize size = TextSize.Body)
         => Tracked(text, tracking, NoireTheme.Current.ResolveTextSize(size));
 
     /// <summary>
@@ -40,13 +41,22 @@ public static partial class NoireText
     /// <param name="text">The text to draw.</param>
     /// <param name="tracking">Extra space per character, in ems. See <see cref="Tracked(string, float, TextSize)"/>.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
-    public static void Tracked(string text, float tracking, float sizePx)
+    /// <returns>
+    /// The size the run occupies. Returned rather than left to a second
+    /// <see cref="TrackedSize(string, float, float)"/> call, because measuring tracked text costs the same walk over
+    /// its glyphs that drawing it does: a caller that measures and then draws pays for the string twice.
+    /// </returns>
+    public static Vector2 Tracked(string text, float tracking, float sizePx)
     {
         if (string.IsNullOrEmpty(text))
-            return;
+            return Vector2.Zero;
 
         NoireUI.EnsureFrameServices();
-        InFont(sizePx, text, tracking, static (t, track) => PlaceGlyphs(t, track, draw: true));
+
+        var size = Vector2.Zero;
+        InFont(sizePx, text, tracking, (t, track) => size = PlaceGlyphs(t, track, draw: true));
+
+        return size;
     }
 
     /// <summary>

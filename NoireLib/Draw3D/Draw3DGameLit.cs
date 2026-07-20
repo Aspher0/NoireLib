@@ -147,9 +147,10 @@ public sealed class Draw3DGameLit
     /// <summary>
     /// Whether game-lit meshes are also drawn, depth-only, into the game's shadow maps, so they cast
     /// shadows as well as receive them. Off by default while the pass is being verified in game.<br/>
-    /// Casting reaches every map the game re-renders - the sun's cascades and the lights near anything
-    /// moving. A map the game rendered once and cached is not re-entered, so a static lamp that has not
-    /// refreshed since the object appeared shadows it one refresh late.
+    /// Casting reaches every map the game re-renders: the near-field map, which it redraws each frame and
+    /// which therefore carries the shadow around the camera immediately, plus the sun's cascades and the
+    /// lights near anything moving. A map the game rendered once and cached is not re-entered, so a static
+    /// lamp that has not refreshed since the object appeared shadows it one refresh late.
     /// </summary>
     public bool CastShadows { get; set; }
 

@@ -139,11 +139,21 @@ NoireUI.DroppedDrawActions;   // dropped because the queue was full, since start
 ### Reduced motion and strings
 
 ```csharp
-NoireUI.ReducedMotion = config.ReducedMotion;   // eased values snap, decorative motion stops
+NoireUI.ReducedMotion;                          // what is in effect right now
+NoireUI.HostReducedMotion;                      // what Dalamud says the user asked for
+NoireUI.HasReducedMotionOverride;               // whether a plugin has taken it over
+
+NoireUI.ReducedMotion = config.ReducedMotion;   // take it over: eased values snap, decorative motion stops
+NoireUI.ClearReducedMotion();                   // hand it back to the host
+
 NoireUI.StringProvider = key => myLocalizer.GetOrNull(key);   // null falls back to the shipped English
 ```
 
-`ReducedMotion` is manual: Dalamud exposes no accessibility signal to seed it from, so a plugin that wants to offer the option sets it from its own settings. NoireLib depends on no localization system and ships no locale files.
+**`ReducedMotion` follows Dalamud's own setting until a plugin assigns it.** It is an accessibility preference the user has already stated once, to the host, and a library that ignored it would have every plugin using it ask again.
+
+Assigning takes it over for good, including assigning `false` — a plugin asking for full motion is an answer, not the absence of one. If you offer the choice in your own settings, offer the way back too, or a preference the user set once in Dalamud quietly becomes a second copy your plugin now owns. Persist the override only when it exists (`TryGet` rather than `Get` with a default), or every load writes your default over the host's answer.
+
+NoireLib depends on no localization system and ships no locale files.
 
 ---
 
@@ -211,6 +221,7 @@ if (presence > 0.001f)
 // Stateless periodic reads of the shared clock.
 var glow = NoireAnim.Pulse(period: 1.5f, min: 0.3f, max: 1f);
 var shimmer = NoireAnim.Sweep(period: 2f);
+var turn = NoireAnim.Spin(secondsPerTurn: 240f);        // turns, for anything that rotates
 
 // One-shots: start once, run themselves out.
 if (saved)
@@ -456,6 +467,23 @@ Give it a `length` whenever the panes are a fixed size. Left at zero it fills th
 
 The value is clamped every frame, not only while dragging, so a width restored from a config written on a wider screen is corrected on the first frame instead of leaving a pane off the edge.
 
+**The divider is resolved from where the pointer is, never from how far it moved.** A mouse delta that the clamp throws away is a delta the size never received, so accumulating deltas leaves the divider ahead of the pointer by everything discarded — push past the minimum, come back, and it starts moving while the cursor is still nowhere near it, for the rest of the drag. Reading the position instead makes overshooting free: the divider sits at the bound until the pointer comes back past it, and is never anywhere but under the cursor. The offset between the two is taken once when the drag starts, so grabbing the divider off-centre does not snap it. (Same rule as `NoireSliders`, and the arithmetic is a tested pure method for the same reason: a drag is the one thing that cannot demonstrate it.)
+
+**A `SplitterOptions` overload opens the look up**, including a `CustomDraw` hook. The grab area and the divider are separate there: `Thickness` is how much of the pointer's path counts as the handle, `LineWidth` is the hairline drawn down the middle of it, and those are rarely the same number.
+
+```csharp
+NoireLayout.Splitter("split", ref paneWidth, new SplitterOptions
+{
+    MinSize = 120f, MaxSize = 420f, Length = paneHeight,
+    Thickness = 9f,                        // comfortable to grab
+    CustomDraw = static _ => { },          // and invisible: this design draws its own divider
+});
+```
+
+That empty hook is the point of it. A design that already paints a rule between two panes wants the handle without a second line on top of it, and the splitter still owns the drag, the cursor and the clamping whatever the hook draws — so an existing divider becomes draggable with nothing about it changing. `UiSplitterDraw.DrawLine()` gives you the shipped line back when the hook only means to add to it.
+
+**Put the handle in the same window as the panes' edge, not over it.** ImGui hit tests windows before items, and a child region is a window: a handle placed across the seam from the parent is underneath whichever region the pointer is over and never gets the click. Draw it inside one of the two regions, along its edge.
+
 **Collapsible sections** fold their body away, and can remember whether they were open.
 
 ```csharp
@@ -536,6 +564,24 @@ NoireWindowChrome.Draw(() =>
 },
 new WindowChromeStyle { Plate = mySurface, Frame = myBorder });
 ```
+
+**Always on top is one call.** `KeepInFront()`, from inside the window, once per frame.
+
+```csharp
+public override void Draw()
+{
+    if (alwaysOnTop)
+        NoireWindowChrome.KeepInFront();
+
+    // ... the window
+}
+```
+
+It covers both halves of what "in front" means, because either alone is visibly wrong. **Clicks** follow the display list, which it moves the window to the front of. **Drawing** follows the draw layer first, and the display list is reordered whenever a window is focused — after every plugin has drawn and before the frame is rendered, so a window holding its place by the display list alone is drawn *behind* for one frame every time an overlapping window is clicked, and no plugin code runs late enough to undo it. So it lifts the window into the top draw layer as well.
+
+It does that by setting the layer's flag on the window **after** it has been begun. The layer is read at render time, so the flag counts for that frame while none of what the same flag does inside `Begin` happens at all: the window is not moved to the cursor, its background and border keep reading the fields an ordinary window reads, and its default item width is unchanged. There is nothing to pass at `PreDraw`.
+
+The layer covers the whole of the ordinary one, so anything a window opens over itself has to join it. Every NoireUI popup does that on its own, by inheriting the layer of the window that opened it. A popup of your own calls `KeepInFront()` from inside itself — which is also what settles the order between the two, since among the windows in front the last caller each frame wins.
 
 **Four flag sets, because the trade-offs are real ones.** `Flags` is the default: no title bar, background, border or scrollbar, and ImGui keeps the drag, so the window can be picked up anywhere it is not already busy. `FixedFlags` adds no-resize. `HandleOnlyFlags` adds `NoMove` for a design whose empty space is not spare, with `DragFrom` naming the handle. `FixedBodyFlags` stops the window scrolling as a whole, for one whose masthead and rail stay put while a region inside it scrolls.
 
@@ -1169,7 +1215,13 @@ combo.FilterPinned = true;   // Default: only the option list scrolls
 combo.FilterPinned = false;  // The whole dropdown scrolls, filter included
 ```
 
-The dropdown always shows **exactly one scrollbar**, in either mode: it is sized to hold `VisibleItemCount` options plus the filter row, and shrinks to fit when there are fewer options.
+The dropdown shows **exactly one scrollbar**, in either mode, and **none at all while every option fits**.
+
+That second half is a **measurement, not a calculation**, and the distinction took five attempts to arrive at. ImGui decides the scrollbar with `ContentSize + WindowPadding * 2 > SizeFull.y`, and floors `SizeFull` whenever a size constraint is present at all — which for a combo popup is always, since `BeginCombo` sets its own when you set none. So a height worked out in advance has to come out equal to a value that is then rounded down, and every fraction anywhere in the layout — the padding, the row step, the filter row, the spacing — is a scrollbar over a list that fits. Each correction to that arithmetic fixed one configuration and left another.
+
+So the dropdown and its option list both **record what ImGui reported needing** and ask for it back, rounded up, as a size *minimum* on the next frame. That is the same quantity the scrollbar test uses, so it cannot disagree with it, whatever the layout turns out to contain. The cap on `VisibleItemCount` still applies when the list is genuinely longer than the dropdown, which is the one case where a pixel of error is invisible because a scrollbar belongs there.
+
+**The general lesson, if you are sizing anything against ImGui's own measurement:** do not predict the number, read it back. A constraint that has to exactly equal what the framework measured is a constraint that will be wrong at some UI scale you are not developing at.
 
 ### Long lists
 
@@ -1252,7 +1304,7 @@ combo.WheelCycleBinding = GamepadButtons.North;                  // A gamepad bu
 
 While the combo is cycling a scroll, **nothing else scrolls**: not the window behind it, not any list it sits in. The combo claims the wheel from ImGui for as long as it is cycling, so the event is never routed anywhere else rather than being undone afterwards. This is not configurable and needs nothing from the host window. A scroll over an idle combo (cycling off, or the binding not held) still scrolls the surrounding window normally.
 
-A hint tooltip (drawn with `NoireTooltip`) is shown automatically when hovering the combo, e.g. "Ctrl + 🖱 ↕ to cycle". It is generated from the binding actually in effect, so it follows a rebinding on its own:
+A hint tooltip (drawn with `NoireTooltip`) is shown automatically when hovering the combo: each key of the shortcut as a keycap, then "+ Scroll", or "Scroll to cycle" when no binding has to be held. It is generated from the binding actually in effect, so it follows a rebinding on its own. Keycaps and text rather than mouse and arrow glyphs, which come from the icon font and are the one part of a hint a consumer's own styling cannot reach; one cap per key, since "Ctrl + G" in a single tile reads as a key called "Ctrl + G". `WheelCycleHintContent` still takes anything a `NoireContent` can hold.
 
 ```csharp
 combo.WheelCycleHintEnabled = true; // Default
@@ -1726,6 +1778,17 @@ var style = new TooltipStyle
 NoireTooltip.ShowOnItemHover(content, style);
 ```
 
+**If you are styling a flagged window of your own, push the field the flag actually selects.** ImGui picks between the window, popup and child style fields by window flag, and the branches are not the same test for every property:
+
+| | Border size | Rounding | Background |
+|---|---|---|---|
+| Ordinary window | `WindowBorderSize` | `WindowRounding` | `WindowBg` |
+| Popup | `PopupBorderSize` | `PopupRounding` | `PopupBg` |
+| Tooltip | `PopupBorderSize` | `WindowRounding` | `PopupBg` |
+| Child | `ChildBorderSize` | `ChildRounding` | `ChildBg` |
+
+Pushing the wrong one is silent: the window draws with whatever the host style happened to have, whatever you asked for. A popup styled with `WindowRounding` and a tooltip styled with `WindowBorderSize` are both no-ops.
+
 ### Placement
 
 ```csharp
@@ -1898,6 +1961,10 @@ NoireText.Tracked("OVERLAYS", NoireText.CapsTracking, TextSize.Caption);
 var width = NoireText.TrackedSize("OVERLAYS", NoireText.CapsTracking, TextSize.Caption).X;
 ```
 
+**Never measure text outside a frame.** `CalcSize`, `Draw`, `Tracked` and the rest push a font handle and call into ImGui, both of which need a frame in progress — reaching for one from a plugin or window constructor to warm the cache is a crash, not a warm cache. `NoireText.Request(sizePx)` is the frame-safe call: it only tells the cache a size is wanted, so it can be built before the frame that needs it. Use it for sizes a host can switch to at runtime, such as a reader-facing type scale; `Prewarm` already covers the sizes the interface always draws.
+
+**`UiFontCache.MaxSizes` bounds how many distinct sizes exist.** Every size is an atlas entry and every rebuild re-rasterizes all of them, so it is a real budget. The default of 16 suits one type scale; a host offering the reader several scales has steps times scale many sizes and should raise it deliberately, rather than have its largest heading silently drawn at its second-largest size.
+
 **Tracking is in ems, a fraction of the size the text is drawn at, exactly as CSS letter-spacing works.** That is what makes one value right at every step of the type scale and at every UI scale, so it is never scaled and never restated. `CapsTracking` is the shipped default: capitals have no ascenders or descenders to separate them and need noticeably more room than lower case to stop reading as one block.
 
 The run is drawn onto the draw list and reserved with a single `Dummy`, rather than as one text item per character, so item spacing cannot creep in between the glyphs and a label always measures exactly what it draws. The trailing gap after the last character is not part of the run, or every tracked label would sit a gap left of where a centred or right-aligned layout put it.
@@ -1994,6 +2061,19 @@ NoireShapes.Frame(min, max, new FrameStyle
 ```
 
 Set `TickLength` to zero and this is an ordinary outline again.
+
+**Corner ticks suppress themselves when they would meet.** Two brackets crossing in the middle read as a smaller frame rather than as corners, so below twice the tick length on either axis the frame draws none. That is the right answer for a rectangle that has merely become small and the wrong one for a strip, which loses its edge entirely — a window collapsed to a title bar, say. `TickFallback.Brackets` draws a full-height bracket at each end instead, at the inset, length, thickness and colour the ticks would have had, so a frame moving between the two shapes keeps its marks where they were:
+
+```csharp
+new FrameStyle { TickLength = 16f, TickFallback = TickFallback.Brackets };
+```
+
+The same brackets are public on their own, for anything drawing its own edge:
+
+```csharp
+NoireShapes.Brackets(min, max, gold, armLength: 7f, thickness: 1.5f);
+NoireShapes.Bracket(min, max, gold, 7f, 1.5f, BracketSide.Right);   // just the "]"
+```
 
 ### Arcs, rings and wedges
 

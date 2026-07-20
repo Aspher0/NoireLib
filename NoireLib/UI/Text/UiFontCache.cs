@@ -26,7 +26,17 @@ internal static class UiFontCache
     /// How many distinct sizes may be built. An interface with more genuinely different text sizes than this is a type
     /// scale that has stopped being one, and the atlas is the wrong place to discover that.
     /// </summary>
-    private const int MaxSizes = 16;
+    /// <summary>
+    /// How many distinct pixel sizes may be built before the cache refuses more.
+    /// </summary>
+    /// <remarks>
+    /// Every size is an atlas entry, and every atlas rebuild re-rasterizes all of them, so this is a real budget rather
+    /// than a formality. The default suits a plugin with one type scale; a host offering the reader several scales has
+    /// as many sizes as steps times scale, and should raise it deliberately rather than have its largest heading
+    /// silently drawn at its second-largest size.<br/>
+    /// Raise it before the first text is drawn. Lowering it below what is already built changes nothing that exists.
+    /// </remarks>
+    public static int MaxSizes { get; set; } = 16;
 
     /// <summary>
     /// How close two requested sizes must be to share a font. Sizes arrive as products of a ratio and a body size, so

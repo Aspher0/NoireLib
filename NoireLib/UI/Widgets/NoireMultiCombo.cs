@@ -303,13 +303,26 @@ public sealed class NoireMultiCombo<T>
         // Without this the popup falls back to ImGui's own cap of roughly eight rows, while the option list inside it
         // is a child sized for VisibleItemCount plus a filter row and the shortcuts above it. The content then
         // overflows the popup and both of them grow a scrollbar: one around the list, one around the popup holding it.
+        // Snapped to whole pixels, for the reason the combo box snaps its own: ImGui floors a window's size whenever a
+        // size constraint is present, and the test that decides the scrollbar adds the window padding to the content
+        // size unfloored. Any fraction in the padding therefore leaves the popup permanently short of what it holds,
+        // which is a scrollbar on a dropdown that fits, at every UI scale that is not a whole multiple.
+        var hostPadding = ImGui.GetStyle().WindowPadding;
+        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(hostPadding.X), MathF.Round(hostPadding.Y)));
+
         ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
+
+        // Read before the popup opens, since inside one the current window is the popup itself.
+        var ownerInFront = UiWindowOrder.InTopLayer;
 
         if (!ImGui.BeginCombo($"{label}###NoireMultiCombo_{Id}", BuildPreview()))
             return changedThisFrame;
 
         try
         {
+            if (ownerInFront)
+                UiWindowOrder.KeepInFront();
+
             DrawDropdown();
         }
         finally
@@ -585,8 +598,17 @@ public sealed class NoireMultiCombo<T>
     /// </remarks>
     private float MeasureMaxPopupHeight()
     {
+        var visibleCount = Math.Max(1, VisibleItemCount);
+
+        // Nothing to cap while everything fits, so nothing is capped and the popup comes out exactly as tall as its own
+        // contents. A cap computed to that same height has to agree with ImGui about every row, gap and padding at
+        // once, in a measurement taken before the popup exists, and a pixel under it is a scrollbar over a list that
+        // fits. It only ever mattered for a list longer than the dropdown, where a scrollbar belongs anyway.
+        if (filteredIndices.Count <= visibleCount)
+            return float.MaxValue;
+
         var style = ImGui.GetStyle();
-        var height = (Math.Max(1, VisibleItemCount) * ResolveRowStep()) - style.ItemSpacing.Y + (style.WindowPadding.Y * 2f);
+        var height = (visibleCount * ResolveRowStep()) - style.ItemSpacing.Y + (style.WindowPadding.Y * 2f);
 
         if (FilterEnabled)
             height += ImGui.GetFrameHeight() + style.ItemSpacing.Y;

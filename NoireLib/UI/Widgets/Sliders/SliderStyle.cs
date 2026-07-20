@@ -77,6 +77,16 @@ public sealed class SliderStyle
     public Vector4? ValueColor { get; set; }
 
     /// <summary>
+    /// Writes the value as words rather than as a number. When <see langword="null"/>, the number is written.
+    /// </summary>
+    /// <remarks>
+    /// For a slider whose positions are named rather than counted: a type scale reading "Smallest" through "Bigger"
+    /// says what it does, where the same slider reading 1 to 5 asks the reader to work out which end is which.
+    /// Overrides <see cref="ValueFormat"/> when set.
+    /// </remarks>
+    public Func<float, string>? ValueText { get; set; }
+
+    /// <summary>
     /// The row label's colour. When <see langword="null"/>, the theme's ordinary text.
     /// </summary>
     /// <remarks>

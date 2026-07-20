@@ -305,8 +305,14 @@ public static class NoireInputs
             ImGui.OpenPopup($"###NoireInputsPicker_{id}");
         }
 
+        // Read before the popup opens, since inside one the current window is the popup itself.
+        var ownerInFront = UiWindowOrder.InTopLayer;
+
         if (ImGui.BeginPopup($"###NoireInputsPicker_{id}"))
         {
+            if (ownerInFront)
+                UiWindowOrder.KeepInFront();
+
             var flags = resolved.ShowAlpha ? ImGuiColorEditFlags.AlphaBar : ImGuiColorEditFlags.NoAlpha;
 
             if (ImGui.ColorPicker4($"###NoireInputsPicked_{id}", ref value, flags))

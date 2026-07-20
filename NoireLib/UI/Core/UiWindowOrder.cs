@@ -25,7 +25,14 @@ internal static class UiWindowOrder
     /// it, and nothing about it prevents a window from taking input.
     /// </summary>
     /// <remarks>
-    /// It does carry one thing, and it is worth knowing before putting this on a window with a background. ImGui reads a
+    /// <b>Only for a window that sets its own position every frame</b>, which is every overlay in the library and no
+    /// window a user can drag. ImGui positions any window begun with this flag that did not set its own position that
+    /// frame: it is moved to the mouse and then pushed clear of the cursor, the same placement a real tooltip gets.<br/>
+    /// <see cref="KeepInFront"/> reaches the same layer without any of that, by setting the flag on the window after it
+    /// has been begun. The layer is read at render time, so a flag set during drawing counts for that frame while none
+    /// of the flag's effects inside <c>Begin</c> ever happen. Prefer it; this constant is for windows that want the
+    /// layer for their whole lifetime and are positioned anyway.<br/>
+    /// It carries one more thing, worth knowing before putting this on a window with a background. ImGui reads a
     /// window's background colour from an index it picks by flag, and this flag selects <c>PopupBg</c> where an ordinary
     /// window would use <c>WindowBg</c>. A window that pushes <c>WindowBg</c> and then sets this flag is drawn in the
     /// theme's popup colour instead, silently and only once it is promoted.<br/>
@@ -52,6 +59,19 @@ internal static class UiWindowOrder
         if (!NoireService.IsInitialized())
             return;
 
-        ImGuiP.BringWindowToDisplayFront(ImGuiP.GetCurrentWindow());
+        var window = ImGuiP.GetCurrentWindow();
+
+        ImGuiP.BringWindowToDisplayFront(window);
+        window.RootWindow.Flags |= TopLayerFlag;
     }
+
+    /// <summary>
+    /// Whether the window being drawn is in the top layer, so that a popup opened from it can join it.
+    /// </summary>
+    /// <remarks>
+    /// Read before the popup is opened, since inside one the current window is the popup itself. The root is what
+    /// carries the layer, so this answers for a child region the same way it answers for the window around it.
+    /// </remarks>
+    internal static bool InTopLayer
+        => NoireService.IsInitialized() && (ImGuiP.GetCurrentWindow().RootWindow.Flags & TopLayerFlag) != 0;
 }

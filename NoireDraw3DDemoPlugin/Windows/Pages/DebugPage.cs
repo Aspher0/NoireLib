@@ -148,8 +148,8 @@ internal sealed class DebugPage
 
         if (NoireDraw3D.GameLit.CastShadows)
         {
-            var (entered, drawn, skipped, meshes) = NoireDraw3D.ShadowCastStats;
-            Ui.Mono($"shadow binds: entered {entered}  drawn {drawn}  skipped {skipped}  meshes {meshes}", ImGuiColors.DalamudGrey3);
+            var (entered, drawn, skipped, nearField, meshes) = NoireDraw3D.ShadowCastStats;
+            Ui.Mono($"shadow binds: entered {entered}  drawn {drawn}  skipped {skipped}  nearfield {nearField}  meshes {meshes}", ImGuiColors.DalamudGrey3);
         }
 
         Ui.Gap();

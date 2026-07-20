@@ -36,8 +36,68 @@ public class NoireUiFoundationsTests : IDisposable
         UiFrameState.PruneAfterFrames = originalPruneAfter;
         UiFrameState.PruneIntervalFrames = originalPruneInterval;
         UiFrameState.Clear();
+        RestoreReducedMotion();
         GC.SuppressFinalize(this);
     }
+
+    /// <summary>
+    /// Puts reduced motion back exactly as it was, which for an unset one means unset rather than false.
+    /// </summary>
+    /// <remarks>
+    /// Assigning the value read back would leave an override behind where there had been none, and the difference is
+    /// the whole of what these tests are about.
+    /// </remarks>
+    private void RestoreReducedMotion()
+    {
+        if (originalReducedMotion is { } value)
+            NoireUI.ReducedMotion = value;
+        else
+            NoireUI.ClearReducedMotion();
+    }
+
+    private readonly bool? originalReducedMotion = NoireUI.HasReducedMotionOverride ? NoireUI.ReducedMotion : null;
+
+    #region Reduced motion
+
+    [Fact]
+    public void ReducedMotion_WithNoOverride_FollowsTheHost()
+    {
+        NoireUI.ClearReducedMotion();
+
+        NoireUI.HasReducedMotionOverride.Should().BeFalse();
+        NoireUI.ReducedMotion.Should().Be(NoireUI.HostReducedMotion);
+    }
+
+    [Fact]
+    public void ReducedMotion_WhenAssigned_TakesOverFromTheHost()
+    {
+        NoireUI.ClearReducedMotion();
+        NoireUI.ReducedMotion = true;
+
+        NoireUI.HasReducedMotionOverride.Should().BeTrue();
+        NoireUI.ReducedMotion.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ReducedMotion_AssignedFalse_IsStillAnOverride()
+    {
+        NoireUI.ClearReducedMotion();
+        NoireUI.ReducedMotion = false;
+
+        NoireUI.HasReducedMotionOverride.Should().BeTrue("a plugin asking for full motion is an answer, not the absence of one");
+    }
+
+    [Fact]
+    public void ClearReducedMotion_HandsItBackToTheHost()
+    {
+        NoireUI.ReducedMotion = true;
+        NoireUI.ClearReducedMotion();
+
+        NoireUI.HasReducedMotionOverride.Should().BeFalse();
+        NoireUI.ReducedMotion.Should().Be(NoireUI.HostReducedMotion);
+    }
+
+    #endregion
 
     /// <summary>A drawable that never registers with the hub, so it can be exercised without an initialized NoireLib.</summary>
     private sealed class TestDrawable : NoireDrawable

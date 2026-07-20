@@ -13,7 +13,11 @@ namespace NoireLib.Tests;
 [Collection(NoireUiTestCollection.Name)]
 public class NoireAnimTests : IDisposable
 {
-    private readonly bool originalReducedMotion = NoireUI.ReducedMotion;
+    /// <remarks>
+    /// Nullable because an unset reduced motion is not the same as a false one: it follows the host. Assigning the
+    /// value read back would leave an override behind where there had been none.
+    /// </remarks>
+    private readonly bool? originalReducedMotion = NoireUI.HasReducedMotionOverride ? NoireUI.ReducedMotion : null;
 
     private float time;
     private int frame;
@@ -30,7 +34,12 @@ public class NoireAnimTests : IDisposable
     {
         NoireUI.TimeOverride = null;
         NoireUI.FrameOverride = null;
-        NoireUI.ReducedMotion = originalReducedMotion;
+
+        if (originalReducedMotion is { } motion)
+            NoireUI.ReducedMotion = motion;
+        else
+            NoireUI.ClearReducedMotion();
+
         UiFrameState.Clear();
         GC.SuppressFinalize(this);
     }
@@ -260,6 +269,47 @@ public class NoireAnimTests : IDisposable
             Advance(0.13f);
             NoireAnim.Sweep(0.5f).Should().BeInRange(0f, 1f);
         }
+    }
+
+    [Fact]
+    public void Spin_StaysWithinOneTurn()
+    {
+        for (var i = 0; i < 40; i++)
+        {
+            Advance(0.37f);
+            NoireAnim.Spin(2f).Should().BeInRange(0f, 1f);
+        }
+    }
+
+    [Fact]
+    public void Spin_CompletesOneTurnPerPeriod()
+    {
+        Advance(0.5f);
+        var quarter = NoireAnim.Spin(2f);
+
+        Advance(0.5f);
+        var half = NoireAnim.Spin(2f);
+
+        quarter.Should().BeApproximately(0.25f, 0.0001f);
+        half.Should().BeApproximately(0.5f, 0.0001f);
+    }
+
+    [Fact]
+    public void Spin_UnderReducedMotion_StandsStill()
+    {
+        NoireUI.ReducedMotion = true;
+        Advance(5f);
+
+        NoireAnim.Spin(2f).Should().Be(0f, "a rotation has no finished position to park at, so it rests at none");
+    }
+
+    [Fact]
+    public void Spin_WithoutAPeriod_StandsStill()
+    {
+        Advance(5f);
+
+        NoireAnim.Spin(0f).Should().Be(0f);
+        NoireAnim.Spin(-1f).Should().Be(0f);
     }
 
     #endregion

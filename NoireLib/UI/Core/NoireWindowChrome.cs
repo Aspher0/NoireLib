@@ -70,6 +70,27 @@ public static class NoireWindowChrome
     public const ImGuiWindowFlags FixedBodyFlags = Flags | ImGuiWindowFlags.NoScrollWithMouse;
 
     /// <summary>
+    /// Keeps the window in front of every other, for the frame being drawn. Call it once per frame from inside the
+    /// window, and again from inside any popup it opens.
+    /// </summary>
+    /// <remarks>
+    /// This is the whole of always on top, and it covers both halves of what "in front" means.<br/>
+    /// <b>Clicks</b> are decided by the display list, which this moves the window to the front of. <b>Drawing</b> is
+    /// decided by the draw layer first, and the display list is reordered when a window is focused, after every plugin
+    /// has drawn and before the frame is rendered. A window holding its place by the display list alone is therefore
+    /// drawn behind for one frame every time an overlapping window is clicked, and there is no point in plugin code
+    /// later than that reorder to undo it. So this lifts the window into the top draw layer as well.<br/>
+    /// It does that by setting the layer's flag on the window <i>after</i> it has been begun. The layer is read when the
+    /// frame is rendered, so the flag counts for that frame, while none of what the same flag does inside <c>Begin</c>
+    /// happens at all: the window is not moved to the cursor, its background and border keep reading the fields an
+    /// ordinary window reads, and its default item width is unchanged. Nothing has to be passed at <c>PreDraw</c>.<br/>
+    /// The layer covers the whole of the ordinary one, so anything the window opens over itself has to join it. Every
+    /// NoireUI popup does that on its own; a popup of your own calls this from inside itself, which is also what settles
+    /// the order between the two, since among the windows in front the last caller each frame wins.
+    /// </remarks>
+    public static void KeepInFront() => UiWindowOrder.KeepInFront();
+
+    /// <summary>
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
     /// <remarks>

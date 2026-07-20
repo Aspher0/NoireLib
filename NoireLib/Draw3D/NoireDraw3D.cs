@@ -1646,20 +1646,23 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Last frame's shadow-cast counters: shadow binds entered with work, binds drawn into, binds skipped
-    /// because their constants matched neither measured layout, and meshes drawn at the last bind. All zero
-    /// while casting is off. Entered high with drawn zero means the game's constant layout moved; entered
-    /// zero while casting is on means the shadow passes are not running or not being seen.
+    /// Last frame's shadow-cast counters: shadow groups entered with work, groups drawn into, groups
+    /// skipped because their constants matched neither measured layout, how many of the drawn groups were
+    /// the near-field map, and meshes drawn at the last group. All zero while casting is off. Entered high
+    /// with drawn zero means the game's constant layout moved; entered zero while casting is on means the
+    /// shadow passes are not running or not being seen. Near-field zero while drawn is high means the cast
+    /// is only reaching per-light maps, which the game caches - the visible symptom of that is a shadow
+    /// that appears late rather than not at all.
     /// </summary>
-    public static (int Entered, int Drawn, int Skipped, int Meshes) ShadowCastStats
+    public static (int Entered, int Drawn, int Skipped, int NearField, int Meshes) ShadowCastStats
         => shadowInject is { } inject
-            ? (inject.LastEnteredCount, inject.LastBindCount, inject.LastSkippedCount, inject.LastInjectedCount)
+            ? (inject.LastEnteredCount, inject.LastBindCount, inject.LastSkippedCount, inject.LastNearFieldCount, inject.LastInjectedCount)
             : default;
 
     /// <summary>
-    /// Draws the queued meshes into the shadow map currently being rendered. Runs on the render thread at a
-    /// shadow bind's first draw; the light's own constants are read there, so unlike the G-buffer pass no
-    /// captured camera is involved.
+    /// Draws the queued meshes into the shadow map slice whose draw group just ended. Runs on the render
+    /// thread; the light's own constants are read there, so unlike the G-buffer pass no captured camera is
+    /// involved.
     /// </summary>
     private static void RunShadowInjection(nint context)
     {

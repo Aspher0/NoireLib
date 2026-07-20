@@ -247,7 +247,9 @@ public static class NoireSliders
     private static void DrawValue(float value, string format, SliderStyle style, Vector2 origin, float width, float height)
     {
         var theme = NoireTheme.Current;
-        var text = value.ToString(format, CultureInfo.CurrentCulture);
+        var text = style.ValueText is { } words
+            ? words(value) ?? string.Empty
+            : value.ToString(format, CultureInfo.CurrentCulture);
         var column = NoireUI.Scaled(style.ValueWidth);
         var measured = NoireText.CalcSize(text);
 
