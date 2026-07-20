@@ -26,6 +26,9 @@ internal sealed unsafe class StateGuard
     // VS
     private ID3D11VertexShader* vs;
     private ID3D11Buffer* vsCb0, vsCb1;
+    // One VS shader-resource slot: the shadow injection reads the light matrix through t0 on the vertex
+    // stage, inside the game's own shadow pass, where the game may have its own view (skinning) bound.
+    private ID3D11ShaderResourceView* vsSrv0;
 
     // PS
     // Six SRV slots, not two: Common.hlsli declares t0..t5 (scene depth, base texture, world height, scene
@@ -87,6 +90,8 @@ internal sealed unsafe class StateGuard
         var cbs = stackalloc ID3D11Buffer*[2];
         ctx->VSGetConstantBuffers(0, 2, cbs);
         vsCb0 = cbs[0]; vsCb1 = cbs[1];
+        fixed (ID3D11ShaderResourceView** p = &vsSrv0)
+            ctx->VSGetShaderResources(0, 1, p);
 
         // PS
         fixed (ID3D11PixelShader** p = &ps)
@@ -192,6 +197,8 @@ internal sealed unsafe class StateGuard
         ctx->VSSetShader(vs, null, 0);
         cbs[0] = vsCb0; cbs[1] = vsCb1;
         ctx->VSSetConstantBuffers(0, 2, cbs);
+        var vsSrv = vsSrv0;
+        ctx->VSSetShaderResources(0, 1, &vsSrv);
 
         // IA
         ctx->IASetInputLayout(inputLayout);
@@ -236,6 +243,7 @@ internal sealed unsafe class StateGuard
         ComPtrUtil.Release(ref vs);
         ComPtrUtil.Release(ref vsCb0);
         ComPtrUtil.Release(ref vsCb1);
+        ComPtrUtil.Release(ref vsSrv0);
         ComPtrUtil.Release(ref ps);
         ComPtrUtil.Release(ref psCb0);
         ComPtrUtil.Release(ref psCb1);

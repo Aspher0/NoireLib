@@ -34,7 +34,7 @@ namespace NoireLib.UI;
 /// });
 /// </code>
 /// </example>
-public static class NoireText
+public static partial class NoireText
 {
     #region Drawing
 

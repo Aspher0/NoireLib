@@ -22,6 +22,7 @@ public sealed partial class NoireReorderableList<T>
     private int dropTarget = -1;
 
     private float listTop;
+    private float listLeft;
     private float rowStep;
 
     /// <summary>
@@ -41,6 +42,13 @@ public sealed partial class NoireReorderableList<T>
         if (items.Count == 0)
         {
             draggingIndex = -1;
+
+            // A list with no rows has no row to be working in, so it holds neither the focus nor the keys. The
+            // watchdog would arrive at the same answer a frame later; saying it here means the keys are given back on
+            // the frame the last row goes rather than after it.
+            focusedIndex = -1;
+            ApplyInputBlocking(false);
+
             NoireText.Muted(EmptyText, TextSize.Caption);
             return false;
         }
@@ -49,7 +57,9 @@ public sealed partial class NoireReorderableList<T>
         var height = RowHeight > 0f ? RowHeight : ImGui.GetFrameHeight();
         var spacing = ImGui.GetStyle().ItemSpacing.Y;
 
-        listTop = ImGui.GetCursorScreenPos().Y;
+        var origin = ImGui.GetCursorScreenPos();
+        listLeft = origin.X;
+        listTop = origin.Y;
         rowStep = height + spacing;
 
         // Worked out from the pointer rather than from which row reports itself hovered. While a drag is running the
@@ -71,8 +81,11 @@ public sealed partial class NoireReorderableList<T>
         else if (pendingMoveFrom >= 0 && Move(pendingMoveFrom, pendingMoveTo))
             focusedIndex = Math.Clamp(pendingMoveTo, 0, items.Count - 1);
 
-        // Clicking away drops the focus, so a list nobody is working in does not keep the arrow keys to itself.
-        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ImGui.IsAnyItemHovered())
+        // Clicking away drops the focus, so a list nobody is working in does not keep the arrow keys to itself. Tested
+        // against the list's own bounds rather than against whether anything was hovered: clicking another control is
+        // the ordinary way to stop working in a list, and hovering test would count that as still being in it, leaving
+        // the keys held while the user is plainly somewhere else.
+        if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ListBounds(width, height).Contains(ImGui.GetIO().MousePos))
             focusedIndex = -1;
 
         ClaimKeyboardIfFocused();
@@ -94,6 +107,20 @@ public sealed partial class NoireReorderableList<T>
         }
 
         return changedThisFrame;
+    }
+
+    /// <summary>
+    /// The area the rows occupy on screen, which is what counts as being inside the list.
+    /// </summary>
+    /// <param name="width">The width the rows were drawn at.</param>
+    /// <param name="height">The height of one row.</param>
+    /// <returns>The bounds in screen pixels.</returns>
+    private UiRect ListBounds(float width, float height)
+    {
+        // The trailing spacing belongs to whatever comes next, so the last row's own height closes the list off.
+        var total = rowStep <= 0f ? height : ((items.Count - 1) * rowStep) + height;
+
+        return new UiRect(new Vector2(listLeft, listTop), new Vector2(width, MathF.Max(height, total)));
     }
 
     /// <summary>

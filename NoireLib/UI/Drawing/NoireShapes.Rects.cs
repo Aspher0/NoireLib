@@ -147,6 +147,84 @@ public static partial class NoireShapes
         }
     }
 
+    /// <summary>
+    /// Paints a soft halo around any convex shape, following the shape rather than its bounding box.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Glow(Vector2, Vector2, Vector4, float, CornerShape, float, RectCorners)"/> can only grow a rectangle,
+    /// so a shape that is not one gets a rectangular halo: a lit diamond comes out sitting in a glowing square, which
+    /// is the tell that the glow knows nothing about what it is lighting. This grows the path itself.<br/>
+    /// Each vertex moves along the bisector of its two edges, by the distance that keeps both edges parallel to where
+    /// they started. That is a real outward offset rather than a scale about the centre, which only agrees with one for
+    /// shapes that happen to be regular.<br/>
+    /// The path must be convex and wound clockwise, the same requirement <see cref="Fill"/> and <see cref="Bevel"/>
+    /// carry, and for the same reason: neither fails loudly.
+    /// </remarks>
+    /// <param name="points">The shape to light, convex and clockwise.</param>
+    /// <param name="color">The glow color at full strength.</param>
+    /// <param name="spread">How far it reaches beyond the shape, in real pixels.</param>
+    public static void GlowPath(ReadOnlySpan<Vector2> points, Vector4 color, float spread)
+    {
+        if (points.Length < 3 || points.Length > MaxGlowPathPoints || spread <= 0f || color.W <= 0f)
+            return;
+
+        var layers = Math.Clamp((int)MathF.Ceiling(spread * 0.5f), 3, 12);
+
+        Span<Vector2> grown = stackalloc Vector2[points.Length];
+        Span<Vector2> bisectors = stackalloc Vector2[points.Length];
+        Span<float> reach = stackalloc float[points.Length];
+
+        for (var index = 0; index < points.Length; index++)
+        {
+            var previous = points[(index - 1 + points.Length) % points.Length];
+            var current = points[index];
+            var next = points[(index + 1) % points.Length];
+
+            var incoming = Normalize(current - previous);
+            var outgoing = Normalize(next - current);
+
+            // Clockwise in screen space, where y grows downwards, puts the outward normal of a direction at (y, -x).
+            var first = new Vector2(incoming.Y, -incoming.X);
+            var second = new Vector2(outgoing.Y, -outgoing.X);
+            var bisector = Normalize(first + second);
+
+            bisectors[index] = bisector;
+
+            // How far along the bisector one pixel of offset is worth. Floored so that a corner sharp enough to send
+            // the miter to infinity is blunted instead of shooting a spike across the interface.
+            var projection = Vector2.Dot(bisector, first);
+            reach[index] = 1f / MathF.Max(0.25f, projection);
+        }
+
+        for (var layer = layers; layer >= 1; layer--)
+        {
+            var distance = (float)layer / layers;
+            var grow = spread * distance;
+            var alpha = color.W * (1f - distance) * 2f / layers;
+
+            if (alpha <= 0f)
+                continue;
+
+            for (var index = 0; index < points.Length; index++)
+                grown[index] = points[index] + (bisectors[index] * (grow * reach[index]));
+
+            Fill(grown, color with { W = alpha });
+        }
+    }
+
+    /// <summary>The most points a shape handed to <see cref="GlowPath"/> may carry.</summary>
+    /// <remarks>
+    /// A glow is a stack of copies of its shape, so the cost is this times the layer count. The bound keeps the
+    /// stack-allocated working set honest and is far past any shape worth lighting.
+    /// </remarks>
+    public const int MaxGlowPathPoints = 64;
+
+    private static Vector2 Normalize(Vector2 value)
+    {
+        var length = value.Length();
+        return length > 0.0001f ? value / length : Vector2.Zero;
+    }
+
     #endregion
 
     #region Plate
@@ -284,8 +362,17 @@ public static partial class NoireShapes
             if ((style.TickCorners & flags[corner]) == 0)
                 continue;
 
-            Line(drawList, origins[corner], origins[corner] + (along[corner] * length), color, thickness);
-            Line(drawList, origins[corner], origins[corner] + (down[corner] * length), color, thickness);
+            // One elbow rather than two lines meeting at a point. A line is drawn centred on its path, so two of them
+            // sharing an end leave the outer corner uncovered by half the thickness: a square notch exactly where the
+            // bracket is supposed to turn. Stroking three points makes it one path with a real joint.
+            Span<Vector2> elbow =
+            [
+                origins[corner] + (along[corner] * length),
+                origins[corner],
+                origins[corner] + (down[corner] * length),
+            ];
+
+            Stroke(elbow, color, thickness, closed: false);
         }
     }
 

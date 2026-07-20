@@ -464,9 +464,12 @@ public static class NoireInputs
     /// </summary>
     /// <remarks>
     /// The label doubles as the id, and anything after a "###" in it is the stable part, exactly as in ImGui. That is
-    /// what lets a renamed or translated label keep the field's state.
+    /// what lets a renamed or translated label keep the field's state.<br/>
+    /// Shared with <see cref="NoireSliders"/>, which draws its own control rather than an ImGui field but has to line
+    /// its label column up with the fields above and below it.
     /// </remarks>
-    private static void BeginRow(string label, float width, out string id, bool sizeField = true, float extraReserve = 0f)
+    /// <returns>How much of the row the label column took, so a caller drawing its own control knows where it starts.</returns>
+    internal static float BeginRow(string label, float width, out string id, bool sizeField = true, float extraReserve = 0f, float? labelWidth = null)
     {
         var marker = label.IndexOf("###", StringComparison.Ordinal);
         id = marker >= 0 ? label[(marker + 3)..] : label;
@@ -492,20 +495,27 @@ public static class NoireInputs
 
             // Padded to a shared column so a run of settings lines its fields up, and never clipped: a label longer
             // than the column pushes its own field along rather than being cut off.
-            column = MathF.Max(NoireText.CalcSize(visible).X, NoireUI.Scaled(LabelWidth)) + gap;
+            // A width given by the caller is the column, not a floor for it. The shared default is a minimum so a run
+            // of settings lines up without anyone measuring, but a page laying its own rows out has already decided
+            // where the controls start, and growing the column for one long label puts that row out of line with the
+            // rest, which is exactly what the caller was trying to prevent.
+            column = labelWidth is { } stated
+                ? NoireUI.Scaled(stated) + gap
+                : MathF.Max(NoireText.CalcSize(visible).X, NoireUI.Scaled(LabelWidth)) + gap;
 
             ImGui.SameLine(0f, 0f);
             ImGui.SetCursorPosX(startX + column);
         }
 
         if (!sizeField)
-            return;
+            return column;
 
         // The dot's column is reserved whether or not there is a dot, so the field does not resize as a value moves
         // away from its default.
         var reserved = column + NoireUI.Scaled(14f) + NoireUI.Scaled(6f) + extraReserve;
 
         ImGui.SetNextItemWidth(width > 0f ? width : MathF.Max(NoireUI.Scaled(60f), available - reserved));
+        return column;
     }
 
     /// <summary>

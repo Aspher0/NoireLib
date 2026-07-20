@@ -39,4 +39,31 @@ public readonly record struct UiButtonDraw(
 
     /// <summary>The centre of the button in screen coordinates.</summary>
     public Vector2 Center => (Min + Max) * 0.5f;
+
+    /// <summary>
+    /// Draws the button's own label, centred, in the colour NoireUI would have used.
+    /// </summary>
+    /// <remarks>
+    /// A hook replaces the whole of the drawing, the label included, which is right: a hook that could not move or
+    /// restyle the text would not be a custom button. But the usual reason for one is a surface ImGui cannot express
+    /// behind an otherwise ordinary label, so writing the text out by hand every time is a tax on the common case.
+    /// This is that line, and it matches <c>DrawLabel</c> on the combo box's row renderer.<br/>
+    /// Centred, because a custom-drawn button is nearly always a shape with its label in the middle. A hook wanting it
+    /// anywhere else has <see cref="Label"/>, <see cref="TextColor"/> and <see cref="DrawList"/>.
+    /// </remarks>
+    public void DrawLabel() => DrawLabel(TextColor);
+
+    /// <summary>
+    /// Draws the button's own label, centred, in a colour of your choosing.
+    /// </summary>
+    /// <param name="color">The colour to draw it in.</param>
+    public void DrawLabel(Vector4 color)
+    {
+        if (string.IsNullOrEmpty(Label))
+            return;
+
+        var size = ImGui.CalcTextSize(Label);
+
+        DrawList.AddText(Center - (size * 0.5f), Helpers.ColorHelper.Vector4ToUint(color), Label);
+    }
 }

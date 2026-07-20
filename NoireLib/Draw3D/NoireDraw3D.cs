@@ -50,8 +50,14 @@ public static unsafe partial class NoireDraw3D
     /// </summary>
     private static Core.GBufferInject? gbufferInject;
 
+    /// <summary>The shadow injection pass: game-lit meshes drawn depth-only into the game's own shadow maps. Null until the first object opts in.</summary>
+    private static Core.ShadowInject? shadowInject;
+
     /// <summary>Frames since anything was submitted for injection; the injection lapses after a few.</summary>
     private static int gbufferIdleFrames;
+
+    /// <summary>Frames since anything was submitted for shadow casting; it lapses like the G-buffer injection.</summary>
+    private static int shadowIdleFrames;
 
     /// <summary>How many idle frames before the per-draw hooks are released.</summary>
     private const int GBufferIdleFramesBeforeOff = 3;
@@ -794,6 +800,8 @@ public static unsafe partial class NoireDraw3D
             shaderLibrary = null;
             gbufferInject?.Dispose();
             gbufferInject = null;
+            shadowInject?.Dispose();
+            shadowInject = null;
             stateCache?.Dispose();
             stateCache = null;
             sceneRt?.Dispose();
@@ -962,6 +970,14 @@ public static unsafe partial class NoireDraw3D
         {
             gbufTap.GBufferInjectionEnabled = false;
             gbufferInject?.Clear();
+        }
+
+        // The shadow queue is cleared with the lapse so a caller that resumes later does not cast one frame
+        // of shadow from wherever its meshes stood when it stopped.
+        if (renderTargetTap is { ShadowInjectionEnabled: true } shadowTap && ++shadowIdleFrames > GBufferIdleFramesBeforeOff)
+        {
+            shadowTap.ShadowInjectionEnabled = false;
+            shadowInject?.Clear();
         }
 
         // The render-thread injection already rendered + composited this frame's scene under the native UI,
@@ -1617,6 +1633,40 @@ public static unsafe partial class NoireDraw3D
 
         gbufferInject.Enqueue(new Core.GBufferInject.Item(
             mesh, world, color, textured, srv, normalSrv, specularSrv, normalStrength, dyeColorStrength, dyeReference));
+
+        if (GameLit.CastShadows)
+        {
+            shadowInject ??= new Core.ShadowInject();
+            tap.ShadowInjector ??= RunShadowInjection;
+            tap.ShadowFrameBoundary ??= shadowInject.OnFrameBoundary;
+            tap.ShadowInjectionEnabled = true;
+            shadowIdleFrames = 0;
+            shadowInject.Enqueue(new Core.ShadowInject.Item(mesh, world));
+        }
+    }
+
+    /// <summary>
+    /// Last frame's shadow-cast counters: shadow binds entered with work, binds drawn into, binds skipped
+    /// because their constants matched neither measured layout, and meshes drawn at the last bind. All zero
+    /// while casting is off. Entered high with drawn zero means the game's constant layout moved; entered
+    /// zero while casting is on means the shadow passes are not running or not being seen.
+    /// </summary>
+    public static (int Entered, int Drawn, int Skipped, int Meshes) ShadowCastStats
+        => shadowInject is { } inject
+            ? (inject.LastEnteredCount, inject.LastBindCount, inject.LastSkippedCount, inject.LastInjectedCount)
+            : default;
+
+    /// <summary>
+    /// Draws the queued meshes into the shadow map currently being rendered. Runs on the render thread at a
+    /// shadow bind's first draw; the light's own constants are read there, so unlike the G-buffer pass no
+    /// captured camera is involved.
+    /// </summary>
+    private static void RunShadowInjection(nint context)
+    {
+        if (shadowInject is not { HasWork: true } inject || renderDevice is null || shaderLibrary is null)
+            return;
+
+        inject.Execute(renderDevice, shaderLibrary, (TerraFX.Interop.DirectX.ID3D11DeviceContext*)context);
     }
 
     /// <summary>

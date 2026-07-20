@@ -140,6 +140,21 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
+    /// <summary>
+    /// Gets the depth-only pipeline that draws a mesh into the GAME's shadow maps, so injected geometry
+    /// casts shadows. Null on compile failure, which leaves objects casting nothing rather than failing.
+    /// </summary>
+    public ShaderPipeline? GetShadowDepth(RenderDevice device)
+    {
+        const string key = "ShadowDepth";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var pipeline = Compile(device, key, GetSource("ShadowDepth.hlsl"), null, instanced: false, createLayout: true);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
     public ShaderPipeline? GetOutlineMaskMesh(RenderDevice device)
     {
         const string key = "OutlineMaskMesh";

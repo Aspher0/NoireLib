@@ -179,7 +179,9 @@ Submitting is all you do: the node's own draw is suppressed for that frame, so i
 
 Submit it from `Scene3D.OnPrepareFrame` rather than from a UI callback, or the object vanishes whenever that window is closed.
 
-**What it costs.** Everything that lives in this renderer's own pass is unavailable: outlines and rims, transparency and fade, ground decals, and drawing above everything. Deferred geometry is opaque. An object that needs any of those stays on the normal path. It also **casts no shadow** - shadow maps are rendered in an earlier pass this geometry is not part of, so an injected object is lit and shadowed correctly but casts nothing.
+**What it costs.** Everything that lives in this renderer's own pass is unavailable: outlines and rims, transparency and fade, ground decals, and drawing above everything. Deferred geometry is opaque. An object that needs any of those stays on the normal path.
+
+**Shadow casting** is a second, separate injection: with `NoireDraw3D.GameLit.CastShadows` on, every game-lit mesh is also drawn depth-only into the game's own shadow passes, with each light's view-projection read out of the constants the game's own shadow draws consume. It reaches every map the game re-renders that frame - the sun's cascades and lights near anything moving - while a map the game rendered once and cached picks the object up on its next refresh.
 
 **This is the only part of Draw3D that draws inside the game's frame rather than into its own target**, so it does nothing until a caller opts in, and it lapses again a few frames after the last submission.
 

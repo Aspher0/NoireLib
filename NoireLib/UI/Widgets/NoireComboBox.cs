@@ -92,6 +92,50 @@ public class NoireComboBox<T>
     public ImGuiComboFlags ComboFlags { get; set; } = ImGuiComboFlags.None;
 
     /// <summary>
+    /// Paints the closed combo as a <see cref="NoireShapes.Plate"/> instead of as an ImGui frame.
+    /// </summary>
+    /// <remarks>
+    /// ImGui draws a combo's box from its own style, which is one flat colour and a rounding, so a design wanting a
+    /// ramped surface, a chamfered corner or a bevel has no way to ask for one. Setting this hands the box to
+    /// <see cref="NoireShapes"/>: the plate is drawn first and ImGui's own frame is pushed transparent over it, so the
+    /// preview text, the hit box, the popup and the keyboard all keep working exactly as they did.<br/>
+    /// The arrow becomes ours too, because ImGui draws its own in the text colour and a gold chevron beside ivory text
+    /// is not reachable from one colour. Use <see cref="BoxArrowColor"/> to set it, or
+    /// <see cref="ImGuiComboFlags.NoArrowButton"/> to have none.<br/>
+    /// When <see langword="null"/>, the combo is an ordinary ImGui one.
+    /// </remarks>
+    public PlateStyle? BoxStyle { get; set; }
+
+    /// <summary>
+    /// The colour of the chevron drawn while <see cref="BoxStyle"/> is set. When <see langword="null"/>, the accent.
+    /// </summary>
+    public Vector4? BoxArrowColor { get; set; }
+
+    /// <summary>How wide the chevron is, at 100%. See <see cref="NoireUI.Scale"/>.</summary>
+    public float BoxArrowSize { get; set; } = 6f;
+
+    /// <summary>
+    /// How far the chevron sits from the box's right edge, at 100%.
+    /// </summary>
+    /// <remarks>
+    /// Its own value rather than the frame padding it used to take, which is sized for text and leaves a mark drawn to
+    /// the edge of its own bounds sitting against the border.
+    /// </remarks>
+    public float BoxArrowInset { get; set; } = 12f;
+
+    /// <summary>
+    /// How the dropdown itself is drawn: its surface, its border, its padding and its rows.
+    /// </summary>
+    /// <remarks>
+    /// Restyling the closed box and leaving the dropdown alone is worse than restyling neither, because the two are
+    /// seen one after the other: a plated combo that opens into ImGui's own grey popup reads as the styling having
+    /// failed. Every value falls back to the theme, so setting one thing does not mean setting all of them.<br/>
+    /// Applied as ImGui style pushes around the popup, so the filter box, the scrollbar and the rows all follow it
+    /// without the combo having to draw any of them itself.
+    /// </remarks>
+    public ComboPopupStyle? PopupStyle { get; set; }
+
+    /// <summary>
     /// How an item is converted to its display text. When <see langword="null"/>, <c>ToString()</c> is used.
     /// </summary>
     public Func<T, string>? DisplayFunc { get; set; }
@@ -524,17 +568,39 @@ public class NoireComboBox<T>
         // Cap the dropdown to exactly what it is meant to show. Left alone, ImGui budgets the popup at eight options and
         // knows nothing about the filter input, so the filter pushes the option list past the budget and the popup grows
         // a scrollbar around the list's own: two nested scrollbars for one list.
+        // The dropdown's own style is pushed before its height is measured, not after. The measurement reads the window
+        // padding and item spacing in force, so pushing afterwards budgets the popup against whatever the host happened
+        // to have set: the popup comes out too short for its own contents, and it grows a scrollbar around the option
+        // list's, which is the two-scrollbar case.
+        var popup = BeginPopupStyle();
+
         ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
+        var box = BeginBox(out var boxRect);
 
         var comboOpen = false;
-        using (var combo = ImRaii.Combo(label, preview, ComboFlags))
+        using (var combo = ImRaii.Combo(label, preview, ComboFlags | (BoxStyle != null ? ImGuiComboFlags.NoArrowButton : ImGuiComboFlags.None)))
         {
+            // Released as soon as the box has been drawn, so the popup and everything drawn inside it is styled
+            // normally rather than inheriting a transparent frame that exists only to uncover the plate.
+            box?.Dispose();
+            box = null;
+
             if (combo)
             {
                 comboOpen = true;
-                DrawPopupContent();
+
+                // The size has to be pushed inside the popup rather than around it: a font handle pushed before Begin
+                // is not what the popup window draws with.
+                if (PopupStyle?.TextSizePx is { } size)
+                    NoireText.At(size, this, static self => self.DrawPopupContent());
+                else
+                    DrawPopupContent();
             }
         }
+
+        box?.Dispose();
+        popup?.Dispose();
+        DrawBoxArrow(boxRect);
 
         // While the dropdown is open the popup is a separate window that owns the wheel itself, so the cycling stands down.
         if (comboOpen)
@@ -544,6 +610,140 @@ public class NoireComboBox<T>
         HandleClosedComboInteractions();
 
         return changedThisFrame;
+    }
+
+    /// <summary>
+    /// Pushes the dropdown's own look, so the popup ImGui opens is drawn to this combo's style.
+    /// </summary>
+    /// <remarks>
+    /// Pushed before the combo rather than inside the popup, because ImGui reads these when the popup window is begun
+    /// and that happens inside <c>BeginCombo</c>. Held for the whole call and released after the popup has closed.
+    /// </remarks>
+    /// <returns>The pushed style, or null when the dropdown is left as ImGui's.</returns>
+    private IDisposable? BeginPopupStyle()
+    {
+        if (PopupStyle == null)
+            return null;
+
+        var theme = NoireTheme.Current;
+        var style = PopupStyle;
+
+        var colors = ImRaii.PushColor(ImGuiCol.PopupBg, style.Background ?? theme.Resolve(ThemeColor.Surface))
+            .Push(ImGuiCol.FrameBg, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
+            .Push(ImGuiCol.FrameBgHovered, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
+            .Push(ImGuiCol.FrameBgActive, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
+            .Push(ImGuiCol.Border, style.BorderColor ?? theme.Resolve(ThemeColor.Border))
+            .Push(ImGuiCol.Header, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.30f))
+            .Push(ImGuiCol.HeaderHovered, style.HoveredColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.18f))
+            .Push(ImGuiCol.HeaderActive, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.38f))
+            .Push(ImGuiCol.ScrollbarBg, style.ScrollbarBackground ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.SurfaceSunken), 0.5f))
+            .Push(ImGuiCol.ScrollbarGrab, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent))
+            .Push(ImGuiCol.ScrollbarGrabHovered, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent))
+            .Push(ImGuiCol.ScrollbarGrabActive, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent));
+
+        if (style.TextColor is { } text)
+            colors.Push(ImGuiCol.Text, text);
+
+        var vars = ImRaii.PushStyle(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize)
+            .Push(ImGuiStyleVar.WindowPadding, NoireUI.Scaled(style.Padding))
+            .Push(ImGuiStyleVar.WindowRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()))
+            .Push(ImGuiStyleVar.WindowBorderSize, style.BorderSize)
+            .Push(ImGuiStyleVar.ScrollbarSize, NoireUI.Scaled(style.ScrollbarWidth))
+            .Push(ImGuiStyleVar.ItemSpacing, NoireUI.Scaled(style.RowSpacing))
+            .Push(ImGuiStyleVar.FramePadding, NoireUI.Scaled(style.RowPadding));
+
+        return new PopupStyleScope(colors, vars);
+    }
+
+    /// <summary>
+    /// Pushes the filter box's own border and text colours, for the moment it is drawn.
+    /// </summary>
+    /// <returns>The pushed colours, or an empty scope when the dropdown is left as ImGui's.</returns>
+    private IDisposable PushFilterStyle()
+    {
+        var style = PopupStyle;
+
+        if (style == null)
+            return ImRaii.PushColor(ImGuiCol.Border, ImGui.GetStyle().Colors[(int)ImGuiCol.Border]);
+
+        var colors = ImRaii.PushColor(ImGuiCol.Border, style.FilterBorderColor ?? style.BorderColor ?? NoireTheme.Current.Resolve(ThemeColor.Border));
+
+        if ((style.FilterTextColor ?? style.TextColor) is { } text)
+            colors.Push(ImGuiCol.Text, text);
+
+        return colors;
+    }
+
+    /// <summary>
+    /// Holds the two ImGui stacks the dropdown's style is pushed onto, so the caller releases one thing rather than two.
+    /// </summary>
+    /// <remarks>
+    /// Released in the reverse order they were taken, because ImGui's colour and variable stacks each unwind from the
+    /// top and a scope that pops them out of order pops somebody else's entries.
+    /// </remarks>
+    private sealed class PopupStyleScope(IDisposable colors, IDisposable vars) : IDisposable
+    {
+        public void Dispose()
+        {
+            vars.Dispose();
+            colors.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Paints the plate under the closed combo and uncovers it, when the combo is drawn as one.
+    /// </summary>
+    /// <remarks>
+    /// The rectangle is worked out before the combo is submitted rather than read back off it afterwards, because a
+    /// plate drawn after the combo would cover its own preview text. <see cref="ImGui.CalcItemWidth"/> is what ImGui
+    /// itself is about to use, including a width set by <see cref="Width"/>, so the two cannot disagree.
+    /// </remarks>
+    /// <param name="rect">Where the box was drawn, for the arrow to line up with.</param>
+    /// <returns>The pushed colours, to release once the box has been drawn, or null when there is no plate.</returns>
+    private IDisposable? BeginBox(out (Vector2 Min, Vector2 Max) rect)
+    {
+        rect = default;
+
+        if (BoxStyle == null)
+            return null;
+
+        var origin = ImGui.GetCursorScreenPos();
+        var size = new Vector2(ImGui.CalcItemWidth(), ImGui.GetFrameHeight());
+
+        rect = (origin, origin + size);
+        NoireShapes.Plate(rect.Min, rect.Max, BoxStyle);
+
+        var clear = new Vector4(0f, 0f, 0f, 0f);
+
+        // The border goes with the background. ImGui draws it rounded from its own style, so leaving it lit puts a
+        // rounded outline around a square plate, which is the one part of the old frame that would still show.
+        return ImRaii.PushColor(ImGuiCol.FrameBg, clear)
+            .Push(ImGuiCol.FrameBgHovered, clear)
+            .Push(ImGuiCol.FrameBgActive, clear)
+            .Push(ImGuiCol.Border, clear);
+    }
+
+    /// <summary>
+    /// Draws the chevron on a plated combo, in its own colour.
+    /// </summary>
+    private void DrawBoxArrow((Vector2 Min, Vector2 Max) rect)
+    {
+        if (BoxStyle == null || ComboFlags.HasFlag(ImGuiComboFlags.NoArrowButton))
+            return;
+
+        var color = BoxArrowColor ?? NoireTheme.Current.Resolve(ThemeColor.Accent);
+        var height = rect.Max.Y - rect.Min.Y;
+        var width = NoireUI.Scaled(BoxArrowSize);
+        var centre = new Vector2(rect.Max.X - NoireUI.Scaled(BoxArrowInset) - width, rect.Min.Y + (height * 0.5f));
+
+        Span<Vector2> chevron =
+        [
+            new(centre.X - width, centre.Y - (width * 0.4f)),
+            new(centre.X, centre.Y + (width * 0.5f)),
+            new(centre.X + width, centre.Y - (width * 0.4f)),
+        ];
+
+        NoireShapes.Stroke(chevron, color, MathF.Max(1f, NoireUI.Scaled(1.5f)), closed: false);
     }
 
     /// <summary>
@@ -622,7 +822,12 @@ public class NoireComboBox<T>
                 ImGui.SetKeyboardFocusHere();
 
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
-            confirm |= ImGui.InputTextWithHint($"###NoireComboFilter_{Id}", FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+
+            // The filter box's own border and text, pushed here rather than with the rest of the dropdown's style:
+            // ImGui draws a frame's border from the same colour as a window's, so the two cannot be set apart from
+            // outside the popup without the window's border following the field's.
+            using (PushFilterStyle())
+                confirm |= ImGui.InputTextWithHint($"###NoireComboFilter_{Id}", FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
 
             if (ImGui.IsItemEdited())
             {
@@ -815,7 +1020,19 @@ public class NoireComboBox<T>
     /// labels: a theme that moves its body size moves the rows with it, and a row sized from the other font would be
     /// wrong by exactly the difference.
     /// </remarks>
-    private float ResolveItemHeight() => ItemHeight.HasValue ? NoireUI.Scaled(ItemHeight.Value) : NoireText.LineHeight();
+    private float ResolveItemHeight()
+    {
+        if (ItemHeight.HasValue)
+            return NoireUI.Scaled(ItemHeight.Value);
+
+        // The dropdown's text need not be the size in force outside it, and measuring at the outer size lays the rows
+        // out for a font they are not drawn in. The padding is deliberately not added on top: it is already pushed as
+        // ImGui's frame padding, and counting it twice leaves each row a line of empty space taller than its text.
+        if (PopupStyle?.TextSizePx is { } size)
+            return NoireText.CalcSize(" ", size).Y;
+
+        return NoireText.LineHeight();
+    }
 
     /// <summary>
     /// The vertical distance from one option to the next: the option itself plus the spacing after it.

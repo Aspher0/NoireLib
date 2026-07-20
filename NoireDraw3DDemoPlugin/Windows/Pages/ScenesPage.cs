@@ -146,7 +146,7 @@ public sealed class ScenesPage : IDisposable
             OpenScene(scenes[sceneIdx]);
 
         ImGui.SameLine();
-        if (ImGui.Button("New scene"))
+        if (Ui.Button("New scene"))
             OpenScene(NewScene());
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Creates an extra retained scene through NoireDraw3D.CreateScene, rendered after the main one. It is a self-contained unit: its own objects, selection, editor and gizmo.");
@@ -154,7 +154,7 @@ public sealed class ScenesPage : IDisposable
         ImGui.SameLine();
         using (Ui.Disabled(!demo.Owned))
         {
-            if (ImGui.Button("Dispose"))
+            if (Ui.Button("Dispose"))
             {
                 demo.TearDown();
                 open = null;
@@ -165,7 +165,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Tooltip("MainScene is permanent and cannot be disposed - it belongs to the library, not the demo. Use \"Clear objects\" instead, or make a new scene.");
 
         ImGui.SameLine();
-        if (ImGui.Button("Clear objects"))
+        if (Ui.Button("Clear objects"))
         {
             demo.Scene.Clear();
             inspected = null;
@@ -265,15 +265,15 @@ public sealed class ScenesPage : IDisposable
         }
 
         Ui.Gap();
-        if (ImGui.Button("Box")) SpawnPrimitive(demo, Primitive.Box);
-        ImGui.SameLine(); if (ImGui.Button("Sphere")) SpawnPrimitive(demo, Primitive.Sphere);
-        ImGui.SameLine(); if (ImGui.Button("Cylinder")) SpawnPrimitive(demo, Primitive.Cylinder);
-        ImGui.SameLine(); if (ImGui.Button("Cone")) SpawnPrimitive(demo, Primitive.Cone);
-        ImGui.SameLine(); if (ImGui.Button("Torus")) SpawnPrimitive(demo, Primitive.Torus);
-        ImGui.SameLine(); if (ImGui.Button("Quad")) SpawnPrimitive(demo, Primitive.Quad);
-        ImGui.SameLine(); if (ImGui.Button("Disc")) SpawnPrimitive(demo, Primitive.Disc);
-        ImGui.SameLine(); if (ImGui.Button("Ring")) SpawnPrimitive(demo, Primitive.Ring);
-        ImGui.SameLine(); if (ImGui.Button("Arrow")) SpawnPrimitive(demo, Primitive.Arrow);
+        if (Ui.Button("Box")) SpawnPrimitive(demo, Primitive.Box);
+        ImGui.SameLine(); if (Ui.Button("Sphere")) SpawnPrimitive(demo, Primitive.Sphere);
+        ImGui.SameLine(); if (Ui.Button("Cylinder")) SpawnPrimitive(demo, Primitive.Cylinder);
+        ImGui.SameLine(); if (Ui.Button("Cone")) SpawnPrimitive(demo, Primitive.Cone);
+        ImGui.SameLine(); if (Ui.Button("Torus")) SpawnPrimitive(demo, Primitive.Torus);
+        ImGui.SameLine(); if (Ui.Button("Quad")) SpawnPrimitive(demo, Primitive.Quad);
+        ImGui.SameLine(); if (Ui.Button("Disc")) SpawnPrimitive(demo, Primitive.Disc);
+        ImGui.SameLine(); if (Ui.Button("Ring")) SpawnPrimitive(demo, Primitive.Ring);
+        ImGui.SameLine(); if (Ui.Button("Arrow")) SpawnPrimitive(demo, Primitive.Arrow);
 
         Ui.Section("Decal");
         Ui.Note("A box whose volume the shape is painted inside, projected onto whatever the depth buffer says is there.");
@@ -302,7 +302,7 @@ public sealed class ScenesPage : IDisposable
         }
 
         Ui.Gap();
-        if (ImGui.Button("Spawn decal at my feet", new Vector2(220f * Ui.Scale, 0f)))
+        if (Ui.Button("Spawn decal at my feet", new Vector2(220f * Ui.Scale, 0f)))
             SpawnDecal(demo);
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Spawns it where you stand, already excluding characters and NPCs so they are not painted over.");
@@ -324,7 +324,7 @@ public sealed class ScenesPage : IDisposable
 
             Ui.Row("Selection outline");
             var outlineOn = editor.SelectionOutline.HasValue;
-            if (ImGui.Checkbox("##outlineon", ref outlineOn))
+            if (Ui.Check("##outlineon", ref outlineOn))
                 editor.SelectionOutline = outlineOn ? selectionOutlineColor : null;
 
             using (Ui.Disabled(!editor.SelectionOutline.HasValue))
@@ -377,7 +377,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Value("Dragging", gizmo.IsDragging ? gizmo.HoveredHandle.ToString() : "-");
 
             Ui.Row("Clear");
-            if (ImGui.Button("Clear selection"))
+            if (Ui.Button("Clear selection"))
                 editor.Selection.Clear();
         }
     }
@@ -400,7 +400,7 @@ public sealed class ScenesPage : IDisposable
         }
 
         Ui.Gap();
-        if (ImGui.Button("Load model", new Vector2(220f * Ui.Scale, 0f)))
+        if (Ui.Button("Load model", new Vector2(220f * Ui.Scale, 0f)))
             LoadModel(demo);
 
         Ui.Gap();
@@ -417,13 +417,13 @@ public sealed class ScenesPage : IDisposable
         }
 
         Ui.Gap();
-        if (ImGui.Button("Spawn world geometry", new Vector2(220f * Ui.Scale, 0f)))
+        if (Ui.Button("Spawn world geometry", new Vector2(220f * Ui.Scale, 0f)))
             NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldGeometry(demo));
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Turns the real collision around you into a translucent scene mesh - the same surface ground decals project onto. A debugging and preview aid.");
 
         ImGui.SameLine();
-        if (ImGui.Button("Spawn world decal", new Vector2(220f * Ui.Scale, 0f)))
+        if (Ui.Button("Spawn world decal", new Vector2(220f * Ui.Scale, 0f)))
             NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldDecal(demo));
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Projects a footprint onto the collision surface, draping over slopes and furniture.");

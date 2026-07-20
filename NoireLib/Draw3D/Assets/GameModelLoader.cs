@@ -109,9 +109,14 @@ public static class GameModelLoader
             var p = ReadElement(data, level, mesh, position.Value, v);
             var n = normal is null ? new Vector4(0f, 1f, 0f, 0f) : ReadElement(data, level, mesh, normal.Value, v);
             var t = uv is null ? Vector4.Zero : ReadElement(data, level, mesh, uv.Value, v);
+
+            // The position's fourth component is baked per-vertex occlusion: the game's own background
+            // shaders write it into the G-buffer's occlusion channel (multiplied by a per-instance sky
+            // visibility), which is what darkens carved recesses. It rides in the color's alpha, which
+            // background models leave free - they declare no color element.
             var c = importVertexColors && color is not null
                 ? ReadElement(data, level, mesh, color.Value, v)
-                : Vector4.One;
+                : new Vector4(1f, 1f, 1f, OcclusionFrom(position.Value.Type, p.W));
 
             // Positions and normals are taken as authored. An earlier version negated Z here, reasoning that
             // one reflection converts the handedness and flips the winding at the same time - which is true
@@ -175,6 +180,17 @@ public static class GameModelLoader
         tangent /= MathF.Sqrt(lengthSquared);
         return new Vector4(tangent.X, tangent.Y, tangent.Z, handedness);
     }
+
+    /// <summary>
+    /// The baked occlusion a position element carries in its fourth component, or 1 (fully open) for a
+    /// format that stores no fourth component - the input assembler pads those to 1 for the game's own
+    /// shaders too, so both readings match what the game renders.
+    /// </summary>
+    private static float OcclusionFrom(GameVertexType type, float w) => type switch
+    {
+        GameVertexType.Single4 or GameVertexType.Half4 => Math.Clamp(w, 0f, 1f),
+        _ => 1f,
+    };
 
     private static Vector4 ReadElement(byte[] data, GameModelLod level, GameModelMeshInfo mesh, GameVertexElement element, int vertex)
     {

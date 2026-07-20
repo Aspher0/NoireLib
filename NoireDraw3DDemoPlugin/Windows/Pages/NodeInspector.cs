@@ -128,7 +128,7 @@ internal sealed class NodeInspector
         }
 
         ImGui.SameLine();
-        if (ImGui.SmallButton(selected ? "Deselect" : "Select"))
+        if (Ui.SmallButton(selected ? "Deselect" : "Select"))
         {
             if (selected)
                 selection.Remove(node);
@@ -137,7 +137,7 @@ internal sealed class NodeInspector
         }
 
         ImGui.SameLine();
-        if (ImGui.SmallButton("Add to selection"))
+        if (Ui.SmallButton("Add to selection"))
             selection.Add(node);
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Adds this object to the selection without removing the others. Needs the scene's editor in multi-select mode to hold more than one.");
@@ -145,7 +145,7 @@ internal sealed class NodeInspector
         ImGui.SameLine();
         using (ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudRed))
         {
-            if (ImGui.SmallButton("Destroy"))
+            if (Ui.SmallButton("Destroy"))
             {
                 demo.DestroyNode(node);
                 return false;
@@ -192,16 +192,16 @@ internal sealed class NodeInspector
 
             var step = rotStepDeg * MathF.PI / 180f;
             Ui.Row("Rotate");
-            if (ImGui.SmallButton("X-")) node.Rotate(Vector3.UnitX, -step);
-            ImGui.SameLine(); if (ImGui.SmallButton("X+")) node.Rotate(Vector3.UnitX, step);
-            ImGui.SameLine(); if (ImGui.SmallButton("Y-")) node.Rotate(Vector3.UnitY, -step);
-            ImGui.SameLine(); if (ImGui.SmallButton("Y+")) node.Rotate(Vector3.UnitY, step);
-            ImGui.SameLine(); if (ImGui.SmallButton("Z-")) node.Rotate(Vector3.UnitZ, -step);
-            ImGui.SameLine(); if (ImGui.SmallButton("Z+")) node.Rotate(Vector3.UnitZ, step);
-            ImGui.SameLine(); if (ImGui.SmallButton("Reset")) node.LocalRotation = Quaternion.Identity;
+            if (Ui.SmallButton("X-")) node.Rotate(Vector3.UnitX, -step);
+            ImGui.SameLine(); if (Ui.SmallButton("X+")) node.Rotate(Vector3.UnitX, step);
+            ImGui.SameLine(); if (Ui.SmallButton("Y-")) node.Rotate(Vector3.UnitY, -step);
+            ImGui.SameLine(); if (Ui.SmallButton("Y+")) node.Rotate(Vector3.UnitY, step);
+            ImGui.SameLine(); if (Ui.SmallButton("Z-")) node.Rotate(Vector3.UnitZ, -step);
+            ImGui.SameLine(); if (Ui.SmallButton("Z+")) node.Rotate(Vector3.UnitZ, step);
+            ImGui.SameLine(); if (Ui.SmallButton("Reset")) node.LocalRotation = Quaternion.Identity;
 
             Ui.Row("Aim", "Points local +Z at you.");
-            if (ImGui.SmallButton("Look at me"))
+            if (Ui.SmallButton("Look at me"))
                 node.LookAt(NoireLib.NoireService.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero);
         }
     }
@@ -254,7 +254,7 @@ internal sealed class NodeInspector
 
             Ui.Row("Custom border color", "Off, the border is the decal's own colour and only its opacity differs from the fill. On, it gets its own colour.");
             var hasOutlineColor = renderer.Material.OutlineColor.W > 0f;
-            if (ImGui.Checkbox("##decaloutlinecol", ref hasOutlineColor))
+            if (Ui.Check("##decaloutlinecol", ref hasOutlineColor))
             {
                 renderer.Material = renderer.Material with
                 {
@@ -285,7 +285,7 @@ internal sealed class NodeInspector
         {
             Ui.Row("Outline", "A post-process rim from a coverage mask, not a second mesh, so it traces the real silhouette.");
             var hasOutline = node.HasOutline;
-            if (ImGui.Checkbox("##hasoutline", ref hasOutline))
+            if (Ui.Check("##hasoutline", ref hasOutline))
             {
                 if (hasOutline)
                     node.ShowOutline(outlineColor, outlineWidth);
@@ -321,7 +321,7 @@ internal sealed class NodeInspector
         {
             Ui.Row("Shape outline", "The exact circle / ring / pie / rect the shader's SDF paints, as a 3D line on the decal plane. Follows Shape, ShapeParams and Surface live.");
             var hasShape = node.HasDecalShape;
-            if (ImGui.Checkbox("##hasdecalshape", ref hasShape))
+            if (Ui.Check("##hasdecalshape", ref hasShape))
             {
                 if (hasShape)
                     node.ShowDecalShape(decalShapeColor);
@@ -341,7 +341,7 @@ internal sealed class NodeInspector
 
             Ui.Row("Volume box", "Shows the projection box, the limit of what the decal can paint.");
             var hasVolume = node.HasDecalVolume;
-            if (ImGui.Checkbox("##hasdecalvolume", ref hasVolume))
+            if (Ui.Check("##hasdecalvolume", ref hasVolume))
             {
                 if (hasVolume)
                     node.ShowDecalVolume(decalVolumeColor);
@@ -381,13 +381,13 @@ internal sealed class NodeInspector
         using (Ui.Form("insp.optin", InspectorLabelWidth))
         {
             Ui.Row("Apply", "MakeSelectable: hover tint plus click-to-select. MakeInteractable: hover and click only. ClearHoverHighlight: drops the built-in tint.");
-            if (ImGui.SmallButton("MakeSelectable()"))
+            if (Ui.SmallButton("MakeSelectable()"))
                 node.MakeSelectable();
             ImGui.SameLine();
-            if (ImGui.SmallButton("MakeInteractable()"))
+            if (Ui.SmallButton("MakeInteractable()"))
                 node.MakeInteractable();
             ImGui.SameLine();
-            if (ImGui.SmallButton("ClearHoverHighlight()"))
+            if (Ui.SmallButton("ClearHoverHighlight()"))
                 node.ClearHoverHighlight();
         }
     }
@@ -399,11 +399,11 @@ internal sealed class NodeInspector
                 + "silhouette. Refreshed each frame on the framework thread - no per-frame plumbing.");
         Ui.Gap();
 
-        if (ImGui.Button("Exclude characters, monsters and NPCs", new Vector2(280f * Ui.Scale, 0f)))
+        if (Ui.Button("Exclude characters, monsters and NPCs", new Vector2(280f * Ui.Scale, 0f)))
             node.ExcludeObjects(static (IGameObject o) => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc);
 
         ImGui.SameLine();
-        if (ImGui.Button("Clear exclusions", new Vector2(160f * Ui.Scale, 0f)))
+        if (Ui.Button("Clear exclusions", new Vector2(160f * Ui.Scale, 0f)))
             node.ClearExclusions();
         if (ImGui.IsItemHovered())
             Ui.Tooltip("The decal paints over everything again, actors included.");

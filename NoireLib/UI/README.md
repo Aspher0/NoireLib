@@ -17,6 +17,9 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Theming (NoireTheme)](#theming-noiretheme)
 - [Buttons (NoireButtons)](#buttons-noirebuttons)
 - [Layout structures](#layout-structures)
+- [Framed containers (NoirePanel)](#framed-containers-noirepanel)
+- [Windows you draw yourself (NoireWindowChrome)](#windows-you-draw-yourself-noirewindowchrome)
+- [Sliders (NoireSliders)](#sliders-noiresliders)
 - [Toasts (NoireToast)](#toasts-noiretoast)
 - [Dialogs you await (NoireModal)](#dialogs-you-await-noiremodal)
 - [Overlay Buttons](#overlay-buttons)
@@ -42,6 +45,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Images (UiImageSource)](#images-uiimagesource)
 - [The UI scale](#the-ui-scale)
 - [Text at any size (NoireText)](#text-at-any-size-noiretext)
+  - [Letter-spacing](#letter-spacing)
 - [Drawing shapes (NoireShapes)](#drawing-shapes-noireshapes)
   - [Where it draws](#where-it-draws)
   - [Plates](#plates)
@@ -49,6 +53,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
   - [Frames and corner ticks](#frames-and-corner-ticks)
   - [Arcs, rings and wedges](#arcs-rings-and-wedges)
   - [Pattern fills](#pattern-fills)
+  - [Glows, clipping and sweeps](#glows-clipping-and-sweeps)
   - [Shapes NoireUI does not ship](#shapes-noireui-does-not-ship)
 
 ---
@@ -482,6 +487,97 @@ NoireLayout.Flow(tags, Measure, DrawChip, width: myPanelWidth);
 Left at zero they use the text wrap position if one is set (which is what `NoireLayout.WrapText` sets, so a row inside one wraps where its text does), and the window's content edge otherwise. **A panel that owns a width nobody else can see has to say so.**
 
 `NoireLayout.ContentWidth()` is that same answer on its own, and is what any widget defaulting to "the space available" should ask instead of `GetContentRegionAvail()`. The difference only shows up inside a page that centres its content in a narrower column: the content region still reports the window's edge, so a field sized from it runs past the end of everything around it.
+
+---
+
+## Framed containers (NoirePanel)
+
+`NoireShapes` paints a box between two points, which is only useful once something knows where those points are. `NoirePanel` is what knows: it runs the body, measures what it came to, and paints the chrome behind it.
+
+```csharp
+NoirePanel.Frame(() =>
+{
+    NoireText.Draw("Selected index");
+    NoireText.Draw("14");
+},
+new FrameStyle { TickLength = 11f, TickColor = gold });
+```
+
+`Frame` draws a `FrameStyle` border; `Plate` draws a `PlateStyle` fill. Both take their body, so there is nothing to close, and a body that throws still leaves the draw list balanced.
+
+**The chrome is drawn after the body and appears behind it.** That is the whole mechanism, and it is why the alternative every plugin writes by hand does not work: you cannot paint a box before you know how tall it is, and drawing it from the height the same content happened to have *last* frame lags by a frame the moment anything inside animates. The panel splits the window's draw list into a chrome channel and a content channel, so the two can be drawn in one order and composited in the other.
+
+**Nested panels do not split again, and must not.** A draw list can only carry one split at a time. They do not need to: chrome from every depth shares one channel and content shares the other, so an inner panel's chrome lands on top of its parent's chrome and still behind all content, which is the order the nesting means. The split is tracked per draw list rather than as a depth count, because a body may open a child window and a child window draws to a list of its own.
+
+**A panel is a fixed-width box**, filling the width available unless `PanelOptions.Width` says otherwise. A stack of panels that each ended wherever their own longest line did would read as ragged rather than as a column. The body is told the width it has, because nothing else can tell it: ImGui's content region reports the *window's* right edge however deeply anything is nested.
+
+`PanelOptions.Header` puts a tracked label and a hairline across the top. Its height is rounded up to a whole pixel, for the reason under [toasts](#toasts-noiretoast): a box placed from a fractional height walks across a pixel while its contents animate.
+
+---
+
+## Windows you draw yourself (NoireWindowChrome)
+
+ImGui's window decoration is drawn from its style and cannot be replaced, so a design whose window edge is part of the design has nowhere to go. Taking the decoration away is easy; what is not is everything that stops working once you do.
+
+```csharp
+// On the window:
+Flags = NoireWindowChrome.Flags;
+public override void PreDraw()  => pushed = NoireWindowChrome.PushWindowStyle();
+public override void PostDraw() => NoireWindowChrome.PopWindowStyle(pushed);
+
+// In Draw():
+NoireWindowChrome.Draw(() =>
+{
+    var handle = DrawMasthead();
+    NoireWindowChrome.DragFrom(handle.Min, handle.Max);
+
+    if (NoireWindowChrome.CloseButton(closeAt, 16f))
+        IsOpen = false;
+},
+new WindowChromeStyle { Plate = mySurface, Frame = myBorder });
+```
+
+**Four flag sets, because the trade-offs are real ones.** `Flags` is the default: no title bar, background, border or scrollbar, and ImGui keeps the drag, so the window can be picked up anywhere it is not already busy. `FixedFlags` adds no-resize. `HandleOnlyFlags` adds `NoMove` for a design whose empty space is not spare, with `DragFrom` naming the handle. `FixedBodyFlags` stops the window scrolling as a whole, for one whose masthead and rail stay put while a region inside it scrolls.
+
+`DragFrom` holds the drag by window id, so it survives the pointer outrunning the handle. `ChromeButton` draws the window's own buttons — `ChromeGlyph.Close`, `Minimize`, `Restore`, `Menu` — from strokes rather than an icon font, so chrome does not depend on FontAwesome being in the atlas. One `ChromeButtonStyle` covers every glyph, so a row of them cannot drift apart in size, weight or hover behaviour; a bare mark floating in a corner reads as debris, so each carries a plate that lights on hover.
+
+**What a custom window gives up:** Dalamud's pin, clickthrough and background-blur controls live on its title bar, and a window with `NoTitleBar` does not get one. They are Dalamud's own state rather than the plugin's, so they cannot be redrawn from a menu of your own. Offer what the window genuinely owns instead — opacity, collapse, close.
+
+**`WindowChromeStyle.Opacity` fades the surface, not the contents.** It scales the plate's fill alpha; the text, the border and the controls stay at full strength. Pushing ImGui's global alpha instead fades everything, which is not a translucent window but a dim one — what a window wants to see through is its background. Anything a window paints behind its content itself (a masthead, a hero) should be scaled by the same number.
+
+**`DragFrom` refuses unless the window carries `NoMove`.** It is the *replacement* for ImGui's drag, not an addition to it: with both running, the movement is applied twice per frame from two different reference points, and the contents visibly swim and lag behind the frame as it is dragged. Use `HandleOnlyFlags` when you want a handle.
+
+**A design that states its own margins wants to be the only thing stating them.** ImGui puts `ItemSpacing.Y` between every two items, which is added to each margin you place: a stated gap of 22 arrives as 22 plus two lots of spacing, and the page reads as falling apart. Push `ItemSpacing` to zero for the window.
+
+**The scrollbar goes and the wheel stays.** A design painting its own edges cannot afford ImGui's scrollbar down the inside of one, but a window that silently refuses the wheel is broken rather than clean.
+
+**The chrome is painted at the window rectangle; the body is advanced from wherever the cursor already is.** Those are the same thing on the first frame and stop being so the moment the window scrolls, which is the trap: setting the body to an absolute position pins the contents and the wheel appears to do nothing, while the border needs to stay with the window rather than scrolling away.
+
+`PushWindowStyle` zeroes ImGui's own window padding and border, which would otherwise sit between the window's edge and the chrome's padding and put every measurement out by it. It is not a window class: creating and registering windows is Dalamud's job, and wrapping it would take away the `Window` surface a plugin already knows.
+
+---
+
+## Sliders (NoireSliders)
+
+ImGui's slider is drawn from its own style and cannot be replaced: a track and a rectangular grab, coloured from four style entries and no more. A design that wants a hairline track with a lit diamond running along it has no way to ask for one. So the drawing is the library's, through the same style-plus-hook shape as buttons and toggles.
+
+```csharp
+NoireSliders.Int("Visible options", ref config.VisibleOptions, 1, 20);
+
+NoireSliders.Float("Opacity", ref opacity, 0f, 1f, new SliderStyle
+{
+    Grab = SliderGrab.Diamond,
+    FillColor = goldDeep,
+    FillTo = goldHi,
+    GlowColor = goldHi,
+});
+```
+
+`SliderGrab` ships Square, Rounded, Circle and Diamond; `SliderStyle.CustomDraw` replaces the painting entirely, with the widget keeping the sizing, the hit testing, the dragging and the value.
+
+**The value is read from where the pointer is, never from how far it moved.** A drag driven by mouse delta accumulates a drift away from the cursor over a long gesture, and a click on the track then jumps by that drift rather than to where it was aimed. Reading the position outright makes a click and a drag the same operation and leaves nothing to accumulate. `ResolveValue` and `ResolveFraction` are the two halves, and the test that matters checks they agree: the handle has to end up under the pointer that put it there.
+
+The label column matches [`NoireInputs`](#settings-fields-noireinputs), so a slider between two number fields lines up with them.
 
 ---
 
@@ -1116,6 +1212,25 @@ combo.DropdownCycleLoop = false;  // Default. Whether arrow key cycling wraps ar
 combo.VisibleItemCount = 8;       // Options shown before the list scrolls.
 ```
 
+### Restyling the closed box
+
+ImGui draws a combo's box from its own style, which is one flat colour and a rounding, so a ramped surface, a chamfered corner or a bevel is not reachable. `BoxStyle` hands the box to `NoireShapes` instead. The frame background **and its border** are pushed transparent: ImGui draws the border rounded from its own style, so leaving it lit puts a rounded outline around a square plate.
+
+```csharp
+combo.BoxStyle = new PlateStyle
+{
+    Fill = ink, FillTo = inkDeep, FillAxis = GradientAxis.Vertical,
+    BorderColor = gold, BorderSize = 1f,
+};
+combo.BoxArrowColor = gold;
+```
+
+`PopupStyle` does the same for the dropdown, and the two belong together: restyling the closed box and leaving the dropdown as ImGui's grey popup is worse than restyling neither, because the two are seen one after the other and the mismatch reads as the styling having failed. It carries the surface, border, rounding, padding, row padding and spacing, hovered and selected row colours, text, and the scrollbar — pushed as ImGui style around the popup, so the filter box and the scrollbar follow it without the combo drawing either.
+
+The plate is drawn first and ImGui's own frame is pushed transparent over it, so the preview text, the hit box, the popup, the filter and the keyboard all keep working exactly as they did. The rectangle is worked out before the combo is submitted rather than read back afterwards, because a plate drawn after the combo would cover its own preview text; `ImGui.CalcItemWidth()` is the width ImGui itself is about to use, so the two cannot disagree.
+
+The arrow becomes NoireUI's too, because ImGui draws its own in the text colour and a gold chevron beside ivory text is not reachable from one colour. `BoxArrowColor` sets it; `ImGuiComboFlags.NoArrowButton` removes it.
+
 ### Hold a binding + wheel cycling (closed combo)
 
 The selection can be cycled by scrolling the mouse wheel over the **closed** combo, optionally gated behind a held binding, with or without looping at the boundaries:
@@ -1412,7 +1527,13 @@ list.BindReorderHotkeys(hotkeys, "list.moveUp", "list.moveDown");   // rebindabl
 
 Modifiers are matched exactly, so the default fires on the bare arrow and not on ctrl with it, and `ResolvedMoveUpBinding` reports whichever is actually in force.
 
-**With hotkeys attached, the list swallows the key from the game only while the shortcut is live**: a row focused, and the window focused. The defaults are the game's own movement keys, and a hotkey left blocking permanently would take the arrow keys away for as long as the plugin is loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf. Whatever each entry's `BlockGameInput` was set to is remembered and restored, so a hotkey a plugin deliberately blocks with keeps blocking when the list is not using it. `BlockGameInputWhileActive` turns the whole behaviour off. Dragging is awkward in a long list and unavailable to some people entirely; the keyboard path costs one branch and is the difference between a reorderable list and a reorderable list somebody can use.
+**With hotkeys attached, the list swallows the key from the game only while the shortcut is live**: a row focused, and the window focused. The defaults are the game's own movement keys, and a hotkey left blocking permanently would take the arrow keys away for as long as the plugin is loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf. `BlockGameInputWhileActive` turns the whole behaviour off.
+
+**The key is taken through `HotkeyEntry.SuppressGameInput`, never by writing `BlockGameInput`.** That option is a persisted setting belonging to whoever registered the hotkey: a stored hotkey overrides the values it is registered with on the next load, so a widget writing its own momentary state there does not merely override an answer that is not its to give, it saves that state as the hotkey's standing one and the key stays swallowed on every launch afterwards, with no way left to turn it off. A suppression is runtime only and reference-counted, so the most a mistake can cost is the rest of the session.
+
+**The block expires on its own, and that is what makes it safe.** Blocking works by clearing the key out of the game's key state on every framework tick, so a raised block that nothing lowers swallows that key until the plugin unloads — and the case that most needs it lowered is the list *not being drawn*, which is exactly when a call inside `Draw` cannot run. So a raised block is renewed one frame at a time and released by a watchdog once the frames stop coming: closing the window, switching tab, emptying the list, detaching the hotkeys or turning `BlockGameInputWhileActive` off all hand the keys straight back. A frame of slack is allowed first, because the watchdog runs on the framework tick and the renewal on the draw, and a tick landing between the two would otherwise take the keys back from a list still being worked in. The focus is dropped with it, so a list that comes back into view comes back neutral rather than silently holding the keys again.
+
+**Clicking anywhere outside the list drops the focus**, tested against the rows' own bounds rather than against whether ImGui reports something hovered. Clicking another control is the ordinary way to stop working in a list, and a hover test counts that as still being in it — which would leave the keys held while the user is plainly somewhere else. Dragging is awkward in a long list and unavailable to some people entirely; the keyboard path costs one branch and is the difference between a reorderable list and a reorderable list somebody can use.
 
 **`Duplicate` matters for anything mutable.** Without it the copy and the original are the same object, and editing either edits both. A record needs `step with { ... }`; a class needs a real copy.
 
@@ -1768,6 +1889,21 @@ Safe to call repeatedly: a size already built is not built again.
 
 ---
 
+### Letter-spacing
+
+ImGui draws a string in one call at the font's own advances, so there is no notion of tracking. `NoireText.Tracked` places each glyph instead.
+
+```csharp
+NoireText.Tracked("OVERLAYS", NoireText.CapsTracking, TextSize.Caption);
+var width = NoireText.TrackedSize("OVERLAYS", NoireText.CapsTracking, TextSize.Caption).X;
+```
+
+**Tracking is in ems, a fraction of the size the text is drawn at, exactly as CSS letter-spacing works.** That is what makes one value right at every step of the type scale and at every UI scale, so it is never scaled and never restated. `CapsTracking` is the shipped default: capitals have no ascenders or descenders to separate them and need noticeably more room than lower case to stop reading as one block.
+
+The run is drawn onto the draw list and reserved with a single `Dummy`, rather than as one text item per character, so item spacing cannot creep in between the glyphs and a label always measures exactly what it draws. The trailing gap after the last character is not part of the run, or every tracked label would sit a gap left of where a centred or right-aligned layout put it.
+
+---
+
 ## Drawing shapes (NoireShapes)
 
 Widgets get you a plugin that works. Getting one that looks like it was designed means drawing the surface it sits on, and ImGui's draw list stops short in a specific place: it has rounded rectangles but no chamfered ones, one axis-aligned square-cornered gradient, no bevel, no glow, and no way to put a gradient on any shape but that one rectangle.
@@ -1896,6 +2032,27 @@ The guilloche is the interlaced rosette engraved on banknotes and watch dials: a
 **The sunburst's rays have soft sides** (`SunburstStyle.Softness`, 0.35 by default). A filled shape only gets one pixel of antialiasing, which is enough for a handful of wide rays and visibly stepped once there are twenty narrow ones. Each ray is therefore drawn as a few layers narrowing inwards, so its sides fade instead of ending. Set it to zero for hard edges. It is also simply the more truthful look: light does not have an edge.
 
 Neither is cached to a texture, and that was a decision rather than an omission. Both are a few hundred points, so there is nothing to cache that would be cheaper than drawing them; geometry also stays sharp at every scale and costs no texture memory, where a cached bitmap would have to be rebuilt whenever the size or the UI scale changed. A pattern that genuinely needs per-pixel maths is a texture you build yourself and draw with [`UiImageSource`](#images-uiimagesource).
+
+### Glows, clipping and sweeps
+
+`Glow` grows a **rectangle**, so a shape that is not one gets a rectangular halo: a lit diamond comes out sitting in a glowing square. `GlowPath` grows the path itself.
+
+```csharp
+NoireShapes.Diamond(centre, 6f, gold, glow: goldHi, glowSpread: 8f);   // sugar over both
+NoireShapes.GlowPath(myPoints, goldHi, 8f);                           // any convex, clockwise path
+```
+
+Each vertex moves along the bisector of its two edges, by the distance that keeps both edges parallel to where they started. That is a real outward offset rather than a scale about the centre, which only agrees with one for shapes that happen to be regular. The miter is floored so a sharp corner is blunted rather than shooting a spike across the interface.
+
+**`Clipped` keeps a whole composition inside a box.** A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. It is a scope for the same reason the gradient is — one call contains however many shapes the composition turns out to be.
+
+```csharp
+NoireShapes.Clipped(min, max, () => { PaintSunburst(); PaintRosette(); });
+```
+
+**`SweepLine` is a line with a bright band travelling along it.** It cannot be a `Gradient`: that ramps between two colours across the whole span, and this is three stops with the bright one moving. The band runs off both ends rather than bouncing, because a highlight that reverses reads as a scanner and one that wraps mid-line flickers.
+
+`FadeIn`, `Diamond`, `DiamondOutline` and `DiamondPath` are the small marks a deco interface repeats; the diamond ones exist because a hand-written diamond is four points that have to be clockwise for `Fill` and `GlowPath` to behave, and neither fails loudly.
 
 ### Shapes NoireUI does not ship
 

@@ -27,6 +27,15 @@ public class NoireLibMain
     /// </summary>
     /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
     /// <param name="plugin">The instance of your plugin.</param>
+    /// <summary>
+    /// NoireLib's own version, for a plugin that wants to show which build it is running against.
+    /// </summary>
+    /// <remarks>
+    /// Read from the assembly rather than kept as a literal, so it cannot drift from the package that shipped it.
+    /// </remarks>
+    public static string Version { get; } =
+        typeof(NoireLibMain).Assembly.GetName().Version?.ToString(3) ?? "unknown";
+
     public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
         var initialized = NoireService.Initialize(dalamudPluginInterface, plugin);

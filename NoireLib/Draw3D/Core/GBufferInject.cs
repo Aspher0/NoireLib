@@ -17,8 +17,9 @@ namespace NoireLib.Draw3D.Core;
 /// <b>What it costs.</b> Everything that lives in Draw3D's own pass is unavailable here: outlines and rims,
 /// transparency, ground decals, and drawing above everything. Deferred geometry is opaque. An object needing
 /// any of those stays on the normal path.<br/>
-/// <b>What it does not do.</b> Cast shadows. Shadow maps are rendered in an earlier depth-only pass that this
-/// geometry is not part of, so an injected object is lit and shadowed correctly but casts nothing.
+/// <b>What it does not do.</b> Cast shadows. Shadow maps are rendered in earlier depth-only passes this pass
+/// never sees; casting is its own injection (<see cref="ShadowInject"/>, opted into per frame through
+/// <see cref="Draw3DGameLit.CastShadows"/>).
 /// </summary>
 /// <remarks>
 /// This is the only part of Draw3D that draws inside the game's frame rather than into its own target, so a

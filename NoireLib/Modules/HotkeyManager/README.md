@@ -11,6 +11,7 @@ You are reading the documentation for the `NoireHotkeyManager` module.
 - [Binding UI](#binding-ui)
 - [Activation Modes](#activation-modes)
 - [Changing a Hotkey at Runtime](#changing-a-hotkey-at-runtime)
+- [Taking a Key for a Moment](#taking-a-key-for-a-moment)
 - [Threading](#threading)
 - [Persistence](#persistence)
 - [EventBus Integration](#eventbus-integration)
@@ -302,10 +303,41 @@ one frame is one save, not one per property.
 - Assigning `Binding` is equivalent to calling `SetHotkeyBinding`: it raises the binding-changed notifications on
   the framework thread and persists, exactly as that method does.
 - `Callback` is runtime-only and is not persisted. `Id` must not be changed after registration.
+- `SuppressGameInput` is runtime-only too, and is the option to reach for when a key is wanted only while something
+  is going on. See [Taking a key for a moment](#taking-a-key-for-a-moment).
 - The convenience methods do the same thing for a single option: `SetHotkeyEnabled`, `SetHotkeyBinding`,
   `SetHotkeyCallback`. `SetHotkeyEnabled` persists its change, just as setting `Enabled` on the entry does.
 - An entry you have unregistered is detached from the manager, so a later property set on it neither takes effect
   nor writes its removed hotkey back to storage.
+
+---
+
+## Taking a Key for a Moment
+
+`BlockGameInput` is the hotkey's **standing** answer: it is persisted, and a stored hotkey overrides the values it
+is registered with on the next load. That makes it the wrong tool for a key you want only while something is
+happening — a panel being worked in, a mode being held. Written for a moment, it is saved forever, and the key
+stays swallowed on every launch afterwards with the moment long since over.
+
+For that, suppress it instead:
+
+```csharp
+if (hotkeyManager.TryGetHotkey("my.hotkey", out var hotkey))
+    hotkey.SuppressGameInput();
+
+// ... later, once the thing that wanted the key is over
+hotkey.ReleaseGameInputSuppression();
+```
+
+- Either one takes the key: the blocker honours `BlockGameInput` and an outstanding suppression alike.
+- A suppression is **never persisted** and cannot outlive the session, so forgetting to release one costs the rest
+  of the session and nothing beyond it.
+- Calls **nest**. Two callers can suppress the same hotkey, and the key goes back to the game when the last one
+  releases. Releasing more than was taken is ignored rather than left as a debt against the next suppression.
+- `IsGameInputSuppressed` reports whether anything is holding the key right now, which is what a UI should show.
+
+`NoireReorderableList` is the worked example: its `BlockGameInputWhileActive` holds a suppression while a row is
+focused in a focused window, and leaves the hotkey's own settings exactly as it found them.
 
 ---
 
@@ -380,10 +412,17 @@ A stored record carries the binding **and every option**: `DisplayName`, `Enable
 `BlockWhenTextInputActive`, `RequireGameFocus`, and `BlockGameInput`. A change a user makes at runtime therefore
 survives a restart.
 
+`Callback` and `SuppressGameInput` are the exceptions, and deliberately so: both are runtime state rather than
+settings, and neither is written to a record.
+
 On load, the stored record **overrides** the values a hotkey is registered with, the same way the stored binding
 already did. The values you pass to `RegisterHotkey` are the defaults for a hotkey that has never been stored; once
 a hotkey is stored, its stored options win. Changing a default in your code later will not move a user who already
 has that hotkey stored, exactly as changing a default binding would not.
+
+That is worth keeping in mind when writing an option from code rather than from a settings panel: whatever you
+write is the user's stored answer from then on, and a value written for the moment will still be there next launch.
+For anything momentary, use [a suppression](#taking-a-key-for-a-moment) instead.
 
 ### Upgrading from an older config
 

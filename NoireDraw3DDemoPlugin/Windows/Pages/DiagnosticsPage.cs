@@ -58,13 +58,13 @@ public sealed class DiagnosticsPage : IDisposable
                 + "that is where projection bugs show up.");
         Ui.Gap();
 
-        if (ImGui.Button("Run projection parity", buttonSize))
+        if (Ui.Button("Run projection parity", buttonSize))
             diag.RunValidate();
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Compares this renderer's projection against the game's over 10 frames; passes within 1 pixel.");
 
         ImGui.SameLine();
-        if (ImGui.Button("Run depth ground-truth", buttonSize))
+        if (Ui.Button("Run depth ground-truth", buttonSize))
             diag.RunProbe();
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Validates depth-buffer readback against the analytic depth map, and reports UI-mask health.");
@@ -79,7 +79,7 @@ public sealed class DiagnosticsPage : IDisposable
                 "How many frames to sample before reporting. 120 is about two seconds; raise it if you need more time to provoke the motion.");
         }
 
-        if (ImGui.Button("Run camera-phase trace", buttonSize))
+        if (Ui.Button("Run camera-phase trace", buttonSize))
             diag.RunCameraPhaseTrace(Math.Clamp(camTraceFrames, 1, 6000));
 
         Ui.Gap();
@@ -99,7 +99,7 @@ public sealed class DiagnosticsPage : IDisposable
                 + "and seeing both is the point.");
         Ui.Gap();
 
-        if (ImGui.Button(on ? "Hide world collision" : "Show world collision", new Vector2(220f * Ui.Scale, 0f)))
+        if (Ui.Button(on ? "Hide world collision" : "Show world collision", new Vector2(220f * Ui.Scale, 0f)))
             NoireService.Framework.RunOnFrameworkThread(ToggleWorldGeometry); // the collision scene is framework-thread only
 
         Ui.Gap();

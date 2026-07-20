@@ -142,6 +142,11 @@ public sealed partial class NoireReorderableList<T>
         ArgumentException.ThrowIfNullOrWhiteSpace(moveUpHotkeyId);
         ArgumentException.ThrowIfNullOrWhiteSpace(moveDownHotkeyId);
 
+        // Given back before the ids change, since a block is released against whichever hotkeys are attached at the
+        // time: rebinding a list that happened to be holding the keys would otherwise hand back the new hotkeys' keys
+        // and leave the old ones held.
+        ReleaseInputBlocking();
+
         hotkeys = hotkeyManager;
         upHotkeyId = moveUpHotkeyId;
         downHotkeyId = moveDownHotkeyId;
@@ -155,6 +160,10 @@ public sealed partial class NoireReorderableList<T>
     /// <returns>This instance, for chaining.</returns>
     public NoireReorderableList<T> UnbindReorderHotkeys()
     {
+        // Given back before the hotkeys are let go of, or a list detached while it happened to be holding the arrow
+        // keys would leave them held with nothing left that knows how to release them.
+        ReleaseInputBlocking();
+
         hotkeys = null;
         upHotkeyId = null;
         downHotkeyId = null;
@@ -168,8 +177,11 @@ public sealed partial class NoireReorderableList<T>
     /// On by default, and only while live: a row focused, the window focused, and the keys otherwise doing nothing.
     /// A hotkey left blocking permanently takes the arrow keys away from the game for as long as the plugin is
     /// loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf.<br/>
-    /// Whatever <see cref="HotkeyEntry.BlockGameInput"/> was set to is remembered and restored, so a hotkey a plugin
-    /// deliberately blocks with keeps blocking when the list is not using it.<br/>
+    /// Held through <see cref="HotkeyEntry.SuppressGameInput"/> rather than by writing
+    /// <see cref="HotkeyEntry.BlockGameInput"/>. That option is a persisted setting belonging to whoever registered
+    /// the hotkey, and a widget writing it would both override an answer that is not its to give and store its own
+    /// momentary state as the hotkey's standing one. A suppression is runtime only, so the worst this can cost is the
+    /// rest of the session.<br/>
     /// Only applies with hotkeys attached through <see cref="BindReorderHotkeys"/>. A local binding has no entry to
     /// block with.
     /// </remarks>
@@ -178,35 +190,122 @@ public sealed partial class NoireReorderableList<T>
     private NoireHotkeyManager? hotkeys;
     private string? upHotkeyId;
     private string? downHotkeyId;
-    private bool? upBlockedOriginally;
-    private bool? downBlockedOriginally;
+    private bool blockRaised;
+    private int blockRenewedOnFrame = -1;
+    private bool watchdogAttached;
 
     /// <summary>
     /// Raises or restores the game-input blocking on the attached hotkeys.
     /// </summary>
+    /// <remarks>
+    /// A raised block is renewed for one frame at a time and expires on its own. Blocking works by clearing the key
+    /// out of the game's own key state on every framework tick, so a block left raised swallows that key for as long
+    /// as the plugin is loaded: it cannot be left to a call that only happens while the list is being drawn, because
+    /// the list not being drawn is precisely the case that has to release it. Closing the window or moving to another
+    /// tab while a row is focused is not an unusual thing to do, and it should not cost the arrow keys.
+    /// </remarks>
     /// <param name="live">Whether the shortcut can currently do anything.</param>
     internal void ApplyInputBlocking(bool live)
     {
-        if (hotkeys == null || !BlockGameInputWhileActive)
+        if (live && BlockGameInputWhileActive && hotkeys != null)
+        {
+            RenewInputBlocking();
             return;
+        }
 
-        ApplyBlockingTo(upHotkeyId, ref upBlockedOriginally, live);
-        ApplyBlockingTo(downHotkeyId, ref downBlockedOriginally, live);
+        // Released rather than returned from. Turning the option off, or detaching the hotkeys, while the block is up
+        // has to give the key back; leaving early would strand it raised with nothing left that would lower it.
+        ReleaseInputBlocking();
     }
 
     /// <summary>
-    /// Blocks one hotkey while the shortcut is live, and puts back whatever the caller had set otherwise.
+    /// Raises the block if it is not already up, and marks it as wanted for this frame.
     /// </summary>
-    private void ApplyBlockingTo(string? hotkeyId, ref bool? original, bool live)
+    private void RenewInputBlocking()
+    {
+        blockRenewedOnFrame = NoireUI.FrameCount;
+
+        if (blockRaised)
+            return;
+
+        blockRaised = true;
+        ApplyBlockingTo(upHotkeyId, true);
+        ApplyBlockingTo(downHotkeyId, true);
+        AttachWatchdog();
+    }
+
+    /// <summary>
+    /// Puts the keys back, leaving the hotkeys' own settings exactly as they were found.
+    /// </summary>
+    private void ReleaseInputBlocking()
+    {
+        DetachWatchdog();
+
+        if (!blockRaised)
+            return;
+
+        blockRaised = false;
+        ApplyBlockingTo(upHotkeyId, false);
+        ApplyBlockingTo(downHotkeyId, false);
+    }
+
+    /// <summary>
+    /// Watches for the list going quiet while it still holds the keys, and hands them back when it does.
+    /// </summary>
+    /// <remarks>
+    /// Attached only while a block is up, and it removes itself as soon as the block comes down, so a list nobody is
+    /// using costs nothing. A frame of slack is allowed before releasing, because the tick and the drawing are on
+    /// separate clocks: a tick that lands after the next frame has been begun but before the list has drawn into it
+    /// would otherwise take the keys back from a list that is still being worked in, and hand the game an arrow the
+    /// user meant for the row. Waiting a frame longer to release costs nothing.
+    /// </remarks>
+    private void OnBlockWatchdog(Dalamud.Plugin.Services.IFramework framework)
+    {
+        if (blockRaised && NoireUI.FrameCount - blockRenewedOnFrame > 1)
+        {
+            // The row keeps no focus through this either, so a list that comes back into view comes back neutral
+            // rather than quietly holding the keys again the moment it is drawn.
+            focusedIndex = -1;
+            ReleaseInputBlocking();
+        }
+    }
+
+    private void AttachWatchdog()
+    {
+        if (watchdogAttached || !NoireService.IsInitialized())
+            return;
+
+        watchdogAttached = true;
+        NoireService.Framework.Update += OnBlockWatchdog;
+    }
+
+    private void DetachWatchdog()
+    {
+        if (!watchdogAttached)
+            return;
+
+        watchdogAttached = false;
+
+        if (NoireService.IsInitialized())
+            NoireService.Framework.Update -= OnBlockWatchdog;
+    }
+
+    /// <summary>
+    /// Takes one hotkey's key from the game while the shortcut is live, and gives it back otherwise.
+    /// </summary>
+    /// <remarks>
+    /// Paired one for one with <see cref="blockRaised"/>, which is what keeps the suppression balanced: it is taken
+    /// only on the transition into a raised block and given back only on the transition out of one.
+    /// </remarks>
+    private void ApplyBlockingTo(string? hotkeyId, bool live)
     {
         if (hotkeyId == null || hotkeys == null || !hotkeys.TryGetHotkey(hotkeyId, out var entry))
             return;
 
-        // Captured the first time the entry is seen rather than when the hotkey was attached, since a hotkey can be
-        // registered after the list is built.
-        original ??= entry.BlockGameInput;
-
-        entry.BlockGameInput = live || original.Value;
+        if (live)
+            entry.SuppressGameInput();
+        else
+            entry.ReleaseGameInputSuppression();
     }
 
     /// <summary>

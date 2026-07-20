@@ -227,7 +227,15 @@ GBufferOut ps(PsIn i)
     o.material = float4(min(material, MaterialCeiling.xxx), 0.0);
 
     o.albedo    = float4(albedo, 1.0);
-    o.misc      = MiscChannels;
+
+    // rtv3's blue is the model's baked per-vertex occlusion: the game's own background shaders write their
+    // position element's fourth component here, scaled by a per-instance sky visibility. The importer
+    // carries that value in the vertex color's alpha, and MiscChannels' blue (1 by default) stands in for
+    // the sky visibility, so the default writes exactly what the game writes.
+    float4 misc = MiscChannels;
+    misc.z = saturate(misc.z * i.color.a);
+
+    o.misc      = misc;
     o.geoNormal = float4(encodedGeo, 0.0);
     return o;
 }

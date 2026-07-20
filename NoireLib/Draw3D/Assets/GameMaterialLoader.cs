@@ -35,10 +35,10 @@ public sealed class GameMaterial : IDisposable
     public bool IsDyeableFurniture => File.ShaderPackage == DyeableFurnitureShader;
 
     /// <summary>
-    /// The color an empty stain slot renders as: stain row 1, Snow White, as the display color the table
-    /// holds. A dyeable surface always has some color multiplied in, and removing an item's dye in game
-    /// lands here whatever dye the item ships with. See docs/Draw3D Game Assets Status.md for the
-    /// measurements behind this value.
+    /// The color a dyeable surface renders when nothing states a stain: stain row 1, Snow White, as the
+    /// display color the table holds. An undyed placement renders its scene's stated default stain
+    /// (<see cref="GameSgbFile.DefaultStain"/>); this is the fallback for a scene stating none. See
+    /// docs/Draw3D Game Assets Status.md for the measurements behind this value.
     /// </summary>
     public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
 
@@ -62,9 +62,9 @@ public sealed class GameMaterial : IDisposable
 
     /// <summary>
     /// The material's diffuse color constant, or null when it sets none. On dyeable furniture it holds an
-    /// exact stain-table color, but it is not what renders: an undyed placement shows the sgb's default
-    /// stain (<see cref="GameFurnitureSgb"/>), or <see cref="UndyedStain"/> when none is stated. Exposed as
-    /// parsed data; see docs/Draw3D Game Assets Status.md for its measured behavior.
+    /// exact stain-table color, but it is not what renders: an undyed placement shows the scene's default
+    /// stain (<see cref="GameSgbFile.DefaultStain"/>), or <see cref="UndyedStain"/> when none is stated.
+    /// Exposed as parsed data; see docs/Draw3D Game Assets Status.md for its measured behavior.
     /// </summary>
     public Vector3? DiffuseColor
     {
@@ -88,8 +88,8 @@ public sealed class GameMaterial : IDisposable
     /// <param name="dye">
     /// Color applied to the dyeable area only, as a display color - the encoding a color picker and the game's
     /// dye table both use. Null renders <see cref="UndyedStain"/>, the game's fallback for an empty stain
-    /// slot; pass the color of the sgb's default stain (<see cref="GameFurnitureSgb"/>) to render an item
-    /// exactly as an undyed placement shows it.
+    /// slot; pass the color of the scene's default stain (<see cref="GameSgbFile.DefaultStain"/>) to render
+    /// an item exactly as an undyed placement shows it.
     /// </param>
     /// <param name="tint">Multiplied over the whole surface afterwards. White leaves it untouched.</param>
     /// <param name="normalStrength">How far the normal map bends the surface normal. 0 draws with the geometric normal alone, and values above 1 exaggerate it.</param>

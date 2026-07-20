@@ -23,11 +23,11 @@ internal sealed class GameAssetsPage : IDisposable
 {
     private const string DefaultPath = "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl";
 
-    /// <summary>Paths verified to exist, covering both vertex layouts and both material shader packages.</summary>
+    /// <summary>Paths verified to exist, covering both vertex layouts, both material shader packages, and a multi-part scene.</summary>
     private static readonly (string Label, string Path)[] Presets =
     [
         ("Furniture", "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl"),
-        ("Furniture 2", "bgcommon/hou/indoor/general/0002/bgparts/fun_b0_m0002.mdl"),
+        ("Scene", "bgcommon/hou/indoor/general/0116/asset/fun_b0_m0116.sgb"),
         ("Body", "chara/human/c0101/obj/body/b0001/model/c0101b0001_top.mdl"),
         ("Equipment", "chara/equipment/e0001/model/c0101e0001_top.mdl"),
         ("Monster", "chara/monster/m0001/obj/body/b0001/model/m0001b0001.mdl"),
@@ -42,8 +42,11 @@ internal sealed class GameAssetsPage : IDisposable
     /// </summary>
     private sealed class SpawnedModel
     {
-        /// <summary>The decoded meshes, index-aligned with <see cref="Nodes"/>.</summary>
+        /// <summary>The decoded meshes of every part, flattened in spawn order and index-aligned with <see cref="Nodes"/>.</summary>
         public required GameModelMesh[] Meshes { get; init; }
+
+        /// <summary>How many placed models the spawn decoded. A scene places several; a model file is one.</summary>
+        public required int PartCount { get; init; }
 
         /// <summary>The materials this model resolved, keyed by material path. Owned here and disposed with it.</summary>
         public required Dictionary<string, GameMaterial> Materials { get; init; }
@@ -173,7 +176,10 @@ internal sealed class GameAssetsPage : IDisposable
     private string status = string.Empty;
     private bool failed;
     private bool loading;
-    private GameModelMesh[]? loaded;
+    private GameScenePart[]? loaded;
+
+    /// <summary>The default stain of the load that has finished but not yet been spawned, read with it off the draw thread.</summary>
+    private ushort pendingStain;
     private Shading appliedShading;
     private bool appliedOverrideDye;
     private Vector3 appliedDye;
@@ -211,7 +217,7 @@ internal sealed class GameAssetsPage : IDisposable
         using (Ui.Form("assets.load"))
         {
             Ui.Text("Game path", () => path, v => path = v, DefaultPath, 512,
-                "Archive path of the model. bgcommon/ paths are props and furniture; chara/ paths are character parts.");
+                "Archive path of a model (.mdl) or a scene (.sgb). A scene spawns every model it places; furniture items are scenes.");
             Ui.Int("Level of detail", () => lod, v => lod = Math.Clamp(v, 0, 2),
                 "0 is the most detailed. Models carry up to three levels.");
             Ui.Toggle("Use game materials", () => useGameMaterials, v => useGameMaterials = v,
@@ -225,6 +231,8 @@ internal sealed class GameAssetsPage : IDisposable
                 "Applied to the dyeable area while the toggle above is on. Picking a dye above sets this to its exact color.");
             Ui.Toggle("Light with the game's lights", () => gameLit, v => gameLit = v,
                 "Draws into the game's own frame so its lighting, shadows and occlusion apply. The object loses outlines, fades and above-everything while this is on.");
+            Ui.Toggle("Cast shadows", () => NoireDraw3D.GameLit.CastShadows, v => NoireDraw3D.GameLit.CastShadows = v,
+                "Also draws the object into the game's shadow maps while the toggle above is on. Experimental.");
             Ui.Toggle("Ignore this renderer's light", () => ignoreSceneLight, v => ignoreSceneLight = v,
                 "Removes this renderer's lighting from Game shading, leaving the texture and dye colors untouched.");
             Ui.Slider("Dye reference", () => dyeReference, v => dyeReference = v, 0f, 1f,
@@ -279,6 +287,8 @@ internal sealed class GameAssetsPage : IDisposable
             all.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.Ordinal));
             stainCombo = new NoireComboBox<GameStain>("assets.stain", all,
                 stain => stain.Name.Length > 0 ? stain.Name : $"Dye {stain.Id}");
+            stainCombo.FilterEnabled = true;
+            stainCombo.PreviewPlaceholder = "Pick a dye...";
         }
 
         Ui.Row("Dye", "The game's housing dyes. Picking one sets the color below to its exact value.");
@@ -297,7 +307,7 @@ internal sealed class GameAssetsPage : IDisposable
             if (i > 0)
                 ImGui.SameLine();
 
-            if (ImGui.SmallButton(Presets[i].Label))
+            if (Ui.SmallButton(Presets[i].Label))
                 path = Presets[i].Path;
         }
 
@@ -342,7 +352,9 @@ internal sealed class GameAssetsPage : IDisposable
             indices += mesh.Geometry.Indices.Length;
         }
 
-        Ui.Mono($"{model.Meshes.Length} mesh(es)   {vertices} vertices   {indices / 3} triangles"
+        Ui.Mono($"{model.Meshes.Length} mesh(es)"
+            + (model.PartCount > 1 ? $" in {model.PartCount} parts" : string.Empty)
+            + $"   {vertices} vertices   {indices / 3} triangles"
             + (model.DefaultStain > 0 ? $"   {DefaultStainName(model.DefaultStain)}" : string.Empty));
         Ui.Gap();
 
@@ -363,7 +375,7 @@ internal sealed class GameAssetsPage : IDisposable
         if (model.Materials.Count > 0)
         {
             Ui.Gap();
-            Ui.Note("The diffuse constant is the dye the item ships pre-applied. Character color tables are parsed but not applied yet, and nothing casts a shadow.");
+            Ui.Note("Character color tables are parsed but not applied yet.");
         }
     }
 
@@ -404,8 +416,25 @@ internal sealed class GameAssetsPage : IDisposable
     {
         try
         {
-            var meshes = await GameModelLoader.LoadAsync(modelPath, requestedLod, colors).ConfigureAwait(false);
-            if (meshes.Length == 0)
+            // A scene decodes into placed parts; a model file becomes one part at the scene origin, so
+            // everything after this point spawns the same way.
+            GameScenePart[] parts;
+            ushort defaultStain;
+            if (modelPath.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
+            {
+                parts = await GameSceneLoader.LoadAsync(modelPath, requestedLod, colors).ConfigureAwait(false);
+                defaultStain = GameSceneLoader.DefaultStain(modelPath) ?? 0;
+            }
+            else
+            {
+                var meshes = await GameModelLoader.LoadAsync(modelPath, requestedLod, colors).ConfigureAwait(false);
+                parts = meshes.Length == 0
+                    ? []
+                    : [new GameScenePart(meshes, modelPath, Vector3.Zero, Quaternion.Identity, Vector3.One)];
+                defaultStain = GameSceneLoader.DefaultStainForModel(modelPath) ?? 0;
+            }
+
+            if (parts.Length == 0)
             {
                 failed = true;
                 status = $"Nothing decoded from '{modelPath}'. The path may not exist, or it has no geometry at level {requestedLod}.";
@@ -418,18 +447,25 @@ internal sealed class GameAssetsPage : IDisposable
             var resolvedMaterials = new Dictionary<string, GameMaterial>(StringComparer.Ordinal);
             if (withMaterials)
             {
-                var paths = new List<string>(meshes.Length);
-                foreach (var mesh in meshes)
-                    paths.Add(mesh.MaterialPath);
+                foreach (var part in parts)
+                {
+                    var paths = new List<string>(part.Meshes.Length);
+                    foreach (var mesh in part.Meshes)
+                        paths.Add(mesh.MaterialPath);
 
-                var resolved = await GameMaterialLoader.LoadForModelAsync(modelPath, paths, requestedVariant).ConfigureAwait(false);
-                foreach (var pair in resolved)
-                    resolvedMaterials[pair.Key] = pair.Value;
+                    var resolved = await GameMaterialLoader.LoadForModelAsync(part.ModelPath, paths, requestedVariant).ConfigureAwait(false);
+                    foreach (var pair in resolved)
+                    {
+                        if (!resolvedMaterials.TryAdd(pair.Key, pair.Value))
+                            pair.Value.Dispose(); // two parts resolved the same material; one copy is enough
+                    }
+                }
             }
 
             pendingMaterials = resolvedMaterials;
+            pendingStain = defaultStain;
             loadedFrom = modelPath;
-            loaded = meshes;
+            loaded = parts;
         }
         catch (Exception ex)
         {
@@ -455,17 +491,22 @@ internal sealed class GameAssetsPage : IDisposable
         if (target is null)
             return;
 
-        var meshes = loaded;
+        var parts = loaded;
         loaded = null; // consumed: a load spawns exactly once, however many models are already standing
+
+        var flattened = new List<GameModelMesh>();
+        foreach (var part in parts)
+            flattened.AddRange(part.Meshes);
 
         // Slots count up and never reuse a gap, so clearing one model does not slide the rest sideways.
         var model = new SpawnedModel
         {
-            Meshes = meshes,
+            Meshes = flattened.ToArray(),
+            PartCount = parts.Length,
             Materials = pendingMaterials,
             Path = loadedFrom,
             Slot = nextSlot++,
-            DefaultStain = GameFurnitureSgb.DefaultStainFor(loadedFrom) ?? 0,
+            DefaultStain = pendingStain,
         };
 
         pendingMaterials = new Dictionary<string, GameMaterial>(StringComparer.Ordinal);
@@ -473,26 +514,38 @@ internal sealed class GameAssetsPage : IDisposable
         var origin = OriginFor(model.Slot);
         var textured = 0;
 
-        // One group node per model, holding the position; the meshes hang under it at local zero. The game
-        // treats the object as one thing, so clicking any part selects and moves the whole - the group is
-        // what the gizmo attaches to, and each part's SelectionProxy is what routes the click there.
+        // One group node per spawn, holding the position; the parts hang under it at their scene-local
+        // transforms. The game treats the object as one thing, so clicking any part selects and moves the
+        // whole - the group is what the gizmo attaches to, and each part's SelectionProxy is what routes
+        // the click there.
         model.Root = target.CreateNode($"GameAsset '{model.Path}'");
         model.Root.LocalPosition = origin;
 
-        foreach (var mesh in meshes)
+        foreach (var part in parts)
         {
-            var material = Flat();
-            if (useGameMaterials && model.Materials.TryGetValue(mesh.MaterialPath, out var game))
-            {
-                material = Build(game, model.DefaultStain);
-                if (game.BaseColor is not null)
-                    textured++;
-            }
+            // A part node per placed model keeps the scene's transform in one place, so the meshes under it
+            // stay at local zero exactly like a single-model spawn.
+            var partNode = target.CreateNode($"GameAssetPart '{part.ModelPath}'");
+            partNode.SetParent(model.Root);
+            partNode.LocalPosition = part.Translation;
+            partNode.LocalRotation = part.Rotation;
+            partNode.LocalScale = part.Scale;
 
-            var node = target.Spawn(mesh.Geometry, material, default, "GameAsset", keepCpuData);
-            node.SetParent(model.Root);
-            node.MakeSelectable();
-            model.Nodes.Add(node);
+            foreach (var mesh in part.Meshes)
+            {
+                var material = Flat();
+                if (useGameMaterials && model.Materials.TryGetValue(mesh.MaterialPath, out var game))
+                {
+                    material = Build(game, model.DefaultStain);
+                    if (game.BaseColor is not null)
+                        textured++;
+                }
+
+                var node = target.Spawn(mesh.Geometry, material, default, "GameAsset", keepCpuData);
+                node.SetParent(partNode);
+                node.MakeSelectable();
+                model.Nodes.Add(node);
+            }
         }
 
         model.SetJoined(!unjoinMeshes);
@@ -502,9 +555,10 @@ internal sealed class GameAssetsPage : IDisposable
         // the state first would say the materials were built without it and trigger a pointless rebuild.
         MarkApplied();
 
+        var partsSuffix = model.PartCount > 1 ? $" in {model.PartCount} parts" : string.Empty;
         status = textured > 0
-            ? $"Spawned {model.Nodes.Count} mesh(es) from '{model.Path}', {textured} with a game texture. {models.Count} model(s) on screen."
-            : $"Spawned {model.Nodes.Count} mesh(es) from '{model.Path}' with the flat tint. {models.Count} model(s) on screen.";
+            ? $"Spawned {model.Nodes.Count} mesh(es){partsSuffix} from '{model.Path}', {textured} with a game texture. {models.Count} model(s) on screen."
+            : $"Spawned {model.Nodes.Count} mesh(es){partsSuffix} from '{model.Path}' with the flat tint. {models.Count} model(s) on screen.";
     }
 
     /// <summary>

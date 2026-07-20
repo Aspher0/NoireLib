@@ -1,5 +1,6 @@
 using NoireLib.Helpers.ObjectExtensions;
 using System;
+using System.Threading;
 
 namespace NoireLib.HotkeyManager;
 
@@ -240,7 +241,11 @@ public sealed class HotkeyEntry
     private bool blockGameInput;
 
     /// <summary>
-    /// Gets or sets whether to block game input when this hotkey is pressed.
+    /// Gets or sets whether to block game input when this hotkey is pressed.<br/>
+    /// A persisted setting, so it is the hotkey's standing answer rather than a switch to flick while something is
+    /// happening: written here it survives a restart, and a value stored on one launch overrides what the hotkey is
+    /// registered with on the next. For a key wanted only while something is going on, use
+    /// <see cref="SuppressGameInput"/> instead.
     /// </summary>
     public bool BlockGameInput
     {
@@ -252,6 +257,43 @@ public sealed class HotkeyEntry
 
             blockGameInput = value;
             Owner?.OnEntryOptionChanged(this);
+        }
+    }
+
+    private int gameInputSuppressions;
+
+    /// <summary>
+    /// Whether something is holding this hotkey's key away from the game at this moment.<br/>
+    /// True while any <see cref="SuppressGameInput"/> is outstanding. Read alongside
+    /// <see cref="BlockGameInput"/> when blocking: either one takes the key.
+    /// </summary>
+    public bool IsGameInputSuppressed => Volatile.Read(ref gameInputSuppressions) > 0;
+
+    /// <summary>
+    /// Takes this hotkey's key away from the game until <see cref="ReleaseGameInputSuppression"/> gives it back.<br/>
+    /// The runtime counterpart of <see cref="BlockGameInput"/>, for a caller that wants the key only while something
+    /// is happening: a widget being worked in, a mode being held. It is never persisted and cannot outlive the
+    /// session, so a caller that forgets to release one cannot leave a key swallowed on every future launch.<br/>
+    /// Calls nest, and the key returns to the game when the last one is released.
+    /// </summary>
+    public void SuppressGameInput() => Interlocked.Increment(ref gameInputSuppressions);
+
+    /// <summary>
+    /// Gives back one <see cref="SuppressGameInput"/>. Releasing more than was taken does nothing.
+    /// </summary>
+    public void ReleaseGameInputSuppression()
+    {
+        // Floored rather than left to go negative, so an unbalanced release cannot put the count below zero and
+        // silently swallow the next genuine suppression.
+        while (true)
+        {
+            var current = Volatile.Read(ref gameInputSuppressions);
+
+            if (current <= 0)
+                return;
+
+            if (Interlocked.CompareExchange(ref gameInputSuppressions, current - 1, current) == current)
+                return;
         }
     }
 

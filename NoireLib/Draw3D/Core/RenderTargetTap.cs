@@ -34,6 +34,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private const int SlotDrawIndexedInstanced = 20;
     private const int SlotDrawInstanced = 21;
     private const int SlotOmSetRenderTargets = 33;
+    private const int SlotRsSetViewports = 44;
     private const int MaxBinds = 640; // a full frame including the late UI stage
     private const int MaxMultiBinds = 32;    // multi-target binds in a frame: the G-buffer plus the post-process ones
     private const int MaxTargetsPerBind = 8; // D3D11's simultaneous render target limit
@@ -56,6 +57,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private delegate void DrawIndexedInstancedFn(nint context, uint indexCountPerInstance, uint instanceCount, uint startIndex, int baseVertex, uint startInstance);
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void DrawInstancedFn(nint context, uint vertexCountPerInstance, uint instanceCount, uint startVertex, uint startInstance);
+    [UnmanagedFunctionPointer(CallingConvention.Winapi)]
+    private delegate void RsSetViewportsFn(nint context, uint numViewports, nint pViewports);
 
     /// <summary>
     /// One render-target bind. <see cref="Format"/> is the VIEW's format, not the texture's: a typeless
@@ -74,6 +77,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private HookWrapper<DrawFn>? drawHook;
     private HookWrapper<DrawIndexedInstancedFn>? drawIndexedInstancedHook;
     private HookWrapper<DrawInstancedFn>? drawInstancedHook;
+    private HookWrapper<RsSetViewportsFn>? rsSetViewportsHook;
     // Kept for the frame walker, which copies a target mid-frame and therefore needs a device of its own; every
     // other job here reads the bind sequence and needs none.
     private RenderDevice? device;
@@ -82,6 +86,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private DrawFn? drawDetour;
     private DrawIndexedInstancedFn? drawIndexedInstancedDetour;
     private DrawInstancedFn? drawInstancedDetour;
+    private RsSetViewportsFn? rsSetViewportsDetour;
     private nint gameContext;
 
     private readonly Bind[] binds = new Bind[MaxBinds];
@@ -180,6 +185,45 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private bool gbufferPassArmed;
     private bool gbufferDoneThisFrame;
 
+    /// <summary>
+    /// Fired at the END of every depth-only non-scene bind that received draws - the game's shadow passes -
+    /// with the game's context and the pass's map, viewport, raster state and constants all still bound, so
+    /// queued geometry can be drawn into the very map that was just rendered.<br/>
+    /// The end, not the first draw: injected at the first draw, the constants produced shadows scattered at
+    /// wrong positions - a shadow bind's first draw does not reliably carry the light that owns the map. The
+    /// last draw's constants are the pass's own settled values, and they remain bound until the game applies
+    /// its next target bind, which is the moment this fires.
+    /// </summary>
+    public Action<nint>? ShadowInjector { get; set; }
+
+    /// <summary>
+    /// Whether the shadow injection is wanted this frame. Costs the same per-draw callback the G-buffer
+    /// injection does, so it tracks whether work is queued rather than latching on.
+    /// </summary>
+    public bool ShadowInjectionEnabled
+    {
+        get => shadowInjectionEnabled;
+        set
+        {
+            if (shadowInjectionEnabled == value)
+                return;
+
+            shadowInjectionEnabled = value;
+            RefreshOmHookState();
+        }
+    }
+
+    private bool shadowInjectionEnabled;
+
+    /// <summary>Fired once per frame on the render thread, so the shadow queue can flip its frame boundary.</summary>
+    public Action? ShadowFrameBoundary { get; set; }
+
+    // Whether the CURRENT bind is a shadow-map bind, and whether the game drew into it. Consumed at the
+    // next bind, where the injection fires before the new targets are applied; a shadow bind that issued
+    // no draws is a cached static map and is skipped.
+    private bool shadowBindActive;
+    private bool shadowBindSawDraw;
+
     /// <summary>When true the detour skips its work - set around Draw3D's OWN binds so they never interfere.</summary>
     public bool SuppressSelf;
 
@@ -253,6 +297,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             drawIndexedInstancedHook = new HookWrapper<DrawIndexedInstancedFn>((nint)vtable[SlotDrawIndexedInstanced], drawIndexedInstancedDetour, autoEnable: false, name: "Draw3D.DrawIndexedInstanced");
             drawInstancedDetour = DrawInstancedDetour;
             drawInstancedHook = new HookWrapper<DrawInstancedFn>((nint)vtable[SlotDrawInstanced], drawInstancedDetour, autoEnable: false, name: "Draw3D.DrawInstanced");
+            rsSetViewportsDetour = RsSetViewportsDetour;
+            rsSetViewportsHook = new HookWrapper<RsSetViewportsFn>((nint)vtable[SlotRsSetViewports], rsSetViewportsDetour, autoEnable: false, name: "Draw3D.RSSetViewports");
         }
         catch (Exception ex)
         {
@@ -402,6 +448,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         RememberBackbuffer(backbufferTexture);
         Capture?.OnFrameBoundary();
         shadowProbe?.OnFrameBoundary();
+        if (shadowInjectionEnabled)
+            ShadowFrameBoundary?.Invoke();
 
         // Commit the present buffer observed this frame for next frame's injection; reset per-frame state.
         if (candidatePresentBuffer != 0)
@@ -415,6 +463,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         // Once per frame: the pass is re-armed at its next bind, so a frame that never runs one injects nothing.
         gbufferPassArmed = false;
         gbufferDoneThisFrame = false;
+        shadowBindActive = false;
+        shadowBindSawDraw = false;
         // Cache the main scene-depth texture for next frame's main-pass fingerprint (stable across frames; a resize just
         // costs one frame of first-depth fallback until it is refreshed here).
         frameSceneDepthTex = GameRenderSources.TryGetDepthTexture(out var sceneDepth) ? sceneDepth.Texture : 0;
@@ -442,9 +492,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void RefreshOmHookState()
     {
-        var wanted = InjectionEnabled || state == 2;
+        var wanted = InjectionEnabled || state == 2 || shadowInjectionEnabled;
         if (omHook != null && omHook.IsEnabled != wanted)
             omHook.SetEnabled(wanted);
+
+        // The viewport hook exists solely for the shadow injection's group boundaries.
+        rsSetViewportsHook?.SetEnabled(shadowInjectionEnabled);
 
         // The camera-constant capture only means something while the injection point provides the main-pass signal;
         // its per-frame commit runs at the main pass's first draw, so the draw hooks follow its active state too.
@@ -454,7 +507,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>Draw hooks serve two masters: the one-frame rtlog capture, and the camera-constant commit signal.</summary>
     private void RefreshDrawHookState()
-        => SetDrawHooksEnabled(state == 2 || GBufferInjectionEnabled || (Capture?.WantsDrawSignal ?? false));
+        => SetDrawHooksEnabled(state == 2 || GBufferInjectionEnabled || shadowInjectionEnabled || (Capture?.WantsDrawSignal ?? false));
 
     private void SetDrawHooksEnabled(bool enabled)
     {
@@ -499,6 +552,18 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         if (state == 2 && dumpFrom >= 0 && !injecting && !SuppressSelf && context == gameContext)
             DumpFinishedBind();
 
+        // A shadow draw group that received draws has just ended - the game is asking for new targets, and
+        // everything the group ran with (the map, the viewport, the raster state, its last draw's
+        // constants) is still bound until the Original call below applies them. This is where the
+        // injection draws.
+        TryInjectShadowAtGroupEnd(context);
+
+        if (!injecting && context == gameContext)
+        {
+            shadowBindActive = false;
+            shadowBindSawDraw = false;
+        }
+
         omHook!.Original(context, numViews, ppRtvs, pDsv); // apply the game's bind first
 
         if (injecting || SuppressSelf || context != gameContext)
@@ -511,6 +576,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         // than guessing here, because a diagnostic that filters is a diagnostic that can hide the answer.
         if (shadowProbe is { Armed: true } && rtv0 == 0 && pDsv != 0)
             shadowProbe.OnDepthOnlyBind(pDsv, IsMainSceneDepth(pDsv));
+
+        // The shape the probe reads: depth only, and not the scene's own depth. Whether the game actually
+        // draws into it decides at the NEXT bind whether the injection fires.
+        shadowBindActive = shadowInjectionEnabled && rtv0 == 0 && pDsv != 0 && !IsMainSceneDepth(pDsv);
 
         // Learn the present-composition buffer: the RTV bound right before a swapchain backbuffer bind.
         if (rtv0 != 0)
@@ -594,6 +663,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         if (shadowProbe is { Armed: true } && !injecting && !SuppressSelf && context == gameContext)
             shadowProbe.OnGameDraw((TerraFX.Interop.DirectX.ID3D11DeviceContext*)context);
 
+        if (shadowBindActive && !injecting && !SuppressSelf && context == gameContext)
+            shadowBindSawDraw = true;
+
         if (!gbufferPassArmed || GBufferInjector is not { } injector)
             return;
 
@@ -616,6 +688,46 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         {
             injecting = false;
         }
+    }
+
+    /// <summary>
+    /// Injects the queued shadow geometry if a shadow draw group with draws behind it is ending right now.
+    /// Called before the state change that ends the group - a new target bind, or a viewport change inside
+    /// the same bind (an atlas map renders its slices as viewport groups, and each slice needs the
+    /// geometry drawn with its own constants and viewport, which are only bound while its group is).
+    /// </summary>
+    private void TryInjectShadowAtGroupEnd(nint context)
+    {
+        if (!shadowBindActive || !shadowBindSawDraw || !shadowInjectionEnabled || injecting || SuppressSelf
+            || context != gameContext || ShadowInjector is not { } shadowInjector)
+            return;
+
+        // The new group must see its own draws before it earns an injection of its own.
+        shadowBindSawDraw = false;
+
+        injecting = true;
+        try
+        {
+            shadowInjector(context);
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Draw3D: shadow injection callback threw - shadow casting disabled for safety.", "Draw3D");
+            ShadowInjectionEnabled = false;
+        }
+        finally
+        {
+            injecting = false;
+        }
+    }
+
+    private void RsSetViewportsDetour(nint context, uint numViewports, nint pViewports)
+    {
+        // A viewport change inside a shadow bind ends the current slice's draw group; inject while that
+        // slice's constants and viewport are still bound, before the game moves to the next slice.
+        TryInjectShadowAtGroupEnd(context);
+
+        rsSetViewportsHook!.Original(context, numViewports, pViewports);
     }
 
     private void DrawIndexedDetour(nint context, uint indexCount, uint startIndex, int baseVertex)
@@ -922,6 +1034,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         InjectionEnabled = false;
         Injector = null;
+        ShadowInjector = null;
+        ShadowFrameBoundary = null;
         Capture = null; // owned and disposed by the hub
         shadowProbe?.Dispose();
         shadowProbe = null;
@@ -931,15 +1045,18 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         drawHook?.Dispose();
         drawIndexedInstancedHook?.Dispose();
         drawInstancedHook?.Dispose();
+        rsSetViewportsHook?.Dispose();
         omHook = null;
         drawIndexedHook = null;
         drawHook = null;
         drawIndexedInstancedHook = null;
         drawInstancedHook = null;
+        rsSetViewportsHook = null;
         omDetour = null;
         drawIndexedDetour = null;
         drawDetour = null;
         drawIndexedInstancedDetour = null;
         drawInstancedDetour = null;
+        rsSetViewportsDetour = null;
     }
 }

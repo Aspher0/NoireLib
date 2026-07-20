@@ -56,15 +56,14 @@ public sealed class Draw3DGameLit
     public const uint LitStencilMark = 0x10;
 
     /// <summary>
-    /// The four channels of rtv3, written verbatim.<br/>
+    /// The four channels of rtv3.<br/>
     /// Red and green are <c>0</c>: that is what the game's own furniture writes, established by sampling its
     /// copy of a model and ours in the same frame and comparing per channel, on two different surfaces of the
     /// same piece.<br/>
-    /// Blue is the one channel here that is still approximated. The game varies it per pixel - <c>1.0</c> on an
-    /// open flat surface and lower inside a carved recess - which is the shape of an occlusion term, while this
-    /// writes a flat <c>1.0</c>. That is the correct neutral for open geometry and slightly too bright in
-    /// cavities, so an injected object is marginally less grounded than the game's. Alpha reads <c>1</c> on both
-    /// and its meaning is unmeasured.
+    /// Blue is a scale over the model's baked per-vertex occlusion (the position element's fourth component,
+    /// carried in the vertex color's alpha), matching the game's own background shaders, which multiply that
+    /// value by a per-instance sky visibility. <c>1</c> here writes exactly what the game writes for a
+    /// normally placed object. Alpha reads <c>1</c> on both and its meaning is unmeasured.
     /// </summary>
     public Vector4 Misc { get; set; } = new(0f, 0f, 1f, 1f);
 
@@ -145,6 +144,15 @@ public sealed class Draw3DGameLit
     /// </summary>
     public Vector4 AlbedoOverride { get; set; }
 
+    /// <summary>
+    /// Whether game-lit meshes are also drawn, depth-only, into the game's shadow maps, so they cast
+    /// shadows as well as receive them. Off by default while the pass is being verified in game.<br/>
+    /// Casting reaches every map the game re-renders - the sun's cascades and the lights near anything
+    /// moving. A map the game rendered once and cached is not re-entered, so a static lamp that has not
+    /// refreshed since the object appeared shadows it one refresh late.
+    /// </summary>
+    public bool CastShadows { get; set; }
+
     /// <summary>Restores every measured default, discarding a sweep.</summary>
     public void Reset()
     {
@@ -157,5 +165,6 @@ public sealed class Draw3DGameLit
         AlbedoOverride = default;
         WriteColor = true;
         WriteDepth = true;
+        CastShadows = false;
     }
 }

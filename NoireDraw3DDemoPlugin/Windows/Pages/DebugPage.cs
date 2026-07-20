@@ -48,6 +48,8 @@ internal sealed class DebugPage
         Ui.Note("Development tooling. This page only exists in debug builds.");
         Ui.Gap();
 
+        // The tab bar stays pinned; each tab scrolls its own body. The window hosts this page in a
+        // non-scrolling child for exactly that reason.
         using var tabs = ImRaii.TabBar("##debugtabs");
         if (!tabs)
             return;
@@ -55,16 +57,24 @@ internal sealed class DebugPage
         using (var tab = ImRaii.TabItem("Probes"))
         {
             if (tab)
-                DrawProbes();
+            {
+                using var body = Ui.Scroll("##probesbody");
+                if (body)
+                    DrawProbes();
+            }
         }
 
         using (var tab = ImRaii.TabItem("G-buffer"))
         {
             if (tab)
             {
-                DrawGameLitChannels();
-                Ui.Gap();
-                DrawGBufferCompare();
+                using var body = Ui.Scroll("##gbufferbody");
+                if (body)
+                {
+                    DrawGameLitChannels();
+                    Ui.Gap();
+                    DrawGBufferCompare();
+                }
             }
         }
 
@@ -72,8 +82,12 @@ internal sealed class DebugPage
         {
             if (tab)
             {
-                Ui.Section("Import orientation");
-                Ui.ImportFlips("debug.flips");
+                using var body = Ui.Scroll("##importbody");
+                if (body)
+                {
+                    Ui.Section("Import orientation");
+                    Ui.ImportFlips("debug.flips");
+                }
             }
         }
     }
@@ -105,7 +119,7 @@ internal sealed class DebugPage
 
     private static void ProbeButton(string label, string command, string description)
     {
-        if (ImGui.Button(label, new Vector2(140f * Ui.Scale, 0f)))
+        if (Ui.Button(label, new Vector2(140f * Ui.Scale, 0f)))
             NoireService.CommandManager.ProcessCommand($"/noire3d {command}");
 
         if (ImGui.IsItemHovered())
@@ -132,6 +146,12 @@ internal sealed class DebugPage
                 "Off removes the object entirely: later passes draw over its pixels.");
         }
 
+        if (NoireDraw3D.GameLit.CastShadows)
+        {
+            var (entered, drawn, skipped, meshes) = NoireDraw3D.ShadowCastStats;
+            Ui.Mono($"shadow binds: entered {entered}  drawn {drawn}  skipped {skipped}  meshes {meshes}", ImGuiColors.DalamudGrey3);
+        }
+
         Ui.Gap();
 
         using (Ui.Form("debug.gamelit"))
@@ -146,7 +166,7 @@ internal sealed class DebugPage
             Ui.Slider("Misc green", () => NoireDraw3D.GameLit.Misc.Y, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { Y = v }, 0f, 1f,
                 "Measured 0 across the game's buffer.");
             Ui.Slider("Misc blue", () => NoireDraw3D.GameLit.Misc.Z, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { Z = v }, 0f, 1f,
-                "Per-pixel in the game's buffer, occlusion-shaped. Flat 1 here.");
+                "Scales the model's baked per-vertex occlusion. 1 writes what the game writes.");
             Ui.Slider("Misc alpha", () => NoireDraw3D.GameLit.Misc.W, v => NoireDraw3D.GameLit.Misc = NoireDraw3D.GameLit.Misc with { W = v }, 0f, 1f,
                 "Reads 1 on the game's geometry.");
 

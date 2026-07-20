@@ -203,4 +203,52 @@ public class NoireHotkeyManagerLiveMutationTests : IDisposable
             "noop.option",
             "the notifying setter only persists when the value actually changes, so writing the current value is a no-op");
     }
+
+    [Fact]
+    public void SuppressingGameInput_PersistsNothing()
+    {
+        // The point of the suppression existing at all. A caller that wants a key only while something is happening
+        // must not be writing the hotkey's standing setting: a stored record overrides what a hotkey is registered
+        // with, so a suppression that reached the disk would take that key on every launch afterwards, with the thing
+        // that was happening long since over.
+        var manager = MakePersistingManager();
+        var entry = MakeEntry("transient.block");
+        manager.RegisterHotkey(entry).Should().BeTrue();
+
+        HotkeyManagerConfig.Hotkeys.Remove("transient.block");
+
+        entry.SuppressGameInput();
+
+        entry.IsGameInputSuppressed.Should().BeTrue("the suppression takes effect on the entry");
+        entry.BlockGameInput.Should().BeFalse("the hotkey's own setting is not the caller's to write");
+        HotkeyManagerConfig.Hotkeys.Should().NotContainKey("transient.block", "a runtime state is never persisted");
+    }
+
+    [Fact]
+    public void SuppressionsNest_AndTheKeyReturnsWhenTheLastIsReleased()
+    {
+        var entry = MakeEntry("nested.block");
+
+        entry.SuppressGameInput();
+        entry.SuppressGameInput();
+        entry.ReleaseGameInputSuppression();
+
+        entry.IsGameInputSuppressed.Should().BeTrue("one holder let go, the other did not");
+
+        entry.ReleaseGameInputSuppression();
+
+        entry.IsGameInputSuppressed.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ReleasingMoreThanWasTaken_DoesNotSwallowTheNextSuppression()
+    {
+        var entry = MakeEntry("unbalanced.block");
+
+        entry.ReleaseGameInputSuppression();
+        entry.ReleaseGameInputSuppression();
+        entry.SuppressGameInput();
+
+        entry.IsGameInputSuppressed.Should().BeTrue("the count is floored at zero, so stray releases leave no debt");
+    }
 }

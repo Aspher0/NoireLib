@@ -223,16 +223,27 @@ public sealed class DemoWindow : Window, IDisposable
     {
         using var id = ImRaii.PushId((int)shell.Current);
 
-        // Scenes still needs a child, just not a scrolling one. The child is what gives this column its own layout
-        // context: without it the rail beside us is part of the same line, and its full height becomes the line height,
-        // so everything after the first row wraps underneath the rail. NoScroll keeps the page's tab bar pinned; each
-        // of its tabs scrolls its own body instead.
-        if (shell.Current == DemoPage.Scenes)
+        // Tabbed pages still need a child, just not a scrolling one. The child is what gives this column its own
+        // layout context: without it the rail beside us is part of the same line, and its full height becomes the
+        // line height, so everything after the first row wraps underneath the rail. NoScroll keeps the page's tab
+        // bar pinned; each of its tabs scrolls its own body instead.
+        var pinnedTabs = shell.Current == DemoPage.Scenes;
+#if DEBUG
+        pinnedTabs = pinnedTabs || shell.Current == DemoPage.Debug;
+#endif
+        if (pinnedTabs)
         {
             using var frame = ImRaii.Child("##pageframe", Vector2.Zero, false,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
             if (frame)
-                scenesPage.Draw();
+            {
+                if (shell.Current == DemoPage.Scenes)
+                    scenesPage.Draw();
+#if DEBUG
+                else
+                    debugPage.Draw();
+#endif
+            }
 
             return;
         }

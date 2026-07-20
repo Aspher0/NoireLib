@@ -1384,7 +1384,12 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
 
         foreach (var entry in entries)
         {
-            if (!entry.Enabled || entry.Binding.IsEmpty || !entry.BlockGameInput || !entry.Binding.IsKeyboardBinding)
+            if (!entry.Enabled || entry.Binding.IsEmpty || !entry.Binding.IsKeyboardBinding)
+                continue;
+
+            // The standing setting or a suppression somebody is holding right now: both take the key, and they are
+            // kept apart so that a transient one can never be written to disk as the hotkey's own answer.
+            if (!entry.BlockGameInput && !entry.IsGameInputSuppressed)
                 continue;
 
             if (entry.RequireGameFocus && !isFocused)

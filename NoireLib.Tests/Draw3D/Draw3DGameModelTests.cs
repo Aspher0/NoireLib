@@ -237,6 +237,44 @@ public class Draw3DGameModelTests
     }
 
     [Fact]
+    public void Decode_BackgroundModel_CarriesBakedOcclusionInColorAlpha()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string Path = "bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample model not present.");
+            return;
+        }
+
+        // The game's own background shaders write the position element's fourth component into the
+        // G-buffer's occlusion channel; the importer carries it in the color's alpha. A carved piece must
+        // therefore decode with alpha varying below 1 in its recesses while its open surfaces sit at 1 -
+        // a flat 1 everywhere would mean the component was dropped again.
+        var meshes = GameModelLoader.Decode(game.GetFile<GameModelFile>(Path)!);
+        var min = 1f;
+        var max = 0f;
+        foreach (var mesh in meshes)
+        {
+            foreach (var vertex in mesh.Geometry.Vertices)
+            {
+                min = Math.Min(min, vertex.Color.W);
+                max = Math.Max(max, vertex.Color.W);
+                vertex.Color.W.Should().BeInRange(0f, 1f);
+            }
+        }
+
+        min.Should().BeLessThan(0.95f, because: "the stool's carved recesses carry baked occlusion");
+        max.Should().BeGreaterThan(0.98f, because: "its open surfaces are fully unoccluded");
+    }
+
+    [Fact]
     public void DecodeTangentFrame_ReconstructsAnOrthogonalFrame()
     {
         // The model stores the bitangent with a handedness flag; the loader reconstructs the tangent so the
@@ -287,9 +325,9 @@ public class Draw3DGameModelTests
     }
 
     [Theory]
-    [InlineData("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb", 0)]  // states none: renders the Snow White fallback
+    [InlineData("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb", 1)]  // Snow White, stated explicitly - the bar stool's known undyed look
     [InlineData("bgcommon/hou/indoor/general/0560/asset/fun_b0_m0560.sgb", 14)] // Blood Red - the Hingan Sofa's known undyed look
-    public void FurnitureSgb_CarriesTheDefaultStain(string sgbPath, int expected)
+    public void SceneFile_CarriesTheDefaultStain(string sgbPath, int expected)
     {
         var game = GameDataFixture.TryOpen();
         if (game is null)
@@ -305,9 +343,106 @@ public class Draw3DGameModelTests
         }
 
         // Both anchors were verified in game: an undyed placement of the second renders Blood Red, of the
-        // first Snow White, with the stain slot empty in both cases.
-        GameFurnitureSgb.TryReadDefaultStain(game.GetFile(sgbPath)!.Data, out var stain).Should().BeTrue();
-        ((int)stain).Should().Be(expected);
+        // first Snow White, with the stain slot empty in both cases. The value is stated in the file for
+        // both - dyeable furniture names its default stain rather than relying on a fallback.
+        ((int)game.GetFile<GameSgbFile>(sgbPath)!.DefaultStain).Should().Be(expected);
+    }
+
+    [Fact]
+    public void SceneFile_ListsThePlacedModelWithItsTransform()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string Path = "bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample sgb not present.");
+            return;
+        }
+
+        // Single-model furniture places its one model at the scene origin, and the entry names both the
+        // model and its collision file with entry-relative offsets - the walk this pins.
+        var scene = game.GetFile<GameSgbFile>(Path)!;
+        scene.Models.Should().HaveCount(1);
+
+        var placement = scene.Models[0];
+        placement.Path.Should().Be("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl");
+        placement.CollisionPath.Should().EndWith(".pcb");
+        placement.Translation.Should().Be(Vector3.Zero);
+        placement.Scale.Should().Be(Vector3.One);
+    }
+
+    [Fact]
+    public void SceneFile_MultiPartFurniturePlacesSeveralModels()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string Path = "bgcommon/hou/indoor/general/0116/asset/fun_b0_m0116.sgb";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample sgb not present.");
+            return;
+        }
+
+        // An item made of several models must decode them all, each with a plausible transform - this is
+        // what spawning the model file alone was silently missing.
+        var scene = game.GetFile<GameSgbFile>(Path)!;
+        scene.Models.Should().HaveCountGreaterThan(1);
+
+        foreach (var placement in scene.Models)
+        {
+            placement.Path.Should().EndWith(".mdl");
+            placement.Scale.X.Should().BeInRange(0.001f, 1000f);
+        }
+    }
+
+    [Fact]
+    public void SceneFile_NestedScenesAreListedAsAttachments()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string Path = "bgcommon/hou/outdoor/general/0022/asset/gar_b0_m0022.sgb";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample sgb not present.");
+            return;
+        }
+
+        // Outdoor sets nest further scenes; every referenced file must itself parse with this layout so a
+        // recursive load cannot walk into an unreadable file.
+        var scene = game.GetFile<GameSgbFile>(Path)!;
+        scene.Attachments.Should().NotBeEmpty();
+
+        foreach (var attachment in scene.Attachments)
+        {
+            attachment.Path.Should().EndWith(".sgb");
+            game.GetFile<GameSgbFile>(attachment.Path).Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public void PathBesideModel_PairsFurnitureModelsWithTheirScene()
+    {
+        GameSgbFile.PathBesideModel("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl")
+            .Should().Be("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb");
+
+        GameSgbFile.PathBesideModel("chara/equipment/e0001/model/c0101e0001_top.mdl").Should().BeNull();
+        GameSgbFile.PathBesideModel("not-a-model.tex").Should().BeNull();
     }
 
     [Theory]
