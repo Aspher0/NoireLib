@@ -53,6 +53,37 @@ public sealed partial class SceneNode
     /// </summary>
     public bool Selectable { get; set; } = true;
 
+    /// <summary>
+    /// A node that stands in for this one when a click selects it. Null, the default, selects the clicked
+    /// node itself.<br/>
+    /// This is how a model made of several meshes selects as one object: parent the mesh nodes under a group
+    /// node and point each part's proxy at the group, and clicking any part selects - and gizmo-moves - the
+    /// whole. Only the selection routes through: hover feedback, <see cref="OnClick"/> and the hit's
+    /// triangle information stay on the part that was actually clicked, because those answer "what is under
+    /// the cursor" and the proxy answers "what does picking it mean".<br/>
+    /// Chains resolve to their end, so a proxy may itself carry a proxy; a destroyed proxy is ignored and
+    /// the clicked node selects itself.
+    /// </summary>
+    public SceneNode? SelectionProxy { get; set; }
+
+    /// <summary>
+    /// The node a selection pick of this node lands on: the end of the <see cref="SelectionProxy"/> chain,
+    /// or the node itself. Bounded so a proxy cycle resolves to somewhere instead of hanging.
+    /// </summary>
+    internal SceneNode ResolveSelectionTarget()
+    {
+        var target = this;
+        for (var hops = 0; hops < 8; hops++)
+        {
+            if (target.SelectionProxy is not { IsDestroyed: false } next || ReferenceEquals(next, target))
+                return target;
+
+            target = next;
+        }
+
+        return target;
+    }
+
     /// <summary>Free slot for consumer data (e.g. the domain object this node represents), so callbacks can recover context.</summary>
     public object? Tag { get; set; }
 

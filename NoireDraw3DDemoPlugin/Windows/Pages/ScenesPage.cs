@@ -283,22 +283,22 @@ public sealed class ScenesPage : IDisposable
             Ui.Enum<DecalShape>("Shape", ref decalShapeIdx,
                 "The footprint painted: Circle, Ring (inner radius from ShapeParams.X), Sector (a pie slice), Rect, or Texture (stamps the material's texture).");
             Ui.Enum<DecalSurface>("Surface", ref decalSurfaceIdx,
-                "Locks the box's orientation. Ground stays horizontal and projects down onto the floor; Wall stays vertical and projects into the wall it faces (grow it so it reaches); Both rotates freely and its orientation decides.\n\nSpawn one, then rotate it with the gizmo to feel the lock.");
+                "Ground projects down, Wall projects into the wall it faces, Both rotates freely.");
             Ui.Enum<DecalProjection>("Projection", ref decalProjIdx,
-                "AllSurfaces paints everything inside the box. HighestOnly paints only the topmost surface per column - a tabletop, not the floor under it - and needs the collision height-map on (Decals page).");
+                "AllSurfaces paints everything in the box. HighestOnly paints only the topmost surface per column (needs the height-map, Decals page).");
             Ui.Color4("Color", () => decalColor, v => decalColor = v);
             Ui.Toggle("Additive", () => decalAdditive, v => decalAdditive = v,
-                "Blends additively, so stacked coloured decals sum their light toward white - overlap a red, green and blue one to see white. Off is the standard translucent blend.");
+                "Additive blend: stacked decals sum toward white. Off is the standard translucent blend.");
             Ui.Slider("Footprint size (m)", () => decalSize, v => decalSize = v, 1f, 12f,
-                "Scales the projection box: footprint and vertical sweep. The outline rim keeps a constant world thickness no matter how large this gets.");
+                "Scales the projection box: footprint and vertical sweep.");
             Ui.Slider("Outline width", () => decalOutline, v => decalOutline = v, 0f, 0.3f,
                 "Rim thickness, held constant in world space regardless of the footprint size above. 0 is a flat fill.");
             Ui.Toggle("Custom border color", () => decalCustomOutlineColor, v => decalCustomOutlineColor = v,
-                "Off, the border is the decal's own colour and only its opacity differs from the fill (the classic look). On, the border gets its own colour.");
+                "On, the border gets its own color instead of the decal's.");
             using (Ui.Disabled(!decalCustomOutlineColor))
                 Ui.Color4("Border color", () => decalOutlineColor, v => decalOutlineColor = v);
             Ui.Toggle("Show volume box", () => decalShowVolume, v => decalShowVolume = v,
-                "Spawns it with its projection box drawn - the volume the SDF is evaluated in, and the limit of what it can paint. Handy while sizing the vertical sweep. Toggle it per object later in the inspector, or for every decal at once on the Renderer page.");
+                "Spawns it with its projection box drawn.");
         }
 
         Ui.Gap();
@@ -320,7 +320,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Toggle("Editor enabled", () => editor.Enabled, v => editor.Enabled = v,
                 "Off, the gizmo neither draws nor interacts. The selection still tracks.");
             Ui.Toggle("Multi-select", () => editor.MultiSelect, v => editor.MultiSelect = v,
-                "Lets picks build a multi-object selection, using the toggle / add modifiers from the Interaction page. The gizmo then edits the whole group around its centroid.\n\nThis is a scoped setting: it is restored when the editor or scene is disposed, so it leaves no global behind.");
+                "Lets picks build a multi-object selection; the gizmo then edits the group around its centroid.");
 
             Ui.Row("Selection outline");
             var outlineOn = editor.SelectionOutline.HasValue;
@@ -348,9 +348,9 @@ public sealed class ScenesPage : IDisposable
             Ui.Enum("Space", () => gizmo.Space, v => gizmo.Space = v,
                 "The frame the translate and rotate handles align to: World (axis-aligned) or Local (the object's own rotation). Scale handles are always object-local.");
             Ui.Enum("Backend", () => gizmo.Backend, v => gizmo.Backend = v,
-                "Native: in-world depth handles hit-tested in screen space - they occlude correctly and never wobble.\n\nImGuizmo: the classic flat 2D handles, always on top.");
+                "Native: in-world handles that occlude correctly. ImGuizmo: flat 2D handles, always on top.");
             Ui.Enum("Depth", () => gizmo.Depth, v => gizmo.Depth = v,
-                "Native backend only.\n\nOnTopOfObjects (the editor default): occluded by the world but drawn over other 3D objects, so a handle is never buried inside what it edits.\n\nAlwaysOnTop: full x-ray.\n\nOccluded: fully depth-tested.");
+                "OnTopOfObjects: hidden by walls, drawn over objects. AlwaysOnTop: x-ray. Occluded: fully depth-tested.");
             Ui.Toggle("Drag feedback", () => gizmo.Options.ShowDragFeedback, v => gizmo.Options.ShowDragFeedback = v,
                 "Draws the drag preview: an anchor at the pre-drag centre, a guide line, and the live amount moved / rotated / scaled.");
             Ui.Drag("Handle length (px)", () => gizmo.Options.HandlePixelLength, v => gizmo.Options.HandlePixelLength = v, 1f, 20f, 400f,
@@ -396,7 +396,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Text("Model file", () => modelPath, v => modelPath = v, @"Absolute path to a .gltf / .glb", 512,
                 "An absolute path. Surrounding quotes are stripped, so Explorer's \"Copy as path\" pastes straight in.");
             Ui.Toggle("Import vertex colors", () => modelVertexColors, v => modelVertexColors = v,
-                "Off by default, and it usually should be: FFXIV-derived exports store shader data (wetness and wind masks) in COLOR_0 rather than albedo, so importing it as a tint paints the model in psychedelic colours.");
+                "Off by default: FFXIV-derived exports store shader masks in this channel rather than color.");
         }
 
         Ui.Gap();
@@ -404,13 +404,6 @@ public sealed class ScenesPage : IDisposable
             LoadModel(demo);
 
         Ui.Gap();
-
-        // The flips are applied inside the loader, so a change reaches the next import rather than what is
-        // already on screen. Nothing is reloaded automatically here: the models came from an arbitrary path
-        // the user chose, and silently re-reading files off disk behind a checkbox is not a demo's business.
-        Ui.ImportFlips("scenes.flips");
-        Ui.Gap();
-        Ui.Note("Load the model again after changing any of these - they apply when a file is imported, not to what is already spawned.");
 
         Ui.Section("World collision");
         Ui.Note("Reads the live collision scene, so both run on the framework thread and fail soft with nothing under you.");
@@ -433,7 +426,7 @@ public sealed class ScenesPage : IDisposable
         if (ImGui.Button("Spawn world decal", new Vector2(220f * Ui.Scale, 0f)))
             NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldDecal(demo));
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("Projects a footprint onto the REAL collision surface, so it drapes over terrain slopes and furniture - unlike the screen-space Material.Decal, which projects onto the depth buffer.");
+            Ui.Tooltip("Projects a footprint onto the collision surface, draping over slopes and furniture.");
 
         Ui.Gap();
         Ui.Status(spawnStatus);

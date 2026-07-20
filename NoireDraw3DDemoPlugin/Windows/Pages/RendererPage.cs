@@ -27,20 +27,20 @@ internal sealed class RendererPage
         using (Ui.Form("renderer.uihidden"))
         {
             Ui.Toggle("Keep 3D layer", static () => NoireDraw3D.KeepDrawingWhenUiHidden, static v => NoireDraw3D.KeepDrawingWhenUiHidden = v,
-                "Keep rendering while the game UI is hidden (HUD hotkey, cutscene, gpose). Diagnostics -> skipped (ui hidden) counts what this stops.");
+                "Keep rendering while the game UI is hidden (HUD hotkey, cutscene, gpose).");
             Ui.Toggle("Keep this window", () => shell.KeepWindowWhenUiHidden, v => shell.KeepWindowWhenUiHidden = v,
-                "Independent of the layer.\n\nDalamud can't hide this window for us: keeping the layer alive means holding Dalamud's UI-hide overrides, which keeps the window up too. So it checks IsGameUiHidden itself in DrawConditions().");
+                "Keep this window open while the game UI is hidden. Independent of the layer.");
         }
 
         Ui.Section("Debug draw");
         using (Ui.Form("renderer.debug"))
         {
             Ui.Toggle("Wireframe", static () => NoireDraw3D.Diagnostics.Wireframe, static v => NoireDraw3D.Diagnostics.Wireframe = v,
-                "Decals have no mesh to wireframe - their shape lives in the pixel shader - so they trace their painted outline instead.");
+                "Draws geometry as wireframe. Decals trace their painted outline instead.");
             Ui.Toggle("Decal outlines", static () => NoireDraw3D.Diagnostics.DecalShapeOutlines, static v => NoireDraw3D.Diagnostics.DecalShapeOutlines = v,
-                "Traces what every decal paints, retained and immediate alike. Objects have a per-object version in the inspector; immediate shapes have no node, so only this reaches them.\n\nAlways on while wireframe is.");
+                "Traces what every decal paints. Always on while wireframe is.");
             Ui.Toggle("Decal volume boxes", static () => NoireDraw3D.Diagnostics.DecalVolumeOutlines, static v => NoireDraw3D.Diagnostics.DecalVolumeOutlines = v,
-                "Draws every decal's projection box - the volume its SDF is evaluated in, and the limit of what it can paint at all. Where the outline above shows what a decal paints, this shows how far it reaches, so a decal stopping short of a wall or a step explains itself.\n\nIndependent of the two above: turn both on to see the shape sitting inside its volume.");
+                "Draws every decal's projection box, the limit of what it can paint.");
         }
     }
 }

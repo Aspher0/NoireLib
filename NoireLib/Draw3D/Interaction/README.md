@@ -26,6 +26,17 @@ node.OnClick = h => Toggle(h.Node);            // still yours; runs alongside se
 
 > The highlight captures the node's resting tint on hover-enter and restores it on exit. It is **idempotent and never stacks**: calling `MakeSelectable` / `MakeInteractable` again just replaces the transform, so a re-opted-in node cannot compound its own tint. Pass your own transform (`MakeSelectable(t => t * 2f)`), return the input unchanged for no visual feedback, or drop it entirely with `ClearHoverHighlight()` when you drive the tint yourself.
 
+A model made of several meshes selects as **one object** through `SelectionProxy`: parent the mesh nodes under a group node and point each part's proxy at the group, and clicking any part selects - and gizmo-moves - the whole. Only the selection routes through; hover feedback and `OnClick` stay on the part actually under the cursor. The editor's `SelectionOutline` covers each selected node's subtree, so selecting a mesh-less group still shows its silhouette.
+
+```csharp
+var root = scene.CreateNode("chair");
+foreach (var part in parts)
+{
+    part.SetParent(root);
+    part.MakeSelectable().SelectionProxy = root;
+}
+```
+
 The open path stays available - opt in by hand and give it callbacks; the node behaves like a button in the world:
 
 ```csharp

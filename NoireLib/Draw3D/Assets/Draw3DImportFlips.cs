@@ -125,17 +125,22 @@ public sealed class Draw3DImportFlips
         return result;
     }
 
-    /// <summary>Positions, normals and texture coordinates - everything that does not depend on the index type.</summary>
+    /// <summary>Positions, normals, tangents and texture coordinates - everything that does not depend on the index type.</summary>
     private void ApplyToVertices(Vertex3D[] vertices)
     {
         var sx = MirrorX ? -1f : 1f;
         var sz = MirrorZ ? -1f : 1f;
+
+        // A single mirror is a reflection and flips the frame's handedness; two mirrors are a rotation and
+        // do not. The tangent's w carries that handedness, so it flips exactly when the transform reflects.
+        var handedness = sx * sz;
 
         for (var i = 0; i < vertices.Length; i++)
         {
             ref var v = ref vertices[i];
             v.Position = new Vector3(v.Position.X * sx, v.Position.Y, v.Position.Z * sz);
             v.Normal = new Vector3(v.Normal.X * sx, v.Normal.Y, v.Normal.Z * sz);
+            v.Tangent = new Vector4(v.Tangent.X * sx, v.Tangent.Y, v.Tangent.Z * sz, v.Tangent.W * handedness);
 
             if (FlipU)
                 v.Uv = v.Uv with { X = 1f - v.Uv.X };

@@ -1534,7 +1534,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (familyCount == 0)
         {
             sb.AppendLine("    (none - no tracked upload matched the camera. If 'large cbuffers' above is non-zero the game may");
-            sb.AppendLine("     use a ring-allocated scheme; paste this log so the capture can grow that path.)");
+            sb.AppendLine("     use a ring-allocated scheme.)");
         }
 
         if (lockedOn && haveCommit)

@@ -88,7 +88,7 @@ public static class GameModelLoader
         var data = file.Data;
         var vertices = new Vertex3D[mesh.VertexCount];
 
-        GameVertexElement? position = null, normal = null, uv = null, color = null;
+        GameVertexElement? position = null, normal = null, uv = null, color = null, tangentFrame = null;
         foreach (var element in declaration)
         {
             switch (element.Usage)
@@ -97,6 +97,7 @@ public static class GameModelLoader
                 case GameVertexUsage.Normal when normal is null: normal = element; break;
                 case GameVertexUsage.Uv when uv is null: uv = element; break;
                 case GameVertexUsage.Color when color is null: color = element; break;
+                case GameVertexUsage.Tangent1 when tangentFrame is null: tangentFrame = element; break;
             }
         }
 
@@ -117,11 +118,16 @@ public static class GameModelLoader
             // about the winding and wrong about the shape, because a reflection mirrors the model. It arrived
             // as text on a texture reading backwards and, confirmed in game, the whole model mirrored. The
             // winding is handled on its own below, where it belongs.
+            var vertexNormal = Vector3.Normalize(new Vector3(n.X, n.Y, n.Z));
+
             vertices[v] = new Vertex3D(
                 new Vector3(p.X, p.Y, p.Z),
-                Vector3.Normalize(new Vector3(n.X, n.Y, n.Z)),
+                vertexNormal,
                 new Vector2(t.X, t.Y),
-                c);
+                c,
+                tangentFrame is null
+                    ? default
+                    : DecodeTangentFrame(ReadElement(data, level, mesh, tangentFrame.Value, v), vertexNormal));
         }
 
         var indexBase = (int)level.IndexDataOffset + ((int)mesh.StartIndex * sizeof(ushort));
@@ -139,6 +145,35 @@ public static class GameModelLoader
         // so a file authored in an unusual convention is corrected the same way whichever path imports it.
         NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, indices);
         return new MeshData(vertices, indices);
+    }
+
+    /// <summary>
+    /// Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry.<br/>
+    /// The game stores the <b>bitangent</b>, packed into normalized bytes (<c>xyz</c> as <c>v*2-1</c>), with
+    /// the handedness flag in <c>w</c>. The tangent is reconstructed as <c>cross(bitangent, normal) * h</c>,
+    /// which is the inversion of the standard frame relation <c>bitangent = cross(normal, tangent) * h</c>;
+    /// the shader rebuilds the bitangent from that same relation, so the round trip lands on the authored
+    /// frame. A degenerate stored vector returns zero, which the shaders treat as "no authored frame" and
+    /// answer with the derivative fallback rather than shading with garbage.
+    /// </summary>
+    /// <param name="packed">The element as read: bytes already normalized to 0..1.</param>
+    /// <param name="normal">The vertex normal, already normalized.</param>
+    internal static Vector4 DecodeTangentFrame(Vector4 packed, Vector3 normal)
+    {
+        var stored = new Vector3((packed.X * 2f) - 1f, (packed.Y * 2f) - 1f, (packed.Z * 2f) - 1f);
+        var lengthSquared = stored.LengthSquared();
+        if (lengthSquared < 1e-6f)
+            return default;
+
+        var handedness = packed.W > 0.5f ? 1f : -1f;
+        var tangent = Vector3.Cross(stored / MathF.Sqrt(lengthSquared), normal) * handedness;
+
+        lengthSquared = tangent.LengthSquared();
+        if (lengthSquared < 1e-6f)
+            return default;
+
+        tangent /= MathF.Sqrt(lengthSquared);
+        return new Vector4(tangent.X, tangent.Y, tangent.Z, handedness);
     }
 
     private static Vector4 ReadElement(byte[] data, GameModelLod level, GameModelMeshInfo mesh, GameVertexElement element, int vertex)

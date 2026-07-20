@@ -89,4 +89,67 @@ public class Draw3DSelectionTests
         // Selection has no process-global surface on NoireInteract; it is exclusively per-scene.
         typeof(NoireInteract).GetProperty("Selection").Should().BeNull();
     }
+
+    [Fact]
+    public void SelectionProxy_RoutesTheClickedPartToItsGroup()
+    {
+        // The multi-mesh model shape: parts under a group node, each proxying selection to the group, so
+        // clicking any part selects the whole and the gizmo moves everything.
+        var scene = new Scene3D("t");
+        var root = scene.CreateNode("root");
+        var part = scene.CreateNode("part").MakeSelectable();
+        part.SetParent(root);
+        part.SelectionProxy = root;
+
+        part.ResolveSelectionTarget().Should().BeSameAs(root);
+    }
+
+    [Fact]
+    public void SelectionProxy_Null_SelectsTheNodeItself()
+    {
+        var scene = new Scene3D("t");
+        var node = scene.CreateNode().MakeSelectable();
+
+        node.ResolveSelectionTarget().Should().BeSameAs(node);
+    }
+
+    [Fact]
+    public void SelectionProxy_ChainsResolveToTheEnd()
+    {
+        var scene = new Scene3D("t");
+        var outer = scene.CreateNode("outer");
+        var inner = scene.CreateNode("inner");
+        var part = scene.CreateNode("part");
+        inner.SelectionProxy = outer;
+        part.SelectionProxy = inner;
+
+        part.ResolveSelectionTarget().Should().BeSameAs(outer, "a proxy may itself carry a proxy");
+    }
+
+    [Fact]
+    public void SelectionProxy_DestroyedProxyFallsBackToTheNode()
+    {
+        var scene = new Scene3D("t");
+        var root = scene.CreateNode("root");
+        var part = scene.CreateNode("part");
+        part.SelectionProxy = root;
+
+        root.Destroy();
+
+        part.ResolveSelectionTarget().Should().BeSameAs(part, "a stale proxy must not select a destroyed node");
+    }
+
+    [Fact]
+    public void SelectionProxy_CycleResolvesInsteadOfHanging()
+    {
+        var scene = new Scene3D("t");
+        var a = scene.CreateNode("a");
+        var b = scene.CreateNode("b");
+        a.SelectionProxy = b;
+        b.SelectionProxy = a;
+
+        // A cycle is a caller mistake; the contract is bounded resolution to one of its members, not an answer.
+        var target = a.ResolveSelectionTarget();
+        new[] { a, b }.Should().Contain(target);
+    }
 }

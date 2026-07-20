@@ -271,6 +271,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         ReadOnlySpan<byte> normal = "NORMAL\0"u8;
         ReadOnlySpan<byte> texcoord = "TEXCOORD\0"u8;
         ReadOnlySpan<byte> color = "COLOR\0"u8;
+        ReadOnlySpan<byte> tangent = "TANGENT\0"u8;
         ReadOnlySpan<byte> iworld = "IWORLD\0"u8;
         ReadOnlySpan<byte> icolor = "ICOLOR\0"u8;
 
@@ -278,15 +279,20 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         fixed (byte* pNormal = normal)
         fixed (byte* pTexcoord = texcoord)
         fixed (byte* pColor = color)
+        fixed (byte* pTangent = tangent)
         fixed (byte* pIWorld = iworld)
         fixed (byte* pIColor = icolor)
         {
-            var elements = stackalloc D3D11_INPUT_ELEMENT_DESC[9];
+            // Every element of Vertex3D is declared for every pipeline; a shader that does not read a
+            // semantic simply leaves it unconsumed, which D3D11 permits, so only the shaders that use the
+            // tangent had to change when it was added.
+            var elements = stackalloc D3D11_INPUT_ELEMENT_DESC[10];
             var count = 0u;
             elements[count++] = Element(pPosition, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT, 0, 0);
             elements[count++] = Element(pNormal, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT, 0, 12);
             elements[count++] = Element(pTexcoord, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32_FLOAT, 0, 24);
             elements[count++] = Element(pColor, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 32);
+            elements[count++] = Element(pTangent, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 48);
 
             if (instanced)
             {

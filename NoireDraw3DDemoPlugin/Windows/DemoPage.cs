@@ -32,6 +32,11 @@ internal enum DemoPage
 
     /// <summary>Validators, live stats, fault feed.</summary>
     Diagnostics,
+
+#if DEBUG
+    /// <summary>Development tooling. Debug builds only.</summary>
+    Debug,
+#endif
 }
 
 /// <summary>A rail entry: the page, its group heading, its caption and its glyph.</summary>
@@ -53,5 +58,8 @@ internal readonly record struct DemoPageInfo(DemoPage Page, string Group, string
         new DemoPageInfo(DemoPage.Lighting, "Render", "Lighting", FontAwesomeIcon.Lightbulb),
         new DemoPageInfo(DemoPage.Interaction, "Input", "Interaction", FontAwesomeIcon.MousePointer),
         new DemoPageInfo(DemoPage.Diagnostics, "Tools", "Diagnostics", FontAwesomeIcon.Heartbeat),
+#if DEBUG
+        new DemoPageInfo(DemoPage.Debug, "Tools", "Debug", FontAwesomeIcon.Bug),
+#endif
     };
 }

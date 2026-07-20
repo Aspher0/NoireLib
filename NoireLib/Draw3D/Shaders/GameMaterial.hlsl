@@ -34,10 +34,35 @@ float3 LinearToSrgb(float3 c)
     return c <= 0.0031308 ? c * 12.92 : (1.055 * pow(c, 1.0 / 2.4)) - 0.055;
 }
 
-// Tangent frame recovered from screen-space derivatives rather than from the vertex buffer. The game's
-// models do carry tangents, but reading them would mean a vertex format that varies per model, and the
-// derivative frame is exact enough for normal mapping on a static prop. It costs nothing at rest: with a
-// zero-strength normal map the geometric normal is returned untouched.
+// The authored tangent frame, used whenever the mesh carries one (tangent w is its handedness and is 0
+// only when no frame was imported). This is what matches the game: its shading normal was measured about
+// ten degrees off ours on strong relief with the derivative frame below, and the map's X and Y only mean
+// what the author saw inside the frame they were painted for.
+float3 ApplyNormalMapAuthored(float3 geometricNormal, float4 worldTangent, float3 tangentNormal, float strength)
+{
+    float3 n = normalize(geometricNormal);
+    if (strength <= 0.0)
+        return n;
+
+    // Gram-Schmidt keeps the frame orthogonal after interpolation; a tangent that collapsed onto the
+    // normal leaves the surface normal standing rather than a normalize() of zero.
+    float3 t = worldTangent.xyz - (n * dot(n, worldTangent.xyz));
+    float lenSq = dot(t, t);
+    if (lenSq < 1e-8)
+        return n;
+
+    t *= rsqrt(lenSq);
+    float3 b = cross(n, t) * worldTangent.w;
+
+    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
+    return normalize((t * m.x) + (b * m.y) + (n * m.z));
+}
+
+// Tangent frame recovered from screen-space derivatives, the fallback for meshes that carry no authored
+// frame (primitives, imports without tangents). Close but not exact: it reconstructs the frame from how
+// the UVs happen to land on the screen, which is several degrees off the authored frame where relief is
+// strong. It costs nothing at rest: with a zero-strength normal map the geometric normal is returned
+// untouched.
 float3 ApplyNormalMap(float3 geometricNormal, float3 worldPos, float2 uv, float3 tangentNormal, float strength)
 {
     float3 n = normalize(geometricNormal);
@@ -67,20 +92,22 @@ float3 ApplyNormalMap(float3 geometricNormal, float3 worldPos, float2 uv, float3
 
 struct VsIn
 {
-    float3 pos    : POSITION;
-    float3 normal : NORMAL;
-    float2 uv     : TEXCOORD0;
-    float4 color  : COLOR0;
+    float3 pos     : POSITION;
+    float3 normal  : NORMAL;
+    float2 uv      : TEXCOORD0;
+    float4 color   : COLOR0;
+    float4 tangent : TANGENT;
 };
 
 struct PsIn
 {
-    float4 svPos       : SV_Position;
-    float2 uv          : TEXCOORD0;
-    float4 color       : COLOR0;
-    float2 clipZW      : TEXCOORD1;
-    float3 worldNormal : TEXCOORD2;
-    float3 worldPos    : TEXCOORD3;
+    float4 svPos        : SV_Position;
+    float2 uv           : TEXCOORD0;
+    float4 color        : COLOR0;
+    float2 clipZW       : TEXCOORD1;
+    float3 worldNormal  : TEXCOORD2;
+    float3 worldPos     : TEXCOORD3;
+    float4 worldTangent : TEXCOORD4;
 };
 
 PsIn vs(VsIn v)
@@ -93,6 +120,10 @@ PsIn vs(VsIn v)
     o.worldNormal = mul(float4(v.normal, 0.0), World).xyz;
     o.worldPos    = wp.xyz;
     o.clipZW      = o.svPos.zw;
+
+    // The handedness rides through untouched: it is a convention, not a direction, so the world transform
+    // has no business with it, and w == 0 is the "no authored frame" signal the pixel shader keys on.
+    o.worldTangent = float4(mul(float4(v.tangent.xyz, 0.0), World).xyz, v.tangent.w);
     return o;
 }
 
@@ -131,7 +162,9 @@ float4 ps(PsIn i) : SV_Target
     // The blue channel is left alone here because its meaning varies by shader package.
     float2 nxy = (AuxTex0.Sample(BaseSamp, i.uv).rg * 2.0) - 1.0;
     float3 tangentNormal = float3(nxy, sqrt(saturate(1.0 - dot(nxy, nxy))));
-    float3 n = ApplyNormalMap(i.worldNormal, i.worldPos, i.uv, tangentNormal, Params2.x);
+    float3 n = i.worldTangent.w != 0.0
+        ? ApplyNormalMapAuthored(i.worldNormal, i.worldTangent, tangentNormal, Params2.x)
+        : ApplyNormalMap(i.worldNormal, i.worldPos, i.uv, tangentNormal, Params2.x);
 
     float3 lightDir = normalize(LightDirIntensity.xyz);
     float  ndl = dot(n, lightDir) * 0.5 + 0.5;   // half-Lambert

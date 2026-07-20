@@ -501,7 +501,10 @@ internal sealed unsafe class ScenePass : IDisposable
             var iSpan = CollectionsMarshal.AsSpan(DynIndices);
             fixed (Vertex3D* v = vSpan)
             {
-                if (!dynVertexRing.TryWrite(device, ctx, v, (uint)(vSpan.Length * sizeof(Vertex3D)), 48, out dynVbOffset))
+                // The alignment is the vertex stride itself (as the index ring's is sizeof(ushort)), so the
+                // returned offset is always a whole number of vertices. A literal here once hid a stride
+                // change behind a corrupted first dynamic draw.
+                if (!dynVertexRing.TryWrite(device, ctx, v, (uint)(vSpan.Length * sizeof(Vertex3D)), (uint)sizeof(Vertex3D), out dynVbOffset))
                     hasDynamic = false;
             }
 

@@ -31,6 +31,9 @@ public sealed class DemoWindow : Window, IDisposable
     private readonly LightingPage lightingPage = new();
     private readonly InteractionPage interactionPage = new();
     private readonly DiagnosticsPage diagnosticsPage = new();
+#if DEBUG
+    private readonly DebugPage debugPage = new();
+#endif
 
     /// <summary>Creates the window (hidden until <c>/noire3ddemo</c> or the plugin-list button).</summary>
     public DemoWindow() : base("NoireLib Draw3D Demo###noire3ddemo")
@@ -151,7 +154,7 @@ public sealed class DemoWindow : Window, IDisposable
 
         Ui.Mono(ms, ImGuiColors.DalamudGrey3);
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("GPU time last frame.\n\nScene: drawing your geometry - it tracks what you spawned.\n\nComposite: blitting the finished layer into the game's frame, including the UI mask - it tracks the layering settings, not the scene.\n\nEverything else is on Diagnostics.");
+            Ui.Tooltip("GPU time last frame: scene draws your geometry, composite blits the layer into the game's frame.");
     }
 
     // ---------------------------------------------------------------- rail
@@ -248,6 +251,9 @@ public sealed class DemoWindow : Window, IDisposable
             case DemoPage.Lighting: lightingPage.Draw(); break;
             case DemoPage.Interaction: interactionPage.Draw(); break;
             case DemoPage.Diagnostics: diagnosticsPage.Draw(); break;
+#if DEBUG
+            case DemoPage.Debug: debugPage.Draw(); break;
+#endif
         }
     }
 

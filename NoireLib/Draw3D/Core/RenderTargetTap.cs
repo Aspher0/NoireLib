@@ -87,6 +87,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private readonly Bind[] binds = new Bind[MaxBinds];
     private int bindCount;
 
+    // The shadow-pass probe, created on first arm. Owned here because the tap is the one component that sees
+    // the binds and draws it needs; disposed with the tap.
+    private ShadowProbe? shadowProbe;
+
     // Multi-target binds get their whole target set recorded, not just the first one. A deferred renderer's
     // G-buffer is only legible as a set: which channel carries the normal, and in what precision, is the
     // difference between writing into it correctly and writing plausible nonsense. Sized flat and up front so
@@ -269,6 +273,19 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     }
 
     /// <summary>Arms a one-frame diagnostic capture after a short warm-up (so every swapchain buffer is learned first).</summary>
+    /// <summary>
+    /// Arms the shadow-pass probe for the next frame: every depth-only bind's target, and the VS constants at
+    /// each one's first draw. The report lands in the log. See <see cref="ShadowProbe"/> for why this exists.
+    /// </summary>
+    public void ArmShadowProbe()
+    {
+        if (omHook == null)
+            return;
+
+        shadowProbe ??= new ShadowProbe();
+        shadowProbe.Arm();
+    }
+
     public void ArmCapture()
     {
         if (omHook == null)
@@ -384,6 +401,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     {
         RememberBackbuffer(backbufferTexture);
         Capture?.OnFrameBoundary();
+        shadowProbe?.OnFrameBoundary();
 
         // Commit the present buffer observed this frame for next frame's injection; reset per-frame state.
         if (candidatePresentBuffer != 0)
@@ -488,6 +506,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
         var rtv0 = ResolveRtv0Resource(numViews, ppRtvs);
 
+        // The shadow probe watches depth-only binds: no color resolved, a depth-stencil present. That shape
+        // covers shadow maps and the scene's own depth pre-pass; the probe records which is which rather
+        // than guessing here, because a diagnostic that filters is a diagnostic that can hide the answer.
+        if (shadowProbe is { Armed: true } && rtv0 == 0 && pDsv != 0)
+            shadowProbe.OnDepthOnlyBind(pDsv, IsMainSceneDepth(pDsv));
+
         // Learn the present-composition buffer: the RTV bound right before a swapchain backbuffer bind.
         if (rtv0 != 0)
         {
@@ -566,6 +590,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private void OnDraw(nint context)
     {
         Capture?.OnGameDraw(context); // no-op except at the main pass's first draw (the commit moment)
+
+        if (shadowProbe is { Armed: true } && !injecting && !SuppressSelf && context == gameContext)
+            shadowProbe.OnGameDraw((TerraFX.Interop.DirectX.ID3D11DeviceContext*)context);
 
         if (!gbufferPassArmed || GBufferInjector is not { } injector)
             return;
@@ -887,7 +914,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         AppendMultiTargets(sb);
 
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
-        DiagnosticChat.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame - paste the log (/xllog).");
+        DiagnosticChat.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame.");
     }
 
     /// <inheritdoc/>
@@ -896,6 +923,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         InjectionEnabled = false;
         Injector = null;
         Capture = null; // owned and disposed by the hub
+        shadowProbe?.Dispose();
+        shadowProbe = null;
 
         omHook?.Dispose();
         drawIndexedHook?.Dispose();

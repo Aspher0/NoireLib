@@ -2362,7 +2362,7 @@ public static unsafe partial class NoireDraw3D
                 if (EnsureRenderTargetTap() is { } tap)
                 {
                     tap.ArmCapture();
-                    Print("Draw3D: capturing the next frame's render-target bind sequence - paste the log (/xllog).");
+                    Print("Draw3D: capturing the next frame's render-target bind sequence.");
                 }
                 else
                 {
@@ -2372,6 +2372,18 @@ public static unsafe partial class NoireDraw3D
                 break;
             case "framedump":
                 HandleFrameDumpCommand(rest);
+                break;
+            case "shadowprobe":
+                if (EnsureRenderTargetTap() is { } shadowTap)
+                {
+                    shadowTap.ArmShadowProbe();
+                    Print("Draw3D: probing the next frame's shadow passes - every depth-only bind and the VS constants at its first draw. Report in the log. Stand where something visibly casts a shadow, and expect one stalled frame.");
+                }
+                else
+                {
+                    Print("Draw3D: the render-target tap could not be installed (see the log).");
+                }
+
                 break;
             case "ontop":
                 NativeUi.Layering = NativeUi.Layering == Draw3DLayering.UnderGameUi ? Draw3DLayering.OverEverything : Draw3DLayering.UnderGameUi;

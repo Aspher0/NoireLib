@@ -61,13 +61,13 @@ public sealed class DiagnosticsPage : IDisposable
         if (ImGui.Button("Run projection parity", buttonSize))
             diag.RunValidate();
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("Projects sample world points with Draw3D's own math and compares them against the game's own WorldToScreen, over 10 frames. The gate is a maximum of 1 pixel of disagreement.\n\nThis is the wobble-class killer: if the overlay ever drifts from the world, this is what catches it.");
+            Ui.Tooltip("Compares this renderer's projection against the game's over 10 frames; passes within 1 pixel.");
 
         ImGui.SameLine();
         if (ImGui.Button("Run depth ground-truth", buttonSize))
             diag.RunProbe();
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("Reads real depth-buffer values back and compares them against the analytic depth map rendering uses.\n\nAlso reports the UI-mask alpha health, which tells you whether the per-pixel 'Keep game UI on top' mask can work at all on this frame.");
+            Ui.Tooltip("Validates depth-buffer readback against the analytic depth map, and reports UI-mask health.");
 
         Ui.Gap();
         Ui.Note("Camera-phase trace: how far the camera an overlay was projected with drifts from a live read later in the same "

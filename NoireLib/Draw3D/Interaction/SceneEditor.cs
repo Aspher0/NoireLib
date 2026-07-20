@@ -101,11 +101,21 @@ public sealed class SceneEditor : IDisposable
     /// <summary>Applies / removes selection outlines to match the current selection and <see cref="SelectionOutline"/>.</summary>
     private void UpdateOutlines()
     {
-        // Drop outlines from nodes no longer selected (or when outlining is off / the node is gone).
+        // The outline covers each selected node's SUBTREE, not just the node: selecting a group node - the
+        // shape a multi-mesh model selects as via SceneNode.SelectionProxy - outlines every mesh under it,
+        // because the group itself draws nothing and a selection with no visible acknowledgement reads as a
+        // missed click. Tracked per outlined node so removal mirrors application exactly.
+        var wanted = new List<SceneNode>();
+        if (selectionOutline is not null)
+        {
+            foreach (var node in scene.Selection.Nodes)
+                CollectSubtree(node, wanted);
+        }
+
         for (var i = outlined.Count - 1; i >= 0; i--)
         {
             var node = outlined[i];
-            if (selectionOutline is null || node.Destroyed || !scene.Selection.Contains(node))
+            if (node.Destroyed || !wanted.Contains(node))
             {
                 if (!node.Destroyed)
                     node.HideOutline();
@@ -115,7 +125,7 @@ public sealed class SceneEditor : IDisposable
 
         if (selectionOutline is { } color)
         {
-            foreach (var node in scene.Selection.Nodes)
+            foreach (var node in wanted)
             {
                 if (!outlined.Contains(node))
                 {
@@ -124,6 +134,17 @@ public sealed class SceneEditor : IDisposable
                 }
             }
         }
+    }
+
+    /// <summary>A node and all its live descendants, once each, cycle-safe by the visited check.</summary>
+    private static void CollectSubtree(SceneNode node, List<SceneNode> into)
+    {
+        if (node.Destroyed || into.Contains(node))
+            return;
+
+        into.Add(node);
+        foreach (var child in node.Children)
+            CollectSubtree(child, into);
     }
 
     /// <summary>

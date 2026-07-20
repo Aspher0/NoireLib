@@ -31,18 +31,16 @@ public sealed class GameMaterial : IDisposable
     /// <summary>The shader package of dyeable furniture, the one package whose color map alpha is a stain mask.</summary>
     public const string DyeableFurnitureShader = "bgcolorchange.shpk";
 
-    /// <summary>
-    /// The stain the game renders on dyeable furniture that carries no stain: row 1 of its stain table,
-    /// Snow White, as the display color the table holds.<br/>
-    /// "Undyed" is not a passthrough state. Two placed undyed stools, sampled in the game's own G-buffer,
-    /// both carried a multiplier over the authored texture that matches this row to 0.002 - the next nearest
-    /// stain is nineteen times further away - and row 0 of the table is black, so it cannot be the default.
-    /// A dyeable surface therefore always has some stain multiplied in, and this is the one it starts with.
-    /// </summary>
-    public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
-
     /// <summary>Whether this material's dyeable mask is live, so a stain (or the undyed default) applies to it.</summary>
     public bool IsDyeableFurniture => File.ShaderPackage == DyeableFurnitureShader;
+
+    /// <summary>
+    /// The color an empty stain slot renders as: stain row 1, Snow White, as the display color the table
+    /// holds. A dyeable surface always has some color multiplied in, and removing an item's dye in game
+    /// lands here whatever dye the item ships with. See docs/Draw3D Game Assets Status.md for the
+    /// measurements behind this value.
+    /// </summary>
+    public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
 
     /// <summary>The base color texture, or null when the material names none or it failed to load.</summary>
     public GpuTexture? BaseColor { get; }
@@ -63,13 +61,10 @@ public sealed class GameMaterial : IDisposable
     public GpuTexture? Specular { get; }
 
     /// <summary>
-    /// The material's diffuse color constant, or null when it sets none. Exposed as parsed data only.<br/>
-    /// <b>It is not what an undyed item shows, and nothing here applies it.</b> That was concluded three
-    /// separate times before it was measured to be false: the stool's file holds a dark brown here while the
-    /// game renders the undyed area bone-white, and no encoding of this value, masked or not, reproduces
-    /// that. What the game actually renders on an unstained item is <see cref="UndyedStain"/>, a row of the
-    /// stain table - the constant on disk is a slot the stain system writes into, and its file value never
-    /// reaches the screen on dyeable furniture.
+    /// The material's diffuse color constant, or null when it sets none. On dyeable furniture it holds an
+    /// exact stain-table color, but it is not what renders: an undyed placement shows the sgb's default
+    /// stain (<see cref="GameFurnitureSgb"/>), or <see cref="UndyedStain"/> when none is stated. Exposed as
+    /// parsed data; see docs/Draw3D Game Assets Status.md for its measured behavior.
     /// </summary>
     public Vector3? DiffuseColor
     {
@@ -92,8 +87,9 @@ public sealed class GameMaterial : IDisposable
     /// </summary>
     /// <param name="dye">
     /// Color applied to the dyeable area only, as a display color - the encoding a color picker and the game's
-    /// dye table both use. Null renders the area as the game renders an unstained item: with
-    /// <see cref="UndyedStain"/>, because the game has no passthrough state for a dyeable surface.
+    /// dye table both use. Null renders <see cref="UndyedStain"/>, the game's fallback for an empty stain
+    /// slot; pass the color of the sgb's default stain (<see cref="GameFurnitureSgb"/>) to render an item
+    /// exactly as an undyed placement shows it.
     /// </param>
     /// <param name="tint">Multiplied over the whole surface afterwards. White leaves it untouched.</param>
     /// <param name="normalStrength">How far the normal map bends the surface normal. 0 draws with the geometric normal alone, and values above 1 exaggerate it.</param>
@@ -103,14 +99,9 @@ public sealed class GameMaterial : IDisposable
     /// reference marks this map's mask channels as not fully understood.
     /// </param>
     /// <param name="dyeReference">
-    /// How the dye meets the masked area. 0 multiplies the authored color by the dye. A positive value is the
-    /// authored color the dye should land on exactly: the area is divided by it first, so the texture carries only
-    /// relative shading and the dye carries the color.<br/>
-    /// <b>Resolved: the game multiplies, so 0 is the correct value.</b> Three stains with opposite channel
-    /// balances - near-white, cyan, dark red - were applied to the game's own copy of a model and sampled in
-    /// its G-buffer beside ours; the multiply reproduces all three within 0.004 per channel, using nothing but
-    /// the stain table's colors, and the divide reading does not. The divide remains as an authoring tool for
-    /// callers who want a dye to land exactly, not as a model of the game.
+    /// How the dye meets the masked area. 0 multiplies the authored color by the dye, which matches the game.
+    /// A positive value is the authored color the dye should land on exactly: the area is divided by it first,
+    /// so the texture carries only relative shading - an authoring tool, not a model of the game.
     /// </param>
     /// <param name="ignoreSceneLight">
     /// Takes this renderer's lighting out of the picture, leaving the surface at the colors its texture and dye give it.<br/>
@@ -132,16 +123,9 @@ public sealed class GameMaterial : IDisposable
         if (BaseColor is null || !GameMaterialPipeline.EnsureRegistered())
             return ToLit(tint);
 
-        // A dyeable surface always has a stain multiplied in - the game has no passthrough state - so "no dye"
-        // means the game's own default stain, not the raw texture. Leaving the area at the texture is what made
-        // every undyed item read brighter and cooler than the game's copy, by exactly the missing stain.
-        //
-        // The rule itself is measured, not assumed: albedo is the stain times the authored color, both in
-        // linear light, confined to the mask. Verified against the game's own G-buffer with three stains of
-        // opposite channel balance, each landing within 0.004 per channel using only the stain table's colors.
-        // Every color here is display-encoded - the stain table, a picker, the undyed default - so the
-        // conversion happens once, here, rather than in a shader that cannot tell an encoded color from a
-        // linear one.
+        // A dyeable surface always has a color multiplied in; an empty stain slot renders the undyed default,
+        // not the raw texture. Every color here is display-encoded - the stain table, a picker, the default -
+        // so the conversion to linear happens once, here, where the encoding is known.
         var applied = dye ?? (IsDyeableFurniture ? UndyedStain : (Vector3?)null);
         var color = ColorHelper.SrgbToLinear(applied ?? Vector3.One);
         var strength = applied is null ? 0f : 1f;
@@ -330,6 +314,63 @@ public static class GameMaterialLoader
         return slash < 0 ? $"--{texture.Path}" : $"{texture.Path[..(slash + 1)]}--{texture.Path[(slash + 1)..]}";
     }
 
+    /// <summary>
+    /// Candidate archive paths for a relative material name whose file lives outside the model's own tree,
+    /// derived from the name itself.<br/>
+    /// A character material's filename encodes its owner: <c>mt_c0201b0001_a.mtrl</c> is character
+    /// <c>c0201</c>, body <c>b0001</c>, and its file lives under the human body directory - not under the
+    /// equipment folder of whatever model referenced it. An equipment model referencing its wearer's skin
+    /// material is exactly that case, and resolving the name against the model's folder produces a path that
+    /// does not exist, which surfaced as a garment whose body parts drew with no material at all. Multiple
+    /// candidates are returned because the human directories are split on whether a variant folder exists;
+    /// the caller takes the first that loads.
+    /// </summary>
+    /// <param name="materialPath">The relative material name, beginning with a slash.</param>
+    /// <param name="variant">Variant directory for the kinds that use one.</param>
+    public static IReadOnlyList<string> ResolveByOwnerName(string materialPath, int variant = 1)
+    {
+        // The grammar is /mt_c{character:4}{kind:1}{set:4}..., and anything else is not a character material.
+        if (materialPath is not ['/', 'm', 't', '_', 'c', ..] || materialPath.Length < 14)
+            return [];
+
+        var character = materialPath.Substring(5, 4);
+        var kind = materialPath[9];
+        var set = materialPath.Substring(10, 4);
+        foreach (var c in character)
+        {
+            if (!char.IsAsciiDigit(c))
+                return [];
+        }
+
+        foreach (var c in set)
+        {
+            if (!char.IsAsciiDigit(c))
+                return [];
+        }
+
+        var humanKind = kind switch
+        {
+            'b' => "body",
+            'f' => "face",
+            'h' => "hair",
+            't' => "tail",
+            'z' => "zear",
+            _ => null,
+        };
+
+        if (humanKind is not null)
+        {
+            var owner = $"chara/human/c{character}/obj/{humanKind}/{kind}{set}";
+            return [$"{owner}/material/v0001{materialPath}", $"{owner}/material{materialPath}"];
+        }
+
+        return kind switch
+        {
+            'e' => [$"chara/equipment/e{set}/material/v{variant:D4}{materialPath}"],
+            _ => [],
+        };
+    }
+
     /// <summary>Loads every distinct material a model references, keyed by the path each was resolved from.</summary>
     /// <param name="modelGamePath">Archive path of the model.</param>
     /// <param name="materialPaths">Material paths as the model stores them.</param>
@@ -354,6 +395,19 @@ public static class GameMaterialLoader
                 continue;
 
             var material = await LoadAsync(resolved, ct).ConfigureAwait(false);
+
+            // A relative name that did not resolve beside the model belongs to another owner - an equipment
+            // model naming its wearer's skin material is the everyday case - and the name says whose it is.
+            if (material is null && raw.StartsWith('/'))
+            {
+                foreach (var candidate in ResolveByOwnerName(raw, variant))
+                {
+                    material = await LoadAsync(candidate, ct).ConfigureAwait(false);
+                    if (material is not null)
+                        break;
+                }
+            }
+
             if (material is not null)
                 loaded[raw] = material;
         }

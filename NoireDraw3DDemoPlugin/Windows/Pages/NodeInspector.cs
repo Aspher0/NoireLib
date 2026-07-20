@@ -212,11 +212,11 @@ internal sealed class NodeInspector
         using (Ui.Form("insp.shading", InspectorLabelWidth))
         {
             Ui.Enum("Domain", () => renderer.Material.Domain, v => renderer.Material = renderer.Material with { Domain = v },
-                "Which shader family draws this.\n\nUnlit: flat colour or texture.\n\nLit: stylized half-Lambert against the global Lighting settings.\n\nGroundDecal: projects its shape onto world surfaces through the mesh's box volume.");
+                "Unlit: flat color or texture. Lit: shaded against the Lighting settings. GroundDecal: projects its shape onto world surfaces.");
             Ui.Color4("Color", () => renderer.Material.Color, c => renderer.Material = renderer.Material with { Color = c },
                 "Shared by every object using this material reference.");
             Ui.Color4("Tint (this object)", () => renderer.Tint, c => renderer.Tint = c,
-                "A per-object multiplier on top of the material colour - cheap variation without a new material.\n\nNote that hovering the object in the world temporarily brightens this and restores it on exit.");
+                "A per-object multiplier on top of the material color.");
         }
 
         Ui.Section("Blending & depth");
@@ -225,16 +225,16 @@ internal sealed class NodeInspector
             Ui.Enum("Blend", () => renderer.Material.Blend, v => renderer.Material = renderer.Material with { Blend = v },
                 "Opaque (z-tested against other Draw3D meshes), Premultiplied (standard translucent), or Additive (emissive glow, order-independent).");
             Ui.Enum("Depth", () => renderer.Material.Depth, v => renderer.Material = renderer.Material with { Depth = v },
-                "Against the game world.\n\nTestOnly: hidden behind walls.\n\nIgnore: x-ray through everything.\n\nWorldOnly: hidden by walls but drawn over other Draw3D objects - the gizmo mix.\n\nIgnored by decals: projection replaces testing.");
+                "TestOnly: hidden behind walls. Ignore: x-ray. WorldOnly: hidden by walls, drawn over other objects.");
             Ui.Enum("Cull", () => renderer.Material.Cull, v => renderer.Material = renderer.Material with { Cull = v },
                 "Which triangle faces rasterize. Back is the default; None for planes and ribbons seen from both sides; Front is what decal volume boxes use.");
             Ui.Enum("When depth unavailable", () => renderer.Material.WhenDepthUnavailable, v => renderer.Material = renderer.Material with { WhenDepthUnavailable = v });
             Ui.Drag("Depth fade (m)", () => renderer.Material.DepthFade, v => renderer.Material = renderer.Material with { DepthFade = v }, 0.01f, 0f, 2f,
                 "Softens the seam where a translucent shape meets world geometry. Blended materials only.");
             Ui.Toggle("Casts into private depth", () => renderer.CastsIntoPrivateDepth, v => renderer.CastsIntoPrivateDepth = v,
-                "Whether opaque draws write Draw3D's private depth buffer, so other Draw3D meshes occlude correctly against this one. Ignored for blended materials.");
+                "Whether opaque draws occlude other objects of this layer. Ignored for blended materials.");
             Ui.Toggle("Unordered batching", () => renderer.Material.UnorderedBatching, v => renderer.Material = renderer.Material with { UnorderedBatching = v },
-                "Lets translucent draws with this material render in any order, so the renderer can instance them hard. Great for hundreds of identical markers; leave off when shapes visibly overlap each other.");
+                "Lets translucent draws render in any order for heavy instancing. Leave off when shapes visibly overlap.");
         }
 
         if (renderer.Material.Domain != MaterialDomain.GroundDecal)
@@ -246,11 +246,11 @@ internal sealed class NodeInspector
             Ui.Enum("Shape", () => renderer.Material.Shape, v => renderer.Material = renderer.Material with { Shape = v },
                 "The projected footprint: Circle, Ring, Sector, Rect, or Texture (stamps the material's texture over the footprint).");
             Ui.Enum("Surface", () => renderer.Material.Surface, v => renderer.Material = renderer.Material with { Surface = v },
-                "Locks the box's orientation. Ground: kept horizontal, projects down. Wall: kept vertical, projects into the wall it faces. Both: free, and the orientation decides.\n\nTry rotating with the gizmo after changing this.");
+                "Ground projects down, Wall projects into the wall it faces, Both is free.");
             Ui.Enum("Projection", () => renderer.Material.Projection, v => renderer.Material = renderer.Material with { Projection = v },
-                "AllSurfaces paints everything in the box. HighestOnly paints only the topmost surface per column - a tabletop, not the floor beneath - and needs the collision height-map on and the top-surface threshold above 0 (Decals page), plus real collision on the covering object.");
+                "AllSurfaces paints everything in the box. HighestOnly paints only the topmost surface per column and needs the height-map on (Decals page).");
             Ui.Drag("Outline width", () => renderer.Material.OutlineWidth, v => renderer.Material = renderer.Material with { OutlineWidth = v }, 0.005f, 0f, 0.5f,
-                "Width of the bright rim, held at a constant world thickness regardless of the decal's scale - scale the box and the rim stays put. 0 means no outline.");
+                "Width of the rim at constant world thickness. 0 disables it.");
 
             Ui.Row("Custom border color", "Off, the border is the decal's own colour and only its opacity differs from the fill. On, it gets its own colour.");
             var hasOutlineColor = renderer.Material.OutlineColor.W > 0f;
@@ -274,7 +274,7 @@ internal sealed class NodeInspector
             Ui.Drag("Height fade", () => renderer.Material.HeightFade, v => renderer.Material = renderer.Material with { HeightFade = v }, 0.02f, 0f, 1f,
                 "Feathering near the top and bottom of the box volume.");
             Ui.Drag4("Shape params", () => renderer.Material.ShapeParams, v => renderer.Material = renderer.Material with { ShapeParams = v }, 0.02f,
-                "Shape-specific tuning (x / y / z / fill).\n\nRing: X is the inner radius as a ratio of the outer (0..1).\n\nSector: X is the half-angle in radians, Y the inner ratio.\n\nW (fill) is the fill opacity relative to the outline, for every shape.");
+                "Ring: X = inner radius ratio. Sector: X = half-angle, Y = inner ratio. W = fill opacity for every shape.");
         }
     }
 
@@ -339,7 +339,7 @@ internal sealed class NodeInspector
                 });
             }
 
-            Ui.Row("Volume box", "The projection box the SDF is evaluated in - the limit of what this decal can paint at all. Shows how far the projection reaches above and below the surface, so a decal stopping short of a wall or a step explains itself.\n\nComposes with the shape outline: turn both on to see the shape inside its volume.");
+            Ui.Row("Volume box", "Shows the projection box, the limit of what the decal can paint.");
             var hasVolume = node.HasDecalVolume;
             if (ImGui.Checkbox("##hasdecalvolume", ref hasVolume))
             {
@@ -380,7 +380,7 @@ internal sealed class NodeInspector
         Ui.Section("Opt-in shortcuts");
         using (Ui.Form("insp.optin", InspectorLabelWidth))
         {
-            Ui.Row("Apply", "MakeSelectable: interactable + selectable + the built-in hover tint.\n\nMakeInteractable: hover and click only - a click never touches the selection.\n\nClearHoverHighlight: drops the built-in tint feedback while clicks still select, for when you drive the tint yourself.");
+            Ui.Row("Apply", "MakeSelectable: hover tint plus click-to-select. MakeInteractable: hover and click only. ClearHoverHighlight: drops the built-in tint.");
             if (ImGui.SmallButton("MakeSelectable()"))
                 node.MakeSelectable();
             ImGui.SameLine();

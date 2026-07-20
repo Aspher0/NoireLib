@@ -79,7 +79,7 @@ public sealed class ShowcasePage : IDisposable
             Station("North", "Mesh primitives",
                 "Box, sphere, cylinder, cone, torus, disc, ring, arrow, sector, an extruded path, and one mesh combining two builders. All Lit, so the Lighting page moves them together.");
             Station("South", "Decal footprints",
-                "Circle, ring, sector, rect, and a texture stamp, each scaled differently but all sharing one constant-thickness rim. All cut around characters standing in them. The circle is HighestOnly, so it needs the collision height-map on to skip the floor under a table. Behind them, three additive circles overlap to white.");
+                "Every decal shape with a constant-thickness rim, cut around characters standing in them. Three additive circles overlap to white.");
             Station("Far south", "Immediate layer",
                 "Donut, sweeping pie, orbiting additive orb, spinning line. Redrawn every frame from OnPrepareFrame, so there is no node to select.");
             Station("West", "Materials",
@@ -96,7 +96,7 @@ public sealed class ShowcasePage : IDisposable
             using (Ui.Form("showcase.gizmo"))
             {
                 Ui.Enum("Backend", () => editor.Gizmo.Backend, v => editor.Gizmo.Backend = v,
-                    "Same API either way.\n\nNative: real in-world geometry hit-tested in screen space - occludes correctly, never wobbles.\n\nImGuizmo: the classic flat handles, always on top.\n\nThis scene runs AlwaysOnTop depth, so Native handles stay visible through walls.");
+                    "Native: in-world handles that occlude correctly. ImGuizmo: flat handles, always on top.");
                 Ui.Value("Attached to", editor.Selection.Count switch
                 {
                     0 => "-",

@@ -156,6 +156,13 @@ public sealed class GameModelFile : FileResource
     /// <summary>Material paths referenced by the meshes. Character models store these relative, beginning with a slash.</summary>
     public string[] MaterialPaths { get; private set; } = [];
 
+    /// <summary>
+    /// Bytes at the end of the runtime block the layout walk did not identify, zero for most models.
+    /// Everything decoded was addressed correctly regardless; this exists so an unread tail is a fact a
+    /// caller can report instead of a silence.
+    /// </summary>
+    public int UnreadRuntimeBytes { get; private set; }
+
     /// <inheritdoc/>
     public override void LoadFile()
     {
@@ -237,14 +244,21 @@ public sealed class GameModelFile : FileResource
         cursor.Skip(cursor.U8());                           // length-prefixed padding run
         cursor.Skip((4 + boneCount) * 32);                  // global and per-bone bounding boxes
 
-        // The runtime block's size is declared in the header, so a walk that ends anywhere else has
-        // mis-sized one of the blocks above and every buffer offset derived from it would be wrong.
+        // The runtime block's size is declared in the header. Walking PAST it means a block above was
+        // mis-sized and every offset derived from the walk is wrong, so that stays fatal. Falling short is
+        // different: some models carry trailing data this walk does not identify - the Hingan Sofa's model
+        // leaves 96 bytes here, the size of three more bounding boxes, gated by a count in the header this
+        // layout has not named - and everything read above was addressed correctly, so the surplus is
+        // recorded and skipped rather than refusing a model the game itself renders.
         var consumed = cursor.Position - runtimeStart;
-        if (consumed != runtimeSize)
+        if (consumed > runtimeSize)
         {
             throw new InvalidOperationException(
                 $"Model layout walk consumed {consumed} bytes of a declared {runtimeSize}-byte runtime block in '{FilePath}'.");
         }
+
+        UnreadRuntimeBytes = (int)(runtimeSize - consumed);
+        cursor.Skip(UnreadRuntimeBytes);
 
         _ = strings;
         _ = stackSize;

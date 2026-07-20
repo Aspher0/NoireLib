@@ -35,6 +35,25 @@ public class Draw3DImportFlipTests
     }
 
     [Fact]
+    public void MirrorZ_FlipsTangentZAndHandedness()
+    {
+        // A single mirror is a reflection: the tangent mirrors like the normal, and the frame's handedness
+        // flips with it. Two mirrors are a rotation and leave the handedness alone - checked below.
+        var flips = new Draw3DImportFlips { MirrorZ = true };
+        Vertex3D[] vertices = [new(new Vector3(1f, 2f, 3f), Vector3.UnitY, Vector2.Zero, Vector4.One, new Vector4(0.6f, 0f, 0.8f, 1f))];
+
+        flips.Apply(vertices, Array.Empty<ushort>());
+
+        vertices[0].Tangent.Should().Be(new Vector4(0.6f, 0f, -0.8f, -1f));
+
+        var both = new Draw3DImportFlips { MirrorX = true, MirrorZ = true };
+        Vertex3D[] rotated = [new(new Vector3(1f, 2f, 3f), Vector3.UnitY, Vector2.Zero, Vector4.One, new Vector4(0.6f, 0f, 0.8f, 1f))];
+        both.Apply(rotated, Array.Empty<ushort>());
+
+        rotated[0].Tangent.W.Should().Be(1f, "two mirrors are a rotation, which preserves handedness");
+    }
+
+    [Fact]
     public void MirrorZ_NegatesZOnPositionsAndNormals()
     {
         var flips = new Draw3DImportFlips { MirrorZ = true };

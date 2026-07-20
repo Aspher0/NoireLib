@@ -248,8 +248,7 @@ internal static class Ui
     {
         var flips = NoireDraw3D.Diagnostics.ImportFlips;
 
-        Section("Import orientation");
-        Note("Leave all of these off. Both loaders take a model's positions and transforms exactly as authored and reverse only the triangle winding, which is right for the game's own models and for a glTF that follows the spec. These are here for a file whose exporter disagreed - one that writes Z-up, or that already converted handedness itself - because such a file cannot be told apart from a correct one by reading it.");
+        Note("Overrides for files authored in an unusual convention. Leave off for game models and spec-conforming glTF.");
         Gap();
         Note("A single mirror reflects, so it turns a model into its mirror image. Mirror X and Mirror Z together are a 180 degree turn instead, which changes only which way the model faces.");
         Gap();

@@ -41,16 +41,16 @@ internal sealed class InteractionPage
         using (Ui.Form("interact.mouse"))
         {
             Ui.Toggle("Hover claims mouse", () => it.BlockGameMouseOnHover, v => it.BlockGameMouseOnHover = v,
-                "Off (default) is the world-overlay choice: the camera still pans and the world stays clickable through a highlighted object. A drag always claims regardless.\n\nOn is the ImGui-consistent mode - tidy for a modal editor, but it blocks camera and zoom whenever the cursor rests on an object.");
+                "Off, the camera still pans over highlighted objects; a drag always claims the mouse. On blocks camera and zoom whenever the cursor rests on an object.");
             Ui.Toggle("Game UI blocks", () => it.GameUiBlocksInteraction, v => it.GameUiBlocksInteraction = v,
-                "Whether native UI under the cursor stops picking an object behind it. Detection uses the game's collision nodes, not padded bounding boxes, so gaps around HUD elements stay clickable.");
+                "Whether native UI under the cursor stops picking an object behind it.");
         }
 
         Ui.Section("Occlusion");
         using (Ui.Form("interact.occlusion"))
         {
             Ui.Enum("Obstacles", () => it.ObstacleOcclusion, v => it.ObstacleOcclusion = v,
-                "An obstacle is anything the game draws in front of your object - walls and terrain, but equally characters and mounts, since the depth comes from the game depth buffer.\n\nOff: always clickable through anything, so picking is reliable at every camera angle.\n\nHoldToClickThrough: blocked unless the click-through key is held.\n\nEnabling this means the ground an object rests on can occlude it at grazing angles.");
+                "Whether world geometry in front of an object blocks clicking it. HoldToClickThrough blocks unless the click-through key is held.");
             Ui.Slider("Bias (m)", () => it.ObstacleOcclusionBias, v => it.ObstacleOcclusionBias = v, 0f, 2f,
                 "Slack before an object counts as occluded. Stops flicker at grazing angles and keeps a ground-hugging decal off its own ground.");
         }
@@ -59,12 +59,12 @@ internal sealed class InteractionPage
         using (Ui.Form("interact.keys"))
         {
             Ui.Flags("Deselect on", () => it.DeselectOn, v => it.DeselectOn = v,
-                "Flags - tick both for both. ClickEmpty: a left click on empty world that didn't become a camera pan. Key: the key below, which does nothing until this is ticked.\n\nClears every scene's selection.");
+                "ClickEmpty deselects on a left click on empty world; Key deselects on the key below. Tick both for both.");
 
             using (Ui.Disabled((it.DeselectOn & DeselectMode.Key) == 0))
             {
                 if (Ui.Enum<DeselectKeyChoice>("Deselect key", ref deselectKeyIdx,
-                    "Read from the OS, not ImGui: Dalamud only hands a key to ImGui while a text field is focused, so ImGui.IsKeyPressed never fires during play. Modifiers are the exception, which is why they can read ImGui IO and this can't."))
+                    "The key that clears the selection while Key is ticked above."))
                     it.DeselectKeyHeld = DeselectKeyFunc((DeselectKeyChoice)deselectKeyIdx);
             }
 

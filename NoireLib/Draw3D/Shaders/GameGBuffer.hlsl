@@ -84,19 +84,21 @@ float3 NormalizeTangentNormal(float4 sampled)
 
 struct VsIn
 {
-    float3 pos    : POSITION;
-    float3 normal : NORMAL;
-    float2 uv     : TEXCOORD0;
-    float4 color  : COLOR0;
+    float3 pos     : POSITION;
+    float3 normal  : NORMAL;
+    float2 uv      : TEXCOORD0;
+    float4 color   : COLOR0;
+    float4 tangent : TANGENT;
 };
 
 struct PsIn
 {
-    float4 svPos       : SV_Position;
-    float2 uv          : TEXCOORD0;
-    float4 color       : COLOR0;
-    float3 worldNormal : TEXCOORD1;
-    float3 worldPos    : TEXCOORD2;
+    float4 svPos        : SV_Position;
+    float2 uv           : TEXCOORD0;
+    float4 color        : COLOR0;
+    float3 worldNormal  : TEXCOORD1;
+    float3 worldPos     : TEXCOORD2;
+    float4 worldTangent : TEXCOORD3;
 };
 
 // The five targets the game binds for its geometry pass, in bind order.
@@ -122,11 +124,34 @@ PsIn vs(VsIn v)
     // limitation the rest of the renderer carries.
     o.worldNormal = mul(float4(v.normal, 0.0), World).xyz;
     o.worldPos    = wp.xyz;
+
+    // The handedness rides through untouched: it is a convention, not a direction, and w == 0 is the
+    // "no authored frame" signal the pixel shader keys on.
+    o.worldTangent = float4(mul(float4(v.tangent.xyz, 0.0), World).xyz, v.tangent.w);
     return o;
 }
 
-// Builds a tangent frame from screen-space derivatives, so a normal map can be applied without the mesh
-// carrying tangents. Same approach the Draw3D game-material shader uses.
+// The authored tangent frame, used whenever the mesh carries one (tangent w is its handedness, 0 only when
+// no frame was imported). This is what matches the game: its shading normal measured about ten degrees off
+// ours on strong relief with the derivative frame, and the map's X and Y only mean what the author saw
+// inside the frame they were painted for. Kept identical to GameMaterial.hlsl so the injected and ordinary
+// paths shade the same relief.
+float3 ApplyNormalMapAuthored(float3 n, float4 worldTangent, float3 tangentNormal, float strength)
+{
+    float3 t = worldTangent.xyz - (n * dot(n, worldTangent.xyz));
+    float lenSq = dot(t, t);
+    if (lenSq < 1e-8)
+        return n;
+
+    t *= rsqrt(lenSq);
+    float3 b = cross(n, t) * worldTangent.w;
+
+    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
+    return normalize((t * m.x) + (b * m.y) + (n * m.z));
+}
+
+// Builds a tangent frame from screen-space derivatives, the fallback for meshes carrying no authored frame.
+// Same approach the Draw3D game-material shader uses.
 float3 ApplyNormalMap(float3 n, float2 uv, float3 worldPos, float3 tangentNormal, float strength)
 {
     float3 dp1 = ddx(worldPos);
@@ -160,7 +185,9 @@ GBufferOut ps(PsIn i)
     // interpolated vertex normal loses every surface detail the material carries, which reads as a flat
     // gradient where the game shows relief.
     float3 tn = NormalizeTangentNormal(AuxTex0.Sample(BaseSamp, i.uv));
-    n = ApplyNormalMap(n, i.uv, i.worldPos, tn, NormalStrength);
+    n = i.worldTangent.w != 0.0
+        ? ApplyNormalMapAuthored(n, i.worldTangent, tn, NormalStrength)
+        : ApplyNormalMap(n, i.uv, i.worldPos, tn, NormalStrength);
 #endif
 
     // Forces a flat albedo, which is how "the G-buffer is wrong" is told apart from "something downstream

@@ -237,7 +237,40 @@ public class Draw3DGameModelTests
     }
 
     [Fact]
-    public void UndyedStain_IsTheGamesSnowWhite()
+    public void DecodeTangentFrame_ReconstructsAnOrthogonalFrame()
+    {
+        // The model stores the bitangent with a handedness flag; the loader reconstructs the tangent so the
+        // shader's bitangent = cross(normal, tangent) * handedness lands back on what the file stored. For a
+        // +Y normal and a +X bitangent with positive handedness, the round trip demands tangent = -Z... the
+        // assertion below IS that algebra, so a sign change in the reconstruction fails here before it ships
+        // as a model whose bumps face the wrong way.
+        var normal = Vector3.UnitY;
+        var packedBitangentX = new Vector4(1f, 0.5f, 0.5f, 1f); // bytes 255,128,128 -> bitangent +X, handedness +1
+
+        var tangent = GameModelLoader.DecodeTangentFrame(packedBitangentX, normal);
+
+        tangent.W.Should().Be(1f);
+        var t = new Vector3(tangent.X, tangent.Y, tangent.Z);
+        t.Length().Should().BeApproximately(1f, 1e-5f);
+        Vector3.Dot(t, normal).Should().BeApproximately(0f, 1e-5f, because: "the frame is orthogonal");
+
+        // The shader's reconstruction of the bitangent must return the stored vector.
+        var rebuilt = Vector3.Cross(normal, t) * tangent.W;
+        rebuilt.X.Should().BeApproximately(1f, 1e-4f);
+        rebuilt.Y.Should().BeApproximately(0f, 1e-4f);
+        rebuilt.Z.Should().BeApproximately(0f, 1e-4f);
+    }
+
+    [Fact]
+    public void DecodeTangentFrame_DegenerateInputMeansNoFrame()
+    {
+        // Bytes at 128,128,128 encode a zero vector; the shaders key "no authored frame" on w == 0, so the
+        // decode must return exactly zero rather than a normalize() of noise.
+        GameModelLoader.DecodeTangentFrame(new Vector4(0.5f, 0.5f, 0.5f, 1f), Vector3.UnitY).Should().Be(Vector4.Zero);
+    }
+
+    [Fact]
+    public void UndyedStain_IsTheStainTablesSnowWhite()
     {
         var game = GameDataFixture.TryOpen();
         if (game is null)
@@ -246,16 +279,118 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // "Undyed" dyeable furniture renders with stain row 1 multiplied in - established by sampling two
-        // placed undyed stools in the game's own G-buffer, whose implied multiplier matches this row to 0.002
-        // while the next nearest stain is nineteen times further away. Row 0 is black and cannot be a default
-        // anything renders with. This pins the shipped constant to the game's own table, so a patch that
-        // moves the table breaks this test instead of silently shifting every undyed item.
+        // An empty stain slot renders stain row 1; this pins the shipped constant to the game's own table so
+        // a patch that moves the table breaks here instead of silently shifting every undyed item.
         var sheet = game.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
         sheet.Should().NotBeNull();
+        GameMaterial.UndyedStain.Should().Be(StainHelper.ToColor(sheet!.GetRow(1).Color));
+    }
 
-        var snowWhite = StainHelper.ToColor(sheet!.GetRow(1).Color);
-        GameMaterial.UndyedStain.Should().Be(snowWhite);
+    [Theory]
+    [InlineData("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb", 0)]  // states none: renders the Snow White fallback
+    [InlineData("bgcommon/hou/indoor/general/0560/asset/fun_b0_m0560.sgb", 14)] // Blood Red - the Hingan Sofa's known undyed look
+    public void FurnitureSgb_CarriesTheDefaultStain(string sgbPath, int expected)
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        if (!game.FileExists(sgbPath))
+        {
+            Assert.Skip("Sample sgb not present.");
+            return;
+        }
+
+        // Both anchors were verified in game: an undyed placement of the second renders Blood Red, of the
+        // first Snow White, with the stain slot empty in both cases.
+        GameFurnitureSgb.TryReadDefaultStain(game.GetFile(sgbPath)!.Data, out var stain).Should().BeTrue();
+        ((int)stain).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData("bgcommon/hou/indoor/general/0681/material/fun_b0_m0681_0a.mtrl", 32u)] // Mole Brown
+    [InlineData("bgcommon/hou/indoor/general/0559/material/fun_b0_m0559_0a.mtrl", 14u)] // Blood Red
+    public void DiffuseConstant_HoldsExactStainTableColors(string materialPath, uint stainRow)
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        if (!game.FileExists(materialPath))
+        {
+            Assert.Skip("Sample material not present.");
+            return;
+        }
+
+        // The constant lands on stain rows verbatim across dyeable furniture, but it is not what an undyed
+        // placement renders (that is the sgb's default stain, or the Snow White fallback). Pinned so a layout
+        // change in either the parser or the table is caught; its in-game role is documented in docs/.
+        var file = game.GetFile<GameMaterialFile>(materialPath)!;
+        var diffuse = file.ConstantValue("g_DiffuseColor");
+        diffuse.Should().NotBeNull().And.HaveCount(3);
+
+        var stain = StainHelper.ToColor(game.GetExcelSheet<Lumina.Excel.Sheets.Stain>()!.GetRow(stainRow).Color);
+        var distance = (new Vector3(diffuse![0], diffuse[1], diffuse[2]) - stain).Length();
+        distance.Should().BeLessThan(0.005f);
+    }
+
+    [Fact]
+    public void ResolveByOwnerName_ReadsTheOwnerOutOfTheFilename()
+    {
+        // A body material referenced by an equipment model lives under the human tree, and only the filename
+        // says so. Both variant layouts are offered because the human directories split on it.
+        GameMaterialLoader.ResolveByOwnerName("/mt_c0201b0001_a.mtrl").Should().Equal(
+            "chara/human/c0201/obj/body/b0001/material/v0001/mt_c0201b0001_a.mtrl",
+            "chara/human/c0201/obj/body/b0001/material/mt_c0201b0001_a.mtrl");
+
+        GameMaterialLoader.ResolveByOwnerName("/mt_c0201e0007_top_a.mtrl", variant: 10).Should().Equal(
+            "chara/equipment/e0007/material/v0010/mt_c0201e0007_top_a.mtrl");
+
+        GameMaterialLoader.ResolveByOwnerName("/mt_notacharacter.mtrl").Should().BeEmpty();
+        GameMaterialLoader.ResolveByOwnerName("bg/absolute/path.mtrl").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EquipmentModel_EveryMaterialResolvesSomewhere()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        const string ModelPath = "chara/equipment/e0007/model/c0201e0007_top.mdl";
+        if (!game.FileExists(ModelPath))
+        {
+            Assert.Skip("Sample equipment model not present.");
+            return;
+        }
+
+        // The robe references its own material AND its wearer's skin material. The skin one does not resolve
+        // beside the model - its file lives under the human tree - which is exactly what left a garment's
+        // body parts drawing with no material until the owner-name fallback existed.
+        var model = game.GetFile<GameModelFile>(ModelPath)!;
+        model.MaterialPaths.Should().NotBeEmpty();
+
+        foreach (var raw in model.MaterialPaths)
+        {
+            var resolved = GameMaterialLoader.ResolvePath(ModelPath, raw, variant: 10);
+            if (resolved is not null && game.FileExists(resolved))
+                continue;
+
+            var found = false;
+            foreach (var candidate in GameMaterialLoader.ResolveByOwnerName(raw, variant: 10))
+                found |= game.FileExists(candidate);
+
+            found.Should().BeTrue(because: $"'{raw}' must resolve somewhere, or its meshes draw with no material");
+        }
     }
 
     [Fact]

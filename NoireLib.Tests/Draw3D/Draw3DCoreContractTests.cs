@@ -34,7 +34,8 @@ public class Draw3DCoreContractTests
     public void CompositeCB_Is4112Bytes() => Unsafe.SizeOf<CompositeCBData>().Should().Be(4112); // header + 128 rects + 128 factors
 
     [Fact]
-    public void Vertex3D_Is48Bytes() => Unsafe.SizeOf<Vertex3D>().Should().Be(48);
+    public void Vertex3D_Is64Bytes() => Unsafe.SizeOf<Vertex3D>().Should().Be(64,
+        because: "the GPU input layout addresses position at 0, normal at 12, uv at 24, color at 32 and tangent at 48 by these exact offsets");
 
     [Fact]
     public void InstanceData_Is80Bytes() => Unsafe.SizeOf<InstanceData>().Should().Be(80);

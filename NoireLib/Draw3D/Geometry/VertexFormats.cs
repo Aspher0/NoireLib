@@ -21,13 +21,36 @@ public struct Vertex3D
     /// <summary>Vertex color, straight alpha (premultiplied inside the shader).</summary>
     public Vector4 Color;
 
-    /// <summary>Creates a vertex.</summary>
+    /// <summary>
+    /// Model-space tangent (xyz) and bitangent handedness (w, -1 or +1), or all zero when the mesh carries
+    /// none.<br/>
+    /// This is what makes a normal map bend the surface the way its author saw it: the map's X and Y are
+    /// meaningless without the frame they were painted in, and a frame derived from screen-space derivatives
+    /// lands several degrees off the authored one - measured against the game's own copy of a model, whose
+    /// shading normal ran ten degrees from ours on strong relief. Shaders that consume a normal map use this
+    /// frame when <c>w</c> is nonzero and fall back to the derivative frame when it is zero, so meshes built
+    /// without tangents (primitives, imports that carry none) keep working unchanged.
+    /// </summary>
+    public Vector4 Tangent;
+
+    /// <summary>Creates a vertex with no authored tangent (normal-mapped shading falls back to a derivative frame).</summary>
     public Vertex3D(Vector3 position, Vector3 normal, Vector2 uv, Vector4 color)
     {
         Position = position;
         Normal = normal;
         Uv = uv;
         Color = color;
+        Tangent = default;
+    }
+
+    /// <summary>Creates a vertex with an authored tangent frame.</summary>
+    public Vertex3D(Vector3 position, Vector3 normal, Vector2 uv, Vector4 color, Vector4 tangent)
+    {
+        Position = position;
+        Normal = normal;
+        Uv = uv;
+        Color = color;
+        Tangent = tangent;
     }
 }
 

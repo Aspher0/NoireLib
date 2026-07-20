@@ -520,7 +520,7 @@ public sealed unsafe class Draw3DDiagnostics
                       + (camTraceCapUsedFrames > 0 ? "The overlay is projecting with it; camera swim is eliminated." : "Turn it on (/noire3d gpucam) - the overlay is not using it.");
         else if (camTraceCapDepthResidualN > 0)
             verdict = "the captured GPU camera fits WORSE than the best struct lag - the capture may be locked on the wrong window. "
-                      + "Run /noire3d cbprobe and paste both logs.";
+                      + "Run /noire3d cbprobe.";
         else if (best == 0)
             verdict = "best fit is lag 0 and no capture was available - the struct snapshot is in phase here; capture engages under load "
                       + "(check the capture state above if it never locks).";
@@ -674,8 +674,8 @@ public sealed unsafe class Draw3DDiagnostics
 
         var gate = (int)MathF.Ceiling(screens.Count * 0.9f);
         var verdict = mainVsMap >= gate ? "PASS"
-            : swapVsMap >= gate ? "FAIL - scene depth lives in the SwapChain buffer at present time (paste the log)"
-            : "FAIL - the analytic map does not match the RTM buffer; paste the point table "
+            : swapVsMap >= gate ? "FAIL - scene depth lives in the SwapChain buffer at present time"
+            : "FAIL - the analytic map does not match the RTM buffer "
               + "(mismatched rows are usually collision-vs-rendered-surface disagreement, harmless if few)";
 
         Report($"Draw3D probe [{verdict.Split(' ')[0]}]: RTM vs map {mainVsMap}/{screens.Count} (gate >= {gate}). {(verdict.Contains('-') ? verdict[(verdict.IndexOf('-') + 2)..] : "Analytic depth mapping confirmed against ground truth.")}");

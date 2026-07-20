@@ -944,8 +944,11 @@ public static class NoireInteract
                     case MouseButton.Left:
                         // Route into the node's OWN scene selection (per-scene, no global). A node opts out of
                         // selection via SceneNode.Selectable = false (MakeInteractable), staying hover/click-only.
+                        // The pick lands on the node's selection target, which is the node itself unless a
+                        // SelectionProxy redirects it - a multi-mesh model selecting as one object. The hit and
+                        // OnClick below stay on the clicked node, which is what is actually under the cursor.
                         if (SelectOnClick && node.Selectable)
-                            node.Scene?.Selection.Pick(node, modifiers);
+                            node.Scene?.Selection.Pick(node.ResolveSelectionTarget(), modifiers);
                         Raise(node.OnClick, hit, "OnClick");
                         break;
                     case MouseButton.Right:
