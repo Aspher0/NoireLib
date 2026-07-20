@@ -10,6 +10,49 @@ namespace NoireLib.Helpers;
 public static class ColorHelper
 {
     /// <summary>
+    /// Converts a display color to linear light, where multiplying two colors means what it physically means.
+    /// </summary>
+    /// <remarks>
+    /// <b>Convert once, at the point where the color's origin is known.</b> A color picked in a UI, read from a
+    /// hex string or taken from the game's dye table is display-encoded and belongs here first; a shader
+    /// constant is already linear and must not be passed through this at all. Both look like three floats in
+    /// 0..1 and nothing downstream can tell them apart, so a second conversion is silent and lands the color
+    /// noticeably dark rather than obviously wrong.
+    /// </remarks>
+    /// <param name="color">A display-encoded color, each channel in 0..1.</param>
+    /// <returns>The same color in linear light.</returns>
+    public static Vector3 SrgbToLinear(Vector3 color) => new(
+        SrgbToLinear(color.X),
+        SrgbToLinear(color.Y),
+        SrgbToLinear(color.Z));
+
+    /// <summary>Converts a color in linear light back to a display encoding.</summary>
+    /// <param name="color">A color in linear light, each channel in 0..1.</param>
+    /// <returns>The same color display-encoded.</returns>
+    public static Vector3 LinearToSrgb(Vector3 color) => new(
+        LinearToSrgb(color.X),
+        LinearToSrgb(color.Y),
+        LinearToSrgb(color.Z));
+
+    /// <summary>Converts one display-encoded channel to linear light.</summary>
+    /// <param name="channel">The channel value, in 0..1.</param>
+    /// <returns>The channel in linear light.</returns>
+    public static float SrgbToLinear(float channel)
+    {
+        channel = Math.Clamp(channel, 0f, 1f);
+        return channel <= 0.04045f ? channel / 12.92f : MathF.Pow((channel + 0.055f) / 1.055f, 2.4f);
+    }
+
+    /// <summary>Converts one channel in linear light to a display encoding.</summary>
+    /// <param name="channel">The channel value, in 0..1.</param>
+    /// <returns>The channel display-encoded.</returns>
+    public static float LinearToSrgb(float channel)
+    {
+        channel = Math.Clamp(channel, 0f, 1f);
+        return channel <= 0.0031308f ? channel * 12.92f : (1.055f * MathF.Pow(channel, 1f / 2.4f)) - 0.055f;
+    }
+
+    /// <summary>
     /// Converts a HEX color string to a Vector3 representing RGB values between 0 and 1.
     /// </summary>
     /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. Alpha value will be ignored if provided.</param>

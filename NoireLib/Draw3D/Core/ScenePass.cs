@@ -45,7 +45,7 @@ internal struct FrameCBData
     public Vector4 WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
 }
 
-/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (208 bytes).</summary>
+/// <summary>Per-object constants - must match ObjectCB in Common.hlsli exactly (224 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct ObjectCBData
 {
@@ -57,6 +57,7 @@ internal struct ObjectCBData
     public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only); y = box top world Y;
                             // z = outline reference footprint scale (0 = constant-thickness rim)
     public Vector4 OutlineColor; // ground-decal rim colour, straight alpha; alpha 0 = unset (the rim uses BaseColor)
+    public Vector4 Params3;      // spare per-shader slot (G-buffer injection: dye colour in rgb, dye strength in w)
 }
 
 /// <summary>
@@ -101,6 +102,7 @@ internal sealed unsafe class ScenePass : IDisposable
     private FrustumPlanes frustum;
     private Vector3 eyePos;
     private bool collectingForMainPass;
+    private long collectFrameId; // matched against a node's G-buffer-injection submission so it is not drawn twice
 
     // Distance/screen-size culling + LOD selection, captured once per collection pass (BeginCollect). Applicable only on
     // the main game pass with a real projection scale: a render-to-texture view or the wholesale-VP fallback exposes no
@@ -186,6 +188,7 @@ internal sealed unsafe class ScenePass : IDisposable
         frustum = FrustumPlanes.FromViewProj(frame.ViewProj);
         eyePos = frame.EyePos;
         collectingForMainPass = mainPass;
+        collectFrameId = frame.FrameId;
         hasOutlined = false;
         maxOutlineWidth = 0f;
 
@@ -219,6 +222,20 @@ internal sealed unsafe class ScenePass : IDisposable
     {
         if (!node.Visible || node.Destroyed)
             return;
+
+        // Submitted to the G-buffer injection this frame: the game's own pass is drawing it, and drawing it
+        // here as well would put the mesh on screen twice, the second copy overwriting the lit one. Only this
+        // node is skipped - its children keep drawing, since they were not submitted.
+        //
+        // Main pass only. A render-to-texture view draws into its own target, which the injection never
+        // touches, so a node missing from it would simply be missing.
+        if (collectingForMainPass && node.GameLitFrameId == collectFrameId)
+        {
+            foreach (var skipped in node.Children)
+                CollectNode(skipped, stats, depthAvailable);
+
+            return;
+        }
 
         var renderer = node.Renderer;
         if (renderer != null)

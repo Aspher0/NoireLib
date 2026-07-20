@@ -24,6 +24,13 @@ namespace NoireLib.Draw3D;
 /// </summary>
 public sealed unsafe class Draw3DDiagnostics
 {
+    /// <summary>
+    /// Orientation overrides for a model authored in a convention the loaders do not expect. Off by default,
+    /// and applied inside both of them so the two import paths behave identically.
+    /// See <see cref="Assets.Draw3DImportFlips"/>.
+    /// </summary>
+    public Assets.Draw3DImportFlips ImportFlips { get; } = new();
+
     private int validateFramesRemaining;
     private float validateMaxDelta;
     private double validateDeltaSum;

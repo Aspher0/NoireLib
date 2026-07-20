@@ -1,4 +1,5 @@
 using NoireLib.Draw3D.Materials;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -27,11 +28,21 @@ public sealed class GameMaterial : IDisposable
     /// <summary>The parsed material, for everything this convenience does not surface.</summary>
     public GameMaterialFile File { get; }
 
+    /// <summary>The shader package of dyeable furniture, the one package whose color map alpha is a stain mask.</summary>
+    public const string DyeableFurnitureShader = "bgcolorchange.shpk";
+
     /// <summary>
-    /// The authored color of a dyeable area, measured across sampled background materials: those texels average
-    /// around this value, so it is the starting point for the dye reference in <see cref="ToGameShaded"/>.
+    /// The stain the game renders on dyeable furniture that carries no stain: row 1 of its stain table,
+    /// Snow White, as the display color the table holds.<br/>
+    /// "Undyed" is not a passthrough state. Two placed undyed stools, sampled in the game's own G-buffer,
+    /// both carried a multiplier over the authored texture that matches this row to 0.002 - the next nearest
+    /// stain is nineteen times further away - and row 0 of the table is black, so it cannot be the default.
+    /// A dyeable surface therefore always has some stain multiplied in, and this is the one it starts with.
     /// </summary>
-    public const float MeasuredDyeReference = 0.78f;
+    public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
+
+    /// <summary>Whether this material's dyeable mask is live, so a stain (or the undyed default) applies to it.</summary>
+    public bool IsDyeableFurniture => File.ShaderPackage == DyeableFurnitureShader;
 
     /// <summary>The base color texture, or null when the material names none or it failed to load.</summary>
     public GpuTexture? BaseColor { get; }
@@ -52,14 +63,13 @@ public sealed class GameMaterial : IDisposable
     public GpuTexture? Specular { get; }
 
     /// <summary>
-    /// The material's diffuse color constant, or null when it sets none. Most materials set it to white,
-    /// where it changes nothing; dyeable furniture is where it carries a real color.<br/>
-    /// <b>Applying it uniformly is wrong.</b> The color map's alpha channel is a binary dyeable mask:
-    /// where it is high the color is authored near-neutral and takes a tint, and where it is low the
-    /// texture carries its own final color, which on furniture is most of the visible surface.
-    /// Multiplying a color over every pixel, as <see cref="ToLit"/> does when asked to, darkens that
-    /// fixed detail. Confining the tint to the masked area needs a shading path that reads alpha as data
-    /// rather than as coverage.
+    /// The material's diffuse color constant, or null when it sets none. Exposed as parsed data only.<br/>
+    /// <b>It is not what an undyed item shows, and nothing here applies it.</b> That was concluded three
+    /// separate times before it was measured to be false: the stool's file holds a dark brown here while the
+    /// game renders the undyed area bone-white, and no encoding of this value, masked or not, reproduces
+    /// that. What the game actually renders on an unstained item is <see cref="UndyedStain"/>, a row of the
+    /// stain table - the constant on disk is a slot the stain system writes into, and its file value never
+    /// reaches the screen on dyeable furniture.
     /// </summary>
     public Vector3? DiffuseColor
     {
@@ -81,8 +91,9 @@ public sealed class GameMaterial : IDisposable
     /// from a dye that simply had nothing to color.
     /// </summary>
     /// <param name="dye">
-    /// Color applied to the dyeable area only, as a display color. Null leaves that area at the near-neutral color it
-    /// was authored with, which is the closest match to an unstained item currently available.
+    /// Color applied to the dyeable area only, as a display color - the encoding a color picker and the game's
+    /// dye table both use. Null renders the area as the game renders an unstained item: with
+    /// <see cref="UndyedStain"/>, because the game has no passthrough state for a dyeable surface.
     /// </param>
     /// <param name="tint">Multiplied over the whole surface afterwards. White leaves it untouched.</param>
     /// <param name="normalStrength">How far the normal map bends the surface normal. 0 draws with the geometric normal alone, and values above 1 exaggerate it.</param>
@@ -94,9 +105,12 @@ public sealed class GameMaterial : IDisposable
     /// <param name="dyeReference">
     /// How the dye meets the masked area. 0 multiplies the authored color by the dye. A positive value is the
     /// authored color the dye should land on exactly: the area is divided by it first, so the texture carries only
-    /// relative shading and the dye carries the color. <see cref="MeasuredDyeReference"/> is the measured starting point.<br/>
-    /// <b>Which of the two the game does is unresolved</b>, and the two differ by more than a shade, so this is a
-    /// control rather than a setting with a known-correct value.
+    /// relative shading and the dye carries the color.<br/>
+    /// <b>Resolved: the game multiplies, so 0 is the correct value.</b> Three stains with opposite channel
+    /// balances - near-white, cyan, dark red - were applied to the game's own copy of a model and sampled in
+    /// its G-buffer beside ours; the multiply reproduces all three within 0.004 per channel, using nothing but
+    /// the stain table's colors, and the divide reading does not. The divide remains as an authoring tool for
+    /// callers who want a dye to land exactly, not as a model of the game.
     /// </param>
     /// <param name="ignoreSceneLight">
     /// Takes this renderer's lighting out of the picture, leaving the surface at the colors its texture and dye give it.<br/>
@@ -111,14 +125,26 @@ public sealed class GameMaterial : IDisposable
         float dyeReference = 0f,
         bool ignoreSceneLight = false)
     {
+        // Falling back costs the dye, the normal map and the specular response while still drawing the
+        // texture, so the result looks like a plausible material rather than like a failure - and it is built
+        // once and kept, so it does not repair itself when the device arrives a frame later. Callers that hold
+        // materials watch GameMaterialPipeline.Ready and rebuild on the transition.
         if (BaseColor is null || !GameMaterialPipeline.EnsureRegistered())
             return ToLit(tint);
 
-        // No dye by default: the masked area keeps the near-neutral colour it was authored with. Using the
-        // material's diffuse constant here was tried and measured against the game, and it came out far too
-        // dark even confined to the mask, so that constant is not the undyed appearance.
-        var color = dye ?? Vector3.One;
-        var strength = dye is null ? 0f : 1f;
+        // A dyeable surface always has a stain multiplied in - the game has no passthrough state - so "no dye"
+        // means the game's own default stain, not the raw texture. Leaving the area at the texture is what made
+        // every undyed item read brighter and cooler than the game's copy, by exactly the missing stain.
+        //
+        // The rule itself is measured, not assumed: albedo is the stain times the authored color, both in
+        // linear light, confined to the mask. Verified against the game's own G-buffer with three stains of
+        // opposite channel balance, each landing within 0.004 per channel using only the stain table's colors.
+        // Every color here is display-encoded - the stain table, a picker, the undyed default - so the
+        // conversion happens once, here, rather than in a shader that cannot tell an encoded color from a
+        // linear one.
+        var applied = dye ?? (IsDyeableFurniture ? UndyedStain : (Vector3?)null);
+        var color = ColorHelper.SrgbToLinear(applied ?? Vector3.One);
+        var strength = applied is null ? 0f : 1f;
 
         // A strength is only meaningful when the map behind it exists, so an absent texture zeroes its term
         // rather than leaving the shader to sample an unbound slot.

@@ -25,7 +25,54 @@
 #define MiscChannels      Params1       // rtv3 rgba, written verbatim
 #define NormalStrength    Params2.x
 #define ShadingModelId    Params2.y     // rtv0 alpha, already divided by 255 on the CPU
+#define DyeReference      Params2.z     // 0 = the dye multiplies the authored colour instead
+#define MaterialCeiling   Params2.w     // rtv1's top of range selects a mode, so the channels are held below it
+#define DyeColorStrength  Params3       // rgb = dye colour, w = how strongly to apply it (0 = undyed)
 #define AlbedoOverride    OutlineColor  // rgb = flat albedo, a = how much of it replaces the sampled albedo
+
+// The game stores colour maps sRGB-encoded and this renderer uploads them as UNORM, so a sample returns the
+// encoded value. The G-buffer's albedo target holds encoded values too, so a texture written straight through
+// is already correct - but a dye has to be applied in linear light and re-encoded, because multiplying two
+// encoded values is not the same operation and lands on a different colour. Same pair as GameMaterial.hlsl.
+float3 SrgbToLinear(float3 c)
+{
+    c = saturate(c);
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+float3 LinearToSrgb(float3 c)
+{
+    c = saturate(c);
+    return c <= 0.0031308 ? c * 12.92 : (1.055 * pow(c, 1.0 / 2.4)) - 0.055;
+}
+
+// The colour map's alpha is a dyeable mask, not coverage: where it is high the texture is authored
+// near-neutral so a colour can be applied, and where it is low the texture already carries its final colour
+// and must be left alone. Tinting the whole surface would darken the fixed detail that is most of what a
+// piece of furniture shows.
+float3 ApplyDye(float3 encodedAlbedo, float maskSource)
+{
+    float mask = saturate(maskSource) * saturate(DyeColorStrength.w);
+    if (mask <= 0.0)
+        return encodedAlbedo;
+
+    // The colour arrives in LINEAR light and is used as it comes. Which encoding it was in is knowable on the
+    // CPU, where the colour's origin is known, and not knowable here: a dye picked from the game's table is
+    // display-encoded and a material's diffuse constant is not, and both reach this as three floats in 0..1.
+    // Converting here assumed the first and silently darkened the second - 0.78 became 0.57 - which is what
+    // made the material's own constant look like the wrong value for years.
+    //
+    // Kept identical to the scene-pass shader so the two paths cannot disagree about a colour. Reference 0
+    // multiplies the authored colour, which is what the game itself does - measured against three of its own
+    // stains, each within 0.004 per channel. A reference above 0 divides by it first, so an area authored at
+    // that value lands on the dye exactly; that reading is an authoring tool, not a model of the game.
+    float3 dyeMul = DyeColorStrength.rgb;
+    if (DyeReference > 0.0)
+        dyeMul /= max(SrgbToLinear(DyeReference.xxx).r, 1e-4);
+
+    float3 linearAlbedo = SrgbToLinear(encodedAlbedo) * lerp(float3(1.0, 1.0, 1.0), dyeMul, mask);
+    return LinearToSrgb(linearAlbedo);
+}
 
 // A game normal map stores XY and reconstructs Z; the blue channel carries other data and must not be used
 // as the Z component.
@@ -58,7 +105,7 @@ struct GBufferOut
     float4 normalId  : SV_Target0;   // rgb = shading normal (world, n*0.5+0.5), a = shading-model id
     float4 material  : SV_Target1;   // packed material scalars, a is always 0
     float4 albedo    : SV_Target2;   // rgb = albedo, a is always 1
-    float4 misc      : SV_Target3;   // r = sentinel, g = 0, ba carry data whose meaning is unmeasured
+    float4 misc      : SV_Target3;   // rg = 0 on the game's furniture, b is occlusion-shaped, a = 1
     float4 geoNormal : SV_Target4;   // rgb = geometric normal (world, no normal-map detail), a ~ 0
 };
 
@@ -103,7 +150,9 @@ GBufferOut ps(PsIn i)
     float3 n = normalize(i.worldNormal);
 
 #ifdef GBUFFER_TEXTURED
-    albedo *= BaseTex.Sample(BaseSamp, i.uv).rgb;
+    // Alpha is read as data, not coverage: it is the dyeable mask.
+    float4 texel = BaseTex.Sample(BaseSamp, i.uv);
+    albedo = ApplyDye(albedo * texel.rgb, texel.a);
 #endif
 
 #ifdef GBUFFER_MAPS
@@ -145,7 +194,10 @@ GBufferOut ps(PsIn i)
     float3 material = MaterialFallback;
 #endif
 
-    o.material = float4(material, 0.0);
+    // Held below the ceiling because the top of rtv1's range is a mode, not a value: red at 1.0 turns the
+    // reflection green, and a specular map reaches 1.0 in places, which showed up as green blotches across an
+    // injected object that the game's own copy of the same model does not have.
+    o.material = float4(min(material, MaterialCeiling.xxx), 0.0);
 
     o.albedo    = float4(albedo, 1.0);
     o.misc      = MiscChannels;

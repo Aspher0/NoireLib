@@ -3,6 +3,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
+using NoireLib.Draw3D;
 using System;
 using System.Numerics;
 
@@ -233,6 +234,49 @@ internal static class Ui
         ImGui.TextDisabled("(?)");
         if (captionHovered || ImGui.IsItemHovered())
             Tooltip(hint);
+    }
+
+    /// <summary>
+    /// Orientation overrides for imported models, shared by every page that imports one.<br/>
+    /// Off by default and correct that way for the game's own models and for a conforming glTF. The toggles
+    /// live on the library so both loaders run the same code, and the panel is shared so the two pages driving
+    /// it cannot describe it differently.
+    /// </summary>
+    /// <param name="id">A unique form id for the page hosting it.</param>
+    /// <returns>Whether a toggle changed this frame, so a caller holding decoded meshes can rebuild them.</returns>
+    public static bool ImportFlips(string id)
+    {
+        var flips = NoireDraw3D.Diagnostics.ImportFlips;
+
+        Section("Import orientation");
+        Note("Leave all of these off. Both loaders take a model's positions and transforms exactly as authored and reverse only the triangle winding, which is right for the game's own models and for a glTF that follows the spec. These are here for a file whose exporter disagreed - one that writes Z-up, or that already converted handedness itself - because such a file cannot be told apart from a correct one by reading it.");
+        Gap();
+        Note("A single mirror reflects, so it turns a model into its mirror image. Mirror X and Mirror Z together are a 180 degree turn instead, which changes only which way the model faces.");
+        Gap();
+
+        var changed = false;
+        using (Form(id))
+        {
+            changed |= Toggle2("Mirror Z", () => flips.MirrorZ, v => flips.MirrorZ = v, "Reflects the model through the XY plane.");
+            changed |= Toggle2("Mirror X", () => flips.MirrorX, v => flips.MirrorX = v, "Reflects through the YZ plane. With Mirror Z on, the two together are a 180 degree turn about Y rather than a reflection.");
+            changed |= Toggle2("Reverse winding", () => flips.ReverseWinding, v => flips.ReverseWinding = v, "Undoes the reversal the loaders already apply. A file whose winding was converted before it got here needs this; anything else will render inside out with it.");
+            changed |= Toggle2("Flip texture U", () => flips.FlipU, v => flips.FlipU = v, "Mirrors the texture horizontally.");
+            changed |= Toggle2("Flip texture V", () => flips.FlipV, v => flips.FlipV = v, "Mirrors the texture vertically.");
+        }
+
+        return changed;
+    }
+
+    /// <summary>A checkbox row that reports whether it changed, for callers that must react to the edit rather than just store it.</summary>
+    public static bool Toggle2(string label, Func<bool> get, Action<bool> set, string? hint = null)
+    {
+        Row(label, hint);
+        var v = get();
+        if (!ImGui.Checkbox($"##{label}", ref v))
+            return false;
+
+        set(v);
+        return true;
     }
 
     /// <summary>Draws a wrapped tooltip. Explicit "\n" still forces a break.</summary>

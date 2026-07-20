@@ -32,6 +32,7 @@ cbuffer ObjectCB : register(b1)
                                 //     box scale; immediate shapes pass their built footprint scale to keep the old proportional rim)
     float4   OutlineColor;      // ground-decal rim colour, straight alpha. Alpha 0 = unset: the rim uses BaseColor, which is
                                 // the classic look where rim and fill differ only in opacity.
+    float4   Params3;           // spare per-shader slot (G-buffer injection: dye colour in rgb, dye strength in w)
 }
 
 // ---- b2: per-decal excluded-actor gate + stencil key (ground-decal ExcludeObjects) --

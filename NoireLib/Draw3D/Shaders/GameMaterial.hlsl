@@ -111,12 +111,17 @@ float4 ps(PsIn i) : SV_Target
 
     float3 albedo = SrgbToLinear(texel.rgb) * SrgbToLinear(i.color.rgb);
 
-    // Two readings of how a dye meets the masked area, because they differ by more than a shade and only a
-    // comparison against a known dye in game can decide between them.
-    //   reference 0  - the dye multiplies the authored colour, so a light dye darkens a light surface.
+    // Two readings of how a dye meets the masked area. The comparison against known dyes in game has been
+    // made, and the game multiplies: three stains sampled in its own G-buffer land within 0.004 per channel
+    // under reference 0, using only the stain table's colours.
+    //   reference 0  - the dye multiplies the authored colour. This is what the game does.
     //   reference > 0 - the authored colour is divided by that reference first, so an area authored at the
-    //                   reference lands on the dye exactly and the texture only carries relative shading.
-    float3 dyeMul = SrgbToLinear(Params0.rgb);
+    //                   reference lands on the dye exactly. An authoring tool, not a model of the game.
+    // Params0.rgb arrives in LINEAR light and is used as it comes, matching GameGBuffer.hlsl so the injected
+    // and ordinary paths cannot land on different colours. Which encoding a colour was in is knowable on the
+    // CPU and not here: a dye from the game's table is display-encoded, a material's diffuse constant is not,
+    // and both reach this as three floats in 0..1. Converting here assumed the first and darkened the second.
+    float3 dyeMul = Params0.rgb;
     if (Params2.z > 0.0)
         dyeMul /= max(SrgbToLinear(Params2.zzz).r, 1e-4);
 

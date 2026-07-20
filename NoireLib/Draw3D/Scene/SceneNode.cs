@@ -45,6 +45,15 @@ public sealed partial class SceneNode
     /// <summary>Whether this node (and its whole subtree) renders. ANDs down the hierarchy.</summary>
     public bool Visible { get; set; } = true;
 
+    /// <summary>
+    /// The frame on which this node was submitted to the G-buffer injection, so the scene pass skips drawing it
+    /// itself and the object is not rendered twice.<br/>
+    /// Deliberately not <see cref="Visible"/>: hiding a node also removes it from picking and hover, and an
+    /// injected object is still standing in the world and still has to be clickable. Only the drawing is
+    /// suppressed, and only for the one frame that was submitted.
+    /// </summary>
+    internal long GameLitFrameId;
+
     /// <summary>The node's renderer, when one was attached via <see cref="SetMesh"/>.</summary>
     public MeshRenderer? Renderer { get; private set; }
 

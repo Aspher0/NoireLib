@@ -238,7 +238,13 @@ public static unsafe partial class NoireDraw3D
     /// <summary>
     /// The game depth-stencil value that marks characters, used to occlude ground decals along an excluded character's
     /// exact silhouette (see <see cref="Scene.SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>).
-    /// Discovered via <c>/noire3d stencil</c>; default <c>0x08</c>. Set to 0 to disable stencil exclusion (decals paint over characters).
+    /// Discovered via <c>/noire3d stencil</c>; default <c>0x08</c>. Set to 0 to disable stencil exclusion (decals paint over characters).<br/>
+    /// <b>This is an end-of-frame reading and only means anything there.</b> The stencil plane is rewritten several
+    /// times across a frame - the geometry pass marks one thing, the lighting pass another, and what a decal sees at
+    /// the end is the last of them. That is the right moment for this feature, because ground decals are drawn then.
+    /// It is <b>not</b> the value the geometry pass writes, so it must not be reused for anything that writes
+    /// mid-frame: see <see cref="Draw3DGameLit.Stencil"/>, where <c>0x08</c> carries no lit mark and leaves the
+    /// object black.
     /// </summary>
     public static uint CharacterStencilValue { get; set; } = 0x08;
 
@@ -365,6 +371,31 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>What <see cref="DrawGameLit(Scene.SceneNode)"/> writes into the game's G-buffer. The defaults are the measured ones.</summary>
     public static Draw3DGameLit GameLit { get; } = new();
+
+    /// <summary>
+    /// Reads every channel of the game's G-buffer at one point on screen: the shading normal and shading-model
+    /// id, the material scalars, the albedo, the misc target and the geometric normal, in bind order.<br/>
+    /// <b>What it is for.</b> An injected object stands in the same buffer as the game's own copy of the same
+    /// model, in the same frame and under the same lights, so sampling both is how "ours looks a little
+    /// brighter" becomes a per-channel difference that can be driven to zero. Judging these by eye is what
+    /// produced every wrong reading this feature was built through.<br/>
+    /// Needs the G-buffer's identity, which comes from a <c>/noire3d rtlog</c> capture; returns false until one
+    /// has run, and on a frame with no world pass.
+    /// </summary>
+    /// <param name="screenPosition">Where to sample, in display pixels.</param>
+    /// <param name="samples">Receives one RGBA value per target, in bind order. Cleared first.</param>
+    /// <param name="patch">Square patch averaged around the point, which steadies the reading on a textured surface.</param>
+    /// <returns>Whether every target was read.</returns>
+    public static bool TrySampleGameGBuffer(Vector2 screenPosition, List<Vector4> samples, int patch = 4)
+    {
+        samples.Clear();
+        if (renderDevice is null || renderTargetTap is not { } tap)
+            return false;
+
+        var targets = tap.GBufferTargets();
+        return targets.Count != 0
+            && GBufferProbe.TrySampleAt(renderDevice, targets, (int)screenPosition.X, (int)screenPosition.Y, patch, samples);
+    }
 
     /// <summary>A snapshot of the renderer's counters (see <see cref="Draw3DStats"/>).</summary>
     public static Draw3DStats Stats => BuildStats();
@@ -1505,9 +1536,11 @@ public static unsafe partial class NoireDraw3D
 
     /// <summary>
     /// Draws a node into the game's G-buffer for this frame, so the game's own lighting pass lights it.<br/>
-    /// Call once per frame for as long as the node should be game-lit; nothing is retained between frames.<br/>
-    /// <b>Set <see cref="Scene.SceneNode.Visible"/> to false on the node as well</b>, or it is drawn twice: once
-    /// here and once by the normal path.<br/>
+    /// Call once per frame for as long as the node should be game-lit; nothing is retained between frames, and
+    /// the node draws normally again on the first frame it is not submitted.<br/>
+    /// The node's own draw is suppressed for that frame automatically, so it is not rendered twice. Do
+    /// <b>not</b> hide it with <see cref="Scene.SceneNode.Visible"/> to achieve that: hiding also removes it
+    /// from picking and hover, and an injected object is still standing in the world and still clickable.<br/>
     /// A game-lit node is opaque and cannot carry an outline, a fade or a ground decal, and cannot be drawn
     /// above everything. Those live in Draw3D's own pass, which this bypasses. Picking, hover and click events
     /// are unaffected - they never depended on which pass drew the node.
@@ -1538,7 +1571,17 @@ public static unsafe partial class NoireDraw3D
             textured ? texture!.SrvPointer : 0,
             hasMaps ? normal!.SrvPointer : 0,
             hasMaps ? specular!.SrvPointer : 0,
-            material.SurfaceParams.X > 0f ? material.SurfaceParams.X : 1f);
+            material.SurfaceParams.X > 0f ? material.SurfaceParams.X : 1f,
+            // The dye reaches the injection from the same two places the scene pass reads it (ShapeParams
+            // arrives as Params0, SurfaceParams as Params2), so a dyed object cannot come out one colour on
+            // one path and another colour on the other.
+            material.ShapeParams,
+            material.SurfaceParams.Z);
+
+        // Suppresses this node's own draw for this frame only. The scene pass compares against the frame it is
+        // collecting for, so a caller that stops submitting gets the normal draw back immediately, with no
+        // state to reset and nothing left latched if the caller disappears.
+        node.GameLitFrameId = frameId;
         return true;
     }
 
@@ -1554,7 +1597,9 @@ public static unsafe partial class NoireDraw3D
     /// <param name="normalSrv">The material's normal map, which supplies the surface relief the game's own normal buffer shows.</param>
     /// <param name="specularSrv">The material's specular map, which supplies rtv1's per-pixel material response.</param>
     /// <param name="normalStrength">How strongly the normal map perturbs the surface normal.</param>
-    internal static void EnqueueGameLit(Geometry.Mesh mesh, in Matrix4x4 world, Vector4 color, bool textured = false, nint srv = 0, nint normalSrv = 0, nint specularSrv = 0, float normalStrength = 1f)
+    /// <param name="dyeColorStrength">The dye for the colour map's maskable area: rgb the colour, w how strongly (0 = undyed).</param>
+    /// <param name="dyeReference">The authored value the dyeable area is divided by, or 0 to multiply the authored colour instead.</param>
+    internal static void EnqueueGameLit(Geometry.Mesh mesh, in Matrix4x4 world, Vector4 color, bool textured = false, nint srv = 0, nint normalSrv = 0, nint specularSrv = 0, float normalStrength = 1f, Vector4 dyeColorStrength = default, float dyeReference = 0f)
     {
         if (renderTargetTap is not { } tap || shaderLibrary is null || renderDevice is null)
             return;
@@ -1571,7 +1616,7 @@ public static unsafe partial class NoireDraw3D
         gbufferIdleFrames = 0;
 
         gbufferInject.Enqueue(new Core.GBufferInject.Item(
-            mesh, world, color, textured, srv, normalSrv, specularSrv, normalStrength));
+            mesh, world, color, textured, srv, normalSrv, specularSrv, normalStrength, dyeColorStrength, dyeReference));
     }
 
     /// <summary>
@@ -2162,7 +2207,7 @@ public static unsafe partial class NoireDraw3D
     /// pixel in the final image carries no record of where it came from. Walking the binds in order and looking
     /// at each one finds the first image where the pixel is already wrong, and that names the pass.
     /// </summary>
-    /// <param name="rest">"from [count]" - indices as printed by <c>/noire3d rtlog</c>.</param>
+    /// <param name="rest">"sweep [count]" for the whole frame, or "from [count]" for a span of it.</param>
     private static void HandleFrameDumpCommand(string rest)
     {
         if (EnsureRenderTargetTap() is not { } dumpTap)
@@ -2172,16 +2217,31 @@ public static unsafe partial class NoireDraw3D
         }
 
         var parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length == 0 || !int.TryParse(parts[0], out var from))
+        var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NoireLib_FrameDump");
+
+        // The default, and the one to use first: a bind index is not a stable name for a pass. The frame's
+        // length moves with what is on screen, so a span read off an earlier log routinely lands on a
+        // different stage entirely - which is exactly how a first attempt at this dumped the depth and
+        // occlusion stage while believing it was dumping the lighting.
+        if (parts.Length == 0 || parts[0].Equals("sweep", StringComparison.OrdinalIgnoreCase))
         {
-            Print("Draw3D: /noire3d framedump <from> [count] - run /noire3d rtlog first, then walk its bind indices. Each dump stalls the frame, so keep the span small.");
+            var sweepCount = parts.Length > 1 && int.TryParse(parts[1], out var wanted) ? wanted : 12;
+            var stride = dumpTap.ArmFrameSweep(sweepCount, folder);
+            Print(stride > 0
+                ? $"Draw3D: sweeping the whole frame on the next one - every {stride}th bind, images in {folder}. Find the first image where the object is already wrong, then narrow with /noire3d framedump <from> <count>."
+                : "Draw3D: the render-target tap could not be installed (see the log).");
+            return;
+        }
+
+        if (!int.TryParse(parts[0], out var from))
+        {
+            Print("Draw3D: /noire3d framedump [sweep [count] | <from> [count]] - sweep covers the whole frame and is the one to start with. Each dump stalls the frame.");
             return;
         }
 
         var count = parts.Length > 1 && int.TryParse(parts[1], out var parsed) ? parsed : 4;
-        var folder = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "NoireLib_FrameDump");
         dumpTap.ArmFrameDump(from, count, folder);
-        Print($"Draw3D: dumping binds {from}..{from + count - 1} on the next frame - images in {folder}, one per bind, named by index. The frame will hitch.");
+        Print($"Draw3D: dumping binds {from}..{from + count - 1} on the next frame - images in {folder}. Indices only mean anything within one frame, so read them off the bind table this same run prints.");
     }
 
     private static void RegisterCommand()
@@ -2190,7 +2250,7 @@ public static unsafe partial class NoireDraw3D
         // the Diagnostics facade keeps the toolkit reachable regardless of who won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump <from> [count] | gbuffer | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump [sweep [count]|<from> [count]] | gbuffer | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)

@@ -403,6 +403,15 @@ public sealed class ScenesPage : IDisposable
         if (ImGui.Button("Load model", new Vector2(220f * Ui.Scale, 0f)))
             LoadModel(demo);
 
+        Ui.Gap();
+
+        // The flips are applied inside the loader, so a change reaches the next import rather than what is
+        // already on screen. Nothing is reloaded automatically here: the models came from an arbitrary path
+        // the user chose, and silently re-reading files off disk behind a checkbox is not a demo's business.
+        Ui.ImportFlips("scenes.flips");
+        Ui.Gap();
+        Ui.Note("Load the model again after changing any of these - they apply when a file is imported, not to what is already spawned.");
+
         Ui.Section("World collision");
         Ui.Note("Reads the live collision scene, so both run on the framework thread and fail soft with nothing under you.");
         Ui.Gap();

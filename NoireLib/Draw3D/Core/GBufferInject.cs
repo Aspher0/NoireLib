@@ -40,6 +40,8 @@ internal sealed unsafe class GBufferInject : IDisposable
     /// <param name="NormalSrv">The material's normal map, or 0. Supplies the relief the game's own normal buffer shows.</param>
     /// <param name="SpecularSrv">The material's specular map, or 0. Supplies rtv1's per-pixel material response.</param>
     /// <param name="NormalStrength">How strongly the normal map perturbs the surface normal.</param>
+    /// <param name="DyeColorStrength">The dye applied to the colour map's maskable area: rgb the colour, w how strongly (0 = undyed).</param>
+    /// <param name="DyeReference">The authored value the dyeable area is divided by, or 0 to multiply the authored colour instead.</param>
     internal readonly record struct Item(
         Mesh Mesh,
         Matrix4x4 World,
@@ -48,7 +50,9 @@ internal sealed unsafe class GBufferInject : IDisposable
         nint Srv,
         nint NormalSrv,
         nint SpecularSrv,
-        float NormalStrength);
+        float NormalStrength,
+        Vector4 DyeColorStrength,
+        float DyeReference);
 
     /// <summary>Depth-state variants, indexed by <see cref="DepthStateIndex"/>: depth write on or off, stencil stamp on or off.</summary>
     private const int DepthStateCount = 4;
@@ -166,7 +170,8 @@ internal sealed unsafe class GBufferInject : IDisposable
         obj.BaseColor = item.Color;
         obj.Params0 = new Vector4(options.MaterialParams, options.MaterialOverride);
         obj.Params1 = options.Misc;
-        obj.Params2 = new Vector4(item.NormalStrength, options.ShadingModelId / 255f, 0f, 0f);
+        obj.Params2 = new Vector4(item.NormalStrength, options.ShadingModelId / 255f, item.DyeReference, options.MaterialCeiling);
+        obj.Params3 = item.DyeColorStrength;
         obj.OutlineColor = options.AlbedoOverride;
         objectCb!.UpdateConstant(ctx, obj);
 

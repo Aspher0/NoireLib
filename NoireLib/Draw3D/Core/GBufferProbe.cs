@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Numerics;
 using System.Text;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
@@ -19,11 +20,26 @@ namespace NoireLib.Draw3D.Core;
 internal static unsafe class GBufferProbe
 {
     /// <summary>Per-channel statistics of one target, which is what distinguishes the kinds apart.</summary>
-    /// <param name="Min">Lowest value seen in each channel.</param>
-    /// <param name="Max">Highest value seen in each channel.</param>
-    /// <param name="Mean">Average of each channel.</param>
+    /// <param name="Min">Lowest finite value seen in each channel.</param>
+    /// <param name="Max">Highest finite value seen in each channel.</param>
+    /// <param name="Mean">Average of each channel, over finite values.</param>
     /// <param name="DistinctApprox">Roughly how many distinct values the red channel takes, quantised to 8 bits.</param>
-    private readonly record struct ChannelStats(float[] Min, float[] Max, float[] Mean, int DistinctApprox);
+    /// <param name="NanCount">Pixels holding a NaN in any colour channel.</param>
+    /// <param name="InfCount">Pixels holding an infinity in any colour channel.</param>
+    /// <param name="DisplayScale">
+    /// The divisor the image is written with. Chosen from a high percentile rather than the peak: dividing by
+    /// the brightest pixel means a single extreme value renders the entire rest of the frame as black, which
+    /// is how two dumps in this workstream came back as featureless black images and were nearly read as
+    /// "nothing here" instead of "one pixel is enormous".
+    /// </param>
+    private readonly record struct ChannelStats(
+        float[] Min,
+        float[] Max,
+        float[] Mean,
+        int DistinctApprox,
+        int NanCount,
+        int InfCount,
+        float DisplayScale);
 
     /// <summary>
     /// Decode buffer, reused across targets and across runs. See <see cref="ReadPixels"/> for why it is not
@@ -130,23 +146,243 @@ internal static unsafe class GBufferProbe
 
                     var stats = Measure(pixels, (int)desc.Width, (int)desc.Height);
 
-                    // A half-float target carries values far above 1, and clamping them to write an image
-                    // destroys exactly the information the image was for: everything bright collapses to one
-                    // flat value and the channel reads as though it held two.
-                    var peak = MathF.Max(stats.Max[0], MathF.Max(stats.Max[1], stats.Max[2]));
-                    var scale = peak > 1.001f ? 1f / peak : 1f;
-
-                    WriteBmp(path, pixels, (int)desc.Width, (int)desc.Height, scale, alphaOnly: false);
+                    WriteBmp(path, pixels, (int)desc.Width, (int)desc.Height, stats.DisplayScale, alphaOnly: false);
                     WriteBmp(AlphaPath(path), pixels, (int)desc.Width, (int)desc.Height, stats.Max[3] > 1.001f ? 1f / stats.Max[3] : 1f, alphaOnly: true);
 
-                    var scaleNote = scale < 1f ? $"  (image divided by {peak:F2} to be viewable)" : string.Empty;
+                    var scaleNote = stats.DisplayScale < 1f ? $"  (image divided by {1f / stats.DisplayScale:F2} to be viewable)" : string.Empty;
+
+                    // Non-finite pixels are called out rather than folded into the range, because they are the
+                    // one reading that explains a result no material value can change: anything multiplied by
+                    // an infinity stays infinite, and anything multiplied by a NaN stays NaN.
+                    var badNote = stats.NanCount > 0 || stats.InfCount > 0
+                        ? $"\n    NOT FINITE: {stats.NanCount} pixel(s) NaN, {stats.InfCount} infinite - these survive any later multiply"
+                        : string.Empty;
 
                     return $"{FormatShort(desc.Format)}, {desc.Width}x{desc.Height}{scaleNote}\n"
                          + $"    R {stats.Min[0]:F3}..{stats.Max[0]:F3} mean {stats.Mean[0]:F3}   "
                          + $"G {stats.Min[1]:F3}..{stats.Max[1]:F3} mean {stats.Mean[1]:F3}\n"
                          + $"    B {stats.Min[2]:F3}..{stats.Max[2]:F3} mean {stats.Mean[2]:F3}   "
                          + $"A {stats.Min[3]:F3}..{stats.Max[3]:F3} mean {stats.Mean[3]:F3}\n"
-                         + $"    about {stats.DistinctApprox} distinct red values{(stats.DistinctApprox <= 8 ? " - few enough to be a mask or an id" : string.Empty)}";
+                         + $"    about {stats.DistinctApprox} distinct red values{(stats.DistinctApprox <= 8 ? " - few enough to be a mask or an id" : string.Empty)}"
+                         + badNote;
+                }
+                finally
+                {
+                    ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the <b>stencil</b> plane of the scene depth-stencil as an image, plus a census of the values in
+    /// it.<br/>
+    /// <b>Timing is the whole point.</b> The game marks pixels in stencil during its geometry pass and its
+    /// deferred light volumes test that mark, so the value only exists between those two passes - anything
+    /// read at the end of the frame has already had it consumed and reports zero. Reading it mid-frame is the
+    /// only way to learn what the game's own geometry actually writes, rather than inferring it from which
+    /// values happen to work.
+    /// </summary>
+    /// <param name="device">The render device whose context performs the copy.</param>
+    /// <param name="resource">The depth-stencil texture.</param>
+    /// <param name="path">Where to write the image.</param>
+    internal static string DumpStencil(RenderDevice device, nint resource, string path)
+    {
+        if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
+            return "no depth-stencil";
+
+        using (source)
+        {
+            D3D11_TEXTURE2D_DESC desc;
+            source.Get()->GetDesc(&desc);
+
+            // How far into each texel the stencil byte sits, per depth-stencil layout. A format with no
+            // stencil plane has nothing to report.
+            var stride = desc.Format switch
+            {
+                DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT => 4,
+                DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT => 8,
+                _ => 0,
+            };
+
+            if (stride == 0)
+                return $"{desc.Format} carries no stencil plane";
+
+            var offset = stride - 1 == 3 ? 3 : 4; // R24G8: byte 3; R32G8X24: byte 4
+
+            var stagingDesc = desc;
+            stagingDesc.Usage = D3D11_USAGE.D3D11_USAGE_STAGING;
+            stagingDesc.BindFlags = 0;
+            stagingDesc.CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ;
+            stagingDesc.MiscFlags = 0;
+
+            ComPtr<ID3D11Texture2D> staging = default;
+            using (staging)
+            {
+                if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
+                    return "stencil staging allocation failed";
+
+                var ctx = device.Context;
+                ctx->CopyResource((ID3D11Resource*)staging.Get(), (ID3D11Resource*)source.Get());
+
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                if (ctx->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped) < 0)
+                    return "stencil map failed";
+
+                try
+                {
+                    var width = (int)desc.Width;
+                    var height = (int)desc.Height;
+                    var needed = width * height * 4;
+
+                    if (scratch is null || scratch.Length < needed)
+                        scratch = new float[needed];
+
+                    var census = new int[256];
+                    var row = (byte*)mapped.pData;
+
+                    for (var y = 0; y < height; y++)
+                    {
+                        var src = row + (y * mapped.RowPitch);
+                        for (var x = 0; x < width; x++)
+                        {
+                            var value = src[(x * stride) + offset];
+                            census[value]++;
+
+                            // Written as the raw value rather than normalised: a stencil image is read by
+                            // matching a grey level back to a number, not by judging its brightness.
+                            StoreGrey(scratch, ((y * width) + x) * 4, value / 255f);
+                        }
+                    }
+
+                    WriteBmp(path, scratch, width, height, 1f, alphaOnly: false);
+
+                    var sb = new StringBuilder();
+                    sb.Append($"stencil {desc.Width}x{desc.Height}: ");
+                    for (var v = 0; v < census.Length; v++)
+                    {
+                        if (census[v] > 0)
+                            sb.Append($"0x{v:X2}={census[v]} ");
+                    }
+
+                    return sb.ToString();
+                }
+                finally
+                {
+                    ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Reads every G-buffer target at one screen position, averaged over a small patch.<br/>
+    /// <b>What this is for.</b> The game's own copy of a model sits in the same buffer, in the same frame,
+    /// under the same lights. Sampling both turns "ours looks a little brighter" into a per-channel difference
+    /// that can be driven to zero - and judging these by eye is what produced every wrong reading on this
+    /// workstream. Copies only the patch rather than the whole target, so it is cheap enough to run per frame.
+    /// </summary>
+    /// <param name="device">The render device whose context performs the copy.</param>
+    /// <param name="targets">The G-buffer resources, in bind order.</param>
+    /// <param name="x">Pixel column.</param>
+    /// <param name="y">Pixel row.</param>
+    /// <param name="patch">Square patch size averaged around the point; 1 samples the single pixel.</param>
+    /// <param name="samples">One RGBA value per target, in bind order.</param>
+    /// <returns>Whether every target was read.</returns>
+    internal static bool TrySampleAt(RenderDevice device, IReadOnlyList<nint> targets, int x, int y, int patch, List<Vector4> samples)
+    {
+        samples.Clear();
+        if (targets.Count == 0)
+            return false;
+
+        foreach (var target in targets)
+        {
+            if (!TrySampleOne(device, target, x, y, patch, out var value))
+                return false;
+
+            samples.Add(value);
+        }
+
+        return true;
+    }
+
+    /// <summary>Copies one patch of one target into staging and averages it.</summary>
+    private static bool TrySampleOne(RenderDevice device, nint resource, int x, int y, int patch, out Vector4 value)
+    {
+        value = default;
+        if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
+            return false;
+
+        using (source)
+        {
+            D3D11_TEXTURE2D_DESC desc;
+            source.Get()->GetDesc(&desc);
+
+            var size = Math.Max(1, patch);
+            var left = Math.Clamp(x - (size / 2), 0, (int)desc.Width - 1);
+            var top = Math.Clamp(y - (size / 2), 0, (int)desc.Height - 1);
+            var right = Math.Min(left + size, (int)desc.Width);
+            var bottom = Math.Min(top + size, (int)desc.Height);
+            if (right <= left || bottom <= top)
+                return false;
+
+            var stagingDesc = desc;
+            stagingDesc.Width = (uint)(right - left);
+            stagingDesc.Height = (uint)(bottom - top);
+            stagingDesc.MipLevels = 1;
+            stagingDesc.ArraySize = 1;
+            stagingDesc.Usage = D3D11_USAGE.D3D11_USAGE_STAGING;
+            stagingDesc.BindFlags = 0;
+            stagingDesc.CPUAccessFlags = (uint)D3D11_CPU_ACCESS_FLAG.D3D11_CPU_ACCESS_READ;
+            stagingDesc.MiscFlags = 0;
+
+            ComPtr<ID3D11Texture2D> staging = default;
+            using (staging)
+            {
+                if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
+                    return false;
+
+                var box = new D3D11_BOX
+                {
+                    left = (uint)left,
+                    top = (uint)top,
+                    front = 0,
+                    right = (uint)right,
+                    bottom = (uint)bottom,
+                    back = 1,
+                };
+
+                var ctx = device.Context;
+                ctx->CopySubresourceRegion((ID3D11Resource*)staging.Get(), 0, 0, 0, 0, (ID3D11Resource*)source.Get(), 0, &box);
+
+                D3D11_MAPPED_SUBRESOURCE mapped;
+                if (ctx->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, 0, &mapped) < 0)
+                    return false;
+
+                try
+                {
+                    var pixels = ReadPixels(mapped, stagingDesc, out var supported);
+                    if (!supported)
+                        return false;
+
+                    var count = (int)(stagingDesc.Width * stagingDesc.Height);
+                    var sum = new double[4];
+                    for (var i = 0; i < count; i++)
+                    {
+                        for (var c = 0; c < 4; c++)
+                        {
+                            var v = pixels[(i * 4) + c];
+                            if (!float.IsNaN(v) && !float.IsInfinity(v))
+                                sum[c] += v;
+                        }
+                    }
+
+                    value = new Vector4(
+                        (float)(sum[0] / count),
+                        (float)(sum[1] / count),
+                        (float)(sum[2] / count),
+                        (float)(sum[3] / count));
+                    return true;
                 }
                 finally
                 {
@@ -361,27 +597,68 @@ internal static unsafe class GBufferProbe
         };
     }
 
-    /// <summary>Measures the channels, including how many distinct values red takes.</summary>
+    /// <summary>How many log2 buckets the brightness histogram uses, spanning 2^-20 to 2^20.</summary>
+    private const int HistogramBuckets = 320;
+
+    /// <summary>The fraction of pixels the written image keeps below saturation.</summary>
+    private const float DisplayPercentile = 0.995f;
+
+    /// <summary>
+    /// Measures the channels: range, mean, how many distinct values red takes, how many pixels are not finite,
+    /// and the divisor the image should be written with.
+    /// </summary>
     private static ChannelStats Measure(float[] pixels, int width, int height)
     {
         var min = new[] { float.MaxValue, float.MaxValue, float.MaxValue, float.MaxValue };
         var max = new[] { float.MinValue, float.MinValue, float.MinValue, float.MinValue };
         var sum = new double[4];
+        var finite = new int[4];
         var seen = new bool[256];
+        var histogram = new int[HistogramBuckets];
+        var nan = 0;
+        var inf = 0;
+        var histogramTotal = 0;
 
         var count = width * height;
         for (var i = 0; i < count; i++)
         {
+            var pixelNan = false;
+            var pixelInf = false;
+
             for (var c = 0; c < 4; c++)
             {
                 var v = pixels[(i * 4) + c];
+
+                // A non-finite value must never reach the range or the scale: one infinity in a channel makes
+                // the maximum infinite, and every other pixel then divides to zero.
                 if (float.IsNaN(v))
+                {
+                    if (c < 3)
+                        pixelNan = true;
                     continue;
+                }
+
+                if (float.IsInfinity(v))
+                {
+                    if (c < 3)
+                        pixelInf = true;
+                    continue;
+                }
 
                 if (v < min[c]) min[c] = v;
                 if (v > max[c]) max[c] = v;
                 sum[c] += v;
+                finite[c]++;
+
+                if (c < 3 && v > 0f)
+                {
+                    histogram[BucketOf(v)]++;
+                    histogramTotal++;
+                }
             }
+
+            if (pixelNan) nan++;
+            if (pixelInf) inf++;
 
             // Quantised so a smoothly varying channel reads as many values and a flag channel as few.
             var r = pixels[i * 4];
@@ -398,9 +675,47 @@ internal static unsafe class GBufferProbe
 
         var mean = new float[4];
         for (var c = 0; c < 4; c++)
-            mean[c] = (float)(sum[c] / count);
+        {
+            mean[c] = finite[c] > 0 ? (float)(sum[c] / finite[c]) : 0f;
+            if (min[c] == float.MaxValue) min[c] = 0f;
+            if (max[c] == float.MinValue) max[c] = 0f;
+        }
 
-        return new ChannelStats(min, max, mean, distinct);
+        return new ChannelStats(min, max, mean, distinct, nan, inf, PercentileScale(histogram, histogramTotal));
+    }
+
+    /// <summary>The log2 histogram bucket a positive value falls in.</summary>
+    private static int BucketOf(float value)
+    {
+        var bucket = (int)((MathF.Log2(value) + 20f) * (HistogramBuckets / 40f));
+        return Math.Clamp(bucket, 0, HistogramBuckets - 1);
+    }
+
+    /// <summary>
+    /// The divisor that puts <see cref="DisplayPercentile"/> of the frame below saturation.<br/>
+    /// The alternative, dividing by the brightest pixel, is unusable on any buffer holding a highlight: the
+    /// highlight sets the scale and the entire image renders black, reporting an absence of data where the
+    /// truth is one very large value.
+    /// </summary>
+    private static float PercentileScale(int[] histogram, int total)
+    {
+        if (total == 0)
+            return 1f;
+
+        var target = (int)(total * DisplayPercentile);
+        var running = 0;
+
+        for (var i = 0; i < histogram.Length; i++)
+        {
+            running += histogram[i];
+            if (running < target)
+                continue;
+
+            var upper = MathF.Pow(2f, ((i + 1) * (40f / HistogramBuckets)) - 20f);
+            return upper > 1.001f ? 1f / upper : 1f;
+        }
+
+        return 1f;
     }
 
     /// <summary>

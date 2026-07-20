@@ -112,12 +112,14 @@ public static class GameModelLoader
                 ? ReadElement(data, level, mesh, color.Value, v)
                 : Vector4.One;
 
-            // The game authors models right-handed; this renderer is left-handed. Negating Z is the
-            // single reflection that converts both the positions and the effective triangle winding,
-            // which is why the index order below is left untouched.
+            // Positions and normals are taken as authored. An earlier version negated Z here, reasoning that
+            // one reflection converts the handedness and flips the winding at the same time - which is true
+            // about the winding and wrong about the shape, because a reflection mirrors the model. It arrived
+            // as text on a texture reading backwards and, confirmed in game, the whole model mirrored. The
+            // winding is handled on its own below, where it belongs.
             vertices[v] = new Vertex3D(
-                new Vector3(p.X, p.Y, -p.Z),
-                Vector3.Normalize(new Vector3(n.X, n.Y, -n.Z)),
+                new Vector3(p.X, p.Y, p.Z),
+                Vector3.Normalize(new Vector3(n.X, n.Y, n.Z)),
                 new Vector2(t.X, t.Y),
                 c);
         }
@@ -127,6 +129,15 @@ public static class GameModelLoader
         for (var i = 0; i < mesh.IndexCount; i++)
             indices[i] = BitConverter.ToUInt16(data, indexBase + (i * sizeof(ushort)));
 
+        // The game authors its triangles counter-clockwise-front and this renderer is clockwise-front, so the
+        // winding is reversed here - on its own, rather than as a side effect of reflecting the geometry.
+        // Without it the model renders inside out and its near faces are culled away.
+        for (var i = 0; i + 2 < indices.Length; i += 3)
+            (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
+
+        // Applied last, and does nothing unless a caller has asked for it. Both loaders run the same options
+        // so a file authored in an unusual convention is corrected the same way whichever path imports it.
+        NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, indices);
         return new MeshData(vertices, indices);
     }
 

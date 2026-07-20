@@ -102,11 +102,19 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     // Frame walker: write out what a span of binds produced. Each one is a full-resolution copy plus a
     // synchronous map, so the frame it runs on stalls badly - it is a one-shot diagnostic and the span is
     // capped rather than left to a caller's arithmetic.
-    private const int MaxFrameDumps = 12;
+    private const int MaxFrameDumps = 16;
     private int dumpFrom = -1;
     private int dumpCount;
+    private int dumpStride; // > 0 = spread across the whole frame instead of a contiguous span
     private int dumpsWritten;
     private string dumpFolder = string.Empty;
+
+    /// <summary>
+    /// Binds in the last captured frame. The frame is <b>not</b> a fixed length - it moves with what is on
+    /// screen - so an index read from one run does not name the same pass in the next, and a span picked from
+    /// an earlier log can land on an entirely different stage. This is what a sweep sizes itself against.
+    /// </summary>
+    private int lastFrameBindCount;
 
     // The swapchain rotates through several backbuffer textures (flip model); a bind is "to the
     // backbuffer" if its target matches ANY of them. Accumulated from the per-present current buffer.
@@ -293,8 +301,35 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         ArmCapture();
         dumpFrom = Math.Max(0, from);
         dumpCount = Math.Clamp(count, 1, MaxFrameDumps);
+        dumpStride = 0;
         dumpsWritten = 0;
         dumpFolder = folder;
+    }
+
+    /// <summary>
+    /// Arms a dump spread evenly across the whole frame rather than over a chosen span.<br/>
+    /// This is the one to reach for first. A bind index is not a stable name for a pass - the frame grows and
+    /// shrinks with what is on screen, so a span chosen from an earlier log can land nowhere near the pass it
+    /// named. A sweep covers the frame end to end in a single run, which brackets where a pixel changes without
+    /// depending on any index surviving between runs.
+    /// </summary>
+    /// <param name="count">How many binds to write out, spread across the frame.</param>
+    /// <param name="folder">Where the images go.</param>
+    /// <returns>The stride chosen, or 0 when the hooks are not installed.</returns>
+    public int ArmFrameSweep(int count, string folder)
+    {
+        if (omHook == null)
+            return 0;
+
+        ArmFrameDump(0, count, folder);
+
+        // Works on the first run, with no capture needed beforehand: a frame that has never been measured is
+        // assumed to be about this long, and the stride only decides the spacing of the samples. Guessing high
+        // costs a sparser sweep, never a failed one, and the next run sizes itself against the real length.
+        const int AssumedFrameBinds = 128;
+        var length = lastFrameBindCount > 0 ? lastFrameBindCount : AssumedFrameBinds;
+        dumpStride = Math.Max(1, length / dumpCount);
+        return dumpStride;
     }
 
     /// <summary>
@@ -305,7 +340,14 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private void DumpFinishedBind()
     {
         var finished = bindCount - 1;
-        if (dumpFrom < 0 || finished < dumpFrom || finished >= dumpFrom + dumpCount || dumpsWritten >= MaxFrameDumps)
+        if (dumpFrom < 0 || finished < 0 || dumpsWritten >= dumpCount)
+            return;
+
+        var wanted = dumpStride > 0
+            ? finished % dumpStride == 0
+            : finished >= dumpFrom && finished < dumpFrom + dumpCount;
+
+        if (!wanted)
             return;
 
         var resource = binds[finished].Rtv0Resource;
@@ -319,6 +361,14 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             var path = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}.bmp");
             var note = GBufferProbe.Dump(dev, resource, path);
             NoireLogger.LogInfo($"[FrameDump] bind {finished}: {note}", "Draw3D");
+
+            // The stencil plane alongside it: the game's light volumes test a mark written during the geometry
+            // pass, so it exists only between those two passes and nothing at the end of the frame can read it.
+            if (GameRenderSources.TryGetDepthTexture(out var depth) && depth.Texture != 0)
+            {
+                var stencilPath = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}_stencil.bmp");
+                NoireLogger.LogInfo($"[FrameDump] bind {finished}: {GBufferProbe.DumpStencil(dev, depth.Texture, stencilPath)}", "Draw3D");
+            }
         }
         catch (Exception ex)
         {
@@ -808,6 +858,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void Flush()
     {
+        lastFrameBindCount = bindCount;
+
         var sb = new StringBuilder();
         var bbList = new StringBuilder();
         for (var i = 0; i < knownBackbufferCount; i++)

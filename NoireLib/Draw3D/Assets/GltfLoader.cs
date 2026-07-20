@@ -19,10 +19,10 @@ namespace NoireLib.Draw3D.Assets;
 /// baseColor factor/texture maps to material color/texture; alphaMode BLEND maps to translucent;
 /// doubleSided maps to no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
 /// are ignored (logged once per file so users know exactly what was dropped).<br/>
-/// Handedness: glTF is right-handed (CCW-front), this renderer is left-handed (CW-front). The loader
-/// negates Z on positions, normals and transforms - <b>one</b> reflection, which by itself flips the
-/// effective winding onto this renderer's clockwise-front convention, so the triangle index order is
-/// kept as-is (a second index flip would cancel it and cull every front face).<br/>
+/// Handedness: glTF is counter-clockwise-front and this renderer is clockwise-front, so the loader reverses
+/// the <b>triangle winding</b> and takes positions, normals and transforms exactly as the file authored them.
+/// It does not reflect the geometry: an earlier version negated Z and leaned on that reflection to flip the
+/// winding for it, which fixed the culling and left every imported model a mirror image of itself.<br/>
 /// <b>Vertex colors:</b> glTF <c>COLOR_0</c> is <i>not</i> imported by default. FFXIV-derived character
 /// exports carry a per-vertex color channel that the game uses as shader <i>data</i> (wetness / wind /
 /// blend masks), not albedo; multiplying it into the base color paints the model in psychedelic tints.
@@ -145,13 +145,15 @@ public static class GltfLoader
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
     {
-        // Right-handed to left-handed: M' = F * M * F with F = diag(1, 1, -1, 1).
-        local.M13 = -local.M13;
-        local.M23 = -local.M23;
-        local.M43 = -local.M43;
-        local.M31 = -local.M31;
-        local.M32 = -local.M32;
-        local.M34 = -local.M34;
+        // Taken as authored, to match the vertices. An earlier version conjugated by diag(1, 1, -1, 1) here
+        // and negated Z on the vertices, which mirrored the model; both halves now leave the file's own
+        // convention alone and only the triangle winding is changed.
+        //
+        // A hierarchical model needs these two halves to agree or it comes apart: transforming the meshes
+        // without the transforms that place them reflects each part inside its own local space and leaves the
+        // arrangement untouched, which arrives as a vehicle whose left and right doors are each individually
+        // flipped but still on the side they started.
+        local = NoireDraw3D.Diagnostics.ImportFlips.Apply(local);
 
         if (Matrix4x4.Decompose(local, out var scale, out var rotation, out var translation))
         {
@@ -197,25 +199,30 @@ public static class GltfLoader
             var p = positions[i];
             var n = normals != null && i < normals.Count ? normals[i] : Vector3.UnitY;
             vertices[i] = new Vertex3D(
-                new Vector3(p.X, p.Y, -p.Z),
-                new Vector3(n.X, n.Y, -n.Z),
+                new Vector3(p.X, p.Y, p.Z),
+                new Vector3(n.X, n.Y, n.Z),
                 uvs != null && i < uvs.Count ? uvs[i] : Vector2.Zero,
                 colors != null && i < colors.Count ? colors[i] : new Vector4(1f, 1f, 1f, 1f));
         }
 
-        // The Z-negation above is a reflection, which already flips the effective winding onto this
-        // renderer's clockwise-front convention. Keep glTF's own index order (a, b, c) - flipping it here
-        // too would cancel the reflection and cull every front face (you would see only the backfaces).
+        // glTF is counter-clockwise-front and this renderer is clockwise-front, so the winding is reversed
+        // here. An earlier version negated Z on the positions instead and relied on that reflection to flip
+        // the winding for it - which fixed the culling and mirrored the model, arriving as text on a texture
+        // reading backwards and, confirmed in game, the whole shape reversed.
         var triangles = new List<uint>();
         foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
             triangles.Add((uint)a);
-            triangles.Add((uint)b);
             triangles.Add((uint)c);
+            triangles.Add((uint)b);
         }
 
         if (triangles.Count == 0)
             return;
+
+        // Driven from inside the loader rather than by the caller, so this path and the game-model one answer
+        // the mirrored-import question the same way. Does nothing unless something is turned on.
+        NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, triangles);
 
         Mesh mesh;
         if (vertices.Length <= ushort.MaxValue)

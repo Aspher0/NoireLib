@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Lumina;
 using NoireLib.Draw3D.Assets;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -222,9 +223,10 @@ public class Draw3DGameModelTests
         var file = game.GetFile<GameMaterialFile>(Path)!;
         var diffuse = file.ConstantValue("g_DiffuseColor");
 
-        // The dyeable shader packages author their color texture near white wherever a surface takes a
-        // color and multiply this constant in at draw time. Without it those surfaces render blown out.
-        diffuse.Should().NotBeNull(because: "a dyeable material carries the color its texture is tinted by");
+        // The constant is parsed data: it is a slot the stain system writes into, and its file value is not
+        // what an undyed item renders as (that is the default stain - see UndyedStain_IsTheGamesSnowWhite).
+        // Reading it still has to work, which is what this locks.
+        diffuse.Should().NotBeNull(because: "a dyeable material carries the constant its stain is written into");
         diffuse!.Length.Should().Be(3);
         foreach (var channel in diffuse)
             channel.Should().BeInRange(0f, 1f);
@@ -232,6 +234,28 @@ public class Draw3DGameModelTests
         // Most materials leave this white, where it changes nothing. This one is a dyeable piece and sets a
         // real color, which is what makes it a useful sample: an all-white read would mean the value was missed.
         diffuse.Should().NotBeEquivalentTo(new[] { 1f, 1f, 1f });
+    }
+
+    [Fact]
+    public void UndyedStain_IsTheGamesSnowWhite()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        // "Undyed" dyeable furniture renders with stain row 1 multiplied in - established by sampling two
+        // placed undyed stools in the game's own G-buffer, whose implied multiplier matches this row to 0.002
+        // while the next nearest stain is nineteen times further away. Row 0 is black and cannot be a default
+        // anything renders with. This pins the shipped constant to the game's own table, so a patch that
+        // moves the table breaks this test instead of silently shifting every undyed item.
+        var sheet = game.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
+        sheet.Should().NotBeNull();
+
+        var snowWhite = StainHelper.ToColor(sheet!.GetRow(1).Color);
+        GameMaterial.UndyedStain.Should().Be(snowWhite);
     }
 
     [Fact]

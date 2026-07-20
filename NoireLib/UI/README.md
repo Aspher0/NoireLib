@@ -36,6 +36,8 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Settings fields (NoireInputs)](#settings-fields-noireinputs)
 - [Data grids (NoireTable)](#data-grids-noiretable)
 - [Reorderable lists (NoireReorderableList)](#reorderable-lists-noirereorderablelist)
+- [Tab bars you can drive (NoireTabBar)](#tab-bars-you-can-drive-noiretabbar)
+- [Badges and attention (NoireBadge, NoireAttention)](#badges-and-attention-noirebadge-noireattention)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
 - [The UI scale](#the-ui-scale)
@@ -534,6 +536,22 @@ new NoireToast("Only in this corner").Show(area);
 **Being on top is two orders in ImGui, and `AlwaysOnTop` moves both.** Drawing is decided by the draw layer first and the display list second; input is decided by the display list alone. Promote only the layer (`ImGuiWindowFlags.Tooltip`) and the element is painted over everything while receiving none of the clicks aimed at it. Reorder only the display list and clicking a window behind moves it in front for one frame before the next frame puts things back, which shows up as a flicker. `AlwaysOnTop` does both: the layer keeps the drawing immune to that churn, the reorder keeps the input right.
 
 It deliberately does not take keyboard focus, which would make text fields in every other window impossible to type in. Within the top layer the last window to ask each frame wins, which is what keeps a tooltip above an always-on-top element it overlaps.
+
+**A toast leaving does not move the ones that stay.** The stack is laid out from whichever of its edges is pinned to the screen, not from the window's own top. The window is sized to the stack every frame, so on a bottom-anchored area (the default) the bottom edge is the fixed one and the top edge moves as toasts arrive, leave and shrink. From the pinned edge, a toast's position depends only on the toasts between it and that edge — so a leaving toast disturbs the ones further from the anchor and nothing else, and since toasts expire oldest first and the oldest sits furthest from the anchor, the usual case moves nothing at all.
+
+**A leaving toast holds still while it goes.** Its slot closes toward the edge the stack hangs from, so the toast is painted from that same edge and cropped to the slot: it looks covered rather than squashed, and it does not drift across the screen while the slot shrinks around it. Painting from the opposite edge is the difference between a toast fading out where it stands and one sliding as it goes.
+
+**The stack's height is rounded up to a whole pixel, and that is load-bearing.** A bottom-anchored window is placed at *(fixed screen edge − its own height)*, so the edge the stack hangs from is recovered as *(placed position + height)* and the two are meant to cancel. They only cancel while the height is a whole number. Window positions are snapped to the pixel grid, and snapping a value shifted by a whole number of pixels shifts the result by that same whole number — but a fractional height leaves its fraction behind:
+
+```
+bottom = snap(C − total) + total  =  C − frac(C − total)
+```
+
+`total` sweeps continuously while a toast arrives or leaves, so `frac` sweeps 0→1 over and over and the anchored edge sawtooths across a pixel. Every remaining toast hangs off that edge, so the whole stack wanders for exactly as long as the animation runs. Rounding the height makes the snap a no-op and the edge exactly constant. `NoireToastAreaTests` pins it both ways: invariant with the rounding, demonstrably not without it.
+
+**Every slot and gap is on the pixel grid too**, which closes the other half of the same problem. ImGui floors the cursor onto the grid after each item it lays out, so the height a block of content *measures* depends on the fraction of a pixel it started at — the same toast measures a pixel taller or shorter depending where it sits. That measurement becomes the next frame's slot, and each slot shifts every toast further from the anchor, so on fractional boundaries every toast nudges its neighbours' measurements about. The wobble that produces grows with distance from the anchor, because that is how far the error has had to accumulate: the toasts nearest the anchor look fine while the ones at the far end visibly shake. Kept on the grid, a toast always measures the same height and nothing propagates. The two roundings compose — once the slots are whole, the total already is, so the stack height adds no slack and the anchored edge stays exactly where it was.
+
+A leaving toast's measured height is frozen for the same reason: its contents are drawn clipped to a closing slot and offset by the slide, and re-measuring under either would feed back into the share of the stack computed from it.
 
 The queue is bounded (`Capacity`, drop-oldest, counted in `DroppedCount`): an unbounded queue in front of an interface that has stopped drawing is a memory leak.
 
@@ -1405,6 +1423,123 @@ list.Duplicate = step => step with { Name = $"{step.Name} (copy)" };
 A `Renderer` paints a row instead of its label, inside the space between the grip and the buttons, and is handed a `UiReorderRowDraw<T>` with `DrawLabel()` on it.
 
 **Flat lists only.** Trees are a different widget with different rules and are deliberately out of scope: everything that makes reordering pleasant here, one insertion point and one index, stops being true the moment a row can be dropped *into* another one.
+
+---
+
+## Tab bars you can drive (NoireTabBar)
+
+A tab bar whose tabs you can open from code, from anywhere.
+
+```csharp
+var tabs = new NoireTabBar("Settings")
+{
+    Tabs =
+    {
+        new UiTab("general", "General", () => DrawGeneral()),
+        new UiTab("filters", "Filters", () => DrawFilters()) { Badge = () => activeFilters },
+        new UiTab("about",   "About",   () => DrawAbout())
+        {
+            Enabled = () => hasData,
+            DisabledReason = "Load a log first.",
+        },
+    },
+    OnTabChanged = id => Log($"now on {id}"),
+};
+
+tabs.Draw();
+
+tabs.SwitchTab("filters");   // from another window, a hotkey, a command, a toast action
+tabs.Current;                // "general"
+```
+
+**Why this exists.** ImGui has a perfectly good tab bar and a genuinely bad story for opening a tab from code. The only lever is `ImGuiTabItemFlags.SetSelected`, and it has to be set for **exactly one frame**: leave it set and the tab is welded open with the user unable to click away, clear it on the wrong frame and the switch silently does not happen. So every plugin that wants "the changelog button opens the What's New tab" hand-rolls a `pendingTab` field and a flag-clearing dance, and most get the edge cases wrong.
+
+`SwitchTab` is that dance done once, and the edge cases are the feature:
+
+| You do this | It does this |
+|---|---|
+| Switch to the tab already open | Nothing. It is not a switch. |
+| Switch twice before a frame runs | Keeps the last request, not both. |
+| Switch before the bar has ever drawn | Applies on the first frame it draws. |
+| Switch from a background thread | Marshals through `RunOnDraw`. |
+| Switch to a disabled tab | Refused. Code may not reach a tab a click cannot. |
+| Switch to an unknown or removed id | Refused, and logged **once per id**. |
+
+| Property | Default | What it does |
+|---|---|---|
+| `Tabs` | empty | The tabs, in draw order. Add, remove or replace at any time. |
+| `Current` | `null` | The tab open as of the last draw. Null before the first one. |
+| `PendingTab` | `null` | A switch waiting for the next frame. |
+| `OnTabChanged` / `OnTabClosed` | none | Raised once per change, by click or by code. |
+| `Reorderable` | off | Let the user drag tabs. |
+| `ScrollWhenCrowded` | off | Scroll rather than shrink when they do not fit. |
+| `WheelScrolls` / `WheelScrollStep` | on / `80` | Wheel over the strip scrolls it. See below. |
+| `Width` | `0` | How wide the bar may be. Zero fits the column it is in. |
+| `EmptyState` | none | Drawn when there are no tabs at all. |
+
+Each `UiTab` carries its own `Body`, so nothing runs for a closed tab and there is no end call to forget. `Label` may change every frame, length included, without the tab losing its identity or its place: ImGui is keyed on `Id`, which never changes.
+
+**A tab disabled while it is open stays open.** `Enabled` gates *reaching* a tab, not what it shows. Closing it under the user would move them somewhere they did not ask to go, and blanking it would leave them looking at nothing with no way to tell what happened. Set `DisabledReason` whenever you set `Enabled` — a control that is dead for no stated reason reads as broken.
+
+**On reordering.** `Reorderable` lets the user drag tabs, but ImGui owns the order it draws them in and does not report it back, so `Tabs` is left exactly as you wrote it. A reordering is for that session and is not something to persist.
+
+**The wheel scrolls the strip.** ImGui's own tab bar ignores it, so reaching a tab that has scrolled off means clicking the little arrows, or selecting the last visible tab so the bar creeps one along and repeating — which changes the open tab as the price of looking for another one. `WheelScrolls` (on by default) makes the wheel move the strip while the pointer is over it, selecting nothing. It does nothing while every tab already fits, so it costs nothing to leave on.
+
+It also stops the windows behind it scrolling on the same notch, and that has to be a **refusal rather than an undo**. ImGui hands the wheel to the hovered window inside `NewFrame`, before a single widget has drawn, so by the time a tab bar could notice, the scrolling has already happened. Undoing it afterwards does not work either, because the window that moved is usually not the one the bar is drawn in: ImGui walks up from the hovered window to the first ancestor that can actually scroll, which for a bar inside a non-scrolling column is the page behind it. So while the pointer is over the strip, the bar marks that whole ancestor chain as not scrolling with the mouse, which is what makes the same walk find nothing willing to move. It is set a frame ahead, which costs nothing: a pointer rests on the strip for many frames before a notch arrives. Nothing has to be restored, because `Begin` reassigns a window's flags from its own arguments every frame.
+
+**`Width` keeps it inside your column.** ImGui builds a tab bar out to the window's right edge and takes no width at all, so a bar inside a page that centres its content in a narrower column runs past the column and out the other side. Left at `0` the bar asks `NoireLayout.ContentWidth()`, which answers for the column rather than the window; set it to hold the bar to a width of your own. It only ever narrows — a bar cannot be given more room than the window it is in.
+
+---
+
+## Badges and attention (NoireBadge, NoireAttention)
+
+The mark that says something is waiting, and the motion that draws the eye to it.
+
+```csharp
+ImGui.Button("Inbox");
+NoireBadge.OnLast(unread);              // a count in the corner; nothing at all when it is 0
+
+ImGui.Button("Settings");
+NoireBadge.DotOnLast(hasChanges);       // just a dot
+
+ImGui.Button("Apply");
+NoireAttention.Glow(hasUnsavedChanges); // a halo while the condition holds
+
+NoireAttention.Shake("password");       // fired once, from the failure path
+NoireAttention.ApplyOffset("password"); // read back on the frames that follow, before the widget
+```
+
+Both are immediate and stateless, and both draw **over** a rectangle you already have rather than wrapping anything, so they compose with any widget without it knowing.
+
+**A badge costs no layout.** It writes straight to the draw list and submits no ImGui item, so it never moves the cursor, never widens the row, and never changes the line's height. That is what lets it be dropped after any widget, including a tab header, without the things around it shifting. Drawing the number with an ordinary text call would not do: an ImGui text call *is* an item, so it advances the cursor and grows the current line's bounding box, and everything after it on the row moves across and up.
+
+**States and events are different things.** `Pulse` and `Glow` are states: they run for as long as the condition holds and you pass that condition every frame, so nothing is registered and nothing has to be stopped. `Shake`, `Bounce` and `Flash` are events: fired once by id, they play themselves out and return to zero on their own.
+
+A shake or a bounce moves where a widget is *drawn*, not where it thinks it is. `ApplyOffset` nudges the cursor before the widget, so the widget moves without knowing it did and nothing can end up somewhere the mouse is not.
+
+| `BadgeStyle` | Default | What it does |
+|---|---|---|
+| `Scale` | `1` | One knob for the whole badge. See below. |
+| `Color` / `TextColor` | danger / text | Danger, because a badge exists to be seen before anything else on the element. |
+| `MaxCount` | `99` | Above it, the badge reads `99+` rather than growing until it swallows the button. Zero shows everything. |
+| `Anchor` / `Offset` | top right | Which point of the element it straddles, and the nudge from it. |
+| `OutlineThickness` | `1.5` | A ring in the surrounding colour, so it reads against a busy element. |
+| `Pulse` | off | A slow fade to catch the eye without moving anything. |
+| `DotSize` / `MinSize` / `PaddingX` | `7` / `15` / `4` | Sizing, in logical pixels. |
+
+A count of zero or less draws nothing, so `NoireBadge.OnLast(count)` can be called unconditionally rather than wrapped in an `if`.
+
+**A badge is never moved to fit.** It straddles the corner it is anchored to and stays there, wherever the element goes. Somewhere it may not overflow, clip rather than reposition: a badge belongs to its element, so it should leave with it. `NoireTabBar` clips to the ends of its bar, which is why a tab scrolled halfway off has half a badge and one scrolled off entirely has none — the same thing the tab itself does. Pushing the badge back inside instead would strand it at the edge, still showing a count for a tab that is no longer there.
+
+**`Scale` is the size knob.** Every measurement below it is also settable on its own, but growing a badge that way means keeping five numbers in proportion by hand:
+
+```csharp
+NoireBadge.OnLast(unread, new BadgeStyle { Scale = 2f });   // twice the size, still in proportion
+```
+
+It moves the text, the padding, the minimum size, the dot, the outline and the offset from the anchor together, and multiplies with `NoireUI.Scale` rather than replacing it, so a badge sized here still follows the user's own interface scale. The text is drawn with a font built at the size it works out to, so each distinct value in use is a distinct font size — a few are free, one that varies per badge across dozens of them is not.
+
+**All of it is decoration, so all of it stops under `NoireUI.ReducedMotion`** while what is underneath keeps working: a pulsing button is still a button, a shaken field still holds its text. The one exception is `Glow`, which holds at full strength rather than disappearing — marking the element is the point, and that survives losing the movement.
 
 ## Custom Tooltips
 

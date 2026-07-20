@@ -28,7 +28,7 @@ public class Draw3DCoreContractTests
     public void FrameCB_Is256Bytes() => Unsafe.SizeOf<FrameCBData>().Should().Be(256); // + WorldHeightRegion (decal height-map)
 
     [Fact]
-    public void ObjectCB_Is208Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(208); // + OutlineColor (ground-decal rim colour)
+    public void ObjectCB_Is224Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(224); // + Params3 (spare slot; the G-buffer injection's dye)
 
     [Fact]
     public void CompositeCB_Is4112Bytes() => Unsafe.SizeOf<CompositeCBData>().Should().Be(4112); // header + 128 rects + 128 factors
