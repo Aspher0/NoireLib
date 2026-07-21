@@ -117,8 +117,10 @@ public static partial class NoireLayout
                 ? options.HoveredColor ?? theme.Hover(theme.Resolve(ThemeColor.Border))
                 : options.Color ?? theme.Muted(theme.Resolve(ThemeColor.Border));
 
+        using var draw = UiDraw.BeginMethod();
+
         var args = new UiSplitterDraw(
-            ImGui.GetWindowDrawList(),
+            draw.List,
             ImGui.GetItemRectMin(),
             ImGui.GetItemRectMax(),
             options.Vertical,
@@ -175,7 +177,11 @@ public static partial class NoireLayout
         Collapsible(id, label, body, static b => b(), options);
     }
 
-    /// <inheritdoc cref="Collapsible(string, string, Action, CollapsibleOptions)"/>
+    /// <summary>
+    /// A section that folds away, with an optional memory of whether it was open.<br/>
+    /// The body takes the usual form: it is simply not called while the section is closed, so nothing inside a folded
+    /// section costs anything and there is no end call to forget.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the section.</param>
     /// <param name="label">The heading.</param>
@@ -237,14 +243,20 @@ public static partial class NoireLayout
             ? (open ? 1f : 0f)
             : NoireAnim.Ease(id, "collapse", open ? 1f : 0f, options.AnimationDuration);
 
-        var drawList = ImGui.GetWindowDrawList();
-        DrawCaret(drawList, new Vector2(min.X + arrowWidth * 0.5f, (min.Y + max.Y) * 0.5f), arrowWidth * 0.34f, turn, headerColor);
+        using var draw = UiDraw.BeginMethod();
 
-        var textSize = ImGui.CalcTextSize(label);
-        drawList.AddText(
-            new Vector2(min.X + arrowWidth + spacing.X * 0.5f, (min.Y + max.Y) * 0.5f - textSize.Y * 0.5f),
-            ColorHelper.Vector4ToUint(headerColor),
-            label);
+        var drawList = draw.List;
+
+        if (!drawList.IsNull)
+        {
+            DrawCaret(drawList, new Vector2(min.X + arrowWidth * 0.5f, (min.Y + max.Y) * 0.5f), arrowWidth * 0.34f, turn, headerColor);
+
+            var textSize = ImGui.CalcTextSize(label);
+            drawList.AddText(
+                new Vector2(min.X + arrowWidth + spacing.X * 0.5f, (min.Y + max.Y) * 0.5f - textSize.Y * 0.5f),
+                ColorHelper.Vector4ToUint(headerColor),
+                label);
+        }
 
         if (options.HeaderExtras != null)
         {

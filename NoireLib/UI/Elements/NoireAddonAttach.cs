@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Windowing;
 using System;
 using System.Numerics;
@@ -21,6 +21,7 @@ namespace NoireLib.UI;
 /// new NoireAddonAttach(myWindow, "_PartyList", UiSide.Right) { Gap = 8f };
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed class NoireAddonAttach : NoireDrawable
 {
     private bool closedByAttachment;

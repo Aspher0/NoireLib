@@ -15,6 +15,7 @@ namespace NoireLib.UI;
 /// The button registers itself on creation and is drawn by NoireLib until it is disposed, unless <see cref="NoireDrawable.AutoDraw"/> is turned off
 /// to handle the drawing manually. It is disposed automatically when NoireLib is disposed, or earlier through <see cref="NoireDrawable.Dispose"/>.
 /// </summary>
+[NoireFacadeFactory]
 public class NoireOverlayButton : NoireDrawable
 {
     private const ImGuiWindowFlags OverlayWindowFlags =
@@ -396,7 +397,12 @@ public class NoireOverlayButton : NoireDrawable
 
     private void DrawBackground(Vector2 rectMin, Vector2 rectMax, bool hovered, bool active)
     {
-        var drawList = ImGui.GetWindowDrawList();
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
+
         var interactive = Enabled;
 
         uint backgroundColor;

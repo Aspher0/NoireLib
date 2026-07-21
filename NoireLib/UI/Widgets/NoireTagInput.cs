@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -29,6 +29,7 @@ namespace NoireLib.UI;
 ///     config.Tags = tags.Tags.ToArray();
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed class NoireTagInput
 {
     private readonly List<string> tags = new();

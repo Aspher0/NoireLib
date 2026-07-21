@@ -18,6 +18,7 @@ namespace NoireLib.UI;
 /// lambda. The simpler overload allocates one delegate per call, which is a few dozen bytes a frame and invisible in
 /// most UIs; the state overload is there for the cases where it is not.
 /// </remarks>
+[NoireFacade]
 public static partial class NoireLayout
 {
     /// <summary>
@@ -31,7 +32,9 @@ public static partial class NoireLayout
         Group(body, static b => b());
     }
 
-    /// <inheritdoc cref="Group(Action)"/>
+    /// <summary>
+    /// Groups the body so it measures and hit-tests as a single item.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to group.</param>
@@ -69,7 +72,15 @@ public static partial class NoireLayout
         Indent(amount, body, static b => b());
     }
 
-    /// <inheritdoc cref="Indent(float, Action)"/>
+    /// <summary>
+    /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
+    /// </summary>
+    /// <remarks>
+    /// An amount of zero or less indents by nothing at all, which is deliberately unlike ImGui's own <c>Indent</c>:
+    /// that one reads zero as "use the default step", so an animated indent easing down to zero would jump a whole
+    /// step outwards on its last frame instead of arriving where it was heading. Ask for the default step by name with
+    /// <see cref="DefaultIndent"/>.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -114,7 +125,9 @@ public static partial class NoireLayout
         Id(id, body, static b => b());
     }
 
-    /// <inheritdoc cref="Id(string, Action)"/>
+    /// <summary>
+    /// Puts the body in its own id namespace, so two copies of the same widget code can coexist without colliding.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">The id to push.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -148,7 +161,9 @@ public static partial class NoireLayout
         Disabled(disabled, body, static b => b());
     }
 
-    /// <inheritdoc cref="Disabled(bool, Action)"/>
+    /// <summary>
+    /// Draws the body greyed out and unclickable when <paramref name="disabled"/> is true, and normally when it is not.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="disabled">Whether to disable the body.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -181,7 +196,9 @@ public static partial class NoireLayout
         ItemWidth(width, body, static b => b());
     }
 
-    /// <inheritdoc cref="ItemWidth(float, Action)"/>
+    /// <summary>
+    /// Sizes every widget in the body to <paramref name="width"/>, instead of setting it before each one.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="width">The item width in pixels. A negative value is measured back from the right edge.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -220,7 +237,14 @@ public static partial class NoireLayout
         WrapText(width, body, static b => b());
     }
 
-    /// <inheritdoc cref="WrapText(float, Action)"/>
+    /// <summary>
+    /// Wraps the text in the body at <paramref name="width"/> pixels from the current cursor.
+    /// </summary>
+    /// <remarks>
+    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one, so passing a screen
+    /// coordinate puts the wrap point far off to the right where it silently does nothing. This takes a width and does
+    /// the conversion, so the mistake is not reachable.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="width">The wrap width in pixels, measured from the cursor.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -258,7 +282,11 @@ public static partial class NoireLayout
         Child(id, size, body, static b => b(), border, flags);
     }
 
-    /// <inheritdoc cref="Child(string, Vector2, Action, bool, ImGuiWindowFlags)"/>
+    /// <summary>
+    /// Draws the body inside a scrolling, clipped child region.<br/>
+    /// The body is not called when the region is entirely clipped away, which is the case a hand-written
+    /// <c>BeginChild</c> has to remember to check.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the region.</param>
     /// <param name="size">The region size.</param>
@@ -295,7 +323,9 @@ public static partial class NoireLayout
         Tooltip(body, static b => b());
     }
 
-    /// <inheritdoc cref="Tooltip(Action)"/>
+    /// <summary>
+    /// Draws the body inside a tooltip.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The tooltip contents.</param>
@@ -345,7 +375,11 @@ public static partial class NoireLayout
         Section(label, body, static b => b(), description, indent);
     }
 
-    /// <inheritdoc cref="Section(string, Action, string, float)"/>
+    /// <summary>
+    /// A labelled block: a heading, an optional wrapping description, and the body indented under them.<br/>
+    /// This is the plain visual grouping; a collapsible section that remembers its state ships with the wider layout
+    /// widgets.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="label">The heading.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>

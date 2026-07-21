@@ -12,6 +12,7 @@ namespace NoireLib.UI;
 /// <b>at the same time</b> as a regular <c>ImGui.SetTooltip()</c>, and can contain any mix of text, icons and images (see <see cref="NoireContent"/>).<br/>
 /// The background transparency is fully customizable, from 0% to 100%. See <see cref="TooltipStyle"/>.
 /// </summary>
+[NoireFacade]
 public static class NoireTooltip
 {
     private static readonly TooltipStyle DefaultStyle = new();
@@ -78,6 +79,11 @@ public static class NoireTooltip
 
         style ??= DefaultStyle;
         var windowId = id != null ? $"###NoireTooltip_{id}" : NoireUI.NextTooltipId();
+
+        // Opened around the call rather than inside the window, deliberately. The tooltip's own window flags reroute
+        // border and background style fields and reposition the window, so nothing here may sit between the style
+        // pushes and the Begin that reads them.
+        using var draw = UiDraw.Begin();
 
         try
         {

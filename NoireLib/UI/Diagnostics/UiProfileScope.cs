@@ -44,11 +44,13 @@ public ref struct UiProfileScope
 }
 
 /// <summary>
-/// Opens the measurement a widget records itself under.
+/// Opens the measurement an instance widget records itself under.
 /// </summary>
 /// <remarks>
 /// The widgets are not <see cref="NoireDrawable"/>s and are drawn by their owner rather than by the hub, so measuring
-/// the hub's pass alone would report nothing for most of an interface. Each widget opens one of these instead.
+/// the hub's pass alone would report nothing for most of an interface. Each widget opens one of these instead.<br/>
+/// Only for the <c>{kind}:{id}</c> shape, which carries a runtime id and so cannot be derived from a call site. A
+/// static surface takes its name from <see cref="UiDraw"/> instead, which hands over the draw list at the same time.
 /// </remarks>
 internal static class UiProfile
 {
@@ -65,19 +67,6 @@ internal static class UiProfile
         var profiler = NoireUI.Profiler;
         return profiler.Measure(profiler.Enabled ? UiIds.Join(kind, ":", id) : string.Empty);
     }
-
-    /// <summary>
-    /// Times a static helper, aggregating every call in the frame under one name.
-    /// </summary>
-    /// <remarks>
-    /// Helpers have no id to be told apart by and are called many times a frame, so one row carrying the whole frame's
-    /// worth of them is the useful shape: what a reader wants to know is what all the text, or all the buttons, cost,
-    /// not what the eleventh one did.<br/>
-    /// The name is a constant at every call site, so there is nothing to compose and nothing to guard.
-    /// </remarks>
-    /// <param name="name">The helper's name.</param>
-    /// <returns>The open scope. Dispose it to close the measurement.</returns>
-    internal static UiProfileScope Helper(string name) => NoireUI.Profiler.Measure(name);
 }
 
 /// <summary>

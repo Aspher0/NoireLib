@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -17,6 +17,7 @@ namespace NoireLib.UI;
 /// var lift = NoireAnim.Spring("panel", "open", expanded ? 220f : 0f);
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireAnim
 {
     /// <summary>The largest step the spring integrator takes, so a long frame cannot make it explode.</summary>
@@ -68,7 +69,18 @@ public static class NoireAnim
     public static float Ease(string id, string subKey, float target, float duration = 0.15f, UiEasing easing = UiEasing.OutCubic)
         => Ease(id, subKey, target, duration, easing, null);
 
-    /// <inheritdoc cref="Ease(string, string, float, float, UiEasing)"/>
+    /// <summary>
+    /// Moves a value toward <paramref name="target"/> along an easing curve, and returns where it is this frame.<br/>
+    /// Changing the target restarts the curve from wherever the value currently is, so a hover that reverses halfway
+    /// never snaps.<br/>
+    /// Animates the widget as a whole. Use <see cref="Ease(string, string, float, float, UiEasing)"/> to animate more
+    /// than one property of the same widget.
+    /// </summary>
+    /// <param name="id">The widget id.</param>
+    /// <param name="target">The value to move toward.</param>
+    /// <param name="duration">How long the move takes, in seconds.</param>
+    /// <param name="easing">The curve to follow.</param>
+    /// <returns>The current value.</returns>
     public static float Ease(string id, float target, float duration = 0.15f, UiEasing easing = UiEasing.OutCubic)
         => Ease(id, string.Empty, target, duration, easing, null);
 
@@ -164,7 +176,18 @@ public static class NoireAnim
         return state.Value;
     }
 
-    /// <inheritdoc cref="Spring(string, string, float, float, float)"/>
+    /// <summary>
+    /// Moves a value toward <paramref name="target"/> like a damped spring, and returns where it is this frame.<br/>
+    /// Unlike <see cref="Ease(string, float, float, UiEasing)"/> a spring has no fixed duration: it carries its
+    /// momentum, so a target that keeps moving is followed smoothly instead of restarting.<br/>
+    /// Animates the widget as a whole. Use <see cref="Spring(string, string, float, float, float)"/> to animate more
+    /// than one property of the same widget.
+    /// </summary>
+    /// <param name="id">The widget id.</param>
+    /// <param name="target">The value to move toward.</param>
+    /// <param name="stiffness">How hard the spring pulls. Higher arrives faster.</param>
+    /// <param name="damping">How much the motion is resisted. Higher overshoots less; around <c>2 * sqrt(stiffness)</c> is the point where it stops overshooting at all.</param>
+    /// <returns>The current value.</returns>
     public static float Spring(string id, float target, float stiffness = 180f, float damping = 26f)
         => Spring(id, string.Empty, target, stiffness, damping);
 
@@ -245,7 +268,12 @@ public static class NoireAnim
     /// <param name="subKey">Which one-shot this is, for example "saved".</param>
     public static void Trigger(string id, string subKey) => UiFrameState.Set(id, subKey, Time);
 
-    /// <inheritdoc cref="Trigger(string, string)"/>
+    /// <summary>
+    /// Starts a one-shot animation now. Call it on the frame the thing happened (a save succeeded, a value was rejected);
+    /// <see cref="Progress"/>, <see cref="Flash"/> and <see cref="Shake"/> read from it.<br/>
+    /// Triggers the widget's only one-shot. Use <see cref="Trigger(string, string)"/> when a widget has more than one.
+    /// </summary>
+    /// <param name="id">The widget id.</param>
     public static void Trigger(string id) => Trigger(id, string.Empty);
 
     /// <summary>

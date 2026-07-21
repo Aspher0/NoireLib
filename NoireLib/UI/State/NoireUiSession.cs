@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NoireLib.UI;
@@ -37,6 +37,7 @@ namespace NoireLib.UI;
 /// var search = NoireUiSession.Get("myplugin.roster.search", string.Empty);
 /// </code>
 /// </example>
+[NoireFacade("Session")]
 public static class NoireUiSession
 {
     private static readonly object SyncRoot = new();

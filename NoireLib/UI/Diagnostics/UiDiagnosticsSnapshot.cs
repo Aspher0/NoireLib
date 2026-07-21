@@ -16,6 +16,11 @@
 /// <param name="TextFontSizes">How many distinct font sizes <see cref="NoireText"/> has built. Each one is a full glyph
 /// atlas, so a number that keeps climbing is an interface asking for text by number instead of by
 /// <see cref="TextSize"/>.</param>
+/// <param name="AllocatedBytesPerFrame">How many bytes a frame of interface allocates, summed across every measured
+/// scope's own allocation and averaged. Reads 0 unless <see cref="UiProfiler.Enabled"/> is on, since nothing is
+/// measured while the profiler is off, and skips any scope marked through <see cref="UiProfiler.SetExcluded"/>. Unlike
+/// the timings, this is the same number on every machine, which is what makes it the figure to compare a change
+/// against.</param>
 public readonly record struct UiDiagnosticsSnapshot(
     int Frame,
     int Drawables,
@@ -26,4 +31,5 @@ public readonly record struct UiDiagnosticsSnapshot(
     int StackRepairs,
     int Faults,
     int DisabledDrawables,
-    int TextFontSizes);
+    int TextFontSizes,
+    double AllocatedBytesPerFrame);

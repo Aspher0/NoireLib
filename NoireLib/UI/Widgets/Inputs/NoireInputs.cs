@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -33,6 +33,7 @@ namespace NoireLib.UI;
 /// NoireInputs.HexColor("Accent", ref config.Accent);
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireInputs
 {
     /// <summary>
@@ -94,7 +95,7 @@ public static class NoireInputs
     /// <returns>True on the frame the value changes.</returns>
     public static bool Number(string label, ref float value, NumberStyle? style)
     {
-        using var profile = UiProfile.Helper("NoireInputs");
+        using var draw = UiDraw.Begin();
 
         NoireUI.EnsureFrameServices();
 
@@ -119,7 +120,9 @@ public static class NoireInputs
         return changed;
     }
 
-    /// <inheritdoc cref="Number(string, ref float, string?)"/>
+    /// <summary>
+    /// A number field with its unit written inside it and a stepper beside it.
+    /// </summary>
     public static bool Number(string label, ref int value, string? unit = null)
     {
         Shorthand.Unit = unit;
@@ -219,7 +222,7 @@ public static class NoireInputs
     /// <returns>True on the frame the duration changes.</returns>
     public static bool Duration(string label, ref TimeSpan value, DurationStyle? style = null)
     {
-        using var profile = UiProfile.Helper("NoireInputs");
+        using var draw = UiDraw.Begin();
 
         NoireUI.EnsureFrameServices();
 
@@ -314,7 +317,7 @@ public static class NoireInputs
     /// <returns>True on the frame the colour changes.</returns>
     public static bool HexColor(string label, ref Vector4 value, HexColorStyle? style = null)
     {
-        using var profile = UiProfile.Helper("NoireInputs");
+        using var draw = UiDraw.Begin();
 
         NoireUI.EnsureFrameServices();
 
@@ -420,7 +423,13 @@ public static class NoireInputs
         return Validated(id, error, body, static b => b());
     }
 
-    /// <inheritdoc cref="Validated(string, string?, Func{bool})"/>
+    /// <summary>
+    /// Wraps any drawing in the same refusal message the fields here use, for a widget this class does not ship.
+    /// </summary>
+    /// <remarks>
+    /// The body draws whatever it likes and returns whether it changed anything; the message appears under it, sliding
+    /// in rather than snapping, so a row does not jump the moment a keystroke makes a value invalid.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A stable id for the message's animation.</param>
     /// <param name="error">The message to show, or <see langword="null"/> when there is nothing wrong.</param>
@@ -476,7 +485,11 @@ public static class NoireInputs
         var centre = origin + (size * 0.5f);
         var color = NoireTheme.Current.Resolve(hovered ? ThemeColor.Accent : ThemeColor.TextMuted);
 
-        ImGui.GetWindowDrawList().AddCircleFilled(centre, hovered ? radius * 1.15f : radius, ColorHelper.Vector4ToUint(color));
+        using (var draw = UiDraw.Begin())
+        {
+            if (!draw.List.IsNull)
+                draw.List.AddCircleFilled(centre, hovered ? radius * 1.15f : radius, ColorHelper.Vector4ToUint(color));
+        }
 
         if (hovered)
         {

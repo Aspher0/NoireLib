@@ -110,6 +110,146 @@ public class NoireUiProfilerTests
     }
 
     [Fact]
+    public void Measure_RecordsWhatTheScopeAllocated()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            // Comfortably under the 85 KB large-object threshold, so this is an ordinary gen 0 allocation and the
+            // counter reports it the way it reports a widget's garbage.
+            const int size = 10_000;
+
+            byte[]? held = null;
+
+            using (profiler.Measure("allocating"))
+            {
+                held = new byte[size];
+            }
+
+            advance();
+
+            using (profiler.Measure("allocating"))
+            {
+            }
+
+            // Asserted rather than discarded: without a use the allocation is a candidate for elimination, and the
+            // test would then be measuring whether the JIT bothered.
+            held!.Length.Should().Be(size);
+
+            var entry = profiler.Snapshot().Single(e => e.Name == "allocating");
+
+            // Approximately, not exactly: the array carries a header on top of its elements. The point is that the
+            // figure is the caller's allocation rather than a count of something else.
+            entry.SelfLastBytes.Should().BeGreaterThanOrEqualTo(size);
+            entry.SelfLastBytes.Should().BeLessThan(size + 512);
+        });
+    }
+
+    [Fact]
+    public void Measure_ReportsZeroForAScopeThatAllocatesNothing()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("quiet"))
+            {
+            }
+
+            advance();
+
+            using (profiler.Measure("quiet"))
+            {
+            }
+
+            // Exactly zero rather than nearly zero, and the strictness is the point: measuring must not cost the thing
+            // being measured anything at all.
+            profiler.Snapshot().Single(e => e.Name == "quiet").SelfLastBytes.Should().Be(0L);
+        });
+    }
+
+    [Fact]
+    public void Measure_ChargesNestedAllocationToTheScopeThatSpentIt()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            const int size = 10_000;
+
+            byte[]? held = null;
+
+            using (profiler.Measure("parent"))
+            {
+                using (profiler.Measure("child"))
+                {
+                    held = new byte[size];
+                }
+            }
+
+            advance();
+
+            using (profiler.Measure("parent"))
+            {
+            }
+
+            held!.Length.Should().Be(size);
+
+            var snapshot = profiler.Snapshot();
+            var parent = snapshot.Single(e => e.Name == "parent");
+            var child = snapshot.Single(e => e.Name == "child");
+
+            child.SelfLastBytes.Should().BeGreaterThanOrEqualTo(size);
+
+            // The parent's total includes the child's allocation and its self excludes it, which is what stops a page
+            // from looking responsible for the garbage of every widget on it.
+            parent.LastBytes.Should().BeGreaterThanOrEqualTo(size);
+            parent.SelfLastBytes.Should().Be(0L);
+        });
+    }
+
+    [Fact]
+    public void TotalAverageBytes_WhileDisabled_ReadsZero()
+    {
+        var profiler = NoireUI.Profiler;
+        var previousEnabled = profiler.Enabled;
+        var previousFrame = NoireUI.FrameOverride;
+
+        var frame = 0;
+        NoireUI.FrameOverride = () => frame;
+
+        profiler.Reset();
+        profiler.Enabled = true;
+
+        try
+        {
+            byte[]? held = null;
+
+            using (profiler.Measure("allocating"))
+            {
+                held = new byte[10_000];
+            }
+
+            frame++;
+
+            using (profiler.Measure("allocating"))
+            {
+            }
+
+            held!.Length.Should().Be(10_000);
+            profiler.TotalAverageBytes.Should().BeGreaterThan(0d);
+
+            // Switched off without a reset, so the nodes still hold their figures. The reading has to stop rather than
+            // keep reporting the last one, because a consumer displaying it every frame cannot tell a live number from
+            // a number that stopped moving.
+            profiler.Enabled = false;
+
+            profiler.TotalAverageBytes.Should().Be(0d);
+        }
+        finally
+        {
+            profiler.Enabled = previousEnabled;
+            profiler.Reset();
+            NoireUI.FrameOverride = previousFrame;
+        }
+    }
+
+    [Fact]
     public void Measure_KeepsScopesApart()
     {
         WithProfiler((profiler, advance) =>
@@ -397,6 +537,220 @@ public class NoireUiProfilerTests
 
             rows.Where(e => e.Name == "hub pass").Should().ContainSingle("the stranded node is rehomed, not duplicated")
                 .Which.ParentId.Should().Be(root.Id);
+        });
+    }
+
+    [Fact]
+    public void SetExcluded_TakesTheScopeOutOfTheTotals()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            byte[]? held = null;
+
+            using (profiler.Measure("kept"))
+                Spin();
+
+            using (profiler.Measure("noisy"))
+            {
+                held = new byte[10_000];
+                Spin();
+            }
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            held!.Length.Should().Be(10_000);
+
+            var noisy = profiler.Snapshot().Single(e => e.Name == "noisy");
+
+            var msBefore = profiler.TotalAverageMs;
+            var bytesBefore = profiler.TotalAverageBytes;
+
+            profiler.SetExcluded(noisy.Id, true).Should().BeTrue();
+
+            // Both totals, because both are what a reader judges a change by, and an exclusion that moved the
+            // milliseconds while leaving the bytes counting the same scope would be worse than none at all.
+            profiler.TotalAverageMs.Should().BeApproximately(msBefore - noisy.SelfAverageMs, 0.0001d);
+            profiler.TotalAverageBytes.Should().BeApproximately(bytesBefore - noisy.SelfAverageBytes, 0.0001d);
+
+            profiler.ExcludedCount.Should().Be(1);
+            profiler.IsExcluded(noisy.Id).Should().BeTrue();
+        });
+    }
+
+    [Fact]
+    public void AnExcludedScope_IsStillMeasuredAndStillReported()
+    {
+        // The point of the mark is the sums, not the row. A scope dropped from the table or frozen at its last reading
+        // would leave no way to see what the thing being excluded actually costs.
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("window"))
+                Spin();
+
+            advance();
+
+            using (profiler.Measure("window"))
+                Spin();
+
+            var before = profiler.Snapshot().Single(e => e.Name == "window");
+
+            profiler.SetExcluded(before.Id, true);
+
+            advance();
+
+            using (profiler.Measure("window"))
+                Spin();
+
+            var after = profiler.Snapshot().Single(e => e.Name == "window");
+
+            after.Excluded.Should().BeTrue("the row has to be able to draw itself as excluded");
+            after.Calls.Should().Be(1);
+            after.SelfLastMs.Should().BeGreaterThan(0d);
+        });
+    }
+
+    [Fact]
+    public void ToggleExcluded_PutsTheScopeBack()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("scope"))
+                Spin();
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            var id = profiler.Snapshot().Single(e => e.Name == "scope").Id;
+            var total = profiler.TotalAverageMs;
+
+            profiler.ToggleExcluded(id).Should().BeTrue("the first right-click excludes it");
+            profiler.ToggleExcluded(id).Should().BeFalse("the second puts it back");
+
+            profiler.ExcludedCount.Should().Be(0);
+            profiler.TotalAverageMs.Should().BeApproximately(total, 0.0001d);
+        });
+    }
+
+    [Fact]
+    public void SetExcluded_MovesTheGenerationOnlyWhenItChangedSomething()
+    {
+        // A reader rebuilds on the generation, so a mark applied between two measured frames has to move it or the
+        // totals on screen would keep including the scope until something else happened to roll a frame.
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("scope"))
+            {
+            }
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            var id = profiler.Snapshot().Single(e => e.Name == "scope").Id;
+            var before = profiler.Generation;
+
+            profiler.SetExcluded(id, true);
+            profiler.Generation.Should().NotBe(before);
+
+            var settled = profiler.Generation;
+
+            profiler.SetExcluded(id, true);
+            profiler.Generation.Should().Be(settled, "nothing changed, so nothing needs redrawing");
+        });
+    }
+
+    [Fact]
+    public void SetExcluded_ForAScopeThatIsNotThere_ReportsItRatherThanThrowing()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("scope"))
+            {
+            }
+
+            advance();
+
+            profiler.SetExcluded(int.MaxValue, true).Should().BeFalse();
+            profiler.IsExcluded(int.MaxValue).Should().BeFalse();
+            profiler.ToggleExcluded(int.MaxValue).Should().BeFalse();
+        });
+    }
+
+    [Fact]
+    public void ClearExclusions_CountsEveryScopeAgainWithoutForgettingAnything()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("first"))
+                Spin();
+
+            using (profiler.Measure("second"))
+                Spin();
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            var rows = profiler.Snapshot();
+            var total = profiler.TotalAverageMs;
+
+            foreach (var row in rows)
+                profiler.SetExcluded(row.Id, true);
+
+            profiler.TotalAverageMs.Should().Be(0d, "every scope is excluded");
+
+            profiler.ClearExclusions();
+
+            profiler.ExcludedCount.Should().Be(0);
+            profiler.TotalAverageMs.Should().BeApproximately(total, 0.0001d,
+                "the marks are lifted without discarding a single measurement");
+        });
+    }
+
+    [Fact]
+    public void Reset_ForgetsTheMarksWithTheNodesTheyWereOn()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            using (profiler.Measure("scope"))
+            {
+            }
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            profiler.SetExcluded(profiler.Snapshot().Single(e => e.Name == "scope").Id, true);
+            profiler.Reset();
+
+            // The ids start again from the beginning after a reset, so a mark that outlived its node would land on
+            // whichever scope happened to be handed the id next.
+            profiler.ExcludedCount.Should().Be(0);
+
+            using (profiler.Measure("scope"))
+            {
+            }
+
+            advance();
+
+            using (profiler.Measure("tick"))
+            {
+            }
+
+            profiler.Snapshot().Single(e => e.Name == "scope").Excluded.Should().BeFalse();
         });
     }
 

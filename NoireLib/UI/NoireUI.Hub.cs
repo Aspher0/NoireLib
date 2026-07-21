@@ -154,7 +154,7 @@ public static partial class NoireUI
     /// <param name="key">The translation key.</param>
     /// <param name="fallback">The shipped English default.</param>
     /// <returns>The translated string, or <paramref name="fallback"/>.</returns>
-    public static string Text(string key, string fallback)
+    internal static string Localize(string key, string fallback)
     {
         var provider = StringProvider;
         if (provider == null)

@@ -457,7 +457,13 @@ public class NoireToastArea : NoireDrawable
         var max = new Vector2(left + ScaledWidth, top + toast.Reserved);
 
         var hovered = ImGui.IsMouseHoveringRect(min, max);
-        var drawList = ImGui.GetWindowDrawList();
+
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
+
         var rounding = Style.ResolveRounding();
 
         // The slot is shorter than the toast while it is arriving or leaving, so everything is clipped to it. Without
@@ -739,7 +745,12 @@ public class NoireToastArea : NoireDrawable
         var fill = Style.ProgressColor ?? ColorHelper.Darken(accent, Style.ProgressDarken);
         var track = Style.ProgressTrackColor ?? theme.Resolve(ThemeColor.SurfaceSunken);
 
-        var drawList = ImGui.GetWindowDrawList();
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
+
         var max = origin + new Vector2(width, height);
 
         drawList.AddRectFilled(origin, max, ColorHelper.Vector4ToUint(track), height * 0.5f);

@@ -115,7 +115,7 @@ public sealed class NoireModalHost : NoireDrawable
             ImGui.Spacing();
 
             var remember = request.Remember;
-            if (ImGui.Checkbox(NoireUI.Text("NoireUI.Modal.Remember", request.Options.RememberLabel ?? "Don't ask again"), ref remember))
+            if (ImGui.Checkbox(NoireUI.Localize("NoireUI.Modal.Remember", request.Options.RememberLabel ?? "Don't ask again"), ref remember))
                 request.Remember = remember;
         }
 
@@ -150,8 +150,8 @@ public sealed class NoireModalHost : NoireDrawable
     private static void DrawConfirmButtons(ModalRequest request)
     {
         var options = request.Options;
-        var confirmLabel = NoireUI.Text("NoireUI.Modal.Confirm", options.ConfirmLabel ?? DefaultConfirmLabel(request));
-        var cancelLabel = options.CancelLabel ?? NoireUI.Text("NoireUI.Modal.Cancel", "Cancel");
+        var confirmLabel = NoireUI.Localize("NoireUI.Modal.Confirm", options.ConfirmLabel ?? DefaultConfirmLabel(request));
+        var cancelLabel = options.CancelLabel ?? NoireUI.Localize("NoireUI.Modal.Cancel", "Cancel");
 
         var confirmEnabled = request.Kind != ModalKind.Prompt
             || (request.Options as PromptOptions)?.AllowEmpty == true

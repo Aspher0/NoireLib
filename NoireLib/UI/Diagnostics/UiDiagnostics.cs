@@ -83,7 +83,8 @@ public sealed class UiDiagnostics
         StackRepairCount,
         FaultCount,
         DisabledDrawableCount,
-        UiFontCache.BuiltSizeCount);
+        UiFontCache.BuiltSizeCount,
+        NoireUI.Profiler.TotalAverageBytes);
 
     /// <summary>
     /// Reports a fault: logs it, records it, and hands it to <see cref="OnFault"/>.

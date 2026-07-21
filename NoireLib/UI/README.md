@@ -4,6 +4,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 
 ## Table of Contents
 - [Overview](#overview)
+- [Two ways to reach every surface](#two-ways-to-reach-every-surface)
 - [The hub (NoireUI)](#the-hub-noireui)
   - [Automatic drawing](#automatic-drawing)
   - [Running work on the draw thread](#running-work-on-the-draw-thread)
@@ -88,6 +89,45 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - **`NoireComboBox<T>`** - A combo box with an optional auto-focused filter input (pinned above the options or scrolling with them), arrow-key cycling of the highlighted option inside the dropdown, and an optional "hold a binding + mouse wheel" shortcut to cycle the selection on the closed combo (with or without looping). The shortcut is a `HotkeyBinding` matched with the same rules as a hotkey, and can be driven straight from the Hotkey Manager so the user can rebind it.
 - **`NoireTooltip`** - A custom tooltip system independent from `ImGui.SetTooltip()`, with customizable background transparency (0% to 100%) and mixed inline content built from `NoireContent`.
 - **`NoireContent`** - A reusable block of rich inline content (text, dynamic text, FontAwesome icons, images, keycaps, and any widget), flowing on lines with vertical centering. Rendered by `NoireTooltip`, and by anything of your own through its public `Draw()`.
+
+---
+
+## Two ways to reach every surface
+
+Every surface above is also reachable under `NoireUI`, so completion branches instead of listing the whole library flat. Type `NoireUI.` to see what there is to draw, pick a surface, and its own members follow:
+
+```csharp
+NoireText.Draw("Ready", TextSize.Heading);          // the surface's own name
+NoireUI.Text.Draw("Ready", TextSize.Heading);       // the same call, reached from the root
+
+NoireShapes.Glow(min, max, colour);
+NoireUI.Shapes.Glow(min, max, colour);
+```
+
+**Both names are the same feature, not two APIs.** The existing top-level names are fully supported, are not deprecated, and stay visible in completion. Nothing you have already written changes, and the two styles mix freely in one file.
+
+The grouped name is the surface's own with the `Noire` prefix taken off, so it is guessable rather than memorised. Two surfaces would repeat the root and carry an explicit name instead:
+
+| Surface | Reached as |
+|---|---|
+| `NoireText`, `NoireShapes`, `NoireLayout`, `NoirePanel`, `NoireStyle`, `NoireAnim`, `NoireButtons`, `NoireInputs`, `NoireSliders`, `NoireGauges`, `NoireBadge`, `NoireAttention`, `NoireTooltip`, `NoireModal`, `NoireToast`, `NoireWindowChrome` | `NoireUI.Text`, `NoireUI.Shapes`, ... |
+| `NoireUiState` | `NoireUI.State` |
+| `NoireUiSession` | `NoireUI.Session` |
+
+The grouped call takes every parameter the direct one takes, defaults identically, and carries the same documentation on hover. It is a shortcut, never a fence, and it costs nothing at draw time: each entry is a one-line forward that inlines away.
+
+### Widgets you construct
+
+Widgets you build and drive are reached from the same root, so browsing it finds a catalogue rather than half of one:
+
+```csharp
+var table = NoireUI.Table<Player>("roster", players);   // creation method
+var table = new NoireTable<Player>("roster", players);  // direct construction, unchanged
+```
+
+`Table`, `TabBar`, `ComboBox`, `MultiCombo`, `ExcelPicker`, `TagInput`, `ReorderableList`, `Content`, `OverlayButton`, `WorldLabel` and `AddonAttach` all have one. Constructing any of them directly stays fully supported and is not deprecated: the creation method is an extra door, not a replacement one.
+
+Some types deliberately have no creation method, because their system already has an entry point under the root and two front doors for one system is a worse answer than one: the modal host is reached through `NoireUI.Modal.Host`, toast areas through `NoireUI.Toast`, and the profiler window through `NoireUI.Profiler`.
 
 ---
 
@@ -359,7 +399,7 @@ foreach (var entry in NoireUI.Profiler.Snapshot())   // most expensive first
 NoireUI.Profile("inventory grid", () => DrawInventoryGrid());   // your own code, same list
 ```
 
-Every element the library ships measures itself, so switching this on attributes the frame without any work at the call sites. Read the **average**: a single frame competing with a texture upload is noise. The **peak** is a high-water mark that only `Reset()` clears.
+Every drawing surface the library ships measures itself, so switching this on attributes the frame without any work at the call sites. That is structural rather than a matter of care: a surface inside NoireUI cannot obtain a draw list without opening a scope at the same time, and an analyzer refuses to compile one that tries. Read the **average**: a single frame competing with a texture upload is noise. The **peak** is a high-water mark that only `Reset()` clears.
 
 **Scopes nest, so each is reported twice over.** *Total* includes everything measured inside a scope; *self* does not. Self is the one that adds up — totalling the total column counts a widget once for itself and again for every scope enclosing it, which is how an interface comes out looking several times its real cost. `TotalAverageMs` sums self time for exactly that reason.
 
@@ -374,6 +414,10 @@ profiler.IsOpen = true;
 ```
 
 A sortable, searchable table of every scope with its calls, last, longest and average, plus **Reset all** and **Copy all** (tab separated, in the order shown, so it pastes into a spreadsheet or an issue). `DrawContents()` is public if you would rather put it on a page of your own settings than in a window.
+
+**Right-click a row to leave that scope out of the totals.** The row turns red, and `TotalAverageMs`, `TotalAverageBytes` and the window's own totals line stop counting it; right-click again, or use **Include all**, to put it back. This is for the cost you have decided is not part of what you are measuring: the profiler window itself, a debug overlay, a page you already know about. The scope keeps being measured and keeps reporting its own figures, so its row still says what it costs.
+
+One node, not a branch: the totals are sums of self time, so a mark removes exactly the figure its own row shows, and excluding a whole branch means marking the rows in it. Marks live on the nodes, so `Reset()` forgets them along with the measurements; `ClearExclusions()` lifts every mark without discarding anything. The same is reachable in code through `SetExcluded(id, excluded)`, `ToggleExcluded(id)`, `IsExcluded(id)` and `ExcludedCount`.
 
 Totals count nested scopes twice over, since a widget measured inside a page that is also measured appears in both. They are a scale to read the rows against, not a frame time.
 

@@ -5,3 +5,5 @@ See the [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/N
 
 To install this library, simply download the [nuget package](https://www.nuget.org/packages/NoireLib/) and add it to your project.<br/>
 Once done, you can initialize the lib and use all of its features as per described in the documentation.
+
+See [AI_USAGE.md](AI_USAGE.md) for how AI was used in building this library.

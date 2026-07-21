@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -28,6 +28,7 @@ namespace NoireLib.UI;
 ///     Rename(newName);
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireModal
 {
     internal const int CancelledResult = -1;

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
@@ -30,6 +30,7 @@ namespace NoireLib.UI;
 /// .Follow(() => NoireService.TargetManager.Target);
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed class NoireWorldLabel : NoireDrawable
 {
     private const ImGuiWindowFlags LabelWindowFlags =
@@ -587,7 +588,10 @@ public sealed class NoireWorldLabel : NoireDrawable
 
         var color = ColorHelper.ScaleAlpha(ArrowColor ?? NoireTheme.Current.Resolve(ThemeColor.Accent), alpha);
 
-        NoireShapes.On(ImGui.GetForegroundDrawList(), (tip, angle, size, color), static state =>
+        // A world label is drawn over the game rather than inside a window, so it belongs on the foreground list.
+        using var draw = UiDraw.BeginForeground();
+
+        NoireShapes.On(draw.List, (tip, angle, size, color), static state =>
         {
             Span<Vector2> points = stackalloc Vector2[3];
             UiWorldProjection.ArrowPoints(state.tip, state.angle, state.size, points);

@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+using NoireLib.Helpers;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -15,7 +15,9 @@ namespace NoireLib.UI;
 /// whenever the atlas is rebuilt and a size that was being approximated becomes real. A key that is complete is what
 /// makes this safe; a stale text measurement is a layout that is wrong everywhere by a few pixels and does not look
 /// like a caching bug.<br/>
-/// Reached only from the draw thread, because measuring needs a frame in progress, so the dictionaries need no lock.
+/// Built on <see cref="HotPathCache{TKey, TValue}"/> rather than carrying its own dictionaries, so there is one
+/// implementation of the pattern in the library rather than two that can drift apart. Reached only from the draw
+/// thread, because measuring needs a frame in progress, which is the assumption that primitive is built on.
 /// </remarks>
 internal static class UiTextMeasureCache
 {
@@ -34,8 +36,8 @@ internal static class UiTextMeasureCache
     /// </remarks>
     private const int MaxEntries = 4096;
 
-    private static readonly Dictionary<Key, Vector2> Sizes = new();
-    private static readonly Dictionary<Key, float> CenterOffsets = new();
+    private static readonly HotPathCache<Key, Vector2> Sizes = new(MaxEntries);
+    private static readonly HotPathCache<Key, float> CenterOffsets = new(MaxEntries);
 
     /// <summary>
     /// Looks up what a string measured.
@@ -46,7 +48,7 @@ internal static class UiTextMeasureCache
     /// <param name="size">The remembered measurement.</param>
     /// <returns>Whether the measurement was already known.</returns>
     internal static bool TryGetSize(string text, float sizePx, float ambientSizePx, out Vector2 size)
-        => Sizes.TryGetValue(new Key(text, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation), out size);
+        => Sizes.TryGet(SizeKey(text, sizePx, ambientSizePx), out size);
 
     /// <summary>
     /// Remembers what a string measured.
@@ -56,12 +58,7 @@ internal static class UiTextMeasureCache
     /// <param name="ambientSizePx">The size of the font that was current.</param>
     /// <param name="size">The measurement.</param>
     internal static void StoreSize(string text, float sizePx, float ambientSizePx, Vector2 size)
-    {
-        if (Sizes.Count >= MaxEntries)
-            Sizes.Clear();
-
-        Sizes[new Key(text, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation)] = size;
-    }
+        => Sizes.Set(SizeKey(text, sizePx, ambientSizePx), size);
 
     /// <summary>
     /// Looks up a font's centre offset.
@@ -71,7 +68,7 @@ internal static class UiTextMeasureCache
     /// <param name="offset">The remembered offset.</param>
     /// <returns>Whether the offset was already known.</returns>
     internal static bool TryGetCenterOffset(float sizePx, float ambientSizePx, out float offset)
-        => CenterOffsets.TryGetValue(CenterKey(sizePx, ambientSizePx), out offset);
+        => CenterOffsets.TryGet(CenterKey(sizePx, ambientSizePx), out offset);
 
     /// <summary>
     /// Remembers a font's centre offset.
@@ -80,19 +77,26 @@ internal static class UiTextMeasureCache
     /// <param name="ambientSizePx">The size of the font that was current.</param>
     /// <param name="offset">The offset.</param>
     internal static void StoreCenterOffset(float sizePx, float ambientSizePx, float offset)
-    {
-        if (CenterOffsets.Count >= MaxEntries)
-            CenterOffsets.Clear();
+        => CenterOffsets.Set(CenterKey(sizePx, ambientSizePx), offset);
 
-        CenterOffsets[CenterKey(sizePx, ambientSizePx)] = offset;
-    }
+    /// <summary>
+    /// The key a measurement is stored under, read from the live scale and font generation.
+    /// </summary>
+    /// <remarks>
+    /// Both are read here rather than handed to <see cref="HotPathCache{TKey, TValue}.InvalidateIfChanged"/>, which
+    /// would drop the whole cache when either moved. Carrying them in the key instead means a scale that moves and
+    /// moves back finds its old measurements still there, and the atlas rebuild that follows a scale change does not
+    /// discard the measurements taken at the scale being returned to.
+    /// </remarks>
+    private static Key SizeKey(string text, float sizePx, float ambientSizePx)
+        => new(text, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation);
 
     /// <summary>
     /// Keyed on the empty string: the offset is a property of the font rather than of any particular text, and sharing
     /// the key shape keeps one invalidation rule for both caches.
     /// </summary>
     private static Key CenterKey(float sizePx, float ambientSizePx)
-        => new(string.Empty, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation);
+        => SizeKey(string.Empty, sizePx, ambientSizePx);
 
     /// <summary>
     /// Forgets every measurement. Called when the fonts are released.

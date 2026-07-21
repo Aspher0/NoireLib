@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
@@ -27,6 +27,7 @@ namespace NoireLib.UI;
 ///     config.Enabled = categories.Selected.ToArray();
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed class NoireMultiCombo<T>
 {
     private readonly List<T> items = new();

@@ -27,6 +27,7 @@ namespace NoireLib.UI;
 /// NoireButtons.Toggle("Enabled", ref config.Enabled);
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireButtons
 {
     /// <summary>
@@ -69,7 +70,7 @@ public static class NoireButtons
     /// <returns>True on the frame the button was clicked.</returns>
     public static bool Button(string label, ButtonStyle? style, Vector2 size = default)
     {
-        using var profile = UiProfile.Helper("NoireButtons");
+        using var draw = UiDraw.Begin();
 
         ArgumentNullException.ThrowIfNull(label);
 
@@ -349,22 +350,29 @@ public static class NoireButtons
         var knobCenter = new Vector2(min.X + height * 0.5f + knobTravel * travel, (min.Y + max.Y) * 0.5f);
         var knobColor = style.KnobColor ?? theme.On(trackColor);
 
-        var drawList = ImGui.GetWindowDrawList();
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
 
-        if (style.CustomDraw != null)
+        // Guarded rather than returned from: the label after this is laid out whether or not the switch was painted,
+        // so a caller's row does not collapse when there is no list. The custom hook sits inside the same guard as the
+        // built-in painting, since handing a consumer a null list would fault in their code rather than here.
+        if (!drawList.IsNull)
         {
-            var args = new UiToggleDraw(drawList, min, max, value, travel, hovered, trackColor, knobCenter, knobRadius, knobColor);
-            Invoke(() => style.CustomDraw(args), nameof(Toggle));
-        }
-        else
-        {
-            drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(trackColor), rounding);
+            if (style.CustomDraw != null)
+            {
+                var args = new UiToggleDraw(drawList, min, max, value, travel, hovered, trackColor, knobCenter, knobRadius, knobColor);
+                Invoke(() => style.CustomDraw(args), nameof(Toggle));
+            }
+            else
+            {
+                drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(trackColor), rounding);
 
-            var borderSize = style.ResolveBorderSize();
-            if (borderSize > 0f)
-                drawList.AddRect(min, max, ColorHelper.Vector4ToUint(style.BorderColor ?? theme.Resolve(ThemeColor.Border)), rounding, ImDrawFlags.None, borderSize);
+                var borderSize = style.ResolveBorderSize();
+                if (borderSize > 0f)
+                    drawList.AddRect(min, max, ColorHelper.Vector4ToUint(style.BorderColor ?? theme.Resolve(ThemeColor.Border)), rounding, ImDrawFlags.None, borderSize);
 
-            drawList.AddCircleFilled(knobCenter, knobRadius, ColorHelper.Vector4ToUint(knobColor));
+                drawList.AddCircleFilled(knobCenter, knobRadius, ColorHelper.Vector4ToUint(knobColor));
+            }
         }
 
         if (!style.LabelFirst && text.Length > 0)
@@ -476,7 +484,10 @@ public static class NoireButtons
         var origin = ImGui.GetCursorScreenPos();
         ImGui.Dummy(size);
 
-        DrawSpinner(ImGui.GetWindowDrawList(), origin + size * 0.5f, radius, color ?? NoireTheme.Current.Resolve(ThemeColor.Accent));
+        using var draw = UiDraw.Begin();
+
+        if (!draw.List.IsNull)
+            DrawSpinner(draw.List, origin + size * 0.5f, radius, color ?? NoireTheme.Current.Resolve(ThemeColor.Accent));
     }
 
     #endregion
@@ -530,7 +541,12 @@ public static class NoireButtons
         var max = ImGui.GetItemRectMax();
         var hovered = ImGui.IsItemHovered();
         var held = ImGui.IsItemActive();
-        var drawList = ImGui.GetWindowDrawList();
+
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
 
         var baseColor = style.Color ?? BaseColorFor(style.Tone, theme);
         var fill = held
@@ -608,7 +624,12 @@ public static class NoireButtons
         var theme = NoireTheme.Current;
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
-        var drawList = ImGui.GetWindowDrawList();
+
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
 
         var baseColor = style.Color ?? BaseColorFor(style.Tone, theme);
         var fill = theme.Muted(baseColor);
@@ -620,7 +641,7 @@ public static class NoireButtons
         var center = (min + max) * 0.5f;
         var radius = (max.Y - min.Y) * 0.26f;
         var textColor = style.TextColor ?? theme.On(baseColor);
-        var busyText = NoireUI.Text("NoireUI.Button.Busy", BusyText ?? string.Empty);
+        var busyText = NoireUI.Localize("NoireUI.Button.Busy", BusyText ?? string.Empty);
 
         if (string.IsNullOrEmpty(busyText))
         {

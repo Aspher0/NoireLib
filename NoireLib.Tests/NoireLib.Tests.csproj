@@ -110,6 +110,13 @@
       <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll"
             CopyToOutputDirectory="PreserveNewest"
             Visible="false" />
+
+      <!-- The native ImGui library Dalamud.Bindings.ImGui P/Invokes into. UiHarness creates a real context and runs
+           real frames, so without this copy every native call fails at load time and the drawing tests cannot run.
+           Copied by the build rather than by hand so a clean clone is not a broken test run. -->
+      <None Include="$(DalamudPath)cimgui.dll"
+            CopyToOutputDirectory="PreserveNewest"
+            Visible="false" />
     </ItemGroup>
 
     <ItemGroup>

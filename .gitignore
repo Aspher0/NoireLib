@@ -10,6 +10,7 @@ docs/
 .scratch/
 .claude/
 CLAUDE.md
+CONTEXT.md
 
 # Local-only solutions
 *.Private.sln

@@ -13,6 +13,13 @@ namespace NoireLib.Helpers;
 /// for bulk invalidation.<br/>
 /// For strongly typed caching with non-string keys, use <see cref="MemoryCacheStore{TKey, TValue}"/> instead.
 /// </summary>
+/// <remarks>
+/// This is an <b>application</b> cache, for values fetched or computed outside a draw. Do not put anything read while
+/// a frame is being drawn on it: a string key has to be composed per lookup, values are stored as
+/// <see cref="object"/> and so box, and a time-to-live recomputes on a clock when nothing has changed while serving a
+/// stale value after something has. Use <see cref="HotPathCache{TKey, TValue}"/> for the draw path. Moving a draw-path
+/// caller here reintroduces a per-frame allocation and reads as cleanup, which is why it is worth stating.
+/// </remarks>
 public static class CacheHelper
 {
     private static readonly ConcurrentDictionary<string, CacheEntry> Store = new();

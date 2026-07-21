@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -33,6 +33,7 @@ namespace NoireLib.UI;
 /// </code>
 /// </example>
 /// <typeparam name="T">The row type.</typeparam>
+[NoireFacadeFactory]
 public sealed partial class NoireTable<T>
 {
     private readonly List<int> visible = new();

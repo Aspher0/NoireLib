@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -27,6 +27,7 @@ namespace NoireLib.UI;
 /// NoireBadge.Count(rect, 12, new BadgeStyle { Pulse = true });
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireBadge
 {
     private static readonly BadgeStyle Default = new();
@@ -82,7 +83,12 @@ public static class NoireBadge
         // line's bounding box, so the widgets after it on the row shift across and the row itself changes height. The
         // font scope is still NoireText's, so the glyphs are rasterized at this size rather than resampled.
         NoireText.At(textSizePx, (textAt, color, text), static state =>
-            ImGui.GetWindowDrawList().AddText(state.textAt, state.color, state.text));
+        {
+            using var draw = UiDraw.Begin();
+
+            if (!draw.List.IsNull)
+                draw.List.AddText(state.textAt, state.color, state.text);
+        });
     }
 
     /// <summary>
@@ -167,7 +173,9 @@ public static class NoireBadge
         // Half the short side, so a wide badge is a pill and a square one is a circle without the caller choosing.
         var radius = MathF.Min(bounds.Size.X, bounds.Size.Y) * 0.5f;
 
-        NoireShapes.On(ImGui.GetWindowDrawList(), (bounds, color, radius, style, theme, alpha), static state =>
+        using var draw = UiDraw.BeginWindow();
+
+        NoireShapes.On(draw.List, (bounds, color, radius, style, theme, alpha), static state =>
         {
             if (state.style.OutlineThickness > 0f)
             {

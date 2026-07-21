@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 
@@ -16,6 +16,7 @@ namespace NoireLib.UI;
 /// NoireStyle.WithAlpha(0.5f, () => DrawPreview());
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireStyle
 {
     /// <summary>

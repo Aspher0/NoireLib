@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -28,6 +28,7 @@ namespace NoireLib.UI;
 /// NoireWindowChrome.Draw(chrome, () => DrawMyContents());
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireWindowChrome
 {
     /// <summary>
@@ -107,7 +108,14 @@ public static class NoireWindowChrome
         Draw(body, static b => b(), style);
     }
 
-    /// <inheritdoc cref="Draw(Action, WindowChromeStyle)"/>
+    /// <summary>
+    /// Paints the window's own surface and border, then runs the body inside it.
+    /// </summary>
+    /// <remarks>
+    /// The chrome is painted across the whole window rather than measured from the body, which is the one way this
+    /// differs from <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and
+    /// no need to split the draw list.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
     /// <param name="body">The window's contents.</param>
@@ -126,13 +134,18 @@ public static class NoireWindowChrome
         // is its background.
         var opacity = Math.Clamp(settings.Opacity, 0f, 1f);
 
-        if (settings.Plate is { } plate)
-            NoireShapes.Plate(min, max, opacity >= 1f ? plate : Faded(plate, opacity));
-        else
-            NoireShapes.Rect(min, max, ColorHelper.ScaleAlpha(NoireTheme.Current.Resolve(ThemeColor.Surface), opacity));
+        // Held around the chrome alone and closed before the body runs. The body is the caller's own drawing, and
+        // charging it here would make every window's frame read as the most expensive thing in the interface.
+        using (var draw = UiDraw.Begin())
+        {
+            if (settings.Plate is { } plate)
+                NoireShapes.Plate(min, max, opacity >= 1f ? plate : Faded(plate, opacity));
+            else
+                NoireShapes.Rect(min, max, ColorHelper.ScaleAlpha(NoireTheme.Current.Resolve(ThemeColor.Surface), opacity));
 
-        if (settings.Frame is { } frame)
-            NoireShapes.Frame(min, max, frame);
+            if (settings.Frame is { } frame)
+                NoireShapes.Frame(min, max, frame);
+        }
 
         var padding = NoireUI.Scaled(settings.Padding);
 
@@ -279,6 +292,8 @@ public static class NoireWindowChrome
         var clicked = ImGui.InvisibleButton($"###NoireWindowChrome_{id}", new Vector2(size, size));
         var hovered = ImGui.IsItemHovered();
         var held = ImGui.IsItemActive();
+
+        using var draw = UiDraw.BeginMethod();
 
         var plateHalf = half * settings.PlateRatio;
         var min = centre - new Vector2(plateHalf, plateHalf);

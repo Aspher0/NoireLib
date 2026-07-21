@@ -21,6 +21,7 @@ namespace NoireLib.UI;
 /// NoireToast.Undo("3 presets deleted", () => RestoreDeleted());
 /// </code>
 /// </example>
+[NoireFacade]
 public sealed class NoireToast
 {
     private readonly List<ToastAction> actions = new();
@@ -259,7 +260,7 @@ public sealed class NoireToast
 
         return new NoireToast(message)
             .WithDuration(seconds)
-            .WithAction(NoireUI.Text("NoireUI.Toast.Undo", "Undo"), _ => onUndo(), ButtonTone.Accent)
+            .WithAction(NoireUI.Localize("NoireUI.Toast.Undo", "Undo"), _ => onUndo(), ButtonTone.Accent)
             .Show();
     }
 

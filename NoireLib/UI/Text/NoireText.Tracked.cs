@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 
@@ -54,7 +54,7 @@ public static partial class NoireText
         NoireUI.EnsureFrameServices();
 
         var size = Vector2.Zero;
-        InFont(sizePx, text, tracking, (t, track) => size = PlaceGlyphs(t, track, draw: true));
+        InFont(sizePx, text, tracking, (t, track) => size = PlaceGlyphs(t, track, paint: true));
 
         return size;
     }
@@ -72,7 +72,10 @@ public static partial class NoireText
     /// <summary>
     /// Measures text as it would be drawn with tracking, at an explicit size.
     /// </summary>
-    /// <inheritdoc cref="CalcSize(string, float)" path="/remarks"/>
+    /// <remarks>
+    /// Measured with the font pushed, which is the whole point: a layout built on a measurement taken in one font and
+    /// drawn in another is wrong everywhere by a few pixels, and neither of the two looks like the one lying.
+    /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
@@ -83,7 +86,7 @@ public static partial class NoireText
             return Vector2.Zero;
 
         var measured = Vector2.Zero;
-        InFont(sizePx, text, tracking, (t, track) => measured = PlaceGlyphs(t, track, draw: false));
+        InFont(sizePx, text, tracking, (t, track) => measured = PlaceGlyphs(t, track, paint: false));
 
         return measured;
     }
@@ -133,15 +136,19 @@ public static partial class NoireText
     /// </remarks>
     /// <param name="text">The text to place.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
-    /// <param name="draw">Whether to actually paint, as opposed to only measuring.</param>
+    /// <param name="paint">Whether to actually paint, as opposed to only measuring.</param>
     /// <returns>The size the run occupies.</returns>
-    private static Vector2 PlaceGlyphs(string text, float tracking, bool draw)
+    private static Vector2 PlaceGlyphs(string text, float tracking, bool paint)
     {
+        // Named for the type rather than for this method, so a tracked label lands in the same row as every other piece
+        // of text in the frame. See the note on NoireText.At.
+        using var draw = UiDraw.Begin();
+
         var origin = ImGui.GetCursorScreenPos();
         var spacing = tracking * ImGui.GetFontSize();
         var height = ImGui.GetTextLineHeight();
         var color = ImGui.GetColorU32(ImGuiCol.Text);
-        var list = ImGui.GetWindowDrawList();
+        var list = draw.List;
 
         Span<char> glyph = stackalloc char[2];
         var x = 0f;
@@ -161,7 +168,7 @@ public static partial class NoireText
 
             var piece = (ReadOnlySpan<char>)glyph[..length];
 
-            if (draw)
+            if (paint)
                 list.AddText(origin + new Vector2(x, 0f), color, piece);
 
             x += ImGui.CalcTextSize(piece).X + spacing;
@@ -173,7 +180,7 @@ public static partial class NoireText
         // or right-aligned.
         var size = new Vector2(MathF.Max(0f, x - spacing), height);
 
-        if (draw)
+        if (paint)
             ImGui.Dummy(size);
 
         return size;

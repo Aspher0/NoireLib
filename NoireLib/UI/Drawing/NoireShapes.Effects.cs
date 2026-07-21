@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -30,7 +30,14 @@ public static partial class NoireShapes
         Clipped(min, max, body, static b => b());
     }
 
-    /// <inheritdoc cref="Clipped(Vector2, Vector2, Action)"/>
+    /// <summary>
+    /// Runs a body with everything it draws clipped to a rectangle.
+    /// </summary>
+    /// <remarks>
+    /// A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a
+    /// sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. Clipping is
+    /// what makes a painted panel a panel rather than a wash across the page.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left of the box to keep drawing inside, in screen space.</param>
     /// <param name="max">The bottom right.</param>

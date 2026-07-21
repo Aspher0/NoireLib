@@ -1,4 +1,4 @@
-using NoireLib.Helpers;
+﻿using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 
@@ -35,6 +35,7 @@ namespace NoireLib.UI;
 /// tabs.SwitchTab("filters");
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed partial class NoireTabBar
 {
     private readonly HashSet<string> refusalsLogged = [];

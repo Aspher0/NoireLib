@@ -91,7 +91,8 @@ public static partial class NoireShapes
     /// </remarks>
     private static void FillShaded(ReadOnlySpan<Vector2> path, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull)
             return;
@@ -124,7 +125,7 @@ public static partial class NoireShapes
         if (spread <= 0f || color.W <= 0f)
             return;
 
-        using var profile = UiProfile.Helper("NoireShapes.Glow");
+        using var draw = UiDraw.BeginMethod();
 
         // A layer roughly every two pixels reads as smooth without spending a draw call per pixel on a wide glow.
         var layers = Math.Clamp((int)MathF.Ceiling(spread * 0.5f), 3, 12);
@@ -390,9 +391,9 @@ public static partial class NoireShapes
     /// <param name="style">The frame style.</param>
     private static void CornerTicks(Vector2 min, Vector2 max, float gap, FrameStyle style)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
 
-        if (drawList.IsNull)
+        if (draw.List.IsNull)
             return;
 
         var length = style.ScaledTickLength;
@@ -451,7 +452,8 @@ public static partial class NoireShapes
     /// <param name="thickness">The line thickness, in real pixels.</param>
     public static void FadedLine(Vector2 from, Vector2 to, Vector4 color, float thickness = 1f)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull || thickness <= 0f || color.W <= 0f)
             return;

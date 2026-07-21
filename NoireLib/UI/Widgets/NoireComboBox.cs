@@ -22,6 +22,7 @@ namespace NoireLib.UI;
 /// Create one instance per combo, keep it, and call <see cref="Draw"/> every frame inside your window.
 /// </summary>
 /// <typeparam name="T">The type of the items of the combo box.</typeparam>
+[NoireFacadeFactory]
 public class NoireComboBox<T>
 {
     private readonly List<T> items = new();

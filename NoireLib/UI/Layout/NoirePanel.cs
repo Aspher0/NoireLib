@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
@@ -29,6 +29,7 @@ namespace NoireLib.UI;
 /// new FrameStyle { TickLength = 11f });
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoirePanel
 {
     /// <summary>
@@ -44,7 +45,9 @@ public static class NoirePanel
         Frame(body, static b => b(), style, options);
     }
 
-    /// <inheritdoc cref="Frame(Action, FrameStyle, PanelOptions)"/>
+    /// <summary>
+    /// Draws a bordered frame around a body.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
     /// <param name="body">The drawing to put inside.</param>
@@ -69,7 +72,9 @@ public static class NoirePanel
         Plate(body, static b => b(), style, options);
     }
 
-    /// <inheritdoc cref="Plate(Action, PlateStyle, PanelOptions)"/>
+    /// <summary>
+    /// Draws a filled plate under a body.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
     /// <param name="body">The drawing to put inside.</param>
@@ -191,7 +196,21 @@ public static class NoirePanel
 
     private static unsafe bool BeginChrome()
     {
-        var list = ImGui.GetWindowDrawList();
+        // The window's own list rather than a redirected one: channels are split on the list the panel's items land
+        // on, and an item lands on the window's list whatever a shape redirect points at.
+        using var draw = UiDraw.BeginWindow();
+
+        var list = draw.List;
+
+        // Pushed even when there is no list to split, because EndChrome pops unconditionally: returning early without
+        // pushing would pop the entry belonging to the panel enclosing this one, and every panel after it would then
+        // read the wrong list as its parent's.
+        if (list.IsNull)
+        {
+            ChromeStack.Add((0, false));
+            return false;
+        }
+
         var handle = (nint)list.Handle;
         var split = ChromeStack.Count == 0 || ChromeStack[^1].List != handle;
 
@@ -210,13 +229,29 @@ public static class NoirePanel
         if (ChromeStack.Count > 0)
             ChromeStack.RemoveAt(ChromeStack.Count - 1);
 
-        if (split)
-            ImGui.GetWindowDrawList().ChannelsMerge();
+        if (!split)
+            return;
+
+        using var draw = UiDraw.BeginWindow();
+
+        if (!draw.List.IsNull)
+            draw.List.ChannelsMerge();
     }
 
-    private static void ToChrome() => ImGui.GetWindowDrawList().ChannelsSetCurrent(ChromeChannel);
+    private static void ToChrome() => SetChannel(ChromeChannel);
 
-    private static void ToContent() => ImGui.GetWindowDrawList().ChannelsSetCurrent(ContentChannel);
+    private static void ToContent() => SetChannel(ContentChannel);
+
+    /// <summary>
+    /// Points the window's list at one of the two channels <see cref="BeginChrome"/> split it into.
+    /// </summary>
+    private static void SetChannel(int channel)
+    {
+        using var draw = UiDraw.BeginWindow();
+
+        if (!draw.List.IsNull)
+            draw.List.ChannelsSetCurrent(channel);
+    }
 
     private const int ChromeChannel = 0;
     private const int ContentChannel = 1;

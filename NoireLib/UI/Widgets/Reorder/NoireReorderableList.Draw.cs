@@ -411,18 +411,24 @@ public sealed partial class NoireReorderableList<T>
         var ghostSize = new Vector2(size.X * 0.5f, size.Y);
         var ghostOrigin = ImGui.GetIO().MousePos + new Vector2(NoireUI.Scaled(12f), -ghostSize.Y * 0.5f);
 
-        NoireShapes.On(ImGui.GetForegroundDrawList(), () =>
+        // The ghost is drawn on top of every window, so it follows the pointer out over whatever the list is sitting
+        // in front of. One gate for both the shapes and the label, so the two cannot end up on different lists.
+        using var draw = UiDraw.BeginForeground();
+        var list = draw.List;
+
+        if (list.IsNull)
+            return;
+
+        NoireShapes.On(list, (ghostOrigin, ghostSize, theme, accent, rounding), static state =>
         {
-            NoireShapes.Rect(ghostOrigin, ghostOrigin + ghostSize, ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Surface), 0.92f), CornerShape.Rounded, rounding);
-            NoireShapes.RectOutline(ghostOrigin, ghostOrigin + ghostSize, ColorHelper.ScaleAlpha(accent, 0.8f), 1f, CornerShape.Rounded, rounding);
+            NoireShapes.Rect(state.ghostOrigin, state.ghostOrigin + state.ghostSize, ColorHelper.ScaleAlpha(state.theme.Resolve(ThemeColor.Surface), 0.92f), CornerShape.Rounded, state.rounding);
+            NoireShapes.RectOutline(state.ghostOrigin, state.ghostOrigin + state.ghostSize, ColorHelper.ScaleAlpha(state.accent, 0.8f), 1f, CornerShape.Rounded, state.rounding);
         });
 
-        var label = LabelOf(items[draggingIndex]);
-
-        ImGui.GetForegroundDrawList().AddText(
+        list.AddText(
             ghostOrigin + new Vector2(NoireUI.Scaled(8f), (ghostSize.Y * 0.5f) - (ImGui.GetTextLineHeight() * 0.5f)),
             ColorHelper.Vector4ToUint(theme.Resolve(ThemeColor.Text)),
-            label);
+            LabelOf(items[draggingIndex]));
     }
 
     /// <summary>

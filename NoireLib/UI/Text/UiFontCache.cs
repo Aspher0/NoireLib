@@ -103,7 +103,19 @@ internal static class UiFontCache
     /// measures as the stand-in, and the frame the real font arrives it measures differently. Without a generation, a
     /// measurement cache would keep answering with the stand-in's numbers for as long as the label went unchanged.
     /// </remarks>
-    internal static int Generation => generation;
+    internal static int Generation => GenerationOverride?.Invoke() ?? generation;
+
+    /// <summary>
+    /// Stands in for the real generation, so the handover can be driven without building a font atlas.
+    /// </summary>
+    /// <remarks>
+    /// Building a font needs a Dalamud atlas, which a test does not have, so the frame the real font arrives cannot be
+    /// reached by asking for a size and waiting. What a test needs to assert is that a measurement taken under one
+    /// generation is unreachable under the next, and that is exactly what moving this proves.<br/>
+    /// Null outside a test, where the real counter answers. Matches <see cref="NoireUI.FrameOverride"/> and
+    /// <see cref="NoireUI.ScaleOverride"/>, which exist for the same reason.
+    /// </remarks>
+    internal static Func<int>? GenerationOverride { get; set; }
 
     private static int generation;
 
@@ -156,7 +168,7 @@ internal static class UiFontCache
 
         // Broken out from NoireText so a first draw that has to register a size, prune the cold ones and ask for a
         // rasterization is a row of its own rather than time charged to whatever text happened to be first.
-        using var profile = UiProfile.Helper("UiFontCache");
+        using var draw = UiDraw.Begin();
 
         IFontHandle? handle;
         bool needsBuild;

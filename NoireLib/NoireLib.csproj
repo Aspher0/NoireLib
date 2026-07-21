@@ -1,7 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
-        <Version>1.8.0.3</Version>
+        <Version>1.9.0.0</Version>
+        <PackageReleaseNotes>
+Breaking: the localization resolver NoireUI.Text(string key, string fallback) is renamed to NoireUI.Localize and is now internal. It resolved a translation key and never drew anything, and its name was needed by the new NoireUI.Text drawing surface. NoireUI.StringProvider, the hook a plugin sets to supply translations, is unchanged and stays public.
+
+Added: every NoireUI surface is now also reachable under the NoireUI root (NoireUI.Text.Draw, NoireUI.Shapes.Circle, NoireUI.Buttons.Draw and so on), so completion branches instead of listing every surface flat. The existing top-level names (NoireText, NoireShapes, NoireButtons and the rest) keep working, keep their documentation, and are not deprecated.
+        </PackageReleaseNotes>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>

@@ -34,6 +34,7 @@ namespace NoireLib.UI;
 /// });
 /// </code>
 /// </example>
+[NoireFacade]
 public static partial class NoireText
 {
     #region Drawing
@@ -349,7 +350,13 @@ public static partial class NoireText
     /// <summary>
     /// Asks for several sizes to be built, without drawing or measuring anything.
     /// </summary>
-    /// <inheritdoc cref="Request(float)" path="/remarks"/>
+    /// <remarks>
+    /// The one text call that is safe outside a frame, and the reason it exists. Every other call here pushes a font
+    /// handle and asks ImGui to measure, both of which need a frame in progress. This only tells the cache the sizes
+    /// are wanted, so they can be built before the frame that needs them.<br/>
+    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface always
+    /// draws are covered by <see cref="Prewarm(bool)"/>.
+    /// </remarks>
     /// <param name="sizesPx">The sizes at 100%.</param>
     public static void Request(ReadOnlySpan<float> sizesPx)
     {
@@ -387,7 +394,16 @@ public static partial class NoireText
     public static float CenterOffset(TextSize size = TextSize.Body)
         => CenterOffset(NoireTheme.Current.ResolveTextSize(size));
 
-    /// <inheritdoc cref="CenterOffset(TextSize)"/>
+    /// <summary>
+    /// How far below the top of a line the text drawn in it looks centred, for lining a drawn shape up with a label.
+    /// </summary>
+    /// <remarks>
+    /// A line is as tall as the font's em box, and letters do not sit in the middle of it. The box reserves room under
+    /// the baseline for descenders that most labels never use, so a shape centred on the box sits visibly high against
+    /// the text beside it.<br/>
+    /// Measured on the capital band rather than on a particular string, so a row of labels keeps one baseline instead
+    /// of each shifting by whether it happens to contain a 'g'.
+    /// </remarks>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The distance from the top of the line to the text's optical centre, in real pixels.</returns>
     public static float CenterOffset(float sizePx)
@@ -572,7 +588,11 @@ public static partial class NoireText
         At(NoireTheme.Current.ResolveTextSize(size), body, static b => b());
     }
 
-    /// <inheritdoc cref="At(TextSize, Action)"/>
+    /// <summary>
+    /// Runs a block of drawing at a named size.<br/>
+    /// Everything inside draws at that size, raw ImGui included, so a block of mixed text takes the size once rather
+    /// than repeating it per call.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="size">The step of the type scale to draw at.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -592,7 +612,9 @@ public static partial class NoireText
         At(sizePx, body, static b => b());
     }
 
-    /// <inheritdoc cref="At(float, Action)"/>
+    /// <summary>
+    /// Runs a block of drawing at an explicit size.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -606,7 +628,7 @@ public static partial class NoireText
 
         // Every text call in the frame lands in one row. Text is the cost an interface is least likely to suspect and
         // most likely to be spending, and a size that has not been built yet is paid for here.
-        using var profile = UiProfile.Helper("NoireText");
+        using var draw = UiDraw.Begin();
 
         var handle = UiFontCache.Get(sizePx);
 

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using System;
@@ -12,7 +12,9 @@ namespace NoireLib.UI;
 /// <summary>
 /// A window listing what every measured scope costs, sortable, searchable and copyable.<br/>
 /// Add it to your <see cref="WindowSystem"/> and open it when you want to know which part of your interface is the
-/// expensive one.
+/// expensive one.<br/>
+/// Right-click a row to leave that scope out of the totals, which marks it in red; right-click it again to put it
+/// back. See <see cref="UiProfiler.SetExcluded"/>.
 /// </summary>
 /// <remarks>
 /// Deliberately built on raw ImGui rather than on <see cref="NoireTable{T}"/>. A diagnostic that depends on the
@@ -40,8 +42,91 @@ public sealed class NoireProfilerWindow : Window
     /// </summary>
     private const double WarnMs = 0.5d;
 
+    /// <summary>
+    /// The allocation per frame a scope is flagged at.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately just above zero. There is no healthy amount of steady per-frame allocation on the draw thread, so
+    /// the threshold exists to ignore the rounding on a rolling average rather than to tolerate a budget.
+    /// </remarks>
+    private const double WarnBytes = 1d;
+
+    /// <summary>
+    /// The colour a figure over its threshold is drawn in.
+    /// </summary>
+    private static readonly Vector4 WarnColour = new(0.93f, 0.72f, 0.35f, 1f);
+
+    /// <summary>
+    /// The background a scope excluded from the totals is drawn on.
+    /// </summary>
+    /// <remarks>
+    /// Dark and half transparent rather than a flat red. It has to read as a marked row at a glance while the figures
+    /// on it stay as legible as every other row's, since an excluded scope is still being measured and its own numbers
+    /// are still the reason it is on screen.
+    /// </remarks>
+    private static readonly Vector4 ExcludedColour = new(0.42f, 0.09f, 0.11f, 0.55f);
+
+    /// <summary>
+    /// The colour the count of excluded scopes is written in: the same red lifted to where it is readable as text.
+    /// </summary>
+    private static readonly Vector4 ExcludedTextColour = new(0.86f, 0.36f, 0.38f, 1f);
+
     private readonly List<UiProfileEntry> rows = new();
     private readonly StringBuilder clipboard = new();
+
+    /// <summary>
+    /// The profiler's own read, taken into a list this window owns so that looking costs no garbage.
+    /// </summary>
+    private readonly List<UiProfileEntry> snapshot = new();
+
+    /// <summary>
+    /// The row comparison, held rather than passed as a method group.
+    /// </summary>
+    /// <remarks>
+    /// A method group converted to a delegate at the call site allocates one every time, because an instance method
+    /// carries its receiver. This window sorts the roots and every branch, so that was a delegate per branch per
+    /// frame.
+    /// </remarks>
+    private readonly Comparison<UiProfileEntry> compareRows;
+
+    /// <summary>
+    /// What the cached rows and text were built from, so a frame that changed nothing rebuilds nothing.
+    /// </summary>
+    private int lastGeneration = -1;
+
+    private string lastSearch = string.Empty;
+    private bool lastShowInactive = true;
+    private int lastSortColumn = -1;
+    private bool lastSortAscending;
+
+    /// <summary>
+    /// Whether the tree has to be regrouped before it is drawn again.
+    /// </summary>
+    private bool treeDirty = true;
+
+    /// <summary>
+    /// One row as it appears on screen, with the tree already walked.
+    /// </summary>
+    /// <param name="Row">The scope.</param>
+    /// <param name="Depth">How far in it sits, which is drawn as indentation rather than as a tree push.</param>
+    /// <param name="HasChildren">Whether it can be opened.</param>
+    private readonly record struct VisibleRow(UiProfileEntry Row, int Depth, bool HasChildren);
+
+    /// <summary>
+    /// Every row a reader could scroll to, in the order they appear, flattened out of the tree.
+    /// </summary>
+    /// <remarks>
+    /// A clipper needs a count and an index, and a tree drawn by recursion offers neither: the rows a collapsed branch
+    /// hides are not known without walking it, and <c>TreePop</c> cannot be paired across a range the clipper skipped.
+    /// Walking once into a flat list and drawing the indentation by hand gives up nothing and makes the row count
+    /// something ImGui can skip through.
+    /// </remarks>
+    private readonly List<VisibleRow> visibleRows = new();
+
+    /// <summary>
+    /// Whether the flattened rows have to be rebuilt before they are drawn again.
+    /// </summary>
+    private bool flattenDirty = true;
 
     /// <summary>
     /// The rows that sit under each scope, rebuilt each frame. Held as a field rather than built fresh so an open
@@ -104,6 +189,16 @@ public sealed class NoireProfilerWindow : Window
     private double totalLastMs;
     private double totalAverageMs;
 
+    /// <summary>
+    /// How many scopes are currently marked as excluded, counted from the read rather than asked of the profiler.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the snapshot, which holds every node, rather than from the rows, which the idle filter can thin out:
+    /// a scope excluded and then hidden is still excluded, and a control that disappeared while its mark stayed in
+    /// force would leave no way to lift it.
+    /// </remarks>
+    private int excludedCount;
+
     private string search = string.Empty;
     private int sortColumn = (int)Column.Self;
     private bool sortAscending;
@@ -116,6 +211,7 @@ public sealed class NoireProfilerWindow : Window
         Scope,
         Calls,
         Self,
+        SelfBytes,
         Total,
         Last,
         Longest,
@@ -128,6 +224,8 @@ public sealed class NoireProfilerWindow : Window
     public NoireProfilerWindow(string name = DefaultName)
         : base(name)
     {
+        compareRows = CompareRows;
+
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(460f, 260f),
@@ -138,7 +236,10 @@ public sealed class NoireProfilerWindow : Window
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Draws the window: the controls, the totals, and the tree of measured scopes.<br/>
+    /// Called by Dalamud's window system; a host that registered the window does not call this itself.
+    /// </summary>
     public override void Draw()
     {
         // The window measures itself, because it is not free: a few hundred rows of tree nodes and formatted numbers
@@ -225,6 +326,19 @@ public sealed class NoireProfilerWindow : Window
 
         if (ImGui.Button("Collapse all"))
             pendingTreeState = false;
+
+        // Only once there is something to lift. A control that is always there and does nothing on most frames is one
+        // more thing to read past on a window whose whole job is to be read quickly.
+        if (excludedCount == 0)
+            return;
+
+        ImGui.SameLine(0f, NoireUI.Scaled(12f));
+
+        if (ImGui.Button("Include all"))
+            NoireUI.Profiler.ClearExclusions();
+
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Counts every excluded scope towards the totals again. Nothing measured is forgotten.");
     }
 
     /// <summary>
@@ -236,13 +350,42 @@ public sealed class NoireProfilerWindow : Window
         var root = NoireUI.Profiler.RootAverageMs;
         var unaccounted = NoireUI.Profiler.UnaccountedAverageMs;
 
-        ImGui.TextUnformatted(
-            $"Total last: {lastTotal.ToString("0.0000", CultureInfo.CurrentCulture)} ms     "
-            + $"Total average: {averageTotal.ToString("0.0000", CultureInfo.CurrentCulture)} ms     "
-            + $"Scopes: {rows.Count}");
+        // Written into the stack rather than interpolated into strings. Every figure on these lines is a rolling
+        // average, so all of them move on every measured frame and none of them can be cached.
+        Span<char> line = stackalloc char[LineCapacity];
+
+        if (line.TryWrite(
+                CultureInfo.CurrentCulture,
+                $"Total last: {lastTotal:0.0000} ms     Total average: {averageTotal:0.0000} ms     Scopes: {rows.Count}     Allocated: {NoireUI.Profiler.TotalAverageBytes:N0} bytes/frame",
+                out var written))
+        {
+            ImGui.TextUnformatted(line[..written]);
+        }
 
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Summed from the self column, so each piece of work is counted once.");
+        {
+            ImGui.SetTooltip(
+                "Summed from the self column, so each piece of work is counted once.\n"
+                + "Right-click a scope to leave it out of these totals, and again to put it back.");
+        }
+
+        if (excludedCount > 0)
+        {
+            ImGui.SameLine(0f, NoireUI.Scaled(14f));
+
+            using (ImRaii.PushColor(ImGuiCol.Text, ExcludedTextColour))
+            {
+                if (line.TryWrite(CultureInfo.CurrentCulture, $"Excluded: {excludedCount}", out written))
+                    ImGui.TextUnformatted(line[..written]);
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(
+                    "Scopes marked on the table and left out of the totals above. They are still measured\n"
+                    + "and still report their own figures. Use Include all to lift every mark at once.");
+            }
+        }
 
         if (root <= 0d)
         {
@@ -258,24 +401,25 @@ public sealed class NoireProfilerWindow : Window
             return;
         }
 
-        // The share nothing claimed. This is the honest measure of how complete the instrumentation is: a large
-        // remainder means the profiler is not yet explaining the frame, not that the frame is cheap.
-        var share = root > 0d ? unaccounted / root * 100d : 0d;
+        if (line.TryWrite(CultureInfo.CurrentCulture, $"Whole draw: {root:0.0000} ms", out written))
+            ImGui.TextUnformatted(line[..written]);
 
-        ImGui.TextUnformatted($"Whole draw: {root.ToString("0.0000", CultureInfo.CurrentCulture)} ms");
         ImGui.SameLine(0f, NoireUI.Scaled(14f));
 
+        // The share nothing claimed. This is the honest measure of how complete the instrumentation is: a large
+        // remainder means the profiler is not yet explaining the frame, not that the frame is cheap.
+        var share = unaccounted / root * 100d;
+
         var colour = share >= 50d
-            ? new Vector4(0.93f, 0.72f, 0.35f, 1f)
+            ? WarnColour
             : new Vector4(0.55f, 0.58f, 0.62f, 1f);
 
-        // Coloured by pushing rather than with TextColored, which is a printf-style call: a percent sign in the text
-        // would be read as a conversion there, and escaping it is a trap nobody remembers on the next edit.
+        // Coloured by pushing rather than with TextColored, which is a printf-style call: the percent sign below would
+        // be read as a conversion there, and escaping it is a trap nobody remembers on the next edit.
         using (ImRaii.PushColor(ImGuiCol.Text, colour))
         {
-            ImGui.TextUnformatted(
-                $"Unaccounted: {unaccounted.ToString("0.0000", CultureInfo.CurrentCulture)} ms "
-                + $"({share.ToString("0", CultureInfo.CurrentCulture)}%)");
+            if (line.TryWrite(CultureInfo.CurrentCulture, $"Unaccounted: {unaccounted:0.0000} ms ({share:0}%)", out written))
+                ImGui.TextUnformatted(line[..written]);
         }
 
         if (ImGui.IsItemHovered())
@@ -292,7 +436,9 @@ public sealed class NoireProfilerWindow : Window
     /// </summary>
     /// <remarks>
     /// Self time, not total time. Scopes nest, so adding up the total column counts a widget once for itself and again
-    /// for every scope enclosing it, which is how an interface comes out looking several times its real cost.
+    /// for every scope enclosing it, which is how an interface comes out looking several times its real cost.<br/>
+    /// Scopes the reader has excluded are skipped, which is the whole point of marking one: it is how the cost of a
+    /// window open beside the thing being measured is kept out of the figure being read.
     /// </remarks>
     /// <returns>The last frame's total and the rolling average.</returns>
     private (double Last, double Average) SelfTotals()
@@ -302,6 +448,9 @@ public sealed class NoireProfilerWindow : Window
 
         foreach (var row in rows)
         {
+            if (row.Excluded)
+                continue;
+
             last += row.SelfLastMs;
             average += row.SelfAverageMs;
         }
@@ -333,7 +482,7 @@ public sealed class NoireProfilerWindow : Window
             | ImGuiTableFlags.ScrollY
             | ImGuiTableFlags.SizingStretchProp;
 
-        if (!ImGui.BeginTable("###NoireProfilerTable", 6, flags))
+        if (!ImGui.BeginTable("###NoireProfilerTable", 7, flags))
             return;
 
         try
@@ -342,6 +491,9 @@ public sealed class NoireProfilerWindow : Window
             ImGui.TableSetupColumn("Scope", ImGuiTableColumnFlags.WidthStretch, 3f);
             ImGui.TableSetupColumn("Calls", ImGuiTableColumnFlags.WidthStretch, 0.9f);
             ImGui.TableSetupColumn("Self avg", ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.WidthStretch, 1.4f);
+            // Beside the self time rather than at the end, because the two are read together: bytes are the same on
+            // every machine and the milliseconds beside them are not.
+            ImGui.TableSetupColumn("Self bytes", ImGuiTableColumnFlags.WidthStretch, 1.4f);
             ImGui.TableSetupColumn("Total avg", ImGuiTableColumnFlags.WidthStretch, 1.4f);
             ImGui.TableSetupColumn("Last", ImGuiTableColumnFlags.WidthStretch, 1.4f);
             // The last column takes whatever is left, so a handle on its right edge would have nothing to give ground
@@ -351,7 +503,22 @@ public sealed class NoireProfilerWindow : Window
 
             ReadSortSpecs();
 
-            BuildTree();
+            // A click on a header reorders the same rows, so it needs the tree regrouped without a fresh snapshot.
+            if (sortColumn != lastSortColumn || sortAscending != lastSortAscending)
+            {
+                lastSortColumn = sortColumn;
+                lastSortAscending = sortAscending;
+
+                Sort();
+                treeDirty = true;
+            }
+
+            if (treeDirty)
+            {
+                BuildTree();
+                treeDirty = false;
+                flattenDirty = true;
+            }
 
             // Applied to every node the profiler knows about, not merely the ones on screen, which is the whole point:
             // the branches that need opening are the ones currently hidden inside a collapsed parent.
@@ -361,10 +528,27 @@ public sealed class NoireProfilerWindow : Window
                     openState[row.Id] = state;
 
                 pendingTreeState = null;
+                flattenDirty = true;
             }
 
-            foreach (var root in roots)
-                DrawBranch(root, depth: 0);
+            if (flattenDirty)
+            {
+                FlattenVisible();
+                flattenDirty = false;
+            }
+
+            // Only the rows on screen are submitted. The table scrolls, so a plugin with a few hundred scopes was
+            // paying for every one of them on every frame to show the dozen that fit.
+            var clipper = new ImGuiListClipper();
+            clipper.Begin(visibleRows.Count);
+
+            while (clipper.Step())
+            {
+                for (var position = clipper.DisplayStart; position < clipper.DisplayEnd; position++)
+                    DrawRow(visibleRows[position]);
+            }
+
+            clipper.End();
         }
         finally
         {
@@ -420,7 +604,13 @@ public sealed class NoireProfilerWindow : Window
             list.Add(row);
         }
 
-        roots.Sort(CompareRows);
+        roots.Sort(compareRows);
+
+        // Sorted here rather than as each branch is drawn, so a branch is ordered once per read instead of once per
+        // frame it is open for.
+        foreach (var list in children.Values)
+            list.Sort(compareRows);
+
         BuildVisibility();
     }
 
@@ -453,11 +643,28 @@ public sealed class NoireProfilerWindow : Window
     }
 
     /// <summary>
-    /// Draws a scope and, when it is open, everything measured inside it.
+    /// Walks the tree once and writes out the rows a reader can actually reach, in the order they appear.
     /// </summary>
-    /// <param name="row">The scope to draw.</param>
-    /// <param name="depth">How deep the branch is, used only to stop a malformed chain from recursing forever.</param>
-    private void DrawBranch(UiProfileEntry row, int depth)
+    /// <remarks>
+    /// Everything inside a collapsed branch is left out, which is what makes the count the clipper is given the count
+    /// of rows on screen rather than of scopes measured.
+    /// </remarks>
+    private void FlattenVisible()
+    {
+        visibleRows.Clear();
+        drawn.Clear();
+
+        foreach (var root in roots)
+            FlattenBranch(root, depth: 0);
+    }
+
+    /// <summary>
+    /// Adds a scope and, when it is open, everything measured inside it.
+    /// </summary>
+    /// <param name="row">The scope to add.</param>
+    /// <param name="depth">How deep the branch is, drawn as indentation and used to stop a malformed chain from
+    /// recursing forever.</param>
+    private void FlattenBranch(UiProfileEntry row, int depth)
     {
         // A scope seen under two parents in one frame could otherwise be reached twice and, in the worst case, become
         // its own ancestor.
@@ -468,19 +675,23 @@ public sealed class NoireProfilerWindow : Window
             return;
 
         var hasChildren = children.TryGetValue(row.Id, out var list) && list.Count > 0;
-        var isRoot = string.Equals(row.Name, UiProfiler.RootScopeName, StringComparison.Ordinal);
 
-        var open = DrawRow(row, leaf: !hasChildren, defaultOpen: isRoot);
+        visibleRows.Add(new VisibleRow(row, depth, hasChildren));
 
-        if (!open || !hasChildren)
+        if (!hasChildren)
             return;
 
-        list!.Sort(CompareRows);
+        var isRoot = string.Equals(row.Name, UiProfiler.RootScopeName, StringComparison.Ordinal);
 
-        foreach (var child in list)
-            DrawBranch(child, depth + 1);
+        // A match's ancestors are forced open, or the match would sit behind a closed arrow and the search would look
+        // like it had found nothing.
+        var open = search.Length > 0 || (openState.TryGetValue(row.Id, out var stored) ? stored : isRoot);
 
-        ImGui.TreePop();
+        if (!open)
+            return;
+
+        foreach (var child in list!)
+            FlattenBranch(child, depth + 1);
     }
 
     /// <summary>
@@ -491,22 +702,36 @@ public sealed class NoireProfilerWindow : Window
     /// <summary>
     /// Draws one scope's row.
     /// </summary>
-    /// <param name="row">The scope to draw.</param>
-    /// <param name="leaf">Whether it has nothing measured inside it.</param>
-    /// <param name="defaultOpen">Whether it starts expanded.</param>
-    /// <returns>Whether the branch is open, and so whether its children should be drawn.</returns>
-    private bool DrawRow(UiProfileEntry row, bool leaf, bool defaultOpen = false)
+    /// <param name="visibleRow">The scope to draw, with its place in the tree already resolved.</param>
+    private void DrawRow(in VisibleRow visibleRow)
     {
+        var row = visibleRow.Row;
+        var leaf = !visibleRow.HasChildren;
+        var defaultOpen = string.Equals(row.Name, UiProfiler.RootScopeName, StringComparison.Ordinal);
+
         ImGui.TableNextRow();
+
+        // Set on the row rather than pushed as a text colour, so an excluded scope is marked across the full width
+        // including the columns it has nothing written in. RowBg0 is the target the striping uses, so this replaces
+        // the stripe rather than sitting under it and coming out two different shades on alternating rows.
+        if (row.Excluded)
+            ImGui.TableSetBgColor(ImGuiTableBgTarget.RowBg0, ImGui.GetColorU32(ExcludedColour));
+
         ImGui.TableNextColumn();
 
-        var flags = ImGuiTreeNodeFlags.SpanFullWidth | ImGuiTreeNodeFlags.OpenOnArrow | ImGuiTreeNodeFlags.OpenOnDoubleClick;
+        // Nothing is ever pushed onto the tree stack, so nothing has to be popped. That is what lets the clipper skip
+        // a range of rows: a push inside a skipped range would never find its pop.
+        var flags = ImGuiTreeNodeFlags.SpanFullWidth | ImGuiTreeNodeFlags.OpenOnArrow
+            | ImGuiTreeNodeFlags.OpenOnDoubleClick | ImGuiTreeNodeFlags.NoTreePushOnOpen;
 
         if (leaf)
-        {
-            // Leaves push nothing onto the tree stack, so they must not be popped either.
-            flags |= ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.NoTreePushOnOpen | ImGuiTreeNodeFlags.Bullet;
-        }
+            flags |= ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.Bullet;
+
+        // Depth is drawn rather than pushed, for the same reason.
+        var indent = visibleRow.Depth * ImGui.GetTreeNodeToLabelSpacing();
+
+        if (indent > 0f)
+            ImGui.Indent(indent);
 
         // What this branch should be showing: a match's ancestors are forced open, or the match would sit behind a
         // closed arrow and the search would look like it had found nothing.
@@ -523,46 +748,91 @@ public sealed class NoireProfilerWindow : Window
 
         ImGui.PopID();
 
-        // The state is forced every frame, so a difference here is the reader having just clicked the arrow.
+        // Asked here, while the node is still the last item submitted: the numeric cells below are items of their own
+        // and would take that place. The node spans the full width, so this is a right click anywhere on the row.
+        if (ImGui.IsItemClicked(ImGuiMouseButton.Right))
+            NoireUI.Profiler.ToggleExcluded(row.Id);
+
+        // The state is forced every frame, so a difference here is the reader having just clicked the arrow. Opening a
+        // branch changes which rows exist, so the flattened list has to be walked again.
         if (!leaf && open != wanted && search.Length == 0)
+        {
             openState[row.Id] = open;
+            flattenDirty = true;
+        }
+
+        if (indent > 0f)
+            ImGui.Unindent(indent);
+
+        // Formatted into the stack rather than into strings. These figures are rolling averages, so they genuinely
+        // move on every measured frame and no cache of formatted text can stay valid; writing into a span and handing
+        // that to ImGui costs nothing per frame either way.
+        Span<char> cell = stackalloc char[CellCapacity];
 
         ImGui.TableNextColumn();
-        ImGui.TextUnformatted(row.Calls.ToString(CultureInfo.CurrentCulture));
+        ImGui.TextUnformatted(WriteCount(cell, row.Calls));
 
         ImGui.TableNextColumn();
 
         // Only the self average is coloured. The total flags every scope enclosing an expensive one, which points at
         // the page rather than at the widget actually spending the time.
-        if (row.SelfAverageMs >= WarnMs)
-            ImGui.TextColored(new Vector4(0.93f, 0.72f, 0.35f, 1f), Format(row.SelfAverageMs));
-        else
-            ImGui.TextUnformatted(Format(row.SelfAverageMs));
+        WriteCell(cell, row.SelfAverageMs, MsFormat, row.SelfAverageMs >= WarnMs);
 
         ImGui.TableNextColumn();
-        ImGui.TextUnformatted(Format(row.AverageMs));
+
+        // Coloured on any steady allocation at all rather than against a threshold. A widget that allocates every
+        // frame is a finding whatever the amount, because it is garbage on the draw thread sixty times a second.
+        WriteCell(cell, row.SelfAverageBytes, BytesFormat, row.SelfAverageBytes >= WarnBytes);
 
         ImGui.TableNextColumn();
-        ImGui.TextUnformatted(Format(row.LastMs));
+        ImGui.TextUnformatted(WriteValue(cell, row.AverageMs, MsFormat));
 
         ImGui.TableNextColumn();
-        ImGui.TextUnformatted(Format(row.PeakMs));
+        ImGui.TextUnformatted(WriteValue(cell, row.LastMs, MsFormat));
 
-        return open;
+        ImGui.TableNextColumn();
+        ImGui.TextUnformatted(WriteValue(cell, row.PeakMs, MsFormat));
     }
 
     /// <summary>
-    /// Takes a fresh snapshot, drops what the search excludes, and sorts what is left.
+    /// Takes a fresh read and regroups the tree, but only when something behind them moved.
     /// </summary>
+    /// <remarks>
+    /// While tracking is on this runs every frame, because the figures are rolling averages and a frame rolls every
+    /// frame. What the gate removes is every frame where nothing moved: all of them while tracking is off, and any
+    /// where the profiler held still with the window left open.<br/>
+    /// The tree cannot be regrouped less often than the rows are read. Its branches hold copies of the entries, so
+    /// structure and figures are rebuilt by the same pass, and skipping it would draw last reading's numbers.
+    /// </remarks>
     private void Refresh()
     {
+        var generation = NoireUI.Profiler.Generation;
+
+        if (generation == lastGeneration
+            && showInactive == lastShowInactive
+            && string.Equals(search, lastSearch, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lastGeneration = generation;
+        lastShowInactive = showInactive;
+        lastSearch = search;
+
+        // Into a list this window owns, so a read costs nothing per frame beyond the entries themselves.
+        NoireUI.Profiler.Snapshot(snapshot);
+
         rows.Clear();
+        excludedCount = 0;
 
         // Everything the search excludes is kept, because a filter that dropped rows would also drop the parents a
         // match hangs from and the tree would fall apart into a flat list exactly when it is most wanted. Scopes that
         // did not run are a different matter: they are noise rather than context.
-        foreach (var entry in NoireUI.Profiler.Snapshot())
+        foreach (var entry in snapshot)
         {
+            if (entry.Excluded)
+                excludedCount++;
+
             if (!showInactive && entry.Calls == 0 && entry.LastMs <= 0d)
                 continue;
 
@@ -570,12 +840,14 @@ public sealed class NoireProfilerWindow : Window
         }
 
         Sort();
+
+        treeDirty = true;
     }
 
     /// <summary>
     /// Sorts by the current column, largest first unless the header says otherwise.
     /// </summary>
-    private void Sort() => rows.Sort(CompareRows);
+    private void Sort() => rows.Sort(compareRows);
 
     /// <summary>
     /// Orders two scopes by the column the header says, largest first unless it says otherwise.
@@ -591,6 +863,7 @@ public sealed class NoireProfilerWindow : Window
             Column.Scope => string.Compare(left.Name, right.Name, StringComparison.OrdinalIgnoreCase),
             Column.Calls => left.Calls.CompareTo(right.Calls),
             Column.Self => left.SelfAverageMs.CompareTo(right.SelfAverageMs),
+            Column.SelfBytes => left.SelfAverageBytes.CompareTo(right.SelfAverageBytes),
             Column.Total => left.AverageMs.CompareTo(right.AverageMs),
             Column.Last => left.LastMs.CompareTo(right.LastMs),
             _ => left.PeakMs.CompareTo(right.PeakMs),
@@ -638,8 +911,21 @@ public sealed class NoireProfilerWindow : Window
         // nothing about what share of the frame it accounts for.
         clipboard.Append("Total last: ").Append(lastTotal.ToString("0.0000", CultureInfo.InvariantCulture))
             .Append(" ms\tTotal average: ").Append(averageTotal.ToString("0.0000", CultureInfo.InvariantCulture))
-            .Append(" ms\tScopes: ").Append(rows.Count.ToString(CultureInfo.InvariantCulture))
-            .AppendLine();
+            .Append(" ms\tScopes: ").Append(rows.Count.ToString(CultureInfo.InvariantCulture));
+
+        // Named on the paste, because the totals above it were summed without them and a reader given the numbers
+        // without that fact would be unable to reconcile the columns with the total.
+        if (excludedCount > 0)
+        {
+            clipboard.Append("\tExcluded from the totals: ")
+                .Append(excludedCount.ToString(CultureInfo.InvariantCulture));
+        }
+
+        clipboard.AppendLine();
+
+        clipboard.Append("Allocated: ")
+            .Append(NoireUI.Profiler.TotalAverageBytes.ToString("N0", CultureInfo.InvariantCulture))
+            .AppendLine(" bytes per frame");
 
         if (root > 0d)
         {
@@ -656,7 +942,9 @@ public sealed class NoireProfilerWindow : Window
         }
 
         clipboard.AppendLine();
-        clipboard.AppendLine("Scope\tPath\tCalls\tSelf (ms)\tLast (ms)\tLongest (ms)\tAverage (ms)");
+        clipboard.AppendLine(
+            "Scope\tPath\tCalls\tSelf (ms)\tLast (ms)\tLongest (ms)\tAverage (ms)\t" +
+            "Self (bytes)\tTotal (bytes)\tPeak (bytes)\tExcluded");
 
         foreach (var row in rows)
         {
@@ -666,7 +954,11 @@ public sealed class NoireProfilerWindow : Window
                 .Append(row.SelfAverageMs.ToString("0.0000", CultureInfo.InvariantCulture)).Append('\t')
                 .Append(row.LastMs.ToString("0.0000", CultureInfo.InvariantCulture)).Append('\t')
                 .Append(row.PeakMs.ToString("0.0000", CultureInfo.InvariantCulture)).Append('\t')
-                .AppendLine(row.AverageMs.ToString("0.0000", CultureInfo.InvariantCulture));
+                .Append(row.AverageMs.ToString("0.0000", CultureInfo.InvariantCulture)).Append('\t')
+                .Append(row.SelfAverageBytes.ToString("0", CultureInfo.InvariantCulture)).Append('\t')
+                .Append(row.AverageBytes.ToString("0", CultureInfo.InvariantCulture)).Append('\t')
+                .Append(row.PeakBytes.ToString(CultureInfo.InvariantCulture)).Append('\t')
+                .AppendLine(row.Excluded ? "yes" : string.Empty);
         }
 
         return clipboard.ToString();
@@ -711,7 +1003,57 @@ public sealed class NoireProfilerWindow : Window
     private readonly List<string> path = new();
 
     /// <summary>
-    /// Formats a millisecond reading at the precision the numbers actually live at.
+    /// How much stack one formatted cell is given. Comfortably past the longest a millisecond or byte figure reaches.
     /// </summary>
-    private static string Format(double ms) => ms.ToString("0.0000", CultureInfo.CurrentCulture);
+    private const int CellCapacity = 32;
+
+    /// <summary>
+    /// How much stack a summary line is given, which is longer than the widest the four figures on it can reach.
+    /// </summary>
+    private const int LineCapacity = 256;
+
+    private const string MsFormat = "0.0000";
+    private const string BytesFormat = "N0";
+
+    /// <summary>
+    /// Writes a value into <paramref name="buffer"/> and returns the part written.
+    /// </summary>
+    /// <remarks>
+    /// Falls back to an empty span rather than throwing when the buffer is somehow too small. This is a diagnostic:
+    /// a blank cell is a far better outcome than an exception taken while someone is looking at why their interface
+    /// is slow.
+    /// </remarks>
+    private static ReadOnlySpan<char> WriteValue(Span<char> buffer, double value, string format)
+        => value.TryFormat(buffer, out var written, format, CultureInfo.CurrentCulture)
+            ? buffer[..written]
+            : default;
+
+    /// <summary>
+    /// Writes a call count into <paramref name="buffer"/> and returns the part written.
+    /// </summary>
+    private static ReadOnlySpan<char> WriteCount(Span<char> buffer, int value)
+        => value.TryFormat(buffer, out var written, default, CultureInfo.CurrentCulture)
+            ? buffer[..written]
+            : default;
+
+    /// <summary>
+    /// Draws one numeric cell, in <see cref="WarnColour"/> when it is over its threshold.
+    /// </summary>
+    /// <remarks>
+    /// Coloured by pushing rather than with <c>TextColored</c>, which is printf-style and would read a percent sign in
+    /// the text as a conversion.
+    /// </remarks>
+    private static void WriteCell(Span<char> buffer, double value, string format, bool warn)
+    {
+        var text = WriteValue(buffer, value, format);
+
+        if (!warn)
+        {
+            ImGui.TextUnformatted(text);
+            return;
+        }
+
+        using (ImRaii.PushColor(ImGuiCol.Text, WarnColour))
+            ImGui.TextUnformatted(text);
+    }
 }

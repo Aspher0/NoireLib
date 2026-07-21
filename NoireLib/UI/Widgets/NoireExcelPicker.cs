@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game;
 using Dalamud.Interface.Utility.Raii;
 using Lumina.Excel;
@@ -37,6 +37,7 @@ namespace NoireLib.UI;
 ///     config.ItemId = items.SelectedRowId;
 /// </code>
 /// </example>
+[NoireFacadeFactory]
 public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
 {
     /// <summary>

@@ -1,4 +1,4 @@
-using Dalamud.Game.ClientState.Keys;
+﻿using Dalamud.Game.ClientState.Keys;
 using NoireLib.Helpers;
 using NoireLib.HotkeyManager;
 using System;
@@ -29,6 +29,7 @@ namespace NoireLib.UI;
 /// </code>
 /// </example>
 /// <typeparam name="T">The row type.</typeparam>
+[NoireFacadeFactory]
 public sealed partial class NoireReorderableList<T>
 {
     private IList<T> items = new List<T>();
@@ -113,7 +114,15 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// The binding that moves the focused row down. The down arrow by default.
     /// </summary>
-    /// <inheritdoc cref="MoveUpBinding" path="/remarks"/>
+    /// <remarks>
+    /// A <see cref="HotkeyBinding"/> matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey, read
+    /// through <see cref="KeybindsHelper.IsBindingHeld"/>. A plain <see cref="VirtualKey"/> converts implicitly
+    /// (<c>list.MoveDownBinding = VirtualKey.NEXT;</c>) and the full binding surface is there for a key with
+    /// modifiers.<br/>
+    /// Modifiers are matched exactly, so the default fires on the bare arrow and not on ctrl with it.<br/>
+    /// Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>; read
+    /// <see cref="ResolvedMoveDownBinding"/> for the one actually in force.
+    /// </remarks>
     public HotkeyBinding MoveDownBinding { get; set; } = VirtualKey.DOWN;
 
     /// <summary>The binding actually moving a row up: the attached hotkey's when there is one.</summary>

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -28,6 +28,7 @@ namespace NoireLib.UI;
 /// NoireShapes.Frame(min, max, new FrameStyle { TickLength = 14f });
 /// </code>
 /// </example>
+[NoireFacade]
 public static partial class NoireShapes
 {
     /// <summary>
@@ -80,7 +81,7 @@ public static partial class NoireShapes
             if (!target.IsNull)
                 return target;
 
-            return NoireService.IsInitialized() ? ImGui.GetWindowDrawList() : ImDrawListPtr.Null;
+            return UiDraw.Available ? ImGui.GetWindowDrawList() : ImDrawListPtr.Null;
         }
     }
 
@@ -108,7 +109,13 @@ public static partial class NoireShapes
         On(drawList, body, static b => b());
     }
 
-    /// <inheritdoc cref="On(ImDrawListPtr, Action)"/>
+    /// <summary>
+    /// Runs a block of drawing against a different draw list: the background or foreground list, or one belonging to
+    /// another window.
+    /// </summary>
+    /// <remarks>
+    /// Nests, and restores the previous target on the way out even if the body throws.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="drawList">The list to paint into.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -167,7 +174,16 @@ public static partial class NoireShapes
         Gradient(from, to, fromColor, toColor, body, static b => b());
     }
 
-    /// <inheritdoc cref="Gradient(Vector2, Vector2, Vector4, Vector4, Action)"/>
+    /// <summary>
+    /// Runs a block of drawing and shades everything it drew along a line, which is how any shape at all becomes a
+    /// gradient: a rounded plate, a notched one, an arc, a run of text.
+    /// </summary>
+    /// <remarks>
+    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, so a body drawn in white takes the
+    /// gradient exactly, a body drawn in a color is tinted by it, and a gradient fading to zero alpha fades the shape
+    /// out. Alpha is multiplied rather than replaced because ImGui carries its antialiasing there.<br/>
+    /// Nests. An inner gradient shades only what it drew, and the outer one then shades that again.
+    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
     /// <param name="to">Where <paramref name="toColor"/> is at full strength, in screen space.</param>
@@ -180,7 +196,8 @@ public static partial class NoireShapes
     {
         ArgumentNullException.ThrowIfNull(body);
 
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull)
         {
@@ -212,7 +229,10 @@ public static partial class NoireShapes
         Gradient(from, to, fromColor, toColor, body);
     }
 
-    /// <inheritdoc cref="Gradient(Vector2, Vector2, GradientAxis, Vector4, Vector4, Action)"/>
+    /// <summary>
+    /// Runs a block of drawing and shades it across a rectangle, for the ordinary case where the gradient runs along
+    /// one of the rectangle's own axes.
+    /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left corner the axis is measured across.</param>
     /// <param name="max">The bottom right corner the axis is measured across.</param>
@@ -414,7 +434,8 @@ public static partial class NoireShapes
     /// <param name="color">The fill color.</param>
     public static unsafe void Fill(ReadOnlySpan<Vector2> points, Vector4 color)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull || points.Length < 3 || color.W <= 0f)
             return;
@@ -436,7 +457,8 @@ public static partial class NoireShapes
     /// <param name="closed">Whether the last point joins back to the first.</param>
     public static unsafe void Stroke(ReadOnlySpan<Vector2> points, Vector4 color, float thickness = 1f, bool closed = true)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull || points.Length < 2 || thickness <= 0f || color.W <= 0f)
             return;
@@ -468,7 +490,8 @@ public static partial class NoireShapes
     /// </param>
     public static void Bevel(ReadOnlySpan<Vector2> points, Vector4 light, Vector4 shadow, float thickness = 1f, Vector2 direction = default)
     {
-        var drawList = DrawList;
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
 
         if (drawList.IsNull || points.Length < 3 || thickness <= 0f)
             return;

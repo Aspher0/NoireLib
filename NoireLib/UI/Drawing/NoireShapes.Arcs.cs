@@ -217,7 +217,7 @@ public static partial class NoireShapes
         if (radius <= 0f || color.W <= 0f || style.Rays <= 0)
             return;
 
-        using var profile = UiProfile.Helper("NoireShapes.Sunburst");
+        using var draw = UiDraw.BeginMethod();
 
         var duty = Math.Clamp(style.Duty, 0.01f, 1f);
         var inner = Math.Clamp(style.InnerRatio, 0f, 0.99f) * radius;
@@ -313,7 +313,7 @@ public static partial class NoireShapes
         if (thickness <= 0f)
             return;
 
-        using var profile = UiProfile.Helper("NoireShapes.Guilloche");
+        using var draw = UiDraw.BeginMethod();
 
         var fixedSegments = style.Segments > 0 ? Math.Clamp(style.Segments, 16, MaxCurvePoints) : 0;
 

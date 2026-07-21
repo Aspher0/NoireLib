@@ -522,7 +522,13 @@ public sealed partial class NoireTable<T>
         var origin = ImGui.GetCursorScreenPos();
         var height = FooterHeight();
         var bottom = origin.Y + height;
-        var drawList = ImGui.GetWindowDrawList();
+
+        using var draw = UiDraw.Begin();
+        var drawList = draw.List;
+
+        if (drawList.IsNull)
+            return;
+
         var border = ColorHelper.Vector4ToUint(theme.Resolve(ThemeColor.Border));
 
         drawList.AddRectFilled(

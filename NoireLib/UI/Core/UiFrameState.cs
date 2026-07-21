@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NoireLib.UI;
@@ -109,7 +109,10 @@ public static class UiFrameState
         return slot.Value;
     }
 
-    /// <inheritdoc cref="Get{T}(string, string, T)"/>
+    /// <summary>
+    /// Reads an entry, returning <paramref name="fallback"/> when it does not exist yet.<br/>
+    /// Reading marks the entry as still in use, so a value read every frame is never pruned.
+    /// </summary>
     public static T Get<T>(string id, T fallback = default!) => Get(id, string.Empty, fallback);
 
     /// <summary>
@@ -150,7 +153,9 @@ public static class UiFrameState
         Store<T>.Entries[new StateKey(id, subKey)] = new Store<T>.Slot { Value = value, Frame = Frame };
     }
 
-    /// <inheritdoc cref="Set{T}(string, string, T)"/>
+    /// <summary>
+    /// Writes an entry, creating it when needed.
+    /// </summary>
     public static void Set<T>(string id, T value) => Set(id, string.Empty, value);
 
     /// <summary>
@@ -204,7 +209,9 @@ public static class UiFrameState
     /// <returns>True when an entry was removed.</returns>
     public static bool Remove<T>(string id, string subKey) => Store<T>.Entries.Remove(new StateKey(id, subKey));
 
-    /// <inheritdoc cref="Remove{T}(string, string)"/>
+    /// <summary>
+    /// Drops a single entry.
+    /// </summary>
     public static bool Remove<T>(string id) => Remove<T>(id, string.Empty);
 
     /// <summary>

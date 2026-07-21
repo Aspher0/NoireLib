@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -27,6 +27,7 @@ namespace NoireLib.UI;
 /// NoireAttention.Offset("password", out var nudge);  // read where it should be drawn this frame
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireAttention
 {
     private const string StateId = "NoireAttention";
@@ -79,7 +80,11 @@ public static class NoireAttention
         var resolved = ColorHelper.ScaleAlpha(color ?? NoireTheme.Current.Resolve(ThemeColor.Accent), strength);
         var reach = NoireUI.Scaled(spread);
 
-        NoireShapes.On(ImGui.GetWindowDrawList(), (target, resolved, reach), static state =>
+        // The window's own list, because this establishes a redirect: reading NoireShapes.DrawList here would read
+        // back a redirect already in force and make the call a no-op.
+        using var draw = UiDraw.BeginWindow();
+
+        NoireShapes.On(draw.List, (target, resolved, reach), static state =>
             NoireShapes.Glow(
                 state.target.Position,
                 state.target.Max,

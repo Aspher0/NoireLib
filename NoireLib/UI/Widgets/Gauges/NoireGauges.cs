@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -25,6 +25,7 @@ namespace NoireLib.UI;
 /// });
 /// </code>
 /// </example>
+[NoireFacade]
 public static partial class NoireGauges
 {
     private static readonly RingStyle DefaultRingStyle = new();
@@ -40,7 +41,7 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
     public static void Ring(float value, RingStyle? style = null)
     {
-        using var profile = UiProfile.Helper("NoireGauges");
+        using var draw = UiDraw.Begin();
 
         style ??= DefaultRingStyle;
 
@@ -79,7 +80,7 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default bar.</param>
     public static void Bar(float value, BarStyle? style = null)
     {
-        using var profile = UiProfile.Helper("NoireGauges");
+        using var draw = UiDraw.Begin();
 
         style ??= DefaultBarStyle;
 
@@ -103,7 +104,11 @@ public static partial class NoireGauges
 
             // The fill is clipped to the track's own rounded shape rather than rounded itself: a short bar with its own
             // rounding is a lozenge floating inside the track, and a full one has a visible seam at the right end.
-            NoireShapes.On(ImGui.GetWindowDrawList(), (origin, max, fillMax, fill, style, rounding), static state =>
+            // Taken from the window's own list because this call establishes a redirect, and resolving the list the way
+            // a shape does would read back a redirect already in force and make the call a no-op.
+            using var inner = UiDraw.BeginWindow();
+
+            NoireShapes.On(inner.List, (origin, max, fillMax, fill, style, rounding), static state =>
             {
                 ImGui.PushClipRect(state.origin, state.fillMax, true);
 
@@ -184,6 +189,8 @@ public static partial class NoireGauges
 
         if (total <= 0)
             return;
+
+        using var draw = UiDraw.Begin();
 
         var size = MathF.Max(style.ScaledSize, 1f);
         var spacing = style.ScaledSpacing;

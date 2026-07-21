@@ -17,6 +17,7 @@ namespace NoireLib.UI;
 /// label or cell of your own through the public <see cref="Draw"/>.<br/>
 /// Example: <c>new NoireContent().AddText("Hold ").AddKeyCap("Ctrl").AddText(" and scroll")</c>.
 /// </summary>
+[NoireFacadeFactory]
 public sealed class NoireContent
 {
     private enum SegmentKind
@@ -373,11 +374,19 @@ public sealed class NoireContent
         var tileSize = new Vector2(textSize.X + padding.X * 2f, textSize.Y + padding.Y * 2f);
         var rounding = NoireUI.Scaled(3f);
 
-        var drawList = ImGui.GetWindowDrawList();
-        drawList.AddRectFilled(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.FrameBg), rounding);
-        drawList.AddRect(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.Border), rounding);
-        drawList.AddText(position + padding, ImGui.GetColorU32(ImGuiCol.Text), label);
+        using var draw = UiDraw.BeginMethod();
 
+        var drawList = draw.List;
+
+        if (!drawList.IsNull)
+        {
+            drawList.AddRectFilled(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.FrameBg), rounding);
+            drawList.AddRect(position, position + tileSize, ImGui.GetColorU32(ImGuiCol.Border), rounding);
+            drawList.AddText(position + padding, ImGui.GetColorU32(ImGuiCol.Text), label);
+        }
+
+        // Reserved whether or not anything was painted, so a caller's layout does not move depending on whether there
+        // was a list to paint into.
         ImGui.Dummy(tileSize);
     }
 }

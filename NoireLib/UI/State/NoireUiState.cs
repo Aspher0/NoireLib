@@ -1,4 +1,4 @@
-using Newtonsoft.Json.Linq;
+﻿using Newtonsoft.Json.Linq;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -21,6 +21,7 @@ namespace NoireLib.UI;
 /// <br/>
 /// <b>Draw thread only</b> for reads and writes; the file itself is written on a background task.
 /// </remarks>
+[NoireFacade("State")]
 public static class NoireUiState
 {
     private const string DisposeCallbackKey = "NoireLib.UI.NoireUiState";

@@ -23,6 +23,7 @@ namespace NoireLib.UI;
 ///     new SliderStyle { Grab = SliderGrab.Diamond });
 /// </code>
 /// </example>
+[NoireFacade]
 public static class NoireSliders
 {
     /// <summary>
@@ -69,6 +70,8 @@ public static class NoireSliders
     /// </summary>
     private static bool Draw(string label, ref float value, float min, float max, SliderStyle style, string format, bool whole)
     {
+        using var draw = UiDraw.Begin();
+
         NoireUI.EnsureFrameServices();
 
         string id;
