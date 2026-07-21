@@ -192,6 +192,19 @@ style.With(ImGuiStyleVar.ScrollbarSize, 14f);
 var softer = style.Clone();
 ```
 
+### Performance is a property of this code, not a task
+
+Everything here runs on a game's draw thread and runs again next frame. Work that would be invisible anywhere else is not invisible here, so every widget in this namespace is held to the same bar, and anything added to it is too:
+
+- **Nothing allocates per frame.** Ids are built once by `UiIds`, not interpolated per frame. No `ToString()` on an unchanged value, no `ToArray()`/`ToList()` in a draw path, no closure where a state overload exists.
+- **Nothing is recomputed that has not changed.** Text measurement is cached; so is layout arithmetic, against what actually moves it.
+- **Nothing off screen is drawn.** Collections of unknown length virtualize past a threshold, with a `Virtualize` override.
+- **Tessellation follows the radius.** A fixed segment count spends hundreds of points on a shape an inch across, each segment a fraction of a pixel: expensive and invisible.
+- **Nothing loop-invariant sits inside a loop**, and expensive rarely-changing visuals are pre-rendered rather than re-tessellated.
+- **Literals handed to ImGui are UTF-8** (`"Save"u8`), encoded once at compile time instead of re-encoded from UTF-16 every frame.
+
+Measure before optimizing, with the profiler below, and read the **self** column rather than the total.
+
 ### Allocation
 
 A body lambda allocates one delegate per call per frame (a few dozen bytes, invisible in most UIs). Where it matters, every container has a state overload that keeps the body `static` and allocates nothing:
@@ -199,6 +212,10 @@ A body lambda allocates one delegate per call per frame (a few dozen bytes, invi
 ```csharp
 NoireLayout.Section("Filters", this, static (self) => self.DrawFilters());
 ```
+
+The widgets themselves allocate nothing per frame for their ids. An id like `###NoireComboItem_myCombo_42` is a constant for the life of the widget, so it is built once and handed back on every later frame rather than re-interpolated: a two hundred row list at sixty frames a second would otherwise produce twelve thousand short-lived strings a second in the one place a plugin cannot afford a collection.
+
+Text measurements are cached the same way, keyed on everything that can change the answer (the text, the size, the ambient font, the UI scale, and the font generation). A label that has not changed is not re-measured, which matters because measuring walks the string a glyph at a time after marshalling it to UTF-8.
 
 ---
 
@@ -328,6 +345,39 @@ NoireUI.Diagnostics.RecentFaults;   // the last 32, oldest first
 Faults are logged before they reach `OnFault`, and an exception thrown by the handler is swallowed so a broken reporter cannot take the frame down.
 
 **The fault ladder** disables the narrowest broken thing rather than logging forever. An element that throws on `FaultTolerance` consecutive frames (default 10) has its `AutoDraw` switched off, alone, with one error explaining why. `Draw()` still works, so nothing is unrecoverable. Set `FaultTolerance = 0` to never switch anything off.
+
+### Profiling
+
+What each part of the interface costs to build, per frame, by name. Off by default and free when off, so the instrumentation stays in place rather than being added when you go looking.
+
+```csharp
+NoireUI.Profiler.Enabled = true;
+
+foreach (var entry in NoireUI.Profiler.Snapshot())   // most expensive first
+    log($"{entry.Name}: {entry.AverageMs:0.000} ms over {entry.Calls} call(s), peak {entry.PeakMs:0.000}");
+
+NoireUI.Profile("inventory grid", () => DrawInventoryGrid());   // your own code, same list
+```
+
+Every element the library ships measures itself, so switching this on attributes the frame without any work at the call sites. Read the **average**: a single frame competing with a texture upload is noise. The **peak** is a high-water mark that only `Reset()` clears.
+
+**Scopes nest, so each is reported twice over.** *Total* includes everything measured inside a scope; *self* does not. Self is the one that adds up — totalling the total column counts a widget once for itself and again for every scope enclosing it, which is how an interface comes out looking several times its real cost. `TotalAverageMs` sums self time for exactly that reason.
+
+The figure your host reports for the whole plugin will always be larger than this total: it covers the windowing and the ImGui work around anything instrumented here. Use this to compare parts of your interface against each other, not to reconcile with the host.
+
+The readout ships as a window:
+
+```csharp
+var profiler = new NoireProfilerWindow();
+windowSystem.AddWindow(profiler);
+profiler.IsOpen = true;
+```
+
+A sortable, searchable table of every scope with its calls, last, longest and average, plus **Reset all** and **Copy all** (tab separated, in the order shown, so it pastes into a spreadsheet or an issue). `DrawContents()` is public if you would rather put it on a page of your own settings than in a window.
+
+Totals count nested scopes twice over, since a widget measured inside a page that is also measured appears in both. They are a scale to read the rows against, not a frame time.
+
+This measures the time spent building the draw data on the draw thread, which is the part a plugin controls and the part an optimization pass moves. It is not the GPU cost of drawing the result.
 
 ---
 

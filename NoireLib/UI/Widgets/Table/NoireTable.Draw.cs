@@ -27,6 +27,8 @@ public sealed partial class NoireTable<T>
     /// <returns>True on the frame the selection changes.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireTable<T>), Id);
+
         NoireUI.EnsureFrameServices();
 
         var changed = false;
@@ -271,7 +273,7 @@ public sealed partial class NoireTable<T>
 
             ImGui.SetNextItemWidth(-1f);
 
-            if (ImGui.InputTextWithHint($"###NoireTableFilter_{Id}_{i}", "Filter", ref text, 64))
+            if (ImGui.InputTextWithHint(UiIds.For("###NoireTableFilter_", Id, i), "Filter", ref text, 64))
             {
                 column.FilterText = text;
                 Invalidate();

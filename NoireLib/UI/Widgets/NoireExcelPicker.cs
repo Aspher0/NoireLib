@@ -188,6 +188,8 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <returns>True on the frame the selection changes.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireExcelPicker<TRow>), Combo.Id);
+
         EnsureLoaded();
 
         if (!IsLoaded)
@@ -212,7 +214,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
         if (Combo.Width.HasValue)
             ImGui.SetNextItemWidth(Combo.Width.Value);
 
-        if (ImGui.BeginCombo($"###NoireExcelPicker_{Combo.Id}", LoadingText))
+        if (ImGui.BeginCombo(UiIds.For("###NoireExcelPicker_", Combo.Id), LoadingText))
             ImGui.EndCombo();
     }
 

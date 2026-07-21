@@ -94,7 +94,7 @@ public static class NoireSliders
         var origin = ImGui.GetCursorScreenPos();
         var size = new Vector2(width, height);
 
-        var pressed = ImGui.InvisibleButton($"###NoireSlider_{id}", size);
+        var pressed = ImGui.InvisibleButton(UiIds.For("###NoireSlider_", id), size);
         var hovered = ImGui.IsItemHovered();
         var held = ImGui.IsItemActive();
 

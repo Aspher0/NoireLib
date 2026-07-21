@@ -124,6 +124,8 @@ public static partial class NoireShapes
         if (spread <= 0f || color.W <= 0f)
             return;
 
+        using var profile = UiProfile.Helper("NoireShapes.Glow");
+
         // A layer roughly every two pixels reads as smooth without spending a draw call per pixel on a wide glow.
         var layers = Math.Clamp((int)MathF.Ceiling(spread * 0.5f), 3, 12);
 

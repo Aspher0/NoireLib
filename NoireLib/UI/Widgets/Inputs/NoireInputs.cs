@@ -1,6 +1,7 @@
 using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.Numerics;
 
@@ -93,6 +94,8 @@ public static class NoireInputs
     /// <returns>True on the frame the value changes.</returns>
     public static bool Number(string label, ref float value, NumberStyle? style)
     {
+        using var profile = UiProfile.Helper("NoireInputs");
+
         NoireUI.EnsureFrameServices();
 
         var resolved = style ?? NumberDefaults;
@@ -100,7 +103,7 @@ public static class NoireInputs
 
         BeginRow(label, resolved.Width, out var id);
 
-        if (ImGui.InputFloat($"###NoireInputsNumber_{id}", ref value, resolved.Step, resolved.FastStep, BuildFormat(resolved)))
+        if (ImGui.InputFloat(UiIds.For("###NoireInputsNumber_", id), ref value, resolved.Step, resolved.FastStep, BuildFormat(resolved)))
         {
             value = Math.Clamp(value, resolved.Min, resolved.Max);
             changed = true;
@@ -171,12 +174,31 @@ public static class NoireInputs
     private static string BuildFormat(NumberStyle style)
     {
         var decimals = Math.Clamp(style.Decimals, 0, 9);
+        var unit = style.Unit ?? string.Empty;
 
-        if (string.IsNullOrEmpty(style.Unit))
-            return $"%.{decimals}f";
+        // Cached because a format is a constant per configuration, and the field it belongs to is redrawn every frame:
+        // built inline, every numeric field on screen would compose the same short string sixty times a second.
+        if (NumberFormats.TryGetValue((decimals, unit), out var cached))
+            return cached;
 
-        return $"%.{decimals}f {style.Unit.Replace("%", "%%")}";
+        var built = unit.Length == 0
+            ? $"%.{decimals}f"
+            : $"%.{decimals}f {unit.Replace("%", "%%")}";
+
+        if (NumberFormats.Count >= MaxNumberFormats)
+            NumberFormats.Clear();
+
+        NumberFormats[(decimals, unit)] = built;
+        return built;
     }
+
+    /// <summary>
+    /// How many distinct number formats are kept. A format is a decimal count and a unit, so a plugin has as many as it
+    /// has kinds of field, and the bound only matters for a unit built from a value.
+    /// </summary>
+    private const int MaxNumberFormats = 256;
+
+    private static readonly Dictionary<(int Decimals, string Unit), string> NumberFormats = new();
 
     #endregion
 
@@ -197,6 +219,8 @@ public static class NoireInputs
     /// <returns>True on the frame the duration changes.</returns>
     public static bool Duration(string label, ref TimeSpan value, DurationStyle? style = null)
     {
+        using var profile = UiProfile.Helper("NoireInputs");
+
         NoireUI.EnsureFrameServices();
 
         var resolved = style ?? DurationDefaults;
@@ -210,11 +234,11 @@ public static class NoireInputs
 
         BeginRow(label, resolved.Width, out var id, extraReserve: previewWidth);
 
-        var textKey = $"NoireInputs.Duration.{id}";
+        var textKey = UiIds.For("NoireInputs.Duration.", id);
         var editing = NoireUiSession.TryGet<string>(textKey, out var pending) && pending != null;
         var text = editing ? pending! : DurationHelper.Format(value);
 
-        ImGui.InputTextWithHint($"###NoireInputsDuration_{id}", resolved.Hint, ref text, 64);
+        ImGui.InputTextWithHint(UiIds.For("###NoireInputsDuration_", id), resolved.Hint, ref text, 64);
 
         if (ImGui.IsItemActive())
         {
@@ -290,6 +314,8 @@ public static class NoireInputs
     /// <returns>True on the frame the colour changes.</returns>
     public static bool HexColor(string label, ref Vector4 value, HexColorStyle? style = null)
     {
+        using var profile = UiProfile.Helper("NoireInputs");
+
         NoireUI.EnsureFrameServices();
 
         var resolved = style ?? HexColorDefaults;
@@ -299,23 +325,23 @@ public static class NoireInputs
 
         var swatch = ImGui.GetFrameHeight();
 
-        if (ImGui.ColorButton($"###NoireInputsSwatch_{id}", value, ImGuiColorEditFlags.AlphaPreview, new Vector2(swatch, swatch))
+        if (ImGui.ColorButton(UiIds.For("###NoireInputsSwatch_", id), value, ImGuiColorEditFlags.AlphaPreview, new Vector2(swatch, swatch))
             && resolved.ShowPicker)
         {
-            ImGui.OpenPopup($"###NoireInputsPicker_{id}");
+            ImGui.OpenPopup(UiIds.For("###NoireInputsPicker_", id));
         }
 
         // Read before the popup opens, since inside one the current window is the popup itself.
         var ownerInFront = UiWindowOrder.InTopLayer;
 
-        if (ImGui.BeginPopup($"###NoireInputsPicker_{id}"))
+        if (ImGui.BeginPopup(UiIds.For("###NoireInputsPicker_", id)))
         {
             if (ownerInFront)
                 UiWindowOrder.KeepInFront();
 
             var flags = resolved.ShowAlpha ? ImGuiColorEditFlags.AlphaBar : ImGuiColorEditFlags.NoAlpha;
 
-            if (ImGui.ColorPicker4($"###NoireInputsPicked_{id}", ref value, flags))
+            if (ImGui.ColorPicker4(UiIds.For("###NoireInputsPicked_", id), ref value, flags))
                 changed = true;
 
             ImGui.EndPopup();
@@ -323,12 +349,12 @@ public static class NoireInputs
 
         ImGui.SameLine(0f, NoireUI.Scaled(6f));
 
-        var textKey = $"NoireInputs.HexColor.{id}";
+        var textKey = UiIds.For("NoireInputs.HexColor.", id);
         var editing = NoireUiSession.TryGet<string>(textKey, out var pending) && pending != null;
         var text = editing ? pending! : Write(value, resolved.ShowAlpha);
 
         ImGui.SetNextItemWidth(NoireText.CalcSize("#12345678").X + (NoireTheme.Current.ResolveFramePadding().X * 2f));
-        ImGui.InputTextWithHint($"###NoireInputsHex_{id}", "#RRGGBB", ref text, 16);
+        ImGui.InputTextWithHint(UiIds.For("###NoireInputsHex_", id), "#RRGGBB", ref text, 16);
 
         if (ImGui.IsItemActive())
         {
@@ -445,7 +471,7 @@ public static class NoireInputs
             return false;
         }
 
-        var clicked = ImGui.InvisibleButton($"###NoireInputsReset_{id}", size);
+        var clicked = ImGui.InvisibleButton(UiIds.For("###NoireInputsReset_", id), size);
         var hovered = ImGui.IsItemHovered();
         var centre = origin + (size * 0.5f);
         var color = NoireTheme.Current.Resolve(hovered ? ThemeColor.Accent : ThemeColor.TextMuted);
@@ -538,7 +564,7 @@ public static class NoireInputs
     /// </remarks>
     private static void DrawError(string id, string? error)
     {
-        var key = $"NoireInputs.Error.{id}";
+        var key = UiIds.For("NoireInputs.Error.", id);
         var showing = !string.IsNullOrEmpty(error);
 
         if (showing)
@@ -584,11 +610,11 @@ public static class NoireInputs
     /// <c>Validate</c> refusal is recomputed from the value on every frame and so persists on its own; a parse failure
     /// happens on exactly one frame, when the field loses focus, and would otherwise slide straight back out again.
     /// </remarks>
-    private static void Refuse(string id, string message) => NoireUiSession.Set($"NoireInputs.Refused.{id}", message);
+    private static void Refuse(string id, string message) => NoireUiSession.Set(UiIds.For("NoireInputs.Refused.", id), message);
 
-    private static void ClearRefusal(string id) => NoireUiSession.Remove($"NoireInputs.Refused.{id}");
+    private static void ClearRefusal(string id) => NoireUiSession.Remove(UiIds.For("NoireInputs.Refused.", id));
 
-    private static string? Refusal(string id) => NoireUiSession.Get<string>($"NoireInputs.Refused.{id}");
+    private static string? Refusal(string id) => NoireUiSession.Get<string>(UiIds.For("NoireInputs.Refused.", id));
 
     /// <summary>
     /// Runs a caller's validation without letting it take the frame down with it.

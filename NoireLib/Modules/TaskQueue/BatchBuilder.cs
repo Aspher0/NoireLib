@@ -24,7 +24,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
         batch = new TaskBatch(customId, true);
     }
 
-    // ── Fluent configuration ─────────────────────────────────────────────────
+    // -- Fluent configuration ----------------------------------
 
     /// <summary>
     /// Sets the custom ID for this batch.
@@ -521,7 +521,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
         return (TSelf)this;
     }
 
-    // ── Terminal methods ──────────────────────────────────────────────────────
+    // -- Terminal methods ----------------------------------
 
     /// <summary>
     /// Builds and returns the configured batch.
@@ -646,7 +646,7 @@ public class BatchTaskConfigurator
     public BatchTaskBuilder Create(string? customId = null)
         => new(batch, customId);
 
-    // ── Direct task addition ─────────────────────────────────────────────────
+    // -- Direct task addition ----------------------------------
 
     /// <summary>
     /// Adds a task to the batch.
@@ -684,7 +684,7 @@ public class BatchTaskConfigurator
         }
     }
 
-    // ── Batch management helpers ─────────────────────────────────────────────
+    // -- Batch management helpers ----------------------------------
 
     /// <summary>
     /// Gets the parent batch this configurator is bound to.

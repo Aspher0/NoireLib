@@ -24,7 +24,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
         task = new QueuedTask(customId, true);
     }
 
-    // ── Fluent configuration ─────────────────────────────────────────────────
+    // -- Fluent configuration ----------------------------------
 
     /// <summary>
     /// Sets the custom ID for the task. Used to identify the task in logs and callbacks, or for future retrieval.
@@ -545,7 +545,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
         return (TSelf)this;
     }
 
-    // ── Terminal methods ──────────────────────────────────────────────────────
+    // -- Terminal methods ----------------------------------
 
     /// <summary>
     /// Builds and returns the configured task.<br/>
@@ -601,7 +601,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
         return success ? builtTask : null;
     }
 
-    // ── Static utilities ──────────────────────────────────────────────────────
+    // -- Static utilities ----------------------------------
 
     /// <summary>
     /// Retrieves metadata from a previous task in the queue by custom ID.<br/>

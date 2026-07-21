@@ -217,6 +217,8 @@ public static partial class NoireShapes
         if (radius <= 0f || color.W <= 0f || style.Rays <= 0)
             return;
 
+        using var profile = UiProfile.Helper("NoireShapes.Sunburst");
+
         var duty = Math.Clamp(style.Duty, 0.01f, 1f);
         var inner = Math.Clamp(style.InnerRatio, 0f, 0.99f) * radius;
         var slot = MathF.Tau / style.Rays;
@@ -311,14 +313,17 @@ public static partial class NoireShapes
         if (thickness <= 0f)
             return;
 
-        var segments = style.Segments > 0
-            ? Math.Clamp(style.Segments, 16, MaxCurvePoints)
-            : Math.Clamp(style.Lobes * 48, 128, MaxCurvePoints);
+        using var profile = UiProfile.Helper("NoireShapes.Guilloche");
+
+        var fixedSegments = style.Segments > 0 ? Math.Clamp(style.Segments, 16, MaxCurvePoints) : 0;
 
         var depth = Math.Clamp(style.Depth, 0f, 1f);
         var rings = Math.Max(1, style.Rings);
 
-        Span<Vector2> points = stackalloc Vector2[segments];
+        // The outermost ring is the largest, so its count is an upper bound for every ring inside it.
+        var widest = fixedSegments > 0 ? fixedSegments : GuillocheSegments(radius, style.Lobes);
+
+        Span<Vector2> points = stackalloc Vector2[widest];
 
         for (var ring = 0; ring < rings; ring++)
         {
@@ -327,7 +332,16 @@ public static partial class NoireShapes
             if (ringRadius <= 0f)
                 break;
 
+            var segments = fixedSegments > 0 ? fixedSegments : GuillocheSegments(ringRadius, style.Lobes);
+            var path = points[..segments];
+
             var rotation = Radians(style.RotationTurns + (ring * style.RingRotationTurns));
+
+            // Turned as a whole rather than by offsetting t, so a ring rotates instead of sliding along its own curve
+            // and landing back where it started. Read once per ring: the angle does not vary along the curve, and
+            // taking it per point spent two thirds of this loop's trigonometry recomputing one constant.
+            var cos = MathF.Cos(rotation);
+            var sin = MathF.Sin(rotation);
 
             // The hypotrochoid: a point offset from the centre of a small circle rolling inside a large one. The lobe
             // count is the ratio of the two radii, and the depth is how far out from that centre the point sits.
@@ -343,16 +357,45 @@ public static partial class NoireShapes
                 var x = (carrier * MathF.Cos(t)) + (offset * MathF.Cos(ratio * t));
                 var y = (carrier * MathF.Sin(t)) - (offset * MathF.Sin(ratio * t));
 
-                // Rotated here rather than by offsetting t, so a ring turns as a whole instead of sliding along its
-                // own curve and landing back where it started.
-                var cos = MathF.Cos(rotation);
-                var sin = MathF.Sin(rotation);
-
-                points[step] = centre + new Vector2((x * cos) - (y * sin), (x * sin) + (y * cos));
+                path[step] = centre + new Vector2((x * cos) - (y * sin), (x * sin) + (y * cos));
             }
 
-            Stroke(points, color, thickness);
+            Stroke(path, color, thickness);
         }
+    }
+
+    /// <summary>
+    /// How long a curve's straight segments are allowed to be, in real pixels.
+    /// </summary>
+    /// <remarks>
+    /// Short enough that a chord across a curve is not visible as a flat, long enough that a small rosette is not drawn
+    /// with hundreds of points nobody can see. Lower it if a large pattern looks faceted.
+    /// </remarks>
+    private const float CurveSegmentPx = 3f;
+
+    /// <summary>
+    /// The fewest points a single lobe is ever drawn with, whatever the radius, so a small rosette still reads as
+    /// having the petals it was asked for rather than as a polygon.
+    /// </summary>
+    private const int MinPointsPerLobe = 12;
+
+    /// <summary>
+    /// How many points a guilloche ring of a given radius is drawn with.
+    /// </summary>
+    /// <remarks>
+    /// Taken from the radius rather than from the lobe count alone, which is what the count used to be. A count that
+    /// ignores the radius spends the same hundreds of points on a rosette an inch across as on one filling the window:
+    /// at a small radius those segments are a fraction of a pixel each, which costs a great deal and shows nothing.
+    /// </remarks>
+    /// <param name="radius">The ring's radius, in real pixels.</param>
+    /// <param name="lobes">How many petals the rosette has.</param>
+    /// <returns>The number of points to draw the ring with.</returns>
+    internal static int GuillocheSegments(float radius, int lobes)
+    {
+        var byLength = (int)MathF.Ceiling(MathF.Tau * radius / CurveSegmentPx);
+        var byLobes = lobes * MinPointsPerLobe;
+
+        return Math.Clamp(Math.Max(byLength, byLobes), 32, MaxCurvePoints);
     }
 
     #endregion

@@ -4,6 +4,7 @@ using Dalamud.Interface.ManagedFontAtlas;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace NoireLib.UI;
@@ -94,6 +95,19 @@ internal static class UiFontCache
     private static bool warnedFull;
 
     /// <summary>
+    /// Moves whenever the set of built fonts changes, so anything that remembered a measurement can tell that the font
+    /// it measured with is no longer the font that would draw.
+    /// </summary>
+    /// <remarks>
+    /// The case this exists for is the handover: a size that is still building is drawn with the stretched stand-in and
+    /// measures as the stand-in, and the frame the real font arrives it measures differently. Without a generation, a
+    /// measurement cache would keep answering with the stand-in's numbers for as long as the label went unchanged.
+    /// </remarks>
+    internal static int Generation => generation;
+
+    private static int generation;
+
+    /// <summary>
     /// Whether a size has been registered that the last build did not cover.
     /// </summary>
     private static bool dirty;
@@ -139,6 +153,10 @@ internal static class UiFontCache
 
         if (IsHostDefault(size))
             return null;
+
+        // Broken out from NoireText so a first draw that has to register a size, prune the cold ones and ask for a
+        // rasterization is a row of its own rather than time charged to whatever text happened to be first.
+        using var profile = UiProfile.Helper("UiFontCache");
 
         IFontHandle? handle;
         bool needsBuild;
@@ -314,6 +332,9 @@ internal static class UiFontCache
 
             Handles.Remove(size);
         }
+
+        // A dropped size measures with the stand-in again from here on, so anything holding its numbers has to stop.
+        Interlocked.Increment(ref generation);
     }
 
     /// <summary>
@@ -358,6 +379,8 @@ internal static class UiFontCache
             {
                 NoireLogger.LogError(ex, "Failed to dispose the NoireText font atlas.", nameof(NoireText));
             }
+
+            UiTextMeasureCache.Clear();
 
             atlas = null;
             warnedFull = false;
@@ -425,6 +448,10 @@ internal static class UiFontCache
     /// </summary>
     private static void Report(int sizes, long started)
     {
+        // Bumped here rather than when the build was asked for, because what invalidates a remembered measurement is a
+        // font becoming available, which is this moment and not the one the build was queued at.
+        Interlocked.Increment(ref generation);
+
         NoireLogger.LogInformation(
             $"Built {sizes} text size(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms. "
             + "Sizes are rasterized as real glyphs, so this scales with how many glyph ranges the Dalamud language settings ask for. "

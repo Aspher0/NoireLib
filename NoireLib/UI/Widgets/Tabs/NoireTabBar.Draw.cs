@@ -122,6 +122,8 @@ public sealed partial class NoireTabBar
         if (!NoireService.IsInitialized())
             return false;
 
+        using var profile = UiProfile.Widget(nameof(NoireTabBar), Id);
+
         NoireUI.EnsureFrameServices();
 
         if (Tabs.Count == 0)
@@ -146,7 +148,7 @@ public sealed partial class NoireTabBar
         var workRect = window.WorkRect;
         ConstrainWorkRect(window);
 
-        if (!ImGui.BeginTabBar($"###NoireTabBar_{Id}", flags))
+        if (!ImGui.BeginTabBar(UiIds.For("###NoireTabBar_", Id), flags))
         {
             window.WorkRect = workRect;
 
@@ -202,7 +204,7 @@ public sealed partial class NoireTabBar
 
         // The label carries the id after a triple hash, so ImGui keys the tab on something stable while the caller is
         // free to change what is written on it, including its length, every frame.
-        var label = $"{tab.Label}###NoireTab_{Id}_{tab.Id}";
+        var label = UiIds.Labelled(tab.Label, "###NoireTab_", Id, tab.Id);
         var open = true;
 
         if (!enabled)

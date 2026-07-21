@@ -232,14 +232,16 @@ public static partial class NoireText
 
             first = false;
 
+            // The span is handed over as a span. Interpolating it into a string here would allocate one per run, per
+            // frame, for text whose whole purpose is to be redrawn as the user types.
             if (highlighted)
             {
                 using var pushed = ImRaii.PushColor(ImGuiCol.Text, highlight);
-                ImGui.TextUnformatted($"{text.AsSpan(start, at - start)}");
+                ImGui.TextUnformatted(text.AsSpan(start, at - start));
             }
             else
             {
-                ImGui.TextUnformatted($"{text.AsSpan(start, at - start)}");
+                ImGui.TextUnformatted(text.AsSpan(start, at - start));
             }
         }
     }
@@ -274,19 +276,39 @@ public static partial class NoireText
         if (!NoireService.IsInitialized())
             return Vector2.Zero;
 
+        text ??= string.Empty;
+
+        // Read before anything is pushed. On the stand-in path this is the font the measurement is actually taken with,
+        // so it belongs to the key rather than to the answer.
+        var ambient = ImGui.GetFontSize();
+
+        if (UiTextMeasureCache.TryGetSize(text, sizePx, ambient, out var cached))
+            return cached;
+
+        var measured = MeasureText(text, sizePx);
+        UiTextMeasureCache.StoreSize(text, sizePx, ambient, measured);
+
+        return measured;
+    }
+
+    /// <summary>
+    /// Measures text with the right font pushed, taking whichever of the two paths applies.
+    /// </summary>
+    private static Vector2 MeasureText(string text, float sizePx)
+    {
         var handle = UiFontCache.Get(sizePx);
 
         if (handle is { Available: true })
         {
             using var pushed = handle.Push();
-            return ImGui.CalcTextSize(text ?? string.Empty);
+            return ImGui.CalcTextSize(text);
         }
 
         var restore = PushApproximateSize(sizePx);
 
         try
         {
-            return ImGui.CalcTextSize(text ?? string.Empty);
+            return ImGui.CalcTextSize(text);
         }
         finally
         {
@@ -373,6 +395,22 @@ public static partial class NoireText
         if (!NoireService.IsInitialized())
             return 0f;
 
+        var ambient = ImGui.GetFontSize();
+
+        if (UiTextMeasureCache.TryGetCenterOffset(sizePx, ambient, out var cached))
+            return cached;
+
+        var measured = MeasureCenterOffsetAt(sizePx);
+        UiTextMeasureCache.StoreCenterOffset(sizePx, ambient, measured);
+
+        return measured;
+    }
+
+    /// <summary>
+    /// Reads the centre offset with the right font pushed, taking whichever of the two paths applies.
+    /// </summary>
+    private static float MeasureCenterOffsetAt(float sizePx)
+    {
         var handle = UiFontCache.Get(sizePx);
 
         if (handle is { Available: true })
@@ -565,6 +603,10 @@ public static partial class NoireText
         ArgumentNullException.ThrowIfNull(body);
 
         NoireUI.EnsureFrameServices();
+
+        // Every text call in the frame lands in one row. Text is the cost an interface is least likely to suspect and
+        // most likely to be spending, and a size that has not been built yet is paid for here.
+        using var profile = UiProfile.Helper("NoireText");
 
         var handle = UiFontCache.Get(sizePx);
 

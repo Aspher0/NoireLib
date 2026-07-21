@@ -41,8 +41,14 @@ public sealed class GuillocheStyle
     public float RotationTurns { get; set; }
 
     /// <summary>
-    /// How many line segments each ring is drawn with. Zero, the default, picks a count from the lobe count.
+    /// How many line segments each ring is drawn with. Zero, the default, picks a count from each ring's own radius, so
+    /// a small rosette is not drawn with segments a fraction of a pixel long and an inner ring costs less than the one
+    /// around it.
     /// </summary>
+    /// <remarks>
+    /// Setting this fixes the count for every ring regardless of size, which is worth doing only when you want two
+    /// patterns of different sizes drawn with exactly the same geometry.
+    /// </remarks>
     public int Segments { get; set; }
 
     /// <summary>

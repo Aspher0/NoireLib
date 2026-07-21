@@ -554,6 +554,8 @@ public class NoireComboBox<T>
     /// <returns>True if the selection changed this frame, false otherwise.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireComboBox<T>), Id);
+
         changedThisFrame = false;
         RestorePersistedFilter();
         ClampSelection();
@@ -562,7 +564,7 @@ public class NoireComboBox<T>
             ImGui.SetNextItemWidth(Width.Value);
 
         var preview = selectedIndex >= 0 ? DisplayOf(items[selectedIndex]) : PreviewPlaceholder;
-        var label = string.IsNullOrEmpty(Label) ? $"###NoireCombo_{Id}" : $"{Label}###NoireCombo_{Id}";
+        var label = string.IsNullOrEmpty(Label) ? UiIds.For("###NoireCombo_", Id) : UiIds.Labelled(Label, "###NoireCombo_", Id);
 
         // Cap the dropdown to exactly what it is meant to show. Left alone, ImGui budgets the popup at eight options and
         // knows nothing about the filter input, so the filter pushes the option list past the budget and the popup grows
@@ -905,7 +907,7 @@ public class NoireComboBox<T>
             // ImGui draws a frame's border from the same colour as a window's, so the two cannot be set apart from
             // outside the popup without the window's border following the field's.
             using (PushFilterStyle())
-                confirm |= ImGui.InputTextWithHint($"###NoireComboFilter_{Id}", FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+                confirm |= ImGui.InputTextWithHint(UiIds.For("###NoireComboFilter_", Id), FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
 
             if (ImGui.IsItemEdited())
             {
@@ -964,7 +966,7 @@ public class NoireComboBox<T>
 
         // NoBackground: the dropdown's own background is the backdrop here, and the list must not paint a second panel of
         // its own over it out of whatever ImGuiCol.ChildBg the consumer happens to have pushed around the combo.
-        using var child = ImRaii.Child($"###NoireComboItems_{Id}", new Vector2(0f, listHeight), false, ImGuiWindowFlags.NoBackground);
+        using var child = ImRaii.Child(UiIds.For("###NoireComboItems_", Id), new Vector2(0f, listHeight), false, ImGuiWindowFlags.NoBackground);
         if (!child)
             return;
 
@@ -1054,7 +1056,7 @@ public class NoireComboBox<T>
         // was given.
         var start = ImGui.GetCursorPos();
 
-        if (ImGui.Selectable($"###NoireComboItem_{Id}_{itemIndex}", isSelected || isHighlighted, ImGuiSelectableFlags.None, new Vector2(0f, ResolveItemHeight())))
+        if (ImGui.Selectable(UiIds.For("###NoireComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.None, new Vector2(0f, ResolveItemHeight())))
             Choose(itemIndex);
 
         // Read before anything is drawn on top, so the hover stays the row rather than the last piece of text in it.
@@ -1171,7 +1173,7 @@ public class NoireComboBox<T>
             return;
 
         if (WheelCycleHintEnabled)
-            NoireTooltip.Show(GetWheelCycleHint(binding), WheelCycleHintStyle, $"NoireComboHint_{Id}");
+            NoireTooltip.Show(GetWheelCycleHint(binding), WheelCycleHintStyle, UiIds.For("NoireComboHint_", Id));
 
         if (items.Count == 0)
             return;
@@ -1295,7 +1297,7 @@ public class NoireComboBox<T>
     {
         if (filterMemory == UiMemoryScope.Session)
         {
-            key = $"ComboBox.{Id}.filter";
+            key = UiIds.Join("ComboBox.", Id, ".filter");
             return true;
         }
 

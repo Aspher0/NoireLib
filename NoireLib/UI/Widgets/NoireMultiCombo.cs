@@ -292,6 +292,8 @@ public sealed class NoireMultiCombo<T>
     /// <returns>True on the frame the selection changes.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireMultiCombo<T>), Id);
+
         NoireUI.EnsureFrameServices();
         changedThisFrame = false;
 
@@ -315,7 +317,7 @@ public sealed class NoireMultiCombo<T>
         // Read before the popup opens, since inside one the current window is the popup itself.
         var ownerInFront = UiWindowOrder.InTopLayer;
 
-        if (!ImGui.BeginCombo($"{label}###NoireMultiCombo_{Id}", BuildPreview()))
+        if (!ImGui.BeginCombo(UiIds.Labelled(label, "###NoireMultiCombo_", Id), BuildPreview()))
             return changedThisFrame;
 
         try
@@ -353,7 +355,7 @@ public sealed class NoireMultiCombo<T>
 
             ImGui.SetNextItemWidth(-1f);
 
-            if (ImGui.InputTextWithHint($"###NoireMultiComboFilter_{Id}", FilterHint, ref filterText, 256))
+            if (ImGui.InputTextWithHint(UiIds.For("###NoireMultiComboFilter_", Id), FilterHint, ref filterText, 256))
             {
                 highlightIndex = -1;
                 RebuildFilteredIndices();
@@ -374,7 +376,7 @@ public sealed class NoireMultiCombo<T>
 
         // Scoped to what the filter is showing rather than to everything, because that is what "all" means with a
         // filter box directly above it.
-        if (ImGui.Button($"{SelectAllText}###NoireMultiComboAll_{Id}", new Vector2(width, 0f)))
+        if (ImGui.Button(UiIds.Labelled(SelectAllText, "###NoireMultiComboAll_", Id), new Vector2(width, 0f)))
         {
             var changed = false;
 
@@ -390,7 +392,7 @@ public sealed class NoireMultiCombo<T>
 
         ImGui.SameLine();
 
-        if (ImGui.Button($"{SelectNoneText}###NoireMultiComboNone_{Id}", new Vector2(width, 0f)))
+        if (ImGui.Button(UiIds.Labelled(SelectNoneText, "###NoireMultiComboNone_", Id), new Vector2(width, 0f)))
             ClearSelection();
 
         ImGui.Separator();
@@ -430,7 +432,7 @@ public sealed class NoireMultiCombo<T>
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
         var height = (visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y;
 
-        using var child = ImRaii.Child($"###NoireMultiComboItems_{Id}", new Vector2(0f, height), false, ImGuiWindowFlags.NoBackground);
+        using var child = ImRaii.Child(UiIds.For("###NoireMultiComboItems_", Id), new Vector2(0f, height), false, ImGuiWindowFlags.NoBackground);
         if (!child)
             return;
 
@@ -482,7 +484,7 @@ public sealed class NoireMultiCombo<T>
         // popup, so that flag decides nothing here in either direction: without this, CloseOnSelect did nothing at
         // all. Closing the current popup works from a child, because it acts on the popup stack rather than on the
         // window doing the asking.
-        if (ImGui.Selectable($"###NoireMultiComboItem_{Id}_{itemIndex}", isSelected || isHighlighted, ImGuiSelectableFlags.DontClosePopups, new Vector2(0f, ResolveItemHeight())))
+        if (ImGui.Selectable(UiIds.For("###NoireMultiComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.DontClosePopups, new Vector2(0f, ResolveItemHeight())))
         {
             Toggle(item);
 

@@ -3,14 +3,15 @@ obj/
 bin/
 *.user
 
-
+# Dev
 Private Testing/
 NoireUIDemoPlugin/
-docs
-.claude
+docs/
+.scratch/
+.claude/
+CLAUDE.md
 
-# Local-only solutions: any solution that loads the private test projects.
-# The committed NoireLib.sln must never reference anything outside this repo.
+# Local-only solutions
 *.Private.sln
 *.Private.slnx
 *.Private.slnf

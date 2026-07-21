@@ -69,6 +69,8 @@ public static class NoireButtons
     /// <returns>True on the frame the button was clicked.</returns>
     public static bool Button(string label, ButtonStyle? style, Vector2 size = default)
     {
+        using var profile = UiProfile.Helper("NoireButtons");
+
         ArgumentNullException.ThrowIfNull(label);
 
         style ??= ToneStyles.For(ButtonTone.Neutral);
@@ -438,7 +440,7 @@ public static class NoireButtons
             segment.Color = isSelected ? accent : theme.Resolve(ThemeColor.SurfaceSunken);
             segment.TextColor = style.TextColor ?? (isSelected ? theme.On(accent) : theme.Resolve(ThemeColor.TextMuted));
 
-            if (Button($"{VisibleLabel(options[index])}##{id}Segment{index}", segment, new Vector2(segmentWidth, height)))
+            if (Button(UiIds.Labelled(VisibleLabel(options[index]), "##", id, "Segment", index), segment, new Vector2(segmentWidth, height)))
             {
                 if (!isSelected)
                 {

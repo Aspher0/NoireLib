@@ -17,6 +17,16 @@ public static partial class NoireUI
     private static bool frameServicesReady;
 
     /// <summary>
+    /// The registry as it was when it last changed, so the per-frame pass can walk it without copying it.
+    /// </summary>
+    /// <remarks>
+    /// The pass has to iterate something that a drawable registering or disposing itself mid-draw cannot invalidate,
+    /// and it runs every frame. Copying the list each time is an allocation per frame for a collection that changes
+    /// perhaps a dozen times over a plugin's life, so the copy is made when it changes instead.
+    /// </remarks>
+    private static NoireDrawable[] drawableSnapshot = Array.Empty<NoireDrawable>();
+
+    /// <summary>
     /// Test seam replacing the ImGui frame counter when no ImGui context exists.
     /// </summary>
     internal static Func<int>? FrameOverride { get; set; }
@@ -168,6 +178,8 @@ public static partial class NoireUI
     /// <returns>A snapshot list of the registered drawables.</returns>
     public static IReadOnlyList<NoireDrawable> GetDrawables()
     {
+        // Copied rather than handing back the array the frame pass walks, which a caller could cast and write through.
+        // This is asked for on demand, not per frame, so the copy costs nothing that matters.
         lock (SyncRoot)
             return Drawables.ToArray();
     }
@@ -185,7 +197,10 @@ public static partial class NoireUI
         lock (SyncRoot)
         {
             if (!Drawables.Contains(drawable))
+            {
                 Drawables.Add(drawable);
+                drawableSnapshot = Drawables.ToArray();
+            }
 
             EnsureFrameHook();
         }
@@ -201,7 +216,10 @@ public static partial class NoireUI
     internal static void UnregisterDrawable(NoireDrawable drawable)
     {
         lock (SyncRoot)
-            Drawables.Remove(drawable);
+        {
+            if (Drawables.Remove(drawable))
+                drawableSnapshot = Drawables.ToArray();
+        }
 
         if (drawable is NoireOverlayButton)
             RefreshUiHideOverrides();
@@ -243,10 +261,19 @@ public static partial class NoireUI
 
         DrawPump.Drain();
 
-        foreach (var drawable in GetDrawables())
+        // Read once, so a drawable that registers or disposes itself from inside its own draw does not disturb the pass
+        // it is running in. The next frame picks the change up.
+        var snapshot = drawableSnapshot;
+
+        foreach (var drawable in snapshot)
         {
             try
             {
+                // The name is built only while the profiler is on, since composing it is the same dictionary lookup the
+                // measurement itself would cost.
+                using var scope = Profiler.Measure(
+                    Profiler.Enabled ? UiIds.Join(drawable.Kind, ":", drawable.Id) : string.Empty);
+
                 if (drawable.TryAutoDraw())
                     Diagnostics.NoteDrawn(drawable);
             }

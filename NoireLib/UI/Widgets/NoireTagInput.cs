@@ -408,6 +408,8 @@ public sealed class NoireTagInput
     /// <returns>True on the frame the tags change.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireTagInput), Id);
+
         NoireUI.EnsureFrameServices();
         changedThisFrame = false;
 
@@ -476,7 +478,7 @@ public sealed class NoireTagInput
         var padding = theme.ResolveFramePadding();
         var size = MeasureChip(tag);
         var origin = ImGui.GetCursorScreenPos();
-        var clicked = ImGui.InvisibleButton($"###NoireTagChip_{Id}_{index}", size);
+        var clicked = ImGui.InvisibleButton(UiIds.For("###NoireTagChip_", Id, index), size);
         var hovered = ImGui.IsItemHovered();
         var accent = theme.Resolve(ThemeColor.Accent);
 
@@ -527,7 +529,7 @@ public sealed class NoireTagInput
 
         ImGui.SetNextItemWidth(width);
 
-        var committed = ImGui.InputTextWithHint($"###NoireTagInput_{Id}", Hint, ref input, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+        var committed = ImGui.InputTextWithHint(UiIds.For("###NoireTagInput_", Id), Hint, ref input, 256, ImGuiInputTextFlags.EnterReturnsTrue);
         var active = ImGui.IsItemActive();
 
         // Checked before committing, because a separator typed or pasted mid-run is what turns one paste into the
@@ -613,7 +615,7 @@ public sealed class NoireTagInput
         {
             var start = ImGui.GetCursorPos();
 
-            if (ImGui.Selectable($"###NoireTagSuggestion_{Id}_{suggestion}", false, ImGuiSelectableFlags.None, new Vector2(width, NoireText.LineHeight())))
+            if (ImGui.Selectable(UiIds.For("###NoireTagSuggestion_", Id, suggestion), false, ImGuiSelectableFlags.None, new Vector2(width, NoireText.LineHeight())))
             {
                 Add(suggestion);
                 input = string.Empty;

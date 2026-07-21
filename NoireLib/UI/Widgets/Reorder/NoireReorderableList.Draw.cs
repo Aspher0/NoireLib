@@ -31,6 +31,8 @@ public sealed partial class NoireReorderableList<T>
     /// <returns>True on the frame the list changes.</returns>
     public bool Draw()
     {
+        using var profile = UiProfile.Widget(nameof(NoireReorderableList<T>), Id);
+
         NoireUI.EnsureFrameServices();
         changedThisFrame = false;
         pendingRemoval = -1;

@@ -40,6 +40,8 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
     public static void Ring(float value, RingStyle? style = null)
     {
+        using var profile = UiProfile.Helper("NoireGauges");
+
         style ??= DefaultRingStyle;
 
         var size = MathF.Max(style.ScaledSize, 1f);
@@ -77,6 +79,8 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default bar.</param>
     public static void Bar(float value, BarStyle? style = null)
     {
+        using var profile = UiProfile.Helper("NoireGauges");
+
         style ??= DefaultBarStyle;
 
         var width = style.Width > 0f ? style.ScaledWidth : NoireLayout.ContentWidth();
