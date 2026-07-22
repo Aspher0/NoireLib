@@ -34,6 +34,20 @@ public class NoireToastArea : NoireDrawable
         ImGuiWindowFlags.NoBackground;
 
     private static readonly object DefaultLock = new();
+
+    /// <summary>
+    /// The dismiss button's style, reused rather than composed per toast per frame.
+    /// </summary>
+    /// <remarks>
+    /// The two colours it carries are written from the theme immediately before it is drawn with, and drawing runs on
+    /// one thread, so a second toast in the same frame cannot see it half-written. See <see cref="DrawBody"/>.
+    /// </remarks>
+    private static readonly ButtonStyle CloseStyle = new()
+    {
+        Tone = ButtonTone.Ghost,
+        Icon = FontAwesomeIcon.Times,
+    };
+
     private static NoireToastArea? defaultArea;
 
     private readonly object syncRoot = new();
@@ -728,15 +742,12 @@ public class NoireToastArea : NoireDrawable
         var groupTop = ImGui.GetItemRectMin().Y;
         ImGui.SetCursorScreenPos(new Vector2(contentRight - closeWidth, groupTop));
 
-        var closeStyle = new ButtonStyle
-        {
-            Tone = ButtonTone.Ghost,
-            Icon = FontAwesomeIcon.Times,
-            TextColor = theme.Resolve(ThemeColor.TextMuted),
-            IconColor = theme.Resolve(ThemeColor.TextMuted),
-        };
+        // Written into a scratch rather than composed per toast per frame. Only the two colours move, and they move with
+        // the theme rather than with the toast.
+        CloseStyle.TextColor = theme.Resolve(ThemeColor.TextMuted);
+        CloseStyle.IconColor = theme.Resolve(ThemeColor.TextMuted);
 
-        if (NoireButtons.Button(UiIds.Join("##", toast.Id, "Close"), closeStyle, new Vector2(closeWidth, closeWidth)))
+        if (NoireButtons.Button(UiIds.Join("##", toast.Id, "Close"), CloseStyle, new Vector2(closeWidth, closeWidth)))
             toast.Dismiss();
     }
 

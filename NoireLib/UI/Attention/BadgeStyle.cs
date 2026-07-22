@@ -78,10 +78,13 @@ public sealed class BadgeStyle
     public float PulsePeriod { get; set; } = 1.5f;
 
     /// <summary>Renders a count the way it will be shown, applying <see cref="MaxCount"/>.</summary>
+    /// <remarks>
+    /// The text is remembered against the count and the cap, because a badge is redrawn on every frame the thing it
+    /// marks is on screen while the count behind it moves only when something arrives.
+    /// </remarks>
     /// <param name="count">The count to render.</param>
     /// <returns>The text on the badge.</returns>
-    public string FormatCount(int count)
-        => MaxCount > 0 && count > MaxCount ? $"{MaxCount}+" : count.ToString();
+    public string FormatCount(int count) => UiValueText.Count(count, MaxCount);
 
     /// <summary>
     /// The size the badge's text is asked for, in logical pixels, once <see cref="Scale"/> is applied.

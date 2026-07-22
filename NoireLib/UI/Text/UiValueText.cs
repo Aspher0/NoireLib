@@ -53,10 +53,17 @@ internal static class UiValueText
     /// </summary>
     private readonly record struct IconKey(FontAwesomeIcon Icon);
 
+    /// <summary>
+    /// A badge count and the ceiling it is capped at, which together decide whether it reads as a number or as an
+    /// overflow.
+    /// </summary>
+    private readonly record struct CountKey(int Value, int MaxCount);
+
     private static readonly HotPathCache<NumberKey, string> Numbers = new(MaxEntries);
     private static readonly HotPathCache<DurationKey, string> Durations = new(MaxEntries);
     private static readonly HotPathCache<HexKey, string> Hexes = new(MaxEntries);
     private static readonly HotPathCache<IconKey, string> Icons = new(MaxEntries);
+    private static readonly HotPathCache<CountKey, string> Counts = new(MaxEntries);
 
     /// <summary>
     /// Formats a number, remembering what it read last time.
@@ -115,6 +122,33 @@ internal static class UiValueText
 
         var text = withAlpha ? ColorHelper.Vector4ToHexAlpha(color) : ColorHelper.Vector4ToHex(color);
         Hexes.Set(key, text);
+
+        return text;
+    }
+
+    /// <summary>
+    /// Writes a badge count, capped at a ceiling, remembering what it read last time.
+    /// </summary>
+    /// <remarks>
+    /// A badge is drawn on every frame the thing it marks is on screen, and the count behind it moves when something
+    /// arrives. Written inline, an unread counter would spend a string sixty times a second to arrive at the digits
+    /// already on the badge.
+    /// </remarks>
+    /// <param name="value">The count to write.</param>
+    /// <param name="maxCount">The ceiling above which the count reads as an overflow. Zero or less does not cap.</param>
+    /// <returns>The count, or the ceiling followed by a plus sign.</returns>
+    internal static string Count(int value, int maxCount)
+    {
+        var key = new CountKey(value, maxCount);
+
+        if (Counts.TryGet(key, out var cached))
+            return cached;
+
+        var text = maxCount > 0 && value > maxCount
+            ? string.Create(CultureInfo.InvariantCulture, $"{maxCount}+")
+            : value.ToString(CultureInfo.CurrentCulture);
+
+        Counts.Set(key, text);
 
         return text;
     }

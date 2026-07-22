@@ -30,8 +30,6 @@ namespace NoireLib.UI;
 [NoireFacade]
 public static class NoireAttention
 {
-    private const string StateId = "NoireAttention";
-
     /// <summary>
     /// How much a pulse dims at its lowest, from 0 for fully transparent to 1 for no dimming at all.
     /// </summary>
@@ -70,7 +68,7 @@ public static class NoireAttention
     /// <param name="period">How long one pulse of the glow takes, in seconds.</param>
     public static void GlowOn(UiRect target, bool active = true, Vector4? color = null, float spread = 6f, float period = 1.5f)
     {
-        if (!active || !NoireService.IsInitialized() || target.IsEmpty)
+        if (!active || !UiDraw.Available || target.IsEmpty)
             return;
 
         // The glow breathes rather than sitting still, because a static halo reads as part of the skin within seconds
@@ -102,13 +100,13 @@ public static class NoireAttention
     /// frames that follow.
     /// </remarks>
     /// <param name="id">A stable id for the thing being shaken.</param>
-    public static void Shake(string id) => NoireAnim.Trigger(StateId, ShakeKey(id));
+    public static void Shake(string id) => NoireAnim.Trigger(id, ShakeKey);
 
     /// <summary>
     /// Starts a bounce on something, for an arrival: a value that just landed, a row that was just added.
     /// </summary>
     /// <param name="id">A stable id for the thing bouncing.</param>
-    public static void Bounce(string id) => NoireAnim.Trigger(StateId, BounceKey(id));
+    public static void Bounce(string id) => NoireAnim.Trigger(id, BounceKey);
 
     /// <summary>
     /// Reads where something being shaken or bounced should be drawn this frame.
@@ -125,10 +123,10 @@ public static class NoireAttention
     {
         offset = Vector2.Zero;
 
-        if (string.IsNullOrEmpty(id) || NoireUI.ReducedMotion || !NoireService.IsInitialized())
+        if (string.IsNullOrEmpty(id) || NoireUI.ReducedMotion || !UiDraw.Available)
             return false;
 
-        var shake = NoireAnim.Shake(StateId, ShakeKey(id));
+        var shake = NoireAnim.Shake(id, ShakeKey);
         var bounce = BounceOffset(id);
 
         offset = new Vector2(shake, bounce);
@@ -161,15 +159,15 @@ public static class NoireAttention
     /// <returns>A multiplier from 1 upward, settling back to 1.</returns>
     public static float FlashStrength(string id)
     {
-        if (string.IsNullOrEmpty(id) || NoireUI.ReducedMotion || !NoireService.IsInitialized())
+        if (string.IsNullOrEmpty(id) || NoireUI.ReducedMotion || !UiDraw.Available)
             return 1f;
 
-        return 1f + NoireAnim.Flash(StateId, FlashKey(id));
+        return 1f + NoireAnim.Flash(id, FlashKey);
     }
 
     /// <summary>Starts a flash on something, for a value that just changed under the user.</summary>
     /// <param name="id">A stable id for the thing flashing.</param>
-    public static void Flash(string id) => NoireAnim.Trigger(StateId, FlashKey(id));
+    public static void Flash(string id) => NoireAnim.Trigger(id, FlashKey);
 
     /// <summary>
     /// Cancels whatever a thing was doing, so a widget being removed or reused does not inherit it.
@@ -180,9 +178,9 @@ public static class NoireAttention
         if (string.IsNullOrEmpty(id))
             return;
 
-        NoireAnim.Reset(StateId, ShakeKey(id));
-        NoireAnim.Reset(StateId, BounceKey(id));
-        NoireAnim.Reset(StateId, FlashKey(id));
+        NoireAnim.Reset(id, ShakeKey);
+        NoireAnim.Reset(id, BounceKey);
+        NoireAnim.Reset(id, FlashKey);
     }
 
     /// <summary>
@@ -197,7 +195,7 @@ public static class NoireAttention
         const float duration = 0.45f;
         const float height = 6f;
 
-        var progress = NoireAnim.Progress(StateId, BounceKey(id), duration);
+        var progress = NoireAnim.Progress(id, BounceKey, duration);
 
         if (progress >= 1f)
             return 0f;
@@ -207,11 +205,19 @@ public static class NoireAttention
         return -MathF.Abs(MathF.Sin(progress * MathF.PI * 2f)) * decay * decay * NoireUI.Scaled(height);
     }
 
-    private static string ShakeKey(string id) => $"{id}.shake";
+    /// <summary>
+    /// The sub keys the three event motions store themselves under.
+    /// </summary>
+    /// <remarks>
+    /// The caller's id is the entry's id and these name which motion it is, which is the split
+    /// <see cref="UiFrameState"/> keys on. Composed into one string instead, the caller's id would be re-interpolated on
+    /// every frame every shaken or flashing widget is read back, and reading back is the per-frame half of this API.
+    /// </remarks>
+    private const string ShakeKey = "attention.shake";
 
-    private static string BounceKey(string id) => $"{id}.bounce";
+    private const string BounceKey = "attention.bounce";
 
-    private static string FlashKey(string id) => $"{id}.flash";
+    private const string FlashKey = "attention.flash";
 
     /// <summary>The rectangle of the widget just submitted.</summary>
     private static UiRect LastItemRect()

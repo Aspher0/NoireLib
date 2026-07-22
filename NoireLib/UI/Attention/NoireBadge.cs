@@ -61,7 +61,7 @@ public static class NoireBadge
     /// <param name="style">How it looks. When <see langword="null"/>, the shipped defaults.</param>
     public static void Count(UiRect target, int count, BadgeStyle? style = null)
     {
-        if (count <= 0 || !NoireService.IsInitialized())
+        if (count <= 0 || !UiDraw.Available)
             return;
 
         var resolved = style ?? Default;
@@ -98,7 +98,7 @@ public static class NoireBadge
     /// <param name="style">How it looks. When <see langword="null"/>, the shipped defaults.</param>
     public static void Dot(UiRect target, BadgeStyle? style = null)
     {
-        if (!NoireService.IsInitialized())
+        if (!UiDraw.Available)
             return;
 
         var resolved = style ?? Default;
@@ -115,7 +115,7 @@ public static class NoireBadge
     /// <returns>The size in real pixels, or zero when nothing would be drawn.</returns>
     public static Vector2 CountSize(int count, BadgeStyle? style = null)
     {
-        if (count <= 0 || !NoireService.IsInitialized())
+        if (count <= 0 || !UiDraw.Available)
             return Vector2.Zero;
 
         var resolved = style ?? Default;

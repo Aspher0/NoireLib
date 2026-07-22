@@ -238,6 +238,7 @@ Everything here runs on a game's draw thread and runs again next frame. Work tha
 
 - **Nothing allocates per frame.** Ids are built once by `UiIds`, not interpolated per frame. No `ToString()` on an unchanged value, no `ToArray()`/`ToList()` in a draw path, no closure where a state overload exists.
 - **Working sets are borrowed, not allocated.** A scratch buffer with a known maximum is `stackalloc`; one sized by the data is a `PooledBuffer<T>` or a list the surface keeps between frames.
+- **A shorthand overload never costs more than the long one.** An overload taking loose arguments and forwarding them as an options or style object writes them into a reused instance instead of constructing one, because the shorthand is the overload most callers reach for and it draws every frame. See `NoireInputs.Number`, `NoireLayout.Splitter` and `NoireButtons.Segmented`.
 - **Style is pushed through `UiPush`, not `ImRaii`.** Every `ImRaii` push wrapper is a class, so it costs 24 bytes per call even when its condition is false and it pushes nothing.
 - **Nothing is recomputed that has not changed.** Text measurement is cached; so is layout arithmetic, against what actually moves it.
 - **Nothing off screen is drawn.** Collections of unknown length virtualize past a threshold, with a `Virtualize` override.
@@ -246,6 +247,8 @@ Everything here runs on a game's draw thread and runs again next frame. Work tha
 - **Literals handed to ImGui are UTF-8** (`"Save"u8`), encoded once at compile time instead of re-encoded from UTF-16 every frame.
 
 Measure before optimizing, with the profiler below, and read the **self** column rather than the total. A scope is not free to open, so a surface entered hundreds of times a frame carries more instrumentation in its reading than one entered once; compare like with like, and prefer allocated bytes, which the act of measuring does not move.
+
+**This bar is enforced, not merely stated.** Every drawing surface in this namespace has a test that runs it inside a real ImGui frame and asserts what it allocated, and the assertion is zero: widgets, layout scopes, panels, shapes, text, content, badges and attention alike. That is what makes the guarantee a consumer's rather than a reviewer's, because none of the causes found so far were visible by reading the widget. Two were lambdas capturing a parameter, which the compiler allocates on entry to the method rather than at the point of use, so a hook nobody had set cost every button in the frame. One was a shorthand overload composing the options object it forwarded. One was a value formatted to a string that had not changed, and one an id interpolated on every frame of a section whose id is a constant. A new surface is not finished until it has its own zero, and a surface that cannot be driven headless, because it is a drawable needing an initialized plugin, has its ids asserted against the literal they replaced instead.
 
 ### Allocation
 

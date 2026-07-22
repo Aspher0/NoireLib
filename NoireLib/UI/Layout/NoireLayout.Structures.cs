@@ -48,14 +48,30 @@ public static partial class NoireLayout
     /// they are a fixed size, or the divider will run past them.</param>
     /// <returns>True while the splitter is being dragged.</returns>
     public static bool Splitter(string id, ref float size, float minSize = 0f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
-        => Splitter(id, ref size, new SplitterOptions
-        {
-            MinSize = minSize,
-            MaxSize = maxSize,
-            Thickness = thickness,
-            Vertical = vertical,
-            Length = length,
-        });
+    {
+        // Written into a scratch rather than a fresh options object, which this composed on every frame every splitter
+        // drew. The shorthand overload is the one most callers reach for, so it is the one that must not cost more than
+        // passing the options in.
+        Shorthand.MinSize = minSize;
+        Shorthand.MaxSize = maxSize;
+        Shorthand.Thickness = thickness;
+        Shorthand.Vertical = vertical;
+        Shorthand.Length = length;
+
+        return Splitter(id, ref size, Shorthand);
+    }
+
+    /// <summary>
+    /// The options the shorthand <see cref="Splitter(string, ref float, float, float, float, bool, float)"/> draws
+    /// through.
+    /// </summary>
+    /// <remarks>
+    /// Reused rather than allocated per call, and only ever read inside the call that set it. Drawing runs on one
+    /// thread, so there is nothing here for a second caller to see half-written. Every field the shorthand exposes is
+    /// written on each call, so nothing carries over from the splitter before it; the rest keep their defaults, which
+    /// is what the shorthand promises.
+    /// </remarks>
+    private static readonly SplitterOptions Shorthand = new();
 
     /// <summary>
     /// A draggable divider between two panes, with the look opened all the way up.
@@ -435,8 +451,11 @@ public static partial class NoireLayout
         if (!persist)
             return null;
 
+        // Built through the id cache rather than interpolated, because a persisting section resolves its key on every
+        // frame it draws while the key itself is a constant of the section. The bytes are the same either way, which
+        // matters here more than elsewhere: this key is what the state file is written under.
         if (!string.IsNullOrWhiteSpace(id))
-            return $"Collapsible.{id}.open";
+            return UiIds.Join("Collapsible.", id, ".open");
 
         lock (PersistRefusals)
         {

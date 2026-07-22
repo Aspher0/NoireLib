@@ -389,7 +389,7 @@ public class NoireOverlayButton : NoireDrawable
                     ImGui.SetTooltip(Tooltip);
 
                 if (CustomTooltip != null && !CustomTooltip.IsEmpty)
-                    NoireTooltip.Show(CustomTooltip, CustomTooltipStyle, $"OverlayButton_{Id}");
+                    NoireTooltip.Show(CustomTooltip, CustomTooltipStyle, UiIds.For("OverlayButton_", Id));
             }
         }
     }

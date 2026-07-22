@@ -14,6 +14,18 @@ public sealed class NoireModalHost : NoireDrawable
     private const string PopupId = "###NoireModalPopup";
 
     private static readonly object InstanceLock = new();
+
+    /// <summary>
+    /// The prompt options a prompt raised without any draws through. Read only, and never handed out.
+    /// </summary>
+    private static readonly PromptOptions PromptDefaults = new();
+
+    /// <summary>
+    /// The confirm button's style, reused rather than composed per frame. Its tone is written immediately before it is
+    /// drawn with, and one dialog is drawn at a time on one thread.
+    /// </summary>
+    private static readonly ButtonStyle ConfirmStyle = new();
+
     private static NoireModalHost? instance;
 
     private NoireModalHost()
@@ -130,7 +142,9 @@ public sealed class NoireModalHost : NoireDrawable
 
     private static void DrawPromptField(ModalRequest request, float width)
     {
-        var options = request.Options as PromptOptions ?? new PromptOptions();
+        // The shipped defaults rather than a fresh instance: a prompt raised without prompt options draws every frame it
+        // is open, and the fallback carries nothing the caller could have changed.
+        var options = request.Options as PromptOptions ?? PromptDefaults;
 
         ImGui.Spacing();
         ImGui.SetNextItemWidth(width);
@@ -175,8 +189,12 @@ public sealed class NoireModalHost : NoireDrawable
 
         ImGui.BeginDisabled(!confirmEnabled);
 
+        // The hold button's style is written into a scratch rather than composed per frame, since a modal asking to be
+        // held is drawn for as long as the user is holding it.
+        ConfirmStyle.Tone = tone;
+
         var confirmed = options.HoldSeconds > 0f
-            ? NoireButtons.HoldToConfirm(UiIds.Labelled(confirmLabel, "##NoireModalConfirm", string.Empty), options.HoldSeconds, new ButtonStyle { Tone = tone }, new Vector2(confirmWidth, 0f))
+            ? NoireButtons.HoldToConfirm(UiIds.Labelled(confirmLabel, "##NoireModalConfirm", string.Empty), options.HoldSeconds, ConfirmStyle, new Vector2(confirmWidth, 0f))
             : NoireButtons.Button(UiIds.Labelled(confirmLabel, "##NoireModalConfirm", string.Empty), tone, new Vector2(confirmWidth, 0f));
 
         ImGui.EndDisabled();
