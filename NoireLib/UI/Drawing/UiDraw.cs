@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Concurrent;
 using System.IO;
@@ -53,7 +53,7 @@ internal static class UiDraw
     /// can key on directly. Resolving one costs a string hash, and doing that per draw is what this cache exists to
     /// avoid.
     /// </remarks>
-    private static readonly ConcurrentDictionary<string, UiScopeName> typeNames = new();
+    private static readonly ConcurrentDictionary<string, UiScopeName> typeNames = new(StringInstanceComparer.Instance);
 
     /// <summary>
     /// The composed <c>Type.Member</c> name for each calling method, by file and then by member.
@@ -64,7 +64,7 @@ internal static class UiDraw
     /// Nested rather than keyed on a <c>(path, member)</c> pair, which is not free: a concurrent dictionary boxes a
     /// value-type key, so the pair cost 88 bytes on every gated draw and the gate has to cost nothing.
     /// </remarks>
-    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, UiScopeName>> methodNames = new();
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, UiScopeName>> methodNames = new(StringInstanceComparer.Instance);
 
     /// <summary>
     /// Stands in for the plugin check when deciding whether ImGui may be called, for the headless harness.
@@ -103,7 +103,9 @@ internal static class UiDraw
     /// <remarks>
     /// One row per method, aggregating every call to it in the frame. This is the granularity the shape helpers
     /// report at, and it is what keeps <c>NoireShapes.Sunburst</c> a row of its own rather than a share of
-    /// <c>NoireShapes</c>.
+    /// <c>NoireShapes</c>.<br/>
+    /// Measured only while <see cref="UiProfiler.Detailed"/> is on; otherwise the call costs a flag read and its time
+    /// folds into the enclosing scope.
     /// </remarks>
     /// <param name="member">Supplied by the compiler. Do not pass this.</param>
     /// <param name="path">Supplied by the compiler. Do not pass this.</param>
@@ -148,42 +150,36 @@ internal static class UiDraw
     /// Taken from the file name up to its first dot, which is the type a partial class is split from: the parts of
     /// <c>NoireShapes</c> live in <c>NoireShapes.Arcs.cs</c> and <c>NoireShapes.Rects.cs</c> and all report as
     /// <c>NoireShapes</c>. Naming them for the whole file name instead would split one surface across as many rows as
-    /// it has files, and would rename every scope that already exists.
+    /// it has files, and would rename every scope that already exists.<br/>
+    /// A surface's private painting helpers hold the gate too, because that is the only way to obtain a list, so the
+    /// same name is routinely opened inside itself. <see cref="UiProfiler.Open"/> declines the duplicate, keeping the
+    /// surface one row whose figures stay comparable.
     /// </remarks>
     private static UiScopeName? TypeName(string path)
-        => NoireUI.Profiler.Enabled ? NotAlreadyOpen(Resolve(path)) : null;
+        => NoireUI.Profiler.Enabled ? Resolve(path) : null;
 
     /// <summary>
-    /// The <c>Type.Member</c> name for a calling method, or none while the profiler is off.
-    /// </summary>
-    private static UiScopeName? MethodName(string path, string member)
-    {
-        if (!NoireUI.Profiler.Enabled)
-            return null;
-
-        var inFile = methodNames.GetOrAdd(path, static _ => new ConcurrentDictionary<string, UiScopeName>());
-
-        return NotAlreadyOpen(inFile.GetOrAdd(
-            member,
-            static (name, file) => UiScopeName.For($"{Resolve(file).Name}.{name}"),
-            path));
-    }
-
-    /// <summary>
-    /// A name, or none when a scope of that name is already open around this call.
+    /// The <c>Type.Member</c> name for a calling method, or none unless the profiler is measuring at method
+    /// resolution.
     /// </summary>
     /// <remarks>
-    /// A surface reached through its own public entry point holds a scope by the time its private painting helpers
-    /// run, and those helpers hold the gate too because that is the only way to obtain a list. Opening the name again
-    /// would not add to the row that is already open: the profiler keys a node on its name and its parent, so the
-    /// second one becomes a child row of the same name, and the outer row's self time drains into it. Every figure
-    /// recorded against the single row before then stops being comparable.<br/>
-    /// No name is what <see cref="UiProfiler.Open"/> already treats as nothing to measure, so the inner call costs
-    /// nothing and its work is charged to the scope that is genuinely around it.<br/>
-    /// Compared by reference: names are interned, so two handles are the same handle exactly when the names match.
+    /// Gated on <see cref="UiProfiler.Detailed"/> as well as on the profiler being on. The method scopes are the bulk
+    /// of what a frame opens, several hundred against a few dozen widget and surface rows, so they are the resolution
+    /// a reader asks for rather than the one measuring starts at. While the gate is closed the shape's time folds
+    /// into the scope around it, so nothing goes unaccounted.
     /// </remarks>
-    private static UiScopeName? NotAlreadyOpen(UiScopeName name)
-        => ReferenceEquals(UiProfiler.InnermostScope, name) ? null : name;
+    private static UiScopeName? MethodName(string path, string member)
+    {
+        if (!NoireUI.Profiler.MeasuringMethods)
+            return null;
+
+        var inFile = methodNames.GetOrAdd(path, static _ => new ConcurrentDictionary<string, UiScopeName>(StringInstanceComparer.Instance));
+
+        return inFile.GetOrAdd(
+            member,
+            static (name, file) => UiScopeName.For($"{Resolve(file).Name}.{name}"),
+            path);
+    }
 
     /// <summary>
     /// The cached scope name for a file path.
@@ -203,11 +199,15 @@ internal static class UiDraw
 /// </summary>
 /// <remarks>
 /// A <see langword="ref struct"/> so that obtaining a draw list allocates nothing, which matters for something every
-/// surface in the library will hold once per draw.
+/// surface in the library will hold once per draw.<br/>
+/// Talks to the profiler directly rather than through a nested <see cref="UiProfileScope"/>: this is held once per
+/// surface per frame, and the extra layer was two more calls per scope on a path that exists to cost nothing.
 /// </remarks>
 internal ref struct UiDrawScope
 {
-    private UiProfileScope profile;
+    private readonly UiProfiler profiler;
+    private readonly UiScopeName? name;
+    private long started;
 
     private readonly UiDrawTarget target;
 
@@ -234,12 +234,22 @@ internal ref struct UiDrawScope
 
     internal UiDrawScope(UiScopeName? name, UiDrawTarget target)
     {
-        profile = NoireUI.Profiler.Measure(name);
+        profiler = NoireUI.Profiler;
+        this.name = name;
         this.target = target;
+        started = profiler.Open(name);
     }
 
     /// <summary>
     /// Closes the measurement. Safe to call more than once.
     /// </summary>
-    public void Dispose() => profile.Dispose();
+    public void Dispose()
+    {
+        if (started == 0L)
+            return;
+
+        profiler.Close(name, started);
+        started = 0L;
+    }
 }
+

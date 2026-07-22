@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -65,7 +65,7 @@ public sealed partial class NoireTable<T>
         using (UiPush.Style(ImGuiStyleVar.ChildBorderSize, 1f))
         using (UiPush.Color(ImGuiCol.Border, NoireTheme.Current.Resolve(ThemeColor.Border)))
         {
-            opened = ImGui.BeginChild($"###NoireTableFrame_{Id}", new Vector2(width, outerHeight), true,
+            opened = ImGui.BeginChild(UiIds.For("###NoireTableFrame_", Id), new Vector2(width, outerHeight), true,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         }
 
@@ -79,7 +79,7 @@ public sealed partial class NoireTable<T>
         var bodyHeight = MathF.Max(FooterHeight(), inner.Y - footerHeight);
         var bodyTop = ImGui.GetCursorScreenPos().Y;
 
-        if (!ImGui.BeginTable($"###NoireTable_{Id}", visibleColumns, flags, new Vector2(inner.X, bodyHeight)))
+        if (!ImGui.BeginTable(UiIds.For("###NoireTable_", Id), visibleColumns, flags, new Vector2(inner.X, bodyHeight)))
         {
             ImGui.EndChild();
             return false;
@@ -131,12 +131,11 @@ public sealed partial class NoireTable<T>
         // Room is reserved for the widest count the table can report, whether or not one is showing. Sized to the
         // count actually there, the field would resize on the first keystroke, and with no room at all the count wraps
         // under the field and pushes the whole table down.
-        var widest = $"{rows.Count} of {rows.Count}";
-        var counterWidth = NoireText.CalcSize(widest, TextSize.Caption).X + NoireUI.Scaled(10f);
+        var counterWidth = NoireText.CalcSize(Counter(rows.Count, rows.Count), TextSize.Caption).X + NoireUI.Scaled(10f);
 
         ImGui.SetNextItemWidth(MathF.Max(NoireUI.Scaled(80f), NoireLayout.ContentWidth() - counterWidth));
 
-        if (ImGui.InputTextWithHint($"###NoireTableSearch_{Id}", SearchHint, ref text, 128))
+        if (ImGui.InputTextWithHint(UiIds.For("###NoireTableSearch_", Id), SearchHint, ref text, 128))
             Search = text;
 
         // Said plainly rather than left to be inferred from a short list, because a search that matches nothing and a
@@ -147,9 +146,38 @@ public sealed partial class NoireTable<T>
         ImGui.SameLine(0f, NoireUI.Scaled(10f));
 
         ImGui.PushTextWrapPos(-1f);
-        NoireText.Muted($"{VisibleCount} of {rows.Count}", TextSize.Caption);
+        NoireText.Muted(Counter(VisibleCount, rows.Count), TextSize.Caption);
         ImGui.PopTextWrapPos();
     }
+
+    /// <summary>
+    /// How many rows the search left, written as <c>12 of 340</c>.
+    /// </summary>
+    /// <remarks>
+    /// Cached because the search box asks for it on every frame, twice: once for the count it is showing and once for
+    /// the widest count it could show, which is what the column beside the field is sized to. Both change when rows are
+    /// added or the search is retyped, and at no other time.
+    /// </remarks>
+    /// <param name="visible">How many rows the search left.</param>
+    /// <param name="total">How many rows there are.</param>
+    /// <returns>The counter text.</returns>
+    private static string Counter(int visible, int total)
+    {
+        var key = new CounterKey(visible, total);
+
+        if (Counters.TryGet(key, out var cached))
+            return cached;
+
+        var text = $"{visible} of {total}";
+        Counters.Set(key, text);
+
+        return text;
+    }
+
+    /// <summary>A pair of counts the counter text is written from.</summary>
+    private readonly record struct CounterKey(int Visible, int Total);
+
+    private static readonly HotPathCache<CounterKey, string> Counters = new(512);
 
     /// <summary>
     /// Declares every visible column to ImGui, in order.
@@ -389,7 +417,7 @@ public sealed partial class NoireTable<T>
                     // Passed as never selected: this is the hit target only. A selectable paints its highlight over
                     // that same expanded box, where TableSetBgColor fills exactly the row and nothing else.
                     if (ImGui.Selectable(
-                            $"###NoireTableRow_{Id}_{index}",
+                            UiIds.For("###NoireTableRow_", Id, index),
                             false,
                             ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowItemOverlap,
                             new Vector2(0f, 0f)))
@@ -603,7 +631,7 @@ public sealed partial class NoireTable<T>
         var reach = NoireUI.Scaled(4f);
 
         ImGui.SetCursorScreenPos(new Vector2(boundary - reach, top));
-        ImGui.InvisibleButton($"###NoireTableFooterGrip_{Id}_{position}", new Vector2(reach * 2f, bottom - top));
+        ImGui.InvisibleButton(UiIds.For("###NoireTableFooterGrip_", Id, position), new Vector2(reach * 2f, bottom - top));
 
         var active = ImGui.IsItemActive();
 

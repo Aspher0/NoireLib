@@ -279,6 +279,27 @@ public static partial class NoireShapes
     /// <param name="centre">Where the shape radiates from.</param>
     /// <param name="innerRadius">The distance at which the shape is left at full strength.</param>
     /// <param name="outerRadius">The distance at which it has faded away entirely.</param>
+    /// <summary>
+    /// Moves a reservation's write positions past vertices and indices written directly into the buffers.
+    /// </summary>
+    /// <remarks>
+    /// A reservation hands back write pointers and expects them walked as the primitives land; writing through the
+    /// buffer spans leaves them behind. ImGui's own helpers reset the pointers on their next reservation, but the
+    /// current vertex id is read, not reset, so leaving it behind would hand the next primitive indices pointing at
+    /// what was just written.
+    /// </remarks>
+    /// <param name="drawList">The list whose reservation was written by hand.</param>
+    /// <param name="vertexCount">How many vertices were written.</param>
+    /// <param name="indexCount">How many indices were written.</param>
+    internal static unsafe void AdvancePrimWrite(ImDrawListPtr drawList, int vertexCount, int indexCount)
+    {
+        var native = drawList.Handle;
+
+        native->VtxCurrentIdx += (uint)vertexCount;
+        native->VtxWritePtr += vertexCount;
+        native->IdxWritePtr += indexCount;
+    }
+
     private static void ShadeRadial(ImDrawListPtr drawList, int start, int end, Vector2 centre, float innerRadius, float outerRadius)
     {
         if (end <= start)

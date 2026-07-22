@@ -1,5 +1,7 @@
 using FluentAssertions;
 using NoireLib.UI;
+using System;
+using System.Numerics;
 using Xunit;
 
 namespace NoireLib.Tests;
@@ -20,6 +22,16 @@ namespace NoireLib.Tests;
 public sealed class NoireWidgetAllocationTests : IClassFixture<UiHarness>
 {
     private const int Repeats = 20;
+
+    /// <summary>
+    /// The series the sparkline is drawn from, held in a field rather than written inside the measured delegate.
+    /// </summary>
+    /// <remarks>
+    /// The harness measures everything the delegate does, so a test's own fixture data is charged to the surface under
+    /// test. A collection expression assigned to a <see cref="System.ReadOnlySpan{T}"/> of a multi-byte element type
+    /// allocates, and written inline it read as 72 bytes a frame that the sparkline never spent.
+    /// </remarks>
+    private static readonly float[] Series = [1f, 4f, 2f, 8f, 3f, 9f, 5f, 7f];
 
     private readonly UiHarness harness;
 
@@ -87,6 +99,118 @@ public sealed class NoireWidgetAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 2);
 
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void Number_WithAStableId_AllocatesNothing()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                var value = 1.5f;
+
+                for (var i = 0; i < Repeats; i++)
+                    NoireInputs.Number("Interval###interval", ref value, "ms");
+            },
+            warmUpFrames: 2);
+
+        // 80 bytes a field before this: a label carrying a stable id was split into two substrings on every frame, and
+        // a stable id is what a settings page uses precisely so its state survives the label being reworded.
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void Duration_AllocatesNothing()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                var value = TimeSpan.FromSeconds(90);
+
+                for (var i = 0; i < Repeats; i++)
+                    NoireInputs.Duration("Cooldown", ref value);
+            },
+            warmUpFrames: 2);
+
+        // 136 bytes a field before this, all of it writing the duration the field is already showing.
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void HexColor_AllocatesNothing()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                var value = new Vector4(1f, 0.5f, 0.25f, 1f);
+
+                for (var i = 0; i < Repeats; i++)
+                    NoireInputs.HexColor("Accent", ref value);
+            },
+            warmUpFrames: 2);
+
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void Timer_AllocatesNothing()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                for (var i = 0; i < Repeats; i++)
+                    NoireGauges.Timer(TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60));
+            },
+            warmUpFrames: 2);
+
+        // 256 bytes a timer before this: the style was cloned to carry a label, and the label was the remaining time
+        // written out again on every frame it had not changed. A countdown ticks once a second and draws sixty times.
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void Timer_WithAValueThatMovesEveryFrame_StillCostsLessThanCloningItsStyle()
+    {
+        var ticks = 0L;
+
+        var result = harness.Draw(
+            () =>
+            {
+                for (var i = 0; i < Repeats; i++)
+                    NoireGauges.Timer(TimeSpan.FromTicks(ticks++ * 12345L), TimeSpan.FromSeconds(60));
+            },
+            warmUpFrames: 200);
+
+        // The worst case the text cache has: a countdown reading a real clock is a different value on every frame, so
+        // the cache never hits and fills to its bound over and over. What is left is the one string the countdown
+        // genuinely has to write, and the dictionary behind it stops growing once it has been round once, which is why
+        // 200 frames are warmed rather than two. Measured at 144 bytes a timer against 256 before this audit, so even
+        // the case the cache cannot help is cheaper than it was.
+        var perTimer = result.AllocatedBytes / (double)Repeats;
+
+        perTimer.Should().BeLessThan(200d);
+    }
+
+    [Fact]
+    public void Gauges_AllocateNothing()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                for (var i = 0; i < Repeats; i++)
+                {
+                    NoireGauges.Ring(0.5f);
+                    NoireGauges.Bar(0.5f);
+                    NoireGauges.Pips(3, 5);
+                    NoireGauges.Sparkline(Series);
+                }
+            },
+            warmUpFrames: 2);
+
+        // These four were already clean when the audit reached them, which is worth holding rather than assuming: the
+        // sparkline in particular builds its points on the stack, and a later change to a heap array would not fail
+        // anything else.
         result.AllocatedBytes.Should().Be(0L);
     }
 

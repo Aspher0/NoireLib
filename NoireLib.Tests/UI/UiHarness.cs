@@ -142,13 +142,17 @@ public sealed class UiHarness : IDisposable
 
         var profiler = NoireUI.Profiler;
         var wasEnabled = profiler.Enabled;
+        var wasDetailed = profiler.Detailed;
 
         // Reset once, before the warm-up rather than before the measured frame. The profiler allocates a node the
         // first time it sees a call path, and resetting immediately before the measurement would push that allocation
         // into the frame being measured and report it as the caller's. The same draw runs every frame, so the scopes
         // seen across the warm-up are the scopes of the measured frame.
+        // At full resolution, because the scope list is a coverage report here: the per-method scopes the shipped
+        // default leaves out are exactly the ones the coverage tests assert on.
         profiler.Reset();
         profiler.Enabled = profile;
+        profiler.Detailed = profile;
 
         try
         {
@@ -166,6 +170,7 @@ public sealed class UiHarness : IDisposable
         finally
         {
             profiler.Enabled = wasEnabled;
+            profiler.Detailed = wasDetailed;
             profiler.Reset();
         }
     }

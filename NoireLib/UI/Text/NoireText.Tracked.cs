@@ -138,8 +138,11 @@ public static partial class NoireText
     /// the whole run at the mercy of item spacing and make every label a different width from its own measurement. One
     /// <see cref="ImGui.Dummy"/> at the end reserves what was actually drawn, so a tracked label lays out like any
     /// other item.<br/>
-    /// A character is measured and drawn through a one-element span rather than a substring, so a label costs no
-    /// allocation per glyph per frame.
+    /// Each glyph is still its own draw-list text call, deliberately. The font atlas spreads its glyphs across several
+    /// textures and which one a glyph lives on is the renderer's business: the text call binds the right texture per
+    /// glyph, where a hand-written quad samples whatever texture the current command happens to hold and draws noise
+    /// off another page. What the metrics cache removes is the measuring around those calls, and a space is skipped
+    /// outright rather than handed to a call that paints nothing.
     /// </remarks>
     /// <param name="text">The text to place.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
@@ -151,48 +154,58 @@ public static partial class NoireText
         // of text in the frame. See the note on NoireText.At.
         using var draw = UiDraw.Begin();
 
-        var origin = ImGui.GetCursorScreenPos();
         var font = UiTextMeasureCache.CurrentFont();
         var fontSize = ImGui.GetFontSize();
         var spacing = tracking * fontSize;
         var height = ImGui.GetTextLineHeight();
-        var color = ImGui.GetColorU32(ImGuiCol.Text);
-        var list = draw.List;
+        var run = UiTextMeasureCache.OpenGlyphRun(font, fontSize);
+
+        var list = paint ? draw.List : ImDrawListPtr.Null;
+        var painting = paint && !list.IsNull;
+
+        var origin = Vector2.Zero;
+        var color = 0u;
+
+        if (painting)
+        {
+            origin = ImGui.GetCursorScreenPos();
+            color = ImGui.GetColorU32(ImGuiCol.Text);
+        }
 
         Span<char> glyph = stackalloc char[2];
         var x = 0f;
 
-        for (var index = 0; index < text.Length;)
+        for (var at = 0; at < text.Length;)
         {
             // A surrogate pair is one character and has to be measured and drawn as one, or it is two replacement
             // boxes with tracking helpfully applied between the halves.
-            var length = char.IsHighSurrogate(text[index]) && index + 1 < text.Length && char.IsLowSurrogate(text[index + 1])
+            var length = char.IsHighSurrogate(text[at]) && at + 1 < text.Length && char.IsLowSurrogate(text[at + 1])
                 ? 2
                 : 1;
 
-            glyph[0] = text[index];
+            var codepoint = length == 2 ? char.ConvertToUtf32(text[at], text[at + 1]) : text[at];
 
-            if (length == 2)
-                glyph[1] = text[index + 1];
-
-            var piece = (ReadOnlySpan<char>)glyph[..length];
-
-            if (paint)
-                list.AddText(origin + new Vector2(x, 0f), color, piece);
-
-            // Measured once per character per font size rather than once per character per frame. A label is redrawn
-            // every frame and its glyphs do not change width between them, and the alphabet an interface uses is small
-            // and fixed, so this fills in the first frames and only hits afterwards.
-            var codepoint = length == 2 ? char.ConvertToUtf32(text[index], text[index + 1]) : text[index];
-
-            if (!UiTextMeasureCache.TryGetGlyphAdvance(codepoint, font, fontSize, out var advance))
+            // Remembered once per character per font size rather than re-measured per frame. A label is redrawn every
+            // frame and its glyphs do not change between them, and the alphabet an interface uses is small and fixed,
+            // so this fills in the first frames and only hits afterwards.
+            if (!run.TryGet(codepoint, out var metrics))
             {
-                advance = ImGui.CalcTextSize(piece).X;
-                UiTextMeasureCache.StoreGlyphAdvance(codepoint, font, fontSize, advance);
+                metrics = BuildGlyphMetrics(codepoint, fontSize);
+                run.Store(codepoint, metrics);
             }
 
-            x += advance + spacing;
-            index += length;
+            if (painting && metrics.Visible)
+            {
+                glyph[0] = text[at];
+
+                if (length == 2)
+                    glyph[1] = text[at + 1];
+
+                list.AddText(origin + new Vector2(x, 0f), color, (ReadOnlySpan<char>)glyph[..length]);
+            }
+
+            x += metrics.Advance + spacing;
+            at += length;
         }
 
         // The trailing gap belongs after the last character and is not part of the run, exactly as a trailing space
@@ -204,5 +217,29 @@ public static partial class NoireText
             ImGui.Dummy(size);
 
         return size;
+    }
+
+    /// <summary>
+    /// Reads a glyph's advance and visibility out of the font in hand, scaled to the size it is being drawn at.
+    /// </summary>
+    /// <remarks>
+    /// The font's glyph table holds metrics at the font's own baked size, while the run may be drawn at another: the
+    /// stand-in path stretches a built font while the right size rasterizes. A codepoint the font does not carry
+    /// comes back as the font's fallback glyph, which is what ImGui's own renderer draws for it too.
+    /// </remarks>
+    /// <param name="codepoint">The character, as a full codepoint.</param>
+    /// <param name="fontSize">The size the run is drawn at, in real pixels.</param>
+    /// <returns>The glyph's metrics at the drawn size.</returns>
+    private static unsafe UiTextMeasureCache.GlyphMetrics BuildGlyphMetrics(int codepoint, float fontSize)
+    {
+        var font = ImGui.GetFont();
+        var glyph = font.FindGlyph((char)codepoint);
+
+        if (glyph == null)
+            return new UiTextMeasureCache.GlyphMetrics(0f, false, true);
+
+        var scale = font.FontSize > 0f ? fontSize / font.FontSize : 1f;
+
+        return new UiTextMeasureCache.GlyphMetrics(glyph->AdvanceX * scale, glyph->Visible != 0, true);
     }
 }

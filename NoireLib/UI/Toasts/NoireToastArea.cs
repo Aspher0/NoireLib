@@ -686,7 +686,7 @@ public class NoireToastArea : NoireDrawable
             var icon = SeverityIcon(toast.Severity);
 
             using (UiPush.Font(UiBuilder.IconFont))
-                ImGui.TextColored(accent, icon.ToIconString());
+                ImGui.TextColored(accent, UiValueText.Icon(icon));
 
             ImGui.SameLine(0f, theme.ResolveItemSpacing().X * 0.75f);
             contentWidth -= ImGui.GetItemRectSize().X + theme.ResolveItemSpacing().X * 0.75f;
@@ -736,7 +736,7 @@ public class NoireToastArea : NoireDrawable
             IconColor = theme.Resolve(ThemeColor.TextMuted),
         };
 
-        if (NoireButtons.Button($"##{toast.Id}Close", closeStyle, new Vector2(closeWidth, closeWidth)))
+        if (NoireButtons.Button(UiIds.Join("##", toast.Id, "Close"), closeStyle, new Vector2(closeWidth, closeWidth)))
             toast.Dismiss();
     }
 
@@ -759,11 +759,11 @@ public class NoireToastArea : NoireDrawable
         for (var index = 0; index < snapshot.Length; index++)
         {
             var action = snapshot[index];
-            var width = ImGui.CalcTextSize(action.Label).X + NoireTheme.Current.ResolveFramePadding().X * 2f;
+            var width = NoireText.CalcSizeInCurrentFont(action.Label).X + NoireTheme.Current.ResolveFramePadding().X * 2f;
 
             NoireLayout.FlowItem(width, index == 0);
 
-            if (!NoireButtons.Button($"{action.Label}##{toast.Id}Action{index}", action.Tone))
+            if (!NoireButtons.Button(UiIds.Labelled(action.Label, "##", toast.Id, "Action", index), action.Tone))
                 continue;
 
             try

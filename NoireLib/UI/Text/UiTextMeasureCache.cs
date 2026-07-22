@@ -29,7 +29,7 @@ internal static class UiTextMeasureCache
     private readonly record struct Key(string Text, float SizePx, float AmbientSizePx, float Scale, int Generation);
 
     /// <summary>
-    /// Everything one glyph's advance depends on.
+    /// Everything one glyph's rendering depends on.
     /// </summary>
     /// <remarks>
     /// Separate from <see cref="Key"/> because a glyph is a codepoint rather than a string, and the point of caching
@@ -65,7 +65,7 @@ internal static class UiTextMeasureCache
 
     private static readonly HotPathCache<Key, Vector2> Sizes = new(MaxEntries);
     private static readonly HotPathCache<Key, float> CenterOffsets = new(MaxEntries);
-    private static readonly HotPathCache<GlyphKey, float> GlyphAdvances = new(MaxEntries);
+    private static readonly HotPathCache<GlyphKey, GlyphMetrics> Glyphs = new(MaxEntries);
     private static readonly HotPathCache<AmbientKey, Vector2> AmbientSizes = new(MaxEntries);
 
     /// <summary>
@@ -109,29 +109,124 @@ internal static class UiTextMeasureCache
         => CenterOffsets.Set(CenterKey(sizePx, ambientSizePx), offset);
 
     /// <summary>
-    /// Looks up how far one glyph advances the pen.
+    /// What placing one glyph needs to know without asking the font again: how far it moves the pen, and whether it
+    /// paints anything at all.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately not the glyph's atlas quad. The atlas spreads its glyphs across several textures and which one a
+    /// glyph lives on is the renderer's business, so painting stays a draw-list text call per glyph; what this cache
+    /// removes is the measuring around those calls.
+    /// </remarks>
+    /// <param name="Advance">How far the glyph moves the pen.</param>
+    /// <param name="Visible">Whether the glyph paints anything. A space advances the pen and draws nothing.</param>
+    /// <param name="Known">Whether this entry has been filled. What tells a slot of the ASCII table apart from a glyph.</param>
+    internal readonly record struct GlyphMetrics(float Advance, bool Visible, bool Known);
+
+    /// <summary>
+    /// Everything an ASCII glyph table depends on: the run invariants of <see cref="GlyphKey"/>, without the codepoint.
+    /// </summary>
+    private readonly record struct GlyphTableKey(nint Font, float SizePx, float Scale, int Generation);
+
+    /// <summary>
+    /// One metrics table per font and size for the first 128 codepoints, which is nearly every character a label draws.
+    /// </summary>
+    /// <remarks>
+    /// The per-codepoint cache answers correctly but answering costs a key hash and a probe per character per frame,
+    /// and a tracked label asks for every character it draws. Resolving the table once per run turns the per-character
+    /// ask into an array index. Codepoints past the table fall back to the per-codepoint cache.
+    /// </remarks>
+    private static readonly HotPathCache<GlyphTableKey, GlyphMetrics[]> AsciiGlyphs = new(64);
+
+    /// <summary>
+    /// The per-run view over the glyph caches: the ASCII table resolved once, and the shared cache behind it.
+    /// </summary>
+    internal readonly struct GlyphRun
+    {
+        private readonly GlyphMetrics[] ascii;
+        private readonly nint font;
+        private readonly float sizePx;
+
+        internal GlyphRun(GlyphMetrics[] ascii, nint font, float sizePx)
+        {
+            this.ascii = ascii;
+            this.font = font;
+            this.sizePx = sizePx;
+        }
+
+        /// <summary>
+        /// Looks up how one glyph renders, through the table when the codepoint fits it.
+        /// </summary>
+        /// <param name="codepoint">The character, as a full codepoint.</param>
+        /// <param name="metrics">The remembered metrics.</param>
+        /// <returns>Whether the metrics were already known.</returns>
+        internal bool TryGet(int codepoint, out GlyphMetrics metrics)
+        {
+            if ((uint)codepoint < 128u)
+            {
+                metrics = ascii[codepoint];
+                return metrics.Known;
+            }
+
+            return TryGetGlyphMetrics(codepoint, font, sizePx, out metrics);
+        }
+
+        /// <summary>
+        /// Remembers how one glyph renders, in the table when the codepoint fits it.
+        /// </summary>
+        /// <param name="codepoint">The character, as a full codepoint.</param>
+        /// <param name="metrics">The metrics.</param>
+        internal void Store(int codepoint, GlyphMetrics metrics)
+        {
+            if ((uint)codepoint < 128u)
+                ascii[codepoint] = metrics;
+            else
+                StoreGlyphMetrics(codepoint, font, sizePx, metrics);
+        }
+    }
+
+    /// <summary>
+    /// Opens the per-run glyph view for the font in hand, resolving the ASCII table once for the whole run.
+    /// </summary>
+    /// <param name="font">The font currently pushed. See <see cref="CurrentFont"/>.</param>
+    /// <param name="sizePx">The size of the font currently pushed.</param>
+    /// <returns>The view to look glyphs up through.</returns>
+    internal static GlyphRun OpenGlyphRun(nint font, float sizePx)
+    {
+        var key = new GlyphTableKey(font, sizePx, NoireUI.Scale, UiFontCache.Generation);
+
+        if (!AsciiGlyphs.TryGet(key, out var ascii))
+        {
+            ascii = new GlyphMetrics[128];
+            AsciiGlyphs.Set(key, ascii);
+        }
+
+        return new GlyphRun(ascii, font, sizePx);
+    }
+
+    /// <summary>
+    /// Looks up how one glyph renders.
     /// </summary>
     /// <param name="codepoint">The character, as a full codepoint so a surrogate pair is one entry.</param>
     /// <param name="font">The font currently pushed. See <see cref="CurrentFont"/>.</param>
     /// <param name="sizePx">The size of the font currently pushed.</param>
-    /// <param name="advance">The remembered advance.</param>
-    /// <returns>Whether the advance was already known.</returns>
-    internal static bool TryGetGlyphAdvance(int codepoint, nint font, float sizePx, out float advance)
-        => GlyphAdvances.TryGet(
+    /// <param name="metrics">The remembered metrics.</param>
+    /// <returns>Whether the metrics were already known.</returns>
+    internal static bool TryGetGlyphMetrics(int codepoint, nint font, float sizePx, out GlyphMetrics metrics)
+        => Glyphs.TryGet(
             new GlyphKey(codepoint, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
-            out advance);
+            out metrics);
 
     /// <summary>
-    /// Remembers how far one glyph advances the pen.
+    /// Remembers how one glyph renders.
     /// </summary>
     /// <param name="codepoint">The character, as a full codepoint.</param>
     /// <param name="font">The font that was current.</param>
     /// <param name="sizePx">The size of the font that was current.</param>
-    /// <param name="advance">The advance.</param>
-    internal static void StoreGlyphAdvance(int codepoint, nint font, float sizePx, float advance)
-        => GlyphAdvances.Set(
+    /// <param name="metrics">The metrics.</param>
+    internal static void StoreGlyphMetrics(int codepoint, nint font, float sizePx, GlyphMetrics metrics)
+        => Glyphs.Set(
             new GlyphKey(codepoint, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
-            advance);
+            metrics);
 
     /// <summary>
     /// Looks up what a string measured against the font already pushed.
@@ -199,7 +294,8 @@ internal static class UiTextMeasureCache
     {
         Sizes.Clear();
         CenterOffsets.Clear();
-        GlyphAdvances.Clear();
+        Glyphs.Clear();
+        AsciiGlyphs.Clear();
         AmbientSizes.Clear();
     }
 }

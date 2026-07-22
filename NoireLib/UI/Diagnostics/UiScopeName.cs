@@ -53,4 +53,25 @@ internal sealed class UiScopeName
     /// <returns>The handle for <paramref name="name"/>.</returns>
     internal static UiScopeName For(string name)
         => interned.GetOrAdd(name, static key => new UiScopeName(key, Interlocked.Increment(ref nextId)));
+
+    /// <summary>
+    /// The handle for a name that is guaranteed to arrive as the same string instance every time, such as one built by
+    /// <see cref="UiIds"/>.
+    /// </summary>
+    /// <remarks>
+    /// The instance-keyed table answers with a reference hash instead of hashing the characters, which matters for the
+    /// widget scopes: each widget resolves its name on every draw while the profiler is on, and this is what keeps
+    /// that resolution from re-hashing the same composed id sixty times a second.
+    /// </remarks>
+    /// <param name="name">The scope name, as the instance handed out for it every time.</param>
+    /// <returns>The handle for <paramref name="name"/>, the same one <see cref="For"/> answers.</returns>
+    internal static UiScopeName ForInstance(string name)
+        => byInstance.GetOrAdd(name, static key => For(key));
+
+    /// <summary>
+    /// The handle for each string instance already asked about through <see cref="ForInstance"/>. A second instance of
+    /// the same content resolves through <see cref="For"/> to the same handle, so a miss costs one content hash and
+    /// never a wrong answer.
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, UiScopeName> byInstance = new(StringInstanceComparer.Instance);
 }

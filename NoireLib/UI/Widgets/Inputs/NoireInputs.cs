@@ -1,8 +1,6 @@
 ﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -181,19 +179,23 @@ public static class NoireInputs
 
         // Cached because a format is a constant per configuration, and the field it belongs to is redrawn every frame:
         // built inline, every numeric field on screen would compose the same short string sixty times a second.
-        if (NumberFormats.TryGetValue((decimals, unit), out var cached))
+        var key = new FormatKey(decimals, unit);
+
+        if (NumberFormats.TryGet(key, out var cached))
             return cached;
 
         var built = unit.Length == 0
             ? $"%.{decimals}f"
             : $"%.{decimals}f {unit.Replace("%", "%%")}";
 
-        if (NumberFormats.Count >= MaxNumberFormats)
-            NumberFormats.Clear();
-
-        NumberFormats[(decimals, unit)] = built;
+        NumberFormats.Set(key, built);
         return built;
     }
+
+    /// <summary>
+    /// How a number is written: the decimals asked for and the unit after them.
+    /// </summary>
+    private readonly record struct FormatKey(int Decimals, string Unit);
 
     /// <summary>
     /// How many distinct number formats are kept. A format is a decimal count and a unit, so a plugin has as many as it
@@ -201,7 +203,7 @@ public static class NoireInputs
     /// </summary>
     private const int MaxNumberFormats = 256;
 
-    private static readonly Dictionary<(int Decimals, string Unit), string> NumberFormats = new();
+    private static readonly HotPathCache<FormatKey, string> NumberFormats = new(MaxNumberFormats);
 
     #endregion
 
@@ -239,7 +241,7 @@ public static class NoireInputs
 
         var textKey = UiIds.For("NoireInputs.Duration.", id);
         var editing = NoireUiSession.TryGet<string>(textKey, out var pending) && pending != null;
-        var text = editing ? pending! : DurationHelper.Format(value);
+        var text = editing ? pending! : UiValueText.Duration(value);
 
         ImGui.InputTextWithHint(UiIds.For("###NoireInputsDuration_", id), resolved.Hint, ref text, 64);
 
@@ -278,7 +280,7 @@ public static class NoireInputs
             ImGui.PushTextWrapPos(-1f);
 
             if (editing && DurationHelper.TryParse(text, resolved.BareUnit, out var preview))
-                NoireText.Muted(DurationHelper.Format(Clamp(preview, resolved.Min, resolved.Max)), TextSize.Caption);
+                NoireText.Muted(UiValueText.Duration(Clamp(preview, resolved.Min, resolved.Max)), TextSize.Caption);
             else
                 ImGui.Dummy(new Vector2(1f, NoireText.LineHeight()));
 
@@ -354,7 +356,7 @@ public static class NoireInputs
 
         var textKey = UiIds.For("NoireInputs.HexColor.", id);
         var editing = NoireUiSession.TryGet<string>(textKey, out var pending) && pending != null;
-        var text = editing ? pending! : Write(value, resolved.ShowAlpha);
+        var text = editing ? pending! : UiValueText.HexColor(value, resolved.ShowAlpha);
 
         ImGui.SetNextItemWidth(NoireText.CalcSize("#12345678").X + (NoireTheme.Current.ResolveFramePadding().X * 2f));
         ImGui.InputTextWithHint(UiIds.For("###NoireInputsHex_", id), "#RRGGBB", ref text, 16);
@@ -396,9 +398,6 @@ public static class NoireInputs
         EndRow(id, Refusal(id) ?? Describe(resolved.Validate, value));
         return changed;
     }
-
-    private static string Write(Vector4 color, bool withAlpha)
-        => withAlpha ? ColorHelper.Vector4ToHexAlpha(color) : ColorHelper.Vector4ToHex(color);
 
     #endregion
 
@@ -516,10 +515,7 @@ public static class NoireInputs
     /// <returns>How much of the row the label column took, so a caller drawing its own control knows where it starts.</returns>
     internal static float BeginRow(string label, float width, out string id, bool sizeField = true, float extraReserve = 0f, float? labelWidth = null)
     {
-        var marker = label.IndexOf("###", StringComparison.Ordinal);
-        id = marker >= 0 ? label[(marker + 3)..] : label;
-
-        var visible = marker >= 0 ? label[..marker] : label;
+        UiLabel.Split(label, out var visible, out id);
 
         // Measured from where the row starts, before the label moves the cursor, since that is where the column the
         // row has to fit inside begins.

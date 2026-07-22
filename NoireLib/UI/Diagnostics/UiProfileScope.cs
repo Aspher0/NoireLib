@@ -63,10 +63,12 @@ internal static class UiProfile
     /// <returns>The open scope. Dispose it to close the measurement.</returns>
     internal static UiProfileScope Widget(string kind, string id)
     {
-        // The name is composed only while the profiler is on, since composing it costs the same dictionary lookup the
-        // measurement itself would.
+        // The name is composed only while the profiler is on, since composing it costs a dictionary lookup of its
+        // own. UiIds returns the same string instance for the same widget every frame, which is what lets the handle
+        // be found by reference rather than by hashing the composed id again. The scope is built directly rather than
+        // through the Measure extension, sparing a call on a path every widget takes every frame.
         var profiler = NoireUI.Profiler;
-        return profiler.Measure(profiler.Enabled ? UiScopeName.For(UiIds.Join(kind, ":", id)) : null);
+        return new UiProfileScope(profiler, profiler.Enabled ? UiScopeName.ForInstance(UiIds.Join(kind, ":", id)) : null);
     }
 }
 

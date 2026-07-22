@@ -618,7 +618,6 @@ public class NoireComboBox<T>
         if (comboOpen)
             return changedThisFrame;
 
-        ClaimWheelIfCycling();
         HandleClosedComboInteractions();
 
         return changedThisFrame;
@@ -760,34 +759,6 @@ public class NoireComboBox<T>
         NoireShapes.Stroke(chevron, color, MathF.Max(1f, NoireUI.Scaled(1.5f)), closed: false);
     }
 
-    /// <summary>
-    /// Tells ImGui that the combo, not the window it sits in, is what the wheel is for right now.
-    /// </summary>
-    /// <remarks>
-    /// A wheel event the combo is cycling with must not also move the window behind it, and ImGui settles what a wheel
-    /// event scrolls at the start of a frame, before any widget code runs: it cannot be handed back afterwards, only
-    /// claimed in advance. Declaring the item as using the wheel is exactly that claim, and ImGui honors it by dropping
-    /// the event for scrolling purposes entirely, so nothing anywhere moves. The raw wheel value stays readable, which is
-    /// what the cycling itself runs on.<br/>
-    /// The claim is made only while the combo is really cycling, so an ordinary scroll over an idle combo still moves the
-    /// window as the user expects. It applies from the next frame on, since ImGui matches the claim against the item that
-    /// was hovered on the previous one; in practice a binding is always already held for a frame before the wheel turns.<br/>
-    /// Must be called while the combo is still the last submitted item: the claim attaches to that item, and the hint
-    /// tooltip drawn afterwards submits items of its own.
-    /// </remarks>
-    private void ClaimWheelIfCycling()
-    {
-        if (!WheelCycleEnabled || items.Count == 0 || !ImGui.IsItemHovered())
-            return;
-
-        if (!TryResolveWheelCycleBinding(out var binding))
-            return;
-
-        if (!binding.IsEmpty && !KeybindsHelper.IsBindingHeld(binding))
-            return;
-
-        ImGuiP.SetItemUsingMouseWheel();
-    }
 
     /// <summary>
     /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/> options.<br/>
@@ -1155,8 +1126,22 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Handles the held binding + wheel cycling and the hint tooltip on the closed combo.
+    /// Handles the held binding + wheel cycling and the hint tooltip on the closed combo, including the wheel claim
+    /// that stops a cycling scroll from also moving the window.
     /// </summary>
+    /// <remarks>
+    /// One pass for everything the hover needs, so the binding is resolved and the held keys are read once per frame
+    /// rather than once per concern: reading the keys is a system call per key, which is the expensive kind of read to
+    /// repeat sixty times a second.<br/>
+    /// The wheel claim has to be made while the combo is still the last submitted item, because ImGui attaches the
+    /// claim to that item and the hint tooltip submits items of its own; that is why it happens before the tooltip
+    /// rather than after. ImGui settles what a wheel event scrolls at the start of a frame, before any widget code
+    /// runs, so the claim cannot be handed back afterwards, only declared in advance; ImGui honors it by dropping the
+    /// event for scrolling entirely while the raw wheel value stays readable, which is what the cycling runs on. The
+    /// claim is made only while the combo is really cycling, so an ordinary scroll over an idle combo still moves the
+    /// window, and it applies from the next frame on, since ImGui matches it against the item hovered on the previous
+    /// one; in practice a binding is always already held for a frame before the wheel turns.
+    /// </remarks>
     private void HandleClosedComboInteractions()
     {
         if (!WheelCycleEnabled || !ImGui.IsItemHovered())
@@ -1165,13 +1150,15 @@ public class NoireComboBox<T>
         if (!TryResolveWheelCycleBinding(out var binding))
             return;
 
+        var held = binding.IsEmpty || KeybindsHelper.IsBindingHeld(binding);
+
+        if (held && items.Count > 0)
+            ImGuiP.SetItemUsingMouseWheel();
+
         if (WheelCycleHintEnabled)
             NoireTooltip.Show(GetWheelCycleHint(binding), WheelCycleHintStyle, UiIds.For("NoireComboHint_", Id));
 
-        if (items.Count == 0)
-            return;
-
-        if (!binding.IsEmpty && !KeybindsHelper.IsBindingHeld(binding))
+        if (items.Count == 0 || !held)
             return;
 
         var wheel = ImGui.GetIO().MouseWheel;

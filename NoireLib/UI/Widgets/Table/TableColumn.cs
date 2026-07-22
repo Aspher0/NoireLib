@@ -108,7 +108,10 @@ public sealed class TableColumn<T>
     /// </summary>
     /// <remarks>
     /// Resolved in order of how much the caller said: an explicit <see cref="Sort"/>, then a <see cref="SortKey"/>,
-    /// then the text. Rule 5's shape applied to behaviour rather than to style.
+    /// then the text. Rule 5's shape applied to behaviour rather than to style.<br/>
+    /// The table asks this several times a frame, once to decide whether it is sortable at all and once per column
+    /// while declaring them, so the two fallbacks are held rather than converted afresh. Converting a method group of
+    /// an instance method builds a delegate every time, which measured 192 bytes a frame on a two-column table.
     /// </remarks>
     /// <returns>The comparison, or <see langword="null"/>.</returns>
     public Comparison<T>? ResolveComparison()
@@ -119,11 +122,16 @@ public sealed class TableColumn<T>
         if (Sort != null)
             return Sort;
 
+        // Held rather than rebuilt, and still correct when the caller swaps the key or the text afterwards: the
+        // delegate is bound to this column and reads whichever it was given at the moment it runs.
         if (SortKey != null)
-            return CompareKeys;
+            return keyComparison ??= CompareKeys;
 
-        return Text != null ? CompareText : null;
+        return Text != null ? textComparison ??= CompareText : null;
     }
+
+    private Comparison<T>? keyComparison;
+    private Comparison<T>? textComparison;
 
     private int CompareKeys(T left, T right)
     {

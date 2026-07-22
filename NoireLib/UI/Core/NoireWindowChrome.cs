@@ -289,7 +289,7 @@ public static class NoireWindowChrome
 
         ImGui.SetCursorScreenPos(centre - new Vector2(half, half));
 
-        var clicked = ImGui.InvisibleButton($"###NoireWindowChrome_{id}", new Vector2(size, size));
+        var clicked = ImGui.InvisibleButton(UiIds.For("###NoireWindowChrome_", id), new Vector2(size, size));
         var hovered = ImGui.IsItemHovered();
         var held = ImGui.IsItemActive();
 

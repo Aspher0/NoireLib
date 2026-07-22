@@ -88,6 +88,18 @@ public sealed class UiDrawCoverageTests : IClassFixture<UiHarness>
     }
 
     [Fact]
+    public void Sunburst_InnerSize_StartsTheRaysOffTheCentre()
+    {
+        // A stated inner distance turns each ray from a triangle into a quad: one extra vertex per ray per layer.
+        // Geometry is the observable because the fading path writes its vertices directly, so the count is exact.
+        // The default style draws twenty four rays in three softness layers.
+        var tipped = Redirected(static () => NoireShapes.Sunburst(Centre, 60f, White));
+        var annular = Redirected(static () => NoireShapes.Sunburst(Centre, 60f, White, new SunburstStyle { InnerSize = 20f }));
+
+        (annular.TotalVtxCount - tipped.TotalVtxCount).Should().Be(24 * 3, "each ray of each layer gains its fourth corner");
+    }
+
+    [Fact]
     public void TrackedText_RegistersUnderTheSameNameAsEveryOtherPieceOfText()
     {
         // NoireText.Tracked.cs is a second file of the same partial class, and it has to report as NoireText rather

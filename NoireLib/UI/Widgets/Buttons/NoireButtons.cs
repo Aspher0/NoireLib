@@ -705,7 +705,7 @@ public static class NoireButtons
         if (style.Icon.HasValue)
         {
             using (UiPush.Font(UiBuilder.IconFont))
-                drawList.AddText(new Vector2(x, centerY - iconSize.Y * 0.5f), iconColor, style.Icon.Value.ToIconString());
+                drawList.AddText(new Vector2(x, centerY - iconSize.Y * 0.5f), iconColor, UiValueText.Icon(style.Icon.Value));
 
             x += iconSize.X + (text.Length > 0 ? gap : 0f);
         }
@@ -742,7 +742,7 @@ public static class NoireButtons
     private static Vector2 MeasureIcon(FontAwesomeIcon icon)
     {
         using (UiPush.Font(UiBuilder.IconFont))
-            return NoireText.CalcSizeInCurrentFont(icon.ToIconString());
+            return NoireText.CalcSizeInCurrentFont(UiValueText.Icon(icon));
     }
 
     private static Vector4 BaseColorFor(ButtonTone tone, NoireTheme theme) => tone switch
@@ -758,11 +758,7 @@ public static class NoireButtons
     /// <summary>
     /// The part of a label that is displayed, dropping the "##" id suffix ImGui uses.
     /// </summary>
-    private static string VisibleLabel(string label)
-    {
-        var marker = label.IndexOf("##", StringComparison.Ordinal);
-        return marker < 0 ? label : label[..marker];
-    }
+    private static string VisibleLabel(string label) => UiLabel.Visible(label);
 
     /// <summary>
     /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.

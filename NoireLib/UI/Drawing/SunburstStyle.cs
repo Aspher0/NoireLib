@@ -25,6 +25,19 @@ public sealed class SunburstStyle
     public float InnerRatio { get; set; }
 
     /// <summary>
+    /// Where the rays begin, as a distance from the centre at 100% (see <see cref="NoireUI.Scale"/>), for lining the
+    /// burst up with something that has a size of its own rather than a share of the radius.<br/>
+    /// Takes precedence over <see cref="InnerRatio"/> when set. A ratio moves with the radius, so a burst sized from
+    /// a window has its hole grow and shrink as the window does; a distance stays put, which is what an ornament
+    /// drawn at a fixed radius inside the burst needs the hole to do.
+    /// </summary>
+    /// <remarks>
+    /// Clamped to stay inside the radius, so a burst smaller than the hole asked for draws a thin outer band rather
+    /// than nothing.
+    /// </remarks>
+    public float? InnerSize { get; set; }
+
+    /// <summary>
     /// How far the pattern is turned, in fractions of a full turn.
     /// </summary>
     public float RotationTurns { get; set; }

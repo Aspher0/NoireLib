@@ -143,13 +143,34 @@ public static class KeybindsHelper
     }
 
     /// <summary>
+    /// The last async modifier read and the millisecond it was taken, so every caller within it shares one read.
+    /// </summary>
+    /// <remarks>
+    /// Reading the physical modifiers is up to nine <c>GetAsyncKeyState</c> calls, each a kernel transition, and that
+    /// measured in the tens of microseconds per read inside the game. The state is polled rather than event driven, so
+    /// two reads within the same millisecond cannot disagree in any way a poll could act on; a hotkey held for less
+    /// than a millisecond was never going to be seen by polling in the first place.
+    /// </remarks>
+    private static long asyncModifierTick = -1;
+    private static (bool Ctrl, bool Shift, bool Alt) asyncModifierState;
+
+    /// <summary>
     /// Returns the current modifier key state read from the physical keyboard through the Win32 async key state.<br/>
-    /// This is thread independent, needs no active frame, and is unaffected by a consumer suppressing a key through <see cref="NoireService.KeyState"/>.
+    /// This is thread independent, needs no active frame, and is unaffected by a consumer suppressing a key through <see cref="NoireService.KeyState"/>.<br/>
+    /// The keyboard is asked at most once per millisecond; callers within the same millisecond share the read.
     /// </summary>
     /// <returns>The current modifier key state.</returns>
     public static (bool Ctrl, bool Shift, bool Alt) GetAsyncModifierState()
     {
-        return (IsAsyncCtrlDown(), IsAsyncShiftDown(), IsAsyncAltDown());
+        var tick = Environment.TickCount64;
+
+        if (tick == asyncModifierTick)
+            return asyncModifierState;
+
+        asyncModifierState = (IsAsyncCtrlDown(), IsAsyncShiftDown(), IsAsyncAltDown());
+        asyncModifierTick = tick;
+
+        return asyncModifierState;
     }
 
     /// <summary>
@@ -396,19 +417,23 @@ public static class KeybindsHelper
         return NoireService.KeyState[VkAlt] || NoireService.KeyState[VkLeftAlt] || NoireService.KeyState[VkRightAlt];
     }
 
+    // The generic codes report the left and right instances combined, which GetAsyncKeyState documents for
+    // VK_SHIFT, VK_CONTROL and VK_MENU. Asking for the sides as well was two extra kernel transitions per
+    // modifier, per read, for an answer the first call already carried.
+
     private static bool IsAsyncCtrlDown()
     {
-        return IsAsyncKeyDown(VkControl) || IsAsyncKeyDown(VkLeftControl) || IsAsyncKeyDown(VkRightControl);
+        return IsAsyncKeyDown(VkControl);
     }
 
     private static bool IsAsyncShiftDown()
     {
-        return IsAsyncKeyDown(VkShift) || IsAsyncKeyDown(VkLeftShift) || IsAsyncKeyDown(VkRightShift);
+        return IsAsyncKeyDown(VkShift);
     }
 
     private static bool IsAsyncAltDown()
     {
-        return IsAsyncKeyDown(VkAlt) || IsAsyncKeyDown(VkLeftAlt) || IsAsyncKeyDown(VkRightAlt);
+        return IsAsyncKeyDown(VkAlt);
     }
 
     private static List<string> FormatModifierParts(bool ctrl, bool shift, bool alt)

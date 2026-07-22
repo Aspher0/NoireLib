@@ -453,7 +453,7 @@ public class NoireOverlayButton : NoireDrawable
             ImGui.SetCursorPos(new Vector2(cursorX, (size.Y - iconSize.Value.Y) / 2f));
             using (UiPush.Color(ImGuiCol.Text, Style.IconColor ?? Style.TextColor ?? Vector4.One, (Style.IconColor ?? Style.TextColor).HasValue))
             using (UiPush.Font(UiBuilder.IconFont))
-                ImGui.TextUnformatted(Icon!.Value.ToIconString());
+                ImGui.TextUnformatted(UiValueText.Icon(Icon!.Value));
 
             cursorX += iconSize.Value.X + Style.ScaledContentSpacing;
         }
@@ -499,7 +499,7 @@ public class NoireOverlayButton : NoireDrawable
         if (Icon.HasValue)
         {
             using (UiPush.Font(UiBuilder.IconFont))
-                iconSize = ImGui.CalcTextSize(Icon.Value.ToIconString()) * externalFontScale;
+                iconSize = NoireText.CalcSizeInCurrentFont(UiValueText.Icon(Icon.Value)) * externalFontScale;
         }
 
         Vector2? imageSize = null;
@@ -511,7 +511,7 @@ public class NoireOverlayButton : NoireDrawable
 
         Vector2? textSize = null;
         if (!string.IsNullOrEmpty(Text))
-            textSize = ImGui.CalcTextSize(Text) * externalFontScale;
+            textSize = NoireText.CalcSizeInCurrentFont(Text) * externalFontScale;
 
         return (iconSize, imageSize, textSize);
     }

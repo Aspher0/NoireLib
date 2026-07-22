@@ -126,7 +126,11 @@ public static partial class NoireUI
             tooltipCounter = 0;
         }
 
-        return $"###NoireTooltip_{tooltipCounter++}";
+        // Built through the id cache rather than interpolated, so the tooltips a frame shows cost nothing after the
+        // first frame that showed that many. The empty owner is what puts the separator in the right place: the shape
+        // is {prefix}{owner}_{index}, so a prefix without its own trailing underscore composes the same string this
+        // replaced, which the tooltip id test asserts against the literal.
+        return UiIds.For("###NoireTooltip", string.Empty, tooltipCounter++);
     }
 
     /// <summary>

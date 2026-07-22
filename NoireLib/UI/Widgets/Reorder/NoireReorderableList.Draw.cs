@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Keys;
 using NoireLib.Helpers;
 using NoireLib.HotkeyManager;
@@ -146,7 +146,7 @@ public sealed partial class NoireReorderableList<T>
         var buttonWidth = ButtonColumnWidth(height);
         var size = new Vector2(width, height);
 
-        if (ImGui.InvisibleButton($"###NoireReorderRow_{Id}_{index}", size))
+        if (ImGui.InvisibleButton(UiIds.For("###NoireReorderRow_", Id, index), size))
             focusedIndex = index;
 
         // Without this the row's own hit box, submitted first and covering everything, keeps the click and the delete
@@ -163,24 +163,31 @@ public sealed partial class NoireReorderableList<T>
             dropTarget = index;
         }
 
-        PaintRow(origin, size, isDragging, hovered && draggingIndex < 0, isFocused, theme);
-        PaintGrip(origin, size, gripWidth, isDragging || hovered, theme);
+        // A row scrolled out of the list is still laid out, still hit-tested and still able to start or receive a
+        // drag, because the drag has to keep working over the whole list and not only over the part of it on screen.
+        // What it stops doing is painting: the plate, the grip, the label and the two buttons are all geometry ImGui
+        // would throw away against the clip rect a moment later.
+        if (ImGui.IsRectVisible(origin, origin + size))
+        {
+            PaintRow(origin, size, isDragging, hovered && draggingIndex < 0, isFocused, theme);
+            PaintGrip(origin, size, gripWidth, isDragging || hovered, theme);
 
-        // The content is overlaid on the row rather than drawn into it, because the row is one invisible button: that
-        // is what makes the whole row draggable and hoverable rather than only the parts nothing else covers.
-        var contentWidth = MathF.Max(0f, width - gripWidth - buttonWidth);
+            // The content is overlaid on the row rather than drawn into it, because the row is one invisible button:
+            // that is what makes the whole row draggable and hoverable rather than only the parts nothing else covers.
+            var contentWidth = MathF.Max(0f, width - gripWidth - buttonWidth);
 
-        ImGui.SetCursorScreenPos(new Vector2(
-            origin.X + gripWidth,
-            origin.Y + (height * 0.5f) - NoireText.CenterOffset()));
+            ImGui.SetCursorScreenPos(new Vector2(
+                origin.X + gripWidth,
+                origin.Y + (height * 0.5f) - NoireText.CenterOffset()));
 
-        DrawContent(item, index, isDragging, new Vector2(contentWidth, height));
+            DrawContent(item, index, isDragging, new Vector2(contentWidth, height));
 
-        if (buttonWidth > 0f)
-            DrawRowButtons(index, origin, size, buttonWidth, height);
+            if (buttonWidth > 0f)
+                DrawRowButtons(index, origin, size, buttonWidth, height);
 
-        if (draggingIndex >= 0 && dropTarget == index)
-            PaintDropMarker(origin, size, theme);
+            if (draggingIndex >= 0 && dropTarget == index)
+                PaintDropMarker(origin, size, theme);
+        }
 
         ImGui.SetCursorScreenPos(origin);
         ImGui.Dummy(size);
@@ -242,7 +249,7 @@ public sealed partial class NoireReorderableList<T>
         {
             ImGui.SetCursorScreenPos(new Vector2(x, origin.Y));
 
-            if (SmallGlyphButton($"###NoireReorderCopy_{Id}_{index}", height, GlyphShape.Duplicate))
+            if (SmallGlyphButton(UiIds.For("###NoireReorderCopy_", Id, index), height, GlyphShape.Duplicate))
                 pendingDuplicate = index;
 
             x += height;
@@ -253,7 +260,7 @@ public sealed partial class NoireReorderableList<T>
 
         ImGui.SetCursorScreenPos(new Vector2(x, origin.Y));
 
-        if (SmallGlyphButton($"###NoireReorderDelete_{Id}_{index}", height, GlyphShape.Cross))
+        if (SmallGlyphButton(UiIds.For("###NoireReorderDelete_", Id, index), height, GlyphShape.Cross))
             pendingRemoval = index;
     }
 

@@ -1,5 +1,4 @@
 ﻿using Dalamud.Bindings.ImGui;
-using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -41,9 +40,23 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
     public static void Ring(float value, RingStyle? style = null)
     {
-        using var draw = UiDraw.Begin();
-
         style ??= DefaultRingStyle;
+        Ring(value, style, style.Label);
+    }
+
+    /// <summary>
+    /// Draws a ring with its label already worked out.
+    /// </summary>
+    /// <remarks>
+    /// The label is passed rather than read off the style so that a countdown can put the time left on a caller's style
+    /// without copying it. Copying it per frame is what a countdown used to cost.
+    /// </remarks>
+    /// <param name="value">The fraction filled, from 0 to 1.</param>
+    /// <param name="style">How to draw it.</param>
+    /// <param name="label">The text in the middle, or <see langword="null"/> for none.</param>
+    private static void Ring(float value, RingStyle style, string? label)
+    {
+        using var draw = UiDraw.Begin();
 
         var size = MathF.Max(style.ScaledSize, 1f);
         var origin = ImGui.GetCursorScreenPos();
@@ -65,8 +78,8 @@ public static partial class NoireGauges
 
         ImGui.Dummy(new Vector2(size, size));
 
-        if (!string.IsNullOrEmpty(style.Label))
-            DrawCentredLabel(style.Label, style.LabelSize, style.LabelColor ?? fill, centre);
+        if (!string.IsNullOrEmpty(label))
+            DrawCentredLabel(label, style.LabelSize, style.LabelColor ?? fill, centre);
     }
 
     #endregion
@@ -80,9 +93,22 @@ public static partial class NoireGauges
     /// <param name="style">How to draw it, or <see langword="null"/> for the default bar.</param>
     public static void Bar(float value, BarStyle? style = null)
     {
-        using var draw = UiDraw.Begin();
-
         style ??= DefaultBarStyle;
+        Bar(value, style, style.Label);
+    }
+
+    /// <summary>
+    /// Draws a bar with its label already worked out.
+    /// </summary>
+    /// <remarks>
+    /// See the ring's private overload for why the label is passed rather than read off the style.
+    /// </remarks>
+    /// <param name="value">The fraction filled, from 0 to 1.</param>
+    /// <param name="style">How to draw it.</param>
+    /// <param name="label">The text over the bar, or <see langword="null"/> for none.</param>
+    private static void Bar(float value, BarStyle style, string? label)
+    {
+        using var draw = UiDraw.Begin();
 
         var width = style.Width > 0f ? style.ScaledWidth : NoireLayout.ContentWidth();
         var height = MathF.Max(style.ScaledHeight, 1f);
@@ -130,8 +156,8 @@ public static partial class NoireGauges
         DrawMarks(style, origin, width, height);
         ImGui.Dummy(new Vector2(width, height));
 
-        if (!string.IsNullOrEmpty(style.Label))
-            DrawBarLabel(style, origin, width, height);
+        if (!string.IsNullOrEmpty(label))
+            DrawBarLabel(style, label, origin, width, height);
     }
 
     /// <summary>
@@ -159,12 +185,12 @@ public static partial class NoireGauges
     /// Draws the label over a bar, aligned along it.
     /// </summary>
     /// <param name="style">The bar style.</param>
+    /// <param name="text">The text to draw.</param>
     /// <param name="origin">The top left of the bar.</param>
     /// <param name="width">The bar width in real pixels.</param>
     /// <param name="height">The bar height in real pixels.</param>
-    private static void DrawBarLabel(BarStyle style, Vector2 origin, float width, float height)
+    private static void DrawBarLabel(BarStyle style, string text, Vector2 origin, float width, float height)
     {
-        var text = style.Label!;
         var measured = NoireText.CalcSize(text, style.LabelSize);
         var x = origin.X + ((width - measured.X) * Math.Clamp(style.LabelAlign, 0f, 1f));
         var y = origin.Y + ((height - measured.Y) * 0.5f);
@@ -234,12 +260,7 @@ public static partial class NoireGauges
     public static void Timer(TimeSpan remaining, TimeSpan total, RingStyle? style = null)
     {
         style ??= DefaultRingStyle;
-
-        var fraction = TimerFraction(remaining, total);
-        var labelled = style.Label != null ? style : style.Clone();
-
-        labelled.Label ??= DurationHelper.Format(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
-        Ring(fraction, labelled);
+        Ring(TimerFraction(remaining, total), style, style.Label ?? Remaining(remaining));
     }
 
     /// <summary>
@@ -251,13 +272,20 @@ public static partial class NoireGauges
     public static void Timer(TimeSpan remaining, TimeSpan total, BarStyle? style)
     {
         style ??= DefaultBarStyle;
-
-        var fraction = TimerFraction(remaining, total);
-        var labelled = style.Label != null ? style : style.Clone();
-
-        labelled.Label ??= DurationHelper.Format(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
-        Bar(fraction, labelled);
+        Bar(TimerFraction(remaining, total), style, style.Label ?? Remaining(remaining));
     }
+
+    /// <summary>
+    /// Writes the time left on a countdown, never as a negative.
+    /// </summary>
+    /// <remarks>
+    /// A countdown that has run out reads <c>0s</c> rather than counting up past zero, and the text is remembered for
+    /// as long as the second lasts: a countdown redraws sixty times for each value it shows.
+    /// </remarks>
+    /// <param name="remaining">How much time is left.</param>
+    /// <returns>The time left, in shorthand.</returns>
+    private static string Remaining(TimeSpan remaining)
+        => UiValueText.Duration(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
 
     /// <summary>
     /// How full a countdown is, from 1 at the start to 0 when it runs out.

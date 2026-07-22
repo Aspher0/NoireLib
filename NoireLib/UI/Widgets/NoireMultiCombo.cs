@@ -3,7 +3,9 @@ using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
+using System.Text;
 
 namespace NoireLib.UI;
 
@@ -35,7 +37,13 @@ public sealed class NoireMultiCombo<T>
     private readonly List<(int Index, int Score)> scored = new();
     private readonly HashSet<T> selected;
 
+    /// <summary>
+    /// Where the preview text is composed, kept between frames so that composing it costs nothing once it has grown.
+    /// </summary>
+    private readonly StringBuilder previewBuilder = new(64);
+
     private string filterText = string.Empty;
+    private string previewText = string.Empty;
     private int highlightIndex = -1;
     private bool scrollToHighlight;
     private bool changedThisFrame;
@@ -560,18 +568,29 @@ public sealed class NoireMultiCombo<T>
             NoireText.Draw(display);
     }
 
+    /// <summary>
+    /// Builds the text shown on the closed box, naming the selected items and summarising the rest.
+    /// </summary>
+    /// <remarks>
+    /// Composed into a builder the widget keeps and only turned into a string when the text has actually changed. This
+    /// runs on every frame the combo draws, open or closed, and the selection behind it moves when the user picks
+    /// something and at no other time, so the frames in between were producing the string already on the box.<br/>
+    /// The items are walked rather than <see cref="Selected"/> read, because that property snapshots the selection into
+    /// a new list on every read and this needs only the first few of them. A custom <see cref="PreviewFunc"/> is still
+    /// handed that snapshot, which is the shape it is declared with, and still runs every frame: it is the consumer's
+    /// callback and the library promises nothing about when it is called.
+    /// </remarks>
+    /// <returns>The preview text.</returns>
     internal string BuildPreview()
     {
-        var chosen = Selected;
-
-        if (chosen.Count == 0)
+        if (selected.Count == 0)
             return PreviewPlaceholder;
 
         if (PreviewFunc is { } custom)
         {
             try
             {
-                return custom(chosen) ?? string.Empty;
+                return custom(Selected) ?? string.Empty;
             }
             catch (Exception ex)
             {
@@ -579,16 +598,69 @@ public sealed class NoireMultiCombo<T>
             }
         }
 
-        var named = Math.Min(Math.Max(PreviewMaxItems, 1), chosen.Count);
-        var preview = string.Empty;
+        var named = Math.Min(Math.Max(PreviewMaxItems, 1), selected.Count);
+        var written = 0;
+        var remaining = 0;
 
-        for (var i = 0; i < named; i++)
-            preview += (i > 0 ? ", " : string.Empty) + DisplayOf(chosen[i]);
+        previewBuilder.Clear();
 
-        var remaining = chosen.Count - named;
+        foreach (var item in items)
+        {
+            if (!selected.Contains(item))
+                continue;
 
-        return remaining > 0 ? $"{preview}  {string.Format(PreviewOverflowFormat, remaining)}" : preview;
+            if (written >= named)
+            {
+                remaining++;
+                continue;
+            }
+
+            if (written > 0)
+                previewBuilder.Append(", ");
+
+            previewBuilder.Append(DisplayOf(item));
+            written++;
+        }
+
+        if (remaining > 0)
+            previewBuilder.Append("  ").Append(OverflowText(PreviewOverflowFormat, remaining));
+
+        // Turned into a string only when it differs from the one already handed out. Comparing is a walk over a short
+        // span; producing it is an allocation on the draw thread.
+        if (!previewBuilder.Equals(previewText.AsSpan()))
+            previewText = previewBuilder.ToString();
+
+        return previewText;
     }
+
+    /// <summary>
+    /// The summary of everything the preview did not name, for example <c>+2 more</c>.
+    /// </summary>
+    /// <remarks>
+    /// Cached because it is composed through a format string, which allocates, and it changes only when the selection
+    /// crosses <see cref="PreviewMaxItems"/>. Shared across every multi-combo in the process, which is why the format
+    /// is part of the key.
+    /// </remarks>
+    /// <param name="format">The format to compose with. <c>{0}</c> is the count.</param>
+    /// <param name="remaining">How many items were not named.</param>
+    /// <returns>The summary text.</returns>
+    private static string OverflowText(string format, int remaining)
+    {
+        var key = new OverflowKey(format, remaining);
+
+        if (Overflows.TryGet(key, out var cached))
+            return cached;
+
+        var text = string.Format(CultureInfo.CurrentCulture, format, remaining);
+        Overflows.Set(key, text);
+
+        return text;
+    }
+
+    /// <summary>A summary format and the count it was composed with.</summary>
+    private readonly record struct OverflowKey(string Format, int Remaining);
+
+    private static readonly HotPathCache<OverflowKey, string> Overflows = new(256);
 
     /// <summary>
     /// The height the dropdown is capped at: the filter row and the shortcuts, when shown, plus exactly

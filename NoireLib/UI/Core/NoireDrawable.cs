@@ -1,4 +1,4 @@
-using NoireLib.Helpers;
+﻿using NoireLib.Helpers;
 using System;
 
 namespace NoireLib.UI;
@@ -70,7 +70,7 @@ public abstract class NoireDrawable : IDisposable
     /// <summary>
     /// The ImGui id this drawable emits, namespaced so two NoireLib elements can never collide.
     /// </summary>
-    protected string ImGuiId => $"###Noire{Kind}_{Id}";
+    protected string ImGuiId => UiIds.For("###Noire", Kind, Id);
 
     /// <summary>
     /// How many frames in a row this drawable has thrown while the hub drew it. Drives the fault ladder in

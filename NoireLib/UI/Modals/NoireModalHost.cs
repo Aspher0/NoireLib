@@ -167,7 +167,7 @@ public sealed class NoireModalHost : NoireDrawable
 
         if (hasCancel)
         {
-            if (NoireButtons.Button($"{cancelLabel}##NoireModalCancel", ButtonTone.Ghost, new Vector2(cancelWidth, 0f)))
+            if (NoireButtons.Button(UiIds.Labelled(cancelLabel, "##NoireModalCancel", string.Empty), ButtonTone.Ghost, new Vector2(cancelWidth, 0f)))
                 NoireModal.Complete(request, NoireModal.CancelledResult);
 
             ImGui.SameLine(0f, spacing);
@@ -176,8 +176,8 @@ public sealed class NoireModalHost : NoireDrawable
         ImGui.BeginDisabled(!confirmEnabled);
 
         var confirmed = options.HoldSeconds > 0f
-            ? NoireButtons.HoldToConfirm($"{confirmLabel}##NoireModalConfirm", options.HoldSeconds, new ButtonStyle { Tone = tone }, new Vector2(confirmWidth, 0f))
-            : NoireButtons.Button($"{confirmLabel}##NoireModalConfirm", tone, new Vector2(confirmWidth, 0f));
+            ? NoireButtons.HoldToConfirm(UiIds.Labelled(confirmLabel, "##NoireModalConfirm", string.Empty), options.HoldSeconds, new ButtonStyle { Tone = tone }, new Vector2(confirmWidth, 0f))
+            : NoireButtons.Button(UiIds.Labelled(confirmLabel, "##NoireModalConfirm", string.Empty), tone, new Vector2(confirmWidth, 0f));
 
         ImGui.EndDisabled();
 
@@ -205,7 +205,7 @@ public sealed class NoireModalHost : NoireDrawable
                 ? request.Options.Danger ? ButtonTone.Danger : ButtonTone.Accent
                 : ButtonTone.Ghost;
 
-            if (NoireButtons.Button($"{choices[index]}##NoireModalChoice{index}", tone, new Vector2(MeasureButton(choices[index]), 0f)))
+            if (NoireButtons.Button(UiIds.Labelled(choices[index], "##NoireModalChoice", string.Empty, string.Empty, index), tone, new Vector2(MeasureButton(choices[index]), 0f)))
                 NoireModal.Complete(request, index);
         }
     }
@@ -217,7 +217,7 @@ public sealed class NoireModalHost : NoireDrawable
     };
 
     private static float MeasureButton(string label)
-        => MathF.Max(NoireUI.Scaled(80f), ImGui.CalcTextSize(label).X + NoireTheme.Current.ResolveFramePadding().X * 4f);
+        => MathF.Max(NoireUI.Scaled(80f), NoireText.CalcSizeInCurrentFont(label).X + NoireTheme.Current.ResolveFramePadding().X * 4f);
 
     /// <summary>
     /// Moves the cursor so a row of that width ends at the right edge of the dialog.

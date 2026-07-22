@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -222,7 +223,12 @@ public static partial class NoireShapes
         using var draw = UiDraw.BeginMethod();
 
         var duty = Math.Clamp(style.Duty, 0.01f, 1f);
-        var inner = Math.Clamp(style.InnerRatio, 0f, 0.99f) * radius;
+
+        // A stated distance wins over the ratio: it exists for lining the hole up with something drawn at a fixed
+        // radius, and scales with the UI rather than with the burst.
+        var inner = style.InnerSize is { } innerSize
+            ? Math.Clamp(NoireUI.Scaled(innerSize), 0f, 0.99f * radius)
+            : Math.Clamp(style.InnerRatio, 0f, 0.99f) * radius;
         var slot = MathF.Tau / style.Rays;
         var half = slot * duty * 0.5f;
         var softness = Math.Clamp(style.Softness, 0f, 1f);
@@ -266,6 +272,21 @@ public static partial class NoireShapes
         var burstCos = MathF.Cos(burst);
         var burstSin = MathF.Sin(burst);
 
+        // A fading burst is written as raw geometry with the fade in the vertex colors, one reservation for the whole
+        // shape. The general path below is a filled polygon per ray per layer, each an own call into ImGui, plus the
+        // shading pass over every vertex produced: for the shipped default of sixty soft rays that was a hundred and
+        // eighty calls a frame, and it was almost all of what a burst cost.
+        // The results match: the fade is linear between the radii, which is exactly what interpolating full-alpha
+        // inner vertices towards zero-alpha rim vertices draws. The rim carries no alpha, so the antialiased fringe
+        // the polygon path would add there has nothing to smooth; the ray sides are softened by the layers, as they
+        // are on the general path; and an inner edge, when the rays start off the centre, sits at the burst's faint
+        // working alpha where the missing single pixel of fringe does not read.
+        if (shading && style.Rays * layers * 4 <= 60000)
+        {
+            FillFadedBurst(drawList, centre, inner, tipped, radius, color, style.Rays, layers, layerAlphas, directions, stride, burstCos, burstSin);
+            return;
+        }
+
         for (var ray = 0; ray < style.Rays; ray++)
         {
             var origin = ray * stride;
@@ -307,6 +328,97 @@ public static partial class NoireShapes
         // a layer and the rays keep their colour.
         if (shading)
             ShadeRadial(drawList, firstVertex, drawList.VtxBuffer.Size, centre, inner, radius);
+    }
+
+    /// <summary>
+    /// Writes a fading sunburst as one batch of raw geometry, with the radial fade carried in the vertex colors
+    /// instead of applied in a pass afterwards.
+    /// </summary>
+    /// <remarks>
+    /// A ray converging at the centre is a triangle; a ray starting off the centre is a quad whose inner corners
+    /// carry the full layer alpha, which is where the radial ramp holds it at full strength.<br/>
+    /// The vertex and index spans are the region the reservation just appended, so nothing here reaches past what it
+    /// asked for. The base vertex id is read after the reservation, which is what keeps the indices right when the
+    /// reservation itself rolled the buffer over to a new draw command.
+    /// </remarks>
+    /// <param name="drawList">The list to write into.</param>
+    /// <param name="centre">Where the rays converge, in screen space.</param>
+    /// <param name="inner">The radius the rays start at, in real pixels.</param>
+    /// <param name="tipped">Whether the rays converge to the centre point.</param>
+    /// <param name="radius">How far they reach, in real pixels.</param>
+    /// <param name="color">The ray color at the centre.</param>
+    /// <param name="rays">How many rays radiate from the centre.</param>
+    /// <param name="layers">How many layers build one soft ray.</param>
+    /// <param name="layerAlphas">The alpha each layer carries.</param>
+    /// <param name="directions">The unit ray directions, as <see cref="ResolveSunburstDirections"/> lays them out.</param>
+    /// <param name="stride">How many directions one ray occupies.</param>
+    /// <param name="burstCos">The cosine of the burst's rotation.</param>
+    /// <param name="burstSin">The sine of the burst's rotation.</param>
+    private static void FillFadedBurst(ImDrawListPtr drawList, Vector2 centre, float inner, bool tipped, float radius, Vector4 color, int rays, int layers, ReadOnlySpan<float> layerAlphas, Vector2[] directions, int stride, float burstCos, float burstSin)
+    {
+        var wedges = rays * layers;
+        var vertexCount = wedges * (tipped ? 3 : 4);
+        var indexCount = wedges * (tipped ? 3 : 6);
+
+        drawList.PrimReserve(indexCount, vertexCount);
+
+        var baseVertex = drawList.VtxCurrentIdx;
+        var vertices = drawList.VtxBuffer.AsSpan()[^vertexCount..];
+        var indices = drawList.IdxBuffer.AsSpan()[^indexCount..];
+        var white = ImGui.GetFontTexUvWhitePixel();
+
+        // One packed color per layer for the inner corners and one shared rim color, rather than a conversion per wedge.
+        Span<uint> innerColors = stackalloc uint[layers];
+
+        for (var layer = 0; layer < layers; layer++)
+            innerColors[layer] = ImGui.GetColorU32(color with { W = layerAlphas[layer] });
+
+        var rimColor = ImGui.GetColorU32(color with { W = 0f });
+        var vertex = 0;
+        var index = 0;
+
+        for (var ray = 0; ray < rays; ray++)
+        {
+            var origin = ray * stride;
+
+            for (var layer = 0; layer < layers; layer++)
+            {
+                var left = Turn(directions[origin + 1 + (layer * 2)], burstCos, burstSin);
+                var right = Turn(directions[origin + 2 + (layer * 2)], burstCos, burstSin);
+
+                if (tipped)
+                {
+                    vertices[vertex] = new ImDrawVert { Pos = centre, Uv = white, Col = innerColors[layer] };
+                    vertices[vertex + 1] = new ImDrawVert { Pos = centre + (right * radius), Uv = white, Col = rimColor };
+                    vertices[vertex + 2] = new ImDrawVert { Pos = centre + (left * radius), Uv = white, Col = rimColor };
+
+                    indices[index] = (ushort)(baseVertex + vertex);
+                    indices[index + 1] = (ushort)(baseVertex + vertex + 1);
+                    indices[index + 2] = (ushort)(baseVertex + vertex + 2);
+
+                    vertex += 3;
+                    index += 3;
+                    continue;
+                }
+
+                vertices[vertex] = new ImDrawVert { Pos = centre + (left * inner), Uv = white, Col = innerColors[layer] };
+                vertices[vertex + 1] = new ImDrawVert { Pos = centre + (right * inner), Uv = white, Col = innerColors[layer] };
+                vertices[vertex + 2] = new ImDrawVert { Pos = centre + (right * radius), Uv = white, Col = rimColor };
+                vertices[vertex + 3] = new ImDrawVert { Pos = centre + (left * radius), Uv = white, Col = rimColor };
+
+                indices[index] = (ushort)(baseVertex + vertex);
+                indices[index + 1] = (ushort)(baseVertex + vertex + 1);
+                indices[index + 2] = (ushort)(baseVertex + vertex + 2);
+                indices[index + 3] = (ushort)(baseVertex + vertex);
+                indices[index + 4] = (ushort)(baseVertex + vertex + 2);
+                indices[index + 5] = (ushort)(baseVertex + vertex + 3);
+
+                vertex += 4;
+                index += 6;
+            }
+        }
+
+        AdvancePrimWrite(drawList, vertexCount, indexCount);
     }
 
     /// <summary>

@@ -16,7 +16,18 @@ namespace NoireLib.UI;
 public static class NoireTooltip
 {
     private static readonly TooltipStyle DefaultStyle = new();
-    private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new();
+
+    /// <summary>
+    /// The size each tooltip measured, by window id, so a reappearing tooltip is placed on its first frame.
+    /// </summary>
+    /// <remarks>
+    /// Keyed by reference: every id, named or numbered, is composed through <see cref="UiIds"/> and so arrives as the
+    /// same instance on every frame, and this cache is read and written on each of them. Hashing the id's characters
+    /// instead spent two content hashes per tooltip per frame on a key that never changes. If <see cref="UiIds"/>
+    /// ever starts over and rebuilds an id, the entry under the old instance stops being found and is pruned like any
+    /// stale one, at the cost of the tooltip being re-measured once.
+    /// </remarks>
+    private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new(StringInstanceComparer.Instance);
 
     /// <summary>
     /// Where a tooltip is parked for the frame or two it takes to measure it, before its real position can be worked out.<br/>
@@ -78,7 +89,7 @@ public static class NoireTooltip
             return;
 
         style ??= DefaultStyle;
-        var windowId = id != null ? $"###NoireTooltip_{id}" : NoireUI.NextTooltipId();
+        var windowId = id != null ? UiIds.For("###NoireTooltip_", id) : NoireUI.NextTooltipId();
 
         // Opened around the call rather than inside the window, deliberately. The tooltip's own window flags reroute
         // border and background style fields and reposition the window, so nothing here may sit between the style

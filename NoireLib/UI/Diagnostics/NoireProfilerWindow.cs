@@ -93,6 +93,12 @@ public sealed class NoireProfilerWindow : Window
     /// </summary>
     private int lastGeneration = -1;
 
+    /// <summary>How often the rows are rebuilt while the figures move every frame, in seconds.</summary>
+    private const float RefreshInterval = 0.15f;
+
+    /// <summary>When the rows were last rebuilt. Negative so the first frame always builds.</summary>
+    private float lastRefreshTime = float.NegativeInfinity;
+
     private string lastSearch = string.Empty;
     private bool lastShowInactive = true;
     private int lastSortColumn = -1;
@@ -295,6 +301,22 @@ public sealed class NoireProfilerWindow : Window
                 + "Separate from Enable because sampling allocation costs more per scope than timing does, and an\n"
                 + "interface opening several hundred scopes a frame pays it on every one. Switch it on to judge\n"
                 + "whether a change allocates; leave it off while reading milliseconds.");
+        }
+
+        ImGui.SameLine(0f, NoireUI.Scaled(14f));
+
+        var fine = NoireUI.Profiler.Detailed;
+
+        if (ImGui.Checkbox("Detail", ref fine))
+            NoireUI.Profiler.Detailed = fine;
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(
+                "Breaks each surface down into per-method rows, one per drawing helper (NoireShapes.Glow and the\n"
+                + "like). Those rows are most of what measuring costs: a decorated window opens a scope per shape\n"
+                + "it paints, several hundred a frame. While this is off their time folds into the widget or\n"
+                + "surface around them, so the totals stay complete either way.");
         }
 
         ImGui.SameLine(0f, NoireUI.Scaled(14f));
@@ -822,14 +844,19 @@ public sealed class NoireProfilerWindow : Window
     private void Refresh()
     {
         var generation = NoireUI.Profiler.Generation;
+        var filtersMoved = showInactive != lastShowInactive || !string.Equals(search, lastSearch, StringComparison.Ordinal);
 
-        if (generation == lastGeneration
-            && showInactive == lastShowInactive
-            && string.Equals(search, lastSearch, StringComparison.Ordinal))
-        {
+        if (!filtersMoved && generation == lastGeneration)
             return;
-        }
 
+        // A moving generation alone rebuilds a few times a second rather than on every measured frame. While the
+        // profiler is on, the figures move every frame, and reformatting a hundred rows sixty times a second made this
+        // window the most expensive scope it displayed; the figures are rolling averages, so nothing readable is lost
+        // at a slower cadence. A filter change still applies at once, because the reader just asked for it.
+        if (!filtersMoved && NoireUI.Time - lastRefreshTime < RefreshInterval)
+            return;
+
+        lastRefreshTime = NoireUI.Time;
         lastGeneration = generation;
         lastShowInactive = showInactive;
         lastSearch = search;

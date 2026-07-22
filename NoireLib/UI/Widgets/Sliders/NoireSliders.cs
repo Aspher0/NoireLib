@@ -1,7 +1,5 @@
 using Dalamud.Bindings.ImGui;
-using NoireLib.Helpers;
 using System;
-using System.Globalization;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -244,46 +242,6 @@ public static class NoireSliders
     }
 
     /// <summary>
-    /// What a value reads as, and everything that can change it.
-    /// </summary>
-    /// <remarks>
-    /// The culture is held as well as the format, because the same number and the same format read differently under
-    /// another one and a slider that kept the old text would be wrong in a way nothing else would explain.
-    /// </remarks>
-    private readonly record struct ValueTextKey(float Value, string Format, string Culture);
-
-    /// <summary>
-    /// What each value has already been formatted as.
-    /// </summary>
-    /// <remarks>
-    /// A slider redraws every frame and its value moves only while it is being dragged, so formatting it per frame is
-    /// a string produced to arrive at the text already on screen. Bounded rather than budgeted, the way the text
-    /// measurement cache is: a slider bound to something that changes every frame would otherwise grow this without
-    /// ever hitting it.
-    /// </remarks>
-    private static readonly HotPathCache<ValueTextKey, string> ValueTexts = new(1024);
-
-    /// <summary>
-    /// Formats a slider's value, remembering what it read last time.
-    /// </summary>
-    /// <param name="value">The value to format.</param>
-    /// <param name="format">The numeric format string.</param>
-    /// <returns>The formatted value.</returns>
-    private static string FormatValue(float value, string format)
-    {
-        var culture = CultureInfo.CurrentCulture;
-        var key = new ValueTextKey(value, format, culture.Name);
-
-        if (ValueTexts.TryGet(key, out var cached))
-            return cached;
-
-        var text = value.ToString(format, culture);
-        ValueTexts.Set(key, text);
-
-        return text;
-    }
-
-    /// <summary>
     /// Writes the value at the end of the row, in a column reserved whatever it reads.
     /// </summary>
     private static void DrawValue(float value, string format, SliderStyle style, Vector2 origin, float width, float height)
@@ -291,7 +249,7 @@ public static class NoireSliders
         var theme = NoireTheme.Current;
         var text = style.ValueText is { } words
             ? words(value) ?? string.Empty
-            : FormatValue(value, format);
+            : UiValueText.Number(value, format);
         var column = NoireUI.Scaled(style.ValueWidth);
         var measured = NoireText.CalcSize(text);
 

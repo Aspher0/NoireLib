@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Numerics;
 
 namespace NoireLib.UI;
 
@@ -71,6 +72,11 @@ public sealed class UiProfiler
     private int generation;
 
     /// <summary>
+    /// Bumped by <see cref="Reset"/>, so a per-thread memo filled before it stops answering. See <see cref="ThreadState"/>.
+    /// </summary>
+    private int resetStamp;
+
+    /// <summary>
     /// The node <see cref="RootScopeName"/> was given, so scopes opened outside it can still be hung from it.
     /// </summary>
     private int rootNodeId;
@@ -78,15 +84,64 @@ public sealed class UiProfiler
     private Node? rootNode;
 
     /// <summary>
-    /// The scopes currently open on this thread, innermost last.
+    /// Everything the profiler keeps per thread, in one object so the hot path pays one thread-local read rather than
+    /// one per piece.
     /// </summary>
     /// <remarks>
     /// Per thread, because nesting is a property of a call stack rather than of the profiler: a scope opened on a
     /// background thread is not inside whatever the draw thread happens to be building at that moment, and charging it
-    /// there would take the time away from a scope that never spent it.
+    /// there would take the time away from a scope that never spent it.<br/>
+    /// The state used to live in five separate <see langword="[ThreadStatic]"/> fields, and every one of them cost its
+    /// own thread-local access on every open and close. Measured against a frame of several hundred scopes, folding
+    /// them into one object was a solid slice of what a scope cost.
     /// </remarks>
+    private sealed class ThreadState
+    {
+        /// <summary>
+        /// The scopes currently open on this thread, innermost last, in the first <see cref="Depth"/> slots.
+        /// </summary>
+        /// <remarks>
+        /// A plain array indexed by hand rather than a <see cref="List{T}"/>. The list's indexer copies the whole
+        /// struct out and back for a field write, its <c>Add</c> copies it again, and removal clears slots because the
+        /// struct holds references. Writing through a <see langword="ref"/> into an array does none of that, and a
+        /// popped slot is simply left behind to be overwritten: everything it references outlives it in
+        /// <see cref="nodes"/> anyway.
+        /// </remarks>
+        public OpenScope[] Stack = new OpenScope[64];
+
+        /// <summary>How many scopes are open: the next slot of <see cref="Stack"/> to fill.</summary>
+        public int Depth;
+
+        /// <summary>
+        /// The profiler the memo below was filled for, so two profilers on one thread cannot read each other's nodes.
+        /// </summary>
+        public UiProfiler? MemoOwner;
+
+        /// <summary>
+        /// The <see cref="resetStamp"/> the memo was filled at. A reset makes every node in it a dead object.
+        /// </summary>
+        public int MemoStamp;
+
+        /// <summary>
+        /// The node each call site resolved to last, indexed by <see cref="UiScopeName.Id"/>.
+        /// </summary>
+        /// <remarks>
+        /// This is what takes a warm scope open off the lock and off the hash table. Measured in a real draw path, a
+        /// scope cost 0.418 microseconds with the shared table locked on every open and close; a frame of any size
+        /// opens several hundred, which put the instrument's own cost above a fifth of what it was reporting.
+        /// </remarks>
+        public Node?[] MemoNodes = new Node?[64];
+
+        /// <summary>
+        /// The parent each memo entry was resolved under. Part of the hit check because one call site can appear under
+        /// several parents, and a memo that ignored the parent would file a widget's time under whichever branch
+        /// happened to draw it first.
+        /// </summary>
+        public int[] MemoParents = new int[64];
+    }
+
     [ThreadStatic]
-    private static List<OpenScope>? openScopes;
+    private static ThreadState? threadState;
 
     /// <summary>
     /// A scope that has been opened and not yet closed, and how much of its time has been spent inside scopes nested in
@@ -189,16 +244,36 @@ public sealed class UiProfiler
     }
 
     /// <summary>
+    /// Backs <see cref="Enabled"/>. A field rather than an auto-property so the hot paths read it without a call:
+    /// an unoptimized build does not inline a property getter, and this is read on every scope of every frame.
+    /// </summary>
+    private bool enabled;
+
+    /// <summary>
+    /// Backs <see cref="TrackAllocations"/>, as a field for the reason <see cref="enabled"/> is one.
+    /// </summary>
+    private bool trackAllocations;
+
+    /// <summary>
+    /// Backs <see cref="Detailed"/>, as a field for the reason <see cref="enabled"/> is one.
+    /// </summary>
+    private bool detailed;
+
+    /// <summary>
     /// Whether scopes are timed.<br/>
     /// Off by default. A disabled profiler reads one boolean per scope and does nothing else, so leaving the
     /// instrumentation in place costs nothing.
     /// </summary>
     /// <remarks>
-    /// Turning it on costs two <see cref="Stopwatch"/> reads and a dictionary lookup per measured scope. That is small
-    /// against what it measures, but it is not nothing: it is a diagnostic to switch on while you are looking, not a
-    /// setting to ship enabled.
+    /// Turning it on costs two <see cref="Stopwatch"/> reads and a memoized node lookup per measured scope. That is
+    /// small against what it measures, but it is not nothing: it is a diagnostic to switch on while you are looking,
+    /// not a setting to ship enabled.
     /// </remarks>
-    public bool Enabled { get; set; }
+    public bool Enabled
+    {
+        get => enabled;
+        set => enabled = value;
+    }
 
     /// <summary>
     /// Whether scopes also record how many bytes they allocated. Requires <see cref="Enabled"/>.<br/>
@@ -213,7 +288,37 @@ public sealed class UiProfiler
     /// a reader cannot mistake a stale number for a live one. A scope open across a change to this setting reports 0
     /// bytes for that one scope, since a difference needs both of its ends.
     /// </remarks>
-    public bool TrackAllocations { get; set; }
+    public bool TrackAllocations
+    {
+        get => trackAllocations;
+        set => trackAllocations = value;
+    }
+
+    /// <summary>
+    /// Whether the library's per-method scopes are measured as rows of their own. Requires <see cref="Enabled"/>.<br/>
+    /// Off by default: the everyday question is "which widget is the expensive one", and the widget and surface rows
+    /// answer it at a fraction of the cost. Switch this on to break a surface down further, into rows like
+    /// <c>NoireShapes.Glow</c>, one per drawing method.
+    /// </summary>
+    /// <remarks>
+    /// The gate exists because the fine rows are most of what measuring costs. A decorated window opens a scope per
+    /// shape it paints, several hundred a frame, against a few dozen widget and surface scopes; measuring only the
+    /// coarse rows makes an enabled profiler cost a few microseconds a frame instead of tens.<br/>
+    /// Nothing goes missing while it is off. A method scope that is not measured folds into the scope around it, so
+    /// every millisecond still lands in the widget or surface that spent it; the fine rows only stop being listed
+    /// separately. Rows measured before the switch moved keep reporting until they fall to zero the way any scope
+    /// that stopped running does.
+    /// </remarks>
+    public bool Detailed
+    {
+        get => detailed;
+        set => detailed = value;
+    }
+
+    /// <summary>
+    /// Both switches a per-method scope needs, in one read for the gate that asks on every shape drawn.
+    /// </summary>
+    internal bool MeasuringMethods => enabled && detailed;
 
     /// <summary>
     /// The name to measure a whole draw callback under, so the profiler can account for every millisecond rather than
@@ -569,53 +674,65 @@ public sealed class UiProfiler
             // Bumped here too: clearing the nodes changes what a reader would display just as surely as a frame
             // rolling does, and one that only watched frames would keep showing rows that no longer exist.
             generation++;
+
+            // Every node the per-thread memos hold has just been discarded, on every thread that filled one. Bumping
+            // this is what makes those entries unreachable rather than a route back to a node no longer in the table.
+            resetStamp++;
         }
 
-        openScopes?.Clear();
-    }
-
-    /// <summary>
-    /// The name of the innermost scope currently open on this thread, or <see langword="null"/> when none is.
-    /// </summary>
-    /// <remarks>
-    /// For a caller deciding whether to open a scope at all. A node is keyed on its name and its parent, so a surface
-    /// that opens its own name again inside itself does not get one row: it gets a second node under the first, and
-    /// the outer row loses its time to a same-named child. Reading this is how <see cref="UiDraw"/> declines to open
-    /// the duplicate.<br/>
-    /// Handed back as the handle rather than the name, so the caller compares references instead of strings.
-    /// </remarks>
-    internal static UiScopeName? InnermostScope
-    {
-        get
+        // Only the calling thread's state can be reached from here; other threads notice through the stamp above.
+        // Cleared rather than merely truncated so nothing keeps the discarded nodes alive.
+        if (threadState is { } ts)
         {
-            var stack = openScopes;
-            return stack is { Count: > 0 } ? stack[^1].Name : null;
+            ts.Depth = 0;
+            ts.MemoOwner = null;
+            Array.Clear(ts.Stack);
+            Array.Clear(ts.MemoNodes);
         }
     }
 
     /// <summary>
     /// Starts timing a scope. Pair with <see cref="Close"/>, which <see cref="UiProfileScope"/> does.
     /// </summary>
+    /// <remarks>
+    /// A scope whose name is already the innermost open one is declined (returns 0): a surface reached through its own
+    /// public entry point holds a scope by the time its private painting helpers run, and opening the name again would
+    /// not add to the row that is already open. The profiler keys a node on its name and its parent, so the second one
+    /// would become a child row of the same name, and the outer row's self time would drain into it. Names are
+    /// interned, so the check is one reference compare.
+    /// </remarks>
     /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
-    /// <returns>The timestamp the scope started at, or 0 when the profiler is off.</returns>
+    /// <returns>The timestamp the scope started at, or 0 when nothing is measured.</returns>
     internal long Open(UiScopeName? name)
     {
-        if (!Enabled || name == null)
+        if (!enabled || name == null)
             return 0L;
 
-        var tracking = TrackAllocations;
+        var ts = threadState ??= new ThreadState();
+        var depth = ts.Depth;
+        var stack = ts.Stack;
 
-        // Read before the profiler touches anything, including the list it is about to grow.
+        if (depth > 0 && ReferenceEquals(stack[depth - 1].Name, name))
+            return 0L;
+
+        // Read before the profiler touches anything it might allocate, so its own bookkeeping is charged to nobody.
+        var tracking = trackAllocations;
         var entryBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
 
-        var stack = openScopes ??= new List<OpenScope>();
-        var parentId = stack.Count > 0 ? stack[^1].NodeId : 0;
+        // The frame number is read here, on scopes opening with nothing above them, and nowhere else. Reading it is
+        // not a field read: outside a test it is an ImGui call across the native boundary, and doing that once per
+        // scope close meant several hundred of them a frame in an interface of any size. Every scope nested in this
+        // one is in the same frame by construction, so one read answers for all of them. The lock is taken only when
+        // the frame has actually moved, so this is also the only place the shared table is locked on a warm path:
+        // once per frame rather than once per scope. RollFrameLocked re-reads the number under the lock, so two
+        // threads racing here roll the frame once between them.
+        if (depth == 0 && NoireUI.FrameCount != currentFrame)
+        {
+            lock (syncRoot)
+                RollFrameLocked();
+        }
 
-        // The frame number is read here, on the outermost scope, and nowhere else. Reading it is not a field read:
-        // outside a test it is an ImGui call across the native boundary, and doing that once per scope close meant
-        // several hundred of them a frame in an interface of any size. Every scope nested in this one is in the same
-        // frame by construction, so one read answers for all of them.
-        var rolling = stack.Count == 0;
+        var parentId = depth > 0 ? stack[depth - 1].NodeId : 0;
 
         // A scope opened with nothing above it still belongs to the frame, even though it is not inside the root's
         // span: NoireUI's own frame pass runs from a second draw handler, alongside the host's rather than within it,
@@ -623,15 +740,68 @@ public sealed class UiProfiler
         if (parentId == 0 && !ReferenceEquals(name, RootScope))
             parentId = rootNodeId;
 
+        // Resolved on the way in rather than on the way out, because a scope opened inside this one needs this node's
+        // id to know where it belongs. The memo hit is checked in place rather than through a helper: a widget draws
+        // from the same place in the tree on every frame, so the answer is the one from last frame nearly every time,
+        // and reaching it costs an array index and two integer compares instead of a lock and a hash. The parent is
+        // part of the check because one call site can appear under several parents, and a memo that ignored it would
+        // file a widget's time under whichever branch happened to draw it first.
+        var nameId = name.Id;
+        Node? resolved = null;
+
+        if (ReferenceEquals(ts.MemoOwner, this) && ts.MemoStamp == resetStamp
+            && nameId < ts.MemoNodes.Length && ts.MemoParents[nameId] == parentId)
+        {
+            resolved = ts.MemoNodes[nameId];
+        }
+
+        resolved ??= Resolve(ts, name, parentId);
+
+        if (depth == stack.Length)
+        {
+            Array.Resize(ref ts.Stack, depth * 2);
+            stack = ts.Stack;
+        }
+
+        // Written through a ref rather than built and assigned, so pushing a scope copies nothing.
+        ref var slot = ref stack[depth];
+
+        slot.Node = resolved;
+        slot.NodeId = resolved.Id;
+        slot.Name = name;
+        slot.ChildTicks = 0L;
+        slot.ChildBytes = 0L;
+        slot.EntryBytes = entryBytes;
+        slot.Tracked = tracking;
+
+        ts.Depth = depth + 1;
+
+        // Both counters are read last, once the profiler's own bookkeeping is done. Resolving a node allocates one the
+        // first time a call path is seen, and charging that to the scope being opened would report garbage the caller
+        // never produced.
+        slot.StartedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
+        slot.Started = Stopwatch.GetTimestamp();
+
+        return slot.Started;
+    }
+
+    /// <summary>
+    /// Finds or creates the node for a call path, and remembers it in the thread's memo for the next frame.
+    /// </summary>
+    /// <remarks>
+    /// The slow half, and the only one that takes the lock. Reached on the first frame a call path is seen and
+    /// afterwards only when the same call site draws under a different parent than it did last time.
+    /// </remarks>
+    /// <param name="ts">The calling thread's state, whose memo the answer is filed in.</param>
+    /// <param name="name">The scope name.</param>
+    /// <param name="parentId">The node id this scope is opening under.</param>
+    /// <returns>The node for this call path.</returns>
+    private Node Resolve(ThreadState ts, UiScopeName name, int parentId)
+    {
         Node resolved;
 
-        // Resolved on the way in rather than on the way out, because a scope opened inside this one needs this node's
-        // id to know where it belongs.
         lock (syncRoot)
         {
-            if (rolling)
-                RollFrameLocked();
-
             if (!nodes.TryGetValue((parentId, name.Id), out var node))
             {
                 node = new Node { Id = nextNodeId++, ParentId = parentId, Name = name.Name, NameId = name.Id };
@@ -649,29 +819,31 @@ public sealed class UiProfiler
             resolved = node;
         }
 
-        stack.Add(new OpenScope
+        // A different profiler, or a reset since the memo was filled, makes every entry in it wrong rather than stale.
+        // Clearing the node column alone is enough to stop the old entries answering.
+        if (!ReferenceEquals(ts.MemoOwner, this) || ts.MemoStamp != resetStamp)
         {
-            Node = resolved,
-            NodeId = resolved.Id,
-            Name = name,
-            ChildTicks = 0L,
-            ChildBytes = 0L,
-            EntryBytes = entryBytes,
-            Tracked = tracking,
-        });
+            ts.MemoOwner = this;
+            ts.MemoStamp = resetStamp;
+            Array.Clear(ts.MemoNodes);
+        }
 
-        // Both counters are read last, once the profiler's own bookkeeping is done. Resolving a node allocates one the
-        // first time a call path is seen, and charging that to the scope being opened would report garbage the caller
-        // never produced.
-        var index = stack.Count - 1;
-        var frame = stack[index];
+        var nameId = name.Id;
 
-        frame.StartedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
-        frame.Started = Stopwatch.GetTimestamp();
+        if (nameId >= ts.MemoNodes.Length)
+        {
+            // Grown to the next power of two past the id rather than by one, since ids only ever increase and a scope
+            // name is registered once for the life of the process.
+            var size = (int)Math.Max(64, BitOperations.RoundUpToPowerOf2((uint)nameId + 1));
 
-        stack[index] = frame;
+            Array.Resize(ref ts.MemoNodes, size);
+            Array.Resize(ref ts.MemoParents, size);
+        }
 
-        return frame.Started;
+        ts.MemoNodes[nameId] = resolved;
+        ts.MemoParents[nameId] = parentId;
+
+        return resolved;
     }
 
     /// <summary>
@@ -679,9 +851,9 @@ public sealed class UiProfiler
     /// </summary>
     /// <remarks>
     /// Adoption at open time only works forward: NoireUI's own draw handler can run before the host's, so on the first
-    /// frames its scopes open with no root to be adopted by and become real orphans. Once the root turns up they would
-    /// sit outside the tree forever, and the same scope would appear twice, once stranded and once adopted. Rehoming
-    /// them here is what makes the tree have a single trunk from the first frame rather than from the second.
+    /// frames its scopes open with no root to be adopted by. Once the root turns up they would sit outside the tree
+    /// forever, and the same scope would appear twice, once stranded and once adopted. Rehoming them here is what makes
+    /// the tree have a single trunk from the first frame rather than from the second.
     /// </remarks>
     private void AdoptOrphansLocked()
     {
@@ -737,32 +909,30 @@ public sealed class UiProfiler
         if (started == 0L)
             return;
 
-        // Read first, before this method's own bookkeeping, for the same reason Open reads last. Between them the two
-        // reads bracket the caller's work and nothing else.
-        var tracking = TrackAllocations;
+        // The clock and the counter are read first, before any of this method's own bookkeeping, for the same reason
+        // Open reads them last: between the two reads is the caller's work and nothing else. Reading them after the
+        // pop, as this used to, billed every scope for the cost of its own measurement.
+        var tracking = trackAllocations;
         var endedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
+        var ended = Stopwatch.GetTimestamp();
 
-        var stack = openScopes;
+        var ts = threadState;
 
-        // Popped even when the profiler was switched off mid-scope, or the entry would be left open and every later
-        // scope would be charged as nested inside a scope that never closed.
-        if (stack == null || stack.Count == 0)
+        // Guarded even though Open pushed, because the profiler may have been reset mid-scope on this very thread.
+        if (ts == null || ts.Depth == 0)
             return;
 
-        var index = stack.Count - 1;
-        var frame = stack[index];
+        var stack = ts.Stack;
+        var index = ts.Depth - 1;
 
         // Scopes are disposed in the reverse of the order they were opened, so anything else means a caller has kept
         // one past its block. Unwinding to it is better than silently attributing the rest of the frame to it.
         // Compared by reference, which interning makes equivalent to comparing the names and far cheaper.
-        if (!ReferenceEquals(frame.Name, name))
+        if (!ReferenceEquals(stack[index].Name, name))
         {
-            // Walked by hand rather than with FindLastIndex and a predicate. A predicate capturing name captures a
-            // parameter, and the closure for that is built on entry to the method rather than where it is used, so
-            // every close would allocate one whether or not this branch ran.
             var found = -1;
 
-            for (var candidate = stack.Count - 1; candidate >= 0; candidate--)
+            for (var candidate = index - 1; candidate >= 0; candidate--)
             {
                 if (!ReferenceEquals(stack[candidate].Name, name))
                     continue;
@@ -775,12 +945,15 @@ public sealed class UiProfiler
                 return;
 
             index = found;
-            frame = stack[index];
         }
 
-        stack.RemoveRange(index, stack.Count - index);
+        // Popped by moving the depth; the slots above are left to be overwritten, since everything they reference
+        // outlives them in the shared table anyway.
+        ts.Depth = index;
 
-        var elapsed = Stopwatch.GetTimestamp() - frame.Started;
+        ref var frame = ref stack[index];
+
+        var elapsed = ended - frame.Started;
         var self = Math.Max(0L, elapsed - frame.ChildTicks);
 
         // Both ends of the difference have to have been read. A scope spanning a change to TrackAllocations reports
@@ -791,9 +964,9 @@ public sealed class UiProfiler
         var selfAllocated = Math.Max(0L, allocated - frame.ChildBytes);
 
         // Charged to the enclosing scope so that its own self figures exclude this one.
-        if (stack.Count > 0)
+        if (index > 0)
         {
-            var parent = stack[^1];
+            ref var parent = ref stack[index - 1];
             parent.ChildTicks += elapsed;
 
             // Charged from this scope's entry rather than from where its own measurement began, so the parent is not
@@ -801,31 +974,31 @@ public sealed class UiProfiler
             // state, and different only on the frame a scope first runs.
             if (measured)
                 parent.ChildBytes += Math.Max(0L, endedBytes - frame.EntryBytes);
-
-            stack[^1] = parent;
         }
 
-        if (!Enabled)
+        if (!enabled)
             return;
 
         var node = frame.Node;
 
-        lock (syncRoot)
-        {
-            node.Ticks += elapsed;
-            node.SelfTicks += self;
-            node.Bytes += allocated;
-            node.SelfBytes += selfAllocated;
-            node.Calls++;
+        // Unlocked, unlike the resolution in Open. The scope stack is per thread, so the only writer of a node's
+        // counters is the thread whose scope is closing, and a reader is either that same thread or a snapshot taking
+        // the lock. Two threads drawing the same widget at once could lose a count here, which is a number in a
+        // diagnostic rather than a corrupted structure, and it is worth that: locking these five additions cost more
+        // than everything they measure on a surface entered hundreds of times a frame.
+        node.Ticks += elapsed;
+        node.SelfTicks += self;
+        node.Bytes += allocated;
+        node.SelfBytes += selfAllocated;
+        node.Calls++;
 
-            // A scope the root adopted ran alongside the root rather than inside it, so the root's own clock and
-            // counter never saw it. Added to the root's totals here, and deliberately not to its self figures, which
-            // keeps the branch adding up: the root's self plus every child, adopted or nested, is the root's total.
-            if (stack.Count == 0 && rootNode != null && node.ParentId == rootNodeId && node.Id != rootNodeId)
-            {
-                rootNode.Ticks += elapsed;
-                rootNode.Bytes += allocated;
-            }
+        // A scope the root adopted ran alongside the root rather than inside it, so the root's own clock and counter
+        // never saw it. Added to the root's totals here, and deliberately not to its self figures, which keeps the
+        // branch adding up: the root's self plus every child, adopted or nested, is the root's total.
+        if (index == 0 && rootNode is { } root && node.ParentId == rootNodeId && node.Id != rootNodeId)
+        {
+            root.Ticks += elapsed;
+            root.Bytes += allocated;
         }
     }
 

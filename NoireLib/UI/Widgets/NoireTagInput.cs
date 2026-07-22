@@ -444,11 +444,20 @@ public sealed class NoireTagInput
         // would ever receive a click.
         var removing = -1;
 
+        // Resolved once for the row rather than per chip: the theme answers the same padding and the same colours for
+        // every chip in a frame, and a field can hold a great many of them.
+        var theme = NoireTheme.Current;
+        var padding = theme.ResolveFramePadding();
+
         for (var index = 0; index < tags.Count; index++)
         {
-            NoireLayout.FlowItem(MeasureChip(tags[index]).X, index == 0, width: width);
+            // Measured once and handed on. The measurement is cached, so the second one was a dictionary lookup rather
+            // than a walk over the glyphs, but it was still two lookups per chip per frame for one answer.
+            var size = MeasureChip(tags[index], padding);
 
-            if (DrawChip(tags[index], index))
+            NoireLayout.FlowItem(size.X, index == 0, width: width);
+
+            if (DrawChip(tags[index], index, size, theme, padding))
                 removing = index;
         }
 
@@ -460,11 +469,14 @@ public sealed class NoireTagInput
             RemoveAt(removing);
     }
 
-    private static Vector2 MeasureChip(string tag)
-    {
-        var padding = NoireTheme.Current.ResolveFramePadding();
-        return NoireText.CalcSize(tag) + new Vector2((padding.X * 2f) + NoireUI.Scaled(16f), padding.Y * 2f);
-    }
+    /// <summary>
+    /// How much room a chip takes: its label, plus the padding around it and the room the cross sits in.
+    /// </summary>
+    /// <param name="tag">The tag the chip holds.</param>
+    /// <param name="padding">The frame padding already resolved from the theme.</param>
+    /// <returns>The chip's size in real pixels.</returns>
+    private static Vector2 MeasureChip(string tag, Vector2 padding)
+        => NoireText.CalcSize(tag) + new Vector2((padding.X * 2f) + NoireUI.Scaled(16f), padding.Y * 2f);
 
     /// <summary>
     /// Draws one chip, reporting whether its cross was clicked.
@@ -473,14 +485,29 @@ public sealed class NoireTagInput
     /// Keyed on the index rather than the text: two chips holding the same tag are two different chips, and an id
     /// built from the text would make them one, so only the first would be clickable.
     /// </remarks>
-    private bool DrawChip(string tag, int index)
+    /// <param name="tag">The tag the chip holds.</param>
+    /// <param name="index">The chip's position, which is what its id is built from.</param>
+    /// <param name="size">The chip's size, measured by the caller laying the row out.</param>
+    /// <param name="theme">The theme, resolved once for the whole row.</param>
+    /// <param name="padding">The frame padding, resolved once for the whole row.</param>
+    /// <returns>True on the frame the chip's cross is clicked.</returns>
+    private bool DrawChip(string tag, int index, Vector2 size, NoireTheme theme, Vector2 padding)
     {
-        var theme = NoireTheme.Current;
-        var padding = theme.ResolveFramePadding();
-        var size = MeasureChip(tag);
         var origin = ImGui.GetCursorScreenPos();
         var clicked = ImGui.InvisibleButton(UiIds.For("###NoireTagChip_", Id, index), size);
         var hovered = ImGui.IsItemHovered();
+
+        // A chip scrolled out of the page still costs two rounded rects, a label and a cross, all of which ImGui then
+        // throws away against the clip rect. The layout still has to run for every chip, since a wrapped row does not
+        // know where the next one lands until this one has been placed, but the painting does not.
+        if (!ImGui.IsRectVisible(origin, origin + size))
+        {
+            ImGui.SetCursorScreenPos(origin);
+            ImGui.Dummy(size);
+
+            return clicked;
+        }
+
         var accent = theme.Resolve(ThemeColor.Accent);
 
         NoireShapes.Rect(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.35f : 0.20f), CornerShape.Rounded, size.Y * 0.5f);
