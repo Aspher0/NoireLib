@@ -334,6 +334,51 @@ public static partial class NoireShapes
         Bracket(min, max, color, armLength, thickness, BracketSide.Right);
     }
 
+    /// <summary>
+    /// Draws a short elbow inside each corner of a rect, the mark that reads as drawn rather than as a border.
+    /// </summary>
+    /// <remarks>
+    /// Each corner is one three-point path rather than two lines meeting at a point. A line is drawn centred on its
+    /// own path, so two of them sharing an end leave the outer corner uncovered by half the thickness: a square notch
+    /// exactly where the tick is supposed to turn.
+    /// </remarks>
+    /// <param name="min">The top left corner of the rect they sit inside, in screen space.</param>
+    /// <param name="max">The bottom right corner, in screen space.</param>
+    /// <param name="color">The line color.</param>
+    /// <param name="length">How far each arm reaches along its edge, in pixels.</param>
+    /// <param name="thickness">The line thickness, in pixels.</param>
+    /// <param name="corners">Which corners are marked.</param>
+    public static void CornerTicks(Vector2 min, Vector2 max, Vector4 color, float length, float thickness = 1f, RectCorners corners = RectCorners.All)
+    {
+        if (color.W <= 0f || length <= 0f || thickness <= 0f || max.X <= min.X || max.Y <= min.Y)
+            return;
+
+        using var draw = UiDraw.BeginMethod();
+
+        if (draw.List.IsNull)
+            return;
+
+        Span<Vector2> origins = [min, new Vector2(max.X, min.Y), max, new Vector2(min.X, max.Y)];
+        Span<Vector2> along = [new Vector2(1f, 0f), new Vector2(-1f, 0f), new Vector2(-1f, 0f), new Vector2(1f, 0f)];
+        Span<Vector2> down = [new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, -1f), new Vector2(0f, -1f)];
+        Span<RectCorners> flags = [RectCorners.TopLeft, RectCorners.TopRight, RectCorners.BottomRight, RectCorners.BottomLeft];
+
+        for (var corner = 0; corner < 4; corner++)
+        {
+            if ((corners & flags[corner]) == 0)
+                continue;
+
+            Span<Vector2> elbow =
+            [
+                origins[corner] + (along[corner] * length),
+                origins[corner],
+                origins[corner] + (down[corner] * length),
+            ];
+
+            Stroke(elbow, color, thickness, closed: false);
+        }
+    }
+
     #endregion
 
     #region Frame
@@ -379,7 +424,7 @@ public static partial class NoireShapes
         }
 
         if (style.TickLength > 0f)
-            CornerTicks(outerMin, outerMax, gap, style);
+            FrameCornerTicks(outerMin, outerMax, gap, style);
     }
 
     /// <summary>
@@ -389,13 +434,8 @@ public static partial class NoireShapes
     /// <param name="max">The bottom right of the outer frame line.</param>
     /// <param name="gap">How far in the innermost frame line already sits.</param>
     /// <param name="style">The frame style.</param>
-    private static void CornerTicks(Vector2 min, Vector2 max, float gap, FrameStyle style)
+    private static void FrameCornerTicks(Vector2 min, Vector2 max, float gap, FrameStyle style)
     {
-        using var draw = UiDraw.BeginMethod();
-
-        if (draw.List.IsNull)
-            return;
-
         var length = style.ScaledTickLength;
         var inset = style.ScaledTickInset + gap;
         var thickness = style.ResolveTickThickness();
@@ -415,28 +455,7 @@ public static partial class NoireShapes
             return;
         }
 
-        Span<Vector2> origins = [topLeft, new Vector2(bottomRight.X, topLeft.Y), bottomRight, new Vector2(topLeft.X, bottomRight.Y)];
-        Span<Vector2> along = [new Vector2(1f, 0f), new Vector2(-1f, 0f), new Vector2(-1f, 0f), new Vector2(1f, 0f)];
-        Span<Vector2> down = [new Vector2(0f, 1f), new Vector2(0f, 1f), new Vector2(0f, -1f), new Vector2(0f, -1f)];
-        Span<RectCorners> flags = [RectCorners.TopLeft, RectCorners.TopRight, RectCorners.BottomRight, RectCorners.BottomLeft];
-
-        for (var corner = 0; corner < 4; corner++)
-        {
-            if ((style.TickCorners & flags[corner]) == 0)
-                continue;
-
-            // One elbow rather than two lines meeting at a point. A line is drawn centred on its path, so two of them
-            // sharing an end leave the outer corner uncovered by half the thickness: a square notch exactly where the
-            // bracket is supposed to turn. Stroking three points makes it one path with a real joint.
-            Span<Vector2> elbow =
-            [
-                origins[corner] + (along[corner] * length),
-                origins[corner],
-                origins[corner] + (down[corner] * length),
-            ];
-
-            Stroke(elbow, color, thickness, closed: false);
-        }
+        CornerTicks(topLeft, bottomRight, color, length, thickness, style.TickCorners);
     }
 
     #endregion

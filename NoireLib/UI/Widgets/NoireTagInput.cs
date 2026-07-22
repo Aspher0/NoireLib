@@ -107,6 +107,15 @@ public sealed class NoireTagInput
     /// <summary>Whether a refused tag shakes the field. Honours <see cref="NoireUI.ReducedMotion"/>.</summary>
     public bool ShakeOnReject { get; set; } = true;
 
+    /// <summary>
+    /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
+    /// </summary>
+    /// <remarks>
+    /// The per-widget override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
+    /// this field unmarked while the rest of the interface keeps its mark.
+    /// </remarks>
+    public FocusStyle? FocusStyle { get; set; }
+
     /// <summary>Whether the reason a tag was refused is shown under the field.</summary>
     public bool ShowErrors { get; set; } = true;
 
@@ -559,6 +568,8 @@ public sealed class NoireTagInput
 
         var committed = ImGui.InputTextWithHint(UiIds.For("###NoireTagInput_", Id), Hint, ref input, 256, ImGuiInputTextFlags.EnterReturnsTrue);
         var active = ImGui.IsItemActive();
+
+        NoireFocus.OnLast(FocusStyle);
 
         // Checked before committing, because a separator typed or pasted mid-run is what turns one paste into the
         // whole list rather than a single tag holding commas.

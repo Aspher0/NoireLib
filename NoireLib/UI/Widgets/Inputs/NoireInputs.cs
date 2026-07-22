@@ -108,6 +108,9 @@ public static class NoireInputs
             changed = true;
         }
 
+        // Before the reset dot, which submits an item of its own and would become the one the mark is read from.
+        NoireFocus.OnLast(resolved.Focus);
+
         if (resolved.Default is { } fallback && ResetDot(id, !Nearly(value, fallback)))
         {
             value = fallback;
@@ -155,6 +158,7 @@ public static class NoireInputs
         WholeNumbers.Default = source.Default;
         WholeNumbers.Validate = source.Validate;
         WholeNumbers.Width = source.Width;
+        WholeNumbers.Focus = source.Focus;
 
         var working = (float)value;
         var changed = Number(label, ref working, WholeNumbers);
@@ -244,6 +248,8 @@ public static class NoireInputs
         var text = editing ? pending! : UiValueText.Duration(value);
 
         ImGui.InputTextWithHint(UiIds.For("###NoireInputsDuration_", id), resolved.Hint, ref text, 64);
+
+        NoireFocus.OnLast(resolved.Focus);
 
         if (ImGui.IsItemActive())
         {
@@ -360,6 +366,8 @@ public static class NoireInputs
 
         ImGui.SetNextItemWidth(NoireText.CalcSize("#12345678").X + (NoireTheme.Current.ResolveFramePadding().X * 2f));
         ImGui.InputTextWithHint(UiIds.For("###NoireInputsHex_", id), "#RRGGBB", ref text, 16);
+
+        NoireFocus.OnLast(resolved.Focus);
 
         if (ImGui.IsItemActive())
         {

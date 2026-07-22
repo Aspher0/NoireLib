@@ -42,6 +42,7 @@ You are reading the documentation for the `NoireLib.UI` helpers.
 - [Reorderable lists (NoireReorderableList)](#reorderable-lists-noirereorderablelist)
 - [Tab bars you can drive (NoireTabBar)](#tab-bars-you-can-drive-noiretabbar)
 - [Badges and attention (NoireBadge, NoireAttention)](#badges-and-attention-noirebadge-noireattention)
+- [Keyboard focus (NoireFocus)](#keyboard-focus-noirefocus)
 - [Custom Tooltips](#custom-tooltips)
 - [Images (UiImageSource)](#images-uiimagesource)
 - [The UI scale](#the-ui-scale)
@@ -110,7 +111,7 @@ The grouped name is the surface's own with the `Noire` prefix taken off, so it i
 
 | Surface | Reached as |
 |---|---|
-| `NoireText`, `NoireShapes`, `NoireLayout`, `NoirePanel`, `NoireStyle`, `NoireAnim`, `NoireButtons`, `NoireInputs`, `NoireSliders`, `NoireGauges`, `NoireBadge`, `NoireAttention`, `NoireTooltip`, `NoireModal`, `NoireToast`, `NoireWindowChrome` | `NoireUI.Text`, `NoireUI.Shapes`, ... |
+| `NoireText`, `NoireShapes`, `NoireLayout`, `NoirePanel`, `NoireStyle`, `NoireAnim`, `NoireButtons`, `NoireInputs`, `NoireSliders`, `NoireGauges`, `NoireBadge`, `NoireAttention`, `NoireFocus`, `NoireTooltip`, `NoireModal`, `NoireToast`, `NoireWindowChrome` | `NoireUI.Text`, `NoireUI.Shapes`, ... |
 | `NoireUiState` | `NoireUI.State` |
 | `NoireUiSession` | `NoireUI.Session` |
 
@@ -1830,6 +1831,53 @@ It moves the text, the padding, the minimum size, the dot, the outline and the o
 
 **All of it is decoration, so all of it stops under `NoireUI.ReducedMotion`** while what is underneath keeps working: a pulsing button is still a button, a shaken field still holds its text. The one exception is `Glow`, which holds at full strength rather than disappearing — marking the element is the point, and that survives losing the movement.
 
+## Keyboard focus (NoireFocus)
+
+Marks the control the keyboard is pointed at, so there is always somewhere on screen saying where typing and the arrow keys will go. **Every widget NoireUI ships draws it itself**, so a plugin gets focus indication by using the widgets and setting nothing:
+
+```csharp
+NoireFocus.Style.Shape = FocusShape.Corners;   // everywhere, once
+NoireFocus.Enabled = false;                    // or not at all
+
+ImGui.InputText("##notes", ref notes, 256);
+NoireFocus.OnLast();                           // a control the library does not provide
+```
+
+**Focus and selection have to differ in kind, not in degree.** Hover, selection and emphasis are drawn with soft marks: a glow, a tint, a lit plate. Focus is drawn hard edged, and that is the whole design. Two marks that differ only in brightness are read as "this one is selected harder", which is not a thing an interface can mean — and a glow spent on selection is the loudest mark in the vocabulary spent on the quietest state. The natures differ too, which is what decides who gets which: focus is singular, transient and moves on every keystroke, while selection is plural, persistent and moves rarely.
+
+| `FocusShape` | What it is | Where it fits |
+|---|---|---|
+| `Ring` | A hairline outline following the whole edge | The default. Unambiguous at any size or proportion |
+| `Corners` | A short elbow inside each corner | Quieter, and lighter on a busy surface |
+| `Brackets` | A matched `[` and `]`, one each side | The most decorative, and the one needing the most room |
+| `Underline` | A bar along the bottom edge alone | Quietest. Reads naturally on a text field, which already has a frame |
+| `None` | Nothing | How one widget opts out while the rest keep their mark |
+
+**Three levels of control, all optional.** `NoireFocus.Enabled = false` turns the mark off everywhere. Every widget that draws one takes a style of its own — `NumberStyle.Focus`, `DurationStyle.Focus`, `HexColorStyle.Focus`, `NoireComboBox.FocusStyle`, `NoireTagInput.FocusStyle` — so one field can differ from the rest, or go unmarked with `Shape = FocusShape.None`. And `FocusStyle.CustomDraw` replaces the painter outright:
+
+```csharp
+combo.FocusStyle = new FocusStyle { Shape = FocusShape.None };          // this one widget, unmarked
+
+numberStyle.Focus = new FocusStyle
+{
+    CustomDraw = args =>
+    {
+        args.DrawShape();                                               // what NoireUI would have drawn
+        args.DrawList.AddCircleFilled(args.Min, 3f * args.Arrival, gold); // and something of your own
+    },
+};
+```
+
+The hook is handed the rect with the spread and arrival already applied, the faded colour, the control's own rectangle, and `Arrival` from 0 to 1, so a custom mark can animate with the arrival rather than against it. `DrawShape()` paints the shipped look, for a hook adding to it rather than replacing it; a hook that draws nothing is another way to suppress one widget's mark.
+
+**The movement runs on arrival and never at rest.** `ArrivalSeconds` (0.12 by default) is how long the mark takes to settle onto a control that has just taken focus, drifting in from `ArrivalSpread` further out and fading up as it lands. An arrival is either focus moving to a different control or focus returning to one it left — the second is detected from a gap in the frames the mark was drawn on, since nothing tells a stateless surface that focus went away. Seeing *where focus went* is the hard part of keyboard navigation, and a short movement answers it; a mark that kept moving would be animating underneath the text the user is in the middle of typing, and would collide with `NoireAttention.Pulse`, which already means "this needs attention" rather than "this is where you are".
+
+**It is the one mark that survives `NoireUI.ReducedMotion`.** Everything in `NoireAttention` stops there, deliberately. Focus does not: the arrival simply does not run, and the mark is placed instantly at full strength. The people navigating by keyboard are exactly the people who need to see where the keyboard is, so dropping the signal along with the motion would fail its own audience. `NoireFocus.Enabled = false` is available and is a real accessibility loss, not a cosmetic preference.
+
+Arms on `Corners` and `Brackets` are sized by `ArmRatio`, a fraction of the control's shorter side, so one style reads correctly on a text field, a tall list box and a small icon button alike; `ArmLength` overrides it with a fixed distance where that is wanted, the way `SunburstStyle.InnerSize` overrides `InnerRatio`. Either is clamped so two arms on one edge cannot meet, since a mark that closes is a frame drawn the expensive way and stops reading as corners at all.
+
+Nothing here submits an ImGui item. Like a badge, the mark is painted over the layout rather than added to it, so it never moves what is around it.
+
 ## Custom Tooltips
 
 `NoireTooltip` draws tooltips that are **not** part of the regular ImGui tooltip system: they are independent windows on the topmost display layer. This means you can show a custom tooltip **and** a regular `ImGui.SetTooltip()` at the same time.
@@ -2186,12 +2234,16 @@ Set `TickLength` to zero and this is an ordinary outline again.
 new FrameStyle { TickLength = 16f, TickFallback = TickFallback.Brackets };
 ```
 
-The same brackets are public on their own, for anything drawing its own edge:
+The same brackets are public on their own, and so are the corner ticks, for anything drawing its own edge:
 
 ```csharp
 NoireShapes.Brackets(min, max, gold, armLength: 7f, thickness: 1.5f);
 NoireShapes.Bracket(min, max, gold, 7f, 1.5f, BracketSide.Right);   // just the "]"
+NoireShapes.CornerTicks(min, max, gold, length: 7f, thickness: 1.5f);
+NoireShapes.CornerTicks(min, max, gold, 7f, 1.5f, RectCorners.TopLeft | RectCorners.BottomRight);
 ```
+
+Each tick is one three-point path rather than two lines meeting at a point. A line is drawn centred on its own path, so two of them sharing an end leave the outer corner uncovered by half the thickness: a square notch exactly where the tick is supposed to turn.
 
 ### Arcs, rings and wedges
 

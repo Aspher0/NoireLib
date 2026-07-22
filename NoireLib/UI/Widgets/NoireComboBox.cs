@@ -375,6 +375,16 @@ public class NoireComboBox<T>
     public TooltipStyle? WheelCycleHintStyle { get; set; } = null;
 
     /// <summary>
+    /// How the keyboard focus mark looks on this combo and its filter. When <see langword="null"/>,
+    /// <see cref="NoireFocus.Style"/>.
+    /// </summary>
+    /// <remarks>
+    /// The per-widget override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
+    /// this combo unmarked while the rest of the interface keeps its mark.
+    /// </remarks>
+    public FocusStyle? FocusStyle { get; set; }
+
+    /// <summary>
     /// The binding the closed-combo wheel cycling currently requires: the live binding of the hotkey attached through
     /// <see cref="BindWheelCycleHotkey"/> when there is one, otherwise <see cref="WheelCycleBinding"/>.<br/>
     /// An attached hotkey is read on every access rather than copied, so a rebinding (through
@@ -577,7 +587,13 @@ public class NoireComboBox<T>
         var popup = BeginPopupStyle();
 
         ApplyPopupConstraints();
+
         var box = BeginBox(out var boxRect);
+
+        // Read here rather than after the popup, because the last item by then is whatever the dropdown's contents
+        // submitted last. The mark itself is painted further down, once the box and its arrow are drawn.
+        var boxFocused = NoireFocus.IsLastFocused();
+        var boxItem = boxFocused ? ImGuiP.GetItemID() : 0u;
 
         // Read out here, because inside the popup the current window is the popup. A dropdown opened from a window that
         // is holding itself in front has to be held there too, or it opens underneath the combo it belongs to.
@@ -613,6 +629,8 @@ public class NoireComboBox<T>
         box.Dispose();
         popup.Dispose();
         DrawBoxArrow(boxRect);
+
+        NoireFocus.On(UiRect.FromBounds(boxRect.Min, boxRect.Max), boxFocused, boxItem, FocusStyle);
 
         // While the dropdown is open the popup is a separate window that owns the wheel itself, so the cycling stands down.
         if (comboOpen)
@@ -872,6 +890,8 @@ public class NoireComboBox<T>
             // outside the popup without the window's border following the field's.
             using (PushFilterStyle())
                 confirm |= ImGui.InputTextWithHint(UiIds.For("###NoireComboFilter_", Id), FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
+
+            NoireFocus.OnLast(FocusStyle);
 
             if (ImGui.IsItemEdited())
             {

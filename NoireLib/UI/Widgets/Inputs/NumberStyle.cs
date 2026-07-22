@@ -58,6 +58,15 @@ public sealed class NumberStyle
     /// </summary>
     public float Width { get; set; }
 
+    /// <summary>
+    /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
+    /// </summary>
+    /// <remarks>
+    /// The per-field override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
+    /// this one field unmarked while the rest of the interface keeps its mark.
+    /// </remarks>
+    public FocusStyle? Focus { get; set; }
+
     /// <summary>Copies the style, for tweaking one call site without touching the shared object.</summary>
     /// <returns>A copy.</returns>
     public NumberStyle Clone() => new()
@@ -71,5 +80,6 @@ public sealed class NumberStyle
         Default = Default,
         Validate = Validate,
         Width = Width,
+        Focus = Focus,
     };
 }

@@ -276,6 +276,10 @@ public static partial class NoireUI
             DrawPump.Clear();
             frameServicesReady = false;
 
+            // Dalamud's hiding is handed back here: it was switched off so windows could answer for themselves, and
+            // with the windows gone there is nothing left to answer.
+            ReleaseRequiredVisibility();
+
             switch (hookMode)
             {
                 case OverlayHookMode.Independent:
