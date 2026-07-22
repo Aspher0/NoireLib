@@ -1,5 +1,4 @@
 ﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Numerics;
 
@@ -103,7 +102,7 @@ public sealed class NoireModalHost : NoireDrawable
 
         // Resolved through the theme rather than inherited, so a light palette does not leave near-white text on a
         // near-white dialog.
-        using var textColor = ImRaii.PushColor(ImGuiCol.Text, theme.Resolve(ThemeColor.Text));
+        using var textColor = UiPush.Color(ImGuiCol.Text, theme.Resolve(ThemeColor.Text));
 
         NoireLayout.WrapText(width, request, static r => r.Message.Draw());
 

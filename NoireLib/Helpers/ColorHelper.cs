@@ -230,9 +230,33 @@ public static class ColorHelper
     /// <summary>
     /// Converts a Vector4 representing RGBA values between 0 and 1 to a uint color value used by ImGui.
     /// </summary>
+    /// <remarks>
+    /// Packed here rather than by calling ImGui's own converter, which is a native call. That is immaterial once, and
+    /// it is not immaterial in a gradient: shading a shape converts every vertex it just produced, so a single
+    /// decorative ornament crossed the managed boundary a couple of thousand times a frame to do arithmetic. The
+    /// layout and the rounding are ImGui's and are asserted against it, so this stays a faster route to the same
+    /// answer rather than a second opinion about what a colour is.
+    /// </remarks>
     /// <param name="color">The Vector4 color to convert.</param>
     /// <returns>The uint representation of the Vector4 color provided.</returns>
-    public static uint Vector4ToUint(Vector4 color) => ImGui.ColorConvertFloat4ToU32(color);
+    public static uint Vector4ToUint(Vector4 color)
+        => Saturate(color.X) | (Saturate(color.Y) << 8) | (Saturate(color.Z) << 16) | (Saturate(color.W) << 24);
+
+    /// <summary>
+    /// Turns one channel from 0 to 1 into the byte ImGui packs, clamping and rounding the way ImGui does.
+    /// </summary>
+    private static uint Saturate(float channel)
+        => (uint)((channel < 0f ? 0f : channel > 1f ? 1f : channel) * 255f + 0.5f);
+
+    /// <summary>
+    /// The alpha channel of a packed ImGui color, from 0 to 1.
+    /// </summary>
+    /// <remarks>
+    /// For the callers that want only the alpha and would otherwise unpack all four channels to reach it.
+    /// </remarks>
+    /// <param name="color">The packed color.</param>
+    /// <returns>The alpha, from 0 to 1.</returns>
+    public static float UintAlpha(uint color) => ((color >> 24) & 0xFFu) / 255f;
 
     /// <summary>
     /// Converts a hexadecimal color string to its equivalent 32-bit unsigned integer representation.

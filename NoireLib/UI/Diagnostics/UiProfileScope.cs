@@ -3,7 +3,8 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// One open measurement, closed when it is disposed. Created by <see cref="UiProfilerExtensions.Measure"/>.
+/// One open measurement, closed when it is disposed. Created by
+/// <see cref="UiProfilerExtensions.Measure(UiProfiler, string)"/>.
 /// </summary>
 /// <remarks>
 /// A <see langword="ref struct"/> so it lives on the stack and a measurement costs no allocation, which matters for a
@@ -15,12 +16,12 @@ namespace NoireLib.UI;
 public ref struct UiProfileScope
 {
     private readonly UiProfiler? profiler;
-    private readonly string name;
+    private readonly UiScopeName? name;
     private readonly long started;
 
     private bool closed;
 
-    internal UiProfileScope(UiProfiler profiler, string name)
+    internal UiProfileScope(UiProfiler profiler, UiScopeName? name)
     {
         this.name = name;
         started = profiler.Open(name);
@@ -65,7 +66,7 @@ internal static class UiProfile
         // The name is composed only while the profiler is on, since composing it costs the same dictionary lookup the
         // measurement itself would.
         var profiler = NoireUI.Profiler;
-        return profiler.Measure(profiler.Enabled ? UiIds.Join(kind, ":", id) : string.Empty);
+        return profiler.Measure(profiler.Enabled ? UiScopeName.For(UiIds.Join(kind, ":", id)) : null);
     }
 }
 
@@ -88,6 +89,24 @@ public static class UiProfilerExtensions
     public static UiProfileScope Measure(this UiProfiler profiler, string name)
     {
         ArgumentNullException.ThrowIfNull(profiler);
-        return new UiProfileScope(profiler, name);
+
+        // Resolved only while the profiler is on, so a disabled one still costs a boolean read rather than the hash
+        // that resolving a name takes.
+        return new UiProfileScope(
+            profiler,
+            profiler.Enabled && !string.IsNullOrEmpty(name) ? UiScopeName.For(name) : null);
     }
+
+    /// <summary>
+    /// Times everything up to the returned scope's disposal, under a name already resolved to a handle.
+    /// </summary>
+    /// <remarks>
+    /// The form the library's own hot paths use. A caller entering the same scope every frame resolves its handle once
+    /// and holds it, which is what keeps a measurement from hashing its own name. See <see cref="UiScopeName"/>.
+    /// </remarks>
+    /// <param name="profiler">The profiler to measure on.</param>
+    /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
+    /// <returns>The open scope. Dispose it to close the measurement.</returns>
+    internal static UiProfileScope Measure(this UiProfiler profiler, UiScopeName? name)
+        => new(profiler, name);
 }

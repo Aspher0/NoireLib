@@ -128,4 +128,39 @@ public sealed class ButtonStyle
         HoldBorderThickness = HoldBorderThickness,
         CustomDraw = CustomDraw,
     };
+
+    /// <summary>
+    /// Copies every field of <paramref name="source"/> into this style, leaving no reference to it.
+    /// </summary>
+    /// <remarks>
+    /// What <see cref="Clone"/> does, into a style that already exists. For a surface that needs a per-item variant of
+    /// a caller's style on every frame: cloning there allocates one of these per item per frame, and a segmented
+    /// control with four options was measured at roughly 315 bytes a segment. The scratch it copies into is reused,
+    /// which is safe only because a style is read by the drawing it is handed to before anything else can run.<br/>
+    /// Kept beside <see cref="Clone"/> so the two field lists are visibly the same list; a field added to one and not
+    /// the other is a variant that silently ignores that setting.
+    /// </remarks>
+    /// <param name="source">The style to copy from.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    internal void CopyFrom(ButtonStyle source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        Tone = source.Tone;
+        Color = source.Color;
+        HoveredColor = source.HoveredColor;
+        ActiveColor = source.ActiveColor;
+        TextColor = source.TextColor;
+        BorderColor = source.BorderColor;
+        BorderSize = source.BorderSize;
+        Rounding = source.Rounding;
+        Padding = source.Padding;
+        Icon = source.Icon;
+        IconColor = source.IconColor;
+        CenterLabel = source.CenterLabel;
+        HoldFill = source.HoldFill;
+        HoldFillColor = source.HoldFillColor;
+        HoldBorderThickness = source.HoldBorderThickness;
+        CustomDraw = source.CustomDraw;
+    }
 }

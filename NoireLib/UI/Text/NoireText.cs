@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ManagedFontAtlas;
-using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Numerics;
 
@@ -63,7 +62,7 @@ public static partial class NoireText
     /// <param name="size">The step of the type scale to draw it at.</param>
     public static void Colored(Vector4 color, string text, TextSize size = TextSize.Body)
     {
-        using var pushed = ImRaii.PushColor(ImGuiCol.Text, color);
+        using var pushed = UiPush.Color(ImGuiCol.Text, color);
         Draw(text, size);
     }
 
@@ -133,8 +132,9 @@ public static partial class NoireText
         At(NoireTheme.Current.ResolveTextSize(size), text, static t =>
         {
             // Measured inside the scope, so the width comes from the font that is about to draw rather than from
-            // whatever was current outside it.
-            var offset = (ImGui.GetContentRegionAvail().X - ImGui.CalcTextSize(t).X) * 0.5f;
+            // whatever was current outside it. That is also why CalcSize is not what is called here: it resolves and
+            // pushes a font of its own, and the one already pushed is the one this has to measure against.
+            var offset = (ImGui.GetContentRegionAvail().X - CalcSizeInCurrentFont(t).X) * 0.5f;
 
             if (offset > 0f)
                 ImGui.SetCursorPosX(ImGui.GetCursorPosX() + offset);
@@ -237,7 +237,7 @@ public static partial class NoireText
             // frame, for text whose whole purpose is to be redrawn as the user types.
             if (highlighted)
             {
-                using var pushed = ImRaii.PushColor(ImGuiCol.Text, highlight);
+                using var pushed = UiPush.Color(ImGuiCol.Text, highlight);
                 ImGui.TextUnformatted(text.AsSpan(start, at - start));
             }
             else
@@ -267,14 +267,21 @@ public static partial class NoireText
     /// Measured with the font pushed, which is the whole point: a layout built on a measurement taken in one font and
     /// drawn in another is wrong everywhere by a few pixels, and neither of the two looks like the one lying. It
     /// therefore answers for whatever would draw *right now*, including the stretched stand-in used while a size is
-    /// still building.
+    /// still building.<br/>
+    /// Needs a frame in progress, not a plugin: with no font built for the size it measures against the stand-in,
+    /// which is the same path <see cref="Tracked(string, float, float)"/> takes and is what makes the answer match
+    /// what would be drawn in the same conditions.
     /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The size the text would occupy, in real pixels.</returns>
     public static Vector2 CalcSize(string text, float sizePx)
     {
-        if (!NoireService.IsInitialized())
+        // Asked of the gate rather than of the service directly. The question is whether ImGui may be called at all,
+        // which is what this guard has always been for: the reads below fault rather than fail with no context. In a
+        // plugin the two are the same answer. The difference is the headless harness, which owns a real context with
+        // no plugin behind it, and where this otherwise returns zero for every measurement the library takes.
+        if (!UiDraw.Available)
             return Vector2.Zero;
 
         text ??= string.Empty;
@@ -288,6 +295,33 @@ public static partial class NoireText
 
         var measured = MeasureText(text, sizePx);
         UiTextMeasureCache.StoreSize(text, sizePx, ambient, measured);
+
+        return measured;
+    }
+
+    /// <summary>
+    /// Measures text against the font already pushed, through the same cache as everything else.
+    /// </summary>
+    /// <remarks>
+    /// For a caller that is already inside a font scope and must not resolve or push another one. The key is the same
+    /// shape the rest of the cache uses, with the current font's size standing in for both the size asked for and the
+    /// size measured with, which is what it is: the font in hand is the font the answer belongs to.
+    /// </remarks>
+    /// <param name="text">The text to measure.</param>
+    /// <returns>The size the text occupies in the current font.</returns>
+    internal static Vector2 CalcSizeInCurrentFont(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return Vector2.Zero;
+
+        var font = UiTextMeasureCache.CurrentFont();
+        var sizePx = ImGui.GetFontSize();
+
+        if (UiTextMeasureCache.TryGetAmbientSize(text, font, sizePx, out var cached))
+            return cached;
+
+        var measured = ImGui.CalcTextSize(text);
+        UiTextMeasureCache.StoreAmbientSize(text, font, sizePx, measured);
 
         return measured;
     }

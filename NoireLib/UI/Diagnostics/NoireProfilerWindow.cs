@@ -1,5 +1,4 @@
 ﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using System;
 using System.Collections.Generic;
@@ -284,6 +283,22 @@ public sealed class NoireProfilerWindow : Window
 
         ImGui.SameLine(0f, NoireUI.Scaled(14f));
 
+        var tracking = NoireUI.Profiler.TrackAllocations;
+
+        if (ImGui.Checkbox("Bytes", ref tracking))
+            NoireUI.Profiler.TrackAllocations = tracking;
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(
+                "Fills the byte columns, which read zero while this is off.\n"
+                + "Separate from Enable because sampling allocation costs more per scope than timing does, and an\n"
+                + "interface opening several hundred scopes a frame pays it on every one. Switch it on to judge\n"
+                + "whether a change allocates; leave it off while reading milliseconds.");
+        }
+
+        ImGui.SameLine(0f, NoireUI.Scaled(14f));
+
         var inactive = showInactive;
 
         if (ImGui.Checkbox("Show idle", ref inactive))
@@ -373,7 +388,7 @@ public sealed class NoireProfilerWindow : Window
         {
             ImGui.SameLine(0f, NoireUI.Scaled(14f));
 
-            using (ImRaii.PushColor(ImGuiCol.Text, ExcludedTextColour))
+            using (UiPush.Color(ImGuiCol.Text, ExcludedTextColour))
             {
                 if (line.TryWrite(CultureInfo.CurrentCulture, $"Excluded: {excludedCount}", out written))
                     ImGui.TextUnformatted(line[..written]);
@@ -416,7 +431,7 @@ public sealed class NoireProfilerWindow : Window
 
         // Coloured by pushing rather than with TextColored, which is a printf-style call: the percent sign below would
         // be read as a conversion there, and escaping it is a trap nobody remembers on the next edit.
-        using (ImRaii.PushColor(ImGuiCol.Text, colour))
+        using (UiPush.Color(ImGuiCol.Text, colour))
         {
             if (line.TryWrite(CultureInfo.CurrentCulture, $"Unaccounted: {unaccounted:0.0000} ms ({share:0}%)", out written))
                 ImGui.TextUnformatted(line[..written]);
@@ -1053,7 +1068,7 @@ public sealed class NoireProfilerWindow : Window
             return;
         }
 
-        using (ImRaii.PushColor(ImGuiCol.Text, WarnColour))
+        using (UiPush.Color(ImGuiCol.Text, WarnColour))
             ImGui.TextUnformatted(text);
     }
 }

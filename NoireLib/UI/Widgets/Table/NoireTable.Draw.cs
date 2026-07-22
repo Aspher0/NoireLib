@@ -1,5 +1,4 @@
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -63,8 +62,8 @@ public sealed partial class NoireTable<T>
         // frame is visibly a separate box rather than part of the table it belongs to.
         bool opened;
 
-        using (ImRaii.PushStyle(ImGuiStyleVar.ChildBorderSize, 1f))
-        using (ImRaii.PushColor(ImGuiCol.Border, NoireTheme.Current.Resolve(ThemeColor.Border)))
+        using (UiPush.Style(ImGuiStyleVar.ChildBorderSize, 1f))
+        using (UiPush.Color(ImGuiCol.Border, NoireTheme.Current.Resolve(ThemeColor.Border)))
         {
             opened = ImGui.BeginChild($"###NoireTableFrame_{Id}", new Vector2(width, outerHeight), true,
                 ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
@@ -385,7 +384,7 @@ public sealed partial class NoireTable<T>
                 // not the item spacing, so a theme whose spacing is the larger of the two overshoots into the rows
                 // either side: two rows report hovered at once and the click goes to whichever was submitted last.
                 // Handing it exactly the cell padding makes that expansion land on the row's own edges.
-                using (ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, new Vector2(style.ItemSpacing.X, style.CellPadding.Y * 2f)))
+                using (UiPush.Style(ImGuiStyleVar.ItemSpacing, new Vector2(style.ItemSpacing.X, style.CellPadding.Y * 2f)))
                 {
                     // Passed as never selected: this is the hit target only. A selectable paints its highlight over
                     // that same expanded box, where TableSetBgColor fills exactly the row and nothing else.

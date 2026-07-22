@@ -1,5 +1,4 @@
 ﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -163,7 +162,7 @@ public static class NoirePanel
         var theme = NoireTheme.Current;
         var color = options.HeaderColor ?? theme.Resolve(ThemeColor.TextMuted);
 
-        using (ImRaii.PushColor(ImGuiCol.Text, color))
+        using (UiPush.Color(ImGuiCol.Text, color))
             NoireText.Tracked(options.Header, options.HeaderTracking, options.HeaderSize);
 
         if (options.HeaderRule)

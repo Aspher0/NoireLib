@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 
@@ -202,9 +203,10 @@ public static partial class NoireShapes
     /// Draws a sunburst: rays radiating from a point, fading out at the rim.
     /// </summary>
     /// <remarks>
-    /// Drawn as geometry rather than rendered into a cached texture. Rays are a few dozen triangles, so there is
-    /// nothing to cache that would be cheaper than drawing them, and geometry stays sharp at every scale and takes no
-    /// texture memory.
+    /// Drawn as geometry rather than rendered into a cached texture, so it stays sharp at every scale and takes no
+    /// texture memory. The ray directions are worked out once for a given burst and reused: they are unit vectors,
+    /// scaled by the radius and turned by the rotation on the way out, so one set serves a burst of any size at any
+    /// angle.
     /// </remarks>
     /// <param name="centre">Where the rays converge, in screen space.</param>
     /// <param name="radius">How far they reach, in real pixels.</param>
@@ -224,7 +226,6 @@ public static partial class NoireShapes
         var slot = MathF.Tau / style.Rays;
         var half = slot * duty * 0.5f;
         var softness = Math.Clamp(style.Softness, 0f, 1f);
-        var faded = color with { W = 0f };
 
         // A soft side is built the way the glow is: layers that each carry part of the alpha, narrowing inwards so
         // they accumulate towards the middle of the ray and leave its edge at a fraction of full strength. An angular
@@ -249,17 +250,32 @@ public static partial class NoireShapes
 
         Span<Vector2> wedge = stackalloc Vector2[4];
 
+        // The rays are filled first and the fade is applied to all of them at once afterwards. Shading each ray as it
+        // was filled meant entering the shading pass once per ray per layer, a hundred and eighty times for the burst
+        // this window draws, and that call was three quarters of what a faded sunburst cost. The fade is the same
+        // radial ramp for every ray, so it is one pass over everything the burst just produced.
+        var drawList = draw.List;
+        var shading = style.Fade && !drawList.IsNull;
+        var firstVertex = shading ? drawList.VtxBuffer.Size : 0;
+
+        // The ray directions come back unrotated, so the burst's own rotation is one pair of trigonometric calls for
+        // the whole shape rather than three for every ray of every layer.
+        var directions = ResolveSunburstDirections(style.Rays, half, softness, layers);
+        var stride = SunburstStride(layers);
+        var burst = Radians(style.RotationTurns);
+        var burstCos = MathF.Cos(burst);
+        var burstSin = MathF.Sin(burst);
+
         for (var ray = 0; ray < style.Rays; ray++)
         {
-            var angle = Radians(style.RotationTurns) + (slot * ray);
-            var along = Direction(angle);
+            var origin = ray * stride;
+            var along = Turn(directions[origin], burstCos, burstSin);
 
             for (var layer = 0; layer < layers; layer++)
             {
-                var width = layers == 1 ? half : half * (1f - (softness * layer / (layers - 1)));
                 var tint = color with { W = layerAlphas[layer] };
-                var left = Direction(angle - width);
-                var right = Direction(angle + width);
+                var left = Turn(directions[origin + 1 + (layer * 2)], burstCos, burstSin);
+                var right = Turn(directions[origin + 2 + (layer * 2)], burstCos, burstSin);
 
                 int count;
 
@@ -281,21 +297,26 @@ public static partial class NoireShapes
                     count = 4;
                 }
 
-                if (style.Fade)
-                    FillShaded(wedge[..count], centre + (along * inner), centre + (along * radius), tint, faded);
-                else
-                    Fill(wedge[..count], tint);
+                // The layer's own alpha goes into the fill rather than into the fade, which is what lets one fade serve
+                // every layer: each layer differs by its tint, and they all share the same ramp from centre to rim.
+                Fill(wedge[..count], tint);
             }
         }
+
+        // Scales what the fills already laid down rather than replacing it, so each layer keeps the alpha that makes it
+        // a layer and the rays keep their colour.
+        if (shading)
+            ShadeRadial(drawList, firstVertex, drawList.VtxBuffer.Size, centre, inner, radius);
     }
 
     /// <summary>
     /// Draws a guilloche: the interlaced rosette engraved on banknotes and watch dials.
     /// </summary>
     /// <remarks>
-    /// Drawn as a polyline rather than rendered into a cached texture, for the same reason as
-    /// <see cref="Sunburst"/>: the curve is a few hundred points, and a curve stays a curve at any scale where a
-    /// texture would have to be rebuilt.
+    /// Drawn as a polyline rather than rendered into a cached texture, for the same reason as <see cref="Sunburst"/>:
+    /// a curve stays a curve at any scale where a texture would have to be rebuilt. The curve itself is worked out
+    /// once at radius one and then scaled, turned and placed on the way out, so a rosette that sits there, animates its
+    /// size or rotates is tessellated once rather than on every frame.
     /// </remarks>
     /// <param name="centre">The centre of the rosette, in screen space.</param>
     /// <param name="radius">Its outer radius, in real pixels.</param>
@@ -343,19 +364,15 @@ public static partial class NoireShapes
             var cos = MathF.Cos(rotation);
             var sin = MathF.Sin(rotation);
 
-            // The hypotrochoid: a point offset from the centre of a small circle rolling inside a large one. The lobe
-            // count is the ratio of the two radii, and the depth is how far out from that centre the point sits.
-            var rolling = ringRadius / style.Lobes;
-            var carrier = ringRadius - rolling;
-            var offset = depth * rolling;
-            var ratio = carrier / rolling;
+            // The curve comes back at radius one and unrotated, so what is left per point is a multiply, a rotation and
+            // a translation. The trigonometry that used to be here, four calls for every one of a few hundred points on
+            // every ring on every frame, happens once for a given rosette and never again.
+            var unit = ResolveGuillochePath(style.Lobes, depth, segments);
 
             for (var step = 0; step < segments; step++)
             {
-                var t = MathF.Tau * step / segments;
-
-                var x = (carrier * MathF.Cos(t)) + (offset * MathF.Cos(ratio * t));
-                var y = (carrier * MathF.Sin(t)) - (offset * MathF.Sin(ratio * t));
+                var x = unit[step].X * ringRadius;
+                var y = unit[step].Y * ringRadius;
 
                 path[step] = centre + new Vector2((x * cos) - (y * sin), (x * sin) + (y * cos));
             }
@@ -396,6 +413,167 @@ public static partial class NoireShapes
         var byLobes = lobes * MinPointsPerLobe;
 
         return Math.Clamp(Math.Max(byLength, byLobes), 32, MaxCurvePoints);
+    }
+
+    /// <summary>
+    /// What a sunburst's ray directions are decided by, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// Neither the radius nor the rotation is here. The rays are unit directions scaled on the way out, and the burst
+    /// is turned as a whole on the way out too, so one entry serves a sunburst of any size at any angle. That is what
+    /// lets a rotating burst, which is the reason one is usually drawn, hit the cache on every frame instead of missing
+    /// on all of them.
+    /// </remarks>
+    /// <param name="Rays">How many rays radiate from the centre.</param>
+    /// <param name="HalfWidth">Half the angular width of a ray, in radians.</param>
+    /// <param name="Softness">How much the layers narrow inwards.</param>
+    /// <param name="Layers">How many layers build one soft ray.</param>
+    private readonly record struct SunburstKey(int Rays, float HalfWidth, float Softness, int Layers);
+
+    /// <summary>
+    /// Sunburst ray directions already worked out, so the same burst is not re-tessellated every frame.
+    /// </summary>
+    private static readonly HotPathCache<SunburstKey, Vector2[]> SunburstCache = new();
+
+    /// <summary>
+    /// How many directions one ray needs: the one down its middle, and an edge pair for each layer.
+    /// </summary>
+    private static int SunburstStride(int layers) => 1 + (layers * 2);
+
+    /// <summary>
+    /// Turns a unit direction by an angle already reduced to its cosine and sine.
+    /// </summary>
+    private static Vector2 Turn(Vector2 direction, float cos, float sin)
+        => new((direction.X * cos) - (direction.Y * sin), (direction.X * sin) + (direction.Y * cos));
+
+    /// <summary>
+    /// Writes the unrotated unit directions for every ray of a sunburst: down the middle of each ray, then the two
+    /// edges of each of its layers.
+    /// </summary>
+    /// <remarks>
+    /// Pure, so the layout can be asserted on without an ImGui context.
+    /// </remarks>
+    /// <param name="directions">Receives the directions. Must be at least rays by stride long.</param>
+    /// <param name="rays">How many rays radiate from the centre.</param>
+    /// <param name="halfWidth">Half the angular width of a ray, in radians.</param>
+    /// <param name="softness">How much the layers narrow inwards.</param>
+    /// <param name="layers">How many layers build one soft ray.</param>
+    /// <returns>How many directions were written.</returns>
+    internal static int SunburstDirections(Span<Vector2> directions, int rays, float halfWidth, float softness, int layers)
+    {
+        var slot = MathF.Tau / rays;
+        var stride = SunburstStride(layers);
+
+        for (var ray = 0; ray < rays; ray++)
+        {
+            var angle = slot * ray;
+            var origin = ray * stride;
+
+            directions[origin] = Direction(angle);
+
+            for (var layer = 0; layer < layers; layer++)
+            {
+                var width = layers == 1 ? halfWidth : halfWidth * (1f - (softness * layer / (layers - 1)));
+
+                directions[origin + 1 + (layer * 2)] = Direction(angle - width);
+                directions[origin + 2 + (layer * 2)] = Direction(angle + width);
+            }
+        }
+
+        return rays * stride;
+    }
+
+    /// <summary>
+    /// The unit ray directions for a burst, from the cache when they are already there and computed into it when not.
+    /// </summary>
+    private static Vector2[] ResolveSunburstDirections(int rays, float halfWidth, float softness, int layers)
+    {
+        var key = new SunburstKey(rays, halfWidth, softness, layers);
+
+        if (SunburstCache.TryGet(key, out var cached))
+            return cached;
+
+        var directions = new Vector2[rays * SunburstStride(layers)];
+        SunburstDirections(directions, rays, halfWidth, softness, layers);
+        SunburstCache.Set(key, directions);
+
+        return directions;
+    }
+
+    /// <summary>
+    /// What a guilloche ring's shape is decided by, and nothing else.
+    /// </summary>
+    /// <remarks>
+    /// The radius is deliberately absent. A hypotrochoid is exactly proportional to it, so one curve serves every size
+    /// of the same rosette and an animated radius keeps hitting the same entry instead of filling the cache with a
+    /// curve per frame. Rotation is absent for the same reason: it is applied on the way out.
+    /// </remarks>
+    /// <param name="Lobes">How many petals.</param>
+    /// <param name="Depth">How far the tracing point sits from the rolling circle's centre.</param>
+    /// <param name="Segments">How many points the ring is drawn with.</param>
+    private readonly record struct GuillocheKey(int Lobes, float Depth, int Segments);
+
+    /// <summary>
+    /// Guilloche rings already worked out, so the same rosette is not re-tessellated every frame.
+    /// </summary>
+    /// <remarks>
+    /// A rosette is the most expensive thing this file draws: hundreds of points, four trigonometric calls each, on
+    /// every frame it is on screen. The curve itself never changes while the ornament sits there, so it is computed
+    /// once and the points are resubmitted.<br/>
+    /// Not a texture, and it could not be: ImGui builds vertex buffers the host renders at the end of the frame and
+    /// there is no render-to-texture to capture them with. Caching the geometry instead also survives tinting and
+    /// rotation with no invalidation at all, which a cache of pixels would not.
+    /// </remarks>
+    private static readonly HotPathCache<GuillocheKey, Vector2[]> GuillocheCache = new();
+
+    /// <summary>
+    /// Writes one guilloche ring of radius one, centred on the origin and unrotated.
+    /// </summary>
+    /// <remarks>
+    /// The hypotrochoid: a point offset from the centre of a small circle rolling inside a large one. The lobe count is
+    /// the ratio of the two radii, and the depth is how far out from that centre the point sits.<br/>
+    /// Pure, and kept that way so the curve can be asserted on without an ImGui context, the way the arc and diamond
+    /// paths already are.
+    /// </remarks>
+    /// <param name="points">Receives the curve. Must be at least <paramref name="segments"/> long.</param>
+    /// <param name="lobes">How many petals the rosette has.</param>
+    /// <param name="depth">How pronounced the petals are, from 0 to 1.</param>
+    /// <param name="segments">How many points to write.</param>
+    /// <returns>How many points were written.</returns>
+    internal static int GuillochePath(Span<Vector2> points, int lobes, float depth, int segments)
+    {
+        var rolling = 1f / lobes;
+        var carrier = 1f - rolling;
+        var offset = depth * rolling;
+        var ratio = carrier / rolling;
+
+        for (var step = 0; step < segments; step++)
+        {
+            var t = MathF.Tau * step / segments;
+
+            points[step] = new Vector2(
+                (carrier * MathF.Cos(t)) + (offset * MathF.Cos(ratio * t)),
+                (carrier * MathF.Sin(t)) - (offset * MathF.Sin(ratio * t)));
+        }
+
+        return segments;
+    }
+
+    /// <summary>
+    /// The unit ring for a shape, from the cache when it is already there and computed into it when it is not.
+    /// </summary>
+    private static Vector2[] ResolveGuillochePath(int lobes, float depth, int segments)
+    {
+        var key = new GuillocheKey(lobes, depth, segments);
+
+        if (GuillocheCache.TryGet(key, out var cached))
+            return cached;
+
+        var path = new Vector2[segments];
+        GuillochePath(path, lobes, depth, segments);
+        GuillocheCache.Set(key, path);
+
+        return path;
     }
 
     #endregion

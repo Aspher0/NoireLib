@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -456,17 +455,17 @@ public sealed class NoireWorldLabel : NoireDrawable
         // after it has been drawn, and ImGui is the only thing that can apply it without a frame of lag.
         ImGui.SetNextWindowPos(position, ImGuiCond.Always, pivot);
 
-        using var alphaStyle = ImRaii.PushStyle(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * alpha);
-        using var paddingStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, NoireUI.Scaled(Padding) * scale);
-        using var roundingStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, NoireUI.Scaled(Rounding));
-        using var borderStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, 0f);
-        using var minSizeStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowMinSize, Vector2.One);
+        using var alphaStyle = UiPush.Style(ImGuiStyleVar.Alpha, ImGui.GetStyle().Alpha * alpha);
+        using var paddingStyle = UiPush.Style(ImGuiStyleVar.WindowPadding, NoireUI.Scaled(Padding) * scale);
+        using var roundingStyle = UiPush.Style(ImGuiStyleVar.WindowRounding, NoireUI.Scaled(Rounding));
+        using var borderStyle = UiPush.Style(ImGuiStyleVar.WindowBorderSize, 0f);
+        using var minSizeStyle = UiPush.Style(ImGuiStyleVar.WindowMinSize, Vector2.One);
 
         // ImGui picks which colour a window's background comes from by flag, and the flag that promotes this one to the
         // top layer is also the one that switches it from WindowBg to PopupBg. Pushed to the wrong index the plate keeps
         // the theme's popup colour instead, so Background and BackgroundOpacity read as broken on exactly the labels
         // that asked to stay in front. See UiWindowOrder.TopLayerFlag.
-        var background = ImRaii.PushColor(
+        var background = UiPush.Color(
             AlwaysOnTop ? ImGuiCol.PopupBg : ImGuiCol.WindowBg,
             ColorHelper.ScaleAlpha(Background ?? theme.Resolve(ThemeColor.Surface), BackgroundOpacity));
 
@@ -543,7 +542,7 @@ public sealed class NoireWorldLabel : NoireDrawable
             return;
         }
 
-        using var color = ImRaii.PushColor(ImGuiCol.Text, TextColor ?? theme.Resolve(ThemeColor.Text));
+        using var color = UiPush.Color(ImGuiCol.Text, TextColor ?? theme.Resolve(ThemeColor.Text));
         ImGui.TextUnformatted(Text);
     }
 

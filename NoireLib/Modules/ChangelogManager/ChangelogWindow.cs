@@ -3,6 +3,7 @@ using Dalamud.Interface;
 using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Core.Modules;
+using NoireLib.UI;
 using System;
 using System.Linq;
 using System.Numerics;
@@ -172,12 +173,10 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
                 }
 
                 var titleColor = currentChangelog.TitleColor ?? new Vector4(1f, 1f, 1f, 1f);
-                using (ImRaii.PushColor(ImGuiCol.Text, titleColor))
+                using (var pushed = UiPush.Color(ImGuiCol.Text, titleColor))
                 {
-                    using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
-                    {
-                        ImGui.TextWrapped($"- {currentChangelog.Title}");
-                    }
+                    pushed.PushTextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X);
+                    ImGui.TextWrapped($"- {currentChangelog.Title}");
                 }
             }
         }
@@ -194,16 +193,18 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // Reserve space for footer
 
         var bgColor = new Vector4(0.5f, 0.5f, 0.5f, 0.05f);
-        using (ImRaii.PushColor(ImGuiCol.Border, bgColor))
+        using (UiPush.Color(ImGuiCol.Border, bgColor))
         {
             using (ImRaii.Child("##ChangelogContentChild", new Vector2(0, availHeight), false))
             {
                 var padding = 5f;
                 ImGui.Dummy(new Vector2(0, padding));
+                // Left on ImRaii deliberately: its scaled overload multiplies by the global scale, and a raw
+                // ImGui.Indent would indent the same amount at every scale. See ticket 29.
                 using (ImRaii.PushIndent(padding))
                 {
                     // Set wrap position accounting for padding
-                    using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
+                    using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
                     {
                         if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
                         {
@@ -264,7 +265,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             // Headers with icons (optional)
             else if (entry.Icon.HasValue)
             {
-                using (ImRaii.PushFont(UiBuilder.IconFont))
+                using (UiPush.Font(UiBuilder.IconFont))
                 {
                     var iconColor = entry.IconColor ?? new Vector4(1f, 1f, 1f, 1f);
                     ImGui.TextColored(iconColor, entry.Icon.Value.ToIconString());
@@ -273,7 +274,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
 
             var headerTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
-            using (ImRaii.PushColor(ImGuiCol.Text, headerTextColor))
+            using (UiPush.Color(ImGuiCol.Text, headerTextColor))
             {
                 var originalPos = ImGui.GetCursorPos();
 
@@ -305,7 +306,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         // Store position after bullet/icon for button alignment
         var textStartPosX = 0f;
 
-        using (ImRaii.PushColor(ImGuiCol.Text, entryTextColor))
+        using (UiPush.Color(ImGuiCol.Text, entryTextColor))
         {
 
             // Calculate prefix width (bullet or icon)
@@ -317,7 +318,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
             if (willShowIcon)
             {
-                using (ImRaii.PushFont(UiBuilder.IconFont))
+                using (UiPush.Font(UiBuilder.IconFont))
                 {
                     prefixWidth = ImGui.CalcTextSize(entry.Icon!.Value.ToIconString()).X + ImGui.GetStyle().ItemSpacing.X;
                 }
@@ -363,7 +364,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             {
                 // Entry with icon
                 var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
-                using (ImRaii.PushFont(UiBuilder.IconFont))
+                using (UiPush.Font(UiBuilder.IconFont))
                 {
                     ImGui.TextColored(iconColor, entry.Icon!.Value.ToIconString());
                 }

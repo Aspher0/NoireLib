@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -151,6 +150,30 @@ public class NoireToastArea : NoireDrawable
             return toasts.ToArray();
     }
 
+    /// <summary>
+    /// Copies the toasts into the reused snapshot buffer, for the drawing to walk.
+    /// </summary>
+    /// <remarks>
+    /// What <see cref="GetToasts"/> does, borrowed rather than allocated, because this one runs on every frame the area
+    /// holds a toast. The copy is the point rather than an implementation detail: it is what lets a toast's own action
+    /// dismiss it, or raise another, without the frame that drew the button walking a list that changed underneath it.
+    /// The lock is held only for the copy, so a callback firing later in the frame is free to take it.
+    /// </remarks>
+    /// <returns>A borrowed buffer holding the toasts in order. Dispose it to give the array back.</returns>
+    private PooledBuffer<NoireToast> SnapshotToasts()
+    {
+        lock (syncRoot)
+        {
+            var buffer = PooledBuffer<NoireToast>.Rent(toasts.Count);
+            var span = buffer.Span;
+
+            for (var index = 0; index < toasts.Count; index++)
+                span[index] = toasts[index];
+
+            return buffer;
+        }
+    }
+
     #endregion
 
     #region Adding and removing
@@ -217,11 +240,18 @@ public class NoireToastArea : NoireDrawable
     /// <inheritdoc/>
     protected override void DrawCore()
     {
-        var visible = new List<NoireToast>();
-        var total = Measure(visible);
+        // Borrowed for the frame rather than allocated in it, and rented per frame rather than kept between them: a
+        // toast's action button runs the consumer's code in the middle of the stack being drawn, so a buffer belonging
+        // to the area rather than to the frame could be cleared and refilled underneath the loop still walking it.
+        using var snapshot = SnapshotToasts();
+        using var buffer = PooledBuffer<NoireToast>.Rent(Math.Min(snapshot.Length, Math.Max(1, MaxVisible)));
 
-        if (visible.Count == 0)
+        var count = Measure(snapshot.Span, buffer.Span, out var total);
+
+        if (count == 0)
             return;
+
+        var visible = buffer.Span[..count];
 
         // Sized and placed exactly, from heights measured this frame rather than from what the window happened to be
         // last frame. An auto-resizing window is always one frame behind its own contents, which a bottom-anchored
@@ -243,9 +273,9 @@ public class NoireToastArea : NoireDrawable
         ImGui.SetNextWindowPos(Position.Resolve(size, viewport.Pos, viewport.Size), ImGuiCond.Always);
         ImGui.SetNextWindowSize(size, ImGuiCond.Always);
 
-        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        using var border = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, 0f);
-        using var minSize = ImRaii.PushStyle(ImGuiStyleVar.WindowMinSize, Vector2.One);
+        using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        using var border = UiPush.Style(ImGuiStyleVar.WindowBorderSize, 0f);
+        using var minSize = UiPush.Style(ImGuiStyleVar.WindowMinSize, Vector2.One);
 
         var flags = ToastWindowFlags;
         if (AlwaysOnTop)
@@ -271,17 +301,23 @@ public class NoireToastArea : NoireDrawable
     /// its way out contributes a shrinking share of it: that is what makes the stack close up smoothly behind a
     /// dismissed toast instead of the rest jumping into the gap.
     /// </remarks>
-    /// <param name="visible">Receives the toasts to draw, in stack order.</param>
-    /// <returns>The total height the stack needs.</returns>
-    private float Measure(List<NoireToast> visible)
+    /// <param name="snapshot">The toasts to consider, oldest first.</param>
+    /// <param name="visible">Receives the toasts to draw, in stack order. Never filled beyond its own length.</param>
+    /// <param name="total">Receives the total height the stack needs.</param>
+    /// <returns>How many of <paramref name="visible"/> were filled.</returns>
+    private int Measure(ReadOnlySpan<NoireToast> snapshot, Span<NoireToast> visible, out float total)
     {
-        var snapshot = GetToasts();
-        var expired = new List<NoireToast>();
-        var total = 0f;
+        using var buffer = PooledBuffer<NoireToast>.Rent(snapshot.Length);
 
-        for (var index = 0; index < snapshot.Count && visible.Count < Math.Max(1, MaxVisible); index++)
+        var expired = buffer.Span;
+        var expiredCount = 0;
+        var count = 0;
+
+        total = 0f;
+
+        for (var index = 0; index < snapshot.Length && count < visible.Length; index++)
         {
-            var toast = snapshot[NewestFirst ? snapshot.Count - 1 - index : index];
+            var toast = snapshot[NewestFirst ? snapshot.Length - 1 - index : index];
 
             // The transition is seeded at zero on the frame a toast first appears: the animation state would otherwise
             // be created already at its target, and the toast would pop into place rather than arrive.
@@ -297,27 +333,27 @@ public class NoireToastArea : NoireDrawable
 
             if (toast.IsDismissed && toast.Presence <= 0.01f)
             {
-                expired.Add(toast);
+                expired[expiredCount++] = toast;
                 continue;
             }
 
             var full = toast.LastHeight > 0f ? toast.LastHeight : EstimateHeight(toast);
             toast.Reserved = ResolveSlotHeight(full * toast.Presence);
 
-            total += toast.Reserved + (visible.Count > 0 ? StackGap : 0f);
-            visible.Add(toast);
+            total += toast.Reserved + (count > 0 ? StackGap : 0f);
+            visible[count++] = toast;
         }
 
-        Retire(expired);
-        return total;
+        Retire(expired[..expiredCount]);
+        return count;
     }
 
     /// <summary>
     /// Removes toasts that have finished leaving and fires their dismissal callbacks.
     /// </summary>
-    private void Retire(List<NoireToast> expired)
+    private void Retire(ReadOnlySpan<NoireToast> expired)
     {
-        if (expired.Count == 0)
+        if (expired.Length == 0)
             return;
 
         lock (syncRoot)
@@ -346,7 +382,7 @@ public class NoireToastArea : NoireDrawable
     /// </remarks>
     /// <param name="visible">The toasts to draw, in stack order.</param>
     /// <param name="height">The window's own height, which is the measured total rounded up to a whole pixel.</param>
-    private void DrawStack(List<NoireToast> visible, float height)
+    private void DrawStack(ReadOnlySpan<NoireToast> visible, float height)
     {
         var window = ImGui.GetWindowPos();
 
@@ -354,7 +390,7 @@ public class NoireToastArea : NoireDrawable
         {
             var top = MathF.Floor(window.Y);
 
-            for (var index = 0; index < visible.Count; index++)
+            for (var index = 0; index < visible.Length; index++)
             {
                 if (index > 0)
                     top += StackGap;
@@ -375,9 +411,9 @@ public class NoireToastArea : NoireDrawable
         // The rounding slack, always under a pixel, lands at the far end where there is nothing to disturb.
         var bottom = MathF.Floor(window.Y + height);
 
-        for (var index = visible.Count - 1; index >= 0; index--)
+        for (var index = visible.Length - 1; index >= 0; index--)
         {
-            if (index < visible.Count - 1)
+            if (index < visible.Length - 1)
                 bottom -= StackGap;
 
             bottom -= visible[index].Reserved;
@@ -489,7 +525,7 @@ public class NoireToastArea : NoireDrawable
             ImGui.SetCursorScreenPos(body + Style.ScaledPadding + new Vector2(Style.ScaledStripeWidth, 0f));
             ImGui.BeginGroup();
 
-            using (ImRaii.PushStyle(ImGuiStyleVar.Alpha, alpha))
+            using (UiPush.Style(ImGuiStyleVar.Alpha, alpha))
                 DrawBody(toast, accent, theme);
 
             ImGui.EndGroup();
@@ -640,7 +676,7 @@ public class NoireToastArea : NoireDrawable
     {
         // A toast paints its own surface from the theme, so its text has to come from the theme too. Left to inherit
         // the host's ImGui text colour it stays near-white, which is invisible the moment the palette turns light.
-        using var textColor = ImRaii.PushColor(ImGuiCol.Text, Style.TextColor ?? theme.Resolve(ThemeColor.Text));
+        using var textColor = UiPush.Color(ImGuiCol.Text, Style.TextColor ?? theme.Resolve(ThemeColor.Text));
 
         var contentWidth = ScaledWidth - Style.ScaledPadding.X * 2f - Style.ScaledStripeWidth;
         var closeWidth = toast.Closable ? ImGui.GetFrameHeight() : 0f;
@@ -649,7 +685,7 @@ public class NoireToastArea : NoireDrawable
         {
             var icon = SeverityIcon(toast.Severity);
 
-            using (ImRaii.PushFont(UiBuilder.IconFont))
+            using (UiPush.Font(UiBuilder.IconFont))
                 ImGui.TextColored(accent, icon.ToIconString());
 
             ImGui.SameLine(0f, theme.ResolveItemSpacing().X * 0.75f);
@@ -707,10 +743,18 @@ public class NoireToastArea : NoireDrawable
     /// <summary>
     /// Draws a toast's action buttons in a wrapping row, so a toast with several actions grows rather than overflowing.
     /// </summary>
+    /// <remarks>
+    /// Copied before any of them is drawn, because an action's own callback may add to or clear the toast's actions,
+    /// and the loop is still walking them when it runs. Borrowed rather than allocated: this is per toast, per frame.
+    /// </remarks>
     private void DrawActions(NoireToast toast)
     {
-        var snapshot = new ToastAction[toast.Actions.Count];
-        toast.Actions.CopyTo(snapshot, 0);
+        using var buffer = PooledBuffer<ToastAction>.Rent(toast.Actions.Count);
+
+        var snapshot = buffer.Span;
+
+        for (var index = 0; index < snapshot.Length; index++)
+            snapshot[index] = toast.Actions[index];
 
         for (var index = 0; index < snapshot.Length; index++)
         {

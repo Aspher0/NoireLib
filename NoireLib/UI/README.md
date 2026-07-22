@@ -237,13 +237,15 @@ var softer = style.Clone();
 Everything here runs on a game's draw thread and runs again next frame. Work that would be invisible anywhere else is not invisible here, so every widget in this namespace is held to the same bar, and anything added to it is too:
 
 - **Nothing allocates per frame.** Ids are built once by `UiIds`, not interpolated per frame. No `ToString()` on an unchanged value, no `ToArray()`/`ToList()` in a draw path, no closure where a state overload exists.
+- **Working sets are borrowed, not allocated.** A scratch buffer with a known maximum is `stackalloc`; one sized by the data is a `PooledBuffer<T>` or a list the surface keeps between frames.
+- **Style is pushed through `UiPush`, not `ImRaii`.** Every `ImRaii` push wrapper is a class, so it costs 24 bytes per call even when its condition is false and it pushes nothing.
 - **Nothing is recomputed that has not changed.** Text measurement is cached; so is layout arithmetic, against what actually moves it.
 - **Nothing off screen is drawn.** Collections of unknown length virtualize past a threshold, with a `Virtualize` override.
 - **Tessellation follows the radius.** A fixed segment count spends hundreds of points on a shape an inch across, each segment a fraction of a pixel: expensive and invisible.
-- **Nothing loop-invariant sits inside a loop**, and expensive rarely-changing visuals are pre-rendered rather than re-tessellated.
+- **Nothing loop-invariant sits inside a loop**, and expensive ornament is tessellated once and resubmitted rather than recomputed. Geometry, not a texture: ImGui builds vertex buffers the host renders at end of frame, so there is nothing to rasterize into. Cached geometry also survives tinting and rotation, which pixels would not.
 - **Literals handed to ImGui are UTF-8** (`"Save"u8`), encoded once at compile time instead of re-encoded from UTF-16 every frame.
 
-Measure before optimizing, with the profiler below, and read the **self** column rather than the total.
+Measure before optimizing, with the profiler below, and read the **self** column rather than the total. A scope is not free to open, so a surface entered hundreds of times a frame carries more instrumentation in its reading than one entered once; compare like with like, and prefer allocated bytes, which the act of measuring does not move.
 
 ### Allocation
 
@@ -256,6 +258,10 @@ NoireLayout.Section("Filters", this, static (self) => self.DrawFilters());
 The widgets themselves allocate nothing per frame for their ids. An id like `###NoireComboItem_myCombo_42` is a constant for the life of the widget, so it is built once and handed back on every later frame rather than re-interpolated: a two hundred row list at sixty frames a second would otherwise produce twelve thousand short-lived strings a second in the one place a plugin cannot afford a collection.
 
 Text measurements are cached the same way, keyed on everything that can change the answer (the text, the size, the ambient font, the UI scale, and the font generation). A label that has not changed is not re-measured, which matters because measuring walks the string a glyph at a time after marshalling it to UTF-8.
+
+Pushing an ImGui colour, style variable or font goes through `UiPush` rather than Dalamud's `ImRaii`. The two read almost the same at a call site, and the difference is that `ImRaii`'s wrappers are classes: each push is 24 bytes on the draw thread, on every frame that draws, and it costs them even when the condition it was handed is false and it pushes nothing at all. `UiPush` is a `ref struct` over the raw `ImGui.PushStyleColor` family, so it costs nothing and cannot be boxed into costing something. Push one thing with `UiPush.Color(slot, colour)`, or accumulate several into one scope and dispose it once. Colours, style variables, fonts, disabled scopes and text wrap positions are all covered. The Begin-style `ImRaii.Child`, `ImRaii.Table`, `ImRaii.Tooltip` and `ImRaii.Combo` are structs already and are still used as they were; so is `ImRaii.PushIndent`, whose scaled overload multiplies by the global scale and so is not the same call as a raw `ImGui.Indent`.
+
+A surface that needs somewhere to gather things while it draws does not allocate one. Where the maximum is a constant, that is `stackalloc`, which is how the shape and path code builds its point buffers. Where the size comes from the data - the segments on a line of content, the keys due to be dropped from a cache - it is a `PooledBuffer<T>`, borrowed from the runtime's array pool and given back when it leaves scope. A surface that draws every frame for its whole life, such as a toast stack, keeps its lists instead and clears them where it fills them, which costs nothing at all after the first frame.
 
 ---
 
@@ -404,6 +410,15 @@ Every drawing surface the library ships measures itself, so switching this on at
 **Scopes nest, so each is reported twice over.** *Total* includes everything measured inside a scope; *self* does not. Self is the one that adds up — totalling the total column counts a widget once for itself and again for every scope enclosing it, which is how an interface comes out looking several times its real cost. `TotalAverageMs` sums self time for exactly that reason.
 
 The figure your host reports for the whole plugin will always be larger than this total: it covers the windowing and the ImGui work around anything instrumented here. Use this to compare parts of your interface against each other, not to reconcile with the host.
+
+**Allocated bytes are sampled separately, through `TrackAllocations`.** The byte columns and `TotalAverageBytes` read zero until you switch it on, next to the timing rather than with it, because reading the allocation counter costs more per scope than timing the scope does and a busy interface opens several hundred scopes a frame. Switch it on when the question is whether a change allocates, which is the number that is identical on every machine; leave it off when the question is milliseconds. A scope open across the change reports no bytes for that one scope, since a difference needs both of its ends.
+
+```csharp
+NoireUI.Profiler.TrackAllocations = true;   // fills the byte columns
+
+foreach (var entry in NoireUI.Profiler.Snapshot())
+    log($"{entry.Name}: {entry.SelfAverageBytes:N0} bytes of its own per frame");
+```
 
 The readout ships as a window:
 
@@ -2054,6 +2069,8 @@ ImGui draws a string in one call at the font's own advances, so there is no noti
 NoireText.Tracked("OVERLAYS", NoireText.CapsTracking, TextSize.Caption);
 var width = NoireText.TrackedSize("OVERLAYS", NoireText.CapsTracking, TextSize.Caption).X;
 ```
+
+`Tracked` returns the size it drew, so a caller placing something beside a tracked label does not need the second call. Each glyph's advance is measured once per font size and remembered, not re-measured on every frame the label is drawn, and neither call allocates.
 
 **Never measure text outside a frame.** `CalcSize`, `Draw`, `Tracked` and the rest push a font handle and call into ImGui, both of which need a frame in progress — reaching for one from a plugin or window constructor to warm the cache is a crash, not a warm cache. `NoireText.Request(sizePx)` is the frame-safe call: it only tells the cache a size is wanted, so it can be built before the frame that needs it. Use it for sizes a host can switch to at runtime, such as a reader-facing type scale; `Prewarm` already covers the sizes the interface always draws.
 

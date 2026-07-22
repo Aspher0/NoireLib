@@ -4,6 +4,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using Dalamud.Utility;
 using NoireLib.Core.Modules;
+using NoireLib.UI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -165,7 +166,7 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         var availableHeight = ImGui.GetContentRegionAvail().Y;
         var leftPanelWidth = 325f;
 
-        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(3, 3)))
+        using (UiPush.Style(ImGuiStyleVar.WindowPadding, new Vector2(3, 3)))
         using (ImRaii.Child("##TweakListPanel", new Vector2(leftPanelWidth, availableHeight), true))
         {
             DrawTweakList();
@@ -189,7 +190,7 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
             return;
         }
 
-        using (ImRaii.PushStyle(ImGuiStyleVar.ItemSpacing, Vector2.Zero))
+        using (UiPush.Style(ImGuiStyleVar.ItemSpacing, Vector2.Zero))
         {
             foreach (var tweak in visibleTweaks)
             {
@@ -278,9 +279,9 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
 
         var textPos = new Vector2(textStartX, cursorPos.Y + (entryHeight - textSize.Y) * 0.5f);
         ImGui.SetCursorScreenPos(textPos);
-        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero))
+        using (UiPush.Style(ImGuiStyleVar.WindowPadding, Vector2.Zero))
         using (ImRaii.Child($"##tweak_text_{tweak.InternalKey}", new Vector2(textWrapWidth, textSize.Y), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs))
-        using (ImRaii.PushColor(ImGuiCol.Text, textColor))
+        using (UiPush.Color(ImGuiCol.Text, textColor))
         {
             ImGui.TextWrapped(tweak.Name);
         }
@@ -289,8 +290,8 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         var starY = cursorPos.Y + (entryHeight - ImGui.GetTextLineHeight()) * 0.5f;
         var favoritePos = new Vector2(cursorPos.X + availWidth - favoriteButtonWidth - rightPad, starY);
         ImGui.SetCursorScreenPos(favoritePos);
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        using (ImRaii.PushColor(ImGuiCol.Text, isFavorite ? GoldColor : DisabledColor))
+        using (UiPush.Font(UiBuilder.IconFont))
+        using (UiPush.Color(ImGuiCol.Text, isFavorite ? GoldColor : DisabledColor))
         {
             ImGui.TextUnformatted(FontAwesomeIcon.Star.ToIconString());
         }
@@ -383,17 +384,17 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         var buttonsY = headerStart.Y + (headerHeight - ImGui.GetFrameHeight()) * 0.5f;
 
         ImGui.SetCursorScreenPos(headerStart);
-        using (ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero))
+        using (UiPush.Style(ImGuiStyleVar.WindowPadding, Vector2.Zero))
         using (ImRaii.Child($"##tweak_header_text_{tweak.InternalKey}", new Vector2(titleWrapWidth, titleSize.Y), false, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse | ImGuiWindowFlags.NoBackground))
-        using (ImRaii.PushColor(ImGuiCol.Text, TitleColor))
-        using (ImRaii.PushFont(UiBuilder.DefaultFont))
+        using (UiPush.Color(ImGuiCol.Text, TitleColor))
+        using (UiPush.Font(UiBuilder.DefaultFont))
         {
             ImGui.TextWrapped(tweak.Name);
         }
 
         ImGui.SetCursorScreenPos(new Vector2(buttonsX, buttonsY));
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-        using (ImRaii.PushColor(ImGuiCol.Text, ParentModule.IsFavorite(tweak.InternalKey) ? GoldColor : DescriptionColor))
+        using (UiPush.Font(UiBuilder.IconFont))
+        using (UiPush.Color(ImGuiCol.Text, ParentModule.IsFavorite(tweak.InternalKey) ? GoldColor : DescriptionColor))
         {
             if (ImGui.Button($"{favoriteLabel}##favorite_toggle_{tweak.InternalKey}", new Vector2(favoriteWidth, 0)))
                 ParentModule.ToggleFavorite(tweak.InternalKey);
@@ -411,15 +412,15 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
 
         ImGui.SameLine(0f, spacing);
         ImGui.SetCursorScreenPos(new Vector2(buttonsX + favoriteWidth + spacing, buttonsY));
-        using (ImRaii.Disabled(isGloballyDisabled))
+        using (UiPush.Disabled(isGloballyDisabled))
         {
             var toggleLabel = tweak.Enabled ? "Disable" : "Enable";
             var buttonColor = tweak.Enabled ? DisableButtonColor : EnableButtonColor;
             var buttonHoveredColor = tweak.Enabled ? DisableButtonHoveredColor : EnableButtonHoveredColor;
             var buttonActiveColor = tweak.Enabled ? DisableButtonActiveColor : EnableButtonActiveColor;
-            using (ImRaii.PushColor(ImGuiCol.Button, buttonColor))
-            using (ImRaii.PushColor(ImGuiCol.ButtonHovered, buttonHoveredColor))
-            using (ImRaii.PushColor(ImGuiCol.ButtonActive, buttonActiveColor))
+            using (UiPush.Color(ImGuiCol.Button, buttonColor))
+            using (UiPush.Color(ImGuiCol.ButtonHovered, buttonHoveredColor))
+            using (UiPush.Color(ImGuiCol.ButtonActive, buttonActiveColor))
             {
                 if (ImGui.Button($"{toggleLabel}##toggle_{tweak.InternalKey}", new Vector2(buttonWidth, 0)))
                 {
@@ -444,15 +445,15 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
 
         if (isGloballyDisabled)
         {
-            using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
+            using (UiPush.Color(ImGuiCol.Text, ErrorColor))
             {
                 ImGui.TextUnformatted("This tweak is globally disabled.");
             }
 
             if (!tweak.GloballyDisabledReason.IsNullOrWhitespace())
             {
-                using (ImRaii.PushColor(ImGuiCol.Text, DescriptionColor))
-                using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
+                using (UiPush.Color(ImGuiCol.Text, DescriptionColor))
+                using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
                 {
                     ImGui.TextWrapped(tweak.GloballyDisabledReason);
                 }
@@ -462,8 +463,8 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         }
 
         // Description with brighter text
-        using (ImRaii.PushColor(ImGuiCol.Text, DescriptionColor))
-        using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
+        using (UiPush.Color(ImGuiCol.Text, DescriptionColor))
+        using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
         {
             ImGui.TextWrapped(tweak.Description);
         }
@@ -473,9 +474,9 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         if (tweak.HasError)
         {
             ImGui.Spacing();
-            using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
+            using (UiPush.Color(ImGuiCol.Text, ErrorColor))
             {
-                using (ImRaii.PushFont(UiBuilder.IconFont))
+                using (UiPush.Font(UiBuilder.IconFont))
                 {
                     ImGui.TextUnformatted(FontAwesomeIcon.ExclamationTriangle.ToIconString());
                 }
@@ -483,13 +484,13 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
                 ImGui.TextUnformatted("Error:");
             }
 
-            using (ImRaii.PushColor(ImGuiCol.Text, ErrorColor))
-            using (ImRaii.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
+            using (UiPush.Color(ImGuiCol.Text, ErrorColor))
+            using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X))
             {
                 ImGui.TextWrapped(tweak.LastError?.Message ?? "Unknown error");
             }
 
-            using (ImRaii.Disabled(isGloballyDisabled))
+            using (UiPush.Disabled(isGloballyDisabled))
             {
                 ImGui.Spacing();
                 if (ImGui.Button($"Clear Error##clearerr_{tweak.InternalKey}"))
@@ -512,7 +513,7 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
             ImGui.Separator();
             ImGui.Spacing();
 
-            using (ImRaii.PushColor(ImGuiCol.Text, ConfigHeaderColor))
+            using (UiPush.Color(ImGuiCol.Text, ConfigHeaderColor))
             {
                 ImGui.TextUnformatted("Configuration");
             }
@@ -523,7 +524,7 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
             {
                 try
                 {
-                    using (ImRaii.Disabled(isGloballyDisabled))
+                    using (UiPush.Disabled(isGloballyDisabled))
                     {
                         tweak.DrawConfigUI();
                     }

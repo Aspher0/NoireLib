@@ -1,4 +1,6 @@
+using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
+using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -27,6 +29,31 @@ internal static class UiTextMeasureCache
     private readonly record struct Key(string Text, float SizePx, float AmbientSizePx, float Scale, int Generation);
 
     /// <summary>
+    /// Everything one glyph's advance depends on.
+    /// </summary>
+    /// <remarks>
+    /// Separate from <see cref="Key"/> because a glyph is a codepoint rather than a string, and the point of caching
+    /// one is to answer without a string existing at all. A tracked label measures every character it draws on every
+    /// frame it is drawn, and the alphabet a plugin uses is small and fixed, so this fills in the first few frames and
+    /// only hits afterwards.<br/>
+    /// There is no size asked for here: the caller has already pushed the font it is measuring with, so the font in
+    /// hand is the whole answer. See <see cref="AmbientKey"/> for why the font is identified rather than described.
+    /// </remarks>
+    private readonly record struct GlyphKey(int Codepoint, nint Font, float SizePx, float Scale, int Generation);
+
+    /// <summary>
+    /// Everything a measurement taken against the font already pushed depends on.
+    /// </summary>
+    /// <remarks>
+    /// Carries the font itself rather than only its size, which <see cref="Key"/> does not have to. Every measurement
+    /// filed under <see cref="Key"/> is taken against a font this library resolved for a size, so the size names the
+    /// font. A caller measuring in the font it has pushed may have pushed anything, and two different fonts reporting
+    /// the same size are not the same measurement: the icon font and the body font at the same pixel size would share
+    /// a key and answer for each other.
+    /// </remarks>
+    private readonly record struct AmbientKey(string Text, nint Font, float SizePx, float Scale, int Generation);
+
+    /// <summary>
     /// How many measurements are kept before the cache starts over.
     /// </summary>
     /// <remarks>
@@ -38,6 +65,8 @@ internal static class UiTextMeasureCache
 
     private static readonly HotPathCache<Key, Vector2> Sizes = new(MaxEntries);
     private static readonly HotPathCache<Key, float> CenterOffsets = new(MaxEntries);
+    private static readonly HotPathCache<GlyphKey, float> GlyphAdvances = new(MaxEntries);
+    private static readonly HotPathCache<AmbientKey, Vector2> AmbientSizes = new(MaxEntries);
 
     /// <summary>
     /// Looks up what a string measured.
@@ -80,6 +109,71 @@ internal static class UiTextMeasureCache
         => CenterOffsets.Set(CenterKey(sizePx, ambientSizePx), offset);
 
     /// <summary>
+    /// Looks up how far one glyph advances the pen.
+    /// </summary>
+    /// <param name="codepoint">The character, as a full codepoint so a surrogate pair is one entry.</param>
+    /// <param name="font">The font currently pushed. See <see cref="CurrentFont"/>.</param>
+    /// <param name="sizePx">The size of the font currently pushed.</param>
+    /// <param name="advance">The remembered advance.</param>
+    /// <returns>Whether the advance was already known.</returns>
+    internal static bool TryGetGlyphAdvance(int codepoint, nint font, float sizePx, out float advance)
+        => GlyphAdvances.TryGet(
+            new GlyphKey(codepoint, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
+            out advance);
+
+    /// <summary>
+    /// Remembers how far one glyph advances the pen.
+    /// </summary>
+    /// <param name="codepoint">The character, as a full codepoint.</param>
+    /// <param name="font">The font that was current.</param>
+    /// <param name="sizePx">The size of the font that was current.</param>
+    /// <param name="advance">The advance.</param>
+    internal static void StoreGlyphAdvance(int codepoint, nint font, float sizePx, float advance)
+        => GlyphAdvances.Set(
+            new GlyphKey(codepoint, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
+            advance);
+
+    /// <summary>
+    /// Looks up what a string measured against the font already pushed.
+    /// </summary>
+    /// <param name="text">The text being measured.</param>
+    /// <param name="font">The font currently pushed. See <see cref="CurrentFont"/>.</param>
+    /// <param name="sizePx">The size of the font currently pushed.</param>
+    /// <param name="size">The remembered measurement.</param>
+    /// <returns>Whether the measurement was already known.</returns>
+    internal static bool TryGetAmbientSize(string text, nint font, float sizePx, out Vector2 size)
+        => AmbientSizes.TryGet(
+            new AmbientKey(text, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
+            out size);
+
+    /// <summary>
+    /// Remembers what a string measured against the font that was pushed.
+    /// </summary>
+    /// <param name="text">The text that was measured.</param>
+    /// <param name="font">The font that was current.</param>
+    /// <param name="sizePx">The size of the font that was current.</param>
+    /// <param name="size">The measurement.</param>
+    internal static void StoreAmbientSize(string text, nint font, float sizePx, Vector2 size)
+        => AmbientSizes.Set(
+            new AmbientKey(text, font, sizePx, NoireUI.Scale, UiFontCache.Generation),
+            size);
+
+    /// <summary>
+    /// Identifies the font currently pushed, for the keys that measure against it.
+    /// </summary>
+    /// <remarks>
+    /// The pointer rather than anything read out of the font. It is only ever compared, never followed, and a font
+    /// that is freed and replaced takes a new address, which is exactly the invalidation wanted. The generation in the
+    /// key covers the case of a new font landing at a recycled address.
+    /// </remarks>
+    /// <returns>A value identifying the current font, or 0 when there is none.</returns>
+    internal static unsafe nint CurrentFont()
+    {
+        var font = ImGui.GetFont();
+        return font.IsNull ? 0 : (nint)font.Handle;
+    }
+
+    /// <summary>
     /// The key a measurement is stored under, read from the live scale and font generation.
     /// </summary>
     /// <remarks>
@@ -105,5 +199,7 @@ internal static class UiTextMeasureCache
     {
         Sizes.Clear();
         CenterOffsets.Clear();
+        GlyphAdvances.Clear();
+        AmbientSizes.Clear();
     }
 }

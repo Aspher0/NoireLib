@@ -588,8 +588,7 @@ public class NoireComboBox<T>
         {
             // Released as soon as the box has been drawn, so the popup and everything drawn inside it is styled
             // normally rather than inheriting a transparent frame that exists only to uncover the plate.
-            box?.Dispose();
-            box = null;
+            box.Dispose();
 
             if (combo)
             {
@@ -609,8 +608,10 @@ public class NoireComboBox<T>
             }
         }
 
-        box?.Dispose();
-        popup?.Dispose();
+        // A second call on a scope already released inside the combo pops nothing, so the plated and unplated paths
+        // both land here rather than one of them needing to remember it has already let go.
+        box.Dispose();
+        popup.Dispose();
         DrawBoxArrow(boxRect);
 
         // While the dropdown is open the popup is a separate window that owns the wheel itself, so the cycling stands down.
@@ -630,30 +631,34 @@ public class NoireComboBox<T>
     /// Pushed before the combo rather than inside the popup, because ImGui reads these when the popup window is begun
     /// and that happens inside <c>BeginCombo</c>. Held for the whole call and released after the popup has closed.
     /// </remarks>
-    /// <returns>The pushed style, or null when the dropdown is left as ImGui's.</returns>
-    private IDisposable? BeginPopupStyle()
+    /// <returns>The pushed style, or an empty scope when the dropdown is left as ImGui's.</returns>
+    private UiPush BeginPopupStyle()
     {
         if (PopupStyle == null)
-            return null;
+            return default;
 
         var theme = NoireTheme.Current;
         var style = PopupStyle;
 
-        var colors = ImRaii.PushColor(ImGuiCol.PopupBg, style.Background ?? theme.Resolve(ThemeColor.Surface))
-            .Push(ImGuiCol.FrameBg, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
-            .Push(ImGuiCol.FrameBgHovered, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
-            .Push(ImGuiCol.FrameBgActive, style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken))
-            .Push(ImGuiCol.Border, style.BorderColor ?? theme.Resolve(ThemeColor.Border))
-            .Push(ImGuiCol.Header, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.30f))
-            .Push(ImGuiCol.HeaderHovered, style.HoveredColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.18f))
-            .Push(ImGuiCol.HeaderActive, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.38f))
-            .Push(ImGuiCol.ScrollbarBg, style.ScrollbarBackground ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.SurfaceSunken), 0.5f))
-            .Push(ImGuiCol.ScrollbarGrab, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent))
-            .Push(ImGuiCol.ScrollbarGrabHovered, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent))
-            .Push(ImGuiCol.ScrollbarGrabActive, style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent));
+        var filterBackground = style.FilterBackground ?? theme.Resolve(ThemeColor.SurfaceSunken);
+        var scrollbar = style.ScrollbarColor ?? theme.Resolve(ThemeColor.Accent);
+
+        var pushed = UiPush.Color(ImGuiCol.PopupBg, style.Background ?? theme.Resolve(ThemeColor.Surface));
+
+        pushed.Push(ImGuiCol.FrameBg, filterBackground);
+        pushed.Push(ImGuiCol.FrameBgHovered, filterBackground);
+        pushed.Push(ImGuiCol.FrameBgActive, filterBackground);
+        pushed.Push(ImGuiCol.Border, style.BorderColor ?? theme.Resolve(ThemeColor.Border));
+        pushed.Push(ImGuiCol.Header, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.30f));
+        pushed.Push(ImGuiCol.HeaderHovered, style.HoveredColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.18f));
+        pushed.Push(ImGuiCol.HeaderActive, style.SelectedColor ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Accent), 0.38f));
+        pushed.Push(ImGuiCol.ScrollbarBg, style.ScrollbarBackground ?? ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.SurfaceSunken), 0.5f));
+        pushed.Push(ImGuiCol.ScrollbarGrab, scrollbar);
+        pushed.Push(ImGuiCol.ScrollbarGrabHovered, scrollbar);
+        pushed.Push(ImGuiCol.ScrollbarGrabActive, scrollbar);
 
         if (style.TextColor is { } text)
-            colors.Push(ImGuiCol.Text, text);
+            pushed.Push(ImGuiCol.Text, text);
 
         // Snapped to whole pixels, which is what keeps a dropdown holding fewer options than it shows from growing a
         // scrollbar anyway. ImGui floors a window's size whenever a size constraint is present, and a combo popup
@@ -663,53 +668,37 @@ public class NoireComboBox<T>
         // multiple, a padding of 6 becomes 7.5 and the popup is half a pixel short of its own contents forever.
         var padding = NoireUI.Scaled(style.Padding);
 
-        var vars = ImRaii.PushStyle(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize)
-            .Push(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(padding.X), MathF.Round(padding.Y)))
+        pushed.Push(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize);
+        pushed.Push(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(padding.X), MathF.Round(padding.Y)));
 
-            // The popup fields, not the window ones: ImGui picks the style field by window flag and this window carries
-            // the popup flag, so pushing WindowRounding and WindowBorderSize here was silent.
-            .Push(ImGuiStyleVar.PopupRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()))
-            .Push(ImGuiStyleVar.PopupBorderSize, style.BorderSize)
-            .Push(ImGuiStyleVar.ScrollbarSize, NoireUI.Scaled(style.ScrollbarWidth))
-            .Push(ImGuiStyleVar.ItemSpacing, NoireUI.Scaled(style.RowSpacing))
-            .Push(ImGuiStyleVar.FramePadding, NoireUI.Scaled(style.RowPadding));
+        // The popup fields, not the window ones: ImGui picks the style field by window flag and this window carries
+        // the popup flag, so pushing WindowRounding and WindowBorderSize here was silent.
+        pushed.Push(ImGuiStyleVar.PopupRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()));
+        pushed.Push(ImGuiStyleVar.PopupBorderSize, style.BorderSize);
+        pushed.Push(ImGuiStyleVar.ScrollbarSize, NoireUI.Scaled(style.ScrollbarWidth));
+        pushed.Push(ImGuiStyleVar.ItemSpacing, NoireUI.Scaled(style.RowSpacing));
+        pushed.Push(ImGuiStyleVar.FramePadding, NoireUI.Scaled(style.RowPadding));
 
-        return new PopupStyleScope(colors, vars);
+        return pushed;
     }
 
     /// <summary>
     /// Pushes the filter box's own border and text colours, for the moment it is drawn.
     /// </summary>
-    /// <returns>The pushed colours, or an empty scope when the dropdown is left as ImGui's.</returns>
-    private IDisposable PushFilterStyle()
+    /// <returns>The pushed colours. Always at least a border, since the box is drawn either way.</returns>
+    private UiPush PushFilterStyle()
     {
         var style = PopupStyle;
 
         if (style == null)
-            return ImRaii.PushColor(ImGuiCol.Border, ImGui.GetStyle().Colors[(int)ImGuiCol.Border]);
+            return UiPush.Color(ImGuiCol.Border, ImGui.GetStyle().Colors[(int)ImGuiCol.Border]);
 
-        var colors = ImRaii.PushColor(ImGuiCol.Border, style.FilterBorderColor ?? style.BorderColor ?? NoireTheme.Current.Resolve(ThemeColor.Border));
+        var pushed = UiPush.Color(ImGuiCol.Border, style.FilterBorderColor ?? style.BorderColor ?? NoireTheme.Current.Resolve(ThemeColor.Border));
 
         if ((style.FilterTextColor ?? style.TextColor) is { } text)
-            colors.Push(ImGuiCol.Text, text);
+            pushed.Push(ImGuiCol.Text, text);
 
-        return colors;
-    }
-
-    /// <summary>
-    /// Holds the two ImGui stacks the dropdown's style is pushed onto, so the caller releases one thing rather than two.
-    /// </summary>
-    /// <remarks>
-    /// Released in the reverse order they were taken, because ImGui's colour and variable stacks each unwind from the
-    /// top and a scope that pops them out of order pops somebody else's entries.
-    /// </remarks>
-    private sealed class PopupStyleScope(IDisposable colors, IDisposable vars) : IDisposable
-    {
-        public void Dispose()
-        {
-            vars.Dispose();
-            colors.Dispose();
-        }
+        return pushed;
     }
 
     /// <summary>
@@ -721,13 +710,13 @@ public class NoireComboBox<T>
     /// itself is about to use, including a width set by <see cref="Width"/>, so the two cannot disagree.
     /// </remarks>
     /// <param name="rect">Where the box was drawn, for the arrow to line up with.</param>
-    /// <returns>The pushed colours, to release once the box has been drawn, or null when there is no plate.</returns>
-    private IDisposable? BeginBox(out (Vector2 Min, Vector2 Max) rect)
+    /// <returns>The pushed colours, to release once the box has been drawn, or an empty scope when there is no plate.</returns>
+    private UiPush BeginBox(out (Vector2 Min, Vector2 Max) rect)
     {
         rect = default;
 
         if (BoxStyle == null)
-            return null;
+            return default;
 
         var origin = ImGui.GetCursorScreenPos();
         var size = new Vector2(ImGui.CalcItemWidth(), ImGui.GetFrameHeight());
@@ -739,10 +728,13 @@ public class NoireComboBox<T>
 
         // The border goes with the background. ImGui draws it rounded from its own style, so leaving it lit puts a
         // rounded outline around a square plate, which is the one part of the old frame that would still show.
-        return ImRaii.PushColor(ImGuiCol.FrameBg, clear)
-            .Push(ImGuiCol.FrameBgHovered, clear)
-            .Push(ImGuiCol.FrameBgActive, clear)
-            .Push(ImGuiCol.Border, clear);
+        var pushed = UiPush.Color(ImGuiCol.FrameBg, clear);
+
+        pushed.Push(ImGuiCol.FrameBgHovered, clear);
+        pushed.Push(ImGuiCol.FrameBgActive, clear);
+        pushed.Push(ImGuiCol.Border, clear);
+
+        return pushed;
     }
 
     /// <summary>

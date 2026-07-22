@@ -62,7 +62,7 @@ public readonly record struct UiButtonDraw(
         if (string.IsNullOrEmpty(Label))
             return;
 
-        var size = ImGui.CalcTextSize(Label);
+        var size = NoireText.CalcSizeInCurrentFont(Label);
 
         DrawList.AddText(Center - (size * 0.5f), Helpers.ColorHelper.Vector4ToUint(color), Label);
     }

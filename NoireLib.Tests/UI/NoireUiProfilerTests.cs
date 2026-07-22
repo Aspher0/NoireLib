@@ -15,10 +15,16 @@ public class NoireUiProfilerTests
     /// <summary>
     /// Runs a body with the profiler on and the frame counter under the test's control, and puts both back afterwards.
     /// </summary>
-    private static void WithProfiler(System.Action<UiProfiler, System.Func<int>> body)
+    /// <param name="body">The test body, handed the profiler and a call that advances the frame.</param>
+    /// <param name="trackAllocations">
+    /// Whether byte figures are recorded. Off by default, matching the shipped setting: allocation sampling costs more
+    /// per scope than the timing does, so a test that reads bytes asks for it rather than every test paying for it.
+    /// </param>
+    private static void WithProfiler(System.Action<UiProfiler, System.Func<int>> body, bool trackAllocations = false)
     {
         var profiler = NoireUI.Profiler;
         var previousEnabled = profiler.Enabled;
+        var previousTracking = profiler.TrackAllocations;
         var previousFrame = NoireUI.FrameOverride;
 
         var frame = 0;
@@ -26,6 +32,7 @@ public class NoireUiProfilerTests
 
         profiler.Reset();
         profiler.Enabled = true;
+        profiler.TrackAllocations = trackAllocations;
 
         try
         {
@@ -34,6 +41,7 @@ public class NoireUiProfilerTests
         finally
         {
             profiler.Enabled = previousEnabled;
+            profiler.TrackAllocations = previousTracking;
             profiler.Reset();
             NoireUI.FrameOverride = previousFrame;
         }
@@ -141,7 +149,7 @@ public class NoireUiProfilerTests
             // figure is the caller's allocation rather than a count of something else.
             entry.SelfLastBytes.Should().BeGreaterThanOrEqualTo(size);
             entry.SelfLastBytes.Should().BeLessThan(size + 512);
-        });
+        }, trackAllocations: true);
     }
 
     [Fact]
@@ -174,6 +182,20 @@ public class NoireUiProfilerTests
 
             byte[]? held = null;
 
+            // Run once and discard, because the assertion below is about the steady state. The first time a name is
+            // measured it is resolved to a handle, and that resolution happens in the caller's code rather than inside
+            // the scope's own bracket, so the enclosing scope is charged for it exactly once per name per process. A
+            // surface inside the library never pays it at all: the gate resolves its handle at the call site and holds
+            // it. See UiScopeName.
+            using (profiler.Measure("parent"))
+            {
+                using (profiler.Measure("child"))
+                {
+                }
+            }
+
+            advance();
+
             using (profiler.Measure("parent"))
             {
                 using (profiler.Measure("child"))
@@ -200,7 +222,7 @@ public class NoireUiProfilerTests
             // from looking responsible for the garbage of every widget on it.
             parent.LastBytes.Should().BeGreaterThanOrEqualTo(size);
             parent.SelfLastBytes.Should().Be(0L);
-        });
+        }, trackAllocations: true);
     }
 
     [Fact]
@@ -208,6 +230,7 @@ public class NoireUiProfilerTests
     {
         var profiler = NoireUI.Profiler;
         var previousEnabled = profiler.Enabled;
+        var previousTracking = profiler.TrackAllocations;
         var previousFrame = NoireUI.FrameOverride;
 
         var frame = 0;
@@ -215,6 +238,7 @@ public class NoireUiProfilerTests
 
         profiler.Reset();
         profiler.Enabled = true;
+        profiler.TrackAllocations = true;
 
         try
         {
@@ -240,13 +264,51 @@ public class NoireUiProfilerTests
             profiler.Enabled = false;
 
             profiler.TotalAverageBytes.Should().Be(0d);
+
+            // The same has to hold for the tracking switch on its own: timing back on, sampling off, and the figure
+            // is still not a live one.
+            profiler.Enabled = true;
+            profiler.TrackAllocations = false;
+
+            profiler.TotalAverageBytes.Should().Be(0d);
         }
         finally
         {
             profiler.Enabled = previousEnabled;
+            profiler.TrackAllocations = previousTracking;
             profiler.Reset();
             NoireUI.FrameOverride = previousFrame;
         }
+    }
+
+    [Fact]
+    public void Measure_WhileTrackingIsOff_RecordsTimeButNoBytes()
+    {
+        WithProfiler((profiler, advance) =>
+        {
+            byte[]? held = null;
+
+            using (profiler.Measure("allocating"))
+            {
+                held = new byte[10_000];
+            }
+
+            advance();
+
+            using (profiler.Measure("allocating"))
+            {
+            }
+
+            held!.Length.Should().Be(10_000);
+
+            var entry = profiler.Snapshot().Single(e => e.Name == "allocating");
+
+            // The scope ran and was timed; only the byte columns are silent. Sampling allocation is the half of a
+            // measurement that costs more than the timing, so it is off unless it was asked for.
+            entry.Calls.Should().Be(1);
+            entry.SelfLastBytes.Should().Be(0L);
+            entry.LastBytes.Should().Be(0L);
+        });
     }
 
     [Fact]

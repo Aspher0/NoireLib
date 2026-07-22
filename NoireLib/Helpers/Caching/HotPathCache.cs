@@ -9,38 +9,11 @@ namespace NoireLib.Helpers;
 /// For anything read while a frame is being drawn. For anything else, use <see cref="CacheHelper"/> or
 /// <see cref="MemoryCacheStore{TKey, TValue}"/>.
 /// </summary>
-/// <remarks>
-/// The difference from the other two is not tuning, it is shape. A draw path runs sixty times a second on the one
-/// thread a plugin cannot afford a collection on, so a cache serving it may not allocate on a hit, may not box the
-/// value it returns, and may not compose a key to look one up. This one does none of those: the key is a struct the
-/// caller already has in hand, the dictionary is typed, and a hit is one lookup.<br/>
-/// Expiry is by change, never by elapsed time. A time-to-live is exactly wrong here: it recomputes on a clock when
-/// nothing has changed, and serves a stale value after something has. For layout that second case means widgets laid
-/// out against an old theme or an old scale until the interval lapses, which does not look like a caching bug.<br/>
-/// <b>Not thread-safe, deliberately.</b> Everything it exists for is reached from the draw thread only, and the locks
-/// or interlocked counters that would make it safe are the cost it exists to avoid. Use
-/// <see cref="MemoryCacheStore{TKey, TValue}"/> when more than one thread is involved.
-/// </remarks>
 /// <typeparam name="TKey">
 /// The key. A <see langword="readonly record struct"/> carrying every input the value depends on is the shape this is
 /// built for: the compiler writes its equality, and the constraint is what keeps a lookup from boxing.
 /// </typeparam>
 /// <typeparam name="TValue">The cached value. Held as itself rather than as <see langword="object"/>, so it never boxes.</typeparam>
-/// <example>
-/// <code>
-/// private readonly record struct WrapKey(string Text, float Width, float Scale, int FontGeneration);
-///
-/// private static readonly HotPathCache&lt;WrapKey, int&gt; WrapPoints = new();
-///
-/// var key = new WrapKey(text, width, NoireUI.Scale, UiFontCache.Generation);
-///
-/// if (!WrapPoints.TryGet(key, out var breakAt))
-/// {
-///     breakAt = FindWrapPoint(text, width);
-///     WrapPoints.Set(key, breakAt);
-/// }
-/// </code>
-/// </example>
 public sealed class HotPathCache<TKey, TValue>
     where TKey : struct, IEquatable<TKey>
 {
@@ -84,14 +57,6 @@ public sealed class HotPathCache<TKey, TValue>
     /// <summary>
     /// How many entries are kept before the cache starts over.
     /// </summary>
-    /// <remarks>
-    /// <b>Reaching the bound clears the cache rather than evicting one entry.</b> That is the policy, and it is chosen
-    /// for what the bound actually protects against. A cache serving a real interface fills once and then only hits,
-    /// so the bound is never reached; a cache that reaches it is being keyed on something that differs every frame,
-    /// such as a live counter in a label, and is not hitting anyway. Evicting the least recently used entry would cost
-    /// a recency list maintained on every hit, which is per-frame work paid by every correct caller to slightly improve
-    /// the behaviour of an incorrect one.
-    /// </remarks>
     public int Capacity { get; }
 
     /// <summary>
@@ -102,10 +67,6 @@ public sealed class HotPathCache<TKey, TValue>
     /// <summary>
     /// How many lookups have been answered from the cache.
     /// </summary>
-    /// <remarks>
-    /// A plain read rather than an interlocked one, for the same reason the cache takes no lock. Treat it as a
-    /// diagnostic reading rather than as an exact count.
-    /// </remarks>
     public long Hits => hits;
 
     /// <summary>
@@ -149,16 +110,6 @@ public sealed class HotPathCache<TKey, TValue>
     /// <summary>
     /// Forgets everything if <paramref name="current"/> differs from the token the entries were stored under.
     /// </summary>
-    /// <remarks>
-    /// The one-line form of invalidation, for the inputs that change every entry at once rather than one of them:
-    /// the interface scale, the theme, the font generation. Combine them into one value and call this at the top of a
-    /// draw. Both scale and theme move at runtime and both change layout, so a cache that omits either is wrong in a
-    /// way that looks like a rendering bug rather than a caching one.<br/>
-    /// The alternative is to carry those inputs in the key itself, which is equally correct and is what a cache with
-    /// only one or two consumers usually does. The difference is only that stale entries linger under the old key until
-    /// the bound is reached, where this drops them at once.<br/>
-    /// The first call after construction records the token without clearing, since there is nothing stale to drop.
-    /// </remarks>
     /// <param name="current">
     /// A value combining everything that invalidates the whole cache. <see cref="HashCode.Combine{T1, T2}"/> composes
     /// one without allocating.

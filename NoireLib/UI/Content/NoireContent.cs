@@ -2,7 +2,7 @@
 using Dalamud.Interface;
 using Dalamud.Interface.Textures.TextureWraps;
 using Dalamud.Interface.Utility;
-using Dalamud.Interface.Utility.Raii;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -217,7 +217,13 @@ public sealed class NoireContent
                 segment.RuntimeText = segment.Text ?? string.Empty;
         }
 
-        var line = new List<Segment>();
+        // Borrowed rather than allocated: content is the body of every custom tooltip, so this runs on every frame one
+        // is open, and a fresh list per frame is garbage on the draw thread. A line cannot hold more segments than the
+        // content has, which is what makes the length known before the loop starts.
+        using var buffer = PooledBuffer<Segment>.Rent(segments.Count);
+
+        var line = buffer.Span;
+        var count = 0;
         var firstLine = true;
 
         foreach (var segment in segments)
@@ -225,9 +231,9 @@ public sealed class NoireContent
             if (segment.Kind == SegmentKind.NewLine || segment.Kind == SegmentKind.Separator)
             {
                 SpaceBeforeLine(firstLine);
-                FlushLine(line, firstLine);
+                FlushLine(line[..count], firstLine);
                 firstLine = false;
-                line.Clear();
+                count = 0;
 
                 if (segment.Kind == SegmentKind.Separator)
                     ImGui.Separator();
@@ -235,11 +241,11 @@ public sealed class NoireContent
                 continue;
             }
 
-            line.Add(segment);
+            line[count++] = segment;
         }
 
         SpaceBeforeLine(firstLine);
-        FlushLine(line, firstLine);
+        FlushLine(line[..count], firstLine);
     }
 
     /// <summary>
@@ -258,9 +264,9 @@ public sealed class NoireContent
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ImGui.GetStyle().ItemSpacing.Y);
     }
 
-    private static void FlushLine(List<Segment> line, bool isFirstLine)
+    private static void FlushLine(ReadOnlySpan<Segment> line, bool isFirstLine)
     {
-        if (line.Count == 0)
+        if (line.Length == 0)
         {
             // An empty line (e.g. two consecutive new lines) still takes vertical space, except at the very end of the content.
             if (!isFirstLine)
@@ -294,18 +300,22 @@ public sealed class NoireContent
     {
         switch (segment.Kind)
         {
+            // Measured against the font in hand rather than through CalcSize, which would resolve and push one of its
+            // own: a segment is drawn in whatever the caller pushed, and a height taken in a different font puts the
+            // line's baseline in the wrong place. The cache identifies the font, so the icon pass below cannot answer
+            // for the text pass even when the two report the same size.
             case SegmentKind.Text:
-                return ImGui.CalcTextSize(segment.RuntimeText ?? string.Empty).Y;
+                return NoireText.CalcSizeInCurrentFont(segment.RuntimeText ?? string.Empty).Y;
 
             case SegmentKind.Icon:
-                using (ImRaii.PushFont(UiBuilder.IconFont))
-                    return ImGui.CalcTextSize(segment.Icon.ToIconString()).Y;
+                using (UiPush.Font(UiBuilder.IconFont))
+                    return NoireText.CalcSizeInCurrentFont(segment.Icon.ToIconString()).Y;
 
             case SegmentKind.Image:
                 return ResolveImageSize(segment).Y;
 
             case SegmentKind.KeyCap:
-                return ImGui.CalcTextSize(segment.RuntimeText ?? string.Empty).Y + KeyCapPadding.Y * 2f;
+                return NoireText.CalcSizeInCurrentFont(segment.RuntimeText ?? string.Empty).Y + KeyCapPadding.Y * 2f;
 
             default:
                 return ImGui.GetTextLineHeight();
@@ -333,13 +343,13 @@ public sealed class NoireContent
         switch (segment.Kind)
         {
             case SegmentKind.Text:
-                using (ImRaii.PushColor(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
+                using (UiPush.Color(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
                     ImGui.TextUnformatted(segment.RuntimeText ?? string.Empty);
                 break;
 
             case SegmentKind.Icon:
-                using (ImRaii.PushColor(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
-                using (ImRaii.PushFont(UiBuilder.IconFont))
+                using (UiPush.Color(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
+                using (UiPush.Font(UiBuilder.IconFont))
                     ImGui.TextUnformatted(segment.Icon.ToIconString());
                 break;
 
@@ -370,7 +380,7 @@ public sealed class NoireContent
     {
         var padding = KeyCapPadding;
         var position = ImGui.GetCursorScreenPos();
-        var textSize = ImGui.CalcTextSize(label);
+        var textSize = NoireText.CalcSizeInCurrentFont(label);
         var tileSize = new Vector2(textSize.X + padding.X * 2f, textSize.Y + padding.Y * 2f);
         var rounding = NoireUI.Scaled(3f);
 

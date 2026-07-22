@@ -44,12 +44,16 @@ internal enum UiDrawTarget
 internal static class UiDraw
 {
     /// <summary>
-    /// The type name for each calling file, so a name is derived once rather than on every draw.
+    /// The scope name for each calling file, so a name is derived once rather than on every draw.
     /// </summary>
     /// <remarks>
     /// Keyed on the path the compiler baked in, which is the same string instance at a given call site every time.
+    /// <br/>
+    /// Holds the resolved <see cref="UiScopeName"/> rather than the string, so a draw hands the profiler a handle it
+    /// can key on directly. Resolving one costs a string hash, and doing that per draw is what this cache exists to
+    /// avoid.
     /// </remarks>
-    private static readonly ConcurrentDictionary<string, string> typeNames = new();
+    private static readonly ConcurrentDictionary<string, UiScopeName> typeNames = new();
 
     /// <summary>
     /// The composed <c>Type.Member</c> name for each calling method, by file and then by member.
@@ -60,7 +64,7 @@ internal static class UiDraw
     /// Nested rather than keyed on a <c>(path, member)</c> pair, which is not free: a concurrent dictionary boxes a
     /// value-type key, so the pair cost 88 bytes on every gated draw and the gate has to cost nothing.
     /// </remarks>
-    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> methodNames = new();
+    private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, UiScopeName>> methodNames = new();
 
     /// <summary>
     /// Stands in for the plugin check when deciding whether ImGui may be called, for the headless harness.
@@ -136,7 +140,7 @@ internal static class UiDraw
         => new(TypeName(path), UiDrawTarget.Background);
 
     /// <summary>
-    /// The type name for a calling file, or an empty name while the profiler is off.
+    /// The type name for a calling file, or none while the profiler is off.
     /// </summary>
     /// <remarks>
     /// Skipped entirely when nothing is being measured, so a disabled profiler costs a boolean read here rather than a
@@ -146,24 +150,27 @@ internal static class UiDraw
     /// <c>NoireShapes</c>. Naming them for the whole file name instead would split one surface across as many rows as
     /// it has files, and would rename every scope that already exists.
     /// </remarks>
-    private static string TypeName(string path)
-        => NoireUI.Profiler.Enabled ? NotAlreadyOpen(Resolve(path)) : string.Empty;
+    private static UiScopeName? TypeName(string path)
+        => NoireUI.Profiler.Enabled ? NotAlreadyOpen(Resolve(path)) : null;
 
     /// <summary>
-    /// The <c>Type.Member</c> name for a calling method, or an empty name while the profiler is off.
+    /// The <c>Type.Member</c> name for a calling method, or none while the profiler is off.
     /// </summary>
-    private static string MethodName(string path, string member)
+    private static UiScopeName? MethodName(string path, string member)
     {
         if (!NoireUI.Profiler.Enabled)
-            return string.Empty;
+            return null;
 
-        var inFile = methodNames.GetOrAdd(path, static _ => new ConcurrentDictionary<string, string>());
+        var inFile = methodNames.GetOrAdd(path, static _ => new ConcurrentDictionary<string, UiScopeName>());
 
-        return NotAlreadyOpen(inFile.GetOrAdd(member, static (name, file) => $"{Resolve(file)}.{name}", path));
+        return NotAlreadyOpen(inFile.GetOrAdd(
+            member,
+            static (name, file) => UiScopeName.For($"{Resolve(file).Name}.{name}"),
+            path));
     }
 
     /// <summary>
-    /// A name, or an empty one when a scope of that name is already open around this call.
+    /// A name, or none when a scope of that name is already open around this call.
     /// </summary>
     /// <remarks>
     /// A surface reached through its own public entry point holds a scope by the time its private painting helpers
@@ -171,22 +178,23 @@ internal static class UiDraw
     /// would not add to the row that is already open: the profiler keys a node on its name and its parent, so the
     /// second one becomes a child row of the same name, and the outer row's self time drains into it. Every figure
     /// recorded against the single row before then stops being comparable.<br/>
-    /// An empty name is what <see cref="UiProfiler.Open"/> already treats as nothing to measure, so the inner call
-    /// costs nothing and its work is charged to the scope that is genuinely around it.
+    /// No name is what <see cref="UiProfiler.Open"/> already treats as nothing to measure, so the inner call costs
+    /// nothing and its work is charged to the scope that is genuinely around it.<br/>
+    /// Compared by reference: names are interned, so two handles are the same handle exactly when the names match.
     /// </remarks>
-    private static string NotAlreadyOpen(string name)
-        => string.Equals(UiProfiler.InnermostScopeName, name, StringComparison.Ordinal) ? string.Empty : name;
+    private static UiScopeName? NotAlreadyOpen(UiScopeName name)
+        => ReferenceEquals(UiProfiler.InnermostScope, name) ? null : name;
 
     /// <summary>
-    /// The cached type name for a file path.
+    /// The cached scope name for a file path.
     /// </summary>
-    private static string Resolve(string path)
+    private static UiScopeName Resolve(string path)
         => typeNames.GetOrAdd(path, static key =>
         {
             var file = Path.GetFileNameWithoutExtension(key);
             var dot = file.IndexOf('.');
 
-            return dot < 0 ? file : file[..dot];
+            return UiScopeName.For(dot < 0 ? file : file[..dot]);
         });
 }
 
@@ -224,7 +232,7 @@ internal ref struct UiDrawScope
         _ => NoireShapes.DrawList,
     };
 
-    internal UiDrawScope(string name, UiDrawTarget target)
+    internal UiDrawScope(UiScopeName? name, UiDrawTarget target)
     {
         profile = NoireUI.Profiler.Measure(name);
         this.target = target;

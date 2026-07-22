@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -35,6 +34,22 @@ public static class NoireButtons
     /// space left, or a segmented control with more segments than pixels.
     /// </summary>
     private const float MinimumSize = 4f;
+
+    /// <summary>
+    /// The style a segmented control's segments are drawn from, reused across segments and across frames.
+    /// </summary>
+    /// <remarks>
+    /// Per thread, because drawing can happen on more than one and two threads sharing one of these would each see the
+    /// other's colours. Every field is written from the caller's style before each segment is drawn, so nothing
+    /// carries over from the segment before it or from the frame before it.
+    /// </remarks>
+    [ThreadStatic]
+    private static ButtonStyle? segmentScratch;
+
+    /// <summary>
+    /// The scratch style for a segment, created on first use for this thread.
+    /// </summary>
+    private static ButtonStyle SegmentScratch => segmentScratch ??= new ButtonStyle();
 
     /// <summary>
     /// How long a hold-to-confirm button must be held by default, in seconds.
@@ -190,7 +205,7 @@ public static class NoireButtons
                 NoireUI.Diagnostics.ReportFault(VisibleLabel(label), "The button's task failed.", failure);
 
             if (onCompleted != null)
-                Invoke(() => onCompleted(failure), nameof(Async));
+                Invoke(onCompleted, failure, nameof(Async));
 
             running = null;
         }
@@ -361,7 +376,7 @@ public static class NoireButtons
             if (style.CustomDraw != null)
             {
                 var args = new UiToggleDraw(drawList, min, max, value, travel, hovered, trackColor, knobCenter, knobRadius, knobColor);
-                Invoke(() => style.CustomDraw(args), nameof(Toggle));
+                Invoke(style.CustomDraw, args, nameof(Toggle));
             }
             else
             {
@@ -425,8 +440,11 @@ public static class NoireButtons
         else
         {
             var widest = 0f;
-            foreach (var option in options)
-                widest = MathF.Max(widest, ImGui.CalcTextSize(VisibleLabel(option)).X);
+
+            // Indexed rather than a foreach. IReadOnlyList is an interface, so foreach over it goes through
+            // IEnumerable and boxes an enumerator on every frame the control draws.
+            for (var index = 0; index < options.Count; index++)
+                widest = MathF.Max(widest, NoireText.CalcSizeInCurrentFont(VisibleLabel(options[index])).X);
 
             var measured = (widest + padding.X * 2f) * options.Count;
             total = width < 0f ? MathF.Max(measured, ImGui.GetContentRegionAvail().X + width) : measured;
@@ -444,7 +462,13 @@ public static class NoireButtons
                 ImGui.SameLine(0f, NoireUI.Scaled(1f));
 
             var isSelected = index == selected;
-            var segment = style.Clone();
+
+            // Copied into a scratch style rather than cloned into a new one. A clone per segment per frame was the
+            // largest allocation in this file: roughly 315 bytes each, so a four-option control produced over a
+            // kilobyte of garbage on every frame it drew. Reuse is safe because Paint reads everything it needs off
+            // the style before it can hand control back to a consumer.
+            var segment = SegmentScratch;
+            segment.CopyFrom(style);
             segment.Color = isSelected ? accent : theme.Resolve(ThemeColor.SurfaceSunken);
             segment.TextColor = style.TextColor ?? (isSelected ? theme.On(accent) : theme.Resolve(ThemeColor.TextMuted));
 
@@ -505,7 +529,7 @@ public static class NoireButtons
         var padding = style.ResolvePadding();
         var text = VisibleLabel(label);
 
-        var contentWidth = ImGui.CalcTextSize(text).X;
+        var contentWidth = NoireText.CalcSizeInCurrentFont(text).X;
 
         if (style.Icon.HasValue)
             contentWidth += MeasureIcon(style.Icon.Value).X + theme.ResolveItemSpacing().X * 0.6f;
@@ -564,7 +588,7 @@ public static class NoireButtons
         if (style.CustomDraw != null)
         {
             var args = new UiButtonDraw(drawList, min, max, VisibleLabel(label), hovered, held, fill, textColor, rounding, progress);
-            Invoke(() => style.CustomDraw(args), nameof(Button));
+            Invoke(style.CustomDraw, args, nameof(Button));
             return;
         }
 
@@ -649,7 +673,7 @@ public static class NoireButtons
             return;
         }
 
-        var textSize = ImGui.CalcTextSize(busyText);
+        var textSize = NoireText.CalcSizeInCurrentFont(busyText);
         var gap = theme.ResolveItemSpacing().X * 0.6f;
         var totalWidth = radius * 2f + gap + textSize.X;
         var spinnerCenter = new Vector2(center.X - totalWidth * 0.5f + radius, center.Y);
@@ -670,7 +694,7 @@ public static class NoireButtons
         var gap = theme.ResolveItemSpacing().X * 0.6f;
 
         var iconSize = style.Icon.HasValue ? MeasureIcon(style.Icon.Value) : Vector2.Zero;
-        var textSize = text.Length > 0 ? ImGui.CalcTextSize(text) : Vector2.Zero;
+        var textSize = NoireText.CalcSizeInCurrentFont(text);
         var contentWidth = iconSize.X + (style.Icon.HasValue && text.Length > 0 ? gap : 0f) + textSize.X;
 
         var centerY = (min.Y + max.Y) * 0.5f;
@@ -680,7 +704,7 @@ public static class NoireButtons
 
         if (style.Icon.HasValue)
         {
-            using (ImRaii.PushFont(UiBuilder.IconFont))
+            using (UiPush.Font(UiBuilder.IconFont))
                 drawList.AddText(new Vector2(x, centerY - iconSize.Y * 0.5f), iconColor, style.Icon.Value.ToIconString());
 
             x += iconSize.X + (text.Length > 0 ? gap : 0f);
@@ -717,8 +741,8 @@ public static class NoireButtons
 
     private static Vector2 MeasureIcon(FontAwesomeIcon icon)
     {
-        using (ImRaii.PushFont(UiBuilder.IconFont))
-            return ImGui.CalcTextSize(icon.ToIconString());
+        using (UiPush.Font(UiBuilder.IconFont))
+            return NoireText.CalcSizeInCurrentFont(icon.ToIconString());
     }
 
     private static Vector4 BaseColorFor(ButtonTone tone, NoireTheme theme) => tone switch
@@ -748,6 +772,33 @@ public static class NoireButtons
         try
         {
             callback();
+        }
+        catch (Exception ex)
+        {
+            NoireUI.Diagnostics.ReportFault(source, "A button callback threw.", ex);
+        }
+    }
+
+    /// <summary>
+    /// Runs a consumer callback that takes an argument, reporting anything it throws rather than letting it escape
+    /// into the frame.
+    /// </summary>
+    /// <remarks>
+    /// The argument is handed over rather than captured, which is the whole point of this overload existing beside the
+    /// one above. A lambda written at the call site to close over it would capture a **parameter** of the calling
+    /// method, and Roslyn builds that display class on entry to the method rather than at the point of use: every
+    /// button in the frame then allocated one whether or not it had a custom draw to run, and none of them do by
+    /// default. Measured at 24 bytes per button per frame before this.
+    /// </remarks>
+    /// <typeparam name="TArg">The argument type.</typeparam>
+    /// <param name="callback">The callback to run.</param>
+    /// <param name="argument">Passed to <paramref name="callback"/>.</param>
+    /// <param name="source">What to blame in the fault report.</param>
+    private static void Invoke<TArg>(Action<TArg> callback, TArg argument, string source)
+    {
+        try
+        {
+            callback(argument);
         }
         catch (Exception ex)
         {

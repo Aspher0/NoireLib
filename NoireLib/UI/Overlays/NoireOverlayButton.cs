@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
-using Dalamud.Interface.Utility.Raii;
 using System;
 using System.Numerics;
 
@@ -302,10 +301,10 @@ public class NoireOverlayButton : NoireDrawable
         ImGui.SetNextWindowSize(size, ImGuiCond.Always);
 
         var alpha = Math.Clamp(Style.Alpha * (Enabled ? 1f : Style.DisabledAlpha), 0f, 1f);
-        using var alphaStyle = ImRaii.PushStyle(ImGuiStyleVar.Alpha, alpha);
-        using var paddingStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Vector2.Zero);
-        using var borderStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowBorderSize, 0f);
-        using var minSizeStyle = ImRaii.PushStyle(ImGuiStyleVar.WindowMinSize, Vector2.One);
+        using var alphaStyle = UiPush.Style(ImGuiStyleVar.Alpha, alpha);
+        using var paddingStyle = UiPush.Style(ImGuiStyleVar.WindowPadding, Vector2.Zero);
+        using var borderStyle = UiPush.Style(ImGuiStyleVar.WindowBorderSize, 0f);
+        using var minSizeStyle = UiPush.Style(ImGuiStyleVar.WindowMinSize, Vector2.One);
 
         var flags = OverlayWindowFlags;
         if (AlwaysOnTop)
@@ -452,8 +451,8 @@ public class NoireOverlayButton : NoireDrawable
         if (iconSize.HasValue)
         {
             ImGui.SetCursorPos(new Vector2(cursorX, (size.Y - iconSize.Value.Y) / 2f));
-            using (ImRaii.PushColor(ImGuiCol.Text, Style.IconColor ?? Style.TextColor ?? Vector4.One, (Style.IconColor ?? Style.TextColor).HasValue))
-            using (ImRaii.PushFont(UiBuilder.IconFont))
+            using (UiPush.Color(ImGuiCol.Text, Style.IconColor ?? Style.TextColor ?? Vector4.One, (Style.IconColor ?? Style.TextColor).HasValue))
+            using (UiPush.Font(UiBuilder.IconFont))
                 ImGui.TextUnformatted(Icon!.Value.ToIconString());
 
             cursorX += iconSize.Value.X + Style.ScaledContentSpacing;
@@ -474,7 +473,7 @@ public class NoireOverlayButton : NoireDrawable
         if (textSize.HasValue)
         {
             ImGui.SetCursorPos(new Vector2(cursorX, (size.Y - textSize.Value.Y) / 2f));
-            using (ImRaii.PushColor(ImGuiCol.Text, Style.TextColor ?? Vector4.One, Style.TextColor.HasValue))
+            using (UiPush.Color(ImGuiCol.Text, Style.TextColor ?? Vector4.One, Style.TextColor.HasValue))
                 ImGui.TextUnformatted(Text!);
         }
     }
@@ -499,7 +498,7 @@ public class NoireOverlayButton : NoireDrawable
         Vector2? iconSize = null;
         if (Icon.HasValue)
         {
-            using (ImRaii.PushFont(UiBuilder.IconFont))
+            using (UiPush.Font(UiBuilder.IconFont))
                 iconSize = ImGui.CalcTextSize(Icon.Value.ToIconString()) * externalFontScale;
         }
 

@@ -311,7 +311,7 @@ public sealed class NoireMultiCombo<T>
         // size unfloored. Any fraction in the padding therefore leaves the popup permanently short of what it holds,
         // which is a scrollbar on a dropdown that fits, at every UI scale that is not a whole multiple.
         var hostPadding = ImGui.GetStyle().WindowPadding;
-        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(hostPadding.X), MathF.Round(hostPadding.Y)));
+        using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(hostPadding.X), MathF.Round(hostPadding.Y)));
 
         ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
 

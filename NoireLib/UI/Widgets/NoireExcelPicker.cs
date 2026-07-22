@@ -1,6 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Game;
-using Dalamud.Interface.Utility.Raii;
 using Lumina.Excel;
 using NoireLib.Helpers;
 using System;
@@ -210,7 +209,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// </summary>
     private void DrawLoadingPlaceholder()
     {
-        using var disabled = ImRaii.Disabled();
+        using var disabled = UiPush.Disabled();
 
         if (Combo.Width.HasValue)
             ImGui.SetNextItemWidth(Combo.Width.Value);

@@ -1,5 +1,4 @@
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Globalization;
@@ -84,7 +83,7 @@ public static class NoireSliders
 
         float column;
 
-        using (style.LabelColor is { } labelColor ? ImRaii.PushColor(ImGuiCol.Text, labelColor) : null)
+        using (UiPush.Color(ImGuiCol.Text, style.LabelColor ?? Vector4.One, style.LabelColor.HasValue))
             column = NoireInputs.BeginRow(label, 0f, out id, sizeField: false, labelWidth: style.LabelWidth);
 
         var height = ImGui.GetFrameHeight();
@@ -125,7 +124,7 @@ public static class NoireSliders
         var args = new UiSliderDraw(origin, origin + size, trackMin, trackMax, grabCenter, fraction, value, hovered, held, style);
 
         if (style.CustomDraw != null)
-            Invoke(() => style.CustomDraw(args), nameof(NoireSliders));
+            Invoke(style.CustomDraw, args, nameof(NoireSliders));
         else
             Paint(args);
 
@@ -245,6 +244,46 @@ public static class NoireSliders
     }
 
     /// <summary>
+    /// What a value reads as, and everything that can change it.
+    /// </summary>
+    /// <remarks>
+    /// The culture is held as well as the format, because the same number and the same format read differently under
+    /// another one and a slider that kept the old text would be wrong in a way nothing else would explain.
+    /// </remarks>
+    private readonly record struct ValueTextKey(float Value, string Format, string Culture);
+
+    /// <summary>
+    /// What each value has already been formatted as.
+    /// </summary>
+    /// <remarks>
+    /// A slider redraws every frame and its value moves only while it is being dragged, so formatting it per frame is
+    /// a string produced to arrive at the text already on screen. Bounded rather than budgeted, the way the text
+    /// measurement cache is: a slider bound to something that changes every frame would otherwise grow this without
+    /// ever hitting it.
+    /// </remarks>
+    private static readonly HotPathCache<ValueTextKey, string> ValueTexts = new(1024);
+
+    /// <summary>
+    /// Formats a slider's value, remembering what it read last time.
+    /// </summary>
+    /// <param name="value">The value to format.</param>
+    /// <param name="format">The numeric format string.</param>
+    /// <returns>The formatted value.</returns>
+    private static string FormatValue(float value, string format)
+    {
+        var culture = CultureInfo.CurrentCulture;
+        var key = new ValueTextKey(value, format, culture.Name);
+
+        if (ValueTexts.TryGet(key, out var cached))
+            return cached;
+
+        var text = value.ToString(format, culture);
+        ValueTexts.Set(key, text);
+
+        return text;
+    }
+
+    /// <summary>
     /// Writes the value at the end of the row, in a column reserved whatever it reads.
     /// </summary>
     private static void DrawValue(float value, string format, SliderStyle style, Vector2 origin, float width, float height)
@@ -252,7 +291,7 @@ public static class NoireSliders
         var theme = NoireTheme.Current;
         var text = style.ValueText is { } words
             ? words(value) ?? string.Empty
-            : value.ToString(format, CultureInfo.CurrentCulture);
+            : FormatValue(value, format);
         var column = NoireUI.Scaled(style.ValueWidth);
         var measured = NoireText.CalcSize(text);
 
@@ -264,7 +303,7 @@ public static class NoireSliders
 
         ImGui.SetCursorScreenPos(at);
 
-        using var pushed = ImRaii.PushColor(ImGuiCol.Text, style.ValueColor ?? theme.Resolve(ThemeColor.TextMuted));
+        using var pushed = UiPush.Color(ImGuiCol.Text, style.ValueColor ?? theme.Resolve(ThemeColor.TextMuted));
         ImGui.PushTextWrapPos(-1f);
         NoireText.Draw(text);
         ImGui.PopTextWrapPos();
@@ -321,11 +360,24 @@ public static class NoireSliders
     /// <summary>
     /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
     /// </summary>
-    private static void Invoke(Action callback, string source)
+    /// <summary>
+    /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
+    /// </summary>
+    /// <remarks>
+    /// The argument is handed over rather than captured. A lambda written at the call site to close over it would
+    /// capture a **parameter** of the calling method, and Roslyn builds that display class on entry to the method
+    /// rather than at the point of use, so every slider in the frame allocated one whether or not it had a custom
+    /// draw to run. See the same fix on <see cref="NoireButtons"/>.
+    /// </remarks>
+    /// <typeparam name="TArg">The argument type.</typeparam>
+    /// <param name="callback">The callback to run.</param>
+    /// <param name="argument">Passed to <paramref name="callback"/>.</param>
+    /// <param name="source">What to blame in the fault report.</param>
+    private static void Invoke<TArg>(Action<TArg> callback, TArg argument, string source)
     {
         try
         {
-            callback();
+            callback(argument);
         }
         catch (Exception ex)
         {

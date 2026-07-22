@@ -1,5 +1,5 @@
 ﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -109,18 +109,18 @@ public static class NoireTooltip
         if (style.BackgroundOpacity.HasValue)
             ImGui.SetNextWindowBgAlpha(Math.Clamp(style.BackgroundOpacity.Value, 0f, 1f));
 
-        using var backgroundColor = ImRaii.PushColor(ImGuiCol.PopupBg, style.BackgroundColor ?? Vector4.One, style.BackgroundColor.HasValue);
-        using var borderColor = ImRaii.PushColor(ImGuiCol.Border, style.BorderColor ?? Vector4.One, style.BorderColor.HasValue);
-        using var textColor = ImRaii.PushColor(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
+        using var backgroundColor = UiPush.Color(ImGuiCol.PopupBg, style.BackgroundColor ?? Vector4.One, style.BackgroundColor.HasValue);
+        using var borderColor = UiPush.Color(ImGuiCol.Border, style.BorderColor ?? Vector4.One, style.BorderColor.HasValue);
+        using var textColor = UiPush.Color(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
 
         // A tooltip's border thickness comes from PopupBorderSize, not from WindowBorderSize: ImGui picks the style
         // field by flag, and this window carries the tooltip flag. Pushing the window one is what made a styled border
         // never appear, whatever the style asked for.
         // Rounding is picked by flag as well, but there the tooltip flag is not part of the popup branch, so that one
         // genuinely is the window field.
-        using var borderSize = ImRaii.PushStyle(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
-        using var rounding = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
-        using var padding = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
+        using var borderSize = UiPush.Style(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
+        using var rounding = UiPush.Style(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
+        using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
 
         if (ImGui.Begin(windowId, TooltipWindowFlags))
         {
@@ -209,21 +209,30 @@ public static class NoireTooltip
     /// A remembered size is what places a tooltip on the frame it reappears, so one is worth keeping long after the
     /// tooltip was last shown, and evicting one only costs the couple of invisible frames it takes to measure it again.
     /// </summary>
+    /// <remarks>
+    /// The keys to drop are gathered before any of them is dropped, because a dictionary cannot be written through
+    /// while it is being read. The buffer they are gathered into is borrowed rather than allocated: this runs on every
+    /// frame a tooltip draws, and it starts running exactly when the cache is at its largest.
+    /// </remarks>
     private static void PruneSizeCache()
     {
         if (SizeCache.Count < 64)
             return;
 
         var currentFrame = ImGui.GetFrameCount();
-        var stale = new List<string>();
+
+        using var buffer = PooledBuffer<string>.Rent(SizeCache.Count);
+
+        var stale = buffer.Span;
+        var count = 0;
 
         foreach (var (key, value) in SizeCache)
         {
             if (currentFrame - value.Frame > 60)
-                stale.Add(key);
+                stale[count++] = key;
         }
 
-        foreach (var key in stale)
-            SizeCache.Remove(key);
+        for (var index = 0; index < count; index++)
+            SizeCache.Remove(stale[index]);
     }
 }

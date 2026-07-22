@@ -53,10 +53,7 @@ public static partial class NoireText
 
         NoireUI.EnsureFrameServices();
 
-        var size = Vector2.Zero;
-        InFont(sizePx, text, tracking, (t, track) => size = PlaceGlyphs(t, track, paint: true));
-
-        return size;
+        return InFont(sizePx, text, tracking, paint: true);
     }
 
     /// <summary>
@@ -82,39 +79,49 @@ public static partial class NoireText
     /// <returns>The size the text would occupy, in real pixels.</returns>
     public static Vector2 TrackedSize(string text, float tracking, float sizePx)
     {
-        if (string.IsNullOrEmpty(text) || !NoireService.IsInitialized())
+        // The guard is not about the font, which InFont handles being unavailable. It is what makes this safe to call
+        // with no ImGui context at all: the walk below reads the cursor and measures glyphs, and both fault rather
+        // than fail without one. Deleting it outright was tried and crashed the test run; asking the gate instead
+        // keeps the protection and lets the headless harness, which owns a context with no plugin behind it, reach
+        // the measurement. See NoireText.CalcSize for the same reasoning.
+        if (string.IsNullOrEmpty(text) || !UiDraw.Available)
             return Vector2.Zero;
 
-        var measured = Vector2.Zero;
-        InFont(sizePx, text, tracking, (t, track) => measured = PlaceGlyphs(t, track, paint: false));
-
-        return measured;
+        return InFont(sizePx, text, tracking, paint: false);
     }
 
     /// <summary>
-    /// Runs a body with the font for a size pushed, falling back to the stretched stand-in while that size builds.
+    /// Places a run with the font for a size pushed, falling back to the stretched stand-in while that size builds.
     /// </summary>
     /// <remarks>
     /// The same two paths <see cref="Highlighted"/> takes, for the same reason: a measurement and the drawing it feeds
     /// have to happen in the same font or the layout is wrong by a few pixels everywhere, with neither of the two
-    /// looking like the one that lied.
+    /// looking like the one that lied.<br/>
+    /// Calls <see cref="PlaceGlyphs"/> directly rather than taking a body to run. It took a delegate when both callers
+    /// wanted the size out of it, and a lambda assigning to a local captures that local, so every tracked label built a
+    /// display class and a delegate on every frame it was drawn. Returning the size instead removes both, and there was
+    /// never a second thing for the body to be.
     /// </remarks>
-    private static void InFont(float sizePx, string text, float tracking, Action<string, float> body)
+    /// <param name="sizePx">The size at 100%.</param>
+    /// <param name="text">The text to place.</param>
+    /// <param name="tracking">Extra space per character, in ems.</param>
+    /// <param name="paint">Whether to actually paint, as opposed to only measuring.</param>
+    /// <returns>The size the run occupies.</returns>
+    private static Vector2 InFont(float sizePx, string text, float tracking, bool paint)
     {
         var handle = UiFontCache.Get(sizePx);
 
         if (handle is { Available: true })
         {
             using var pushed = handle.Push();
-            body(text, tracking);
-            return;
+            return PlaceGlyphs(text, tracking, paint);
         }
 
         var restore = PushApproximateSize(sizePx);
 
         try
         {
-            body(text, tracking);
+            return PlaceGlyphs(text, tracking, paint);
         }
         finally
         {
@@ -145,7 +152,9 @@ public static partial class NoireText
         using var draw = UiDraw.Begin();
 
         var origin = ImGui.GetCursorScreenPos();
-        var spacing = tracking * ImGui.GetFontSize();
+        var font = UiTextMeasureCache.CurrentFont();
+        var fontSize = ImGui.GetFontSize();
+        var spacing = tracking * fontSize;
         var height = ImGui.GetTextLineHeight();
         var color = ImGui.GetColorU32(ImGuiCol.Text);
         var list = draw.List;
@@ -171,7 +180,18 @@ public static partial class NoireText
             if (paint)
                 list.AddText(origin + new Vector2(x, 0f), color, piece);
 
-            x += ImGui.CalcTextSize(piece).X + spacing;
+            // Measured once per character per font size rather than once per character per frame. A label is redrawn
+            // every frame and its glyphs do not change width between them, and the alphabet an interface uses is small
+            // and fixed, so this fills in the first frames and only hits afterwards.
+            var codepoint = length == 2 ? char.ConvertToUtf32(text[index], text[index + 1]) : text[index];
+
+            if (!UiTextMeasureCache.TryGetGlyphAdvance(codepoint, font, fontSize, out var advance))
+            {
+                advance = ImGui.CalcTextSize(piece).X;
+                UiTextMeasureCache.StoreGlyphAdvance(codepoint, font, fontSize, advance);
+            }
+
+            x += advance + spacing;
             index += length;
         }
 

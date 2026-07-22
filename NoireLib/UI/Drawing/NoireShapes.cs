@@ -261,6 +261,57 @@ public static partial class NoireShapes
     /// <summary>
     /// Recolors a run of vertices by where each one falls along a line.
     /// </summary>
+    /// <summary>
+    /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
+    /// </summary>
+    /// <remarks>
+    /// The gradient a shape radiating from a point actually wants. Done as a line, it has to be done once per arm,
+    /// because each arm points a different way: a sunburst of sixty rays in three layers ran this a hundred and eighty
+    /// times a frame, and the cost was almost entirely in being called rather than in the arithmetic. Distance from the
+    /// centre is the same measure for every arm, so the whole shape is one pass.<br/>
+    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm is
+    /// slightly further from the centre than its projection along the arm. That is the more correct of the two for a
+    /// shape whose fade is meant to be radial.
+    /// </remarks>
+    /// <param name="drawList">The list holding the vertices.</param>
+    /// <param name="start">The first vertex to shade.</param>
+    /// <param name="end">One past the last vertex to shade.</param>
+    /// <param name="centre">Where the shape radiates from.</param>
+    /// <param name="innerRadius">The distance at which the shape is left at full strength.</param>
+    /// <param name="outerRadius">The distance at which it has faded away entirely.</param>
+    private static void ShadeRadial(ImDrawListPtr drawList, int start, int end, Vector2 centre, float innerRadius, float outerRadius)
+    {
+        if (end <= start)
+            return;
+
+        var span = outerRadius - innerRadius;
+
+        if (span < 0.0001f)
+            return;
+
+        var vertices = drawList.VtxBuffer.AsSpan();
+
+        if (end > vertices.Length)
+            return;
+
+        var inverseSpan = 1f / span;
+
+        for (var i = start; i < end; i++)
+        {
+            ref var vertex = ref vertices[i];
+
+            var position = Math.Clamp((Vector2.Distance(vertex.Pos, centre) - innerRadius) * inverseSpan, 0f, 1f);
+
+            // The alpha byte is scaled where it sits and the other three are carried across untouched. Unpacking to
+            // floats and packing back is the same answer through four channels of arithmetic, and this loop runs once
+            // per vertex of every ornament that fades.
+            var packed = vertex.Col;
+            var faded = (uint)((((packed >> 24) & 0xFFu) * (1f - position)) + 0.5f);
+
+            vertex.Col = (packed & 0x00FFFFFFu) | (faded << 24);
+        }
+    }
+
     private static void Shade(ImDrawListPtr drawList, int start, int end, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         if (end <= start)
@@ -286,10 +337,11 @@ public static partial class NoireShapes
             var position = Math.Clamp(Vector2.Dot(vertex.Pos - from, axis) * inverseLength, 0f, 1f);
             var tint = Vector4.Lerp(fromColor, toColor, position);
 
-            // Unpacked through ImGui's own converter rather than by shifting bytes, so the packed layout stays ImGui's
-            // business. The existing alpha is what carries the antialiased edge, so it is multiplied, not replaced.
-            var existing = ImGui.ColorConvertU32ToFloat4(vertex.Col);
-            vertex.Col = ColorHelper.Vector4ToUint(tint with { W = existing.W * tint.W });
+            // Only the alpha of what is already there is wanted, because that is what carries the antialiased edge and
+            // it is multiplied rather than replaced. Reading the one channel rather than unpacking all four keeps this
+            // loop off the native converter, which it would otherwise cross twice for every vertex of every gradient.
+            var existing = ColorHelper.UintAlpha(vertex.Col);
+            vertex.Col = ColorHelper.Vector4ToUint(tint with { W = existing * tint.W });
         }
     }
 

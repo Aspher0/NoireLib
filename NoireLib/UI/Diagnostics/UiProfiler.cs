@@ -51,9 +51,16 @@ public sealed class UiProfiler
     /// is what a helper is, had one row whose parent was whichever caller ran last; every other caller then showed a
     /// self time reduced by a child that was nowhere under it, and the difference vanished from the tree. Keyed by
     /// path, each caller gets its own node and every branch adds up.<br/>
-    /// The key holds the parent's id rather than a built path string, so nothing is composed or allocated per frame.
+    /// Both halves of the key are integers: the parent's id rather than a built path string, and the name's
+    /// <see cref="UiScopeName.Id"/> rather than the name. Nothing is composed or allocated per frame, and nothing is
+    /// hashed that was not already an integer.
     /// </remarks>
-    private readonly Dictionary<(int Parent, string Name), Node> nodes = new();
+    private readonly Dictionary<(int Parent, int Name), Node> nodes = new();
+
+    /// <summary>
+    /// The handle for <see cref="RootScopeName"/>, resolved once rather than compared as a string per open.
+    /// </summary>
+    private static readonly UiScopeName RootScope = UiScopeName.For(RootScopeName);
 
     private int nextNodeId = 1;
     private int currentFrame = -1;
@@ -98,7 +105,7 @@ public sealed class UiProfiler
         public Node Node;
 
         public int NodeId;
-        public string Name;
+        public UiScopeName Name;
         public long Started;
         public long ChildTicks;
 
@@ -124,6 +131,17 @@ public sealed class UiProfiler
         /// garbage its children produced.
         /// </summary>
         public long ChildBytes;
+
+        /// <summary>
+        /// Whether <see cref="UiProfiler.TrackAllocations"/> was on when this scope opened.
+        /// </summary>
+        /// <remarks>
+        /// Carried rather than read again on the way out, because the setting can move while a scope is open. Both
+        /// ends of a difference have to have been read for the difference to mean anything: without this, a scope
+        /// that opened while tracking was off and closed while it was on would report the thread's entire allocation
+        /// since startup as its own.
+        /// </remarks>
+        public bool Tracked;
     }
 
     /// <summary>
@@ -134,6 +152,12 @@ public sealed class UiProfiler
         public int Id;
         public int ParentId;
         public string Name = string.Empty;
+
+        /// <summary>
+        /// The <see cref="UiScopeName.Id"/> half of the key this node is filed under, so a rehome can rebuild the key
+        /// without hashing the name back into one.
+        /// </summary>
+        public int NameId;
 
         public long Ticks;
         public long SelfTicks;
@@ -177,6 +201,21 @@ public sealed class UiProfiler
     public bool Enabled { get; set; }
 
     /// <summary>
+    /// Whether scopes also record how many bytes they allocated. Requires <see cref="Enabled"/>.<br/>
+    /// Off by default, separately from the timing, because it costs more per scope than the timing does.
+    /// </summary>
+    /// <remarks>
+    /// Each measured scope reads the runtime's per-thread allocation counter twice, and that is a runtime call rather
+    /// than a field read. An interface opening several hundred scopes a frame pays it several hundred times, which was
+    /// measured at roughly half of what a scope costs at all.<br/>
+    /// Switch it on while judging whether a change allocates, which is what the byte columns are for, and leave it off
+    /// while reading milliseconds. The byte figures report 0 while it is off rather than holding their last values, so
+    /// a reader cannot mistake a stale number for a live one. A scope open across a change to this setting reports 0
+    /// bytes for that one scope, since a difference needs both of its ends.
+    /// </remarks>
+    public bool TrackAllocations { get; set; }
+
+    /// <summary>
     /// The name to measure a whole draw callback under, so the profiler can account for every millisecond rather than
     /// only the ones something claimed.
     /// </summary>
@@ -203,7 +242,7 @@ public sealed class UiProfiler
         get
         {
             lock (syncRoot)
-                return nodes.TryGetValue((0, RootScopeName), out var root) ? root.AverageMs : 0d;
+                return nodes.TryGetValue((0, RootScope.Id), out var root) ? root.AverageMs : 0d;
         }
     }
 
@@ -216,7 +255,7 @@ public sealed class UiProfiler
         get
         {
             lock (syncRoot)
-                return nodes.TryGetValue((0, RootScopeName), out var root) ? root.SelfAverageMs : 0d;
+                return nodes.TryGetValue((0, RootScope.Id), out var root) ? root.SelfAverageMs : 0d;
         }
     }
 
@@ -341,7 +380,7 @@ public sealed class UiProfiler
 
     /// <summary>
     /// The sum of every scope's self allocation, averaged: how many bytes a frame of interface produces.<br/>
-    /// Reads 0 while <see cref="Enabled"/> is off.
+    /// Reads 0 unless both <see cref="Enabled"/> and <see cref="TrackAllocations"/> are on.
     /// </summary>
     /// <remarks>
     /// The counterpart to <see cref="TotalAverageMs"/>, and the number to watch when judging whether a change helped.
@@ -358,7 +397,7 @@ public sealed class UiProfiler
     {
         get
         {
-            if (!Enabled)
+            if (!Enabled || !TrackAllocations)
                 return 0d;
 
             var total = 0d;
@@ -542,9 +581,10 @@ public sealed class UiProfiler
     /// For a caller deciding whether to open a scope at all. A node is keyed on its name and its parent, so a surface
     /// that opens its own name again inside itself does not get one row: it gets a second node under the first, and
     /// the outer row loses its time to a same-named child. Reading this is how <see cref="UiDraw"/> declines to open
-    /// the duplicate.
+    /// the duplicate.<br/>
+    /// Handed back as the handle rather than the name, so the caller compares references instead of strings.
     /// </remarks>
-    internal static string? InnermostScopeName
+    internal static UiScopeName? InnermostScope
     {
         get
         {
@@ -556,23 +596,31 @@ public sealed class UiProfiler
     /// <summary>
     /// Starts timing a scope. Pair with <see cref="Close"/>, which <see cref="UiProfileScope"/> does.
     /// </summary>
-    /// <param name="name">The scope's name.</param>
+    /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
     /// <returns>The timestamp the scope started at, or 0 when the profiler is off.</returns>
-    internal long Open(string name)
+    internal long Open(UiScopeName? name)
     {
-        if (!Enabled || string.IsNullOrEmpty(name))
+        if (!Enabled || name == null)
             return 0L;
 
+        var tracking = TrackAllocations;
+
         // Read before the profiler touches anything, including the list it is about to grow.
-        var entryBytes = GC.GetAllocatedBytesForCurrentThread();
+        var entryBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
 
         var stack = openScopes ??= new List<OpenScope>();
         var parentId = stack.Count > 0 ? stack[^1].NodeId : 0;
 
+        // The frame number is read here, on the outermost scope, and nowhere else. Reading it is not a field read:
+        // outside a test it is an ImGui call across the native boundary, and doing that once per scope close meant
+        // several hundred of them a frame in an interface of any size. Every scope nested in this one is in the same
+        // frame by construction, so one read answers for all of them.
+        var rolling = stack.Count == 0;
+
         // A scope opened with nothing above it still belongs to the frame, even though it is not inside the root's
         // span: NoireUI's own frame pass runs from a second draw handler, alongside the host's rather than within it,
         // and the host times both. Adopted by the root so the tree has one trunk instead of a scattering of orphans.
-        if (parentId == 0 && !string.Equals(name, RootScopeName, StringComparison.Ordinal))
+        if (parentId == 0 && !ReferenceEquals(name, RootScope))
             parentId = rootNodeId;
 
         Node resolved;
@@ -581,12 +629,15 @@ public sealed class UiProfiler
         // id to know where it belongs.
         lock (syncRoot)
         {
-            if (!nodes.TryGetValue((parentId, name), out var node))
-            {
-                node = new Node { Id = nextNodeId++, ParentId = parentId, Name = name };
-                nodes[(parentId, name)] = node;
+            if (rolling)
+                RollFrameLocked();
 
-                if (parentId == 0 && string.Equals(name, RootScopeName, StringComparison.Ordinal))
+            if (!nodes.TryGetValue((parentId, name.Id), out var node))
+            {
+                node = new Node { Id = nextNodeId++, ParentId = parentId, Name = name.Name, NameId = name.Id };
+                nodes[(parentId, name.Id)] = node;
+
+                if (parentId == 0 && ReferenceEquals(name, RootScope))
                 {
                     rootNodeId = node.Id;
                     rootNode = node;
@@ -606,6 +657,7 @@ public sealed class UiProfiler
             ChildTicks = 0L,
             ChildBytes = 0L,
             EntryBytes = entryBytes,
+            Tracked = tracking,
         });
 
         // Both counters are read last, once the profiler's own bookkeeping is done. Resolving a node allocates one the
@@ -614,7 +666,7 @@ public sealed class UiProfiler
         var index = stack.Count - 1;
         var frame = stack[index];
 
-        frame.StartedBytes = GC.GetAllocatedBytesForCurrentThread();
+        frame.StartedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
         frame.Started = Stopwatch.GetTimestamp();
 
         stack[index] = frame;
@@ -633,14 +685,14 @@ public sealed class UiProfiler
     /// </remarks>
     private void AdoptOrphansLocked()
     {
-        List<(int Parent, string Name)>? orphans = null;
+        List<(int Parent, int Name)>? orphans = null;
 
         foreach (var pair in nodes)
         {
             if (pair.Key.Parent != 0 || pair.Value.Id == rootNodeId)
                 continue;
 
-            (orphans ??= new List<(int, string)>()).Add(pair.Key);
+            (orphans ??= new List<(int, int)>()).Add(pair.Key);
         }
 
         if (orphans == null)
@@ -678,16 +730,17 @@ public sealed class UiProfiler
     /// <summary>
     /// Finishes timing a scope opened by <see cref="Open"/>, charging its time to itself and to whatever encloses it.
     /// </summary>
-    /// <param name="name">The scope's name.</param>
+    /// <param name="name">The scope's name, as it was passed to <see cref="Open"/>.</param>
     /// <param name="started">The timestamp <see cref="Open"/> returned.</param>
-    internal void Close(string name, long started)
+    internal void Close(UiScopeName? name, long started)
     {
         if (started == 0L)
             return;
 
         // Read first, before this method's own bookkeeping, for the same reason Open reads last. Between them the two
         // reads bracket the caller's work and nothing else.
-        var endedBytes = GC.GetAllocatedBytesForCurrentThread();
+        var tracking = TrackAllocations;
+        var endedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
 
         var stack = openScopes;
 
@@ -701,7 +754,8 @@ public sealed class UiProfiler
 
         // Scopes are disposed in the reverse of the order they were opened, so anything else means a caller has kept
         // one past its block. Unwinding to it is better than silently attributing the rest of the frame to it.
-        if (!string.Equals(frame.Name, name, StringComparison.Ordinal))
+        // Compared by reference, which interning makes equivalent to comparing the names and far cheaper.
+        if (!ReferenceEquals(frame.Name, name))
         {
             // Walked by hand rather than with FindLastIndex and a predicate. A predicate capturing name captures a
             // parameter, and the closure for that is built on entry to the method rather than where it is used, so
@@ -710,7 +764,7 @@ public sealed class UiProfiler
 
             for (var candidate = stack.Count - 1; candidate >= 0; candidate--)
             {
-                if (!string.Equals(stack[candidate].Name, name, StringComparison.Ordinal))
+                if (!ReferenceEquals(stack[candidate].Name, name))
                     continue;
 
                 found = candidate;
@@ -729,7 +783,11 @@ public sealed class UiProfiler
         var elapsed = Stopwatch.GetTimestamp() - frame.Started;
         var self = Math.Max(0L, elapsed - frame.ChildTicks);
 
-        var allocated = Math.Max(0L, endedBytes - frame.StartedBytes);
+        // Both ends of the difference have to have been read. A scope spanning a change to TrackAllocations reports
+        // no bytes rather than the counter's absolute value.
+        var measured = tracking && frame.Tracked;
+
+        var allocated = measured ? Math.Max(0L, endedBytes - frame.StartedBytes) : 0L;
         var selfAllocated = Math.Max(0L, allocated - frame.ChildBytes);
 
         // Charged to the enclosing scope so that its own self figures exclude this one.
@@ -741,7 +799,9 @@ public sealed class UiProfiler
             // Charged from this scope's entry rather than from where its own measurement began, so the parent is not
             // billed for the node the profiler allocated on first seeing this call path. Identical in the steady
             // state, and different only on the frame a scope first runs.
-            parent.ChildBytes += Math.Max(0L, endedBytes - frame.EntryBytes);
+            if (measured)
+                parent.ChildBytes += Math.Max(0L, endedBytes - frame.EntryBytes);
+
             stack[^1] = parent;
         }
 
@@ -752,8 +812,6 @@ public sealed class UiProfiler
 
         lock (syncRoot)
         {
-            RollFrameLocked();
-
             node.Ticks += elapsed;
             node.SelfTicks += self;
             node.Bytes += allocated;
@@ -777,7 +835,11 @@ public sealed class UiProfiler
     /// <remarks>
     /// Rolled up here, on the way into a measurement, rather than from the hub's per-frame pass. A scope can be measured
     /// by a plugin that never registered a drawable and so never runs that pass, and a profiler that only reported for
-    /// hub-driven interfaces would be silently empty for exactly the plugin most likely to be looking at it.
+    /// hub-driven interfaces would be silently empty for exactly the plugin most likely to be looking at it.<br/>
+    /// Called only when a scope opens with nothing above it, which is once per frame in a nested interface rather than
+    /// once per scope. The previous frame's figures are therefore closed off before any of this frame's measurements
+    /// land, which is what the roll has to guarantee and is the same point in the sequence as closing the first scope
+    /// of the frame.
     /// </remarks>
     private void RollFrameLocked()
     {

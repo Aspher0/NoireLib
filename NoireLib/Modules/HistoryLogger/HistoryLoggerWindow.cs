@@ -4,6 +4,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using NoireLib.Core.Modules;
 using NoireLib.Helpers;
+using NoireLib.UI;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -311,7 +312,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             var io = ImGui.GetIO();
             var ctrlShiftPressed = io.KeyCtrl && io.KeyShift;
 
-            using (ImRaii.Disabled(!ctrlShiftPressed))
+            using (UiPush.Disabled(!ctrlShiftPressed))
             {
                 if (ImGui.Button("Clear in-memory entries", new Vector2(buttonWidth, 0)))
                     ParentModule.ClearEntries();
@@ -330,7 +331,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             var io = ImGui.GetIO();
             var ctrlShiftPressed = io.KeyCtrl && io.KeyShift;
 
-            using (ImRaii.Disabled(!ctrlShiftPressed))
+            using (UiPush.Disabled(!ctrlShiftPressed))
             {
                 if (ImGui.Button("Clear database entries", new Vector2(buttonWidth, 0)))
                     ParentModule.ClearDatabaseEntries();
@@ -472,10 +473,11 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             var rowId = $"##HistoryLoggerRow_{index}";
             var popupId = $"HistoryLoggerRowMenu_{index}";
 
-            using (ImRaii.PushColor(ImGuiCol.Header, new Vector4(0, 0, 0, 0)))
-            using (ImRaii.PushColor(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.05f)))
-            using (ImRaii.PushColor(ImGuiCol.HeaderActive, new Vector4(0, 0, 0, 0)))
+            using (var pushed = UiPush.Color(ImGuiCol.Header, new Vector4(0, 0, 0, 0)))
             {
+                pushed.Push(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.05f));
+                pushed.Push(ImGuiCol.HeaderActive, new Vector4(0, 0, 0, 0));
+
                 if (ImGui.Selectable(rowId, isSelected, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowItemOverlap, new Vector2(0, rowHeight)))
                     ToggleSelection(entry, index, pagedEntries);
             }
@@ -502,7 +504,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             }
 
             ImGui.TableSetColumnIndex(col++); // Level
-            using (ImRaii.PushColor(ImGuiCol.Text, GetLevelColor(entry.Level)))
+            using (UiPush.Color(ImGuiCol.Text, GetLevelColor(entry.Level)))
                 ImGui.TextUnformatted(entry.Level.ToString());
 
             if (!hideCategory)
@@ -563,10 +565,11 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                 var rowId = $"##HistoryLoggerLine_{rowIndex}";
                 var popupId = $"HistoryLoggerLineMenu_{rowIndex}";
 
-                using (ImRaii.PushColor(ImGuiCol.Header, new Vector4(0, 0, 0, 0)))
-                using (ImRaii.PushColor(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.05f)))
-                using (ImRaii.PushColor(ImGuiCol.HeaderActive, new Vector4(0, 0, 0, 0)))
+                using (var pushed = UiPush.Color(ImGuiCol.Header, new Vector4(0, 0, 0, 0)))
                 {
+                    pushed.Push(ImGuiCol.HeaderHovered, new Vector4(1, 1, 1, 0.05f));
+                    pushed.Push(ImGuiCol.HeaderActive, new Vector4(0, 0, 0, 0));
+
                     if (ImGui.Selectable(rowId, isLineSelected, ImGuiSelectableFlags.SpanAllColumns | ImGuiSelectableFlags.AllowItemOverlap, new Vector2(0, rowHeight)))
                         ToggleLineSelection(entry, lineIndex, rowIndex, pagedEntries, lines.Length);
                 }
@@ -596,7 +599,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
                 ImGui.TableSetColumnIndex(col++); // Level
                 if (lineIndex == 0)
                 {
-                    using (ImRaii.PushColor(ImGuiCol.Text, GetLevelColor(entry.Level)))
+                    using (UiPush.Color(ImGuiCol.Text, GetLevelColor(entry.Level)))
                         ImGui.TextUnformatted(entry.Level.ToString());
                 }
 
@@ -694,7 +697,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.PushFont(NoireService.PluginInterface.UiBuilder.FontIcon);
 
-        using (ImRaii.Disabled(currentPage <= 1))
+        using (UiPush.Disabled(currentPage <= 1))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleDoubleLeft.ToIconString()}##FirstPage"))
                 currentPage = 1;
@@ -702,7 +705,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.SameLine();
 
-        using (ImRaii.Disabled(currentPage <= 1))
+        using (UiPush.Disabled(currentPage <= 1))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleLeft.ToIconString()}##PrevPage"))
                 currentPage = Math.Max(1, currentPage - 1);
@@ -724,7 +727,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.PushFont(NoireService.PluginInterface.UiBuilder.FontIcon);
 
-        using (ImRaii.Disabled(currentPage >= totalPages))
+        using (UiPush.Disabled(currentPage >= totalPages))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleRight.ToIconString()}##NextPage"))
                 currentPage = Math.Min(totalPages, currentPage + 1);
@@ -732,7 +735,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.SameLine();
 
-        using (ImRaii.Disabled(currentPage >= totalPages))
+        using (UiPush.Disabled(currentPage >= totalPages))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleDoubleRight.ToIconString()}##LastPage"))
                 currentPage = totalPages;
@@ -935,7 +938,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         if (canDelete)
         {
-            using (ImRaii.Disabled(!ctrlPressed))
+            using (UiPush.Disabled(!ctrlPressed))
             {
                 if (ImGui.MenuItem(deleteLabel, string.Empty, false, ctrlPressed) && ctrlPressed)
                 {

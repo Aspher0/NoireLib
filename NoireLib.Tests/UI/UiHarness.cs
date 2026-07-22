@@ -123,10 +123,19 @@ public sealed class UiHarness : IDisposable
     /// representative: its auto-size has not resolved, so its contents are laid out against a size ImGui is still
     /// working out. One warm-up frame is enough for that; more is for state that settles over several frames.
     /// </param>
+    /// <param name="profile">
+    /// Whether the profiler runs during the frame. On by default, because the scopes a frame opened are half of what
+    /// this harness reports.<br/>
+    /// Turn it off to time drawing the way a plugin actually runs it. A scope costs far more to open while the profiler
+    /// is listening than while it is not, so a surface entered hundreds of times a frame reads as much more expensive
+    /// than it is. A measurement in milliseconds taken with this on is a measurement of the profiler as much as of the
+    /// drawing. Allocated bytes are unaffected, since the profiler's own allocations are not on the measured thread's
+    /// account during a warm frame.
+    /// </param>
     /// <returns>What the measured frame produced. Never accumulates across the warm-up frames.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="draw"/> is <see langword="null"/>.</exception>
     /// <exception cref="ObjectDisposedException">Thrown when the harness has been disposed.</exception>
-    public UiHarnessResult Draw(Action draw, int warmUpFrames = 1)
+    public UiHarnessResult Draw(Action draw, int warmUpFrames = 1, bool profile = true)
     {
         ArgumentNullException.ThrowIfNull(draw);
         ObjectDisposedException.ThrowIf(disposed, this);
@@ -139,7 +148,7 @@ public sealed class UiHarness : IDisposable
         // into the frame being measured and report it as the caller's. The same draw runs every frame, so the scopes
         // seen across the warm-up are the scopes of the measured frame.
         profiler.Reset();
-        profiler.Enabled = true;
+        profiler.Enabled = profile;
 
         try
         {

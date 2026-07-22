@@ -1,5 +1,4 @@
 ﻿using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.Utility.Raii;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -219,7 +218,9 @@ public static partial class NoireLayout
             ? MathF.Max(arrowWidth, available - extrasWidth - spacing.X)
             : available;
 
-        if (ImGui.InvisibleButton($"{id}##NoireCollapsibleHeader", new Vector2(MathF.Max(1f, headerWidth), lineHeight + spacing.Y)))
+        if (ImGui.InvisibleButton(
+                UiIds.Join(string.Empty, id, "##NoireCollapsibleHeader"),
+                new Vector2(MathF.Max(1f, headerWidth), lineHeight + spacing.Y)))
         {
             open = !open;
 
@@ -251,7 +252,7 @@ public static partial class NoireLayout
         {
             DrawCaret(drawList, new Vector2(min.X + arrowWidth * 0.5f, (min.Y + max.Y) * 0.5f), arrowWidth * 0.34f, turn, headerColor);
 
-            var textSize = ImGui.CalcTextSize(label);
+            var textSize = NoireText.CalcSize(label);
             drawList.AddText(
                 new Vector2(min.X + arrowWidth + spacing.X * 0.5f, (min.Y + max.Y) * 0.5f - textSize.Y * 0.5f),
                 ColorHelper.Vector4ToUint(headerColor),
@@ -272,7 +273,7 @@ public static partial class NoireLayout
 
         if (!string.IsNullOrEmpty(options.Description))
         {
-            using (ImRaii.PushColor(ImGuiCol.Text, theme.Resolve(ThemeColor.TextMuted)))
+            using (UiPush.Color(ImGuiCol.Text, theme.Resolve(ThemeColor.TextMuted)))
                 WrapText(ImGui.GetContentRegionAvail().X, options.Description, static text => ImGui.TextUnformatted(text));
 
             ImGui.Spacing();
@@ -308,10 +309,16 @@ public static partial class NoireLayout
         ArgumentNullException.ThrowIfNull(measure);
         ArgumentNullException.ThrowIfNull(draw);
 
+        // Resolved once for the row rather than once per item. The theme lookup is the same answer for every item in
+        // the row, and a row of chips asked it once per chip per frame. Handing the resolved value on is exactly
+        // equivalent: FlowItem re-resolves only a negative gap, and re-resolving would return the value already in
+        // hand.
+        var gap = spacing >= 0f ? spacing : NoireTheme.Current.ResolveItemSpacing().X;
+
         for (var index = 0; index < items.Count; index++)
         {
             var item = items[index];
-            FlowItem(measure(item).X, index == 0, spacing, width);
+            FlowItem(measure(item).X, index == 0, gap, width);
             draw(item);
         }
     }
