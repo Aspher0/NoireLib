@@ -86,7 +86,80 @@ public static class EmoteHelper
 
     /// <inheritdoc cref="IsEmoteUnlocked(uint)"/>
     /// <param name="emote">The Emote to check.</param>
-    public unsafe static bool IsEmoteUnlocked(Emote emote) => IsEmoteUnlocked(emote.RowId);
+    public static bool IsEmoteUnlocked(Emote emote) => IsEmoteUnlocked(emote.RowId);
+
+    /// <summary>
+    /// Retrieves the character states the specified emote can be performed in.
+    /// </summary>
+    /// <remarks>
+    /// This has not been fully tested and may not be accurate for all emotes, although I strongly believe
+    /// it is correct for all the emotes listed in the Emote addon at the very least.
+    /// </remarks>
+    /// <param name="emote">The Emote to retrieve conditions for.</param>
+    /// <returns>The states the emote can be performed in, as an <see cref="Enums.EmoteCondition"/>.</returns>
+    public static Enums.EmoteCondition GetEmoteConditions(Emote emote)
+    {
+        if (emote.RowId == 90) // Universal change pose
+            return Enums.EmoteCondition.Standing
+                | Enums.EmoteCondition.SittingInChair
+                | Enums.EmoteCondition.SittingOnGround
+                | Enums.EmoteCondition.HoldingUmbrella
+                | Enums.EmoteCondition.WearingFashionAccessory;
+
+        var timelines = emote.ActionTimeline;
+        bool HasTimeline(int index) => index < timelines.Count && timelines[index].RowId != 0;
+
+        var conditions = Enums.EmoteCondition.None;
+
+        if (HasTimeline(0) || emote.Unknown1)
+            conditions |= Enums.EmoteCondition.Standing | Enums.EmoteCondition.WearingFashionAccessory;
+
+        if (emote.Unknown2)
+            conditions |= Enums.EmoteCondition.Swimming;
+
+        if (emote.Unknown3)
+            conditions |= Enums.EmoteCondition.Diving;
+
+        if (HasTimeline(2) || emote.Unknown1)
+            conditions |= Enums.EmoteCondition.SittingOnGround;
+
+        if (HasTimeline(3) || emote.Unknown1)
+            conditions |= Enums.EmoteCondition.SittingInChair;
+
+        if (emote.Unknown1)
+            conditions |= Enums.EmoteCondition.Mounted;
+
+        if (emote.Unknown1 && !emote.Unknown5)
+            conditions |= Enums.EmoteCondition.HoldingUmbrella | Enums.EmoteCondition.HoldingTorch;
+
+        if (!emote.Unknown5)
+            conditions |= Enums.EmoteCondition.Fishing;
+
+        return conditions;
+    }
+
+    /// <inheritdoc cref="GetEmoteConditions(Emote)"/>
+    /// <param name="emoteId">The ID of the Emote whose conditions are to be retrieved.</param>
+    public static Enums.EmoteCondition GetEmoteConditions(uint emoteId)
+    {
+        var emote = GetEmoteById(emoteId);
+        return emote.HasValue ? GetEmoteConditions(emote.Value) : Enums.EmoteCondition.None;
+    }
+
+    /// <summary>
+    /// Checks whether the specified emote can be performed in every one of the given states.
+    /// </summary>
+    /// <param name="emote">The Emote to check.</param>
+    /// <param name="conditions">The states to test. Combine flags to require all of them at once.</param>
+    /// <returns>True if the emote can be performed in every given state; otherwise, false.</returns>
+    public static bool CanUseEmoteWhile(Emote emote, Enums.EmoteCondition conditions)
+        => (GetEmoteConditions(emote) & conditions) == conditions;
+
+    /// <inheritdoc cref="CanUseEmoteWhile(Emote, Enums.EmoteCondition)"/>
+    /// <param name="emoteId">The ID of the Emote to check.</param>
+    /// <param name="conditions">The states to test. Combine flags to require all of them at once.</param>
+    public static bool CanUseEmoteWhile(uint emoteId, Enums.EmoteCondition conditions)
+        => (GetEmoteConditions(emoteId) & conditions) == conditions;
 
     /// <summary>
     /// Retrieves the category of the specified emote.

@@ -47,6 +47,7 @@ Added: every NoireUI surface is now also reachable under the NoireUI root (Noire
         </None>
         
         <None Include="README.md" />
+        <None Include="Automation\Actions\README.md" />
         <None Include="database\README.md" />
         <None Include="ipc\README.md" />
         <None Include="Configuration\README.md" />

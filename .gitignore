@@ -11,9 +11,14 @@ docs/
 .claude/
 CLAUDE.md
 CONTEXT.md
+AGENTS.md
+.agents/
 
 # Local-only solutions
 *.Private.sln
 *.Private.slnx
 *.Private.slnf
 *.Local.sln
+
+# Temporary
+Automation/

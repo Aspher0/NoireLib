@@ -74,7 +74,7 @@
 
         <Reference Include="InteropGenerator.Runtime">
             <HintPath>$(DalamudPath)InteropGenerator.Runtime.dll</HintPath>
-            <Private>False</Private>
+            <Private>True</Private>
         </Reference>
 
         <Reference Include="Lumina">
