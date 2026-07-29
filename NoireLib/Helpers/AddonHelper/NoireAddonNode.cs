@@ -2,6 +2,7 @@ using Dalamud.Game.Addon.Events;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using System;
+using System.Numerics;
 
 namespace NoireLib.Helpers;
 
@@ -113,6 +114,53 @@ public readonly unsafe struct NoireAddonNode
     /// The Y position of the node on screen, or 0 if invalid.
     /// </summary>
     public float ScreenY => IsValid ? Pointer->ScreenY : 0f;
+
+    /// <summary>
+    /// Whether the node and every one of its ancestors is visible.<br/>
+    /// A node keeps its own visibility flag set while a hidden parent hides it on screen, so this is the test an
+    /// on-screen visibility question needs.
+    /// </summary>
+    public bool IsEffectivelyVisible
+        => IsValid && Pointer->IsVisible() && AddonHelper.AreAncestorsVisible(Pointer);
+
+    /// <summary>
+    /// The node's screen rect in framebuffer pixels (xy = min, zw = max), or zero if invalid.<br/>
+    /// The node's own scale is applied; the owning addon's <see cref="NoireAddon.Scale"/> is not.
+    /// </summary>
+    public Vector4 ScreenRect
+    {
+        get
+        {
+            if (!IsValid)
+                return default;
+
+            var node = Pointer;
+            return new Vector4(node->ScreenX, node->ScreenY, node->ScreenX + (node->Width * node->ScaleX), node->ScreenY + (node->Height * node->ScaleY));
+        }
+    }
+
+    /// <summary>
+    /// Tries to read the node's screen rect, requiring the node to exist, be visible, and have area.
+    /// </summary>
+    /// <param name="rect">The rect in framebuffer pixels (xy = min, zw = max).</param>
+    /// <returns>True if the rect is usable; otherwise, false.</returns>
+    public bool TryGetScreenRect(out Vector4 rect)
+    {
+        rect = default;
+
+        if (!IsValid || !Pointer->IsVisible())
+            return false;
+
+        var node = Pointer;
+        var width = node->Width * node->ScaleX;
+        var height = node->Height * node->ScaleY;
+
+        if (width <= 0 || height <= 0)
+            return false;
+
+        rect = new Vector4(node->ScreenX, node->ScreenY, node->ScreenX + width, node->ScreenY + height);
+        return true;
+    }
 
     /// <summary>
     /// The current text of the node, or <see cref="string.Empty"/> if the node is invalid or not a text node.

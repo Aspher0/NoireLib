@@ -2,6 +2,7 @@ using Dalamud.Game.Addon.Events.EventDataTypes;
 using Dalamud.Game.Addon.Lifecycle.AddonArgTypes;
 using Dalamud.Game.NativeWrapper;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using System.Numerics;
 
 namespace NoireLib.Helpers;
 
@@ -115,6 +116,29 @@ public readonly unsafe struct NoireAddon
     /// The scaled height of the addon, or 0 if invalid.
     /// </summary>
     public float Height => IsValid ? Pointer->GetScaledHeight(true) : 0f;
+
+    /// <summary>
+    /// The addon's on-screen rect in framebuffer pixels (xy = min, zw = max), or zero if invalid or without a root node.<br/>
+    /// Measured from the root node with the addon's own <see cref="Scale"/> applied, so it matches what
+    /// <see cref="AddonHelper.VisibleAddons(Vector2, float)"/> and <see cref="AddonHelper.HitTest(Vector2, Vector2, float, Enums.AddonPhantomCollisionScope, bool)"/> work in.
+    /// </summary>
+    public Vector4 ScreenRect
+    {
+        get
+        {
+            if (!IsValid)
+                return default;
+
+            var root = Pointer->RootNode;
+            if (root == null)
+                return default;
+
+            var scale = Pointer->Scale;
+            var width = root->Width * root->ScaleX * scale;
+            var height = root->Height * root->ScaleY * scale;
+            return new Vector4(root->ScreenX, root->ScreenY, root->ScreenX + width, root->ScreenY + height);
+        }
+    }
 
     /// <summary>
     /// The root node of the addon. Invalid if the addon is not ready or has no root node.
