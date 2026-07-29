@@ -15,8 +15,8 @@ public static partial class NoireShapes
     /// </summary>
     /// <remarks>
     /// A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a
-    /// sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. Clipping is
-    /// what makes a painted panel a panel rather than a wash across the page.<br/>
+    /// sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. Clipping
+    /// keeps a painted panel a panel instead of a wash across the page.<br/>
     /// A scope rather than a parameter on every shape, for the same reason the gradient is: one call contains a whole
     /// composition, however many shapes it turns out to be made of.
     /// </remarks>
@@ -34,9 +34,8 @@ public static partial class NoireShapes
     /// Runs a body with everything it draws clipped to a rectangle.
     /// </summary>
     /// <remarks>
-    /// A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a
-    /// sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. Clipping is
-    /// what makes a painted panel a panel rather than a wash across the page.
+    /// Clipping keeps a painted panel a panel instead of a wash across the page: a painted background is drawn from
+    /// its centre outwards and has no idea where the block holding it ends.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left of the box to keep drawing inside, in screen space.</param>
@@ -67,10 +66,10 @@ public static partial class NoireShapes
     /// <remarks>
     /// The mark that makes a masthead rule read as lit rather than drawn. It cannot be a
     /// <see cref="Gradient(Vector2, Vector2, Vector4, Vector4, Action)"/>: that ramps between two colors across the
-    /// whole span, and this is three stops with the bright one somewhere in the middle and moving. So the line is drawn
-    /// as segments whose alpha is a function of how near each one is to the band.<br/>
-    /// The band runs off both ends rather than bouncing, which is why <paramref name="phase"/> is taken over a range
-    /// wider than the line: a highlight that reverses reads as a scanner, and one that wraps mid-line flickers.
+    /// whole span, and this is three stops with the bright one somewhere in the middle and moving, so the line is
+    /// drawn as segments whose alpha is a function of how near each one is to the band.<br/>
+    /// The band runs off both ends rather than bouncing, so <paramref name="phase"/> is taken over a range wider than
+    /// the line: a highlight that reverses reads as a scanner, and one that wraps mid-line flickers.
     /// </remarks>
     /// <param name="from">Where the line starts, in screen space.</param>
     /// <param name="to">Where it ends.</param>
@@ -90,9 +89,8 @@ public static partial class NoireShapes
         var band = Math.Clamp(width, 0.01f, 1f);
         var half = thickness * 0.5f;
 
-        // Honoured here rather than left to the caller, the way the animation helpers do it. A travelling highlight is
-        // motion whoever asked for it, and a reader who has turned motion off should not have to know which of the
-        // things on screen happens to be drawn by a shape helper rather than by an animation one.
+        // Honoured here rather than left to the caller, the way the animation helpers do it: a travelling highlight is
+        // motion whoever asked for it, and a reader who has turned motion off should not have to know which drew it.
         if (NoireUI.ReducedMotion)
         {
             Rect(
@@ -106,10 +104,10 @@ public static partial class NoireShapes
         // Taken over a range wider than the line so the band enters and leaves rather than appearing at one end.
         var centre = (phase * (1f + (band * 2f))) - band;
 
-        // The line is one rectangle and the band is two, which is the whole of why this is not drawn as a run of
-        // segments. Segments have to meet somewhere, and two translucent rectangles meeting composite twice over the
-        // pixels they share: the seam comes out darker than either, so an animated line reads as a row of dents
-        // travelling along it. Nothing here overlaps anything else of its own colour.
+        // The line is one rectangle and the band is two, not a run of segments: segments have to meet somewhere, and
+        // two translucent rectangles meeting composite twice over the pixels they share, so the seam would come out
+        // darker than either and an animated line would read as a row of dents travelling along it. Nothing here
+        // overlaps anything else of its own colour.
         var lineMin = new Vector2(MathF.Min(from.X, to.X), MathF.Min(from.Y, to.Y) - half);
         var lineMax = new Vector2(MathF.Max(from.X, to.X), MathF.Max(from.Y, to.Y) + half);
 
@@ -125,10 +123,9 @@ public static partial class NoireShapes
         var lit = highlight;
         var clear = highlight with { W = 0f };
 
-        // Antialiasing off for the band, and this is the whole reason the seam behaves. The two halves meet along one
-        // edge; with antialiasing on, each contributes a partly transparent pixel there and the two composite into a
-        // bright point sitting in the middle of the sweep. Nothing here is diagonal or curved, so there is no edge that
-        // wanted smoothing in the first place.
+        // Antialiasing off for the band: the two halves meet along one edge, and with antialiasing on, each would
+        // contribute a partly transparent pixel there, compositing into a bright point in the middle of the sweep.
+        // Nothing here is diagonal or curved, so there is no edge that needed smoothing in the first place.
         var antiAlias = AntiAlias;
         AntiAlias = false;
 
@@ -171,8 +168,7 @@ public static partial class NoireShapes
     /// Draws a square stood on its corner, the mark a deco interface is built from.
     /// </summary>
     /// <remarks>
-    /// Shipped because it was being written out by hand at every call site, and a hand-written one is four points that
-    /// have to be in clockwise order for <see cref="Fill"/> and <see cref="GlowPath"/> to behave.
+    /// The four points must be in clockwise order for <see cref="Fill"/> and <see cref="GlowPath"/> to behave.
     /// </remarks>
     /// <param name="centre">The middle of the diamond, in screen space.</param>
     /// <param name="radius">How far each point sits from the middle, in real pixels.</param>

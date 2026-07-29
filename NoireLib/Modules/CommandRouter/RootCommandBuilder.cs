@@ -3,8 +3,8 @@ using System;
 namespace NoireLib.CommandRouter;
 
 /// <summary>
-/// Fluent builder for configuring a root slash command, including help text, subcommands, and default handlers.<br/>
-/// Returned by <see cref="NoireCommandRouter.Map(string)"/>.
+/// Fluent builder, returned by <see cref="NoireCommandRouter.Map(string)"/>, for configuring a root slash command's
+/// help text, subcommands, and default handlers.
 /// </summary>
 public sealed class RootCommandBuilder
 {
@@ -20,8 +20,7 @@ public sealed class RootCommandBuilder
     }
 
     /// <summary>
-    /// Sets the help text for this root command.<br/>
-    /// Also updates the Dalamud help message if the command is already registered.
+    /// Sets the help text for this root command, updating the live Dalamud registration if already registered.
     /// </summary>
     /// <param name="helpText">A short description of what this command does.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -34,8 +33,8 @@ public sealed class RootCommandBuilder
     }
 
     /// <summary>
-    /// Sets the display order for this root command in Dalamud's help listing.<br/>
-    /// Also updates the Dalamud registration if the command is already registered.
+    /// Sets the display order for this root command in Dalamud's help listing, updating the live registration if
+    /// already registered.
     /// </summary>
     /// <param name="order">The display order value.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -47,8 +46,7 @@ public sealed class RootCommandBuilder
     }
 
     /// <summary>
-    /// Sets whether this command should appear in the help output.<br/>
-    /// Also updates the Dalamud registration if the command is already registered.
+    /// Sets whether this command appears in the help output, updating the live registration if already registered.
     /// </summary>
     /// <param name="show">True to show in help output; false to hide.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -98,17 +96,14 @@ public sealed class RootCommandBuilder
     }
 
     /// <summary>
-    /// Sets an availability predicate. The root command will only run when this predicate returns true.<br/>
-    /// The predicate gates the command as a whole, so while it returns false nothing under the command runs: the raw
-    /// handler, the default handler, every subcommand (whatever its own condition says), and the generated help are
-    /// all blocked. This is the same rule <see cref="SubCommandBuilder.WithCondition(Func{bool})"/> applies to a
-    /// subcommand, where a blocked subcommand also blocks everything nested beneath it, applied to the outermost
-    /// scope.<br/>
-    /// A blocked command tells the user it is not available right now and is recorded in
-    /// <see cref="NoireCommandRouter.GetHistory"/> as an unsuccessful entry. No <see cref="CommandFailedEvent"/> is
-    /// published, since being unavailable is not a failure; that event stays reserved for a handler that threw.<br/>
-    /// The command still appears in Dalamud's help listing. Use <see cref="ShowInDalamudHelp(bool)"/> to hide it.<br/>
-    /// The predicate is evaluated on the framework thread on every invocation of the command.
+    /// Sets an availability predicate; while it returns false, nothing under the command runs: the raw handler, the
+    /// default handler, every subcommand regardless of its own condition, and the generated help.<br/>
+    /// The same rule applies to a subcommand via <see cref="SubCommandBuilder.WithCondition(Func{bool})"/>, which
+    /// also blocks everything nested beneath it.<br/>
+    /// A blocked command tells the user it is unavailable and is recorded in <see cref="NoireCommandRouter.GetHistory"/>
+    /// as an unsuccessful entry; no <see cref="CommandFailedEvent"/> is published, since unavailability is not a failure.<br/>
+    /// The command still appears in Dalamud's help listing; use <see cref="ShowInDalamudHelp(bool)"/> to hide it.<br/>
+    /// The predicate is evaluated on the framework thread on every invocation.
     /// </summary>
     /// <param name="condition">The availability predicate.</param>
     /// <returns>The builder instance for chaining.</returns>

@@ -8,8 +8,7 @@ namespace NoireLib.Helpers;
 /// <remarks>
 /// This detects damage, not tampering. A CRC is public and deterministic, so anyone who edits a payload can recompute
 /// it; what it catches is a code that was truncated by a chat client, re-wrapped by a forum, or half-selected on the way
-/// to the clipboard. Nothing here says who wrote a code. Only a signature does, which is what
-/// <c>EncryptionHelper</c> is for.
+/// to the clipboard. Nothing here says who wrote a code; only a signature does, via <c>EncryptionHelper</c>.
 /// </remarks>
 internal static class ShareCodeCrc32
 {

@@ -5,10 +5,8 @@ namespace NoireLib.UI;
 /// </summary>
 /// <remarks>
 /// The combo keeps the row: its size, its hit testing, its selection and keyboard state, its filtering and its
-/// scrolling. The renderer only paints inside it, and is free to draw an icon, a second line, a badge or nothing at
-/// all.<br/>
-/// Call <see cref="DrawLabel"/> to get the combo's own text back, including the filter highlighting, rather than
-/// reimplementing it. A renderer that wants an icon and the ordinary label is one line of its own plus that call.
+/// scrolling. The renderer only paints inside it. Call <see cref="DrawLabel"/> to get the combo's own text back,
+/// including the filter highlighting, rather than reimplementing it.
 /// </remarks>
 /// <typeparam name="T">The item type of the combo.</typeparam>
 /// <param name="Combo">The combo drawing this option.</param>

@@ -79,15 +79,11 @@ public static partial class EncryptionHelper
     /// <returns>A serializer that honours <paramref name="jsonSettings"/> without leaving the format open to the process.</returns>
     private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? jsonSettings)
     {
-        // JsonSerializer.Create resolves every setting from the object it is given. The JsonConvert overloads and
-        // JsonSerializer.CreateDefault instead merge in JsonConvert.DefaultSettings, a process-global that any other
-        // code loaded into this process can assign, so a caller whose settings do not mention a property would silently
-        // inherit that code's choice for it. That global also changes at runtime, which would let the JSON behind a
-        // hash or a ciphertext differ between the moment it is written and the moment it is read back. The settings
-        // object itself is never mutated; the serializer is the copy.
+        // Create rather than CreateDefault, which merges the mutable process-global JsonConvert.DefaultSettings and
+        // would let the JSON behind a hash or ciphertext differ between when it was written and when it is read back.
         var serializer = JsonSerializer.Create(jsonSettings);
 
-        // Type resolution driven by payload content is what turns a decrypted or decoded document into an instruction
+        // Type resolution driven by payload content would turn a decrypted or decoded document into an instruction
         // to construct arbitrary types. It stays off for every caller regardless of what was passed.
         serializer.TypeNameHandling = TypeNameHandling.None;
 

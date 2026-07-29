@@ -151,12 +151,10 @@ internal sealed class PredicateGameCondition : GameCondition
 
 /// <summary>
 /// An event latch: a condition that becomes true when a matching event is dispatched by the watcher.<br/>
-/// The internal subscription arms on the first <see cref="GameCondition.IsMet"/> evaluation (or at creation
-/// with <c>armImmediately</c>) and self-unsubscribes on first match. Latches are <b>one-shot per instance</b>:
-/// once matched, <see cref="GameCondition.IsMet"/> stays true until an explicit <see cref="Reset"/> - this
-/// matters for retried tasks, which would otherwise complete instantly on a stale match.<br/>
-/// The latch subscription is owner-tagged with this condition object, so abandoned latches are visible in
-/// diagnostics and reclaimable via <see cref="NoireGameWatcher.UnsubscribeOwner"/>.
+/// Arms on the first <see cref="GameCondition.IsMet"/> evaluation (or at creation with <c>armImmediately</c>)
+/// and self-unsubscribes on first match. Latches are <b>one-shot per instance</b>: once matched,
+/// <see cref="GameCondition.IsMet"/> stays true until an explicit <see cref="Reset"/> - without it, a retried
+/// task completes instantly on a stale match.
 /// </summary>
 /// <typeparam name="TEvent">The event type the latch listens for.</typeparam>
 public sealed class GameEventLatchCondition<TEvent> : GameCondition

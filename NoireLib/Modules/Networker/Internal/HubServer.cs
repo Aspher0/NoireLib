@@ -255,7 +255,7 @@ internal sealed class HubServer : IDisposable
     }
 
     /// <summary>
-    /// Dials another machine's hub discovered through LAN beacons. Only the lower hub id dials, so links are unique.
+    /// Dials another machine's hub discovered through LAN beacons; only the lower hub id dials, so links are unique.
     /// </summary>
     public async Task DialHubLinkAsync(IPEndPoint remoteEndPoint, Guid remoteHubId)
     {
@@ -705,10 +705,10 @@ internal sealed class HubServer : IDisposable
             remotePeerOwners.Clear();
         }
 
-        // Announce the shutdown so clients re-elect immediately instead of waiting for disconnect detection. Each
-        // session closes itself once its goodbye has been written, rather than being closed here after a fixed pause:
-        // this runs during a plugin unload or a SetActive(false), both of which reach it from the framework thread,
-        // where pausing to watch the frames flush would stall the game's frame.
+        // Announces the shutdown so clients re-elect immediately instead of waiting for disconnect detection. Each
+        // session closes itself once its goodbye is written, rather than after a fixed pause here: this runs on
+        // the framework thread (plugin unload or SetActive(false)), where waiting on the writes would stall the
+        // game's frame.
         var goodbye = new Envelope { Kind = EnvelopeKind.HubGoodbye, Origin = owner.SelfId };
 
         foreach (var session in allSessions)

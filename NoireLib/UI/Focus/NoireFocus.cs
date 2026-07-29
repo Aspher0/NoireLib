@@ -9,14 +9,12 @@ namespace NoireLib.UI;
 /// Marks the control holding keyboard focus, so the user can see where typing and the arrow keys will go.
 /// </summary>
 /// <remarks>
-/// Every widget NoireUI ships draws this itself, so a plugin gets focus indication by using the widgets and setting
-/// nothing. <see cref="Style"/> changes how it looks everywhere at once and <see cref="Enabled"/> turns it off;
-/// <see cref="OnLast(FocusStyle)"/> is there for a control the library does not provide.<br/>
-/// The mark is deliberately hard edged, and that is the whole design. Hover, selection and emphasis are drawn with
-/// soft, glowing or tinted marks, and a focus mark that differed from those only in brightness would be read as "this
-/// one is selected harder": focus and selection have to differ in kind, not in degree. Focus is also singular,
-/// transient and moves on every keystroke, where selection is plural, persistent and moves rarely, which is the other
-/// reason the sharp mark belongs to focus and the soft one to selection.
+/// Every widget NoireUI ships draws this itself, so a plugin gets focus indication by using the widgets and
+/// setting nothing. <see cref="Style"/> changes how it looks everywhere at once and <see cref="Enabled"/> turns it
+/// off; <see cref="OnLast(FocusStyle)"/> is there for a control the library does not provide.<br/>
+/// Hard edged deliberately: hover, selection and emphasis use soft, glowing or tinted marks, and a focus mark
+/// differing only in brightness would read as "this one is selected harder" rather than a different kind of thing.
+/// Focus is also singular and transient, where selection is plural and persistent.
 /// </remarks>
 /// <example>
 /// <code>
@@ -33,8 +31,8 @@ public static class NoireFocus
     /// Where the mark currently is, and when it arrived there.
     /// </summary>
     /// <remarks>
-    /// One slot rather than a keyed store, because exactly one control holds focus at a time. That is what makes the
-    /// arrival animation cost nothing: there is no id to compose, nothing to look up and nothing to prune.
+    /// One slot rather than a keyed store, since exactly one control holds focus at a time: no id to compose,
+    /// nothing to look up, nothing to prune.
     /// </remarks>
     private static uint focusedItem;
     private static float arrivedAt;
@@ -135,11 +133,11 @@ public static class NoireFocus
     {
         var frame = NoireUI.FrameCount;
 
-        // Two ways for this to be an arrival, and only the first is obvious. Focus moving to a different control is
-        // one. The other is focus coming back to the control it left: nothing tells this class that focus was lost,
-        // because a control without focus simply stops calling, so the only evidence is a gap in the frames it was
-        // marked on. Without that test, clicking away and back found the timestamp from the first visit still sitting
-        // there, read the arrival as long finished, and placed the mark instantly for the rest of the session.
+        // Two ways for this to be an arrival: focus moving to a different control, or focus coming back to the one
+        // it left. Nothing tells this class that focus was lost, since a control without focus simply stops
+        // calling, so a gap in the frames marked is the only evidence. Without this check, clicking away and back
+        // would reuse the first visit's timestamp, read the arrival as already finished, and place the mark
+        // instantly for the rest of the session.
         if (id != focusedItem || frame > lastMarkedFrame + 1)
         {
             focusedItem = id;
@@ -159,9 +157,8 @@ public static class NoireFocus
     {
         var eased = UiEasing.OutCubic.Apply(Arrival(id, style));
 
-        // The mark starts further out and settles in, which is what reads as landing on the control rather than
-        // appearing on top of it. The fade is on the same curve so a mark that is still travelling is not yet at full
-        // strength, and neither half is convincing on its own.
+        // The mark starts further out and settles in, reading as landing on the control rather than appearing on
+        // top of it. The fade follows the same curve, so a mark still travelling is not yet at full strength.
         var spread = NoireUI.Scaled(style.Spread + (style.ArrivalSpread * (1f - eased)));
         var color = ColorHelper.ScaleAlpha(style.ResolveColor(), eased);
 

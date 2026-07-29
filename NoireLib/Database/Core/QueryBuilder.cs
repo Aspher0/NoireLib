@@ -689,8 +689,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
     }
 
     /// <summary>
-    /// Retrieves values for a column, optionally keyed by another column.<br/>
-    /// In short, this method can be used to get a list of values from a single column, or a list of key-value pairs if a key column is specified.
+    /// Retrieves values for a column, optionally keyed by another column.
     /// </summary>
     /// <param name="column">The value column.</param>
     /// <param name="key">The key column.</param>
@@ -724,10 +723,7 @@ public sealed class QueryBuilder<TModel> where TModel : NoireDbModelBase<TModel>
 
     /// <summary>
     /// Processes the query results in chunks.<br/>
-    /// In short, this method can be used to efficiently process large result sets by retrieving them in smaller batches,
-    /// reducing memory usage and improving performance when working with large datasets.<br/>
-    /// The callback takes the parameters of the current chunk of results and the page number,
-    /// and it should return true or null to continue processing the next chunk, false to stop.
+    /// The callback receives the current chunk and the page number; return true or null to continue, false to stop.
     /// </summary>
     /// <param name="count">The chunk size.</param>
     /// <param name="callback">The callback invoked for each chunk.</param>

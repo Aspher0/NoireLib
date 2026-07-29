@@ -18,7 +18,7 @@ internal static class DecalExclusionService
     private static readonly List<SceneNode> Nodes = new();
     private static bool hooked;
 
-    /// <summary>Registers a node for per-frame exclusion refresh (idempotent). Hooks the framework tick on first use.</summary>
+    /// <summary>Registers a node for per-frame exclusion refresh (idempotent); hooks the framework tick on first use.</summary>
     public static void Register(SceneNode node)
     {
         lock (Sync)

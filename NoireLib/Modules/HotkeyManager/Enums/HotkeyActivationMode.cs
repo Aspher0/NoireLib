@@ -22,10 +22,8 @@ public enum HotkeyActivationMode
     /// </summary>
     Repeat,
     /// <summary>
-    /// Waits for an initial hold, then activates repeatedly, like <see cref="Repeat"/> preceded by a
-    /// <see cref="Held"/>-style delay.<br/>
-    /// The initial delay is <see cref="HotkeyEntry.HoldDelay"/>; the repeat cadence is
-    /// <see cref="HotkeyEntry.FixedRepeatDelay"/>, or the <see cref="HotkeyEntry.RepeatDelayMin"/> to
+    /// Waits for an initial hold, then activates repeatedly: delay from <see cref="HotkeyEntry.HoldDelay"/>,
+    /// cadence from <see cref="HotkeyEntry.FixedRepeatDelay"/>, or the <see cref="HotkeyEntry.RepeatDelayMin"/> to
     /// <see cref="HotkeyEntry.RepeatDelayMax"/> range when <see cref="HotkeyEntry.UseRandomRepeatDelay"/> is set.
     /// </summary>
     HoldAndRepeat,

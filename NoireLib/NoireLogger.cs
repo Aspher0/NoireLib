@@ -357,9 +357,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <param name="messageBuilder">The message builder containing the message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
@@ -371,9 +370,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with the caller instance prefix as an echo message.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -387,9 +385,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
@@ -401,9 +398,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat as an echo message with the caller instance prefix.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -417,9 +413,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -435,9 +430,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message with the caller instance prefix.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -455,9 +449,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
@@ -470,9 +463,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -487,9 +479,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="messageBuilder">The message builder containing the message to display.</param>
@@ -502,9 +493,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -519,9 +509,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -538,9 +527,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -559,9 +547,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
@@ -576,9 +563,8 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type, caller instance prefix, and RGB color formatting.<br/>
-    /// Safe to call from any thread. The chat log is only ever handed a message on the framework thread, so a call from
-    /// any other thread has its message delivered on the next framework tick rather than immediately. Does nothing
-    /// while NoireLib is not initialized.
+    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
+    /// immediately. Does nothing before NoireLib is initialized.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -638,19 +624,19 @@ public static class NoireLogger
     /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntry(XivChatEntry entry)
     {
-        // Before initialization there is no chat log to print to, and NoireService.ChatGui is still null. Dropping the
-        // message holds chat output to the contract the log writes already keep, where a call made outside a running
-        // plugin is a no-op rather than a throw, and is what lets consumer code be exercised without the game.
+        // Before initialization there is no chat log to print to, and NoireService.ChatGui is still null. Dropping
+        // the message keeps chat output to the same contract the log writes already keep: a call outside a running
+        // plugin is a no-op rather than a throw.
         if (!NoireService.IsInitialized())
             return;
 
         try
         {
-            // Chat entries go into a queue that is filled here and drained on the framework thread, and that queue is
-            // not synchronized. Filling it from any other thread races the drain, which corrupts the queue rather than
-            // merely reordering it, so the entry has to be handed over on the framework thread. A caller already on
-            // that thread hands it over directly: that keeps every existing caller synchronous and allocation-free,
-            // and it is what preserves the order of a report printed as several consecutive lines.
+            // Chat entries go into a queue filled here and drained on the framework thread; the queue is not
+            // synchronized, so filling it from another thread races the drain and corrupts it rather than merely
+            // reordering it. A caller already on that thread hands the entry over directly, which keeps every
+            // existing caller synchronous, allocation-free, and preserves the order of a report printed as several
+            // consecutive lines.
             if (NoireService.Framework.IsInFrameworkUpdateThread)
             {
                 PrintChatEntryToChatLog(entry);
@@ -673,9 +659,9 @@ public static class NoireLogger
     /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntryToChatLog(XivChatEntry entry)
     {
-        // Swallowed inside the action rather than around it, because this also runs marshalled, where an escaping
-        // exception would fault a task nobody is holding. Chat output is a logging path either way, so a message that
-        // cannot be delivered is reported to the log rather than raised at a caller that has long since moved on.
+        // Swallowed inside the action rather than around it: this also runs marshalled, where an escaping exception
+        // would fault a task nobody is holding. A message that cannot be delivered is reported to the log rather
+        // than raised at a caller that has long since moved on.
         try
         {
             NoireService.ChatGui.Print(entry);
@@ -878,8 +864,7 @@ public static class NoireLogger
     {
         var builder = new SeStringBuilder();
 
-        // DO NOT add a player payload if the sender is the local player
-        // Actually, never add a player payload since it could cause issues if sender has "incorrect" data, such as a made up name and world ID
+        // Never add a player payload for the sender: incorrect data, such as a made-up name or world ID, can cause issues.
         AppendStyledText(builder, senderName, foregroundColor, glowColor);
 
         return builder.Build();

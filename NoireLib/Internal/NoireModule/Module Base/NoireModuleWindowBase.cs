@@ -7,8 +7,7 @@ using System;
 namespace NoireLib.Core.Modules;
 
 /// <summary>
-/// Base class for module windows within the NoireLib library.<br/>
-/// Provides automatic window registration and management within the NoireLib window system.
+/// Base class for module windows, providing automatic registration and management within the NoireLib window system.
 /// </summary>
 /// <typeparam name="TModule">The type of the parent module associated with this window.</typeparam>
 public abstract class NoireModuleWindowBase<TModule> : Window, IDisposable, INoireModuleWindow

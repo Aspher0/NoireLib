@@ -11,10 +11,8 @@ public interface INoireModule
     bool IsActive { get; set; }
 
     /// <summary>
-    /// Whether this module writes its own informational, debug and verbose log output.<br/>
-    /// Warnings, errors and fatal messages are reported regardless of this flag. Reading it is what lets the module
-    /// logging helpers skip building a log message when the module is not logging, so the flag is exposed here rather
-    /// than only on the base class.
+    /// Whether this module writes its own informational, debug and verbose log output. Warnings, errors and fatal
+    /// messages are reported regardless of this flag.
     /// </summary>
     bool EnableLogging { get; set; }
 

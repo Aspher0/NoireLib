@@ -15,10 +15,9 @@ namespace NoireLib.Draw3D;
 /// and the captured GPU camera constants against pixel-anchored residuals.<br/>
 /// <see cref="PreferCapturedCamera"/> and <c>/noire3d cbprobe</c> belong to the camera-constant capture; see
 /// <see cref="Core.CameraConstantCapture"/> for the capture mechanism itself.<br/>
-/// Each of these arms a window and then samples from inside the render body, on the render thread. The game reads they
-/// take there are best-effort by design: answering them off-thread would return them against a camera that has already
-/// moved, which destroys the frame-coherent comparison each one is built on. Their terminal chat lines are marshalled
-/// to the framework thread (<see cref="Core.DiagnosticChat"/>); the full findings always go to the plugin log.<br/>
+/// Each of these samples from the render thread only: an off-thread read would be measured against a camera that
+/// has already moved. Terminal chat lines are marshalled to the framework thread (<see cref="Core.DiagnosticChat"/>);
+/// full findings always go to the plugin log.<br/>
 /// The visual showcase (the showcase scene, world-geometry preview, glTF import) lives in the separate
 /// <c>NoireDraw3DDemoPlugin</c>, built entirely on the public Draw3D API.
 /// </summary>
@@ -110,16 +109,15 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>
     /// Arms the camera-phase trace for the next <paramref name="frames"/> rendered frames (results logged): pins down
-    /// the frame-to-frame camera drift under motion. Each frame it takes independent world anchors under a screen grid
-    /// (the game's own collision raycast) plus this frame's rendered depth texels, and for each candidate <b>frame-lag</b>
-    /// - the camera the overlay projected 0, 1, 2, and so on frames ago, from the history ring - measures how well that
-    /// camera reprojects the anchors onto THIS frame's rendered image. The pixels were drawn with exactly one camera, so
-    /// the lag with the smallest residual names it. It also reports the inject-vs-present-time-fallback frame split, and
-    /// the proj-vs-live drift as a secondary signal. Read-only, no projection behavior changes.<br/>
+    /// the frame-to-frame camera drift under motion. Each frame it takes independent world anchors (the game's own
+    /// collision raycast under a screen grid, plus this frame's rendered depth texels), and for each candidate
+    /// <b>frame-lag</b> - the camera the overlay projected 0, 1, 2, ... frames ago, from the history ring - measures
+    /// how well that camera reprojects the anchors onto this frame's image. The lag with the smallest residual names
+    /// the pixels' camera. Also reports the inject-vs-present-time-fallback split and the proj-vs-live drift as a
+    /// secondary signal. Read-only, no projection behavior changes.<br/>
     /// Run it while panning, zooming, or orbiting the camera <b>vigorously</b> at high frame-rate under load: the log's
-    /// lag table calls out the best-fit lag k, which is the exact correction (project the injected overlay with the
-    /// snapshot k frames back). A best-fit of 0 means the overlay is already in phase and any residual is not a frame-lag
-    /// (look at the fallback count instead). The whole-texture depth readback is throttled, so the trace itself costs
+    /// lag table names the best-fit lag k (the exact correction - project with the snapshot k frames back). Best fit 0
+    /// means the overlay is already in phase; look at the fallback count instead. The throttled depth readback costs
     /// some frames while armed.
     /// </summary>
     /// <param name="frames">How many rendered frames to trace (clamped to 1..6000; default 120 is about a couple of seconds).</param>
@@ -163,9 +161,8 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>
     /// Traces every decal's painted shape as an outline, over normal rendering - retained decals and the immediate
-    /// layer's grounded shapes alike. Answers "where is this decal actually landing" globally, including for shapes drawn
-    /// through <see cref="Im.ImDraw3D"/>, which have no node to call
-    /// <see cref="Scene.SceneNode.ShowDecalShape"/> on. Always on while wireframe is.
+    /// layer's grounded shapes alike, including shapes drawn through <see cref="Im.ImDraw3D"/>, which have no node
+    /// to call <see cref="Scene.SceneNode.ShowDecalShape"/> on. Always on while wireframe is.
     /// </summary>
     public bool DecalShapeOutlines
     {
@@ -175,10 +172,10 @@ public sealed unsafe class Draw3DDiagnostics
 
     /// <summary>
     /// Draws every decal's projection box - the volume its SDF is evaluated in - as a wireframe, over normal rendering:
-    /// retained decals and the immediate layer's grounded shapes alike. Where <see cref="DecalShapeOutlines"/> answers
-    /// "what does this decal paint", this answers "how far does its projection reach", which is what a decal that stops
-    /// short of a wall or a step needs. <see cref="Scene.SceneNode.ShowDecalVolume"/> is the per-node version.
-    /// Independent of <see cref="Wireframe"/> and of the shape outlines - turn both on to see the shape inside its volume.
+    /// retained decals and the immediate layer's grounded shapes alike. Complements <see cref="DecalShapeOutlines"/>
+    /// (what a decal paints vs how far its projection reaches) - useful for a decal that stops short of a wall or a
+    /// step. <see cref="Scene.SceneNode.ShowDecalVolume"/> is the per-node version. Independent of
+    /// <see cref="Wireframe"/> and of the shape outlines - turn both on to see the shape inside its volume.
     /// </summary>
     public bool DecalVolumeOutlines
     {
@@ -198,13 +195,10 @@ public sealed unsafe class Draw3DDiagnostics
 
         validateFramesRemaining--;
 
-        // Sample world points: around the player, plus points pushed forward through screen rays.
-        // The object-table and GameGui reads below happen on the render thread, deliberately. This measurement is a
-        // parity check between our projection and the game's own, and it is only meaningful when both project the same
-        // points against the same camera at the same instant. Marshalling the reads to the framework thread would
-        // answer them a frame later against a camera that has since moved, turning every sample into inter-frame
-        // camera drift (what RunCameraPhaseTrace measures on purpose) and hiding the projection error being looked for.
-        // They stay here as best-effort diagnostic reads: armed by hand, never on a normal frame, and read-only.
+        // Sample world points: around the player, plus points pushed forward through screen rays. The object-table
+        // and GameGui reads happen here on the render thread, deliberately: this is a parity check between our
+        // projection and the game's own at the same instant, and marshalling to the framework thread would compare
+        // against a camera that has since moved. Best-effort diagnostic reads: armed by hand, read-only.
         Span<Vector3> points = stackalloc Vector3[24];
         var count = 0;
 
@@ -345,12 +339,9 @@ public sealed unsafe class Draw3DDiagnostics
     }
 
     /// <summary>
-    /// The authoritative measurement: anchor points are independent world surfaces under a screen grid (the game's own
-    /// collision raycast) plus this frame's rendered depth texels. For each candidate frame-lag it takes the camera the
-    /// overlay projected that many frames ago (the history ring) and measures how well it reprojects those anchors onto
-    /// THIS frame's image - a screen residual (where the anchor lands vs where the game shows it, every frame) and a
-    /// depth residual (predicted depth-buffer sample vs the actual texel, on a throttled subset). The pixels were drawn
-    /// with exactly one camera; the lag that minimizes the residual names it. The captured GPU camera constants are
+    /// The authoritative measurement behind <see cref="RunCameraPhaseTrace"/>: scores each candidate frame-lag's camera
+    /// by reprojecting independent world anchors (game collision raycast + depth texels) onto this frame's image - a
+    /// screen residual every frame, a depth residual on a throttled subset. The captured GPU camera constants are
     /// scored against the same anchors as their own row. Best-effort, read-only.
     /// </summary>
     private void SweepFrameLags(RenderDevice device, in FrameContext frame, in Matrix4x4 gpuVp, bool hasGpuVp)
@@ -587,11 +578,9 @@ public sealed unsafe class Draw3DDiagnostics
 
     private void RunProbeNow(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)
     {
-        // Gather ground-truth points: screen positions raycast into the world by the game itself.
-        // Read on the render thread by design: these points are compared against depth texels read back from THIS
-        // frame's buffer, so a raycast answered a frame later on the framework thread would be measured against a
-        // different camera and a different depth image, which is exactly the comparison the probe exists to avoid.
-        // Best-effort diagnostic read: armed by hand, one frame, read-only.
+        // Gather ground-truth points: screen positions raycast into the world by the game itself, read here on the
+        // render thread so they compare against this frame's depth texels under the same camera. Best-effort
+        // diagnostic read: armed by hand, one frame, read-only.
         var screens = new List<Vector2>();
         var worlds = new List<Vector3>();
         for (var gy = 0; gy < 4; gy++)

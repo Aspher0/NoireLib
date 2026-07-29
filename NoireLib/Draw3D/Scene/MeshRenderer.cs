@@ -12,15 +12,15 @@ public sealed class MeshRenderer
 {
     private readonly SceneNode node;
 
-    /// <summary>The mesh to draw. Referenced, never owned - dispose it wherever it was created.</summary>
+    /// <summary>The mesh to draw; referenced, never owned, dispose it wherever it was created.</summary>
     public Mesh Mesh { get; set; }
 
-    /// <summary>The material to draw with. Immutable record - swap the reference to change appearance.</summary>
+    /// <summary>The material to draw with; immutable record, swap the reference to change appearance.</summary>
     public Material Material { get; set; }
 
     /// <summary>
-    /// Whether opaque draws write the private Draw3D depth buffer (so other Draw3D meshes occlude correctly).<br/>
-    /// Defaults to true for opaque materials; ignored for blended ones.
+    /// Whether opaque draws write the private Draw3D depth buffer (so other Draw3D meshes occlude correctly);
+    /// defaults to true for opaque materials, ignored for blended ones.
     /// </summary>
     public bool CastsIntoPrivateDepth { get; set; } = true;
 
@@ -28,22 +28,23 @@ public sealed class MeshRenderer
     public Vector4 Tint { get; set; } = new(1f, 1f, 1f, 1f);
 
     /// <summary>
-    /// Selection/highlight outline color, straight alpha. Alpha &gt; 0 draws a real screen-space silhouette outline
+    /// Selection/highlight outline color, straight alpha: alpha &gt; 0 draws a real screen-space silhouette outline
     /// around this object (a post-process rim, computed from a coverage mask - works for solid meshes and ground
-    /// decals alike). Default transparent = no outline. Drive it via <see cref="SceneNode.ShowOutline"/> /
+    /// decals alike), default transparent means no outline; drive it via <see cref="SceneNode.ShowOutline"/> /
     /// <see cref="SceneNode.HideOutline"/>.
     /// </summary>
     public Vector4 OutlineColor { get; set; }
 
-    /// <summary>Outline thickness in screen pixels (used when <see cref="OutlineColor"/>'s alpha &gt; 0). Default 4.</summary>
+    /// <summary>Outline thickness in screen pixels (used when <see cref="OutlineColor"/>'s alpha &gt; 0); default 4.</summary>
     public float OutlineWidthPixels { get; set; } = 4f;
 
     /// <summary>
     /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
-    /// paint on - so a character / monster / NPC standing in it is excluded (not painted on) without holing the
-    /// ground around their feet. Settable per frame; null = paint over everything. The easy path is
+    /// paint on, so a character / monster / NPC standing in it is excluded (not painted on) without holing the
+    /// ground around their feet; settable per frame (null = paint over everything), up to 64 volumes honored.
+    /// The easy path is
     /// <see cref="SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
-    /// (library-threaded); this is the deepest floor. Up to 64 volumes are honored.
+    /// (library-threaded) - this is the deepest floor.
     /// </summary>
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; set; }
 

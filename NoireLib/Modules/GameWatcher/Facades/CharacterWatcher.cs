@@ -56,8 +56,7 @@ public sealed class CharacterWatcher : GameWatcherFacade
     #region Presence
 
     /// <summary>
-    /// Subscribes to characters appearing in the object table. The object table is the client's entire view of
-    /// the area, so with a scope this <i>is</i> the presence event - someone arriving where you are.
+    /// Subscribes to characters appearing in the object table.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="scope">Who to watch; null = <see cref="Scope.LocalPlayer"/>.</param>

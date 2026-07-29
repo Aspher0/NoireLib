@@ -4,11 +4,11 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Read-only access to the <b>stencil</b> plane of the game's scene depth-stencil buffer (bound only as an SRV, never a
-/// DSV). The game marks object categories in stencil (characters carry a distinct value), so a ground decal can occlude
-/// itself exactly along an excluded character's silhouette without any volume. Creates its own <c>*_G8_UINT</c> view of
-/// the typeless depth-stencil texture; only formats that actually carry a stencil plane are supported (others leave this
-/// off and the decal simply paints as before). Mirrors <see cref="SceneDepth"/>; re-derives on any texture change.
+/// Read-only access to the <b>stencil</b> plane of the game's scene depth-stencil buffer (bound only as an SRV,
+/// never a DSV), so a ground decal can occlude itself along an excluded character's silhouette without any
+/// volume. Creates its own <c>*_G8_UINT</c> view of the typeless depth-stencil texture; formats with no stencil
+/// plane leave this off and the decal paints as before. Mirrors <see cref="SceneDepth"/>; re-derives on any
+/// texture change.
 /// </summary>
 internal sealed unsafe class SceneStencil : System.IDisposable
 {

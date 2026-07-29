@@ -11,17 +11,14 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A searchable, icon-rich picker over any sheet of game data, in one line.<br/>
-/// Point it at a row type, say how to read a name off a row, and it is a dropdown over every item, emote, mount, world
-/// or duty in the game, filtered fuzzily and drawn with icons.
+/// A searchable, icon-rich picker over any sheet of game data, filtered fuzzily and drawn with icons.
 /// </summary>
 /// <remarks>
-/// Reading a sheet is not free and this does not pretend otherwise: the rows are read once, on a background thread,
-/// and the picker says so while it is happening rather than freezing the frame that opened it. Nothing here touches
-/// the object table, which is the game state that genuinely has to be read on the framework thread; Excel data is
-/// static content on disk.<br/>
-/// The <see cref="Combo"/> underneath is fully public. Everything <see cref="NoireComboBox{T}"/> can do is reachable
-/// from here, including a renderer of your own, and this is only the assembly of it.
+/// Reading a sheet is not free: the rows are read once, on a background thread, and the picker shows that it is
+/// happening rather than freezing the frame that opened it. Nothing here touches the object table, the game state
+/// that has to be read on the framework thread; Excel data is static content on disk.<br/>
+/// The <see cref="Combo"/> underneath is fully public: everything <see cref="NoireComboBox{T}"/> can do, including a
+/// renderer of your own, is reachable from here.
 /// </remarks>
 /// <typeparam name="TRow">The Excel row type, for example <c>Lumina.Excel.Sheets.Item</c>.</typeparam>
 /// <example>
@@ -43,9 +40,9 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// Serializes sheet reads across every picker in the plugin.
     /// </summary>
     /// <remarks>
-    /// Lumina loads a sheet's pages on demand, so two pickers reading two sheets at once would be two threads walking
-    /// that lazy loading concurrently. One at a time costs nothing worth measuring here, because a picker reads its
-    /// sheet once for the life of the plugin.
+    /// Lumina loads a sheet's pages on demand, so two pickers reading two sheets at once would be two threads
+    /// walking that lazy loading concurrently. Costs nothing worth measuring here, since a picker reads its sheet
+    /// once for the life of the plugin.
     /// </remarks>
     private static readonly SemaphoreSlim SheetGate = new(1, 1);
 
@@ -102,20 +99,10 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Which rows the picker offers. When <see langword="null"/>, all of them.
     /// </summary>
-    /// <remarks>
-    /// A predicate rather than a fixed set of categories, so the decision stays the consumer's: a picker over
-    /// equippable items, over emotes the player has unlocked, or over worlds on one data centre is this callback and
-    /// nothing else.
-    /// </remarks>
+    /// <remarks>A predicate rather than a fixed set of categories, so the decision stays the consumer's.</remarks>
     public Func<TRow, bool>? Include { get; set; }
 
-    /// <summary>
-    /// Whether rows whose name is empty are dropped. On by default.
-    /// </summary>
-    /// <remarks>
-    /// Most game sheets are mostly blank: unused ids, placeholders and internal entries all carry an empty name, and
-    /// a picker that lists them is thousands of unselectable rows deep.
-    /// </remarks>
+    /// <summary>Whether rows whose name is empty are dropped. On by default.</summary>
     public bool SkipEmptyNames { get; set; } = true;
 
     /// <summary>
@@ -173,9 +160,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>The selected row, or <see langword="null"/> when nothing is selected.</summary>
     public TRow? Selected => Combo.SelectedIndex >= 0 ? Combo.SelectedItem.Row : null;
 
-    /// <summary>
-    /// The selected row's id, which is the value worth persisting. <see langword="null"/> when nothing is selected.
-    /// </summary>
+    /// <summary>The selected row's id. <see langword="null"/> when nothing is selected.</summary>
     public uint? SelectedRowId => Combo.SelectedIndex >= 0 ? Combo.SelectedItem.RowId : null;
 
     #endregion
@@ -243,8 +228,8 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
             }
         }
 
-        // Centred against the icon rather than sitting on the row's top edge, which is what makes a taller row read as
-        // one line instead of two things that happen to overlap.
+        // Centred against the icon rather than the row's top edge, so a taller row reads as one line instead of two
+        // overlapping things.
         var offset = (size - NoireText.LineHeight()) * 0.5f;
 
         if (Icon != null && offset > 0f)
@@ -267,9 +252,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
 
     #region Selection
 
-    /// <summary>
-    /// Selects a row by its id, which is how a persisted value is restored.
-    /// </summary>
+    /// <summary>Selects a row by its id.</summary>
     /// <remarks>
     /// Safe to call before the sheet has been read: the request is remembered and applied when the rows arrive, so a
     /// plugin restoring a saved id on load does not have to wait for anything.

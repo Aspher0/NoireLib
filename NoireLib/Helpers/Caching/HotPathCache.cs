@@ -11,7 +11,7 @@ namespace NoireLib.Helpers;
 /// </summary>
 /// <typeparam name="TKey">
 /// The key. A <see langword="readonly record struct"/> carrying every input the value depends on is the shape this is
-/// built for: the compiler writes its equality, and the constraint is what keeps a lookup from boxing.
+/// built for: the compiler writes its equality, and the struct constraint keeps a lookup from boxing.
 /// </typeparam>
 /// <typeparam name="TValue">The cached value. Held as itself rather than as <see langword="object"/>, so it never boxes.</typeparam>
 public sealed class HotPathCache<TKey, TValue>

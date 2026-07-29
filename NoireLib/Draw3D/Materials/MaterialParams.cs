@@ -5,10 +5,9 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Materials;
 
 /// <summary>
-/// The flattened, GPU-facing form of a <see cref="Material"/> resolved once at snapshot time.<br/>
-/// Value equality (texture by SRV pointer) is the batching key, which lets the immediate layer produce
-/// batchable draws without allocating Material records per call, keeping the steady-state path free of
-/// managed allocations.
+/// The flattened, GPU-facing form of a <see cref="Material"/> resolved once at snapshot time. Value equality
+/// (texture by SRV pointer) is the batching key: the immediate layer produces batchable draws without allocating
+/// Material records per call, keeping the steady-state path allocation-free.
 /// </summary>
 internal struct MaterialData : IEquatable<MaterialData>
 {
@@ -26,18 +25,15 @@ internal struct MaterialData : IEquatable<MaterialData>
     public Vector4 Params1; // x = DepthFade, y = shapeKind, z = outlineWidth, w = heightFade
     public Vector4 SurfaceParams; // custom pipelines only: arrives as Params2 (decals need that register themselves)
     public float ProjectionMode; // ground decals: (float)DecalProjection (0 = AllSurfaces, 1 = HighestOnly)
-    public float OutlineScaleRef; // ground decals: reference footprint scale for the outline rim - 0 keeps the rim a
-                                  // constant world thickness under any scale (scene decals); the immediate layer passes
-                                  // its own built footprint scale so its rim stays proportional to the drawn radius
+    public float OutlineScaleRef; // ground decals: outline rim reference footprint scale; 0 = constant world thickness
+                                  // (scene decals), else proportional to the immediate layer's own footprint scale
     public Vector4 DecalOutlineColor; // ground decals: rim colour, straight alpha; alpha 0 = unset (rim uses the decal colour)
     public string? CustomPipeline;
 
     /// <summary>The bucket this material renders in: 0 opaque, 1 ground decal, 2 transparent.</summary>
     public readonly int Bucket => Domain == MaterialDomain.GroundDecal ? 1 : Blend == BlendMode.Opaque ? 0 : 2;
 
-    /// <summary>
-    /// Resolves a material record. Returns false when the draw must be skipped (texture disposed).
-    /// </summary>
+    /// <summary>Resolves a material record; returns false when the draw must be skipped (texture disposed).</summary>
     public static bool TryFrom(Material material, out MaterialData data)
     {
         data = default;
@@ -50,15 +46,13 @@ internal struct MaterialData : IEquatable<MaterialData>
                 return false; // disposed texture - skip and count, never bind a stale pointer
         }
 
-        // Auxiliary textures follow the same rule: a disposed one skips the draw rather than binding a
-        // stale pointer, since a custom pipeline sampling freed memory is not a recoverable state.
+        // Same rule for auxiliary textures: a disposed one skips the draw rather than binding a stale pointer.
         if (!TryResolveAux(material.AuxTexture0, out data.AuxSrv0) || !TryResolveAux(material.AuxTexture1, out data.AuxSrv1))
             return false;
 
         var domain = material.Domain;
         data.Domain = domain;
-        // Decals cannot be opaque (they blend a projected footprint), so only Additive or Premultiplied are meaningful:
-        // Additive passes through (stacked coloured decals sum toward white), anything else resolves to Premultiplied.
+        // Decals cannot be opaque; Additive passes through (stacked decals sum toward white), anything else resolves to Premultiplied.
         data.Blend = domain == MaterialDomain.GroundDecal
             ? material.Blend == BlendMode.Additive ? BlendMode.Additive : BlendMode.Premultiplied
             : material.Blend;
@@ -79,7 +73,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         return true;
     }
 
-    /// <summary>Resolves an optional auxiliary texture. Returns false when it exists but has been disposed.</summary>
+    /// <summary>Resolves an optional auxiliary texture; returns false when it exists but has been disposed.</summary>
     private static bool TryResolveAux(Assets.GpuTexture? texture, out nint srv)
     {
         srv = 0;

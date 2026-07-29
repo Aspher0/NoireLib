@@ -17,72 +17,54 @@ namespace NoireLib.Configuration;
 public abstract class NoireConfigBase : INoireConfig
 {
     /// <summary>
-    /// Whether the calling thread is inside the member copy that transfers a loaded configuration onto its auto-save
-    /// wrapper, which is what tells the auto-save interceptor to let that copy's assignments pass without persisting
-    /// each one.<br/>
-    /// Scoped to a thread rather than shared by the process, because the only save this has to suppress is the one the
-    /// copy itself raises. The copy assigns through the wrapper's intercepted setters, the interceptor runs inline
-    /// inside each of those assignments, and the save it would perform is therefore always on the thread doing the
-    /// copying. A save raised on any other thread is an unrelated consumer persisting a real change, and suppressing
-    /// that would apply the change in memory and silently never write it.<br/>
-    /// A thread scope also keeps copies of two different configuration types from ending each other's suppression:
-    /// they serialize on separate locks, one per closed generic type, so they can overlap.
+    /// Suppresses auto-save while the member copy that transfers a loaded configuration onto its auto-save wrapper is
+    /// running on the calling thread. Thread-static, not process-wide, so a save raised on another thread by an
+    /// unrelated consumer still persists, and copies of two different configuration types can overlap.
     /// </summary>
     [ThreadStatic]
     internal static bool IsInternalCopying;
 
     /// <summary>
-    /// Backing state for <see cref="IsDegraded"/>.<br/>
-    /// Declared protected rather than private because the member copy that transfers a configuration onto its
-    /// auto-save wrapper reflects over the concrete configuration type, and that reflection does not see private
-    /// fields declared on a base class. A private field here would leave the wrapper undegraded, and the wrapper
-    /// is the instance most consumers actually hold.
+    /// Backing field for <see cref="IsDegraded"/>. Protected, not private, so the auto-save wrapper's reflected
+    /// member copy can see it.
     /// </summary>
     protected bool degradedLoad;
 
     /// <summary>
-    /// Backing state for <see cref="DegradedBackupPath"/>. Protected for the same reason as <see cref="degradedLoad"/>.
+    /// Backing field for <see cref="DegradedBackupPath"/>, protected for the same reason as <see cref="degradedLoad"/>.
     /// </summary>
     protected string? degradedBackupPath;
 
     /// <summary>
-    /// Whether the full explanation for refusing to save has already been logged for the current degraded state.<br/>
-    /// Deliberately private, unlike <see cref="degradedLoad"/>: it must not travel with a member copy onto another
-    /// instance, because the copy produces a second instance whose own first refusal is the one a reader of the log
-    /// would see, and that refusal has to carry the explanation rather than assume an earlier line covered it.
+    /// Whether the degraded-state explanation has already been logged. Deliberately private, unlike
+    /// <see cref="degradedLoad"/>: it must not carry across the member copy, so the copy's own first refusal still
+    /// logs in full.
     /// </summary>
     private bool degradedSaveRefusalLogged;
 
     /// <summary>
-    /// Settings to serialize data.<br/>
-    /// <see cref="Newtonsoft.Json.TypeNameHandling"/> and <see cref="Newtonsoft.Json.PreserveReferencesHandling"/> are
-    /// pinned rather than left to their defaults. Every <see cref="JsonConvert"/> entry point layers the process-global
-    /// <see cref="JsonConvert.DefaultSettings"/> underneath the settings it is given and only overlays the properties
-    /// this object actually sets, so a property left unmentioned here would take its value from whatever other code
-    /// loaded into this process assigned to that global. Pinning them keeps the file format decided here alone, for
-    /// derived classes that hand this object to <see cref="JsonConvert"/> as well as for the serializer below.
+    /// Serializer settings for configuration files. <see cref="Newtonsoft.Json.TypeNameHandling"/> and
+    /// <see cref="Newtonsoft.Json.PreserveReferencesHandling"/> are pinned rather than inherited from the
+    /// process-global <see cref="JsonConvert.DefaultSettings"/>, which other code in the process can reassign.
     /// </summary>
     protected static readonly JsonSerializerSettings JsonSettings = new()
     {
         Formatting = Formatting.Indented,
 
-        // Load-bearing: without it Newtonsoft populates into the collection a property initializer already created
-        // instead of replacing it, which silently keeps the initializer's comparer and merges defaults with the file.
+        // Load-bearing: without this, Newtonsoft populates an existing collection instance instead of replacing it,
+        // merging file values with the property initializer's defaults.
         ObjectCreationHandling = ObjectCreationHandling.Replace,
 
-        // Type resolution driven by file content is what turns a configuration file into an instruction to construct
-        // arbitrary types. It stays off.
+        // Stays off: type resolution driven by file content would let the file construct arbitrary types.
         TypeNameHandling = TypeNameHandling.None,
         PreserveReferencesHandling = PreserveReferencesHandling.None,
     };
 
     /// <summary>
-    /// Reads and writes the configuration file. It is built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
-    /// <see cref="JsonSettings"/> alone. The <see cref="JsonConvert"/> overloads and
-    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> instead merge in
-    /// <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into this process can
-    /// assign, which would let unrelated code decide how the user's configuration is written and read back.
+    /// Serializer for reading and writing configuration files, built via
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from
+    /// <see cref="JsonSettings"/> alone rather than merging in the process-global
+    /// <see cref="JsonConvert.DefaultSettings"/>.
     /// </summary>
     private static readonly JsonSerializer ConfigSerializer = CreateConfigSerializer();
 
@@ -90,9 +72,7 @@ public abstract class NoireConfigBase : INoireConfig
     {
         var serializer = JsonSerializer.Create(JsonSettings);
 
-        // A configuration file holds exactly one JSON document, so anything after it means the file is corrupt.
-        // JsonConvert.DeserializeObject turns this on for its callers implicitly; setting it explicitly keeps that
-        // rejection in place now that the reads below go through a serializer instance instead.
+        // A configuration file holds exactly one JSON document; content after it means the file is corrupt.
         serializer.CheckAdditionalContent = true;
         return serializer;
     }
@@ -130,17 +110,14 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// The version of the configuration schema, for potential migrations.<br/>
-    /// Override this in a derived configuration and set the current schema version as the property initializer. The
-    /// value an instance reports is always the schema it targets, never the schema of the file it was loaded from:
-    /// <see cref="Load"/> compares the two, migrates the file's contents up when they differ, and leaves this reporting
-    /// the target either way. It is serialized, so the number written to the file records the schema the file is at.
+    /// The configuration schema version. Override with the current schema version as the property initializer;
+    /// always reports the target schema, not the file's, and <see cref="Load"/> migrates the file up to it when
+    /// they differ.
     /// </summary>
     public abstract int Version { get; set; }
 
     /// <summary>
-    /// Gets the configuration file name (with or without extension).
-    /// Override this method to provide a custom file name for your configuration.
+    /// The configuration file name (with or without extension). Override to provide a custom name.
     /// </summary>
     /// <returns>The configuration file name.</returns>
     public abstract string GetConfigFileName();
@@ -152,17 +129,10 @@ public abstract class NoireConfigBase : INoireConfig
     public virtual bool LoadFromDiskOnInitialization => true;
 
     /// <summary>
-    /// Gets a value indicating whether this instance holds values that must not be written back to disk.<br/>
-    /// This becomes true when <see cref="Load"/> finds a configuration file older than <see cref="Version"/> and the
-    /// migration to the current schema fails. The file is still deserialized so the plugin can start, but members the
-    /// migration was supposed to produce stay at their defaults, which makes the instance a partial view of the user's
-    /// real settings.<br/>
-    /// While this is true, <see cref="Save"/> refuses to write and returns false, so that ordinary saves performed
-    /// during startup cannot replace a good file on disk with the partial values. <see cref="DegradedBackupPath"/>
-    /// points at the copy of the file taken before the migration ran.<br/>
-    /// The state is set by <see cref="Load"/> and reflects only the most recent load: a load that needs no migration,
-    /// or whose migration succeeds, clears it. It is also cleared by <see cref="ClearDegradedState"/> and by a
-    /// successful <see cref="ForceSave"/>.
+    /// Whether this instance holds values a failed migration left partially defaulted, set by <see cref="Load"/>
+    /// when the file's version is older than <see cref="Version"/> and migration fails.<br/>
+    /// While true, <see cref="Save"/> refuses to write and returns false; <see cref="DegradedBackupPath"/> points to
+    /// the pre-migration backup. Cleared by <see cref="ClearDegradedState"/> or a successful <see cref="ForceSave"/>.
     /// </summary>
     /// <seealso cref="ForceSave"/>
     /// <seealso cref="ClearDegradedState"/>
@@ -170,32 +140,24 @@ public abstract class NoireConfigBase : INoireConfig
     public bool IsDegraded => degradedLoad;
 
     /// <summary>
-    /// Gets the full path to the copy of the configuration file taken before the failed migration that made this
-    /// instance <see cref="IsDegraded"/>, or null when the instance is not degraded or no backup could be written.<br/>
-    /// The file at this path is the user's configuration exactly as it was before the migration was attempted, and is
-    /// what a recovery flow should restore from.
+    /// The path to the pre-migration backup that caused <see cref="IsDegraded"/>, or null when not degraded or no
+    /// backup could be written. A recovery flow restores from this file.
     /// </summary>
     [JsonIgnore]
     public string? DegradedBackupPath => degradedBackupPath;
 
     /// <summary>
-    /// Gets a value indicating whether the current degraded state has already had its full explanation logged, which
-    /// is what makes <see cref="Save"/> record the refusals following the first one at verbose level instead.<br/>
-    /// It is reset every time the degraded state is decided anew, by <see cref="Load"/>, <see cref="ForceSave"/> and
-    /// <see cref="ClearDegradedState"/>, so that each degraded state explains itself once in full.<br/>
-    /// Read-only, which also keeps it out of the member copy that transfers a configuration onto its auto-save
-    /// wrapper: the wrapper is a distinct instance whose own first refusal still owes the reader an explanation.
+    /// Whether the current degraded state's full explanation has already been logged; later refusals log at verbose
+    /// level instead. Reset whenever the degraded state is decided anew, by <see cref="Load"/>,
+    /// <see cref="ForceSave"/> or <see cref="ClearDegradedState"/>.
     /// </summary>
     internal bool HasLoggedDegradedSaveRefusal => degradedSaveRefusalLogged;
 
     /// <summary>
-    /// Gets the schema version that this configuration's own type declares, read from a fresh instance of it rather
-    /// than from <see cref="Version"/>, which anything holding the configuration is free to assign over.<br/>
-    /// A configuration with members marked <see cref="AutoSaveAttribute"/> is handed to consumers as a generated
-    /// subclass that intercepts their assignments, so the type such an instance reports is that subclass rather than
-    /// the configuration whose declared version is wanted. The configuration type is therefore resolved from the
-    /// instance rather than read from <see cref="object.GetType"/>, which also keeps this from building a second
-    /// intercepting subclass every time it is asked.
+    /// The schema version this configuration type declares, read from a fresh instance rather than
+    /// <see cref="Version"/>, which callers can reassign. Resolved from the instance rather than
+    /// <see cref="object.GetType"/>, since a type with <see cref="AutoSaveAttribute"/> members reports its
+    /// generated subclass instead.
     /// </summary>
     /// <returns>The version a new instance of this configuration type reports, or the value <see cref="Version"/>
     /// currently holds when no fresh instance can be constructed.</returns>
@@ -217,10 +179,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Gets the full path to the configuration file.<br/>
-    /// Resolves <see cref="GetConfigFileName"/> against the plugin's configuration directory. Override this to place
-    /// the file somewhere else; every file operation on the configuration (load, save, backup, delete and existence
-    /// checks) goes through this method, so an override relocates all of them consistently.
+    /// The full path to the configuration file, resolved from <see cref="GetConfigFileName"/> against the plugin's
+    /// configuration directory. Override to relocate the file; every file operation goes through this method.
     /// </summary>
     /// <returns>The full path to the configuration JSON file, or null if NoireLib is not initialized or the file name is invalid.</returns>
     protected virtual string? GetConfigFilePath()
@@ -239,10 +199,9 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Saves the current configuration to a JSON file.<br/>
-    /// Refuses to write and returns false while <see cref="IsDegraded"/> is true, because the instance then holds
-    /// values that a failed migration left partially defaulted and writing them would destroy the user's file. Use
-    /// <see cref="ForceSave"/> to write anyway, or <see cref="ClearDegradedState"/> once the values are repaired.
+    /// Saves the current configuration to a JSON file. Refuses to write and returns false while
+    /// <see cref="IsDegraded"/> is true; use <see cref="ForceSave"/> to write anyway or
+    /// <see cref="ClearDegradedState"/> once the values are repaired.
     /// </summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
@@ -265,10 +224,8 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
-            // The number written to the file records the schema the values being written are at, which is the schema
-            // this build defines whatever the property currently reports. Read from a fresh instance of this type
-            // rather than from the property, so that a version assigned over it cannot mislabel the file and send a
-            // later load down a migration path that does not match its contents.
+            // Read from a fresh instance rather than the property, so a version assigned over the property cannot
+            // mislabel the file and send a later load down a migration path that does not match its contents.
             var defaultVersion = GetDefaultVersion();
             Version = defaultVersion;
 
@@ -298,13 +255,9 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Reports a save that <see cref="Save"/> refused because the instance is <see cref="IsDegraded"/>.<br/>
-    /// Members marked <see cref="AutoSaveAttribute"/> save on every assignment, so a degraded configuration refuses a
-    /// save as often as anything assigns to one of them, which is often enough to bury the rest of the log. The first
-    /// refusal of a degraded state therefore carries the whole explanation and the backup location, because the user
-    /// has to learn that their configuration did not survive its migration and where the copy of it is. Every refusal
-    /// after it is the same event repeating and is recorded at verbose level, which keeps it discoverable when the
-    /// refusals themselves are what is being investigated without making the state cost an error per assignment.
+    /// Reports a save that <see cref="Save"/> refused because the instance is <see cref="IsDegraded"/>. The first
+    /// refusal per degraded state logs the full explanation and backup location at error level; later refusals log
+    /// at verbose level.
     /// </summary>
     private void LogDegradedSaveRefusal()
     {
@@ -332,15 +285,12 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Saves the current configuration to a JSON file even when <see cref="IsDegraded"/> is true, overwriting the file
-    /// on disk with the values this instance currently holds.<br/>
-    /// This is the deliberate override of the protection described on <see cref="IsDegraded"/>, and it is destructive:
-    /// after a failed migration the settings that the migration was supposed to produce are still at their defaults, so
-    /// forcing the write replaces the user's stored values with those defaults. Prefer repairing the instance first and
-    /// calling <see cref="ClearDegradedState"/>, or restoring <see cref="DegradedBackupPath"/>.<br/>
-    /// A successful forced write clears the degraded state, since the file on disk then matches this instance and there
-    /// is nothing left for the block to protect. A failed write leaves the degraded state in place.<br/>
-    /// When the instance is not degraded this is exactly <see cref="Save"/>.
+    /// Saves even when <see cref="IsDegraded"/> is true, overwriting the file with the values this instance
+    /// currently holds; destructive, since a failed migration leaves those values at their defaults. Prefer
+    /// repairing the instance and calling <see cref="ClearDegradedState"/>, or restoring
+    /// <see cref="DegradedBackupPath"/>.<br/>
+    /// A successful write clears the degraded state; a failed write leaves it in place. Equivalent to
+    /// <see cref="Save"/> when the instance is not degraded.
     /// </summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
@@ -372,11 +322,9 @@ public abstract class NoireConfigBase : INoireConfig
         }
         finally
         {
-            // Only a write that actually landed retires the protection; otherwise the file on disk is still the one
-            // worth protecting and the block has to stay. Restored from a finally because Save is virtual and resolves
-            // the file path through another virtual member, so it can throw rather than report false. An exception
-            // leaving the state cleared would retire the protection without anything having been written, and the next
-            // ordinary save would then replace the user's file with the partially defaulted values.
+            // Only a write that actually landed retires the protection. Restored from a finally because Save is
+            // virtual and can throw rather than report false; an exception leaving the state cleared would retire
+            // the protection without anything having been written.
             if (!success && wasDegraded)
             {
                 degradedLoad = true;
@@ -386,12 +334,10 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Clears the degraded state described on <see cref="IsDegraded"/> without writing anything to disk, so that
-    /// <see cref="Save"/> is allowed again.<br/>
-    /// Call this once the values a failed migration left at their defaults have been repaired in memory, whether by the
-    /// plugin or by the user. It is an assertion that this instance is now safe to persist; it does not verify that, and
-    /// the next ordinary <see cref="Save"/> will overwrite the file on disk.<br/>
-    /// <see cref="DegradedBackupPath"/> is cleared with it, so read it first if the backup location is still needed.
+    /// Clears the degraded state described on <see cref="IsDegraded"/> without writing to disk, so
+    /// <see cref="Save"/> is allowed again. Does not verify the repaired values are actually safe to persist; the
+    /// next <see cref="Save"/> writes them as-is.<br/>
+    /// <see cref="DegradedBackupPath"/> is cleared with it; read it first if still needed.
     /// </summary>
     /// <seealso cref="IsDegraded"/>
     /// <seealso cref="ForceSave"/>
@@ -403,10 +349,9 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Loads the configuration from a JSON file and populates the current instance.
-    /// Automatically executes migrations if the file version is older than the current version.<br/>
-    /// When the file is older than <see cref="Version"/>, it is copied to a backup before the migration runs, and a
-    /// migration that fails marks the instance <see cref="IsDegraded"/> instead of writing anything to disk.
+    /// Loads the configuration from a JSON file and populates this instance, migrating automatically when the
+    /// file's version is older than <see cref="Version"/>. The file is backed up before migration runs; a failed
+    /// migration marks the instance <see cref="IsDegraded"/> instead of writing to disk.
     /// </summary>
     /// <returns>True if the load operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
@@ -449,9 +394,7 @@ public abstract class NoireConfigBase : INoireConfig
             {
                 NoireLogger.LogInfo<NoireConfigBase>($"Configuration version mismatch: file={fileVersion}, target={targetVersion}. Attempting migration.");
 
-                // Taken before the migration runs, while the file is still known to hold the user's settings at the
-                // version they were written at. A failure to back up does not stop the load: nothing has been written
-                // yet, and the degraded latch below is what actually keeps the file safe.
+                // A failed backup does not stop the load; the degraded latch below is what keeps the file safe.
                 backupPath = CreateMigrationBackup(filePath, fileVersion);
 
                 var migratedJson = MigrationExecutor.ExecuteMigrations(GetType(), json, fileVersion, targetVersion);
@@ -485,27 +428,17 @@ public abstract class NoireConfigBase : INoireConfig
 
             CopyPropertiesFrom(loadedConfig);
 
-            // Version is a public read-write property, so the copy above brings the file's schema version across with
-            // the settings and leaves this instance reporting it. What this instance holds is a view of the target
-            // schema whatever the file said: values that needed no migration, values a migration has just produced, or,
-            // when the migration failed, values the target schema defaults. The target is therefore restored here.
-            // Leaving the file's version in place would make the next Load on this instance measure the file against
-            // that stale value instead, so an unmigrated file would compare equal to its own version and the migration
-            // it still needs would be skipped, silently, along with the degraded state that skip should have raised.
-            // The migration decision above is unaffected: it is made from fileVersion, read out of the JSON, and from
-            // targetVersion, read before this copy.
+            // Restored to the target: the copy above brought the file's version across, and leaving it would make
+            // the next Load compare the file to its own stale version, silently skipping a migration it still needs.
             Version = targetVersion;
 
-            // Deserializing un-migrated JSON into the current type mostly succeeds, because unknown members are ignored
-            // and absent ones keep their defaults. That silence is the danger: without this latch the instance looks
-            // healthy and the next save replaces the user's file with the partial values. Assigned rather than only set,
-            // so that a later load which needs no migration, or whose migration succeeds, clears a stale latch.
+            // Deserializing un-migrated JSON mostly succeeds silently: unknown members are ignored and absent ones
+            // default. Assigned rather than left alone, so a later successful load clears a stale latch.
             var migrationFailed = fileVersion < targetVersion && !migrationSuccess;
             degradedLoad = migrationFailed;
             degradedBackupPath = migrationFailed ? backupPath : null;
 
-            // A load decides the degraded state afresh, so the explanation is owed again rather than treated as already
-            // given by a refusal from some earlier state of this instance.
+            // Reset here so a fresh degraded state logs its own explanation rather than reusing an earlier one.
             degradedSaveRefusalLogged = false;
 
             if (fileVersion < targetVersion && migrationSuccess)
@@ -541,14 +474,12 @@ public abstract class NoireConfigBase : INoireConfig
     /// <returns>The full path to the backup, or null if no backup could be written.</returns>
     private static string? CreateMigrationBackup(string filePath, int fileVersion)
     {
-        // Named for the version it was taken at rather than for the moment it was taken, which keeps exactly one backup
-        // per schema version the file has been through. A timestamped name would add another copy on every start that
-        // retries a failing migration. The ".bak" suffix keeps the backup from being picked up as a configuration file.
+        // Named for the version, not the moment, so retries do not add duplicate backups. The ".bak" suffix keeps
+        // the backup from being picked up as a configuration file.
         var backupPath = $"{filePath}.v{fileVersion}.bak";
 
-        // An existing backup was taken from this same file at this same version, on an earlier attempt, and is
-        // therefore at least as trustworthy as anything that could be written now. Keeping it also means a forced or
-        // otherwise degraded write that has since reached the file cannot be copied over the last good copy.
+        // An existing backup from this version is kept rather than overwritten, so a later degraded write cannot
+        // replace the last good copy.
         if (FileHelper.FileExists(backupPath))
         {
             NoireLogger.LogDebug<NoireConfigBase>($"A pre-migration backup already exists, keeping it: {backupPath}");
@@ -574,10 +505,8 @@ public abstract class NoireConfigBase : INoireConfig
     {
         try
         {
-            // Parsed rather than deserialized on purpose. Every JsonConvert entry point layers the process-global
-            // JsonConvert.DefaultSettings underneath the settings it is given, and that global is writable by any other
-            // plugin sharing this process, so deserializing here would let a foreign TypeNameHandling apply to a file
-            // this code has not validated. JObject.Parse reads the token stream and consults no settings at all.
+            // Parsed, not deserialized: JsonConvert entry points merge in the process-global DefaultSettings, which
+            // other code can reassign, and JObject.Parse consults no settings at all.
             var versionToken = JObject.Parse(json)["Version"];
 
             if (versionToken != null && versionToken.Type != JTokenType.Null)
@@ -585,8 +514,7 @@ public abstract class NoireConfigBase : INoireConfig
         }
         catch
         {
-            // A file that cannot be parsed reports version 0, which routes it into the migration path rather than
-            // letting it be treated as already current.
+            // Unparseable files report version 0, routing them into the migration path.
         }
 
         return 0;
@@ -657,15 +585,9 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Gets a value indicating whether this instance is at its defaults because there was no configuration file to load
-    /// rather than because loading one did not work.<br/>
-    /// True when the configuration resolves a file path and no file exists at it, which is the ordinary state of a
-    /// plugin that has not saved its configuration yet. <see cref="Load"/> reports both cases the same way, by
-    /// returning false, so this tells them apart for callers that keep the instance around: a default instance nothing
-    /// was stored for is the real configuration and holding on to it is correct, while one that stands in for a file
-    /// that exists and could not be read is a placeholder that should not outlive the attempt.<br/>
-    /// The two are not distinguished by <see cref="Exists"/> alone, which also reports false when no path could be
-    /// resolved at all, the state of a configuration reached before NoireLib is initialized.
+    /// Whether this instance is at its defaults because no configuration file exists yet, rather than because
+    /// loading one failed. <see cref="Load"/> returns false for both cases; this tells them apart, unlike
+    /// <see cref="Exists"/> alone, which also reports false before NoireLib is initialized.
     /// </summary>
     internal bool IsUnwrittenDefault => !string.IsNullOrEmpty(GetConfigFilePath()) && !Exists();
 }

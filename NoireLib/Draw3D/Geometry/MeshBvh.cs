@@ -5,11 +5,10 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// A bounding-volume hierarchy over a mesh's triangles for fast ray picking. Built once per mesh (lazily, on the first
-/// pick) and reused, it turns a hover hit-test from a per-triangle scan - O(triangles), which alone makes hovering a
-/// dense imported model stall - into an O(log triangles) traversal. Model-space: the caller brings the ray into mesh
-/// space so a moving node never invalidates the tree.<br/>
-/// Median-split build, stack traversal, no per-query allocation. Two-sided triangle test, matching the picker's own.
+/// A bounding-volume hierarchy over a mesh's triangles for fast ray picking, built once per mesh (lazily, on the
+/// first pick) and reused, turning a per-triangle O(triangles) scan into an O(log triangles) traversal.
+/// Model-space: the caller brings the ray into mesh space so a moving node never invalidates the tree.
+/// Median-split build, stack traversal, no per-query allocation, two-sided triangle test matching the picker's own.
 /// </summary>
 internal sealed class MeshBvh
 {
@@ -39,7 +38,7 @@ internal sealed class MeshBvh
         this.v2 = v2;
     }
 
-    /// <summary>Builds a BVH from a mesh's CPU geometry. Returns null when the mesh has no triangles.</summary>
+    /// <summary>Builds a BVH from a mesh's CPU geometry; returns null when the mesh has no triangles.</summary>
     public static MeshBvh? Build(Vertex3D[] vertices, ushort[]? indices16, uint[]? indices32)
     {
         var indexCount = indices16?.Length ?? indices32?.Length ?? 0;
@@ -79,8 +78,7 @@ internal sealed class MeshBvh
             tri[t] = t;
         }
 
-        // A growable list keeps the build correct under recursion (a fixed pool would have to be grown by ref, which a
-        // parent frame cannot observe after a child grows it). One flattening copy at the end; the tree is built once.
+        // A growable list keeps the build correct under recursion; one flattening copy at the end, the tree is built once.
         var list = new List<Node>(2 * (triCount / LeafTriangles + 1));
         BuildRange(list, tri, centroid, v0, v1, v2, 0, triCount);
 
@@ -155,7 +153,7 @@ internal sealed class MeshBvh
 
     /// <summary>
     /// Casts a ray (model space) and returns the nearest two-sided triangle hit: <paramref name="t"/> is the distance
-    /// along <paramref name="direction"/>, <paramref name="triangle"/> the original triangle index. No allocation.
+    /// along <paramref name="direction"/>, <paramref name="triangle"/> the original triangle index; no allocation.
     /// </summary>
     public bool RayCast(Vector3 origin, Vector3 direction, out float t, out int triangle)
     {
@@ -226,7 +224,7 @@ internal sealed class MeshBvh
         return tmax >= MathF.Max(tmin, 0f) && tmin <= tMax;
     }
 
-    /// <summary>Möller-Trumbore, two-sided (matches the picker). Returns the forward hit distance along <paramref name="dir"/>.</summary>
+    /// <summary>Möller-Trumbore, two-sided (matches the picker); returns the forward hit distance along <paramref name="dir"/>.</summary>
     private static bool RayTriangle(Vector3 origin, Vector3 dir, Vector3 a, Vector3 b, Vector3 c, out float t)
     {
         t = 0f;

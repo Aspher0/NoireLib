@@ -6,13 +6,12 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. A depth
-/// resource can only be copied whole (D3D forbids a sub-region copy of a depth-stencil texture), so the naive
-/// "make a staging texture, copy, map, read one texel, destroy" pattern would churn GPU memory and stall the
-/// pipeline on every hover frame, freezing and eventually crashing the device under sustained use. This keeps
-/// <b>one</b> staging copy of the depth texture, recreated only when its size or format changes, and reads it one
-/// cycle late with a non-blocking map (the same deferred pattern the UI-mask health check uses), so a probe never
-/// allocates and never waits on the GPU. Render-thread only (uses the immediate context); released with the renderer.
+/// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. D3D
+/// forbids a sub-region copy of a depth-stencil texture, so a naive copy-map-read-destroy pattern per hover
+/// frame would churn GPU memory and stall the pipeline, freezing and eventually crashing the device under
+/// sustained use. This keeps <b>one</b> staging copy, recreated only when size or format changes, and reads it
+/// one cycle late with a non-blocking map, so a probe never allocates and never waits on the GPU; render-thread
+/// only, released with the renderer.
 /// </summary>
 internal sealed unsafe class DepthProbe : IDisposable
 {
@@ -66,7 +65,7 @@ internal sealed unsafe class DepthProbe : IDisposable
         var ctx = device.Context;
         D3D11_MAPPED_SUBRESOURCE mapped;
         if (ctx->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, doNotWait, &mapped) < 0)
-            return false; // still in flight (essentially never at the callers' throttle): read on the next cycle
+            return false; // still in flight (rare at the callers' throttle): read on the next cycle
 
         try
         {

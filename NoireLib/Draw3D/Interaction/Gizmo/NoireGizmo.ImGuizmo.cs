@@ -12,8 +12,7 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// <summary>
 /// The <see cref="GizmoBackend.ImGuizmo"/> backend of <see cref="NoireGizmo"/>: the classic 2D-projected handles drawn
 /// by <c>Dalamud.Bindings.ImGuizmo</c>, fed the render camera's view plus a Z-rebuilt projection (see
-/// <see cref="BuildImGuizmoProjection"/>). Same public API as the native backend, so the consumer flips
-/// <see cref="GizmoOptions.Backend"/> without touching call sites. It is <b>self-driven</b>: ImGuizmo reads ImGui IO
+/// <see cref="BuildImGuizmoProjection"/>). It is <b>self-driven</b>: ImGuizmo reads ImGui IO
 /// directly, so it is not a ray-hover target. It runs in <see cref="NoireInteract"/>'s self-driven pre-pass and hosts
 /// itself in a fullscreen, <b>always-<c>NoInputs</c></b> window. When a handle is hovered/dragged it reports it owns the
 /// mouse (making the frame a hard pass for scene picking) and blocks the game camera with
@@ -66,15 +65,15 @@ public sealed partial class NoireGizmo
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint ImGuizmoGetStyleDelegate();
 
-    /// <summary>The PHYSICAL (hardware) left-mouse state, read straight from the OS. ImGui's own <c>io.MouseDown</c> can
-    /// desync - Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui -
-    /// which strands an ImGuizmo drag; reading the hardware bit is the only reliable release signal. VK_LBUTTON = 0x01.</summary>
+    /// <summary>The PHYSICAL (hardware) left-mouse state, read straight from the OS: ImGui's own <c>io.MouseDown</c> can
+    /// desync (Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui,
+    /// stranding an ImGuizmo drag), so reading the hardware bit is the only reliable release signal. VK_LBUTTON = 0x01.</summary>
     private static bool PhysicalLeftDown() => KeybindsHelper.IsAsyncKeyDown(0x01);
 
     /// <summary>
     /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend
-    /// draws or falls back; the flags are process-static and would otherwise stay silent after the first use. Logs the
-    /// current API state (which persists a real capability check). Called when the reference scene spawns.
+    /// draws or falls back (the flags are process-static and would otherwise stay silent after the first use); logs
+    /// the current API state, called when the reference scene spawns.
     /// </summary>
     internal static void ResetImGuizmoDiagnostics()
     {
@@ -84,10 +83,10 @@ public sealed partial class NoireGizmo
     }
 
     /// <summary>
-    /// Binds the ImGuizmo native function table once. Dalamud initialises the ImGui binding but not ImGuizmo's, so
-    /// without this every ImGuizmo call hits a null table and draws nothing. This binds against the same native module
-    /// ImGui uses (ImGuizmo lives in it), then points ImGuizmo at Dalamud's live ImGui context. Attempted once; failure
-    /// disables the backend cleanly (no per-frame retry, no crash spam).
+    /// Binds the ImGuizmo native function table once: Dalamud initialises the ImGui binding but not ImGuizmo's, so
+    /// without this every ImGuizmo call hits a null table and draws nothing. Binds against the same native module
+    /// ImGui uses (ImGuizmo lives in it), then points ImGuizmo at Dalamud's live ImGui context; attempted once,
+    /// failure disables the backend cleanly (no per-frame retry, no crash spam).
     /// </summary>
     /// <returns>True when the ImGuizmo API is bound and usable.</returns>
     private static bool EnsureImGuizmoApi()
@@ -117,17 +116,17 @@ public sealed partial class NoireGizmo
     /// <summary>
     /// Runs the ImGuizmo manipulation for the frame inside a fullscreen passthrough host window, applies the edit, and
     /// returns whether it owns the mouse right now (a handle hovered or being dragged), so <see cref="NoireInteract"/>
-    /// can make the frame a hard pass for scene picking. The game camera is blocked here via
-    /// <c>SetNextFrameWantCaptureMouse</c> (no window). Driven from the self-driven pre-pass.
+    /// can make the frame a hard pass for scene picking; the game camera is blocked here via
+    /// <c>SetNextFrameWantCaptureMouse</c> (no window), driven from the self-driven pre-pass.
     /// </summary>
     private bool DrawImGuizmo(in FrameContext frame, in Matrix4x4 world)
     {
-        // Hardware stuck-drag watchdog (runs before every early-out). A gizmo drag lives only while the button is
+        // Hardware stuck-drag watchdog (runs before every early-out): a gizmo drag lives only while the button is
         // physically held. If we still think we are dragging with the button PHYSICALLY up, the ImGui mouse-up was lost
-        // (Dalamud routed the release to the game while the mouse was captured), so io.MouseDown stays stuck true - then
+        // (Dalamud routed the release to the game while the mouse was captured), so io.MouseDown stays stuck true, then
         // ImGuizmo keeps dragging the object on mouse-move and our capture flag holds the cursor hostage, with no visible
         // handle to release on. Reading the REAL button (not io.MouseDown, the very bit that desynced) and resyncing
-        // ImGui to it releases ImGuizmo the same frame. This is why the earlier IsMouseDown-based guard could not work.
+        // ImGui to it releases ImGuizmo the same frame.
         var physicalDown = PhysicalLeftDown();
         if (imguizmoUsing && !physicalDown)
         {
@@ -242,10 +241,9 @@ public sealed partial class NoireGizmo
                 imguizmoDragOp = op;
             }
 
-            // Choose this frame's snap increment BEFORE manipulating. During a drag the op is latched. Otherwise use the
-            // handle the cursor is over (ImGuizmo reports it from the previous frame), so a drag snaps from its very
-            // first frame: no unsnapped nudge is ever applied, which is what left a scale/rotation drag with a small
-            // permanent offset when the op was only detected a frame late. A single-op gizmo knows its op up front.
+            // Choose this frame's snap increment BEFORE manipulating: during a drag the op is latched, otherwise use
+            // the handle the cursor is over (ImGuizmo reports it from the previous frame), so a drag snaps from its
+            // very first frame with no unsnapped nudge. A single-op gizmo knows its op up front.
             var snapKind = imguizmoUsing ? imguizmoSnapKind
                 : imguizmoHoverKind != SnapKind.None ? imguizmoHoverKind
                 : SingleOpKind();
@@ -367,9 +365,9 @@ public sealed partial class NoireGizmo
     }
 
     /// <summary>
-    /// Ends the current ImGuizmo drag: clears the using/snap/group state and raises <c>EditEnd</c> once. Called on the
+    /// Ends the current ImGuizmo drag: clears the using/snap/group state and raises <c>EditEnd</c> once; called on the
     /// normal release and by the hardware watchdog when the physical button comes up while we still think we are
-    /// dragging - so a missed mouse-up can never leave the gizmo permanently owning the mouse.
+    /// dragging, so a missed mouse-up can never leave the gizmo permanently owning the mouse.
     /// </summary>
     private void EndImguizmoDrag()
     {
@@ -393,9 +391,9 @@ public sealed partial class NoireGizmo
 
     /// <summary>
     /// The op whose handle is under the cursor right now (from ImGuizmo's last frame), so a drag that starts next frame
-    /// already knows which single op to lock and which snap increment to feed. None when the cursor is over no handle.
-    /// Priority is Scale &gt; Translate &gt; Rotate - the topmost handle where they overlap (a scale ball drawn over the
-    /// screen rotation ring), matching ImGuizmo's own hit priority, so the lock agrees with what ImGuizmo would pick.
+    /// already knows which single op to lock and which snap increment to feed, or None when the cursor is over no
+    /// handle; priority is Scale &gt; Translate &gt; Rotate, the topmost handle where they overlap (a scale ball drawn
+    /// over the screen rotation ring), matching ImGuizmo's own hit priority.
     /// </summary>
     private SnapKind HoveredOpKind()
     {
@@ -436,9 +434,10 @@ public sealed partial class NoireGizmo
     }
 
     /// <summary>
-    /// Builds ImGuizmo's snap array for the operation the drag is driving. Translation snaps per axis (World mode snaps
-    /// world axes, Local mode snaps the object's own axes, both handled inside ImGuizmo); rotation and scale snap by a
-    /// single increment. Returns false when the driven operation has no snap set, so the manipulation runs unsnapped.
+    /// Builds ImGuizmo's snap array for the operation the drag is driving: translation snaps per axis (World mode
+    /// snaps world axes, Local mode snaps the object's own axes, both handled inside ImGuizmo), rotation and scale
+    /// snap by a single increment; returns false when the driven operation has no snap set, so the manipulation runs
+    /// unsnapped.
     /// </summary>
     private bool TryBuildSnap(SnapKind kind, out float[] snap)
     {
@@ -515,9 +514,8 @@ public sealed partial class NoireGizmo
     /// Turns ImGuizmo's proxy result (whose scale is <see cref="NoireGizmo.baseScale"/> multiplied by ImGuizmo's factor)
     /// back into the real world transform: translation and rotation are taken verbatim, and scale becomes an additive
     /// delta on the size at press - <c>pressScale + (resultScale - baseScale)</c>, floored at <see cref="MinScale"/> so a
-    /// component never collapses. That makes an axis that was zero (or any size) grow back at the base rate, matching the
-    /// native backend instead of ImGuizmo's multiply-the-current-size behaviour. Falls back to the raw result if it will
-    /// not decompose.
+    /// component never collapses, matching the native backend instead of ImGuizmo's multiply-the-current-size behaviour;
+    /// falls back to the raw result if it will not decompose.
     /// </summary>
     private Matrix4x4 RebuildFromScaleProxy(in Matrix4x4 proxyResult)
     {
@@ -572,8 +570,8 @@ public sealed partial class NoireGizmo
 
     /// <summary>
     /// Resolves <c>&amp;ImGuizmo::Style</c> once, straight from the native module's <c>ImGuizmo_GetStyle</c> export (the
-    /// Dalamud binding wraps no style accessor). Zeroing two alpha floats in that struct is how the built-in drag text is
-    /// hidden. Returns 0 when the export cannot be resolved, in which case the built-in text is simply left visible.
+    /// Dalamud binding wraps no style accessor); zeroing two alpha floats in that struct is how the built-in drag text
+    /// is hidden, returning 0 when the export cannot be resolved, in which case the built-in text is simply left visible.
     /// </summary>
     private static nint ResolveImGuizmoStyle()
     {
@@ -613,8 +611,8 @@ public sealed partial class NoireGizmo
 
     /// <summary>
     /// Zeroes ImGuizmo's TEXT / TEXT_SHADOW alpha (saving the prior values) so its built-in drag info text is invisible
-    /// for the next Manipulate call. Paired with <see cref="RestoreImGuizmoText"/> so the change never outlives the call:
-    /// ImGuizmo's global style is shared with any other plugin using it, and is left exactly as found.
+    /// for the next Manipulate call; paired with <see cref="RestoreImGuizmoText"/> so the change never outlives the
+    /// call, since ImGuizmo's global style is shared with any other plugin using it and is left exactly as found.
     /// </summary>
     private void HideImGuizmoText()
     {
@@ -647,7 +645,7 @@ public sealed partial class NoireGizmo
     /// <summary>
     /// Freezes the press-time transform and readout basis for the ImGuizmo drag feedback: the origin, the rotation the
     /// gesture is measured against, and the axes the translation readout projects onto - world axes in World space, the
-    /// object's own axes in Local space. Mirrors what the native backend captures in <c>OnDragStart</c>.
+    /// object's own axes in Local space; mirrors what the native backend captures in <c>OnDragStart</c>.
     /// </summary>
     private void CaptureImGuizmoPress(in Matrix4x4 world)
     {
@@ -671,7 +669,7 @@ public sealed partial class NoireGizmo
     /// <summary>
     /// Refreshes the live drag readout from the current transform against the press transform: the movement (which the
     /// translate readout projects onto the frozen press axes, so a Local-space axis drag reads its own distance rather
-    /// than a world projection), the angle swept and the scale relative to the base size. The representative handle
+    /// than a world projection), the angle swept and the scale relative to the base size; the representative handle
     /// selects which of the three the overlay prints, matching the operation ImGuizmo is driving.
     /// </summary>
     private void UpdateImGuizmoFeedback(in Matrix4x4 current)
@@ -693,9 +691,9 @@ public sealed partial class NoireGizmo
 
     /// <summary>
     /// Which scale handle the readout should report, from the per-axis change since press (relative to
-    /// <see cref="NoireGizmo.baseScale"/> so the axes compare fairly). Near-equal change on all three reads as a uniform
-    /// scale (<see cref="GizmoHandle.ScaleUniform"/>, printed <c>xN.NN</c>); otherwise the axis that moved most (printed
-    /// <c>Y xN.NN</c>). Used because ImGuizmo's universal-scale op does not surface which sub-handle is driving.
+    /// <see cref="NoireGizmo.baseScale"/> so the axes compare fairly): near-equal change on all three reads as a uniform
+    /// scale (<see cref="GizmoHandle.ScaleUniform"/>, printed <c>xN.NN</c>), otherwise the axis that moved most (printed
+    /// <c>Y xN.NN</c>); used because ImGuizmo's universal-scale op does not surface which sub-handle is driving.
     /// </summary>
     private GizmoHandle ScaleHandleFromDelta(in Vector3 currentScale)
     {

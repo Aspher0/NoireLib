@@ -24,7 +24,7 @@ public sealed partial class SceneNode
     internal Scene3D? SceneRef;
     internal bool Destroyed;
 
-    /// <summary>The mesh this node created and owns (via a <see cref="MeshData"/> <see cref="SetMesh(MeshData, Material, bool)"/> / Spawn), freed on replace or destroy. Null when the node references a shared mesh instead.</summary>
+    /// <summary>The mesh this node created and owns (via a <see cref="MeshData"/> <see cref="SetMesh(MeshData, Material, bool)"/> / Spawn), freed on replace or destroy; null when the node references a shared mesh instead.</summary>
     private Mesh? ownedMesh;
 
     /// <summary>Optional debug/lookup name.</summary>
@@ -36,7 +36,7 @@ public sealed partial class SceneNode
     /// <summary>The scene this node currently belongs to (null while detached, e.g. an unattached imported model).</summary>
     public Scene3D? Scene => SceneRef;
 
-    /// <summary>True once this node has been destroyed (via <see cref="Destroy"/>, <see cref="Scene3D.Remove"/>, or the scene's disposal). A destroyed node must not be reused.</summary>
+    /// <summary>True once this node has been destroyed (via <see cref="Destroy"/>, <see cref="Scene3D.Remove"/>, or the scene's disposal); a destroyed node must not be reused.</summary>
     public bool IsDestroyed => Destroyed;
 
     /// <summary>Draw layer: orders ground decals and feeds the sort key (higher layers draw later within a bucket).</summary>
@@ -49,7 +49,7 @@ public sealed partial class SceneNode
     /// The frame on which this node was submitted to the G-buffer injection, so the scene pass skips drawing it
     /// itself and the object is not rendered twice.<br/>
     /// Deliberately not <see cref="Visible"/>: hiding a node also removes it from picking and hover, and an
-    /// injected object is still standing in the world and still has to be clickable. Only the drawing is
+    /// injected object is still standing in the world and still has to be clickable, so only the drawing is
     /// suppressed, and only for the one frame that was submitted.
     /// </summary>
     internal long GameLitFrameId;
@@ -129,8 +129,8 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Attaches (or replaces) a renderer drawing the given <b>shared</b> mesh with the given material. Fluent.</summary>
-    /// <param name="mesh">The mesh to draw. Referenced, never owned - you (or a <see cref="Scene3D.Own"/> scope) dispose it.</param>
+    /// <summary>Attaches (or replaces) a renderer drawing the given <b>shared</b> mesh with the given material; fluent.</summary>
+    /// <param name="mesh">The mesh to draw; referenced, never owned - you (or a <see cref="Scene3D.Own"/> scope) dispose it.</param>
     /// <param name="material">The material to draw with.</param>
     /// <remarks>If this node previously owned a mesh (attached via the <see cref="MeshData"/> overload), that owned mesh is disposed; the shared <paramref name="mesh"/> is left untouched.</remarks>
     public MeshRenderer SetMesh(Mesh mesh, Material material)
@@ -148,10 +148,10 @@ public sealed partial class SceneNode
     }
 
     /// <summary>
-    /// Attaches (or replaces) a renderer drawing a mesh the node builds and <b>owns</b> from the given geometry data.
-    /// The node disposes the mesh when it is replaced, cleared or destroyed - no mesh bookkeeping. Fluent.
+    /// Attaches (or replaces) a renderer drawing a mesh the node builds and <b>owns</b> from the given geometry data,
+    /// disposing it when replaced, cleared or destroyed - no mesh bookkeeping; fluent.
     /// </summary>
-    /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>). A fresh <see cref="Mesh"/> is built from it and owned exclusively by this node.</param>
+    /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>); a fresh <see cref="Mesh"/> is built from it and owned exclusively by this node.</param>
     /// <param name="material">The material to draw with.</param>
     /// <param name="keepCpuData">Retain the CPU arrays on the mesh for exact triangle picking.</param>
     public MeshRenderer SetMesh(MeshData data, Material material, bool keepCpuData = false)
@@ -161,7 +161,7 @@ public sealed partial class SceneNode
         return SetMeshOwnedInternal(mesh, material);
     }
 
-    /// <summary>Attaches a renderer for a mesh this node should own (dispose on replace/destroy). The caller must not dispose or share <paramref name="mesh"/>.</summary>
+    /// <summary>Attaches a renderer for a mesh this node should own (dispose on replace/destroy); the caller must not dispose or share <paramref name="mesh"/>.</summary>
     internal MeshRenderer SetMeshOwnedInternal(Mesh mesh, Material material)
     {
         lock (Scene3D.GraphLock)
@@ -184,7 +184,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Disposes the node's owned mesh (if any) and clears the reference. Caller holds <see cref="Scene3D.GraphLock"/>. Idempotent - <see cref="Mesh.Dispose"/> is render-thread-deferred and safe to call twice.</summary>
+    /// <summary>Disposes the node's owned mesh (if any) and clears the reference; caller holds <see cref="Scene3D.GraphLock"/>, idempotent since <see cref="Mesh.Dispose"/> is render-thread-deferred and safe to call twice.</summary>
     private void DisposeOwnedMeshNoLock()
     {
         var owned = ownedMesh;
@@ -193,7 +193,7 @@ public sealed partial class SceneNode
     }
 
     /// <summary>
-    /// Reparents the node (null = make it a root of its scene). Rejects cycles with <see cref="InvalidOperationException"/>.
+    /// Reparents the node (null = make it a root of its scene); rejects cycles with <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <param name="newParent">The new parent, or null.</param>
     public void SetParent(SceneNode? newParent)
@@ -223,7 +223,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Removes this node and its whole subtree from the scene. Referenced meshes/materials are untouched (the creator owns them).</summary>
+    /// <summary>Removes this node and its whole subtree from the scene; referenced meshes/materials are untouched (the creator owns them).</summary>
     public void Destroy()
     {
         lock (Scene3D.GraphLock)
@@ -301,10 +301,10 @@ public sealed partial class SceneNode
 
     /// <summary>
     /// Re-orients a ground-decal's world matrix to its <see cref="DecalSurface"/> plane, keeping the box's horizontal
-    /// heading (yaw), scale and position but dropping any pitch/roll. <see cref="DecalSurface.Ground"/> forces the
-    /// footprint (local XZ) horizontal with the sweep (local Y) pointing down; <see cref="DecalSurface.Wall"/> stands the
-    /// footprint upright with the sweep pointing horizontally into the wall. The thin (local Y) axis is the projection
-    /// depth in both, so one box works for either mode.
+    /// heading (yaw), scale and position but dropping any pitch/roll: <see cref="DecalSurface.Ground"/> forces the
+    /// footprint (local XZ) horizontal with the sweep (local Y) pointing down, <see cref="DecalSurface.Wall"/> stands
+    /// the footprint upright with the sweep pointing horizontally into the wall, and the thin (local Y) axis is the
+    /// projection depth in both, so one box works for either mode.
     /// </summary>
     private static Matrix4x4 ConstrainDecalWorld(in Matrix4x4 world, DecalSurface surface)
     {

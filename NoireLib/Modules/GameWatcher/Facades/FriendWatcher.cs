@@ -9,11 +9,9 @@ namespace NoireLib.GameWatcher;
 /// <summary>
 /// Friend-list facts through the game's social data - remote presence beyond the object table: a friend
 /// coming online, going offline, or arriving somewhere, without them ever being near you.<br/>
-/// The proxy is refreshed in the background on <see cref="GameWatcherOptions.FriendsRefreshCadence"/> (a
-/// jittered cadence, floored at 30s) so facts stay current without the friend list being open - except while
-/// the friend-list window <i>is</i> open,
-/// when the refresh is held so it never re-sorts or scrolls the addon. Values are seconds-grained and can lag
-/// reality between refreshes.
+/// The proxy refreshes in the background on a jittered cadence
+/// (<see cref="GameWatcherOptions.FriendsRefreshCadence"/>); values are seconds-grained and can lag reality
+/// between refreshes.
 /// </summary>
 public sealed class FriendWatcher : GameWatcherFacade
 {

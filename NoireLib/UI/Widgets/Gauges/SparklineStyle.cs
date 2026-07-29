@@ -24,15 +24,15 @@ public sealed class SparklineStyle
     public Vector4? Color { get; set; }
 
     /// <summary>
-    /// The colour of the area under the trace. When <see langword="null"/>, the trace colour at low opacity.<br/>
-    /// A fully transparent value is a real setting, and the way to ask for a bare line.
+    /// The colour of the area under the trace. When <see langword="null"/>, the trace colour at low opacity; fully
+    /// transparent is a valid setting for a bare line.
     /// </summary>
     public Vector4? FillColor { get; set; }
 
     /// <summary>The colour behind the trace. When <see langword="null"/>, nothing is drawn behind it.</summary>
     public Vector4? Background { get; set; }
 
-    /// <summary>Whether the last point is marked with a dot. On by default, because it is the current value.</summary>
+    /// <summary>Whether the last point is marked with a dot. On by default.</summary>
     public bool MarkLast { get; set; } = true;
 
     /// <summary>The radius of that dot at 100%.</summary>
@@ -49,10 +49,7 @@ public sealed class SparklineStyle
     /// <summary>
     /// The value at the bottom of the plot. When <see langword="null"/>, the lowest value in the data.
     /// </summary>
-    /// <remarks>
-    /// Fixing both ends is what makes two sparklines comparable. Left to the data, every trace fills its own box and
-    /// a flat line and a violent one look identical.
-    /// </remarks>
+    /// <remarks>When unset, each trace scales to its own data independently.</remarks>
     public float? Min { get; set; }
 
     /// <summary>The value at the top of the plot. When <see langword="null"/>, the highest value in the data.</summary>
@@ -74,9 +71,7 @@ public sealed class SparklineStyle
     internal Vector4 ResolveBaselineColor()
         => BaselineColor ?? NoireTheme.Current.Resolve(ThemeColor.Border);
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public SparklineStyle Clone() => (SparklineStyle)MemberwiseClone();
 }

@@ -19,11 +19,11 @@ namespace NoireLib.Draw3D.Assets;
 public static class TextureLoader
 {
     /// <summary>
-    /// Bridges an existing Dalamud texture wrap into a material-ready texture.<br/>
-    /// The wrap's low-level resource is shared (independent reference), then QueryInterface proves the
-    /// handle really is a shader resource view, never assumed.
+    /// Bridges an existing Dalamud texture wrap into a material-ready texture: the wrap's low-level resource
+    /// is shared (independent reference), then QueryInterface proves the handle really is a shader resource
+    /// view, never assumed.
     /// </summary>
-    /// <param name="wrap">The source wrap. It can be disposed freely after this call.</param>
+    /// <param name="wrap">The source wrap; can be disposed freely after this call.</param>
     /// <returns>The bridged texture, or null when the handle is not a D3D11 SRV (logged once).</returns>
     public static unsafe GpuTexture? FromWrap(IDalamudTextureWrap wrap)
     {
@@ -100,8 +100,8 @@ public static class TextureLoader
 public static unsafe class ExternalTexture
 {
     /// <summary>
-    /// Opens a shared texture.<br/>
-    /// NT handles require ID3D11Device1 (captured at init; absence degrades only this feature).
+    /// Opens a shared texture; NT handles require ID3D11Device1 (captured at init, absence degrades only
+    /// this feature).
     /// </summary>
     /// <param name="handle">The shared handle from the producing process.</param>
     /// <param name="ntHandle">True for NT handles (D3D11.1 sharing), false for legacy/KMT handles.</param>

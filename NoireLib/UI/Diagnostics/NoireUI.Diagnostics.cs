@@ -20,12 +20,11 @@ public static partial class NoireUI
     public static UiProfiler Profiler { get; } = new();
 
     /// <summary>
-    /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, so your own code appears on
-    /// <see cref="UiProfiler.Snapshot()"/> beside the widgets the library ships.
+    /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
     /// </summary>
     /// <remarks>
-    /// Free while <see cref="UiProfiler.Enabled"/> is off, so this can be left in place rather than added when you go
-    /// looking and removed afterwards.
+    /// Free while <see cref="UiProfiler.Enabled"/> is off.
     /// </remarks>
     /// <example>
     /// <code>
@@ -42,12 +41,11 @@ public static partial class NoireUI
     }
 
     /// <summary>
-    /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, so your own code appears on
-    /// <see cref="UiProfiler.Snapshot()"/> beside the widgets the library ships.
+    /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
     /// </summary>
     /// <remarks>
-    /// Free while <see cref="UiProfiler.Enabled"/> is off, so this can be left in place rather than added when you go
-    /// looking and removed afterwards.
+    /// Free while <see cref="UiProfiler.Enabled"/> is off.
     /// </remarks>
     /// <example>
     /// <code>
@@ -56,7 +54,7 @@ public static partial class NoireUI
     /// </example>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="name">The name to record the cost under.</param>
-    /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
+    /// <param name="state">Passed to <paramref name="body"/> so it can stay a static lambda.</param>
     /// <param name="body">The drawing to measure.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
     public static void Profile<TState>(string name, TState state, Action<TState> body)

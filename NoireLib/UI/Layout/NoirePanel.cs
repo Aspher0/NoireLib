@@ -11,12 +11,10 @@ namespace NoireLib.UI;
 /// header, and the room to hold them apart.
 /// </summary>
 /// <remarks>
-/// <see cref="NoireShapes"/> paints a box between two points, which is only useful once something knows where those
-/// points are. That is the whole job here: run the body, measure what it came to, and paint the box behind it. The
-/// alternative every plugin writes by hand is to guess a height, or to draw the box from the height the same content
-/// happened to have last frame, which lags by a frame the moment anything inside it animates.<br/>
-/// Bodies are taken rather than begun and ended, per the library's scope rule, so there is nothing to close and a body
-/// that throws still leaves the draw list balanced.
+/// Runs the body first to measure it, then paints the chrome behind it: guessing a height, or reusing last frame's,
+/// lags a frame the moment the content animates.<br/>
+/// Bodies are taken rather than begun and ended, so there is nothing to close and a body that throws still leaves the
+/// draw list balanced.
 /// </remarks>
 /// <example>
 /// <code>
@@ -90,7 +88,7 @@ public static class NoirePanel
     /// </summary>
     /// <remarks>
     /// The order on screen is chrome then body; the order in time is body then chrome, because the body is what says
-    /// how tall the box is. Splitting the draw list is what lets those two disagree.
+    /// how tall the box is. The draw list is split into channels to let the two disagree.
     /// </remarks>
     private static void Draw<TState, TStyle>(
         TState state,
@@ -118,9 +116,8 @@ public static class NoirePanel
 
             try
             {
-                // The body is told the width it has, because nothing else can tell it: ImGui's content region always
-                // reports the window's right edge however deeply anything is nested, so a panel that did not state its
-                // own width would have every wrapping thing inside it run out to the window instead.
+                // The body is told the width it has, since ImGui's content region always reports the window's right
+                // edge regardless of nesting: an unstated width would let content run out to the window.
                 NoireLayout.WrapText(inner, (state, body, settings, inner), static args =>
                 {
                     DrawHeader(args.settings, args.inner);
@@ -132,9 +129,8 @@ public static class NoirePanel
                 ImGui.EndGroup();
             }
 
-            // Rounded up to a whole pixel. The box is placed from this number and the next thing on the page is placed
-            // after it, so a fractional height puts both on a sub-pixel boundary and any change in the body walks the
-            // whole panel across a pixel while it animates.
+            // Rounded up to a whole pixel: a fractional height puts this box and the next item on a sub-pixel
+            // boundary, and any change in the body would walk the panel across a pixel while it animates.
             height = MathF.Ceiling(ImGui.GetItemRectSize().Y + (padding.Y * 2f));
 
             ToChrome();
@@ -185,11 +181,11 @@ public static class NoirePanel
     /// The draw lists this call is nested inside, and whether each entry is the one that split its list.
     /// </summary>
     /// <remarks>
-    /// A draw list can only be split once at a time, so a panel inside a panel must not split again. It does not need
-    /// to: chrome from every depth shares one channel and content shares the other, so an inner panel's chrome lands
-    /// on top of its parent's chrome and still behind all of the content, which is the order the nesting means.<br/>
-    /// Tracked per draw list rather than as a plain depth count because a body may open a child window, and a child
-    /// window draws to a list of its own that nothing has split yet.
+    /// A draw list can only be split once at a time, so a panel inside a panel must not split again: chrome from
+    /// every depth shares one channel and content the other, so an inner panel's chrome lands on top of its parent's
+    /// chrome and still behind all content.<br/>
+    /// Tracked per draw list rather than as a plain depth count, since a body may open a child window that draws to a
+    /// list of its own nothing has split yet.
     /// </remarks>
     private static readonly List<(nint List, bool Split)> ChromeStack = [];
 
@@ -201,9 +197,8 @@ public static class NoirePanel
 
         var list = draw.List;
 
-        // Pushed even when there is no list to split, because EndChrome pops unconditionally: returning early without
-        // pushing would pop the entry belonging to the panel enclosing this one, and every panel after it would then
-        // read the wrong list as its parent's.
+        // Pushed even with no list to split, since EndChrome pops unconditionally: skipping the push here would
+        // misalign the stack, and every panel after this one would read the wrong parent.
         if (list.IsNull)
         {
             ChromeStack.Add((0, false));

@@ -25,7 +25,7 @@ internal readonly struct PointerSample
     /// <summary>Left / right / middle button held this frame.</summary>
     public readonly bool LeftDown, RightDown, MiddleDown;
 
-    /// <summary>The topmost interactable target under the cursor this frame (null = nothing grabbable). Stable identity across frames.</summary>
+    /// <summary>The topmost interactable target under the cursor this frame (null = nothing grabbable), with a stable identity across frames.</summary>
     public readonly object? HoverToken;
 
     /// <summary>Whether <see cref="HoverToken"/> supports dragging (gizmo handles always do; nodes opt in).</summary>
@@ -59,7 +59,7 @@ internal interface IArbiterSink
     /// <summary>The cursor stopped hovering <paramref name="token"/>.</summary>
     void HoverExit(object token);
 
-    /// <summary>A button pressed down while over <paramref name="token"/> (the gesture latched to us). Fired before any click/drag so the drag layer can snapshot the grab ray.</summary>
+    /// <summary>A button pressed down while over <paramref name="token"/> (the gesture latched to us); fired before any click/drag so the drag layer can snapshot the grab ray.</summary>
     void Press(object token, MouseButton button);
 
     /// <summary>A press+release on the same target without crossing the drag threshold.</summary>

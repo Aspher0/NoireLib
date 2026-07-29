@@ -11,18 +11,18 @@ namespace NoireLib.Draw3D.Scene;
 public sealed partial class Scene3D
 {
     /// <summary>
-    /// This scene's selection - the set the scene's <see cref="SceneEditor"/> and gizmo read from. Own to the scene:
-    /// two scenes have two independent selections. Single by default; drive multi-select through
+    /// This scene's selection - the set the scene's <see cref="SceneEditor"/> and gizmo read from - own to the
+    /// scene, so two scenes have two independent selections; single by default, drive multi-select through
     /// <see cref="SceneEditor.MultiSelect"/> (scoped) or <see cref="InteractSelection.Mode"/> directly.
     /// </summary>
     public InteractSelection Selection { get; } = new();
 
     /// <summary>
     /// Creates a <see cref="SceneEditor"/> - "click to select, gizmo follows the selection" - bound to this scene and
-    /// <b>owned</b> by it: <see cref="Dispose"/> tears it down. Configure via <c>editor.Gizmo</c> / <c>editor.MultiSelect</c>;
-    /// make nodes pickable with <see cref="SceneNode.MakeSelectable"/>. Disposing the editor yourself is optional.
+    /// <b>owned</b> by it (<see cref="Dispose"/> tears it down; disposing the editor yourself is optional), configured
+    /// via <c>editor.Gizmo</c> / <c>editor.MultiSelect</c>; make nodes pickable with <see cref="SceneNode.MakeSelectable"/>.
     /// </summary>
-    /// <param name="op">Which transform operations the gizmo exposes. Default <see cref="GizmoOp.Universal"/>.</param>
+    /// <param name="op">Which transform operations the gizmo exposes; default <see cref="GizmoOp.Universal"/>.</param>
     public SceneEditor CreateEditor(GizmoOp op = GizmoOp.Universal)
     {
         var editor = new SceneEditor(this, op);

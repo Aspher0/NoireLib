@@ -156,9 +156,9 @@ internal sealed unsafe class DepthTarget : IDisposable
 }
 
 /// <summary>
-/// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV) - used to render
-/// the collision world's device-z so the ground decal can reconstruct "how far is the real world here" per pixel and
-/// skip anything (characters) standing in front of it. Cleared to 0.0 (reversed-Z "far" = no collision).
+/// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV), used to
+/// render the collision world's device-z so the ground decal can skip anything standing in front of it.
+/// Cleared to 0.0 (reversed-Z "far" = no collision).
 /// </summary>
 internal sealed unsafe class DepthTargetSrv : IDisposable
 {

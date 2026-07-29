@@ -10,14 +10,12 @@ using System;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A helper class for sending chat messages to the game.
+/// Sends chat messages to the game.
 /// </summary>
 public static class ChatHelper
 {
     /// <summary>
-    /// Send a given message to the chat box. <b>This can send chat to the server.</b><br/>
-    /// This method will throw exceptions for certain inputs that the client can't
-    /// normally send, but it is still possible to make mistakes. Use with caution.
+    /// Sends <paramref name="message"/> to the chat box. <b>This can send chat to the server.</b>
     /// </summary>
     /// <param name="message">message to send</param>
     /// <exception cref="ArgumentException">If <paramref name="message"/> is empty, longer than 500 bytes in UTF-8, or contains invalid characters.</exception>

@@ -11,9 +11,6 @@ namespace NoireLib.UI;
 /// filters, virtualized so a hundred thousand rows cost what a screenful costs, selectable, totalled, and exportable.
 /// </summary>
 /// <remarks>
-/// ImGui's <c>BeginTable</c> already does the hard half, which is the layout: resizable, reorderable, scrollable
-/// columns that behave. What it leaves to every caller is the half that is tedious rather than difficult, and this is
-/// that half.<br/>
 /// The table never copies your rows. It holds the list you gave it and works in indices into it, so the row a
 /// selection or a renderer sees is the one you own.
 /// </remarks>
@@ -245,7 +242,7 @@ public sealed partial class NoireTable<T>
     /// <summary>Whether a footer of column totals is drawn. On when any column has an aggregate.</summary>
     public bool ShowFooter { get; set; } = true;
 
-    /// <summary>How many rows were actually drawn last frame, which is what virtualization changes.</summary>
+    /// <summary>How many rows were actually drawn last frame.</summary>
     public int DrawnRowCount { get; private set; }
 
     #endregion

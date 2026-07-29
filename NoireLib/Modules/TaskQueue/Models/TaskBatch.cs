@@ -95,14 +95,12 @@ public class TaskBatch
     public bool StopQueueOnCancel { get; set; }
 
     /// <summary>
-    /// Defines how the batch should handle task failures.
-    /// Default is ContinueRemaining.
+    /// Defines how the batch should handle task failures (default ContinueRemaining).
     /// </summary>
     public BatchTaskFailureMode TaskFailureMode { get; set; } = BatchTaskFailureMode.ContinueRemaining;
 
     /// <summary>
-    /// Defines how the batch should handle task cancellations.
-    /// Default is ContinueRemaining.
+    /// Defines how the batch should handle task cancellations (default ContinueRemaining).
     /// </summary>
     public BatchTaskCancellationMode TaskCancellationMode { get; set; } = BatchTaskCancellationMode.ContinueRemaining;
 
@@ -112,14 +110,12 @@ public class TaskBatch
     public object? Metadata { get; set; }
 
     /// <summary>
-    /// Optional delay to wait after the batch completes (successfully or based on flags).
-    /// This delay executes after the batch would normally complete.
-    /// If <see cref="PostCompletionDelayProvider"/> is set, it will be used to determine the delay at runtime.
+    /// Optional delay to wait after the batch completes (successfully or based on flags). If <see cref="PostCompletionDelayProvider"/> is set, it is used instead, evaluated at runtime.
     /// </summary>
     public TimeSpan? PostCompletionDelay { get; set; }
 
     /// <summary>
-    /// Optional provider for post-completion delay. If set, this function will be called at the moment the post-completion delay is about to start, and its result will be used as the delay.
+    /// Optional provider for the post-completion delay; if set, it is called when the delay is about to start and its result used as the delay.
     /// </summary>
     public Func<TaskBatch, TimeSpan?>? PostCompletionDelayProvider { get; set; }
 
@@ -239,11 +235,9 @@ public class TaskBatch
     /// <returns>True if the delay has elapsed, false otherwise.</returns>
     internal bool HasPostDelayCompleted()
     {
-        // No post-completion delay configured (or one that never started) means there is nothing left to wait for.
         if (!PostDelayStartTicks.HasValue || !PostCompletionDelay.HasValue)
             return true;
 
-        // While the delay is paused it has not elapsed.
         if (PostDelayPausedAtTicks.HasValue)
             return false;
 
@@ -259,7 +253,6 @@ public class TaskBatch
         if (!PostDelayStartTicks.HasValue || PostDelayPausedAtTicks.HasValue)
             return;
 
-        // Accumulate elapsed time
         AccumulatedPostDelayMillis += Environment.TickCount64 - PostDelayStartTicks.Value;
         PostDelayPausedAtTicks = Environment.TickCount64;
     }
@@ -272,7 +265,6 @@ public class TaskBatch
         if (!PostDelayPausedAtTicks.HasValue)
             return;
 
-        // Resume from current time
         PostDelayStartTicks = Environment.TickCount64;
         PostDelayPausedAtTicks = null;
     }

@@ -3,10 +3,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// Why a tag was not accepted.
 /// </summary>
-/// <remarks>
-/// Reported rather than swallowed so the field can say what happened. A tag that simply vanishes when the user presses
-/// Enter reads as the widget being broken, whichever rule actually rejected it.
-/// </remarks>
+/// <remarks>Reported rather than swallowed, so the field can say what happened.</remarks>
 public enum TagRejection
 {
     /// <summary>It was accepted.</summary>

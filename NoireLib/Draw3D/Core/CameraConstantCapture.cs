@@ -10,24 +10,13 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Captures the exact camera constants the GPU rasterizes the world with, at the D3D boundary.<br/>
-/// The world pixels are drawn from constant-buffer bytes the game uploads through the immediate context; any read of
-/// the CPU camera struct - at any moment - is a guess about when the game copied that struct into the upload, and
-/// under load the struct advances mid-frame, so every struct-timed snapshot drifts from the rasterized frame by
-/// camera-velocity times an unknown dt. This class removes the guess: it taps the upload paths
-/// (<c>UpdateSubresource</c>, <c>Map</c>/<c>Unmap</c>, the same sanctioned vtable-tap mechanism as
-/// <see cref="RenderTargetTap"/>), discovers at runtime where the view-projection is uploaded, and each frame commits
-/// the newest validated upload pending at the main scene pass. The overlay then projects with exactly the matrix the
-/// pixels were drawn with - including any projection jitter the struct never exposes.<br/>
-/// The lock identity is an (offset, layout) <b>family across a set of member buffers</b>, not a single buffer: the
-/// game rotates its per-view camera writes round-robin over a small ring of physical cbuffers (for example, three
-/// 64-byte buffers at VS b0), so a single-pointer lock can never hold. Windows are scored <b>at capture time
-/// against a same-instant struct read</b>, which removes the temporal skew from the match itself; matching and
-/// validation use the X/Y/W columns only, because the game's uploaded Z column differs from the struct's by design
-/// (the render path rebuilds Z analytically anyway).<br/>
-/// Self-calibrating and fail-soft: no shipped offsets (discovery re-runs after any game patch or buffer change by
-/// construction), per-commit validation against the struct camera rejects foreign views (shadow, water, portrait),
-/// and any failure falls back to the world-pass struct snapshot - the layer never goes dark because of this feature.
+/// Captures the exact camera constants the GPU rasterizes the world with, by tapping the upload paths
+/// (<c>UpdateSubresource</c>, <c>Map</c>/<c>Unmap</c>) instead of reading the CPU camera struct, which drifts from
+/// the rasterized frame under motion. The lock identity is an (offset, layout) family across a ring of member
+/// buffers, not a single pointer, since the game rotates its per-view camera writes round-robin across several
+/// same-size cbuffers; matching compares the X/Y/W columns only, since the uploaded Z column differs from the
+/// struct's by design (the render path rebuilds Z analytically). Self-calibrating and fail-soft: no shipped
+/// offsets, and any failure falls back to the struct snapshot.
 /// </summary>
 internal sealed unsafe class CameraConstantCapture : IDisposable
 {
@@ -53,13 +42,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private const int PendingRingLength = 32;      // must exceed the member writes that can follow the main-view upload before its pass draws
     private const int VsSlotCount = 14;            // D3D11 common-shader cbuffer slots queried for the bound-confirm
 
-    // Match thresholds (normalized RMS over the compared elements). CandidateErr admits a window into the family
-    // table; LockErr keeps a winning streak alive; StrongErr must be reached at least once before locking; SteadyErr
-    // is the per-commit validation gate once locked. The floors these gates sit above are temporal: the uploads
-    // derive from the game's own view setup, up to a frame before any reference read, so under fast camera motion
-    // the best achievable match is a fraction of the inter-frame camera delta (typically a few e-3 at ordinary
-    // speeds). A foreign view's constants (shadow/water/portrait) differ by orders of magnitude, so the gates stay
-    // far from ambiguity even this wide open.
+    // Match thresholds (normalized RMS). CandidateErr admits a window into the family table; LockErr keeps a
+    // streak alive; StrongErr must be reached once before locking; SteadyErr is the per-commit validation gate
+    // once locked. A foreign view's constants (shadow/water/portrait) differ by orders of magnitude, so the gates
+    // stay far from ambiguity even this wide open.
     private const float CandidateErr = 2e-2f;
     private const float LockErr = 1e-2f;
     private const float StrongErr = 3e-3f;
@@ -89,8 +75,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     /// <summary>
     /// A small cbuffer being observed during discovery: identity, payload, per-frame best match, probe bookkeeping.
-    /// Only real constant buffers within the size bounds occupy a slot; everything else goes to the ignore ring, so
-    /// junk resources can never squat the table and starve the camera buffers out of it.
+    /// Only real constant buffers within the size bounds occupy a slot; everything else goes to the ignore ring.
     /// </summary>
     private struct TrackedBuffer
     {
@@ -105,9 +90,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         public int LastBoundSlot;      // -1 until seen bound to the VS at a main-pass commit
         public float BestVpErr;        // best window error ever seen for either lock form (probe report)
 
-        // Best-matching window since the last commit, scored at capture time (small buffers only). This is what
-        // survives the round-robin overwrites: the main-view write is kept even when other views' writes land after
-        // it in the same physical buffer before the commit looks.
+        // Best-matching window since the last commit, scored at capture time (small buffers only): survives the
+        // round-robin overwrites even when other views' writes land after it in the same physical buffer.
         public bool HasBestSinceCommit;
         public float BestErrSinceCommit;
         public int BestOffsetSinceCommit;
@@ -195,8 +179,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private long copiesIntoTracked;           // CopyResource/CopySubresourceRegion into a tracked/locked buffer (probe report)
 
     // Pointers checked once and found uninteresting (not a buffer, not a cbuffer, out of size bounds). A ring so a
-    // very long session cannot grow it; overwritten entries are simply re-checked on next sight (budgeted). Sized
-    // for the game's resource-upload churn - an undersized ring wraps and re-burns the learn budget every frame.
+    // very long session cannot grow it; overwritten entries are re-checked on next sight (budgeted). Undersizing
+    // it wraps the ring and re-burns the learn budget every frame.
     private const int MaxIgnored = 1024;
     private readonly nint[] ignoredPtrs = new nint[MaxIgnored];
     private int ignoredCount;
@@ -217,13 +201,11 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private int familyCount;
     private long commitFrames;                // main-pass commits seen (discovery clock)
 
-    // Locked state. All writes happen on the render thread (detours and the main-pass commit run there); the
-    // consumers (inject and present-time paths) run on the same thread, so plain fields are safe by construction.
-    // Membership is a SIZE CLASS, not a pointer set: the game rotates its camera block round-robin across a ring
-    // of same-size physical buffers (for example, five 1024 B buffers each written every ~5th frame), so a
-    // pointer-set lock starves - most frames the main-view write lands in a buffer outside the set, the commit
-    // goes stale, and the overlay projects with a frames-old camera. Extracting the locked window from every
-    // tracked buffer of the locked byte-width lets validation decide which windows are the main view.
+    // Locked state. All writes happen on the render thread, and so do the consumers (inject and present-time
+    // paths), so plain fields are safe by construction. Membership is a SIZE CLASS, not a pointer set: the game
+    // rotates its camera block round-robin across a ring of same-size physical buffers, so a pointer-set lock
+    // starves and the overlay would project a frames-old camera. Validation at commit decides which windows of
+    // the locked byte-width are the main view.
     private bool lockedOn;
     private int lockedOffset;
     private MatrixForm lockedForm;
@@ -270,13 +252,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>Whether a camera constant window family is currently locked and producing per-frame commits.</summary>
     public bool IsLocked => lockedOn;
 
-    /// <summary>
-    /// Classifies the contents of every tracked constant buffer, for finding values the game uploads that this
-    /// renderer has no other way to learn - its lighting above all.<br/>
-    /// The buffers are already being tracked for the camera window; this reads the same bytes without disturbing
-    /// that. Snapshots are copies, so two taken at different moments can be compared.
-    /// </summary>
-    /// <param name="lockedOnly">Restrict to buffers of the locked size class, which is where the camera lives and most likely the frame constants with it.</param>
+    /// <summary>Classifies the contents of every tracked constant buffer, returning copies that can be compared across calls.</summary>
+    /// <param name="lockedOnly">Restrict to buffers of the locked size class.</param>
     public IReadOnlyList<ConstantSnapshot> SnapshotConstants(bool lockedOnly = false)
     {
         var snapshots = new List<ConstantSnapshot>();
@@ -296,41 +273,32 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return snapshots;
     }
 
-    /// <summary>Whether whole payloads are currently being copied, which is what makes a constant snapshot live.</summary>
+    /// <summary>Whether whole payloads are currently being copied.</summary>
     public bool FullCaptureArmed => fullCaptureFramesRemaining > 0;
 
     /// <summary>
-    /// Asks for whole upload payloads to be copied for the next <paramref name="frames"/> world frames.<br/>
-    /// The tracker stops copying them once it locks, because the camera window is all it needs from then on.
-    /// Reading those bytes for anything else - finding the game's lighting - requires turning the copies back on,
-    /// and it is time-boxed because it costs a memcpy per upload of every tracked buffer.
+    /// Copies whole upload payloads for the next <paramref name="frames"/> world frames. Time-boxed: costs a
+    /// memcpy per upload of every tracked buffer, and the tracker stops copying once it locks.
     /// </summary>
     /// <param name="frames">How many world frames to keep copying for.</param>
     public void ArmFullCapture(int frames) => fullCaptureFramesRemaining = Math.Max(frames, 0);
 
-    /// <summary>
-    /// Records every payload written to tracked buffers for the next few frames, instead of only the last one
-    /// per buffer.<br/>
-    /// This is how data the game writes repeatedly within a frame becomes visible. A deferred renderer's light
-    /// list is the case in point: one buffer, rewritten per light, which the tracking table can only ever show
-    /// as a single value that changes constantly.
-    /// </summary>
+    /// <summary>Records every payload written to tracked buffers for the next few frames, instead of only the last one per buffer.</summary>
     /// <param name="frames">How many world frames to record.</param>
     /// <param name="byteWidth">When above zero, record only buffers of exactly this size.</param>
     public void ArmWriteLog(int frames, int byteWidth = 0)
     {
-        // The log can only record payloads for buffers the table already knows, so whole-payload copying has to
-        // be on for it to have anything to see.
+        // The log needs whole-payload copying on: it can only record payloads for buffers the table already knows.
         if (fullCaptureFramesRemaining <= 0)
             fullCaptureFramesRemaining = Math.Max(frames, 0) + 1;
 
         writeLog.Arm(frames, byteWidth);
     }
 
-    /// <summary>Whether the write log hit its cap, meaning the end of the frame was never recorded.</summary>
+    /// <summary>Whether the write log hit its cap: the end of the frame was never recorded.</summary>
     public bool WriteLogTruncated => writeLog.Truncated;
 
-    /// <summary>The distinct buffer sizes currently tracked, for choosing what to restrict a write log to.</summary>
+    /// <summary>The distinct buffer sizes currently tracked.</summary>
     public IReadOnlyList<int> TrackedSizes()
     {
         var sizes = new SortedSet<int>();
@@ -352,10 +320,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>Reports what the write log recorded, grouped by buffer and ordered by how varied each one is.</summary>
     public string DescribeWriteLog() => writeLog.Describe();
 
-    /// <summary>
-    /// The distinct payloads from the last write-log run, for comparing one run against another across a change
-    /// made in the world.
-    /// </summary>
+    /// <summary>The distinct payloads from the last write-log run.</summary>
     public List<byte[]> WriteLogPayloads() => writeLog.DistinctPayloads();
 
     /// <summary>The buffer size the last write-log run was restricted to, or zero for all of them.</summary>
@@ -456,9 +421,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     /// <summary>
     /// Signal from the tap's OM detour at the first main-scene-pass bind: arms the commit for the pass's draws.
-    /// Committing at the bind itself would be wrong: the game binds and uploads its camera block between the OM
-    /// bind and the pass's draws, so at the bind the VS slots still hold the previous pass's buffers and the
-    /// newest camera upload may not exist yet.
+    /// Not committed at the bind itself: the game uploads its camera block between the OM bind and the pass's
+    /// draws, so at the bind the VS slots still hold the previous pass's buffers.
     /// </summary>
     public void OnMainPassBind()
     {
@@ -470,12 +434,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     }
 
     /// <summary>
-    /// Signal from the tap's draw detours (render thread, every game draw while active). Locked, the commit runs
-    /// at the first draw at-or-after the frame's fresh main-view upload: a small fraction of frames put a draw
-    /// (clear, sky, query) between the pass bind and the camera upload (typically a couple of percent of frames,
-    /// each recovering within the same frame), so a failed attempt keeps retrying on subsequent draws, bounded by
-    /// <see cref="CommitRetryDraws"/>. Discovering, the first draw learns the VS-bound buffers and advances the
-    /// lock state machine. Fast no-op on every other draw.
+    /// Signal from the tap's draw detours, every game draw while active. Locked, retries the commit on each draw
+    /// until the frame's fresh main-view upload lands, bounded by <see cref="CommitRetryDraws"/>; discovering,
+    /// the first draw learns the VS-bound buffers and advances the lock state machine. No-op otherwise.
     /// </summary>
     public void OnGameDraw(nint context)
     {
@@ -552,9 +513,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     }
 
     /// <summary>
-    /// The committed GPU view-projection for the frame the caller is compositing, or false when there is none fresh.
-    /// The inject path runs before this frame's present boundary, so its commit carries the current present index;
-    /// the present-time path runs after the boundary advanced, so its commit carries the previous one.
+    /// The committed GPU view-projection for the frame being composited, or false when none is fresh. The inject
+    /// path runs before the frame's present boundary and reads the current present index; the present-time path
+    /// runs after, and reads the previous one.
     /// </summary>
     /// <param name="presentTimePath">True for the present-time composite, false for the pre-UI inject path.</param>
     /// <param name="viewProj">Receives the captured view-projection (Z column as uploaded; the render path rebuilds it).</param>
@@ -762,9 +723,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     }
 
     /// <summary>
-    /// Finds the tracked slot for a buffer, learning it (QI + GetDesc, budgeted per frame) on first sight while
-    /// discovering. Only real constant buffers within the size bounds enter the table; everything else goes to the
-    /// ignore ring. Returns -1 for unknown, over-budget, or ignored pointers.
+    /// Finds the tracked slot for a buffer, learning it (QI + GetDesc, budgeted per frame) on first sight. Only
+    /// real constant buffers within the size bounds enter the table. Returns -1 for unknown, over-budget, or
+    /// ignored pointers.
     /// </summary>
     private int FindOrLearn(nint ptr)
     {
@@ -866,8 +827,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// </summary>
     private void CapturePayload(nint resource, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
-        // Recorded before anything else, and independently of the tracking table: a buffer written once per
-        // light is exactly the case the table cannot represent, since it only ever holds the final write.
+        // Recorded before anything else and independent of the tracking table, which only ever holds the final
+        // write and cannot represent a buffer written once per light.
         if (writeLog.Armed)
         {
             for (var i = 0; i < trackedCount; i++)
@@ -882,9 +843,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         if (lockedOn)
         {
-            // Size-class membership: any tracked buffer of the locked byte-width is a potential ring member (the
-            // camera write rotates across the whole ring, so a fixed pointer set starves). Validation at commit
-            // decides which extracted windows are actually the main view.
+            // Size-class membership: any tracked buffer of the locked byte-width is a potential ring member.
+            // Validation at commit decides which extracted windows are the main view.
             for (var i = 0; i < trackedCount; i++)
             {
                 if (tracked[i].Ptr != resource)
@@ -906,9 +866,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 lockedMechanisms |= mechanism;
                 tracked[i].UpdatesSeen++; // keeps live ring members protected from slot eviction
 
-                // Once locked the tracker has no reason to keep whole payloads, so it stops copying them and the
-                // stored bytes freeze at whatever discovery last saw. Anything reading those bytes for another
-                // purpose - the light search - needs them live, and asks for it by arming a window.
+                // Once locked, the tracker stops copying whole payloads and the stored bytes freeze at whatever
+                // discovery last saw. A reader needing them live arms a window.
                 if (fullCaptureFramesRemaining > 0)
                     CopyPayloadBytes(ref tracked[i], data, sourceOffset, sourceLength, mechanism);
 
@@ -931,7 +890,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
             // Small buffers are scored at capture time against a same-instant struct read: the per-view ring
             // overwrites each physical buffer several times per frame, so only scoring every write can see the
-            // main-view upload - the commit-time last-write scan would usually find another view's constants.
+            // main-view upload.
             if (slot.ByteWidth <= SmallScanBytes)
                 ScoreBufferNow(ref slot);
             return;
@@ -971,10 +930,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (windows <= 0)
             return;
 
-        // Buffers seen bound to the VS at the main pass are scored unconditionally: they are the only lock
-        // candidates (the bound gate) and there are few of them. Unbound buffers spend the per-frame budget: the
-        // per-draw upload stream is large enough to drain any budget every frame before the camera writes arrive,
-        // so the bound set must never compete with it for scoring.
+        // Buffers bound to the VS at the main pass are scored unconditionally: they are the only lock candidates
+        // and there are few of them. Unbound buffers spend the per-frame budget instead, since the bound set must
+        // never compete with the much larger per-draw upload stream for scoring.
         if (slot.LastBoundSlot < 0)
         {
             if (scoreBudget < windows * 2)
@@ -1054,12 +1012,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     }
 
     /// <summary>
-    /// Learns and marks the buffers bound to the VS at the main pass's first draw (discovery only). This is the
-    /// primary discovery source, not just ranking: the camera constants must be bound here to be read by the world
-    /// pass at all, so enrolling the bound buffers directly makes discovery immune to upload-stream noise starving
-    /// the learn budget. The draw moment matters as much as the enrollment: at the OM bind, the VS slots still hold
-    /// the previous pass's buffers, since the game binds its camera block between the OM bind and the first draw;
-    /// sampling there would mislabel those leftovers as bound and hide the real camera family.
+    /// Learns and marks the buffers bound to the VS at the main pass's first draw (discovery only): the primary
+    /// discovery source, since the camera constants must be bound here to be read by the world pass at all. Sampled
+    /// at the first draw rather than the OM bind, since at the bind the VS slots still hold the previous pass's
+    /// buffers.
     /// </summary>
     private void LearnBoundBuffers(ID3D11DeviceContext* ctx)
     {
@@ -1110,7 +1066,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// One discovery step (main-pass commit frame): merges the capture-time best matches (small buffers) and a
     /// last-write scan (larger buffers) into the family table, advances the winning family's streak, and locks when
     /// a stable winner with a strong match emerges. Family identity is (offset, layout); the physical buffer a
-    /// match lands in only extends the family's member set, so the per-view ring rotation cannot reset a streak.
+    /// match lands in only extends the family's member set, so per-view ring rotation cannot reset a streak.
     /// </summary>
     private void AdvanceDiscovery(in Matrix4x4 refVp)
     {
@@ -1181,8 +1137,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
 
         // Stability: two families can tie within noise (the same matrix stored twice per upload). An incumbent
-        // already carrying a streak keeps the win while it stays within a factor of this frame's best - either
-        // window holds the correct matrix; only alternation between them would prevent the lock.
+        // already carrying a streak keeps the win while it stays within a factor of this frame's best, since
+        // either window holds the correct matrix and only alternation between them would prevent the lock.
         if (bestIdx >= 0)
         {
             for (var i = 0; i < familyCount; i++)
@@ -1218,9 +1174,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             ref var winner = ref families[bestIdx];
 
             // BoundSeen is a hard lock requirement: the family must have been seen bound to the VS at the game's
-            // main-pass bind. Beyond ranking, this is the guard against locking onto a camera-shaped upload that
-            // the world pass never reads - in particular another NoireLib instance in the same process uploading
-            // its own frame constants (its own uploads are invisible to itself, not to a sibling instance).
+            // main-pass bind. This guards against locking onto a camera-shaped upload the world pass never reads,
+            // such as another NoireLib instance in the same process uploading its own frame constants.
             if (winner.Streak >= LockStreak && winner.MinErr < StrongErr && winner.BoundSeen)
                 LockOn(in winner);
         }
@@ -1309,9 +1264,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         lockedMechanisms = 0;
         lockedByteWidth = 0;
 
-        // The locked identity is the SIZE CLASS of the family's members (see the locked-state comment): resolve it
-        // from any member's tracked entry. The camera write rotates across every same-size ring buffer, so the
-        // extraction matches on byte-width, never on the pointers the family happened to accumulate.
+        // The locked identity is the SIZE CLASS of the family's members: resolve it from any member's tracked
+        // entry. The camera write rotates across every same-size ring buffer, so extraction matches on
+        // byte-width, never on the pointers the family happened to accumulate.
         for (var i = 0; i < trackedCount; i++)
         {
             if (winner.HasMember(tracked[i].Ptr))
@@ -1362,14 +1317,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>
     /// One locked-commit attempt: promotes the newest FRESH pending upload that validates against the struct camera
     /// to this frame's commit; false when none exists yet (the caller retries on the next draw). Newest wins by
-    /// design: the game uploads the other views first and the main view last, before the pass draws.
-    /// Validation runs against BOTH the draw-moment reference and the previous commit's reference: the uploads
-    /// carry the previous frame's camera phase, so the captured constants equal the struct camera one frame back,
-    /// and under extreme motion the draw-moment reference alone is a full frame ahead and would reject the true
-    /// main view. Foreign views (shadow/water/portrait) differ by orders of magnitude from either.
-    /// A pending already committed once is never re-committed: a frame whose fresh upload never arrives produces
-    /// NO commit and falls back to the struct snapshot. Projecting a frames-old camera, which is what a starved
-    /// pointer-set lock would do, is the one failure mode worse than the fallback.
+    /// design, since the game uploads the other views first and the main view last, before the pass draws.
+    /// Validation runs against both the draw-moment reference and the previous commit's reference, since the
+    /// uploads carry the previous frame's camera phase and under extreme motion the draw-moment reference alone
+    /// would reject the true main view. A pending upload already committed once is never re-committed: a frame
+    /// whose fresh upload never arrives produces no commit and falls back to the struct snapshot rather than
+    /// projecting a frames-old camera.
     /// </summary>
     private bool TryCommitLocked(in Matrix4x4 refVp, bool firstAttempt)
     {
@@ -1422,9 +1375,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     /// <summary>
     /// Normalized RMS error between a 16-float cbuffer window and a reference row-vector matrix, in the given
-    /// layout. With <paramref name="skipZColumn"/> the reference's third column is excluded: the game's uploaded Z
-    /// column legitimately differs from the struct-composed one (the render path rebuilds Z analytically), so the
-    /// camera identity lives entirely in the X/Y/W columns. NaN when the window holds non-finite values.
+    /// layout. With <paramref name="skipZColumn"/> the reference's third column is excluded, since the game's
+    /// uploaded Z column legitimately differs from the struct-composed one (rebuilt analytically). NaN when the
+    /// window holds non-finite values.
     /// </summary>
     internal static float WindowError(ReadOnlySpan<float> window, in Matrix4x4 reference, bool transposed, bool skipZColumn)
     {

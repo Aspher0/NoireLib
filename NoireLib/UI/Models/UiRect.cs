@@ -48,7 +48,7 @@ public readonly record struct UiRect(Vector2 Position, Vector2 Size)
     /// <summary>The centre point.</summary>
     public Vector2 Center => Position + (Size * 0.5f);
 
-    /// <summary>Whether the rectangle has no area, which is what an unresolved target reads as.</summary>
+    /// <summary>Whether the rectangle has no area. An unresolved target reads as empty.</summary>
     public bool IsEmpty => Size.X <= 0f || Size.Y <= 0f;
 
     /// <summary>
@@ -105,8 +105,8 @@ public readonly record struct UiRect(Vector2 Position, Vector2 Size)
     /// Clamps a rectangle of the given size so it stays fully inside this one.
     /// </summary>
     /// <remarks>
-    /// An element larger than the bounds is pinned to the top left rather than pushed off the other side, which is the
-    /// only choice that keeps the part a user reads first on screen.
+    /// An element larger than the bounds is pinned to the top left rather than pushed off the other side, keeping
+    /// the part a user reads first on screen.
     /// </remarks>
     /// <param name="position">The top left corner of the element.</param>
     /// <param name="size">The size of the element.</param>

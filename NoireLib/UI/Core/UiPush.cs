@@ -16,8 +16,8 @@ namespace NoireLib.UI;
 /// <b>Dispose the accumulated value, once.</b> The accumulating methods mutate in place and return nothing, so that no
 /// copy exists to dispose twice: two copies would pop more than was pushed, which underflows the ImGui stack rather
 /// than leaking it.<br/>
-/// A <see langword="default"/> value pushes and pops nothing, which is what a method returns when it turns out to have
-/// no style to apply.
+/// A <see langword="default"/> value pushes and pops nothing: a method that has no style to apply can return one as a
+/// no-op.
 /// </remarks>
 /// <example>
 /// <code>
@@ -217,8 +217,8 @@ internal ref struct UiPush
     /// Wraps text at a given position for the rest of this scope.
     /// </summary>
     /// <remarks>
-    /// The position is absolute rather than scaled, which is what ImGui takes and what every caller here already
-    /// computes from the cursor and the region available.
+    /// The position is absolute rather than scaled, matching what ImGui takes; every caller here already computes it
+    /// from the cursor and the region available.
     /// </remarks>
     /// <param name="position">Where to wrap, in window coordinates.</param>
     /// <param name="when">Whether to push at all.</param>

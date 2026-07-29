@@ -10,9 +10,9 @@ namespace NoireLib.Draw3D.Core;
 /// The collision-geometry sibling of <see cref="GameRenderSources"/>: the only other Draw3D file that touches
 /// FFXIVClientStructs, and it touches only the collision scene. Everything is read through named struct fields on
 /// the singletons, no signatures and no offsets - the single virtual call is <c>Collider.GetColliderType()</c>,
-/// dispatched through the object's own vtable, never a scanned address.<br/>
-/// It walks the game's real collision world - streamed terrain, placed background parts, housing furniture and any
-/// dynamic object that registers a collider - and yields world-space triangles for surface-projected geometry.<br/>
+/// dispatched through the object's own vtable, never a scanned address. It walks the game's real collision world
+/// (streamed terrain, placed background parts, housing furniture, any dynamic object that registers a collider)
+/// and yields world-space triangles for surface-projected geometry.<br/>
 /// <b>Threading:</b> the collision scene is mutated by the game's framework-thread update under an SRW lock, so every
 /// method here MUST be called on the framework thread. Fail-soft throughout: a bad collider is skipped, never fatal.
 /// </summary>
@@ -26,9 +26,9 @@ internal static unsafe class WorldCollisionSource
 
     /// <summary>
     /// Collects world-space collision triangles overlapping the query AABB into <paramref name="outTriangles"/>
-    /// (flat triples: three <see cref="Vector3"/> per triangle). Returns the number of triangles appended.<br/>
-    /// Mesh colliders (streamed terrain + placed/loaded background models, which is how the game registers furniture
-    /// and dynamic-object collision) are always read. Analytic colliders (box / cylinder / sphere / plane - mostly
+    /// (flat triples: three <see cref="Vector3"/> per triangle). Returns the number of triangles appended. Mesh
+    /// colliders (streamed terrain + placed/loaded background models, which is how the game registers furniture and
+    /// dynamic-object collision) are always read. Analytic colliders (box / cylinder / sphere / plane - mostly
     /// invisible walls and trigger volumes) are tessellated only when <paramref name="includeAnalytic"/> is set.
     /// </summary>
     /// <param name="boxMin">Query AABB minimum (world space).</param>

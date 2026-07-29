@@ -6,8 +6,7 @@ namespace NoireLib.UI;
 /// Everything a cell renderer is handed: which table, which row, which column, and whether the row is selected.
 /// </summary>
 /// <remarks>
-/// The table has already placed the cell and decided its size, its selection and its order. A renderer only paints,
-/// which is what makes a bespoke cell configuration rather than a fork.
+/// The table has already placed the cell and decided its size, its selection and its order. A renderer only paints.
 /// </remarks>
 /// <typeparam name="T">The row type.</typeparam>
 /// <param name="Table">The table being drawn.</param>
@@ -24,9 +23,7 @@ public readonly record struct UiTableCellDraw<T>(
     int ColumnIndex,
     bool Selected)
 {
-    /// <summary>
-    /// The text the column reads out of this row, which is what the table would have drawn.
-    /// </summary>
+    /// <summary>The text the column reads out of this row.</summary>
     public string Text => Column.Read(Row);
 
     /// <summary>

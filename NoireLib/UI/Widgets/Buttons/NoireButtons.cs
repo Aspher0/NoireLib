@@ -9,11 +9,9 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The buttons ImGui does not ship: hold-to-confirm for destructive actions, a button that runs a task and reports on
-/// it, a split button, an animated toggle and a segmented control.<br/>
-/// All of them are immediate: there is nothing to construct, register or dispose, they take their colors from
-/// <see cref="NoireTheme.Current"/>, and each exposes a full style object plus a custom-draw hook so a bespoke look is
-/// configuration rather than a fork.
+/// The buttons ImGui does not ship: hold-to-confirm for destructive actions, an async button that runs a task and
+/// reports on it, a split button, an animated toggle and a segmented control. All are immediate, take colors from
+/// <see cref="NoireTheme.Current"/>, and expose a style object plus a custom-draw hook.
 /// </summary>
 /// <example>
 /// <code>
@@ -39,9 +37,8 @@ public static class NoireButtons
     /// The style a segmented control's segments are drawn from, reused across segments and across frames.
     /// </summary>
     /// <remarks>
-    /// Per thread, because drawing can happen on more than one and two threads sharing one of these would each see the
-    /// other's colours. Every field is written from the caller's style before each segment is drawn, so nothing
-    /// carries over from the segment before it or from the frame before it.
+    /// Thread-static because drawing can happen on more than one thread. Overwritten from the caller's style before
+    /// each segment is drawn, so nothing carries over between segments or frames.
     /// </remarks>
     [ThreadStatic]
     private static ButtonStyle? segmentScratch;
@@ -57,8 +54,8 @@ public static class NoireButtons
     public static float DefaultHoldSeconds { get; set; } = 1.2f;
 
     /// <summary>
-    /// The text shown on an asynchronous button while its task is running, replacing the label.<br/>
-    /// Set to <see langword="null"/> or empty to show only the spinner.
+    /// The text shown on an asynchronous button while its task is running, replacing the label; empty or
+    /// <see langword="null"/> shows only the spinner.
     /// </summary>
     public static string? BusyText { get; set; } = null;
 
@@ -103,16 +100,12 @@ public static class NoireButtons
     #region Hold to confirm
 
     /// <summary>
-    /// Draws a button that only fires once it has been held down for long enough, filling as it goes.<br/>
-    /// This is the alternative to a confirmation dialog for a destructive action: the pause is the confirmation, so
-    /// nothing is deleted by a misplaced click and nobody is asked "are you sure" for the hundredth time.
+    /// Draws a button that only fires once it has been held down for long enough, filling as it goes.
     /// </summary>
     /// <remarks>
-    /// The fill runs off wall-clock time, not frames, so it takes the same real duration whatever the frame rate. It is
-    /// deliberately not affected by <see cref="NoireUI.ReducedMotion"/>: the delay is a safety mechanism rather than
-    /// decoration, and removing it would remove the protection.<br/>
-    /// Releasing early drains the fill quickly rather than snapping it to empty, so a hold interrupted by a stutter
-    /// does not feel like it was thrown away.
+    /// The fill runs off wall-clock time, not frames. Not affected by <see cref="NoireUI.ReducedMotion"/>, since the
+    /// delay is a safety mechanism rather than decoration. Releasing early drains the fill quickly rather than
+    /// snapping it to empty.
     /// </remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="holdSeconds">How long the button must be held. Defaults to <see cref="DefaultHoldSeconds"/>.</param>
@@ -166,14 +159,12 @@ public static class NoireButtons
     #region Asynchronous
 
     /// <summary>
-    /// Draws a button that runs a task, disabling itself and showing a spinner until the task finishes.<br/>
-    /// Clicking twice cannot start the work twice, and a task that fails is reported through
-    /// <see cref="UiDiagnostics"/> rather than disappearing into an unobserved exception.
+    /// Draws a button that runs a task, disabling itself and showing a spinner until the task finishes. Clicking twice
+    /// cannot start the work twice, and a failed task is reported through <see cref="UiDiagnostics"/>.
     /// </summary>
     /// <remarks>
-    /// The running task is tracked against the button's id for as long as the button keeps being drawn. A window closed
-    /// mid-task does not cancel anything: the task runs to completion, it simply stops being watched, and the button
-    /// starts idle the next time it appears.
+    /// The running task is tracked against the button's id while the button keeps being drawn. Closing the window
+    /// mid-task does not cancel it: the task runs to completion and the button goes idle the next time it appears.
     /// </remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="action">The work to start. Invoked on the draw thread, so it should return quickly and do its work
@@ -252,10 +243,7 @@ public static class NoireButtons
 
     #region Split
 
-    /// <summary>
-    /// Draws a button with a caret beside it that opens a menu, for an action with variants: "Export" with "Export
-    /// as..." behind the caret.
-    /// </summary>
+    /// <summary>Draws a button with a caret beside it that opens a menu of variant actions.</summary>
     /// <param name="label">The main button's label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="menuBody">The menu contents, drawn inside the popup. Not called while the menu is closed, so there
     /// is no open flag to track and no end call to forget.</param>
@@ -368,9 +356,8 @@ public static class NoireButtons
         using var draw = UiDraw.Begin();
         var drawList = draw.List;
 
-        // Guarded rather than returned from: the label after this is laid out whether or not the switch was painted,
-        // so a caller's row does not collapse when there is no list. The custom hook sits inside the same guard as the
-        // built-in painting, since handing a consumer a null list would fault in their code rather than here.
+        // Guarded rather than returned from: the label below is still laid out even with no draw list. The custom
+        // hook runs inside the same guard, since a null list would fault in consumer code.
         if (!drawList.IsNull)
         {
             if (style.CustomDraw != null)
@@ -430,8 +417,7 @@ public static class NoireButtons
         var padding = style.ResolvePadding();
         var height = ImGui.GetFrameHeight();
 
-        // Every segment is the same width, taken from the longest label, so the control does not reflow as the
-        // selection moves and the options stay equally weighted.
+        // Every segment is the same width, taken from the longest label, so selecting an option does not reflow it.
         float total;
         if (width > 0f)
         {
@@ -441,8 +427,7 @@ public static class NoireButtons
         {
             var widest = 0f;
 
-            // Indexed rather than a foreach. IReadOnlyList is an interface, so foreach over it goes through
-            // IEnumerable and boxes an enumerator on every frame the control draws.
+            // Indexed rather than foreach: IReadOnlyList foreach boxes an enumerator via IEnumerable, every frame.
             for (var index = 0; index < options.Count; index++)
                 widest = MathF.Max(widest, NoireText.CalcSizeInCurrentFont(VisibleLabel(options[index])).X);
 
@@ -463,10 +448,8 @@ public static class NoireButtons
 
             var isSelected = index == selected;
 
-            // Copied into a scratch style rather than cloned into a new one. A clone per segment per frame was the
-            // largest allocation in this file: roughly 315 bytes each, so a four-option control produced over a
-            // kilobyte of garbage on every frame it drew. Reuse is safe because Paint reads everything it needs off
-            // the style before it can hand control back to a consumer.
+            // Copied into a scratch style instead of cloned, avoiding a per-segment allocation each frame; safe
+            // because Paint reads everything it needs off the style before returning control.
             var segment = SegmentScratch;
             segment.CopyFrom(style);
             segment.Color = isSelected ? accent : theme.Resolve(ThemeColor.SurfaceSunken);
@@ -490,12 +473,9 @@ public static class NoireButtons
 
     #region Spinner
 
-    /// <summary>
-    /// Draws a spinning busy indicator as an ordinary item, so it takes part in layout like any widget.
-    /// </summary>
+    /// <summary>Draws a spinning busy indicator as an ordinary item that takes part in layout.</summary>
     /// <remarks>
-    /// Under <see cref="NoireUI.ReducedMotion"/> the dots stop rotating and are drawn at an even opacity, so the
-    /// indicator still says "working" without any movement.
+    /// Under <see cref="NoireUI.ReducedMotion"/>, the dots stop rotating and are drawn at an even opacity.
     /// </remarks>
     /// <param name="radius">The radius in pixels. Zero uses a size that matches the current line height.</param>
     /// <param name="color">The dot color. When <see langword="null"/>, the theme accent is used.</param>
@@ -714,10 +694,7 @@ public static class NoireButtons
             drawList.AddText(new Vector2(x, centerY - textSize.Y * 0.5f), color, text);
     }
 
-    /// <summary>
-    /// Draws the busy indicator: eight dots around a circle whose opacity rotates, which needs only the draw-list calls
-    /// the rest of the library already relies on.
-    /// </summary>
+    /// <summary>Draws the busy indicator: eight dots around a circle whose opacity rotates.</summary>
     private static void DrawSpinner(ImDrawListPtr drawList, Vector2 center, float radius, Vector4 color)
     {
         const int Dots = 8;
@@ -780,11 +757,8 @@ public static class NoireButtons
     /// into the frame.
     /// </summary>
     /// <remarks>
-    /// The argument is handed over rather than captured, which is the whole point of this overload existing beside the
-    /// one above. A lambda written at the call site to close over it would capture a **parameter** of the calling
-    /// method, and Roslyn builds that display class on entry to the method rather than at the point of use: every
-    /// button in the frame then allocated one whether or not it had a custom draw to run, and none of them do by
-    /// default. Measured at 24 bytes per button per frame before this.
+    /// The argument is passed explicitly rather than captured by a closure: Roslyn allocates a display class at
+    /// method entry for a lambda that captures a parameter, even on frames where the branch does not run.
     /// </remarks>
     /// <typeparam name="TArg">The argument type.</typeparam>
     /// <param name="callback">The callback to run.</param>
@@ -819,8 +793,7 @@ public static class NoireButtons
     /// The progress of a hold, plus whether a new hold may start.
     /// </summary>
     /// <remarks>
-    /// <c>Armed</c> is what stops a completed hold from firing again every frame while the mouse is still down: it only
-    /// comes back on release, so one press is always one action.
+    /// <c>Armed</c> resets on release, so a completed hold cannot fire again while the mouse stays down.
     /// </remarks>
     private struct HoldState
     {
@@ -834,8 +807,7 @@ public static class NoireButtons
     /// One reusable style per tone, so the common <c>Button(label, tone)</c> call allocates nothing per frame.
     /// </summary>
     /// <remarks>
-    /// These are handed out by reference and are never written to by the drawing code, which only ever reads them and
-    /// clones when it needs a variant.
+    /// Handed out by reference; drawing code only reads them and clones when it needs a variant.
     /// </remarks>
     private static class ToneStyles
     {

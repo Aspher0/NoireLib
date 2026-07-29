@@ -11,15 +11,14 @@ using System.Text;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A class containing helper methods for working with SeString objects.
+/// Helpers for working with SeString objects.
 /// </summary>
 public static class SeStringHelper
 {
     /// <summary>
-    /// Resolves the sender of a message represented by a SeString into a PlayerModel.<br/>
-    /// Run this on framework thread.
+    /// Resolves a SeString message's sender into a <see cref="PlayerModel"/>. Framework thread only.
     /// </summary>
-    /// <param name="sender">The SeString representing the sender of the message.</param>
+    /// <param name="sender">The message's sender.</param>
     /// <returns>A <see cref="PlayerModel"/> if the sender could be resolved; otherwise, null.</returns>
     public static PlayerModel? ResolveSender(SeString sender)
     {
@@ -63,10 +62,10 @@ public static class SeStringHelper
     }
 
     /// <summary>
-    /// Converts a pointer to a UTF-8 encoded string structure into plain text.
+    /// Converts a UTF-8 string pointer to plain text.
     /// </summary>
-    /// <param name="utf8StringPtr">A pointer to a UTF-8 encoded string structure to convert. Must not be null.</param>
-    /// <returns>A string containing the plain text representation of the specified UTF-8 string.</returns>
+    /// <param name="utf8StringPtr">UTF-8 string pointer to convert. Must not be null.</param>
+    /// <returns>Plain text representation of the string.</returns>
     public static unsafe string Utf8StringPtrToPlainText(Utf8String* utf8StringPtr)
     {
         var ut8Span = GetUtf8Span(utf8StringPtr);
@@ -80,7 +79,7 @@ public static class SeStringHelper
         => Utf8StringPtrToPlainText(&utf8String);
 
     /// <summary>
-    /// Gets the plain text representation of a <see cref="SeString"/> by concatenating the text from all TextPayloads and evaluating any AutoTranslatePayloads using the client's current language settings.
+    /// Converts a <see cref="SeString"/> to plain text, concatenating TextPayloads and evaluating AutoTranslatePayloads.
     /// </summary>
     /// <param name="seString">The <see cref="SeString"/> to convert to plain text.</param>
     /// <param name="languageOverride">An optional language override for evaluating AutoTranslatePayloads.</param>

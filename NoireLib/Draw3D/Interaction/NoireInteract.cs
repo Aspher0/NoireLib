@@ -103,7 +103,7 @@ public static class NoireInteract
 
     /// <summary>
     /// When true, logs the click pipeline (raw button state, hover, capture, and every press/click/drag event) to the
-    /// plugin log for in-game diagnosis. Off by default; the reference scene turns it on.
+    /// plugin log for in-game diagnosis; off by default, the reference scene turns it on.
     /// </summary>
     public static bool DebugLog { get; set; }
 
@@ -123,9 +123,9 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// Whether NoireInteract drives itself from <c>UiBuilder.Draw</c> every frame (default true). Set false to call
-    /// <see cref="Update"/> from your own ImGui draw code instead, when you want explicit control of ordering, since
-    /// interaction must run inside an ImGui frame to read input and claim the mouse.
+    /// Whether NoireInteract drives itself from <c>UiBuilder.Draw</c> every frame (default true); set false to call
+    /// <see cref="Update"/> from your own ImGui draw code instead for explicit control of ordering, since interaction
+    /// must run inside an ImGui frame to read input and claim the mouse.
     /// </summary>
     public static bool AutoRun
     {
@@ -148,13 +148,12 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// Whether merely hovering a plain (non-draggable) interactable claims the mouse. Default <b>false</b>: the
-    /// playable choice for a world overlay, where hovering an object never steals the game's mouse, so the camera
-    /// still pans/zooms and the world is still clickable straight through a highlighted object; only an actual drag
-    /// of a draggable target (a gizmo handle) takes the lead of input. A plain left-click still selects and fires
-    /// <c>OnClick</c>, but coexists with the game (the click also reaches the world behind). Set <b>true</b> for the
-    /// aggressive, ImGui-consistent mode where hovering claims the mouse and consumes the click from the game: tidy
-    /// for a modal editor, but it blocks camera/zoom while the cursor rests on an object.
+    /// Whether merely hovering a plain (non-draggable) interactable claims the mouse: default <b>false</b>, the
+    /// world-overlay-friendly choice where hovering never steals the game's mouse (the camera still pans/zooms and
+    /// the world is still clickable straight through a highlighted object, only an actual drag of a draggable target
+    /// takes the lead of input, and a plain left-click still selects and fires <c>OnClick</c> while coexisting with
+    /// the game); <b>true</b> is the aggressive, ImGui-consistent mode where hovering claims the mouse and consumes
+    /// the click from the game - tidy for a modal editor, but it blocks camera/zoom while the cursor rests on an object.
     /// </summary>
     public static bool BlockGameMouseOnHover { get; set; }
 
@@ -162,60 +161,61 @@ public static class NoireInteract
     public static bool SelectOnClick { get; set; } = true;
 
     /// <summary>
-    /// Whether native game UI under the cursor blocks Draw3D from hovering / picking a 3D object behind it. Default
-    /// <b>true</b>: a click on a game HUD window belongs to the game, not to an object behind it. Detection is by the
-    /// game's own collision nodes (not an addon's padded bounding box), so empty space around HUD elements stays
-    /// clickable. Set <b>false</b> to let clicks pass through all game UI to the 3D layer (also disables the
+    /// Whether native game UI under the cursor blocks Draw3D from hovering / picking a 3D object behind it: default
+    /// <b>true</b>, since a click on a game HUD window belongs to the game, not to an object behind it, detected by
+    /// the game's own collision nodes (not an addon's padded bounding box) so empty space around HUD elements stays
+    /// clickable; set <b>false</b> to let clicks pass through all game UI to the 3D layer (also disables the
     /// <c>[Interact/Gate]</c> game-UI probe unless <see cref="DebugLog"/> is on).
     /// </summary>
     public static bool GameUiBlocksInteraction { get; set; } = true;
 
     /// <summary>
-    /// How every scene's <see cref="InteractSelection"/> is cleared. Default <see cref="DeselectMode.ClickEmpty"/>: a left click on empty
-    /// world (not a camera pan, not over UI) deselects. Set <see cref="DeselectMode.None"/> to manage it yourself, or add
-    /// <see cref="DeselectMode.Key"/> to also clear on <see cref="DeselectKeyHeld"/>. Flags; combine freely.
+    /// How every scene's <see cref="InteractSelection"/> is cleared: default <see cref="DeselectMode.ClickEmpty"/>
+    /// (a left click on empty world - not a camera pan, not over UI - deselects), <see cref="DeselectMode.None"/> to
+    /// manage it yourself, or add <see cref="DeselectMode.Key"/> to also clear on <see cref="DeselectKeyHeld"/>;
+    /// flags, combine freely.
     /// </summary>
     public static DeselectMode DeselectOn { get; set; } = DeselectMode.ClickEmpty;
 
     /// <summary>
-    /// Whether the deselect key for <see cref="DeselectMode.Key"/> is <b>down right now</b>. Default <b>Escape</b>.
-    /// A plain held test, like the modifier predicates: the press edge is tracked here, so holding the key clears once
-    /// rather than every frame. Point it at any key or your own input.<br/>
-    /// Read the key from the OS (<see cref="KeybindsHelper.IsAsyncKeyDown"/>) rather than through ImGui: Dalamud only
-    /// forwards a key to ImGui while a text field is focused, and force-releases every non-modifier key otherwise, so
-    /// <c>ImGui.IsKeyPressed</c> never fires during play. Only the modifier keys survive that, which is why
-    /// <see cref="ToggleSelectionHeld"/> and friends can read <c>ImGui.GetIO()</c> and this cannot.
+    /// Whether the deselect key for <see cref="DeselectMode.Key"/> is <b>down right now</b> (default <b>Escape</b>):
+    /// a plain held test, like the modifier predicates - the press edge is tracked here, so holding the key clears
+    /// once rather than every frame; point it at any key or your own input.<br/>
+    /// Read the key from the OS (<see cref="KeybindsHelper.IsAsyncKeyDown"/>) rather than through ImGui, since
+    /// Dalamud only forwards a key to ImGui while a text field is focused and force-releases every non-modifier key
+    /// otherwise, so <c>ImGui.IsKeyPressed</c> never fires during play; only the modifier keys survive that, which is
+    /// why <see cref="ToggleSelectionHeld"/> and friends can read <c>ImGui.GetIO()</c> and this cannot.
     /// </summary>
     public static Func<bool> DeselectKeyHeld { get; set; } = static () => KeybindsHelper.IsAsyncKeyDown((int)VirtualKey.ESCAPE);
 
     /// <summary>
     /// While this returns true, a left-click on a node <b>toggles</b> it in and out of a <see cref="SelectionMode.Multi"/>
-    /// selection. Default <b>Ctrl</b>. Point it at any key, or <c>() =&gt; false</c> to disable toggle-select.
+    /// selection (default <b>Ctrl</b>); point it at any key, or <c>() =&gt; false</c> to disable toggle-select.
     /// </summary>
     public static Func<bool> ToggleSelectionHeld { get; set; } = static () => ImGui.GetIO().KeyCtrl;
 
     /// <summary>
     /// While this returns true, a left-click on a node <b>adds</b> it to a <see cref="SelectionMode.Multi"/> selection
-    /// (keeping the rest). Default <b>Shift</b>. Set <c>() =&gt; true</c> to always add on click, or point it at any key.
-    /// Honoured only when the node's scene <see cref="InteractSelection"/> is in <see cref="SelectionMode.Multi"/>.
+    /// (keeping the rest), default <b>Shift</b>; set <c>() =&gt; true</c> to always add on click, or point it at any
+    /// key, honoured only when the node's scene <see cref="InteractSelection"/> is in <see cref="SelectionMode.Multi"/>.
     /// </summary>
     public static Func<bool> AddSelectionHeld { get; set; } = static () => ImGui.GetIO().KeyShift;
 
     /// <summary>
     /// How anything the game draws in front of a 3D object (a wall, terrain, a house, but equally a character or a
-    /// mount) affects hovering/clicking it. Default <see cref="ObstacleOcclusion.Off"/>: objects are always
-    /// hoverable/clickable, so picking is reliable at every camera angle out of the box. Opt into
+    /// mount) affects hovering/clicking it: default <see cref="ObstacleOcclusion.Off"/>, objects always
+    /// hoverable/clickable so picking is reliable at every camera angle out of the box; opt into
     /// <see cref="ObstacleOcclusion.Always"/> or <see cref="ObstacleOcclusion.HoldToClickThrough"/> when you want what
-    /// is really in front to block picking (bear in mind the ground an object rests on can then occlude it at grazing
-    /// angles). Also governs native gizmo handles whose depth mode is not fully on top (see
+    /// is really in front to block picking (the ground an object rests on can then occlude it at grazing angles),
+    /// which also governs native gizmo handles whose depth mode is not fully on top (see
     /// <see cref="IPointerInteractor.OccludesBehindObstacles"/>).
     /// </summary>
     public static ObstacleOcclusion ObstacleOcclusionMode { get; set; } = ObstacleOcclusion.Off;
 
     /// <summary>
     /// The click-through override for <see cref="ObstacleOcclusion.HoldToClickThrough"/>: while it returns true,
-    /// obstacles are ignored and objects behind them are clickable. Default <b>Alt</b> held (Ctrl/Shift are the
-    /// selection modifiers). Point it at any key (for example <c>() =&gt; ImGui.GetIO().KeyCtrl</c>) or your own input.
+    /// obstacles are ignored and objects behind them are clickable; default <b>Alt</b> held (Ctrl/Shift are the
+    /// selection modifiers), point it at any key (for example <c>() =&gt; ImGui.GetIO().KeyCtrl</c>) or your own input.
     /// </summary>
     public static Func<bool> ClickThroughHeld { get; set; } = static () => ImGui.GetIO().KeyAlt;
 
@@ -232,23 +232,23 @@ public static class NoireInteract
     public static bool IsCapturingMouse => showedCaptureLastFrame;
 
     /// <summary>
-    /// True when another UI surface owns the mouse this frame, or the cursor is not over the game viewport at all.
-    /// Sources: a foreign ImGui window (a different plugin's, never our own capture window), native game UI (a HUD
-    /// window / addon) under the cursor, or the cursor being outside the game window. While true, Draw3D neither
-    /// hovers, picks, nor captures.
+    /// True when another UI surface owns the mouse this frame, or the cursor is not over the game viewport at all:
+    /// a foreign ImGui window (a different plugin's, never our own capture window), native game UI (a HUD window /
+    /// addon) under the cursor, or the cursor being outside the game window; while true, Draw3D neither hovers,
+    /// picks, nor captures.
     /// </summary>
     public static bool ForeignUiHasMouse => foreignCapturing;
 
     /// <summary>
-    /// Ask NoireInteract to claim the mouse from the game for the remainder of this frame. For pointer clients that
-    /// handle their own input yet still need the game camera blocked while active (a custom self-managed widget).
-    /// Effective only during <see cref="Update"/> (call it from an interactor's <see cref="IPointerInteractor.Draw"/>).
-    /// The built-in ImGuizmo gizmo does not use this: it is <see cref="IPointerInteractor.SelfDriven"/> and blocks the
-    /// camera itself with <c>SetNextFrameWantCaptureMouse</c>.
+    /// Ask NoireInteract to claim the mouse from the game for the remainder of this frame, for pointer clients that
+    /// handle their own input yet still need the game camera blocked while active (a custom self-managed widget);
+    /// effective only during <see cref="Update"/> (call it from an interactor's <see cref="IPointerInteractor.Draw"/>),
+    /// and not used by the built-in ImGuizmo gizmo, which is <see cref="IPointerInteractor.SelfDriven"/> and blocks
+    /// the camera itself with <c>SetNextFrameWantCaptureMouse</c>.
     /// </summary>
     public static void RequestCapture() => captureRequested = true;
 
-    /// <summary>Registers a pointer client (gizmo, custom widget) into the shared arbitration. Idempotent.</summary>
+    /// <summary>Registers a pointer client (gizmo, custom widget) into the shared arbitration; idempotent.</summary>
     /// <param name="interactor">The interactor to add.</param>
     public static void RegisterInteractor(IPointerInteractor interactor)
     {
@@ -265,7 +265,7 @@ public static class NoireInteract
         EnsureRunning();
     }
 
-    /// <summary>Unregisters a pointer client. Returns whether it was registered.</summary>
+    /// <summary>Unregisters a pointer client; returns whether it was registered.</summary>
     /// <param name="interactor">The interactor to remove.</param>
     public static bool UnregisterInteractor(IPointerInteractor interactor)
     {
@@ -274,9 +274,9 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// Advances interaction by one frame. Called automatically from <c>UiBuilder.Draw</c> when <see cref="AutoRun"/>
-    /// is on; call it yourself (from inside your ImGui draw code) when you turn AutoRun off. Safe to call when nothing
-    /// is interactable: it early-outs cheaply and never claims the mouse.
+    /// Advances interaction by one frame, called automatically from <c>UiBuilder.Draw</c> when <see cref="AutoRun"/>
+    /// is on (call it yourself, from inside your ImGui draw code, when you turn AutoRun off); safe to call when
+    /// nothing is interactable, since it early-outs cheaply and never claims the mouse.
     /// </summary>
     public static void Update()
     {
@@ -400,8 +400,8 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// Whether the cursor is over the game viewport and the game window is the foreground window. Anything outside the
-    /// framebuffer, or a click while another application is in front, is not the game's to act on.
+    /// Whether the cursor is over the game viewport and the game window is the foreground window; anything outside
+    /// the framebuffer, or a click while another application is in front, is not the game's to act on.
     /// </summary>
     private static bool CursorWithinGameWindow(Vector2 mouse, Vector2 displaySize)
     {
@@ -507,10 +507,10 @@ public static class NoireInteract
     }
 
     /// <summary>
-    /// The nearest game surface under the cursor, for obstacle occlusion. Prefers the game depth buffer (every rendered
-    /// surface: static meshes, fences, furniture, decorations, characters, not only the collision meshes the raycast
-    /// alone misses), reconstructing the world point and caching it since the readback copies the whole depth texture.
-    /// Falls back to the game's collision raycast only on frames where the depth buffer is unreadable.
+    /// The nearest game surface under the cursor, for obstacle occlusion: prefers the game depth buffer (every
+    /// rendered surface - static meshes, fences, furniture, decorations, characters, not only the collision meshes
+    /// the raycast alone misses), reconstructing the world point and caching it since the readback copies the whole
+    /// depth texture, falling back to the game's collision raycast only on frames where the depth buffer is unreadable.
     /// </summary>
     private static bool TryGetOccluderSurface(out Vector3 world)
     {
@@ -606,8 +606,8 @@ public static class NoireInteract
     /// <summary>
     /// Render-thread overlay (fired by <see cref="NoireDraw3D.OnRenderOverlay"/> with the live frame): draws each
     /// ray-driven interactor's zero-latency geometry (the native gizmo handles) so their screen-constant sizing tracks
-    /// the camera instead of lagging a frame during zoom. Self-driven interactors (ImGuizmo) draw themselves on the UI
-    /// thread and are skipped. Runs on the render thread; it only reads hover/drag state and emits geometry, no input.
+    /// the camera instead of lagging a frame during zoom; self-driven interactors (ImGuizmo) draw themselves on the
+    /// UI thread and are skipped. Runs on the render thread; it only reads hover/drag state and emits geometry, no input.
     /// </summary>
     private static void DrawOverlayInteractors(FrameContext overlayFrame)
     {
@@ -639,13 +639,13 @@ public static class NoireInteract
     // ---------------------------------------------------------------- capture window
 
     /// <summary>
-    /// The single mouse-capture authority. When NoireInteract wants the mouse, it shows a fullscreen, invisible ImGui
-    /// window under the cursor: hovering it makes ImGui set <c>WantCaptureMouse</c>, which is what tells Dalamud to
-    /// withhold the input from the game, so the camera cannot pan and nothing is targeted. The window is only shown
-    /// while interacting (and only when no foreign window already owns the cursor), so the game keeps the mouse the rest
-    /// of the time. The InvisibleButton's active-id holds the capture through a fast drag even if the cursor outruns hover.
-    /// The self-driven ImGuizmo backend does not use this: it blocks the camera with <c>SetNextFrameWantCaptureMouse</c>
-    /// (no window) instead.
+    /// The single mouse-capture authority: when NoireInteract wants the mouse, it shows a fullscreen, invisible ImGui
+    /// window under the cursor, and hovering it makes ImGui set <c>WantCaptureMouse</c>, which tells Dalamud to
+    /// withhold the input from the game so the camera cannot pan and nothing is targeted. The window is only shown
+    /// while interacting (and only when no foreign window already owns the cursor), so the game keeps the mouse the
+    /// rest of the time, and the InvisibleButton's active-id holds the capture through a fast drag even if the
+    /// cursor outruns hover. The self-driven ImGuizmo backend does not use this: it blocks the camera with
+    /// <c>SetNextFrameWantCaptureMouse</c> (no window) instead.
     /// </summary>
     /// <param name="want">Whether the window should be shown this frame.</param>
     private static void DrawCaptureWindow(bool want)
@@ -942,11 +942,11 @@ public static class NoireInteract
                 switch (button)
                 {
                     case MouseButton.Left:
-                        // Route into the node's OWN scene selection (per-scene, no global). A node opts out of
+                        // Routes into the node's OWN scene selection (per-scene, no global); a node opts out of
                         // selection via SceneNode.Selectable = false (MakeInteractable), staying hover/click-only.
-                        // The pick lands on the node's selection target, which is the node itself unless a
-                        // SelectionProxy redirects it - a multi-mesh model selecting as one object. The hit and
-                        // OnClick below stay on the clicked node, which is what is actually under the cursor.
+                        // The pick lands on the node's selection target - the node itself unless a SelectionProxy
+                        // redirects it (a multi-mesh model selecting as one object) - but the hit and OnClick below
+                        // stay on the clicked node, the one actually under the cursor.
                         if (SelectOnClick && node.Selectable)
                             node.Scene?.Selection.Pick(node.ResolveSelectionTarget(), modifiers);
                         Raise(node.OnClick, hit, "OnClick");

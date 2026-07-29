@@ -132,11 +132,11 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     #region Window Display
 
     /// <summary>
-    /// Opens the changelog window showing a specific version.<br/>
-    /// This is the version-aware counterpart of the inherited <see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/>,
-    /// which opens the window on whichever version is currently selected.<br/>
-    /// Passing <see langword="null"/>, or a version this manager does not hold, selects the latest available version
-    /// instead of failing. When no version is available at all the window stays closed and a notification is raised.
+    /// Opens the changelog window showing a specific version. Version-aware counterpart of the inherited
+    /// <see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/>, which opens on whichever version is
+    /// currently selected.<br/>
+    /// <see langword="null"/>, or a version this manager does not hold, selects the latest available version instead
+    /// of failing. No version available at all leaves the window closed with a notification raised.
     /// </summary>
     /// <param name="version">The version to show. Defaults to the latest available version.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -288,7 +288,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     }
 
     /// <summary>
-    /// Adds or updates a changelog version.<br/>
+    /// Adds or updates a changelog version.
     /// </summary>
     /// <param name="version">The <see cref="ChangelogVersion"/> to add or update.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -300,7 +300,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
     }
 
     /// <summary>
-    /// Adds or updates multiple changelog versions.<br/>
+    /// Adds or updates multiple changelog versions.
     /// </summary>
     /// <param name="versions">The list of <see cref="ChangelogVersion"/> to add or update.</param>
     /// <returns>The module instance for chaining.</returns>

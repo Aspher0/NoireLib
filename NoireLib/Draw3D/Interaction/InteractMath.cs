@@ -11,7 +11,7 @@ namespace NoireLib.Draw3D.Interaction;
 /// </summary>
 public static class InteractMath
 {
-    /// <summary>Intersects a ray with an infinite plane. Returns false when the ray is parallel to the plane.</summary>
+    /// <summary>Intersects a ray with an infinite plane; returns false when the ray is parallel to the plane.</summary>
     /// <param name="origin">Ray origin.</param>
     /// <param name="direction">Ray direction (need not be normalized; <paramref name="t"/> is in its units).</param>
     /// <param name="planePoint">Any point on the plane.</param>
@@ -35,7 +35,7 @@ public static class InteractMath
 
     /// <summary>
     /// Finds the parameter along an axis line closest to a ray: the core of axis-constrained dragging
-    /// (project the cursor ray onto the handle's axis). Returns false when the ray is (near) parallel to the axis,
+    /// (project the cursor ray onto the handle's axis); returns false when the ray is (near) parallel to the axis,
     /// in which case <paramref name="axisParam"/> falls back to the projection of the ray origin onto the axis.
     /// </summary>
     /// <param name="rayOrigin">Ray origin.</param>
@@ -90,7 +90,7 @@ public static class InteractMath
         return Vector3.Distance(pOnSeg, pOnRay);
     }
 
-    /// <summary>Ray/sphere intersection (nearest non-negative root). Used for center/cube handles and bounds picks.</summary>
+    /// <summary>Ray/sphere intersection (nearest non-negative root), used for center/cube handles and bounds picks.</summary>
     /// <param name="origin">Ray origin.</param>
     /// <param name="direction">Ray direction, normalized.</param>
     /// <param name="center">Sphere center.</param>
@@ -135,8 +135,8 @@ public static class InteractMath
 
     /// <summary>
     /// Signed angle (radians) swept from <paramref name="from"/> to <paramref name="to"/> about <paramref name="axis"/>,
-    /// measuring both points relative to <paramref name="center"/> after projecting them into the axis plane. The core
-    /// of rotate-gizmo dragging. Returns 0 when either projected vector collapses to the axis.
+    /// measuring both points relative to <paramref name="center"/> after projecting them into the axis plane - the core
+    /// of rotate-gizmo dragging; returns 0 when either projected vector collapses to the axis.
     /// </summary>
     public static float SignedAngleOnPlane(Vector3 center, Vector3 axis, Vector3 from, Vector3 to)
     {
@@ -157,9 +157,9 @@ public static class InteractMath
 
     /// <summary>
     /// Screen-constant sizing: the world distance at <paramref name="worldPoint"/> that projects to one screen pixel,
-    /// plus the camera-aligned right/up world axes at that point: everything a gizmo needs to keep a fixed pixel size
-    /// and to build a screen-space handle basis, derived purely from the view-projection pair (no camera struct).
-    /// Returns false when the point is at/behind the camera.
+    /// plus the camera-aligned right/up world axes at that point - everything a gizmo needs to keep a fixed pixel size
+    /// and to build a screen-space handle basis, derived purely from the view-projection pair (no camera struct);
+    /// returns false when the point is at/behind the camera.
     /// </summary>
     /// <param name="frame">The frame whose projection to sample.</param>
     /// <param name="worldPoint">The point to size around.</param>
@@ -189,9 +189,9 @@ public static class InteractMath
         upWorld = SafeNormalize(Vector3.Cross(toPoint, rightWorld), Vector3.UnitY);
 
         // Perspective denominator at the point, straight from the forward transform (well-conditioned everywhere in
-        // front of the camera). The pixel scale is then the exact analytic screen-space derivative of the projection
-        // along each axis. This never reconstructs depth from NDC, so it is immune to the reversed-Z precision collapse
-        // near the camera that made the round-trip estimate (and the handle size resting on it) jitter up close.
+        // front of the camera): the pixel scale is the exact analytic screen-space derivative of the projection along
+        // each axis, never reconstructing depth from NDC, so it stays immune to the reversed-Z precision collapse near
+        // the camera.
         var vpMat = frame.ViewProj;
         var clip = Vector4.Transform(new Vector4(worldPoint, 1f), vpMat);
         if (clip.W <= 1e-4f)

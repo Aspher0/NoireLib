@@ -21,20 +21,18 @@ public static class NoireTooltip
     /// The size each tooltip measured, by window id, so a reappearing tooltip is placed on its first frame.
     /// </summary>
     /// <remarks>
-    /// Keyed by reference: every id, named or numbered, is composed through <see cref="UiIds"/> and so arrives as the
-    /// same instance on every frame, and this cache is read and written on each of them. Hashing the id's characters
-    /// instead spent two content hashes per tooltip per frame on a key that never changes. If <see cref="UiIds"/>
-    /// ever starts over and rebuilds an id, the entry under the old instance stops being found and is pruned like any
-    /// stale one, at the cost of the tooltip being re-measured once.
+    /// Keyed by reference: every id, named or numbered, is composed through <see cref="UiIds"/> and arrives as the
+    /// same instance every frame, so this avoids hashing the id's characters on a key that never changes. If
+    /// <see cref="UiIds"/> ever rebuilds an id, the entry under the old instance is pruned like any stale one, at
+    /// the cost of the tooltip being re-measured once.
     /// </remarks>
     private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new(StringInstanceComparer.Instance);
 
     /// <summary>
-    /// Where a tooltip is parked for the frame or two it takes to measure it, before its real position can be worked out.<br/>
-    /// Far outside any viewport, and ImGui leaves a window given an explicit position exactly where it is put rather than
-    /// clamping it back into view, so the tooltip is measured in full while never being seen. Hiding it by drawing it at
-    /// zero alpha instead would not work: ImGui refuses to process a window whose style alpha is zero when it begins, so
-    /// the size it is being hidden to discover would never be measured at all.
+    /// Where a tooltip is parked for the frame or two it takes to measure it, before its real position can be
+    /// worked out. Far outside any viewport, since ImGui leaves an explicitly positioned window there rather than
+    /// clamping it back into view. Zero alpha would not work instead: ImGui refuses to process a window whose style
+    /// alpha is zero when it begins, so it would never be measured at all.
     /// </summary>
     private static readonly Vector2 MeasuringPosition = new(-10000f, -10000f);
 
@@ -125,19 +123,19 @@ public static class NoireTooltip
         using var textColor = UiPush.Color(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
 
         // A tooltip's border thickness comes from PopupBorderSize, not from WindowBorderSize: ImGui picks the style
-        // field by flag, and this window carries the tooltip flag. Pushing the window one is what made a styled border
-        // never appear, whatever the style asked for.
-        // Rounding is picked by flag as well, but there the tooltip flag is not part of the popup branch, so that one
-        // genuinely is the window field.
+        // field by flag, and this window carries the tooltip flag. Pushing the window field leaves a styled border
+        // never appearing, whatever the style asked for.
+        // Rounding is picked by flag as well, but there the tooltip flag is not part of the popup branch, so that
+        // one genuinely is the window field.
         using var borderSize = UiPush.Style(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
         using var rounding = UiPush.Style(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
         using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
 
         if (ImGui.Begin(windowId, TooltipWindowFlags))
         {
-            // A tooltip shares the top draw layer with any always-on-top element it might overlap, and within a layer
-            // the last window to ask is the one in front. Asking here, after the thing being annotated has drawn, is
-            // what keeps the tooltip above it rather than behind.
+            // A tooltip shares the top draw layer with any always-on-top element it might overlap; within a layer,
+            // the last window to ask is the one in front. Asked here, after the thing being annotated has drawn, so
+            // the tooltip stays above it rather than behind.
             UiWindowOrder.KeepInFront();
 
             content.Draw();
@@ -186,12 +184,10 @@ public static class NoireTooltip
     /// when the style asks for it.
     /// </summary>
     /// <remarks>
-    /// The pivot is applied here rather than handed to <c>ImGui.SetNextWindowPos</c>, which takes one: ImGui defers a
-    /// non-zero pivot until it knows the window size, and an auto-resizing window does not know its size on the frame it
-    /// appears. The tooltip would spawn at the raw anchor and visibly settle into place on the next frame, which is why
-    /// only the item-relative placements ever showed it (the mouse placement pivots on its top left corner, so there is
-    /// nothing to defer). Resolving it against the size the tooltip had the last time it was drawn places it correctly on
-    /// the first frame instead.
+    /// The pivot is applied here rather than handed to <c>ImGui.SetNextWindowPos</c>, which takes one: ImGui defers
+    /// a non-zero pivot until it knows the window size, and an auto-resizing window does not know its size on the
+    /// frame it appears, so the tooltip would spawn at the raw anchor and visibly settle into place next frame.
+    /// Resolving it against the size the tooltip had last time places it correctly on the first frame instead.
     /// </remarks>
     /// <param name="anchorPosition">The anchor position in screen coordinates.</param>
     /// <param name="pivot">The normalized point of the tooltip pinned to the anchor.</param>
@@ -215,10 +211,9 @@ public static class NoireTooltip
 
 
     /// <summary>
-    /// Drops remembered sizes of tooltips that have not been drawn for a while, once enough of them have piled up to be
-    /// worth bounding.<br/>
-    /// A remembered size is what places a tooltip on the frame it reappears, so one is worth keeping long after the
-    /// tooltip was last shown, and evicting one only costs the couple of invisible frames it takes to measure it again.
+    /// Drops remembered sizes of tooltips that have not been drawn for a while, once enough have piled up to be
+    /// worth bounding. A remembered size places a tooltip on the frame it reappears, so one is worth keeping long
+    /// after the tooltip was last shown; evicting one only costs a couple of invisible frames to measure again.
     /// </summary>
     /// <remarks>
     /// The keys to drop are gathered before any of them is dropped, because a dictionary cannot be written through

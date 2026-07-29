@@ -36,7 +36,7 @@ public sealed class WindowChromeStyle
     /// </remarks>
     public float Opacity { get; set; } = 1f;
 
-    /// <summary>Returns a copy, so a shared style can be varied for one window.</summary>
+    /// <summary>Returns a copy.</summary>
     /// <returns>A shallow copy.</returns>
     public WindowChromeStyle Clone() => (WindowChromeStyle)MemberwiseClone();
 }

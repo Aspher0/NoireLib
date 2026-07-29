@@ -6,8 +6,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The sparkline: a series drawn small enough to sit in a line of text, where the shape of the last minute is the
-/// whole point and the individual numbers are not.
+/// The sparkline: a series drawn small enough to sit in a line of text, showing the shape of the last minute
+/// rather than the individual numbers.
 /// </summary>
 public static partial class NoireGauges
 {
@@ -18,8 +18,7 @@ public static partial class NoireGauges
     /// </summary>
     /// <remarks>
     /// The vertical range comes from the data unless <see cref="SparklineStyle.Min"/> and
-    /// <see cref="SparklineStyle.Max"/> pin it. Pinning is what makes two sparklines comparable: left to itself, every
-    /// trace fills its own box, and a flat line and a violent one come out looking the same.
+    /// <see cref="SparklineStyle.Max"/> pin it.
     /// </remarks>
     /// <param name="values">The series, oldest first. Fewer than two values draws nothing but still reserves the space.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default sparkline.</param>
@@ -89,8 +88,7 @@ public static partial class NoireGauges
 
         if (fill.W > 0f)
         {
-            // The filled shape is the trace closed along the bottom edge, so it is the line's own points plus the two
-            // corners under its ends rather than a second pass over the data.
+            // The filled shape is the line's own points plus the two bottom corners, avoiding a second pass over the data.
             Span<Vector2> area = count + 2 <= 258 ? stackalloc Vector2[count + 2] : new Vector2[count + 2];
 
             line.CopyTo(area);
@@ -120,8 +118,8 @@ public static partial class NoireGauges
     /// The vertical range a sparkline is plotted against.
     /// </summary>
     /// <remarks>
-    /// A flat series has no range of its own, and dividing by it would put the trace at infinity. It is drawn through
-    /// the middle instead, which is the honest picture of a value that has not moved.
+    /// A flat series has no range of its own, and dividing by it would put the trace at infinity; it is drawn through
+    /// the middle instead.
     /// </remarks>
     /// <param name="values">The series.</param>
     /// <param name="explicitMin">A pinned lower bound, or <see langword="null"/> to take it from the data.</param>

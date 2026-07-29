@@ -108,11 +108,8 @@ public partial class NoireGameWatcher
         var typedFilter = userOptions.Filter;
         var once = userOptions.Once;
 
-        // Once is deliberately handled here, not by the registry. The registry only knows about the inner
-        // subscription, but a one-shot must tear down the whole ledger entry atomically on the matching
-        // invocation - releasing interest, running ExtraDispose and invalidating the outer token - which
-        // RemoveLedgerEntry does and the registry's own once cannot. (The registry now also claims once only
-        // after its filter passes, so either place gives correct once-on-match for filtered subscriptions.)
+        // Once is handled here, not by the registry: a one-shot must atomically release interest, run
+        // ExtraDispose and invalidate the outer token, which the registry's own once cannot do.
         var innerOptions = new NoireSubscriptionOptions<object>
         {
             Priority = userOptions.Priority,
@@ -325,7 +322,7 @@ public partial class NoireGameWatcher
     #region Dispatch & custom events
 
     /// <summary>
-    /// Injects an external event into the watcher - tier 5 of the coverage doctrine with full citizenship.<br/>
+    /// Injects an external event into the watcher.<br/>
     /// Detect a fact however you like (your own hook, a network callback, anything), publish it here, and from
     /// then on it is indistinguishable from a library event: same subscriptions and options, same
     /// <see cref="WaitFor{TEvent}"/>, same <see cref="GameConditions.FromEvent{TEvent}"/>, same TaskQueue pairing.<br/>

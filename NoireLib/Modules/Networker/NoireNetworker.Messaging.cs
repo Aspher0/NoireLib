@@ -205,8 +205,8 @@ public partial class NoireNetworker
     }
 
     /// <summary>
-    /// Sends a request to every other peer and collects their responses.<br/>
-    /// Completes when all peers answered or the timeout elapsed; contains only the successful answers (failures are logged).
+    /// Sends a request to every other peer and collects their responses; completes when all peers answered or the
+    /// timeout elapsed, containing only the successful answers (failures are logged).
     /// </summary>
     /// <typeparam name="TRequest">The request type.</typeparam>
     /// <typeparam name="TResponse">The expected response type.</typeparam>

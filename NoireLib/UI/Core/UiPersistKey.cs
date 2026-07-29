@@ -7,7 +7,7 @@ namespace NoireLib.UI;
 /// <remarks>
 /// A generated id is a fresh GUID every session. Persisting against one would write an entry that can never be read
 /// back, so the state file grows forever and restores nothing, and the symptom (a setting that silently never sticks)
-/// points nowhere near the cause. Refusing once, with a message naming the fix, is the whole point.<br/>
+/// points nowhere near the cause.<br/>
 /// Shared rather than written per widget, because every <c>Persist*</c> switch in the library owes the same guarantee
 /// and a widget that quietly skipped it would be the one that fails this way.
 /// </remarks>

@@ -11,13 +11,11 @@ namespace NoireLib.UI;
 /// One JSON file, one flat key space, written on a debounce and on shutdown. Reads are cheap enough to do every frame.
 /// </summary>
 /// <remarks>
-/// <b>This is not a replacement for your configuration.</b> Nothing here is versioned, migrated, validated or backed
-/// up, and it is deleted without ceremony when a user resets their layout. Anything a user would be upset to lose
-/// belongs in the configuration system, which does all of that. What belongs here is the state a widget would rebuild
-/// from scratch without complaint, and which is only worth keeping because rebuilding it is mildly annoying.<br/>
+/// <b>Not a replacement for your configuration.</b> Nothing here is versioned, migrated, validated or backed up, and
+/// it is deleted without ceremony when a user resets their layout; keep only state a widget would rebuild from
+/// scratch without complaint.<br/>
 /// <br/>
-/// Every <c>Persist</c> switch on a widget defaults to <b>off</b>. Nothing is written until a plugin asks for it, so a
-/// plugin that never opts in never grows a state file.<br/>
+/// Every <c>Persist</c> switch on a widget defaults to <b>off</b>: nothing is written until a plugin asks for it.<br/>
 /// <br/>
 /// <b>Draw thread only</b> for reads and writes; the file itself is written on a background task.
 /// </remarks>
@@ -56,7 +54,7 @@ public static class NoireUiState
 
     /// <summary>
     /// An explicit full path for the state file, overriding <see cref="FileName"/>. Leave it <see langword="null"/> to
-    /// keep the file beside the plugin's configuration, which is where it belongs.
+    /// keep the file beside the plugin's configuration.
     /// </summary>
     public static string? FilePath
     {
@@ -72,8 +70,7 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// How long writing waits for the changes to stop before it saves. A user dragging an overlay produces a change
-    /// every frame, and none of them is worth a disk write on its own.
+    /// How long writing waits for the changes to stop before it saves.
     /// </summary>
     public static TimeSpan SaveDelay { get; set; } = TimeSpan.FromSeconds(2);
 
@@ -129,8 +126,7 @@ public static class NoireUiState
 
     /// <summary>
     /// Reads a stored value and reports whether it was there and readable.<br/>
-    /// A stored value of the wrong shape reads as absent rather than throwing: the file is editable by hand, and one bad
-    /// entry must not take a window down.
+    /// A stored value of the wrong shape reads as absent rather than throwing, since the file is editable by hand.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="key">The entry key.</param>
@@ -286,8 +282,8 @@ public static class NoireUiState
 
         if (!FileHelper.WriteJsonToFile(path, snapshot))
         {
-            // The write already logged. Keeping the dirty flag means the next change retries rather than assuming the
-            // state reached disk, so a transient failure costs a delay instead of the whole layout.
+            // The write already logged; keeping the dirty flag retries on the next change rather than assuming the
+            // state reached disk.
             lock (SyncRoot)
                 dirty = true;
         }

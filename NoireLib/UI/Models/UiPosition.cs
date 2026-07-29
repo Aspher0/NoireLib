@@ -11,9 +11,9 @@ namespace NoireLib.UI;
 /// Every pixel value here is written at 100% and scaled when the position is resolved. See <see cref="NoireUI.Scale"/>.
 /// </summary>
 /// <remarks>
-/// A position bound to a game window can fail to resolve, because the window may not be on screen. Use
-/// <see cref="TryResolve(Vector2, out Vector2)"/> where that means the element should disappear too, which is what
-/// gives "a button that exists only while the Duty Finder is open" for one line of setup.
+/// A position bound to a game window can fail to resolve, since the window may not be on screen. Use
+/// <see cref="TryResolve(Vector2, out Vector2)"/> where that should also hide the element, such as a button that
+/// exists only while the Duty Finder is open.
 /// </remarks>
 public sealed class UiPosition
 {
@@ -141,8 +141,8 @@ public sealed class UiPosition
         };
 
     /// <summary>
-    /// Creates a position placed alongside a native game window rather than over it, which is what docking a panel to
-    /// the party list or a bar under the target frame actually asks for.<br/>
+    /// Creates a position placed alongside a native game window rather than over it, for docking a panel to the
+    /// party list or a bar under the target frame.<br/>
     /// Example: <c>UiPosition.NextToAddon("_PartyList", UiSide.Right)</c>.
     /// </summary>
     /// <param name="addonName">The addon name, for example <c>_PartyList</c>.</param>
@@ -262,9 +262,9 @@ public sealed class UiPosition
     /// Resolves this position against a supplied source of game window rectangles.
     /// </summary>
     /// <remarks>
-    /// The rectangles are relative to the top left corner of the game window, in real pixels, which is what
-    /// <see cref="UiAddon.GetRect"/> returns. Supplying the source rather than reading the game is what makes this the
-    /// whole of the positioning logic and leaves nothing untestable behind it.
+    /// The rectangles are relative to the top left corner of the game window, in real pixels, matching what
+    /// <see cref="UiAddon.GetRect"/> returns. Supplying the source rather than reading the game keeps the
+    /// positioning logic testable.
     /// </remarks>
     /// <param name="elementSize">The size of the element to position, in real pixels.</param>
     /// <param name="viewportPos">The top left position of the viewport.</param>
@@ -360,8 +360,8 @@ public sealed class UiPosition
     /// attaches, and which point of the element attaches there.
     /// </summary>
     /// <remarks>
-    /// Sitting to the right of something means pinning the element's left edge to the target's right edge, so the two
-    /// ratios are mirrors along the placement axis and equal along the other. Keeping that in one place is what lets
+    /// Sitting to the right of something means pinning the element's left edge to the target's right edge, so the
+    /// two ratios are mirrors along the placement axis and equal along the other. Keeping that in one place lets
     /// docking, edge arrows and attached windows agree with each other.
     /// </remarks>
     /// <param name="side">Which side of the target to sit on.</param>

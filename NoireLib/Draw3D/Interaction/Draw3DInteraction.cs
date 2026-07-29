@@ -22,7 +22,7 @@ public sealed class Draw3DInteraction
         set => NoireInteract.Enabled = value;
     }
 
-    /// <summary>Whether interaction drives itself from <c>UiBuilder.Draw</c> every frame (default true). Turn off to call <see cref="Update"/> yourself.</summary>
+    /// <summary>Whether interaction drives itself from <c>UiBuilder.Draw</c> every frame (default true); turn off to call <see cref="Update"/> yourself.</summary>
     public bool AutoRun
     {
         get => NoireInteract.AutoRun;
@@ -57,14 +57,14 @@ public sealed class Draw3DInteraction
         set => NoireInteract.GameUiBlocksInteraction = value;
     }
 
-    /// <summary>How selections are cleared (empty-world click and/or a key). Default <see cref="DeselectMode.ClickEmpty"/>. Clearing acts on every scene's selection.</summary>
+    /// <summary>How selections are cleared (empty-world click and/or a key), default <see cref="DeselectMode.ClickEmpty"/>; clearing acts on every scene's selection.</summary>
     public DeselectMode DeselectOn
     {
         get => NoireInteract.DeselectOn;
         set => NoireInteract.DeselectOn = value;
     }
 
-    /// <summary>Whether the deselect key for <see cref="DeselectMode.Key"/> is down (default Escape). A held test - the press edge is taken for you.</summary>
+    /// <summary>Whether the deselect key for <see cref="DeselectMode.Key"/> is down (default Escape); a held test, the press edge is taken for you.</summary>
     public Func<bool> DeselectKeyHeld
     {
         get => NoireInteract.DeselectKeyHeld;
@@ -125,11 +125,11 @@ public sealed class Draw3DInteraction
     /// <summary>True when another UI surface owns the mouse this frame, or the cursor is outside the game viewport.</summary>
     public bool ForeignUiHasMouse => NoireInteract.ForeignUiHasMouse;
 
-    /// <summary>Registers a pointer client (a custom widget or gizmo) into the shared arbitration. Idempotent - the deepest interaction floor.</summary>
+    /// <summary>Registers a pointer client (a custom widget or gizmo) into the shared arbitration; idempotent, the deepest interaction floor.</summary>
     /// <param name="interactor">The interactor to add.</param>
     public void RegisterInteractor(IPointerInteractor interactor) => NoireInteract.RegisterInteractor(interactor);
 
-    /// <summary>Unregisters a pointer client. Returns whether it was registered.</summary>
+    /// <summary>Unregisters a pointer client; returns whether it was registered.</summary>
     /// <param name="interactor">The interactor to remove.</param>
     public bool UnregisterInteractor(IPointerInteractor interactor) => NoireInteract.UnregisterInteractor(interactor);
 

@@ -5,9 +5,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The look of an animated toggle drawn with <see cref="NoireButtons.Toggle(string, ref bool, ToggleStyle)"/>.<br/>
-/// Every value left <see langword="null"/> resolves through <see cref="NoireTheme.Current"/>, so a toggle matches the
-/// rest of the interface without being told anything.
+/// The look of an animated toggle drawn with <see cref="NoireButtons.Toggle(string, ref bool, ToggleStyle)"/>. Every
+/// value left <see langword="null"/> resolves through <see cref="NoireTheme.Current"/>.
 /// </summary>
 public sealed class ToggleStyle
 {
@@ -71,9 +70,7 @@ public sealed class ToggleStyle
     internal float ResolveRounding(float trackHeight)
         => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : trackHeight * 0.5f;
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public ToggleStyle Clone() => new()
     {

@@ -21,17 +21,14 @@ namespace NoireLib.UpdateTracker;
 public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 {
     /// <summary>
-    /// The EventBus instance to publish events to.<br/>
-    /// If <see langword="null"/>, no events will be published.
+    /// The EventBus instance to publish events to; <see langword="null"/> publishes nothing.
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
 
     /// <summary>
-    /// Reads the plugin repository response. The body is remote input, so this is built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
-    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
-    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
-    /// this process can assign, which would let unrelated code decide how a remote response is read.<br/>
+    /// Reads the plugin repository response. Built via <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>
+    /// rather than <see cref="JsonConvert"/> or <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>, so
+    /// no process-global <see cref="JsonConvert.DefaultSettings"/> is merged into how a remote response is parsed.<br/>
     /// TypeNameHandling stays None so a response can never name a type into existence.
     /// </summary>
     private static readonly JsonSerializer RepositoryReader = CreateRepositoryReader();
@@ -65,18 +62,15 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     private readonly HttpClient httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
 
     /// <summary>
-    /// Cancelled at the start of teardown. A check suspended on the HTTP call would otherwise resume against a disposed
-    /// <see cref="httpClient"/> and go on to touch a module, and a NoireLib, that no longer exist.
+    /// Cancelled at the start of teardown, so a check in flight cannot resume against a disposed <see cref="httpClient"/>.
     /// </summary>
     private readonly CancellationTokenSource disposalTokenSource = new();
 
     /// <summary>
-    /// Latched at the start of teardown, before anything it protects is released, so no path that starts a check or a
-    /// timer can treat a disposed module as a working one. It is latched here rather than read from <see cref="IsActive"/>
-    /// because active state is cleared only once teardown has finished, leaving a window where the module is disposed and
-    /// still reports itself active.<br/>
-    /// It is also what makes teardown itself run at most once, so that a module disposed twice does not tear down
-    /// resources it has already released.
+    /// Latched at the start of teardown, before anything it protects is released, so no in-flight check or timer start
+    /// treats a disposed module as active. Latched here rather than read from <see cref="IsActive"/> because active
+    /// state clears only once teardown has finished.<br/>
+    /// Also makes teardown idempotent.
     /// </summary>
     private volatile bool disposed;
 
@@ -88,8 +82,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     public NoireUpdateTracker() : base() { }
 
     /// <summary>
-    /// Creates a new instance of the <see cref="NoireUpdateTracker"/> module.<br/>
-    /// See <see cref="UpdateTrackerTextTags"/> to add dynamic content to messages and notifications.
+    /// Creates a new instance of the <see cref="NoireUpdateTracker"/> module. See <see cref="UpdateTrackerTextTags"/>
+    /// to add dynamic content to messages and notifications.
     /// </summary>
     /// <param name="moduleId">The optional module identifier.</param>
     /// <param name="active">Whether the module should be active upon creation.</param>
@@ -97,12 +91,12 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     /// <param name="repoUrl">The URL of the JSON repository to check for updates.</param>
     /// <param name="shouldPrintMessageInChatOnUpdate">Whether to print a message in chat when an update is detected.</param>
     /// <param name="shouldShowNotificationOnUpdate">Whether to show a notification when an update is detected.</param>
-    /// <param name="message">The message to print in chat when an update is detected.<br/>Can use dynamic content tags.</param>
-    /// <param name="notificationTitle">The title of the notification to show when an update is detected.<br/>Can use dynamic content tags.</param>
-    /// <param name="notificationMessage">The message content of the notification to show when an update is detected.<br/>Can use dynamic content tags.</param>
+    /// <param name="message">The message to print in chat when an update is detected. Can use dynamic content tags.</param>
+    /// <param name="notificationTitle">The title of the notification to show when an update is detected. Can use dynamic content tags.</param>
+    /// <param name="notificationMessage">The message content of the notification to show when an update is detected. Can use dynamic content tags.</param>
     /// <param name="notificationDurationMs">The duration in milliseconds for which the update notification will be displayed.</param>
     /// <param name="eventBus">Optional EventBus instance to publish events. If null, no event will be published.</param>
-    /// <param name="shouldStopNotifyingAfterFirstNotification">Whether to stop checking once a detected update has reached a notification channel.<br/>Declared after <paramref name="eventBus"/> so that callers already passing the earlier parameters positionally keep binding them to the same options.</param>
+    /// <param name="shouldStopNotifyingAfterFirstNotification">Whether to stop checking once a detected update has reached a notification channel. Declared last so existing positional callers keep binding earlier parameters unchanged.</param>
     public NoireUpdateTracker(
         string? moduleId = null,
         bool active = true,
@@ -145,9 +139,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     /// <param name="args">The initialization parameters</param>
     protected override void InitializeModule(params object?[] args)
     {
-        // Nothing here needs NoireLib to be initialized: recording how the module should behave requires no Dalamud
-        // service. The update check is the part that genuinely does need one, and it declines and says so while NoireLib
-        // is uninitialized, so construction order is a non-issue rather than something a consumer has to get right.
+        // Construction requires no Dalamud service; only the update check does, and it self-declines while NoireLib
+        // is uninitialized.
         if (args.Length > 0 && args[0] is string repoUrl)
             RepoUrl = repoUrl;
 
@@ -204,16 +197,11 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     private string? repoUrl = null;
 
     /// <summary>
-    /// The URL of the JSON repository to check for updates.<br/>
-    /// While this is null or whitespace there is nothing to fetch, so the update check timer stays stopped instead of
-    /// waking every <see cref="CheckIntervalMinutes"/> to do nothing. Assigning a URL while the module is active starts
-    /// the timer, and clearing it stops the timer again.<br/>
-    /// Assigning a different URL reopens the <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate, and the
-    /// first check against the new repository runs <see cref="CheckStartDelayMs"/> later rather than at the end of the
-    /// current interval. Assigning the URL it already holds does neither, so a consumer that writes this every frame
-    /// from its own configuration costs nothing.<br/>
-    /// Assigning this on a disposed module records the URL but starts no timer, since there is nothing left to check
-    /// with.
+    /// The JSON repository URL to check for updates.<br/>
+    /// Null or whitespace stops the update check timer; a value assigned while active starts it.<br/>
+    /// Reassigning to a different URL reopens the <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate and
+    /// delays the next check by <see cref="CheckStartDelayMs"/>; reassigning the same value is a no-op.<br/>
+    /// No effect beyond recording the value once the module is disposed.
     /// </summary>
     public string? RepoUrl
     {
@@ -275,25 +263,19 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// Whether to stop checking for updates once a detected update has been shown.<br/>
-    /// An update counts as shown when the check carried it to at least one channel: a notification toast, a chat
-    /// message, or a <see cref="NewPluginVersionDetectedEvent"/> handed to <see cref="EventBus"/> subscribers. The
-    /// event bus counts because a subscriber receives the detection and decides what to present, which is the same
-    /// role the two built-in channels play; a tracker configured to report only through the event bus would otherwise
-    /// never satisfy this gate and would keep polling forever.<br/>
-    /// Detecting a newer version while every channel is off (both <see cref="ShouldShowNotificationOnUpdate"/> and
-    /// <see cref="ShouldPrintMessageInChatOnUpdate"/> disabled with no <see cref="EventBus"/> attached) shows nothing
-    /// and therefore leaves this gate open, so that checks keep running and the next detection can still be reported
-    /// once a channel is configured.<br/>
-    /// The gate closes at most once per shown update, not once per session: <see cref="HasShownUpdateNotification"/>
-    /// reports whether it is closed, assigning a different <see cref="RepoUrl"/> reopens it, and
-    /// <see cref="ResetUpdateNotification"/> reopens it on demand.
+    /// Whether to stop checking once a detected update has been shown.<br/>
+    /// Counts as shown once the check reaches at least one channel: a notification, a chat message, or a
+    /// <see cref="NewPluginVersionDetectedEvent"/> published to <see cref="EventBus"/> subscribers.<br/>
+    /// Leaves the gate open when every channel is off (<see cref="ShouldShowNotificationOnUpdate"/> and
+    /// <see cref="ShouldPrintMessageInChatOnUpdate"/> both disabled, no <see cref="EventBus"/>), so checks keep running.<br/>
+    /// <see cref="HasShownUpdateNotification"/> reports the gate state; assigning a different <see cref="RepoUrl"/> or
+    /// calling <see cref="ResetUpdateNotification"/> reopens it.
     /// </summary>
     public bool ShouldStopNotifyingAfterFirstNotification { get; set; } = true;
 
     /// <summary>
-    /// Sets whether to stop notifying after the first update notification has been shown.<br/>
-    /// See <see cref="ShouldStopNotifyingAfterFirstNotification"/> for what counts as shown.
+    /// Sets whether to stop notifying after the first shown update; see
+    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> for what counts as shown.
     /// </summary>
     /// <param name="shouldStop">Whether to stop notifying after the first notification.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -304,22 +286,18 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// Whether a detected update has already been carried to at least one notification channel, which is what
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> gates further checks on. While this is true and that
-    /// option is enabled, no check runs.<br/>
-    /// See <see cref="ShouldStopNotifyingAfterFirstNotification"/> for what counts as shown. Assigning a different
-    /// <see cref="RepoUrl"/> clears this, and <see cref="ResetUpdateNotification"/> clears it on demand.
+    /// Whether a detected update has reached at least one notification channel; see
+    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> for what that gates.<br/>
+    /// True with that option enabled stops checks. Assigning a different <see cref="RepoUrl"/> or calling
+    /// <see cref="ResetUpdateNotification"/> clears this.
     /// </summary>
     public bool HasShownUpdateNotification { get; private set; } = false;
 
     /// <summary>
-    /// Reopens the <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate, so that the next detected update is
-    /// reported again even though an earlier one already reached a notification channel.<br/>
-    /// Assigning a different <see cref="RepoUrl"/> already does this, since a notification shown for one repository
-    /// says nothing about another. Call this when something else that the shown notification was about has changed, or
-    /// to report a still-pending update again after the user has dismissed it.<br/>
-    /// The automatic checks resume on their existing schedule. To check immediately instead, follow this with
-    /// <see cref="CheckForUpdatesNowAsync"/>.
+    /// Reopens the <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate so the next detected update is
+    /// reported again.<br/>
+    /// Assigning a different <see cref="RepoUrl"/> already does this. Checks continue on the existing schedule;
+    /// follow with <see cref="CheckForUpdatesNowAsync"/> to check immediately instead.
     /// </summary>
     /// <returns>The module instance for chaining.</returns>
     public NoireUpdateTracker ResetUpdateNotification()
@@ -329,18 +307,14 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// The message to print in chat when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"[{UpdateTrackerTextTags.PluginInternalName}] A new update is available. Current version: {UpdateTrackerTextTags.CurrentVersion} - New version: {UpdateTrackerTextTags.NewVersion}."<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// The message to print in chat when an update is detected. Use <see cref="UpdateTrackerTextTags"/> tags for
+    /// dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     public string? Message { get; set; } = null;
 
     /// <summary>
-    /// Sets the message to print in chat when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"[{UpdateTrackerTextTags.PluginInternalName}] A new update is available. Current version: {UpdateTrackerTextTags.CurrentVersion} - New version: {UpdateTrackerTextTags.NewVersion}."<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// Sets the message to print in chat when an update is detected. Use <see cref="UpdateTrackerTextTags"/> tags for
+    /// dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     /// <param name="message">The message content.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -351,18 +325,14 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// The title of the notification to show when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} - Update Available"<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// The title of the notification to show when an update is detected. Use <see cref="UpdateTrackerTextTags"/> tags
+    /// for dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     public string? NotificationTitle { get; set; } = null;
 
     /// <summary>
-    /// Sets the title of the notification to show when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} - Update Available"<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// Sets the title of the notification to show when an update is detected. Use <see cref="UpdateTrackerTextTags"/>
+    /// tags for dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     /// <param name="title"></param>
     /// <returns></returns>
@@ -373,18 +343,14 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// The message content of the notification to show when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerTextTags.NewVersion}"<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// The message content of the notification to show when an update is detected. Use
+    /// <see cref="UpdateTrackerTextTags"/> tags for dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     public string? NotificationMessage { get; set; } = null;
 
     /// <summary>
-    /// Sets the message content of the notification to show when an update is detected.<br/>
-    /// Use <see cref="UpdateTrackerTextTags"/> tags for dynamic content.<br/>
-    /// Example: $"{UpdateTrackerTextTags.PluginInternalName} has a new update available.\nCurrent version: {UpdateTrackerTextTags.CurrentVersion}\nNew version: {UpdateTrackerTextTags.NewVersion}"<br/>
-    /// Set to <see langword="null"/> to use the default content.
+    /// Sets the message content of the notification to show when an update is detected. Use
+    /// <see cref="UpdateTrackerTextTags"/> tags for dynamic content; <see langword="null"/> uses the default content.
     /// </summary>
     /// <param name="notificationMessage">The notification message content.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -395,14 +361,12 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// The duration in milliseconds for which the update notification will be displayed.<br/>
-    /// By default, the notification will be shown for 30000 ms (30 seconds).
+    /// The duration in milliseconds the update notification is displayed. Default is 30000 ms (30 seconds).
     /// </summary>
     public int NotificationDurationMs { get; set; } = 30000;
 
     /// <summary>
-    /// Sets the duration in milliseconds for which the update notification will be displayed.<br/>
-    /// By default, the notification will be shown for 30000 ms (30 seconds).
+    /// Sets the duration in milliseconds the update notification is displayed. Default is 30000 ms (30 seconds).
     /// </summary>
     /// <param name="durationMs">The duration in milliseconds.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -415,13 +379,9 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     private int checkIntervalMinutes = 30;
 
     /// <summary>
-    /// The interval in minutes at which to check for updates.<br/>
-    /// Default is 30 minutes.<br/>
-    /// Assigning this while the module is active restarts the timer, so the new interval applies from the next check
-    /// rather than from the end of the one already in flight. That next check runs <see cref="CheckStartDelayMs"/>
-    /// later.<br/>
-    /// Assigning this on a disposed module records the interval but starts no timer, since there is nothing left to
-    /// check with.
+    /// The interval in minutes between update checks. Default is 30.<br/>
+    /// Assigning while active restarts the timer; the next check runs after <see cref="CheckStartDelayMs"/>.<br/>
+    /// No effect beyond recording the value once the module is disposed.
     /// </summary>
     public int CheckIntervalMinutes
     {
@@ -453,17 +413,12 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     private int checkStartDelayMs = 2000;
 
     /// <summary>
-    /// The delay in milliseconds between the update check timer starting and the first check it runs.<br/>
-    /// Every path that starts the timer restarts this delay: activating the module, and assigning
-    /// <see cref="RepoUrl"/> or <see cref="CheckIntervalMinutes"/> while it is active. A run of configuration changes
-    /// therefore costs one check once the values settle rather than one request per change, which is what a URL
-    /// assigned from a text field that fires on every keystroke would otherwise produce.<br/>
-    /// It is also what makes reconfiguration take effect promptly: the first check against a newly assigned repository
-    /// runs this long after it was assigned, instead of waiting out a whole <see cref="CheckIntervalMinutes"/>
-    /// interval.<br/>
-    /// Default is 2000 ms. Set to 0 to check the moment the timer starts, accepting one request per configuration
-    /// change. A new value applies the next time the timer starts, since applying it any sooner would mean restarting
-    /// the timer, which is itself a scheduled check.
+    /// The delay in milliseconds between the update check timer starting and its first check.<br/>
+    /// Restarted by every path that starts the timer: module activation, and assigning <see cref="RepoUrl"/> or
+    /// <see cref="CheckIntervalMinutes"/> while active. A burst of configuration changes therefore costs one check,
+    /// not one per change.<br/>
+    /// Default is 2000 ms; 0 checks the moment the timer starts. A new value applies the next time the timer starts,
+    /// not immediately.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is negative.</exception>
     public int CheckStartDelayMs
@@ -479,9 +434,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// Sets the delay in milliseconds between the update check timer starting and the first check it runs.<br/>
-    /// Default is 2000 ms. See <see cref="CheckStartDelayMs"/> for what restarts the delay and when a new value
-    /// applies.
+    /// Sets the delay in milliseconds between the update check timer starting and its first check. Default is 2000 ms;
+    /// see <see cref="CheckStartDelayMs"/> for what restarts it and when a new value applies.
     /// </summary>
     /// <param name="delayMs">The delay in milliseconds.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -544,16 +498,13 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     #endregion
 
     /// <summary>
-    /// Checks for an update immediately, rather than waiting for the next scheduled check.<br/>
-    /// The returned task completes once the check has finished and its notifications have been delivered, so a caller
-    /// can await it to re-enable the control that started it. It never faults: a check reports its own failures
-    /// through the log, which is what the scheduled checks already rely on, so discarding this task is as safe as
-    /// awaiting it.<br/>
-    /// The check runs under exactly the rules a scheduled one does, and so does nothing when the module is disposed,
-    /// when the module is inactive, when <see cref="RepoUrl"/> is not configured, when NoireLib is not initialized, or
-    /// when <see cref="ShouldStopNotifyingAfterFirstNotification"/> has already closed on a shown update. Call
-    /// <see cref="ResetUpdateNotification"/> first to check past that last one.<br/>
-    /// The schedule of the automatic checks is left alone.
+    /// Checks for an update immediately instead of waiting for the next scheduled check.<br/>
+    /// The returned task completes once the check and its notifications finish; it never faults, so discarding it is
+    /// safe.<br/>
+    /// No-ops when the module is disposed or inactive, when <see cref="RepoUrl"/> is unset, when NoireLib is
+    /// uninitialized, or when <see cref="ShouldStopNotifyingAfterFirstNotification"/> has already closed the gate
+    /// (call <see cref="ResetUpdateNotification"/> first to bypass that). Leaves the automatic check schedule
+    /// unchanged.
     /// </summary>
     /// <returns>A task that completes when the check has finished.</returns>
     public Task CheckForUpdatesNowAsync() => CheckForUpdateAsync();
@@ -637,9 +588,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
         }
         catch (ObjectDisposedException)
         {
-            // Teardown landed between the disposed check above and this check reaching the token source or the HTTP
-            // client, both of which it disposes. The same benign case as the cancellation above, and reported the same
-            // way: the module is gone, which is not a failure of the check.
+            // Teardown landed between the disposed check above and this call touching the token source or HTTP
+            // client. Same benign case as the cancellation above.
         }
         catch (Exception ex)
         {
@@ -648,10 +598,10 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// Carries a detected update to every configured notification channel and closes the
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate if at least one of them took it.<br/>
-    /// Framework thread only: this reaches the notification manager and the chat log, and it hands
-    /// <see cref="NewPluginVersionDetectedEvent"/> to event bus subscribers, which run inline on the calling thread.
+    /// Carries a detected update to every configured channel and closes the
+    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate if any channel took it.<br/>
+    /// Framework thread only: reaches the notification manager and chat log, and runs
+    /// <see cref="NewPluginVersionDetectedEvent"/> subscribers inline.
     /// </summary>
     /// <param name="currentVersion">The currently installed plugin version.</param>
     /// <param name="remoteVersion">The newer version found in the repository.</param>
@@ -689,11 +639,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     }
 
     /// <summary>
-    /// Whether a detected update reaches at least one notification channel, and therefore whether the
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate has a delivery to close on.<br/>
-    /// This is the whole rule behind that gate, kept in one place so that the decision to stop checking is made from
-    /// what a detection actually carries rather than from the fact that a version was newer. See
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> for why an attached event bus counts.
+    /// Whether a detected update reaches at least one channel, and therefore whether
+    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> has a delivery to close its gate on.
     /// </summary>
     /// <param name="hasEventBus">Whether an <see cref="EventBus"/> is attached to receive the detection.</param>
     /// <param name="showsNotification">The value of <see cref="ShouldShowNotificationOnUpdate"/>.</param>
@@ -712,8 +659,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 
     /// <summary>
     /// Internal dispose method called when the module is disposed.<br/>
-    /// Runs once. A second call returns having done nothing, since a module is reachable for teardown both from the
-    /// consumer that owns it and from the library tearing its modules down.
+    /// Runs once; a second call is a no-op.
     /// </summary>
     protected override void DisposeInternal()
     {

@@ -38,7 +38,7 @@ FuzzyMatcher.IsMatch("Combat Log", "cmbl");     // true
 FuzzyMatcher.Score("Combat Log", "cmbl");       // 168 - higher sorts first
 ```
 
-An empty query matches everything, which is what a filter box nobody has typed in should show.
+An empty query matches everything: the state a filter box nobody has typed into should show.
 
 **A score of zero means "did not match", and nothing else.** A successful match always scores at least one, whatever
 weights were used, so `Score(...) > 0` is a valid test even with weights of your own.
@@ -66,8 +66,8 @@ FPS for a query that has not changed is waste.
 
 ## Highlighting the match
 
-Showing which characters matched is most of what makes a fuzzy filter feel trustworthy rather than arbitrary. Without
-it, a list that quietly reorders itself looks like it is guessing.
+Showing which characters matched makes a fuzzy filter feel trustworthy rather than arbitrary. Without it, a list
+that quietly reorders itself looks like it is guessing.
 
 ```csharp
 Span<int> hits = stackalloc int[FuzzyMatcher.MaxQueryLength];
@@ -92,7 +92,7 @@ filtering: short human-readable labels like command names, setting titles and it
 | Signal | Default | Why |
 |---|---|---|
 | Consecutive run | `+15 x run length` | The strongest signal there is, and **it grows with the run**. Two adjacent characters say little; six in a row mean the query is simply a substring of the answer. |
-| Word start | `+30` | A match after a space, underscore, hyphen, dot or slash. This is what makes initialisms work. |
+| Word start | `+30` | A match after a space, underscore, hyphen, dot or slash; how initialisms match. |
 | CamelCase boundary | `+30` | A capital following a lower-case letter is a word start inside an identifier. |
 | First character | `+15` | On top of the word-start bonus, which the first character also earns for being the start of a word. |
 | Exact case | `+4` | Small on purpose: it breaks ties towards the obvious answer without overriding anything real. |
@@ -105,8 +105,8 @@ Two of these are worth knowing about, because they decide the results you will a
 several other entries match, because six consecutive characters outweigh any combination of boundary bonuses.
 
 **A word-start bonus larger than a two-character run means initialisms win.** For `cl`, `Copy Link` and `Combat Log`
-rank above `Close Window`, because reading the query as initials is what a command palette is for. If your list is
-better served by prefixes, raise `SequentialBonus` or lower `SeparatorBonus`.
+rank above `Close Window`, since a command palette reads the query as initials. If your list is better served by
+prefixes, raise `SequentialBonus` or lower `SeparatorBonus`.
 
 ---
 
@@ -134,8 +134,8 @@ own.
 
 The search explores alternative positions because greedy matching picks the wrong ones: `cl` against `Combat Log` taken
 greedily is the `C` and the `l` of `Combat`, which highlights the wrong letters and scores as a mid-word match.
-`RecursionBudget` bounds that exploration, which is what stops a pathological candidate (a long run of one repeated
-character) from costing exponential time.
+`RecursionBudget` bounds that exploration, stopping a pathological candidate (a long run of one repeated character)
+from costing exponential time.
 
 `MaxQueryLength` caps the query the convenience overloads consider. The span overload takes a query of any length.
 

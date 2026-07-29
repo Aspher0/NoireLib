@@ -9,26 +9,12 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Draws meshes depth-only into the GAME's shadow maps, inside the game's own shadow passes, so injected
-/// geometry casts shadows.<br/>
-/// <b>How the light is found.</b> Nothing on the CPU hands over a light's transform; it lives in the
-/// g_CameraParameter block the game's own shadow draws consume, whose layout the game's shader reflection
-/// names: m_ViewMatrix (world to the pass's view space) at byte 0 and m_ProjectionMatrix (view to clip)
-/// at byte 288 - the two a shadow pass fills. This runs at the END of each shadow bind, with the last
-/// caster draw's constants still bound - the pass's own settled values; a bind's FIRST draw does not
-/// reliably carry the pass that owns the map. Both windows are copied GPU-side into a small row buffer the
-/// vertex shader reads - no CPU round trip, no stall. The near-field map carries a 64-byte buffer holding
-/// one whole transform instead; a bind whose constants match neither shape is skipped. See
-/// docs/Draw3D Game Assets Status.md.<br/>
-/// <b>What is inherited.</b> Depth compare, depth bias, viewport and culling all stay as the game configured
-/// them for the very map being rendered; this pass changes only the shaders, the input assembly and its own
-/// constant slots, and restores those.<br/>
-/// <b>Cached maps are the limit.</b> The game re-renders a light's map only when its own bookkeeping says
-/// something near that light changed, and injected geometry is invisible to that bookkeeping - so a cached
-/// map shows the shadow only when the game next refreshes it. Stamping cached maps from saved captures was
-/// tried and removed: a capture only exists because the slice really rendered, and that render already
-/// received the injection, so a later stamp can only add a second silhouette on top of the first - written
-/// depth cannot be unwritten. Ending the wait requires the game itself to invalidate the map; see
-/// docs/Draw3D Game Assets Status.md.
+/// geometry casts shadows. Runs at the END of each shadow bind, with the last caster draw's constants still
+/// bound; a bind's first draw does not reliably carry the pass that owns the map. Depth compare, depth bias,
+/// viewport and culling stay as the game configured them; only the shaders, input assembly and this pass's own
+/// constant slots change, and are restored after. The game re-renders a light's map only when its own
+/// bookkeeping detects a change near that light, and injected geometry is invisible to that bookkeeping, so a
+/// cached map shows the shadow only once the game next refreshes it.
 /// </summary>
 internal sealed unsafe class ShadowInject : IDisposable
 {
@@ -39,10 +25,8 @@ internal sealed unsafe class ShadowInject : IDisposable
 
     // The g_CameraParameter block, named by the game's own shader reflection: m_ViewMatrix (world to the
     // pass's view space, three rows) sits at byte 0 and m_ProjectionMatrix (view to clip, four rows) at
-    // byte 288. Those two are what a shadow pass fills - the probe finds no matrix at 96 (viewProj) or
-    // 352 (mainViewToProj) in shadow binds - and the game's own geometry shaders compose positions the
-    // same way: an instance transform into the pass's view space, then the projection rows. See
-    // docs/Draw3D Game Assets Status.md.
+    // byte 288. Those two are what a shadow pass fills; the game's own geometry shaders compose positions
+    // the same way, an instance transform into the pass's view space, then the projection rows.
     private const int ViewOffset = 0;
     private const int ViewSize = 48;
     private const int ClipOffset = 288;
@@ -97,10 +81,9 @@ internal sealed unsafe class ShadowInject : IDisposable
     public int LastInjectedCount { get; private set; }
 
     /// <summary>
-    /// How many of last frame's drawn groups were the near-field map (the single-matrix constant layout),
-    /// for diagnostics. This is the map the game redraws every frame, so a steady non-zero count is what
-    /// says a cast appears immediately rather than waiting on a cached per-light map to refresh. Zero while
-    /// the per-light maps are being drawn into means the near-field layout is not being reached.
+    /// How many of last frame's drawn groups were the near-field map (the single-matrix constant layout), for
+    /// diagnostics. The game redraws this map every frame, so a steady non-zero count means a cast appears
+    /// immediately; zero while per-light maps are being drawn means the near-field layout is not being reached.
     /// </summary>
     public int LastNearFieldCount { get; private set; }
 

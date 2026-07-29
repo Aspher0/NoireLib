@@ -26,12 +26,10 @@ public enum FileWatchEventType
     Renamed,
 
     /// <summary>
-    /// Never carried by a notification, and kept only because removing it would break consumers that name it.<br/>
-    /// A watcher-level error is not a filesystem notification: it reports an exception rather than a path, so it
-    /// travels as a <see cref="FileWatchError"/> through <see cref="NoireFileWatcher.Error"/> and
-    /// <see cref="FileWatchErrorEvent"/> instead of as a <see cref="FileWatchNotification"/>. No
-    /// <see cref="FileWatchNotification.EventType"/> is ever set to this value, so a switch case testing for it is
-    /// unreachable. Handle the error event to observe watcher errors.
+    /// Never carried by a notification; kept only because removing it would break consumers that name it.<br/>
+    /// A watcher-level error travels as a <see cref="FileWatchError"/> through <see cref="NoireFileWatcher.Error"/>
+    /// and <see cref="FileWatchErrorEvent"/> instead, so <see cref="FileWatchNotification.EventType"/> is never set
+    /// to this value and a switch case testing for it is unreachable.
     /// </summary>
     Error
 }

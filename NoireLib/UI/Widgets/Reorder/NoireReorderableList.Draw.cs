@@ -64,18 +64,16 @@ public sealed partial class NoireReorderableList<T>
         listTop = origin.Y;
         rowStep = height + spacing;
 
-        // Worked out from the pointer rather than from which row reports itself hovered. While a drag is running the
-        // dragged row is the active item, and ImGui gives no other item the hover, so a hover-driven target only ever
-        // resolves in whichever direction happened to keep the pointer inside the row it started on.
+        // Worked out from the pointer rather than which row reports itself hovered: while dragging, ImGui gives the
+        // hover to no row but the dragged one, so a hover-driven target would only work in one direction.
         if (draggingIndex >= 0)
             dropTarget = ResolveDropTarget(ImGui.GetIO().MousePos.Y);
 
         for (var index = 0; index < items.Count; index++)
             DrawRow(index, width, height);
 
-        // Applied after the loop, since removing, inserting or reordering mid-draw shifts every row after it onto an
-        // index that is still to be drawn. The keyboard move belongs here for the same reason the buttons do, and did
-        // not, which is why the arrow keys appeared to do nothing.
+        // Applied after the loop, since removing, inserting or reordering mid-draw shifts every row after it onto
+        // an index that is still to be drawn. The keyboard move belongs here for the same reason the buttons do.
         if (pendingDuplicate >= 0)
             DuplicateAt(pendingDuplicate);
         else if (pendingRemoval >= 0)
@@ -83,10 +81,9 @@ public sealed partial class NoireReorderableList<T>
         else if (pendingMoveFrom >= 0 && Move(pendingMoveFrom, pendingMoveTo))
             focusedIndex = Math.Clamp(pendingMoveTo, 0, items.Count - 1);
 
-        // Clicking away drops the focus, so a list nobody is working in does not keep the arrow keys to itself. Tested
-        // against the list's own bounds rather than against whether anything was hovered: clicking another control is
-        // the ordinary way to stop working in a list, and hovering test would count that as still being in it, leaving
-        // the keys held while the user is plainly somewhere else.
+        // Clicking away drops the focus, so a list nobody is working in does not keep the arrow keys to itself.
+        // Tested against the list's own bounds rather than whether anything was hovered: clicking another control
+        // is the ordinary way to stop working in a list, and a hover test would still count that as being in it.
         if (ImGui.IsMouseClicked(ImGuiMouseButton.Left) && !ListBounds(width, height).Contains(ImGui.GetIO().MousePos))
             focusedIndex = -1;
 
@@ -111,9 +108,7 @@ public sealed partial class NoireReorderableList<T>
         return changedThisFrame;
     }
 
-    /// <summary>
-    /// The area the rows occupy on screen, which is what counts as being inside the list.
-    /// </summary>
+    /// <summary>The area the rows occupy on screen.</summary>
     /// <param name="width">The width the rows were drawn at.</param>
     /// <param name="height">The height of one row.</param>
     /// <returns>The bounds in screen pixels.</returns>
@@ -172,8 +167,8 @@ public sealed partial class NoireReorderableList<T>
             PaintRow(origin, size, isDragging, hovered && draggingIndex < 0, isFocused, theme);
             PaintGrip(origin, size, gripWidth, isDragging || hovered, theme);
 
-            // The content is overlaid on the row rather than drawn into it, because the row is one invisible button:
-            // that is what makes the whole row draggable and hoverable rather than only the parts nothing else covers.
+            // The content is overlaid on the row rather than drawn into it, since the row is one invisible button:
+            // that keeps the whole row draggable and hoverable, not only the parts nothing else covers.
             var contentWidth = MathF.Max(0f, width - gripWidth - buttonWidth);
 
             ImGui.SetCursorScreenPos(new Vector2(
@@ -274,13 +269,12 @@ public sealed partial class NoireReorderableList<T>
     /// Queues a move of the focused row from the reorder keys.
     /// </summary>
     /// <remarks>
-    /// The keys are read through <see cref="KeybindsHelper.IsBindingHeld"/> rather than through ImGui, and that is the
-    /// whole reason this works. ImGui only receives key events the host forwards, and the host forwards them only when
-    /// ImGui says it wants the keyboard, which with no text field active it does not: the game takes the arrow keys
-    /// and the widget is never told anything happened. Reading the key state directly is the same route
-    /// <see cref="NoireHotkeyManager"/> takes, and it is why a hotkey works anywhere.<br/>
-    /// The move is queued rather than made here, because this runs inside the loop drawing the rows and reordering the
-    /// list under that loop moves every later row onto an index that has not been drawn yet.
+    /// The keys are read through <see cref="KeybindsHelper.IsBindingHeld"/> rather than through ImGui: ImGui only
+    /// receives key events the host forwards, and forwards them only when it wants the keyboard, which with no text
+    /// field active it does not, so the game takes the arrow keys and the widget is never told. Reading the key
+    /// state directly is the same route <see cref="NoireHotkeyManager"/> takes.
+    /// The move is queued rather than made here, because this runs inside the loop drawing the rows, and reordering
+    /// the list under that loop would move every later row onto an index that has not been drawn yet.
     /// </remarks>
     private void HandleKeyboard(int index)
     {
@@ -303,9 +297,8 @@ public sealed partial class NoireReorderableList<T>
     /// Whether a binding counts as pressed this frame, including a repeat while it is held.
     /// </summary>
     /// <remarks>
-    /// The key state read this way is a level, not an edge: it says the key is down, not that it has just gone down.
-    /// So the edge is derived here, and a hold repeats on the same delay and rate ImGui uses for a held key, which is
-    /// what makes walking a row several places feel like one gesture rather than several presses.
+    /// The key state read this way is a level, not an edge: it says the key is down, not that it has just gone
+    /// down. The edge is derived here, and a hold repeats on the same delay and rate ImGui uses for a held key.
     /// </remarks>
     private static bool Pressed(HotkeyBinding binding, ref double heldSince)
     {
@@ -337,8 +330,7 @@ public sealed partial class NoireReorderableList<T>
     }
 
     /// <summary>
-    /// Whether a binding names anything at all, so an unbound or disabled hotkey is simply off rather than a key
-    /// combination of no keys that reads as held.
+    /// Whether a binding names anything at all, so an empty binding reads as unbound rather than always-held.
     /// </summary>
     private static bool IsBound(HotkeyBinding binding)
         => binding.VkCode != 0 || binding.GamepadButton.HasValue;
@@ -359,8 +351,7 @@ public sealed partial class NoireReorderableList<T>
     /// Not what makes the keys arrive: they are read from the key state directly and arrive either way. This is so
     /// that pressing the shortcut does not *also* do whatever the game does with that key, which for the default
     /// arrows is turn the character.<br/>
-    /// Claimed only while a row is focused in a focused window, and the focus is dropped by clicking anywhere else,
-    /// because it is holding those keys away from the game.
+    /// Claimed only while a row is focused in a focused window; the focus is dropped by clicking anywhere else.
     /// </remarks>
     private void ClaimKeyboardIfFocused()
     {
@@ -438,9 +429,7 @@ public sealed partial class NoireReorderableList<T>
             LabelOf(items[draggingIndex]));
     }
 
-    /// <summary>
-    /// Draws the handle: three short bars, which is what a grip looks like everywhere and needs no icon font.
-    /// </summary>
+    /// <summary>Draws the handle: three short bars, no icon font needed.</summary>
     private static void PaintGrip(Vector2 origin, Vector2 size, float gripWidth, bool lit, NoireTheme theme)
     {
         var color = ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.TextMuted), lit ? 0.9f : 0.45f);

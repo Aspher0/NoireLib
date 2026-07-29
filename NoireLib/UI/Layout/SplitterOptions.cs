@@ -8,8 +8,7 @@ namespace NoireLib.UI;
 /// </summary>
 /// <remarks>
 /// The grab area and the divider are separate concerns here: <see cref="Thickness"/> is how much of the pointer's path
-/// counts as the handle, while the line drawn down the middle of it is a hairline. A comfortable handle and a hairline
-/// divider are what a resizable pane usually wants, and they are not the same number.
+/// counts as the handle, while the line drawn down the middle of it is a hairline; the two are not the same number.
 /// </remarks>
 public sealed class SplitterOptions
 {
@@ -30,7 +29,7 @@ public sealed class SplitterOptions
 
     /// <summary>
     /// How long the divider is, across the panes it separates, in real pixels. Zero fills the space remaining in the
-    /// current region, which is only right when the panes do too.
+    /// current region; pass an explicit length when the panes are a fixed size.
     /// </summary>
     public float Length { get; set; }
 
@@ -53,8 +52,8 @@ public sealed class SplitterOptions
     /// Paints the divider yourself, in place of the line NoireUI would draw.
     /// </summary>
     /// <remarks>
-    /// The splitter still owns the handle, the drag and the clamping whatever this draws, so a hook that draws nothing
-    /// is the way to make an existing divider draggable without changing how it looks. See
+    /// The splitter still owns the handle, the drag and the clamping whatever this draws: a hook that draws nothing
+    /// makes an existing divider draggable without changing how it looks. See
     /// <see cref="UiSplitterDraw.DrawLine()"/> for the shipped line, when the hook only wants to add to it.
     /// </remarks>
     public Action<UiSplitterDraw>? CustomDraw { get; set; }

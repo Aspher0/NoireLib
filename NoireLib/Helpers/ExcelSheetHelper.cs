@@ -9,12 +9,12 @@ using System.Linq;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A helper class for managing Excel sheets across different client languages.<br/>
-/// Supports lazy loading and caching of sheets for fast retrieval.
+/// Manages Excel sheets across client languages, with lazy loading and caching.
 /// </summary>
 public static class ExcelSheetHelper
 {
     private static readonly ConcurrentDictionary<(Type SheetType, ClientLanguage Language), object> Sheets = new();
+    private static readonly ConcurrentDictionary<(Type SheetType, ClientLanguage Language), object> SubrowSheets = new();
 
     /// <summary>
     /// Loads the Excel sheets for the specified type across all client languages.
@@ -54,7 +54,7 @@ public static class ExcelSheetHelper
     /// <typeparam name="T">The type of the Excel row.</typeparam>
     /// <param name="rowId">The unique identifier of the row to retrieve.</param>
     /// <param name="lang">An optional client language to use when retrieving the row. If not specified, the default language is used.</param>
-    /// <returns>An instance of type <typeparamref name="T"/> representing the requested row if found; otherwise, null.</returns>
+    /// <returns>An instance of type <typeparamref name="T"/> representing the requested row if found.</returns>
     public static T GetRow<T>(uint rowId, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
     {
         var sheet = GetSheet<T>(lang);
@@ -66,7 +66,7 @@ public static class ExcelSheetHelper
     }
 
     /// <summary>
-    /// Tries to retrieve a row of data from the specified Excel sheet by its unique identifier, returning a boolean indicating success or failure.
+    /// Tries to retrieve a row of data from the specified Excel sheet by its unique identifier.
     /// </summary>
     /// <typeparam name="T">The type of the Excel row.</typeparam>
     /// <param name="rowId">The unique identifier of the row to retrieve.</param>
@@ -115,7 +115,7 @@ public static class ExcelSheetHelper
     /// <typeparam name="T">The type of the Excel row.</typeparam>
     /// <param name="predicate">A function to test each row for a condition.</param>
     /// <param name="lang">An optional client language to use when retrieving the rows. If not specified, the default language is used.</param>
-    /// <returns>An IEnumerable of <typeparamref name="T"/> representing all matching rows in the sheet, or an empty collection if no matches are found.</returns>
+    /// <returns>All matching rows, or empty if none match.</returns>
     public static IEnumerable<T> FindRows<T>(Func<T, bool> predicate, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
     {
         var sheet = GetSheet<T>(lang);
@@ -124,5 +124,46 @@ public static class ExcelSheetHelper
             return Enumerable.Empty<T>();
 
         return sheet.Where(predicate);
+    }
+
+    /// <summary>
+    /// Gets the subrow Excel sheet for the specified type and language, cached separately from ordinary sheets.<br/>
+    /// A subrow sheet's rows each hold a variable-length list of subrows (e.g. <c>MapMarker</c>, <c>ZoneSharedGroup</c>, <c>HousingMapMarkerInfo</c>).
+    /// </summary>
+    /// <typeparam name="T">The type of the Excel subrow.</typeparam>
+    /// <param name="lang">The client language. If null, uses the current client language.</param>
+    /// <returns>The subrow Excel sheet of type <typeparamref name="T"/> for the specified language, or null if not found.</returns>
+    public static SubrowExcelSheet<T>? GetSubrowSheet<T>(ClientLanguage? lang = null) where T : struct, IExcelSubrow<T>
+    {
+        var language = lang ?? NoireService.ClientState.ClientLanguage;
+
+        if (SubrowSheets.TryGetValue((typeof(T), language), out var cached))
+            return cached as SubrowExcelSheet<T>;
+
+        var sheet = NoireService.DataManager.GetSubrowExcelSheet<T>(language);
+        if (sheet == null)
+            return null;
+
+        SubrowSheets[(typeof(T), language)] = sheet;
+        return sheet;
+    }
+
+    /// <summary>
+    /// Tries to retrieve a row's subrow collection from the specified subrow Excel sheet by its unique identifier.
+    /// </summary>
+    /// <typeparam name="T">The type of the Excel subrow.</typeparam>
+    /// <param name="rowId">The unique identifier of the row to retrieve.</param>
+    /// <param name="subrows">When this method returns, contains the row's subrows if found; otherwise, the default.</param>
+    /// <param name="lang">An optional client language to use when retrieving the row. If not specified, the default language is used.</param>
+    /// <returns>True if the row was found; otherwise, false.</returns>
+    public static bool TryGetSubrows<T>(uint rowId, out SubrowCollection<T> subrows, ClientLanguage? lang = null)
+        where T : struct, IExcelSubrow<T>
+    {
+        var sheet = GetSubrowSheet<T>(lang);
+        if (sheet != null)
+            return sheet.TryGetRow(rowId, out subrows);
+
+        subrows = default;
+        return false;
     }
 }

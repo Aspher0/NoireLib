@@ -6,11 +6,8 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides keyed delayed trigger functionality, allowing independent delayed triggers for different operations.<br/>
-/// Each key maintains its own Delayer instance, preventing interference between different operations.<br/>
-/// Provides easy-to-use static methods to start, cancel, and manage delayed triggers based on unique keys.<br/>
-/// NoireLib must be initialized before using this helper.<br/>
-/// See <see cref="Delayer"/> for more details.
+/// Keyed delayed triggers: each key gets its own independent <see cref="Delayer"/> instance. NoireLib must be
+/// initialized before use.
 /// </summary>
 public static class DelayerHelper
 {

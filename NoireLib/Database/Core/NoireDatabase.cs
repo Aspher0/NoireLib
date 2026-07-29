@@ -11,8 +11,7 @@ namespace NoireLib.Database;
 
 /// <summary>
 /// Internal core class providing access to SQLite database manipulation and querying.<br/>
-/// You should typically not need to interact with this class directly, as it is used internally and
-/// higher-level abstractions are available for common operations.
+/// Typically not needed directly; higher-level abstractions cover common operations.
 /// </summary>
 public sealed class NoireDatabase : IDisposable
 {

@@ -17,7 +17,7 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// 3D objects but are occluded by the game world, so a handle is never buried inside the object it edits yet still hides
 /// behind a wall.<br/>
 /// The gizmo is a client of <see cref="NoireInteract"/>: it shares the one mouse-capture authority, so grabbing a
-/// handle takes the lead of input and the camera never pans underneath a drag. Construct one, <see cref="Attach"/> it
+/// handle takes the lead of input and the camera never pans underneath a drag; construct one, <see cref="Attach"/> it
 /// to a node, and it draws and edits itself every frame until <see cref="Dispose"/>.
 /// </summary>
 public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
@@ -75,7 +75,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private Vector3 feedbackScale = Vector3.One;
 
     /// <summary>Creates a gizmo and registers it with <see cref="NoireInteract"/> (disposed automatically with NoireLib).</summary>
-    /// <param name="op">Which operations to expose. Default <see cref="GizmoOp.Universal"/>.</param>
+    /// <param name="op">Which operations to expose; default <see cref="GizmoOp.Universal"/>.</param>
     public NoireGizmo(GizmoOp op = GizmoOp.Universal)
     {
         Op = op;
@@ -91,7 +91,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>Which operations the gizmo exposes.</summary>
     public GizmoOp Op { get; set; }
 
-    /// <summary>Space / snapping / sizing options. The common knobs are also surfaced directly on the gizmo (below) so object-initializers work; this is the full struct for everything else.</summary>
+    /// <summary>Space / snapping / sizing options; the common knobs are also surfaced directly on the gizmo (below) so object-initializers work, and this is the full struct for everything else.</summary>
     public GizmoOptions Options { get; set; } = new();
 
     // ---------------------------------------------------------------- flattened config (delegates to Options)
@@ -110,7 +110,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         set => Options.Backend = value;
     }
 
-    /// <summary>Uniform translation snap in world units (shortcut for <see cref="GizmoOptions.Snap"/>). Getter returns the X component; setter applies the value to all three axes. 0 or less = no snap.</summary>
+    /// <summary>Uniform translation snap in world units (shortcut for <see cref="GizmoOptions.Snap"/>); getter returns the X component, setter applies the value to all three axes, 0 or less = no snap.</summary>
     public float Snap
     {
         get => Options.Snap.X;
@@ -124,14 +124,14 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         set => Options.Snap = value;
     }
 
-    /// <summary>Rotation snap, in degrees (shortcut for <see cref="GizmoOptions.RotateSnapDeg"/>). 0 or less = free.</summary>
+    /// <summary>Rotation snap, in degrees (shortcut for <see cref="GizmoOptions.RotateSnapDeg"/>); 0 or less = free.</summary>
     public float RotateSnapDeg
     {
         get => Options.RotateSnapDeg;
         set => Options.RotateSnapDeg = value;
     }
 
-    /// <summary>Scale snap increment (shortcut for <see cref="GizmoOptions.ScaleSnap"/>). 0 or less = free.</summary>
+    /// <summary>Scale snap increment (shortcut for <see cref="GizmoOptions.ScaleSnap"/>); 0 or less = free.</summary>
     public float ScaleSnap
     {
         get => Options.ScaleSnap;
@@ -201,8 +201,8 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     }
 
     /// <summary>
-    /// Binds the gizmo to several nodes at once. It shows a single gizmo centered on the group and moves / rotates /
-    /// scales every member together around that pivot. A group of one behaves like <see cref="Attach"/> on that node.
+    /// Binds the gizmo to several nodes at once, showing a single gizmo centered on the group that moves / rotates /
+    /// scales every member together around that pivot; a group of one behaves like <see cref="Attach"/> on that node.
     /// </summary>
     /// <param name="targets">The nodes to manipulate together.</param>
     public NoireGizmo AttachGroup(IReadOnlyList<SceneNode> targets)
@@ -232,9 +232,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         => (node != null && !node.Destroyed) || matrixGetter != null || (groupNodes != null && groupNodes.Count > 0);
 
     /// <summary>
-    /// True when the single target is a Ground/Wall decal, which its <see cref="DecalSurface"/> mode locks to a plane
-    /// (the node constrains the box to horizontal / vertical). Every rotation but the yaw that re-aims it is dead, so the
-    /// gizmo shows only the yaw ring and hides the other rotation handles on both backends.
+    /// True when the single target is a Ground/Wall decal, whose <see cref="DecalSurface"/> mode locks it to a plane
+    /// (the node constrains the box to horizontal / vertical), leaving every rotation but the yaw that re-aims it dead,
+    /// so the gizmo shows only the yaw ring and hides the other rotation handles on both backends.
     /// </summary>
     private bool IsOrientationLockedDecal
         => node?.Renderer?.Material is { Domain: MaterialDomain.GroundDecal } decalMat && decalMat.Surface != DecalSurface.Both;
@@ -248,8 +248,8 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     /// <summary>
     /// Captures the current target scale as the reference a scaling gesture is measured against, so scaling stays
-    /// relative to the original size. An axis found essentially collapsed uses a reference of 1 instead, so re-binding
-    /// a zeroed object can still grow it back at a normal rate.
+    /// relative to the original size; an axis found essentially collapsed uses a reference of 1 instead, so
+    /// re-binding a zeroed object can still grow it back at a normal rate.
     /// </summary>
     private void CaptureBaseScale()
     {
@@ -287,9 +287,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     private GizmoHandle TokenToHandle(object? token) => token is GizmoHandleRef r && ReferenceEquals(r.Gizmo, this) ? r.Handle : GizmoHandle.None;
 
     /// <summary>
-    /// Whether the native (in-world, screen-hit-tested) backend is active. It is active whenever the ImGuizmo backend is
-    /// not selected, and also as an automatic fallback so a gizmo still shows and stays grabbable (instead of silently
-    /// vanishing) when the ImGuizmo backend cannot be used: a binding that failed to initialise (see
+    /// Whether the native (in-world, screen-hit-tested) backend is active: whenever the ImGuizmo backend is not
+    /// selected, and also as an automatic fallback so a gizmo still shows and stays grabbable (instead of silently
+    /// vanishing) when the ImGuizmo backend cannot be used - a binding that failed to initialise (see
     /// <see cref="EnsureImGuizmoApi"/>), or a frame that used the wholesale view-projection fallback camera (which
     /// exposes no separate view/proj to feed ImGuizmo).
     /// </summary>
@@ -469,13 +469,12 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     }
 
     /// <summary>
-    /// Snaps a translated position in the gizmo's own basis. Only the axes the active handle drives are snapped (an axis
-    /// handle snaps one, a plane handle its two in-plane axes, the center all three); the axes it does not drive are held
-    /// at the pressed value, so a constrained drag never nudges a perpendicular axis onto the grid. In both spaces the
-    /// snap quantizes the <b>movement since press</b> (as ImGuizmo does), not the absolute position: World space snaps it
-    /// per axis on the world axes, Local space by a single increment along each local axis. Snapping the movement rather
-    /// than the absolute coordinate keeps an object that started off-grid at its offset instead of jerking it onto the
-    /// grid on the first frame of a drag.
+    /// Snaps a translated position in the gizmo's own basis: only the axes the active handle drives are snapped (an
+    /// axis handle snaps one, a plane handle its two in-plane axes, the center all three), the axes it does not drive
+    /// are held at the pressed value, so a constrained drag never nudges a perpendicular axis onto the grid.
+    /// In both spaces the snap quantizes the <b>movement since press</b> (as ImGuizmo does), not the absolute position
+    /// - World space per axis on the world axes, Local space by a single increment along each local axis - which keeps
+    /// an object that started off-grid at its offset instead of jerking onto the grid on the first frame of a drag.
     /// </summary>
     private Vector3 SnapTranslation(Vector3 moved)
     {
@@ -554,8 +553,8 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>
     /// Finds the handle nearest the cursor by projecting every handle into screen space and measuring pixel distance,
     /// so detection is reliable at any camera angle (a world-space ray test degenerates on edge-on rings and grazing
-    /// planes). Ties are broken toward the handle nearer the camera. <paramref name="bestDistance"/> receives the
-    /// camera distance to the chosen handle; <paramref name="bestPoint"/> receives a representative world point on it.
+    /// planes); ties are broken toward the handle nearer the camera, and <paramref name="bestDistance"/> receives the
+    /// camera distance to the chosen handle while <paramref name="bestPoint"/> receives a representative world point on it.
     /// </summary>
     private GizmoHandle PickHandle(Vector2 cursor, in FrameContext frame, in Basis b, out float bestDistance, out Vector3 bestPoint)
     {
@@ -751,7 +750,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <inheritdoc/>
     /// <remarks>
     /// UI-thread pass for the native backend: it tracks which handle is hovered and, during a drag, draws the 2D
-    /// preview overlay (anchor, guide line, live values). The handles themselves are drawn in <see cref="DrawOverlay"/>
+    /// preview overlay (anchor, guide line, live values); the handles themselves are drawn in <see cref="DrawOverlay"/>
     /// on the render thread with the current frame, so their screen-constant size tracks the live camera. ImGuizmo is
     /// self-driven and never reaches here.
     /// </remarks>
@@ -773,7 +772,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     /// <summary>
     /// Draws the drag preview on the ImGui foreground list: a fixed anchor marking where the target's center was at
     /// press (glued to that world point as the camera moves), a guide line to the current center, and the live amount
-    /// moved / rotated / scaled. Mirrors the feedback the ImGuizmo backend draws itself.
+    /// moved / rotated / scaled, mirroring the feedback the ImGuizmo backend draws itself.
     /// </summary>
     private void DrawDragFeedback(in FrameContext frame)
     {
@@ -823,9 +822,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     }
 
     /// <summary>
-    /// The translation readout, measured along the axes the active handle drives, in the gizmo's own basis. A single-axis
-    /// drag reads that one axis, a plane drag its two; in Local space the components follow the object's local axes, so a
-    /// local-axis drag still reads a single value rather than its world decomposition.
+    /// The translation readout, measured along the axes the active handle drives, in the gizmo's own basis: a
+    /// single-axis drag reads that one axis, a plane drag its two, and in Local space the components follow the
+    /// object's local axes, so a local-axis drag still reads a single value rather than its world decomposition.
     /// </summary>
     private string TranslateReadout()
     {
@@ -1214,7 +1213,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
             NoireLibMain.UnregisterOnDispose(disposeKey);
     }
 
-    /// <summary>The gizmo's per-frame handle frame (origin + axis bases + on-screen size). Frozen during a drag.</summary>
+    /// <summary>The gizmo's per-frame handle frame (origin + axis bases + on-screen size), frozen during a drag.</summary>
     private readonly record struct Basis(Vector3 Origin, Vector3 Ax, Vector3 Ay, Vector3 Az, Vector3 Sx, Vector3 Sy, Vector3 Sz, Vector3 ViewDir, float HandleLen);
 }
 

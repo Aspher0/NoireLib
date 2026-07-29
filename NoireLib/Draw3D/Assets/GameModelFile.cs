@@ -1,6 +1,7 @@
 using Lumina.Data;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Text;
 
 namespace NoireLib.Draw3D.Assets;
@@ -118,7 +119,7 @@ public sealed class GameModelLod
 /// Loaded through Lumina's archive reader (which reassembles the file's independently compressed
 /// regions) but parsed here, because the shipped parser reads only the older bone-table layout and
 /// mis-tracks everything that follows it in current files.<br/>
-/// This is the granular surface: every structure needed to decode geometry is public. For the
+/// This is the granular surface: every structure needed to decode geometry is public; for the
 /// one-call path use <see cref="GameModelLoader"/>.
 /// </summary>
 public sealed class GameModelFile : FileResource
@@ -153,12 +154,18 @@ public sealed class GameModelFile : FileResource
     /// <summary>Every mesh in the file, addressed by the level-of-detail ranges.</summary>
     public GameModelMeshInfo[] Meshes { get; private set; } = [];
 
-    /// <summary>Material paths referenced by the meshes. Character models store these relative, beginning with a slash.</summary>
+    /// <summary>Material paths referenced by the meshes; character models store these relative, beginning with a slash.</summary>
     public string[] MaterialPaths { get; private set; } = [];
 
+    /// <summary>Lower corner of the model's own bounding box, in the model's local space.</summary>
+    public Vector3 BoundingBoxMin { get; private set; }
+
+    /// <summary>Upper corner of the model's own bounding box, in the model's local space.</summary>
+    public Vector3 BoundingBoxMax { get; private set; }
+
     /// <summary>
-    /// Bytes at the end of the runtime block the layout walk did not identify, zero for most models.
-    /// Everything decoded was addressed correctly regardless; this exists so an unread tail is a fact a
+    /// Bytes at the end of the runtime block the layout walk did not identify (zero for most models);
+    /// everything decoded was addressed correctly regardless, and this exists so an unread tail is a fact a
     /// caller can report instead of a silence.
     /// </summary>
     public int UnreadRuntimeBytes { get; private set; }
@@ -242,14 +249,18 @@ public sealed class GameModelFile : FileResource
 
         cursor.Skip((int)cursor.U32());                     // submesh bone map
         cursor.Skip(cursor.U8());                           // length-prefixed padding run
-        cursor.Skip((4 + boneCount) * 32);                  // global and per-bone bounding boxes
+
+        // Four global bounding boxes, then one per bone; the first is the model's own extent, tracking the
+        // mesh to within a few centimetres.
+        BoundingBoxMin = ReadVector4AsVector3(data, cursor.Position);
+        BoundingBoxMax = ReadVector4AsVector3(data, cursor.Position + 16);
+        cursor.Skip((4 + boneCount) * 32);
 
         // The runtime block's size is declared in the header. Walking PAST it means a block above was
-        // mis-sized and every offset derived from the walk is wrong, so that stays fatal. Falling short is
-        // different: some models carry trailing data this walk does not identify - the Hingan Sofa's model
-        // leaves 96 bytes here, the size of three more bounding boxes, gated by a count in the header this
-        // layout has not named - and everything read above was addressed correctly, so the surplus is
-        // recorded and skipped rather than refusing a model the game itself renders.
+        // mis-sized and every offset derived from the walk is wrong, so that stays fatal; falling short is
+        // different, since some models carry trailing data this walk does not identify, and everything read
+        // above was addressed correctly, so the surplus is recorded and skipped rather than refusing a model
+        // the game itself renders.
         var consumed = cursor.Position - runtimeStart;
         if (consumed > runtimeSize)
         {
@@ -381,6 +392,15 @@ public sealed class GameModelFile : FileResource
 
         return Encoding.UTF8.GetString(data, start, end - start);
     }
+
+    /// <summary>Reads a bounding-box corner, which the file stores as a four-component vector.</summary>
+    private static Vector3 ReadVector4AsVector3(byte[] data, int at)
+        => at + 12 > data.Length
+            ? Vector3.Zero
+            : new Vector3(
+                BitConverter.ToSingle(data, at),
+                BitConverter.ToSingle(data, at + 4),
+                BitConverter.ToSingle(data, at + 8));
 
     /// <summary>Sequential little-endian reader over the model's bytes.</summary>
     private struct ByteCursor(byte[] data)

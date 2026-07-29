@@ -6,15 +6,13 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Pins one of your windows to a native game window, so it docks beside the party list, sits under the target frame,
-/// or hangs off the duty finder, and follows it wherever the player drags or rescales it.
+/// Pins one of your windows to a native game window, and follows it wherever the player drags or rescales it.
 /// </summary>
 /// <remarks>
 /// The attachment writes the window's own <see cref="Window.Position"/> rather than drawing anything, so it composes
 /// with whatever the window already does and leaves its contents alone.<br/>
-/// Visibility follows too: a window attached to a game window that is not on screen has nowhere to be, so by default
-/// it closes with it and reopens when it comes back. That is what turns "a panel that exists only while the Duty
-/// Finder is open" into two lines of setup.
+/// Visibility follows too: a window attached to a game window that is not on screen has nowhere to be, so by
+/// default it closes with it and reopens when it comes back.
 /// </remarks>
 /// <example>
 /// <code>
@@ -28,9 +26,9 @@ public sealed class NoireAddonAttach : NoireDrawable
     private bool wasAttached;
     private bool subscribed;
 
-    // What the window looked like before the attachment first wrote to it. Dalamud reapplies a window's position and
-    // size every frame it draws, and only when they are set at all, so handing them back is what actually releases a
-    // window: an attachment that merely stopped writing would leave it frozen wherever it was last put.
+    // What the window looked like before the attachment first wrote to it. Dalamud reapplies a window's position
+    // and size every frame it draws, and only when they are set at all, so releasing a window means writing the
+    // old values back; merely stopping the writes would leave it frozen wherever it was last put.
     private Window? held;
     private Vector2? heldPosition;
     private ImGuiCond heldPositionCondition;
@@ -53,8 +51,8 @@ public sealed class NoireAddonAttach : NoireDrawable
         AddonName = addonName ?? string.Empty;
         Side = side;
 
-        // An attachment nobody applied does nothing at all, and the symptom is a window that simply never moves, which
-        // points nowhere near the master default. Following the game window is the entire purpose of the object.
+        // AutoDraw is set because an attachment nobody applied does nothing: the symptom is a window that simply
+        // never moves. Following the game window is this object's entire purpose.
         AutoDraw = true;
 
         if (NoireService.IsInitialized())
@@ -138,9 +136,9 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// </summary>
     /// <remarks>
     /// Answers for whichever addon is actually in effect, so it stays right when a <see cref="PositionOverride"/>
-    /// names one of its own. Unlike <see cref="IsAttached"/> it does not care whether the attachment is enabled, which
-    /// is what makes it the thing to check before opening a window that follows visibility: a window opened while its
-    /// game window is not on screen is closed again before it draws, and asking first is how you say so instead.
+    /// names one of its own. Unlike <see cref="IsAttached"/> it does not care whether the attachment is enabled:
+    /// check this before opening a window that follows visibility, since a window opened while its game window is
+    /// not on screen is closed again before it draws.
     /// </remarks>
     public bool IsAddonVisible => UiAddon.GetRect(EffectiveAddonName) != null;
 
@@ -214,10 +212,10 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// Applies the visibility rule for the coming frame, before anything has had a chance to draw.
     /// </summary>
     /// <remarks>
-    /// Visibility cannot be decided from <see cref="Apply"/>, and this is the reason it is not. Dalamud tests whether a
-    /// window is open, and then calls its <c>PreDraw</c> and draws it, in that order and in one pass: a window closed
-    /// from <c>PreDraw</c> has already been let through the test, so it draws once anyway. Opening a panel whose game
-    /// window is not on screen would flash it onto the screen and take it away again.<br/>
+    /// Visibility cannot be decided from <see cref="Apply"/>: Dalamud tests whether a window is open, then calls
+    /// its <c>PreDraw</c> and draws it, in that order and in one pass, so a window closed from <c>PreDraw</c> has
+    /// already been let through the test and draws once anyway, flashing a panel whose game window is not on
+    /// screen onto the screen and taking it away again.<br/>
     /// The framework tick runs before the frame does, so a window closed here is never begun at all.
     /// </remarks>
     /// <param name="framework">The framework raising the update.</param>

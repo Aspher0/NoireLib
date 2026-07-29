@@ -7,9 +7,8 @@ namespace NoireLib.Draw3D.Scene;
 /// <summary>
 /// Renders a scene through a virtual camera into a texture, once per frame before the main pass:
 /// minimap portals, mirrors, model-viewer thumbnails, picture-in-picture.<br/>
-/// World-depth occlusion is force-disabled per view (a virtual camera has no matching game Z-buffer).
-/// Feeding <see cref="Texture"/> back into materials is legal (one-frame latency; views render in
-/// registration order).<br/>
+/// World-depth occlusion is force-disabled per view (a virtual camera has no matching game Z-buffer); feeding
+/// <see cref="Texture"/> back into materials is legal (one-frame latency; views render in registration order).<br/>
 /// Dispose the view to release its GPU target; the scene it renders is not owned.
 /// </summary>
 public sealed class RenderView : IDisposable
@@ -18,7 +17,7 @@ public sealed class RenderView : IDisposable
     internal readonly DepthTarget Depth = new();
     private GpuTexture? texture;
 
-    /// <summary>The scene this view renders. Referenced, never owned.</summary>
+    /// <summary>The scene this view renders; referenced, never owned.</summary>
     public Scene3D Scene { get; set; }
 
     /// <summary>The virtual camera.</summary>
@@ -37,8 +36,8 @@ public sealed class RenderView : IDisposable
     public bool IsDisposed { get; private set; }
 
     /// <summary>
-    /// The rendered output as a material-ready texture. Null until the first frame rendered.
-    /// Owned by the view - do not dispose it separately.
+    /// The rendered output as a material-ready texture; null until the first frame rendered, owned by the view,
+    /// do not dispose it separately.
     /// </summary>
     public GpuTexture? Texture => texture;
 

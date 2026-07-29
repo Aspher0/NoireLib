@@ -8,8 +8,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides safe threading, scheduling, and asynchronous execution.
-/// Helps with work in background threads and framework thread without freezing the game.
+/// Safe threading, scheduling and asynchronous execution, on background threads and the framework thread, without freezing the game.
 /// </summary>
 public static class AsyncHelper
 {

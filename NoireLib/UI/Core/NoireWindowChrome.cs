@@ -11,10 +11,8 @@ namespace NoireLib.UI;
 /// </summary>
 /// <remarks>
 /// ImGui's window decoration is drawn from its style and cannot be replaced, so a design whose window is part of the
-/// design has nowhere to go. Taking the decoration away is easy; what is not, and what this exists for, is everything
-/// that stops working once you do. The window must still be draggable, and ImGui's own drag is attached to the title
-/// bar that is now gone. It must still be closeable. It must still be resizable if it was. And the background is now
-/// the plugin's to paint, which means it has to be painted before anything else and behind everything else.<br/>
+/// design has nowhere to go. Removing it breaks draggability (ImGui's own drag is attached to the title bar), closing
+/// and resizing, and leaves the background for the plugin to paint, before anything else and behind everything else.<br/>
 /// Not a window class: creating and registering windows is Dalamud's job and wrapping it would take away the
 /// <see cref="Dalamud.Interface.Windowing.Window"/> surface a plugin already knows. This is the chrome, applied inside a
 /// window a plugin owns.
@@ -37,8 +35,8 @@ public static class NoireWindowChrome
     /// <remarks>
     /// The background, the title bar and the border are all removed because they would be drawn under, over and around
     /// what the chrome paints instead. Moving is left with ImGui, which drags a decorationless window from any empty
-    /// space in it: with no title bar to take hold of, being able to pick the window up wherever it is not already busy
-    /// is what makes it feel like a window at all.<br/>
+    /// space in it: with no title bar to take hold of, the window can still be picked up from any space that is not
+    /// already busy.<br/>
     /// The scrollbar goes and the wheel stays. A design that paints its own edges cannot afford ImGui's scrollbar down
     /// the inside of one, but a window that silently refuses the wheel is broken rather than clean.
     /// </remarks>
@@ -65,8 +63,8 @@ public static class NoireWindowChrome
     /// The same as <see cref="Flags"/>, and the window itself never scrolls.
     /// </summary>
     /// <remarks>
-    /// For a window whose masthead and rail stay put while a region inside it scrolls. Without this the wheel moves the
-    /// whole design, header and all, which is not what a fixed masthead is for.
+    /// For a window whose masthead and rail stay put while a region inside it scrolls: without this, the wheel moves
+    /// the whole design, header and all.
     /// </remarks>
     public const ImGuiWindowFlags FixedBodyFlags = Flags | ImGuiWindowFlags.NoScrollWithMouse;
 
@@ -78,16 +76,16 @@ public static class NoireWindowChrome
     /// This is the whole of always on top, and it covers both halves of what "in front" means.<br/>
     /// <b>Clicks</b> are decided by the display list, which this moves the window to the front of. <b>Drawing</b> is
     /// decided by the draw layer first, and the display list is reordered when a window is focused, after every plugin
-    /// has drawn and before the frame is rendered. A window holding its place by the display list alone is therefore
-    /// drawn behind for one frame every time an overlapping window is clicked, and there is no point in plugin code
-    /// later than that reorder to undo it. So this lifts the window into the top draw layer as well.<br/>
+    /// has drawn and before the frame is rendered. A window holding its place by the display list alone is drawn
+    /// behind for one frame whenever an overlapping window is clicked, with no point in plugin code after that reorder
+    /// to undo it, so this lifts the window into the top draw layer as well.<br/>
     /// It does that by setting the layer's flag on the window <i>after</i> it has been begun. The layer is read when the
     /// frame is rendered, so the flag counts for that frame, while none of what the same flag does inside <c>Begin</c>
     /// happens at all: the window is not moved to the cursor, its background and border keep reading the fields an
     /// ordinary window reads, and its default item width is unchanged. Nothing has to be passed at <c>PreDraw</c>.<br/>
     /// The layer covers the whole of the ordinary one, so anything the window opens over itself has to join it. Every
-    /// NoireUI popup does that on its own; a popup of your own calls this from inside itself, which is also what settles
-    /// the order between the two, since among the windows in front the last caller each frame wins.
+    /// NoireUI popup does that on its own; a popup of your own calls this from inside itself. Among the windows in
+    /// front, the last caller each frame wins, which settles the order between the two.
     /// </remarks>
     public static void KeepInFront() => UiWindowOrder.KeepInFront();
 
@@ -95,9 +93,9 @@ public static class NoireWindowChrome
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
     /// <remarks>
-    /// The chrome is painted across the whole window rather than measured from the body, which is the one way this
-    /// differs from <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and
-    /// no need to split the draw list.
+    /// The chrome is painted across the whole window rather than measured from the body, unlike
+    /// <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and no need to
+    /// split the draw list.
     /// </remarks>
     /// <param name="body">The window's contents.</param>
     /// <param name="style">How the window is painted. When <see langword="null"/>, the theme's surface and border.</param>
@@ -112,9 +110,9 @@ public static class NoireWindowChrome
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
     /// <remarks>
-    /// The chrome is painted across the whole window rather than measured from the body, which is the one way this
-    /// differs from <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and
-    /// no need to split the draw list.
+    /// The chrome is painted across the whole window rather than measured from the body, unlike
+    /// <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and no need to
+    /// split the draw list.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
@@ -129,9 +127,8 @@ public static class NoireWindowChrome
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
 
-        // The opacity is spent on the surface alone. Fading the whole window through ImGui's alpha takes the text and
-        // the controls with it, which is not a translucent window, it is a dim one: what a window wants to see through
-        // is its background.
+        // The opacity is spent on the surface alone: fading the whole window through ImGui's alpha would take the text
+        // and the controls with it too, dimming rather than making it translucent.
         var opacity = Math.Clamp(settings.Opacity, 0f, 1f);
 
         // Held around the chrome alone and closed before the body runs. The body is the caller's own drawing, and
@@ -149,10 +146,10 @@ public static class NoireWindowChrome
 
         var padding = NoireUI.Scaled(settings.Padding);
 
-        // Advanced from wherever the cursor already is rather than placed at the window's corner. The two are the same
-        // on the first frame and stop being so the moment the window scrolls: the corner is fixed while the content
-        // moves up past it, so setting an absolute position would pin the contents in place and the wheel would appear
-        // to do nothing. The chrome itself is painted at the corner deliberately, so the border stays with the window.
+        // Advanced from wherever the cursor already is rather than placed at the window's corner: the two agree on the
+        // first frame but diverge once the window scrolls, since the corner stays fixed while the content moves past
+        // it. An absolute position would pin the contents in place and make the wheel appear to do nothing. The chrome
+        // itself is painted at the corner deliberately, so the border stays with the window.
         ImGui.Indent(padding.X);
         ImGui.Dummy(new Vector2(0f, padding.Y));
 
@@ -268,8 +265,7 @@ public static class NoireWindowChrome
     /// <remarks>
     /// A bare mark floating in a corner reads as debris rather than as a control: nothing says it is clickable until
     /// the pointer is already on it. So it carries a plate that lights on hover, the mark thickens with it, and every
-    /// part of both is a <see cref="ChromeButtonStyle"/> value, because a window drawing its own chrome will want its
-    /// buttons to match that and not the library's taste.<br/>
+    /// part of both is a <see cref="ChromeButtonStyle"/> value.<br/>
     /// One call for every glyph, so a row of them cannot drift apart in size, weight or hover behaviour.
     /// </remarks>
     /// <param name="id">A unique id, so a row of buttons does not share one hit box.</param>
@@ -358,7 +354,7 @@ public static class NoireWindowChrome
 
             case ChromeGlyph.Minimize:
             {
-                // A chevron rather than a bar, because a bar is what a window uses for "hide" and this is "collapse".
+                // A chevron rather than a bar: a bar means "hide" elsewhere, this means "collapse".
                 Span<Vector2> chevron =
                 [
                     new(centre.X - reach, centre.Y - (reach * 0.4f)),

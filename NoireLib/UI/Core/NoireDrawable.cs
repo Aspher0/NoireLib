@@ -104,7 +104,7 @@ public abstract class NoireDrawable : IDisposable
     /// <remarks>
     /// A generated id is a fresh GUID every session. Persisting against one would write an entry that can never be read
     /// back, so the state file would grow forever and restore nothing, and the symptom (a setting that silently never
-    /// sticks) points nowhere near the cause. Refusing here, once, with a message naming the fix, is the whole point.
+    /// sticks) points nowhere near the cause.
     /// </remarks>
     /// <param name="subKey">What is being remembered, for example "position".</param>
     /// <param name="key">The state key, or an empty string when persisting is refused.</param>

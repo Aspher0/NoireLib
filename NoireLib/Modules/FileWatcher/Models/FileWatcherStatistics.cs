@@ -5,13 +5,13 @@ namespace NoireLib.FileWatcher;
 /// </summary>
 /// <param name="RegisteredWatches">The current number of registered watches.</param>
 /// <param name="EnabledWatches">The current number of enabled watches.</param>
-/// <param name="TotalRegistrations">The total number of watch registrations created since the watcher's creation.</param>
-/// <param name="TotalRemoved">The total number of watch registrations removed since the watcher's creation.</param>
-/// <param name="TotalNotificationsObserved">The total number of notifications observed from the underlying filesystem watchers since the watcher's creation.</param>
-/// <param name="TotalNotificationsDispatched">The total number of notifications dispatched to user callbacks since the watcher's creation.</param>
-/// <param name="TotalErrors">The total number of errors observed from the underlying filesystem watchers since the watcher's creation.</param>
-/// <param name="TotalDuplicateNotificationsSuppressed">The total number of duplicate notifications that have been suppressed since the watcher's creation.</param>
-/// <param name="TotalCallbackExceptionsCaught">The total number of exceptions caught from user callbacks since the watcher's creation.</param>
+/// <param name="TotalRegistrations">The total number of watch registrations created.</param>
+/// <param name="TotalRemoved">The total number of watch registrations removed.</param>
+/// <param name="TotalNotificationsObserved">The total number of notifications observed from the underlying filesystem watchers.</param>
+/// <param name="TotalNotificationsDispatched">The total number of notifications dispatched to user callbacks.</param>
+/// <param name="TotalErrors">The total number of errors observed from the underlying filesystem watchers.</param>
+/// <param name="TotalDuplicateNotificationsSuppressed">The total number of duplicate notifications that have been suppressed.</param>
+/// <param name="TotalCallbackExceptionsCaught">The total number of exceptions caught from user callbacks.</param>
 public sealed record FileWatcherStatistics(
     int RegisteredWatches,
     int EnabledWatches,
@@ -24,11 +24,10 @@ public sealed record FileWatcherStatistics(
     long TotalCallbackExceptionsCaught)
 {
     /// <summary>
-    /// The total number of deliveries discarded because the framework thread delivery queue was at capacity
-    /// since the watcher's creation.<br/>
+    /// The total number of deliveries discarded because the framework thread delivery queue was at capacity.<br/>
     /// A non-zero value means <see cref="TotalNotificationsDispatched"/> undercounts what the filesystem reported:
-    /// those notifications were observed and accepted but never reached a callback. It is a sign that handlers are
-    /// too slow for the event volume, or that the filesystem activity is too heavy for the game's frame rate.
+    /// those notifications were observed but never reached a callback, because handlers were too slow for the
+    /// event volume or filesystem activity outpaced the game's frame rate.
     /// </summary>
     public long TotalDeliveriesDropped { get; init; }
 }

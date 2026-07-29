@@ -17,7 +17,7 @@ public sealed class PipStyle
     /// <summary>The gap between pips at 100%.</summary>
     public float Spacing { get; set; } = 4f;
 
-    /// <summary>The shape of a pip. Defaults to rounded, which reads as a dot at this size.</summary>
+    /// <summary>The shape of a pip. Defaults to rounded.</summary>
     public CornerShape Shape { get; set; } = CornerShape.Rounded;
 
     /// <summary>The colour of a filled pip. When <see langword="null"/>, the theme's accent.</summary>
@@ -42,9 +42,7 @@ public sealed class PipStyle
     internal Vector4 ResolveEmptyColor()
         => EmptyColor ?? NoireTheme.Current.Resolve(ThemeColor.SurfaceSunken);
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public PipStyle Clone() => (PipStyle)MemberwiseClone();
 }

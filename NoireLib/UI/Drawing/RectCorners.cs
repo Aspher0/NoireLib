@@ -5,10 +5,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Which corners of a rectangle a <see cref="CornerShape"/> applies to. The ones left out stay square.
 /// </summary>
-/// <remarks>
-/// Cutting two corners rather than four is most of what separates a deliberate shape from a rounded box, so the
-/// diagonal pairs are named rather than left to be spelled out.
-/// </remarks>
 [Flags]
 public enum RectCorners
 {

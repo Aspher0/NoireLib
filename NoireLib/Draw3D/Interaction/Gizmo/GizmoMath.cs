@@ -10,7 +10,7 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// </summary>
 public static class GizmoMath
 {
-    /// <summary>The world length that spans <paramref name="pixels"/> screen pixels at <paramref name="origin"/>, keeping a handle a constant on-screen size. Falls back to a distance-scaled estimate behind the camera.</summary>
+    /// <summary>The world length that spans <paramref name="pixels"/> screen pixels at <paramref name="origin"/>, keeping a handle a constant on-screen size; falls back to a distance-scaled estimate behind the camera.</summary>
     public static float ScreenConstantLength(in FrameContext frame, Vector3 origin, float pixels)
     {
         if (InteractMath.WorldPerPixel(in frame, origin, out var worldPerPixel, out _, out _))
@@ -22,10 +22,9 @@ public static class GizmoMath
 
     /// <summary>
     /// Signed distance the cursor moved along an axis between press and now, tracking the cursor so the grabbed point
-    /// stays under it. Each ray is intersected with the plane that contains the axis and faces the camera most (its
-    /// normal is the eye-to-gizmo direction with the axis component removed), and the hit-point difference is projected
-    /// onto the axis. A closest-point-between-lines measure (the earlier approach) over-slid the object when the axis
-    /// ran oblique to the view, moving it farther than the cursor; this matches how ImGuizmo tracks an axis drag.
+    /// stays under it: each ray is intersected with the plane that contains the axis and faces the camera most (normal
+    /// = eye-to-gizmo direction with the axis component removed), and the hit-point difference is projected onto the
+    /// axis, matching how ImGuizmo tracks an axis drag.
     /// </summary>
     public static float AxisTranslationDelta(Vector3 axis, Vector3 origin, Vector3 pressRayO, Vector3 pressRayD, Vector3 curRayO, Vector3 curRayD)
     {
@@ -71,7 +70,7 @@ public static class GizmoMath
 
     /// <summary>
     /// Scale factor for an axis handle: 1 at press, growing linearly as the cursor is dragged out along the axis
-    /// (moving a full handle-length doubles it). Clamped to a small positive minimum so scale never flips or hits zero.
+    /// (moving a full handle-length doubles it), clamped to a small positive minimum so scale never flips or hits zero.
     /// </summary>
     /// <param name="axis">Handle axis, normalized.</param>
     /// <param name="origin">Gizmo origin.</param>

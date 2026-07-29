@@ -18,28 +18,25 @@ namespace NoireLib.Draw3D.Assets;
 /// Mapping: node tree to <see cref="SceneNode"/> subtree; one mesh+renderer per primitive;
 /// baseColor factor/texture maps to material color/texture; alphaMode BLEND maps to translucent;
 /// doubleSided maps to no culling. Metallic/roughness/normal maps, KHR extensions, skins, animations, cameras and lights
-/// are ignored (logged once per file so users know exactly what was dropped).<br/>
-/// Handedness: glTF is counter-clockwise-front and this renderer is clockwise-front, so the loader reverses
-/// the <b>triangle winding</b> and takes positions, normals and transforms exactly as the file authored them.
-/// It does not reflect the geometry: an earlier version negated Z and leaned on that reflection to flip the
-/// winding for it, which fixed the culling and left every imported model a mirror image of itself.<br/>
+/// are ignored (logged once per file).<br/>
+/// <b>Handedness:</b> glTF is counter-clockwise-front and this renderer is clockwise-front, so the loader
+/// reverses the <b>triangle winding</b> and takes positions, normals and transforms exactly as authored.<br/>
 /// <b>Vertex colors:</b> glTF <c>COLOR_0</c> is <i>not</i> imported by default. FFXIV-derived character
 /// exports carry a per-vertex color channel that the game uses as shader <i>data</i> (wetness / wind /
 /// blend masks), not albedo; multiplying it into the base color paints the model in psychedelic tints.
 /// Pass <c>importVertexColors: true</c> for assets that genuinely author vertex colors.<br/>
-/// <b>FBX:</b> never natively - convert once with FBX2glTF or Blender export; the result is a
-/// better-specified asset.<br/>
-/// <b>Level of detail is off by default.</b> Pass <c>generateLods: true</c> to build a quadric-error LOD chain for large
-/// primitives (drawn coarser as they shrink on screen); tune or disable it via <see cref="NoireDraw3D.Performance"/>.
-/// Rendering a full-detail model is cheap; the LODs are for scenes with many heavy models at once.
+/// <b>FBX:</b> never natively - convert once with FBX2glTF or Blender export.<br/>
+/// <b>Level of detail is off by default</b> (rendering full detail is cheap; LODs are for scenes with many
+/// heavy models at once). Pass <c>generateLods: true</c> to build a quadric-error LOD chain for large
+/// primitives, drawn coarser as they shrink on screen; tune or disable it via <see cref="NoireDraw3D.Performance"/>.
 /// </summary>
 public static class GltfLoader
 {
     /// <summary>Loads a .gltf or .glb file into a detached, ready-to-attach model.</summary>
     /// <param name="path">Absolute file path.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
-    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default - FFXIV-derived exports store shader data there, not colors (see the type remarks).</param>
-    /// <param name="generateLods">Build a level-of-detail chain for large primitives so they draw a coarser mesh as they shrink on screen. <b>Off by default</b> (see the type remarks); tune with <see cref="NoireDraw3D.Performance"/>.</param>
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint; off by default, since FFXIV-derived exports store shader data there, not colors.</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives so they draw a coarser mesh as they shrink on screen; <b>off by default</b>, tune with <see cref="NoireDraw3D.Performance"/>.</param>
     /// <param name="ct">Optional cancellation token.</param>
     public static Task<Model3D> LoadAsync(string path, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
         => Task.Run(() => Import(ModelRoot.Load(path), System.IO.Path.GetFileName(path), keepCpuData, importVertexColors, generateLods, ct), ct);
@@ -47,8 +44,8 @@ public static class GltfLoader
     /// <summary>Loads a binary .glb from memory into a detached, ready-to-attach model.</summary>
     /// <param name="glbBytes">GLB file contents.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the meshes for exact picking.</param>
-    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint. Off by default (see the type remarks).</param>
-    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; see the type remarks).</param>
+    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> vertex-color channel as an albedo tint; off by default, since FFXIV-derived exports store shader data there, not colors.</param>
+    /// <param name="generateLods">Build a level-of-detail chain for large primitives, drawn coarser as they shrink on screen; off by default, tune with <see cref="NoireDraw3D.Performance"/>.</param>
     /// <param name="ct">Optional cancellation token.</param>
     public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
         => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, generateLods, ct), ct);
@@ -145,14 +142,9 @@ public static class GltfLoader
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
     {
-        // Taken as authored, to match the vertices. An earlier version conjugated by diag(1, 1, -1, 1) here
-        // and negated Z on the vertices, which mirrored the model; both halves now leave the file's own
-        // convention alone and only the triangle winding is changed.
-        //
-        // A hierarchical model needs these two halves to agree or it comes apart: transforming the meshes
-        // without the transforms that place them reflects each part inside its own local space and leaves the
-        // arrangement untouched, which arrives as a vehicle whose left and right doors are each individually
-        // flipped but still on the side they started.
+        // Taken as authored, to match the vertices; only the triangle winding changes, not the transform. A
+        // hierarchical model needs the mesh and its placing transform to agree or it comes apart - see
+        // Draw3DImportFlips.Apply(Matrix4x4).
         local = NoireDraw3D.Diagnostics.ImportFlips.Apply(local);
 
         if (Matrix4x4.Decompose(local, out var scale, out var rotation, out var translation))
@@ -205,10 +197,7 @@ public static class GltfLoader
                 colors != null && i < colors.Count ? colors[i] : new Vector4(1f, 1f, 1f, 1f));
         }
 
-        // glTF is counter-clockwise-front and this renderer is clockwise-front, so the winding is reversed
-        // here. An earlier version negated Z on the positions instead and relied on that reflection to flip
-        // the winding for it - which fixed the culling and mirrored the model, arriving as text on a texture
-        // reading backwards and, confirmed in game, the whole shape reversed.
+        // glTF is counter-clockwise-front and this renderer is clockwise-front, so the winding is reversed here.
         var triangles = new List<uint>();
         foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
@@ -220,8 +209,8 @@ public static class GltfLoader
         if (triangles.Count == 0)
             return;
 
-        // Driven from inside the loader rather than by the caller, so this path and the game-model one answer
-        // the mirrored-import question the same way. Does nothing unless something is turned on.
+        // Driven from inside the loader, not by the caller, so this path and the game-model one answer
+        // identically; does nothing unless something is turned on.
         NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, triangles);
 
         Mesh mesh;
@@ -248,9 +237,9 @@ public static class GltfLoader
     }
 
     /// <summary>
-    /// Builds and attaches a quadric-error LOD chain for a large primitive, so it draws a coarser mesh as it shrinks on
-    /// screen (used/tuned via <see cref="NoireDraw3D.Performance"/>). Skipped for small meshes; fail-soft - a decimation
-    /// fault leaves the model at full detail.
+    /// Builds and attaches a quadric-error LOD chain for a large primitive, so it draws a coarser mesh as it shrinks
+    /// on screen (used/tuned via <see cref="NoireDraw3D.Performance"/>); skipped for small meshes, fail-soft since a
+    /// decimation fault leaves the model at full detail.
     /// </summary>
     private static void GenerateLods(Mesh mesh, Vertex3D[] vertices, List<uint> triangles, ImportStats stats)
     {

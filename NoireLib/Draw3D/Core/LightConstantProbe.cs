@@ -37,9 +37,9 @@ internal enum RowKind
     Large = 16,
 
     /// <summary>
-    /// The row is one axis of an orthonormal basis formed with its neighbours: a rotation, so transform data.<br/>
-    /// This is the single most useful exclusion. A rotation's rows are unit vectors, so shape alone calls every one
-    /// of them a possible light direction, and a frame buffer full of view matrices then drowns anything real.
+    /// The row is one axis of an orthonormal basis formed with its neighbours: a rotation, so transform data. A
+    /// rotation's rows are unit vectors, so shape alone calls every one of them a possible light direction, and a
+    /// frame buffer full of view matrices then drowns anything real.
     /// </summary>
     MatrixRow = 32,
 }
@@ -49,21 +49,16 @@ internal enum RowKind
 /// <param name="ByteWidth">The buffer's declared size.</param>
 /// <param name="Rows">Its rows, classified.</param>
 /// <param name="Captures">
-/// How many whole payloads had been copied into this buffer when the snapshot was taken.<br/>
-/// Two snapshots with the same count hold the same bytes by construction, so a comparison between them says
-/// nothing. Without this, a tracker that had stopped copying would report every row as unchanged, which reads
-/// exactly like a result.
+/// How many whole payloads had been copied into this buffer at snapshot time. Two snapshots with the same count
+/// are the same bytes by construction, so a stalled tracker would falsely report every row as unchanged.
 /// </param>
 internal sealed record ConstantSnapshot(nint Pointer, int ByteWidth, ConstantRow[] Rows, long Captures);
 
 /// <summary>
 /// Reads the game's tracked constant buffers and reports what is in them, so the values that drive its
-/// lighting can be found rather than guessed at.<br/>
-/// <b>Why this exists:</b> matching the game's light by hand never converges, and the constants that
-/// produce it are already flowing through the buffers the camera capture tracks. What is missing is
-/// knowing which bytes they are. A single dump cannot say - too many rows share a shape - so this also
-/// diffs two moments: a row that moves when the light moves and holds still otherwise is a candidate,
-/// and one that never moves is not a light at all.
+/// lighting can be found rather than guessed at. A single dump cannot say which bytes they are - too many rows
+/// share a shape - so this also diffs two moments: a row that moves when the light moves and holds still
+/// otherwise is a candidate, and one that never moves is not a light at all.
 /// </summary>
 internal static class LightConstantProbe
 {
@@ -107,9 +102,9 @@ internal static class LightConstantProbe
     }
 
     /// <summary>
-    /// Flags every run of three consecutive rows whose xyz form an orthonormal basis.<br/>
-    /// A rotation matrix is three mutually perpendicular unit vectors, and testing that is what separates a view
-    /// matrix from a light direction: both are unit vectors, but only one comes with two perpendicular partners.
+    /// Flags every run of three consecutive rows whose xyz form an orthonormal basis. A rotation matrix is three
+    /// mutually perpendicular unit vectors: both a view-matrix row and a light direction are unit vectors, but
+    /// only the matrix row comes with two perpendicular partners.
     /// </summary>
     private static void MarkMatrixRows(ConstantRow[] rows)
     {
@@ -164,9 +159,8 @@ internal static class LightConstantProbe
     }
 
     /// <summary>
-    /// Rows that changed between two snapshots of the same buffer.<br/>
-    /// This is the discriminating step: taken across a change in the game's light (a different time of day,
-    /// indoors against outdoors), the rows that moved are the short list, and everything constant is ruled out.
+    /// Rows that changed between two snapshots of the same buffer, taken across a change in the game's light: the
+    /// rows that moved are the short list, and everything constant is ruled out.
     /// </summary>
     /// <param name="before">The earlier snapshot.</param>
     /// <param name="after">The later snapshot of the same buffer.</param>
@@ -223,7 +217,7 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    /// <summary>Renders the rows that moved between two snapshots, which is the short list worth investigating.</summary>
+    /// <summary>Renders the rows that moved between two snapshots.</summary>
     /// <param name="before">The earlier snapshot.</param>
     /// <param name="after">The later snapshot of the same buffer.</param>
     /// <param name="maxRows">How many rows to list at most.</param>
@@ -271,34 +265,32 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    /// <summary>A row that could be a light value, with why it is worth looking at.</summary>
+    /// <summary>A row that could be a light value, paired with the reason it is a candidate.</summary>
     /// <param name="Pointer">Buffer it was found in.</param>
     /// <param name="Row">The row itself.</param>
     /// <param name="Reason">What makes it a candidate.</param>
-    /// <param name="Corroboration">How many other buffers hold the same xyz. A value shared across buffers is far stronger than one seen once.</param>
-    /// <param name="Responded">Whether this row changed when the lighting was changed, which is the only direct evidence available.</param>
+    /// <param name="Corroboration">How many other buffers hold the same xyz; a shared value is a stronger signal than one seen once.</param>
+    /// <param name="Responded">Whether this row changed when the lighting was changed.</param>
     internal readonly record struct LightCandidate(nint Pointer, ConstantRow Row, string Reason, int Corroboration, bool Responded);
 
     /// <summary>
-    /// Ranks the rows across every buffer that could carry a light, applying the tests that survived the first
-    /// two rounds of looking at this by hand.<br/>
+    /// Ranks the rows across every buffer that could carry a light.<br/>
     /// <b>Colour:</b> three components inside 0..1 that are not all equal, with w exactly 1. A light's colour is a
     /// tint with unit weight; a grey triple is more likely a scale, and a w that is not 1 is usually a distance.<br/>
     /// <b>Direction:</b> a unit vector that is not part of a contiguous rotation.<br/>
-    /// <b>Corroboration across buffers is the strongest signal available</b> without knowing the layout: the game
+    /// <b>Corroboration across buffers</b> is the strongest signal available without knowing the layout: the game
     /// feeds the same light to several passes, so a direction appearing in more than one buffer is far more likely
     /// real than one seen once. A matrix row repeated by coincidence does not survive this.
     /// </summary>
     /// <param name="snapshots">Every buffer's current contents.</param>
     /// <param name="marked">
     /// Optional earlier snapshots taken before the lighting was changed. When given, a row that moved is ranked
-    /// above every row that did not: <b>responding to a lighting change is the only direct evidence here</b>, and
-    /// shape alone has already produced two confident wrong answers on this project.
+    /// above every row that did not: responding to a lighting change is the only direct evidence available.
     /// </param>
     /// <param name="volatileRows">
-    /// Rows already known to change on their own, from a control comparison taken with nothing altered.<br/>
-    /// <b>Without this the responded flag is close to worthless</b>: a jittered sample kernel changes every frame,
-    /// so it moves across any comparison and outranks everything that moved for a reason.
+    /// Rows already known to change on their own, from a control comparison taken with nothing altered. Without
+    /// this the responded flag is close to worthless: a jittered sample kernel changes every frame, so it moves
+    /// across any comparison and outranks everything that moved for a reason.
     /// </param>
     public static IReadOnlyList<LightCandidate> Candidates(
         IReadOnlyList<ConstantSnapshot> snapshots,
@@ -378,10 +370,8 @@ internal static class LightConstantProbe
 
     /// <summary>
     /// Every row that differs between two snapshots taken with nothing deliberately changed: the rows that move
-    /// on their own.<br/>
-    /// This is the control the search needs. The game jitters sample kernels per frame and animates constants
-    /// nothing asked it to, and those rows move across any comparison, so without subtracting them a lighting
-    /// comparison reports mostly noise ranked at the top.
+    /// on their own. The game jitters sample kernels per frame and animates constants nothing asked it to; without
+    /// subtracting these rows, a lighting comparison reports mostly noise ranked at the top.
     /// </summary>
     /// <param name="before">The earlier snapshots.</param>
     /// <param name="after">Later snapshots taken with nothing altered in between.</param>
@@ -458,10 +448,9 @@ internal static class LightConstantProbe
     }
 
     /// <summary>
-    /// Whether every component is 0 or plus/minus 1: a canonical axis, an identity row, or a flag.<br/>
-    /// These must be excluded before ranking by corroboration, because they appear in many buffers precisely
-    /// by being generic. Ranking on how widely a value is shared otherwise puts every default axis above the
-    /// real measurement, which is what the first ranked run did.
+    /// Whether every component is 0 or plus/minus 1: a canonical axis, an identity row, or a flag. These must be
+    /// excluded before ranking by corroboration, because they appear in many buffers precisely by being generic -
+    /// ranking on how widely a value is shared otherwise puts every default axis above the real measurement.
     /// </summary>
     private static bool IsTrivial(Vector4 v)
     {
@@ -478,8 +467,7 @@ internal static class LightConstantProbe
     /// Whether a row is the depth pair of a projection matrix: <c>(0, 0, m22, m32)</c>.<br/>
     /// A perspective projection puts <c>far/(near-far)</c> and <c>near*far/(near-far)</c> in those two slots, so
     /// their ratio is exactly <c>1/near</c> and the third component sits near 1. Such a row is a unit vector by
-    /// shape and moves whenever a shadow frustum is refitted, which makes it a convincing false positive: it was
-    /// the entire responded list once the per-frame noise had been removed.
+    /// shape and moves whenever a shadow frustum is refitted, which makes it a convincing false positive.
     /// </summary>
     private static bool IsProjectionDepthRow(Vector4 v)
     {

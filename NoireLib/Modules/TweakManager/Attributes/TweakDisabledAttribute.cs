@@ -3,11 +3,9 @@ using System;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Marks a tweak class as globally disabled.<br/>
-/// When applied, the tweak cannot be enabled by users.<br/>
-/// If <see cref="ShowInList"/> is <see langword="true"/>, the tweak is still visible in the
-/// tweak list (shown in red with a tooltip) but cannot be toggled.
-/// When <see langword="false"/> (default), the tweak is completely hidden.
+/// Marks a tweak class as globally disabled, so it cannot be enabled by users. If <see cref="ShowInList"/> is true,
+/// the tweak stays visible in the list (red name, tooltip) but cannot be toggled; when false (default), it is
+/// completely hidden.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class TweakDisabledAttribute : Attribute
@@ -18,10 +16,8 @@ public sealed class TweakDisabledAttribute : Attribute
     public string? Reason { get; }
 
     /// <summary>
-    /// Whether the tweak should still be shown in the tweak list while disabled.<br/>
-    /// When <see langword="true"/>, the tweak appears in the list with a red name and a tooltip
-    /// showing the reason, but cannot be enabled or interacted with.<br/>
-    /// When <see langword="false"/> (default), the tweak is completely hidden from users.
+    /// Whether the tweak should still be shown in the tweak list while disabled: true shows it with a red name
+    /// and a tooltip giving the reason, non-interactive; false (default) hides it completely.
     /// </summary>
     public bool ShowInList { get; }
 

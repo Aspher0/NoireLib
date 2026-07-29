@@ -6,11 +6,9 @@ namespace NoireLib.Core.Modules;
 /// <summary>
 /// Interpolated string handler used by the gated module logging helpers
 /// (<c>LogInfo</c>, <c>LogDebug</c>, <c>LogVerbose</c>) on <see cref="NoireModuleBase{TModule}"/>.<br/>
-/// When the module it is built for has <see cref="INoireModule.EnableLogging"/> set to <see langword="false"/>, the
-/// compiler is told through the constructor's <c>shouldAppend</c> out parameter not to run any append, so an
-/// interpolated message such as <c>LogDebug($"Value: {Compute()}")</c> never allocates a string or evaluates its
-/// holes while logging is off. This is why the gated helpers take this handler rather than a plain
-/// <see cref="string"/>, whose argument would be built at the call site on every pass regardless of the flag.
+/// When <see cref="INoireModule.EnableLogging"/> is <see langword="false"/>, the constructor's <c>shouldAppend</c>
+/// out parameter tells the compiler to skip every append, so an interpolated message never allocates a string or
+/// evaluates its holes while logging is off.
 /// </summary>
 [InterpolatedStringHandler]
 public ref struct NoireLogHandler

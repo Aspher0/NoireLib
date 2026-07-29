@@ -5,11 +5,10 @@ namespace NoireLib.Draw3D;
 
 /// <summary>
 /// Performance knobs for the world pass, reached via <see cref="NoireDraw3D.Performance"/>: level-of-detail for imported
-/// models, and optional distance / screen-size culling for dense scenes.<br/>
-/// Everything here is <b>opt-in and off the default path</b> - a full-detail model renders cheaply, so nothing is
-/// culled or swapped unless you ask. Turn LOD on per-load (<c>generateLods: true</c> on <see cref="Scene.Draw3DModels"/>
-/// / <see cref="Assets.GltfLoader"/>) for scenes with many heavy models at once; the two culls default off so nothing
-/// disappears unexpectedly. <b>Open all the way down:</b> every threshold the selection branches on is a public property.
+/// models, and optional distance / screen-size culling for dense scenes. Everything here is <b>opt-in and off the
+/// default path</b> - a full-detail model renders cheaply, so nothing is culled or swapped unless you ask. Turn LOD on
+/// per-load (<c>generateLods: true</c> on <see cref="Scene.Draw3DModels"/> / <see cref="Assets.GltfLoader"/>); the two
+/// culls default off. <b>Open all the way down:</b> every threshold the selection branches on is a public property.
 /// </summary>
 public sealed class Draw3DPerformance
 {
@@ -20,9 +19,8 @@ public sealed class Draw3DPerformance
     /// <summary>
     /// Whether meshes that carry a LOD chain draw a coarser level as they shrink on screen. Default <b>true</b>, but
     /// <b>a LOD chain is only built when a model is imported with <c>generateLods: true</c></b> - so with the default
-    /// import (no chain) this does nothing and every model draws at full resolution. Turn it off to force full detail
-    /// even on models that do carry a chain. Only affects meshes with <see cref="Geometry.Mesh.LodCount"/> &gt; 0;
-    /// primitives, small meshes, and decals are never touched.
+    /// import (no chain) this does nothing and every model draws at full resolution. Only affects meshes with
+    /// <see cref="Geometry.Mesh.LodCount"/> &gt; 0; primitives, small meshes, and decals are never touched.
     /// </summary>
     public bool Lod { get; set; } = true;
 
@@ -74,15 +72,12 @@ public sealed class Draw3DPerformance
     public float MinScreenPixels { get; set; }
 
     /// <summary>
-    /// Supersampling anti-aliasing for the 3D layer: it renders the scene at this multiple of the display resolution and
-    /// box-downsamples at composite, removing the jagged/shimmering edges a dense mesh shows at a distance (the layer has
-    /// no MSAA of its own, unlike the game world - so a full-detail model aliases where the world does not). <b>Default 1
-    /// = off.</b> <b>2</b> is the sweet spot (exactly 2 gives a perfect 2x2 box filter) but costs 4x the layer's fill and
-    /// VRAM - a real cost at 4K, which is why it is opt-in. Clamped to 1..2. Affects only the main game view, never a
-    /// render-to-texture pass; fail-soft (renders at 1x for any frame the larger target cannot be allocated).
-    /// <br/>
-    /// The lighter-weight alternative is model LOD (<see cref="Lod"/> + <c>generateLods</c>), which also removes the
-    /// aliasing by thinning distant geometry - trading detail instead of fill.
+    /// Supersampling anti-aliasing for the 3D layer: renders the scene at this multiple of the display resolution and
+    /// box-downsamples at composite (the layer has no MSAA of its own, unlike the game world). <b>Default 1 = off.</b>
+    /// <b>2</b> is the sweet spot (a perfect 2x2 box filter) but costs 4x the layer's fill and VRAM. Clamped to 1..2.
+    /// Affects only the main game view, never a render-to-texture pass; fail-soft (renders at 1x if the larger target
+    /// cannot be allocated). The lighter-weight alternative is model LOD (<see cref="Lod"/> + <c>generateLods</c>),
+    /// which trades detail instead of fill.
     /// </summary>
     public float Supersample { get; set; } = 1f;
 

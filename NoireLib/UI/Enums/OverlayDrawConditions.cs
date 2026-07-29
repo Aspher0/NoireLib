@@ -8,12 +8,11 @@ namespace NoireLib.UI;
 /// an overlay button follows that behavior. Setting one or more of these flags keeps the button visible in the matching state.
 /// </summary>
 /// <remarks>
-/// These flags apply to the overlay button that carries them and to nothing else. NoireLib draws overlays independently of the host plugin's
-/// own UI, so keeping one visible in a state has no effect on the plugin's windows: they keep hiding exactly as they would have, and other
-/// overlay buttons keep answering for themselves.<br/>
-/// The one exception is a Dalamud that NoireLib cannot install its own draw hook into, where overlays fall back to being drawn with the rest
-/// of the plugin's UI and Dalamud's per-plugin hiding applies to them all at once. Setting any of these flags then also keeps the rest of the
-/// plugin's UI visible in that state. NoireLib logs it when it happens; see <see cref="NoireUI.OverlaysDrawIndependently"/>.
+/// These flags apply to the overlay button that carries them and to nothing else: NoireLib draws overlays independently of the host plugin's
+/// own UI, so the plugin's windows and other overlay buttons keep hiding exactly as they would have.<br/>
+/// The one exception is a Dalamud NoireLib cannot install its own draw hook into: overlays then fall back to drawing with the rest of the
+/// plugin's UI, so any of these flags also keeps the rest of the plugin's UI visible in that state. NoireLib logs when this happens; see
+/// <see cref="NoireUI.OverlaysDrawIndependently"/>.
 /// </remarks>
 [Flags]
 public enum OverlayDrawConditions

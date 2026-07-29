@@ -22,7 +22,7 @@ public enum UiPositionMode
 
     /// <summary>
     /// The element is positioned relative to a native game addon, following it as the player moves or rescales it.
-    /// Resolving fails while the addon is not on screen, which is what lets an element exist only alongside it.
+    /// Resolving fails while the addon is not on screen, so the element exists only alongside it.
     /// </summary>
     Addon,
 }

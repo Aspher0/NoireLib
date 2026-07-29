@@ -9,12 +9,8 @@ namespace NoireLib.Helpers;
 /// <c>1:30</c>, <c>1.5h</c>.
 /// </summary>
 /// <remarks>
-/// A setting measured in time is almost always stored as a number of milliseconds and shown as one, which makes every
-/// value in it something the user has to do arithmetic on. This reads the shorthand instead, and
-/// <see cref="Format(TimeSpan)"/> writes it back in the same shorthand, so a field round-trips through what was typed
-/// rather than through what it was stored as.<br/>
-/// Nothing here touches ImGui: it is string to <see cref="TimeSpan"/> and back, and is as useful behind a command
-/// argument or a config importer as it is behind a text field.
+/// Not tied to ImGui: pure string-to-<see cref="TimeSpan"/> conversion, usable behind a command argument or config
+/// importer as well as a text field. <see cref="Format(TimeSpan)"/> writes back in the same shorthand this reads.
 /// </remarks>
 /// <example>
 /// <code>
@@ -44,9 +40,7 @@ public static class DurationHelper
     /// Reads a duration.
     /// </summary>
     /// <remarks>
-    /// Every part of the text has to be understood. A trailing scrap that means nothing fails the whole parse rather
-    /// than being ignored, because a field that reads "5 minuts" as five minutes is a field that silently saves the
-    /// wrong number on the day it reads "5 monts" as five somethings.
+    /// The whole text must parse: a trailing scrap that means nothing fails the parse rather than being silently ignored.
     /// </remarks>
     /// <param name="text">The text to read.</param>
     /// <param name="bareUnit">The unit a leading number with no unit is measured in.</param>
@@ -96,8 +90,8 @@ public static class DurationHelper
     /// </summary>
     /// <remarks>
     /// Round-trips: anything this writes, <see cref="TryParse(string?, out TimeSpan)"/> reads back to the same value.
-    /// Parts that are zero are left out, so an hour is <c>1h</c> rather than <c>1h0m0s</c>, and a duration of nothing
-    /// is <c>0s</c> rather than the empty string a field could not put a cursor in.
+    /// Parts that are zero are left out, so an hour is <c>1h</c> rather than <c>1h0m0s</c>; a duration of nothing is
+    /// <c>0s</c>, never the empty string.
     /// </remarks>
     /// <param name="value">The duration to write.</param>
     /// <returns>The duration in shorthand.</returns>
@@ -137,9 +131,8 @@ public static class DurationHelper
     /// Reads the <c>1h30m</c> form: a run of amounts, each with a unit or taking the next one down.
     /// </summary>
     /// <remarks>
-    /// Units have to get smaller as the text goes on. That is not pedantry: it is what makes a bare tail readable at
-    /// all, and it rejects the transpositions ("30s1m") that a tolerant parser would quietly add up into a number the
-    /// user never asked for.
+    /// Units must strictly decrease through the text, which resolves a bare tail to the next unit down and rejects
+    /// transpositions like <c>30s1m</c> that a tolerant parser would silently sum.
     /// </remarks>
     private static bool TryReadUnits(ReadOnlySpan<char> span, DurationUnit bareUnit, out double milliseconds)
     {
@@ -177,8 +170,8 @@ public static class DurationHelper
 
             if (at == unitStart)
             {
-                // A bare amount: the first one is measured in whatever the caller said, a later one in the unit below
-                // the one before it, which is how "1h30" means an hour and a half.
+                // A bare amount: the first one is measured in whatever the caller said; a later one takes the
+                // unit below the one before it.
                 if (previous is null)
                     unit = bareUnit;
                 else if (!TryStepDown(previous.Value, out unit))

@@ -74,12 +74,9 @@ public sealed class FocusStyle
     /// places it immediately.
     /// </summary>
     /// <remarks>
-    /// Motion on arrival, never motion at rest. The hard part of keyboard navigation is seeing <em>where focus went</em>,
-    /// which a short movement answers and a continuous one does not; a mark that kept moving would also be animating
-    /// underneath the text the user is in the middle of typing. It is over before typing starts, and under
-    /// <see cref="NoireUI.ReducedMotion"/> it does not run at all: the mark is still drawn, in place, at full strength.
-    /// Focus is the one signal that has to survive reduced motion, because the people who navigate by keyboard are
-    /// exactly the people who need it.
+    /// Motion on arrival, never motion at rest: a mark that kept moving would animate underneath text the user is
+    /// mid-typing. Under <see cref="NoireUI.ReducedMotion"/> it does not run at all; the mark is still drawn, in
+    /// place, at full strength.
     /// </remarks>
     public float ArrivalSeconds { get; set; } = 0.12f;
 
@@ -92,10 +89,8 @@ public sealed class FocusStyle
     /// Paints the mark instead of <see cref="Shape"/>, for a look the four shapes do not cover.
     /// </summary>
     /// <remarks>
-    /// Handed everything the shipped painter works from, including how far through its arrival the mark is, so a hook
-    /// can animate with it rather than against it. <see cref="UiFocusDraw.DrawShape"/> draws what NoireUI would have,
-    /// for a hook adding to the look rather than replacing it, and a hook that draws nothing is how one widget goes
-    /// unmarked while the rest of the interface keeps its mark.
+    /// Handed everything the shipped painter works from, so a hook can animate with the arrival rather than against
+    /// it. See <see cref="UiFocusDraw"/> for what it receives and how to draw nothing or add to the shipped look.
     /// </remarks>
     public Action<UiFocusDraw>? CustomDraw { get; set; }
 

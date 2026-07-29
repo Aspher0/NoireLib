@@ -28,8 +28,8 @@ public sealed record GcdStateChangedEvent(bool IsReady, float Remaining);
 
 /// <summary>
 /// Fired when another character's action is observed and an estimated cooldown starts.<br/>
-/// <b>Estimate</b> (doctrine tier 4): the client has no recast data for anyone but you - this is inferred
-/// from observed usage and sheet recast data, and drifts with skill/spell speed and unseen charge usage.
+/// <b>Estimate</b>: the client has no recast data for anyone but you - inferred from observed usage and
+/// sheet recast data, drifting with skill/spell speed and unseen charge usage.
 /// </summary>
 /// <param name="Cooldown">The estimated recast state (<see cref="CooldownSnapshot.IsEstimate"/> is true).</param>
 public sealed record EstimatedCooldownStartedEvent(CooldownSnapshot Cooldown);

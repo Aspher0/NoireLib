@@ -21,8 +21,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     /// Identifies a column of the entries table independently of where it sits.<br/>
     /// The Category and Source columns are only registered when the display preferences show them, so a column's
     /// positional index shifts with those preferences. These values are handed to ImGui as the column user id and
-    /// come back unchanged in the sort specs, which is what lets a clicked header be resolved to the field it
-    /// actually sorts by whatever the current layout is.
+    /// come back unchanged in the sort specs, resolving a clicked header to the field it sorts regardless of layout.
     /// </summary>
     private enum EntryColumn : uint
     {
@@ -42,7 +41,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     private readonly HashSet<HistoryLogLevel> selectedLevels = new();
     private readonly HashSet<HistoryLogEntry> selectedEntries = new();
     private readonly HashSet<(HistoryLogEntry Entry, int LineIndex)> selectedLines = new();
-    // Matches the column carrying ImGuiTableColumnFlags.DefaultSort below, which is what ImGui selects before the
+    // Matches the column carrying ImGuiTableColumnFlags.DefaultSort below: ImGui selects that column before the
     // first sort spec is reported.
     private EntryColumn sortColumn = EntryColumn.Time;
     private ImGuiSortDirection sortDirection = ImGuiSortDirection.Descending;
@@ -243,8 +242,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             // Synchronize selections when switching modes
             if (allowSelectLinesSeparately && !previousMode)
             {
-                // Switching from standard mode to line separation mode
-                // Select all lines of currently selected entries
                 selectedLines.Clear();
                 foreach (var entry in selectedEntries)
                 {
@@ -256,8 +253,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             }
             else if (!allowSelectLinesSeparately && previousMode)
             {
-                // Switching from line separation mode to standard mode
-                // Select entries that have any line selected
                 selectedEntries.Clear();
                 var entriesWithAnyLine = selectedLines.Select(l => l.Entry).Distinct();
                 foreach (var entry in entriesWithAnyLine)
@@ -403,7 +398,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (!child)
             return;
 
-        // Determine which columns to show from the current display preferences.
         bool hideCategory = HistoryLoggerConfig.HideCategoryColumn;
         bool hideSource = HistoryLoggerConfig.HideSourceColumn;
         int columnCount = 3 + (hideCategory ? 0 : 1) + (hideSource ? 0 : 1); // Time, Level, Message, [Category], [Source]
@@ -427,8 +421,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         UpdateSortSpecs();
 
-        // Pre-calculate message column width for row height estimation. The message column sits after the category
-        // column only when the category column is shown.
+        // The message column sits after the category column only when the category column is shown.
         int messageColIndex = 2;
         if (!hideCategory) messageColIndex++;
         ImGui.TableNextRow();
@@ -447,7 +440,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         {
             var entry = pagedEntries[index];
 
-            // Calculate row height based on wrapped message text
             var messageSize = ImGui.CalcTextSize(entry.Message ?? string.Empty, false, messageColumnWidth);
             var rowHeight = Math.Max(ImGui.GetTextLineHeightWithSpacing(), messageSize.Y + ImGui.GetStyle().CellPadding.Y * 2f);
 
@@ -869,19 +861,16 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         }
         else
         {
-            // Normal click without modifiers
+            // Plain click: toggles off only when it was the sole selection, otherwise selects just this one.
             var isCurrentlySelected = selectedEntries.Contains(entry);
             var isOnlyOneSelected = selectedEntries.Count == 1;
 
             if (isCurrentlySelected && isOnlyOneSelected)
             {
-                // Clicking the only selected line - deselect it
                 selectedEntries.Clear();
             }
             else
             {
-                // Either clicking unselected line or clicking one of multiple selected lines
-                // In both cases: clear and select only this one
                 selectedEntries.Clear();
                 selectedEntries.Add(entry);
             }
@@ -931,7 +920,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             }
         }
 
-        // Show delete option based on entry type and corresponding permission
         var canDelete = ParentModule.PersistLogs
             ? ParentModule.AllowUserClearDatabase
             : ParentModule.AllowUserClearInMemory;
@@ -973,9 +961,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             CopyEntriesToClipboard(copyEntries);
         }
 
-        // Show "Copy message only" button when:
-        // - Not in line separation mode (always shown), OR
-        // - In line separation mode AND first line (lineIndex == 0) is selected
+        // Shown when not in line-separation mode, or when the first line of an entry is selected.
         var showMessageOnlyCopy = !HistoryLoggerConfig.SelectLinesSeparately ||
             selectedLines.Any(l => l.LineIndex == 0);
 

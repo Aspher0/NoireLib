@@ -19,7 +19,7 @@ public sealed partial class NoireTabBar
     /// <remarks>
     /// The tab bar's scroll position lives in ImGui's internals rather than in its public surface, so this reaches it
     /// through <c>ImGui.GetCurrentContext().CurrentTabBar</c>. That is only valid between <c>BeginTabBar</c> and
-    /// <c>EndTabBar</c>, which is why this is not a separate call the caller makes.<br/>
+    /// <c>EndTabBar</c>, so this is not a separate call the caller makes.<br/>
     /// Setting the target rather than the animated position leaves ImGui's own easing in charge, so a wheel notch
     /// glides the way clicking the arrows does instead of jumping.
     /// </remarks>
@@ -101,9 +101,8 @@ public sealed partial class NoireTabBar
     /// advance. Putting the scroll back afterwards is not equivalent either, because the window that moved is often not
     /// the one the bar is drawn in: ImGui walks up from the hovered window to the first ancestor that can actually
     /// scroll, which for a bar inside a non-scrolling column is the page behind it.<br/>
-    /// So the flag is set on the whole ancestor chain, which is what makes that same walk find nothing willing to
-    /// scroll. It is set a frame ahead, which costs nothing in practice: the pointer rests on the strip for many frames
-    /// before a wheel notch arrives.<br/>
+    /// So the flag is set on the whole ancestor chain, defeating that same walk. It is set a frame ahead, which
+    /// costs nothing in practice: the pointer rests on the strip for many frames before a wheel notch arrives.<br/>
     /// Nothing is restored, and nothing needs to be. <c>Begin</c> assigns a window's flags from its own arguments every
     /// frame, so this lasts exactly until the window is next begun and then undoes itself.
     /// </remarks>
@@ -178,8 +177,8 @@ public sealed partial class NoireTabBar
         ImGui.EndTabBar();
         window.WorkRect = workRect;
 
-        // Cleared after exactly one frame of being applied, whatever happened above. This single line is most of what
-        // the widget is for: held any longer and the tab is welded open with the user unable to click away.
+        // Cleared after exactly one frame of being applied, whatever happened above: held any longer and the tab
+        // is welded open with the user unable to click away.
         pendingTab = null;
 
         if (closed != null)
@@ -240,10 +239,9 @@ public sealed partial class NoireTabBar
     /// Draws the tab's badge over its header, if it has one to draw.
     /// </summary>
     /// <remarks>
-    /// Clipped to the ends of the bar rather than pushed back inside them. A badge belongs to its tab, so it should
-    /// leave with it: a tab scrolled halfway off the end has half a badge, and one scrolled off entirely has none,
-    /// which is what the tab itself does. Holding the badge inside instead leaves it stranded at the edge, still
-    /// showing a count for a tab that is no longer there.<br/>
+    /// Clipped to the ends of the bar rather than pushed back inside them: a tab scrolled halfway off the end has
+    /// half a badge, and one scrolled off entirely has none, matching the tab itself. Holding the badge inside
+    /// instead would leave it stranded at the edge, still showing a count for a tab that is no longer there.<br/>
     /// Only the ends are clipped. A badge deliberately rides above the top of its tab, so bounding it vertically as
     /// well would shave the top off every badge in the bar rather than only the ones going out of view.
     /// </remarks>
@@ -282,10 +280,7 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// Shows whichever of the tooltip and the disabled reason applies.
     /// </summary>
-    /// <remarks>
-    /// The reason wins while the tab is disabled, because a control that is dead for no stated reason reads as broken
-    /// and that is the question the user is asking at exactly that moment.
-    /// </remarks>
+    /// <remarks>The reason wins while the tab is disabled.</remarks>
     private static void DrawTabTooltip(UiTab tab, bool enabled, bool hovered)
     {
         if (!hovered)

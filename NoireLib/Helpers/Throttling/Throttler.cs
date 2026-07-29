@@ -5,9 +5,8 @@ using System;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides throttle functionality to limit the rate at which an action can be executed.<br/>
-/// Use <see cref="ThrottleHelper"/> instead, unless you know what you're doing.<br/>
-/// If you are using this class, then do not forget to call <see cref="Dispose"/>.
+/// Limits the rate at which an action can be executed.<br/>
+/// Prefer <see cref="ThrottleHelper"/> unless you need this directly; if you use it, remember to call <see cref="Dispose"/>.
 /// </summary>
 public class Throttler : TimingHelperBase
 {

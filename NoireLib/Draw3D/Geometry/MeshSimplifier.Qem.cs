@@ -7,11 +7,11 @@ namespace NoireLib.Draw3D.Geometry;
 public static partial class MeshSimplifier
 {
     /// <summary>
-    /// Quadric error edge-collapse decimation (Garland-Heckbert). It repeatedly collapses the edge whose removal adds
-    /// the least squared distance to the original surface, placing the merged vertex at whichever of its two endpoints
-    /// or their midpoint costs least - so every output vertex sits on an original edge and the surface degrades
-    /// smoothly instead of shattering. Boundary edges are pinned, and a collapse that would flip a face is skipped.
-    /// Returns null when the mesh is too small, already at/below target, or nothing could be collapsed.
+    /// Quadric error edge-collapse decimation (Garland-Heckbert): repeatedly collapses the edge whose removal adds
+    /// the least squared distance to the surface, placing the merged vertex at whichever of its two endpoints or
+    /// their midpoint costs least, so every output vertex sits on an original edge and the surface degrades smoothly
+    /// instead of shattering; boundary edges are pinned, a collapse that would flip a face is skipped, and null is
+    /// returned when the mesh is too small, already at/below target, or nothing could be collapsed.
     /// </summary>
     /// <param name="vertices">Source vertices.</param>
     /// <param name="indices">Source indices (triangle list).</param>

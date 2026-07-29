@@ -32,8 +32,8 @@ internal enum UiDrawTarget
 /// without a list, and cannot obtain a list without being measured. The scope's name is derived from where it was
 /// opened rather than from a literal, so there is nothing to mistype.<br/>
 /// <see cref="Begin"/> names the scope for the calling type, aggregating a surface's whole frame into one row.
-/// <see cref="BeginMethod"/> names it for the calling method, which is the shape the shape helpers want: a reader
-/// wants to know what all the glows cost, not what the eleventh one did.
+/// <see cref="BeginMethod"/> names it for the calling method: what the shape helpers use, since a reader wants to
+/// know what all the glows cost, not what the eleventh one did.
 /// </remarks>
 /// <example>
 /// <code>
@@ -50,8 +50,7 @@ internal static class UiDraw
     /// Keyed on the path the compiler baked in, which is the same string instance at a given call site every time.
     /// <br/>
     /// Holds the resolved <see cref="UiScopeName"/> rather than the string, so a draw hands the profiler a handle it
-    /// can key on directly. Resolving one costs a string hash, and doing that per draw is what this cache exists to
-    /// avoid.
+    /// can key on directly: resolving one costs a string hash, and this cache avoids paying that per draw.
     /// </remarks>
     private static readonly ConcurrentDictionary<string, UiScopeName> typeNames = new(StringInstanceComparer.Instance);
 
@@ -101,9 +100,8 @@ internal static class UiDraw
     /// Opens a measurement named <c>Type.Member</c> for the calling method, and hands back the list it paints into.
     /// </summary>
     /// <remarks>
-    /// One row per method, aggregating every call to it in the frame. This is the granularity the shape helpers
-    /// report at, and it is what keeps <c>NoireShapes.Sunburst</c> a row of its own rather than a share of
-    /// <c>NoireShapes</c>.<br/>
+    /// One row per method, aggregating every call to it in the frame: the granularity the shape helpers report at,
+    /// keeping <c>NoireShapes.Sunburst</c> a row of its own rather than a share of <c>NoireShapes</c>.<br/>
     /// Measured only while <see cref="UiProfiler.Detailed"/> is on; otherwise the call costs a flag read and its time
     /// folds into the enclosing scope.
     /// </remarks>
@@ -150,7 +148,7 @@ internal static class UiDraw
     /// Taken from the file name up to its first dot, which is the type a partial class is split from: the parts of
     /// <c>NoireShapes</c> live in <c>NoireShapes.Arcs.cs</c> and <c>NoireShapes.Rects.cs</c> and all report as
     /// <c>NoireShapes</c>. Naming them for the whole file name instead would split one surface across as many rows as
-    /// it has files, and would rename every scope that already exists.<br/>
+    /// it has files.<br/>
     /// A surface's private painting helpers hold the gate too, because that is the only way to obtain a list, so the
     /// same name is routinely opened inside itself. <see cref="UiProfiler.Open"/> declines the duplicate, keeping the
     /// surface one row whose figures stay comparable.
@@ -198,10 +196,10 @@ internal static class UiDraw
 /// An open measurement and the list it measures the drawing into, closed when it is disposed.
 /// </summary>
 /// <remarks>
-/// A <see langword="ref struct"/> so that obtaining a draw list allocates nothing, which matters for something every
-/// surface in the library will hold once per draw.<br/>
+/// A <see langword="ref struct"/> so that obtaining a draw list allocates nothing: every surface in the library
+/// holds one once per draw.<br/>
 /// Talks to the profiler directly rather than through a nested <see cref="UiProfileScope"/>: this is held once per
-/// surface per frame, and the extra layer was two more calls per scope on a path that exists to cost nothing.
+/// surface per frame, and the extra layer cost two more calls per scope on a path that must cost nothing.
 /// </remarks>
 internal ref struct UiDrawScope
 {
@@ -216,9 +214,9 @@ internal ref struct UiDrawScope
     /// all and the drawing is silently skipped.
     /// </summary>
     /// <remarks>
-    /// Resolved on each read rather than captured when the scope opened, which is what lets a surface that measures
-    /// without painting hold a scope safely: reaching for the current window's list outside a window is not a
-    /// question ImGui answers. Read it into a local when a method paints more than once.<br/>
+    /// Resolved on each read rather than captured when the scope opened, so a surface that measures without painting
+    /// can hold a scope safely: reaching for the current window's list outside a window is not a question ImGui
+    /// answers. Read it into a local when a method paints more than once.<br/>
     /// The window list is resolved the way <see cref="NoireShapes.DrawList"/> resolves it, so a gated surface drawn
     /// inside <see cref="NoireShapes.On(ImDrawListPtr, System.Action)"/> paints into the redirected list rather than
     /// the window's. The viewport lists are asked for directly, since that call answers for the whole viewport rather

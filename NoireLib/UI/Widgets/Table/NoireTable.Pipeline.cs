@@ -124,7 +124,7 @@ public sealed partial class NoireTable<T>
     /// Orders a list of row indices by one column.
     /// </summary>
     /// <remarks>
-    /// Ties break on the source index, which makes the order **stable** and, more to the point, deterministic:
+    /// Ties break on the source index, making the order stable and deterministic:
     /// <see cref="List{T}.Sort(Comparison{T})"/> is an introsort and gives no guarantee otherwise, so a table sorted
     /// on a column full of equal values would reshuffle its rows every time anything else changed.<br/>
     /// The search deliberately does not reorder here, unlike the combo box's filter. A table has an explicit sort that

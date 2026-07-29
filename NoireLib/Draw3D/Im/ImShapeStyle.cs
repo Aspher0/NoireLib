@@ -18,10 +18,10 @@ public enum ImShapePlacement
 public readonly record struct ImShapeStyle
 {
     // Every default that is not the zero value reads through a nullable backing field rather than a property
-    // initializer. An initializer only runs for `new ImShapeStyle()`: `default(ImShapeStyle)` - which is what an
-    // unassigned field, an explicit `default`, and `style ?? default` all produce - would zero the lot instead, leaving a
-    // decal with no fill and no outline (it paints nothing at all) and a curve with no segments. Defaulting on read makes
-    // `default` and `new()` behave identically, so a caller cannot land on the zeroed set by accident.
+    // initializer: an initializer only runs for `new ImShapeStyle()`, not for `default(ImShapeStyle)` (which an
+    // unassigned field, an explicit `default`, and `style ?? default` all produce) - that would zero the lot,
+    // leaving a decal with no fill and no outline and a curve with no segments. Defaulting on read makes `default`
+    // and `new()` behave identically.
     private readonly float? outlineWidth;
     private readonly float? fillOpacity;
     private readonly float? decalHeight;

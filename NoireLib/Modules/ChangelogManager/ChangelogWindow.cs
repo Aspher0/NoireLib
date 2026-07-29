@@ -138,7 +138,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
                         selectedVersion = version;
                         currentChangelog = ParentModule.GetVersion(selectedVersion);
 
-                        // Notify manager that version changed
                         if (oldVersion != selectedVersion)
                         {
                             ParentModule.OnVersionChanged(oldVersion, selectedVersion);
@@ -152,7 +151,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
         }
 
-        // Show selected version info
         if (currentChangelog != null)
         {
             ImGui.SameLine();
@@ -162,7 +160,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             {
                 var availableWidth = ImGui.GetContentRegionAvail().X;
 
-                // Start on a new line if there's not enough space
                 if (availableWidth < 100f)
                 {
                     ImGui.NewLine();
@@ -199,11 +196,10 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             {
                 var padding = 5f;
                 ImGui.Dummy(new Vector2(0, padding));
-                // Left on ImRaii deliberately: its scaled overload multiplies by the global scale, and a raw
-                // ImGui.Indent would indent the same amount at every scale. See ticket 29.
+                // ImRaii, not raw ImGui.Indent: its scaled overload multiplies by the global scale, so indentation
+                // stays consistent across UI scales.
                 using (ImRaii.PushIndent(padding))
                 {
-                    // Set wrap position accounting for padding
                     using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
                     {
                         if (!string.IsNullOrWhiteSpace(currentChangelog.Description))
@@ -246,7 +242,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         {
             ImGui.Spacing();
 
-            // Apply indentation for headers
             var headerIndent = 20f;
             var headerTotalIndent = entry.IndentLevel * headerIndent;
 
@@ -256,13 +251,11 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
                 ImGui.SetCursorPosX(currentPosX + headerTotalIndent);
             }
 
-            // Headers with bullets
             if (entry.HasBullet)
             {
                 ImGui.Bullet();
                 ImGui.SameLine();
             }
-            // Headers with icons (optional)
             else if (entry.Icon.HasValue)
             {
                 using (UiPush.Font(UiBuilder.IconFont))
@@ -300,19 +293,15 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
         var entryTextColor = entry.TextColor ?? new Vector4(1f, 1f, 1f, 1f);
 
-        // Check if we have a button to determine text wrapping behavior
         bool hasButton = !string.IsNullOrWhiteSpace(entry.ButtonText) && entry.ButtonAction != null;
         bool shouldPlaceButtonOnNewLine = false;
-        // Store position after bullet/icon for button alignment
         var textStartPosX = 0f;
 
         using (UiPush.Color(ImGuiCol.Text, entryTextColor))
         {
 
-            // Calculate prefix width (bullet or icon)
             float prefixWidth = 0f;
 
-            // Determine what prefix we're using
             bool willShowBullet = entry.HasBullet;
             bool willShowIcon = !entry.HasBullet && entry.Icon.HasValue;
 
@@ -330,22 +319,18 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
             if (hasButton)
             {
-                // Calculate if text will wrap
                 var buttonWidth = ImGui.CalcTextSize(entry.ButtonText).X + 35f;
                 var availableWidth = ImGui.GetContentRegionAvail().X;
                 var textWidth = ImGui.CalcTextSize(entry.Text ?? string.Empty).X;
 
-                // If text + button doesn't fit on one line, put button on new line
                 if (textWidth + prefixWidth + buttonWidth + 10f > availableWidth)
                 {
                     shouldPlaceButtonOnNewLine = true;
                 }
             }
 
-            // Draw prefix (bullet or icon) + text
             if (willShowBullet)
             {
-                // Entry with bullet
                 ImGui.Bullet();
                 ImGui.SameLine();
 
@@ -362,7 +347,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
             else if (willShowIcon)
             {
-                // Entry with icon
                 var iconColor = entry.IconColor ?? new Vector4(0.7f, 0.7f, 0.7f, 1f);
                 using (UiPush.Font(UiBuilder.IconFont))
                 {
@@ -383,7 +367,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
             else
             {
-                // Entry with no prefix (no bullet, no icon)
                 textStartPosX = ImGui.GetCursorPosX();
 
                 if (shouldPlaceButtonOnNewLine)
@@ -397,7 +380,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
         }
 
-        // Draw button
         if (hasButton)
         {
             if (!shouldPlaceButtonOnNewLine)
@@ -406,7 +388,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             }
             else
             {
-                // Position button at the same X position as the text (after bullet/icon)
                 ImGui.SetCursorPosX(textStartPosX);
             }
 

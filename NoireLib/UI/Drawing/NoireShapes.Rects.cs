@@ -58,8 +58,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Fills a rectangle with a gradient, corners and all, which is the thing ImGui's own multicolor rectangle cannot
-    /// do.
+    /// Fills a rectangle with a gradient, corners and all, unlike ImGui's own multicolor rectangle.
     /// </summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
@@ -133,7 +132,7 @@ public static partial class NoireShapes
         Span<Vector2> path = stackalloc Vector2[MaxRectPathPoints];
 
         // Painted outwards in, so the layers accumulate towards the shape rather than away from it. Each one carries a
-        // fraction of the total alpha, which is what makes the falloff smooth instead of a stack of visible rings.
+        // fraction of the total alpha, keeping the falloff smooth instead of a stack of visible rings.
         for (var layer = layers; layer >= 1; layer--)
         {
             var distance = (float)layer / layers;
@@ -155,8 +154,8 @@ public static partial class NoireShapes
     /// </summary>
     /// <remarks>
     /// <see cref="Glow(Vector2, Vector2, Vector4, float, CornerShape, float, RectCorners)"/> can only grow a rectangle,
-    /// so a shape that is not one gets a rectangular halo: a lit diamond comes out sitting in a glowing square, which
-    /// is the tell that the glow knows nothing about what it is lighting. This grows the path itself.<br/>
+    /// so a shape that is not one gets a rectangular halo: a lit diamond comes out sitting in a glowing square. This
+    /// grows the path itself instead.<br/>
     /// Each vertex moves along the bisector of its two edges, by the distance that keeps both edges parallel to where
     /// they started. That is a real outward offset rather than a scale about the centre, which only agrees with one for
     /// shapes that happen to be regular.<br/>
@@ -387,8 +386,8 @@ public static partial class NoireShapes
     /// Draws a hairline frame: one line, optionally two, with optional brackets set inside the corners.
     /// </summary>
     /// <remarks>
-    /// The brackets are the reason this is not <c>AddRect</c>. A frame with a short tick inside each corner reads as
-    /// drawn rather than as a border, and it is the single cheapest thing that makes a panel look composed.
+    /// The brackets are the reason this is not <c>AddRect</c>: a short tick inside each corner reads as drawn rather
+    /// than as a border.
     /// </remarks>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>

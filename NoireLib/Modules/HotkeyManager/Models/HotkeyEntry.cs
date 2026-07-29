@@ -7,29 +7,25 @@ namespace NoireLib.HotkeyManager;
 /// <summary>
 /// Represents a registered hotkey entry.<br/>
 /// The entry handed back by <see cref="NoireHotkeyManager.TryGetHotkey"/> is the live entry the detection loop
-/// reads, so assigning one of its options takes effect on the next detection tick, and, when the owning manager
-/// persists its hotkeys, the change is saved as well. This is the supported way to reconfigure a hotkey at
-/// runtime; there is no need to remove and re-add it. A burst of assignments coalesces into a single write while
-/// the game is running.<br/>
-/// Assigning <see cref="Binding"/> routes through <see cref="NoireHotkeyManager.SetHotkeyBinding"/>, so it raises
-/// the binding-changed notifications and persists exactly as that method does. <see cref="Id"/> and
+/// reads: assigning one of its options takes effect on the next detection tick and persists if the owning manager
+/// does, coalescing a burst of assignments into a single write while the game is running. Assigning
+/// <see cref="Binding"/> routes through <see cref="NoireHotkeyManager.SetHotkeyBinding"/>, raising the
+/// binding-changed notifications and persisting exactly as that method does. <see cref="Id"/> and
 /// <see cref="Callback"/> are ordinary values; changing the id after registration is not supported.
 /// </summary>
 public sealed class HotkeyEntry
 {
     /// <summary>
-    /// The unique identifier for the hotkey.<br/>
-    /// Ids are matched ignoring case, so "my.hotkey" and "My.Hotkey" name one hotkey, and either spelling
-    /// reaches it from every surface that takes an id. Changing the id after registration is not supported.
+    /// The unique identifier for the hotkey, matched ignoring case (so "my.hotkey" and "My.Hotkey" are the same)
+    /// and immutable after registration.
     /// </summary>
     public string Id { get; set; }
 
     private string displayName;
 
     /// <summary>
-    /// The display name for the hotkey, used as the label of the binding UI.<br/>
-    /// Registering an entry whose display name is blank replaces it with <see cref="Id"/>, so that the binding
-    /// UI always has a name to render.
+    /// The display name for the hotkey, used as the label of the binding UI; a blank name is replaced with
+    /// <see cref="Id"/> on registration.
     /// </summary>
     public string DisplayName
     {
@@ -47,19 +43,16 @@ public sealed class HotkeyEntry
     private HotkeyBinding binding;
 
     /// <summary>
-    /// The binding for this hotkey.<br/>
-    /// Assigning this on a registered entry is equivalent to calling
-    /// <see cref="NoireHotkeyManager.SetHotkeyBinding"/>: the manager records the change, raises its
-    /// binding-changed notifications on the framework thread, and persists it. On an entry that is not registered
-    /// with a manager it is a plain value.
+    /// The binding for this hotkey; on a registered entry, assigning it routes through
+    /// <see cref="NoireHotkeyManager.SetHotkeyBinding"/> (records the change, raises binding-changed
+    /// notifications on the framework thread, and persists), otherwise it is a plain value.
     /// </summary>
     public HotkeyBinding Binding
     {
         get => binding;
         set
         {
-            // A registered entry's binding has a first-class path that notifies and persists; routing through it
-            // rather than writing the field is what makes assigning Binding here behave like SetHotkeyBinding.
+            // Routed through the manager so this setter behaves like SetHotkeyBinding on a registered entry.
             var owner = Owner;
             if (owner != null)
             {
@@ -241,11 +234,8 @@ public sealed class HotkeyEntry
     private bool blockGameInput;
 
     /// <summary>
-    /// Gets or sets whether to block game input when this hotkey is pressed.<br/>
-    /// A persisted setting, so it is the hotkey's standing answer rather than a switch to flick while something is
-    /// happening: written here it survives a restart, and a value stored on one launch overrides what the hotkey is
-    /// registered with on the next. For a key wanted only while something is going on, use
-    /// <see cref="SuppressGameInput"/> instead.
+    /// Gets or sets whether to block game input when this hotkey is pressed; persisted (so it survives a restart
+    /// and overrides the registered value on the next load), unlike the momentary <see cref="SuppressGameInput"/>.
     /// </summary>
     public bool BlockGameInput
     {
@@ -263,23 +253,21 @@ public sealed class HotkeyEntry
     private int gameInputSuppressions;
 
     /// <summary>
-    /// Whether something is holding this hotkey's key away from the game at this moment.<br/>
-    /// True while any <see cref="SuppressGameInput"/> is outstanding. Read alongside
-    /// <see cref="BlockGameInput"/> when blocking: either one takes the key.
+    /// Whether something is holding this hotkey's key away from the game right now: true while any
+    /// <see cref="SuppressGameInput"/> is outstanding, checked alongside <see cref="BlockGameInput"/> since
+    /// either one takes the key.
     /// </summary>
     public bool IsGameInputSuppressed => Volatile.Read(ref gameInputSuppressions) > 0;
 
     /// <summary>
-    /// Takes this hotkey's key away from the game until <see cref="ReleaseGameInputSuppression"/> gives it back.<br/>
-    /// The runtime counterpart of <see cref="BlockGameInput"/>, for a caller that wants the key only while something
-    /// is happening: a widget being worked in, a mode being held. It is never persisted and cannot outlive the
-    /// session, so a caller that forgets to release one cannot leave a key swallowed on every future launch.<br/>
-    /// Calls nest, and the key returns to the game when the last one is released.
+    /// Takes this hotkey's key away from the game until <see cref="ReleaseGameInputSuppression"/> gives it back;
+    /// the runtime, non-persisted counterpart of <see cref="BlockGameInput"/>, so a forgotten release cannot
+    /// outlive the session. Calls nest: the key returns to the game once the last one releases.
     /// </summary>
     public void SuppressGameInput() => Interlocked.Increment(ref gameInputSuppressions);
 
     /// <summary>
-    /// Gives back one <see cref="SuppressGameInput"/>. Releasing more than was taken does nothing.
+    /// Gives back one <see cref="SuppressGameInput"/>; releasing more than was taken does nothing.
     /// </summary>
     public void ReleaseGameInputSuppression()
     {
@@ -303,20 +291,18 @@ public sealed class HotkeyEntry
     internal HotkeyActivationState Activation;
 
     /// <summary>
-    /// Whether this hotkey is suppressed until its key is released, set when a rebind capture or a game text input
-    /// claimed the key while it was down. Tracked apart from <see cref="Activation"/> because it is decided against
-    /// live game state in the detection loop rather than by the pure activation machine.
+    /// Whether this hotkey is suppressed until its key is released, set when a rebind capture or a game text
+    /// input claims the key while it is down, tracked apart from <see cref="Activation"/>.
     /// </summary>
     internal bool BlockedWhileDown { get; set; }
 
     private volatile NoireHotkeyManager? owner;
 
     /// <summary>
-    /// The manager currently holding this entry, or null when it is not registered.<br/>
-    /// Set on registration and cleared on unregister or teardown. The notifying option setters read it to route a
-    /// runtime change back to the manager that persists it; a change made on an entry with no owner is a plain
-    /// field write. Volatile because the thread that registers an entry need not be the thread that later
-    /// reconfigures it.
+    /// The manager currently holding this entry, or null when not registered; set on registration, cleared on
+    /// unregister or teardown. The notifying option setters route a runtime change back through it to persist,
+    /// falling back to a plain field write when there is no owner; volatile since the registering thread need
+    /// not be the one that later reconfigures the entry.
     /// </summary>
     internal NoireHotkeyManager? Owner
     {
@@ -327,11 +313,9 @@ public sealed class HotkeyEntry
     private volatile bool unregistered;
 
     /// <summary>
-    /// Whether the manager has stopped holding this entry.<br/>
-    /// Detection queues a trigger ahead of the framework thread that delivers it, so an entry can be removed
-    /// while one of its triggers is still waiting. Delivery reads this to discard such a trigger rather than
-    /// invoke a callback the consumer has already retired. Volatile because the removal and the delivery need
-    /// not run on the same thread, and the delivery deliberately reads it without taking the manager's lock.
+    /// Whether the manager has stopped holding this entry; delivery reads it to discard a trigger queued before
+    /// an unregister rather than invoke a retired callback. Volatile, since removal and delivery need not run
+    /// on the same thread and delivery reads it without the manager's lock.
     /// </summary>
     internal bool Unregistered
     {
@@ -340,10 +324,8 @@ public sealed class HotkeyEntry
     }
 
     /// <summary>
-    /// Writes the binding field directly, bypassing the routing the <see cref="Binding"/> setter does for a
-    /// registered entry.<br/>
-    /// Used by <see cref="NoireHotkeyManager.SetHotkeyBinding"/>, which is the routed path itself and would
-    /// otherwise recurse into its own call.
+    /// Writes the binding field directly, bypassing the <see cref="Binding"/> setter's routing; used by
+    /// <see cref="NoireHotkeyManager.SetHotkeyBinding"/> itself, to avoid recursing into its own call.
     /// </summary>
     /// <param name="value">The binding to store.</param>
     internal void SetBindingStorage(HotkeyBinding value) => binding = value;

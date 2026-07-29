@@ -30,7 +30,7 @@ public readonly record struct GameSgbPlacement(
 /// </summary>
 public sealed class GameSgbFile : FileResource
 {
-    // Layout, validated against every furniture sgb in the archives (1916 files, indoor and outdoor):
+    // Layout, validated against every furniture sgb in the archives:
     //   0x00 "SGB1", 0x0C "SCN1"; header offsets are relative to 0x14.
     //   0x14 u32: offset of the shared entry group. Group: name u32 at +0x04 (group-relative),
     //             entry count at +0x20, entry offset table at +0x48, each entry at table + stored u32.
@@ -51,10 +51,10 @@ public sealed class GameSgbFile : FileResource
     /// <summary>The models this scene places, with their local transforms.</summary>
     public IReadOnlyList<GameSgbPlacement> Models => models;
 
-    /// <summary>The scenes this scene nests, with their local transforms. Their own placements are local to them.</summary>
+    /// <summary>The scenes this scene nests, with their local transforms; their own placements are local to them.</summary>
     public IReadOnlyList<GameSgbPlacement> Attachments => attachments;
 
-    /// <summary>The stain an empty stain slot renders, 0 when the scene states none. Dyeable furniture states one explicitly.</summary>
+    /// <summary>The stain an empty stain slot renders (0 when the scene states none); dyeable furniture states one explicitly.</summary>
     public ushort DefaultStain { get; private set; }
 
     /// <inheritdoc/>
@@ -98,8 +98,8 @@ public sealed class GameSgbFile : FileResource
     }
 
     /// <summary>
-    /// The scene definition placed beside a background model, resolved from the model's path.
-    /// Furniture pairs <c>.../bgparts/x.mdl</c> with <c>.../asset/x.sgb</c>.
+    /// The scene definition placed beside a background model, resolved from the model's path: furniture pairs
+    /// <c>.../bgparts/x.mdl</c> with <c>.../asset/x.sgb</c>.
     /// </summary>
     /// <param name="modelGamePath">The model's archive path, under <c>bgcommon/</c>.</param>
     /// <returns>The sibling scene path, or null when the path does not follow the pairing.</returns>

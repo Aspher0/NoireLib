@@ -6,21 +6,20 @@ using System.Collections.Generic;
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// Ground-decal actor exclusions, owned by the node (proxying its renderer). A layered, dev-owned predicate decides
-/// which game objects a decal should <b>not</b> paint on: the decal paints the ground normally, and a surface inside
-/// an excluded volume simply does not receive paint - the ground around it still does. Nothing is cut from the decal;
-/// the excluded thing is just not drawn on. The library walks the object table on the framework thread and applies the
-/// result for you - no per-frame plumbing.
+/// Ground-decal actor exclusions, owned by the node (proxying its renderer): a layered, dev-owned predicate decides
+/// which game objects a decal should <b>not</b> paint on - the decal paints the ground normally, and a surface
+/// inside an excluded volume simply does not receive paint, the ground around it still does. The library walks the
+/// object table on the framework thread and applies the result for you - no per-frame plumbing.
 /// </summary>
 public sealed partial class SceneNode
 {
-    /// <summary>The per-frame exclusion collector set by <c>ExcludeObjects</c> / <c>ExcludeVolumes(collector)</c>, invoked on the framework thread. Null when the node has no dynamic exclusions.</summary>
+    /// <summary>The per-frame exclusion collector set by <c>ExcludeObjects</c> / <c>ExcludeVolumes(collector)</c>, invoked on the framework thread; null when the node has no dynamic exclusions.</summary>
     internal Func<IReadOnlyList<ExcludeVolume>>? ExclusionCollector;
 
     /// <summary>
-    /// Excludes game objects the predicate accepts. You decide what counts (a player? a minion? by name,
-    /// owner, distance, sub-kind, ...). Each accepted object contributes a cylinder at its position sized by its hitbox
-    /// radius * <paramref name="radiusScale"/>. Refreshed by the library each frame on the framework thread. Fluent.
+    /// Excludes game objects the predicate accepts (a player, a minion, by name, owner, distance, sub-kind - you
+    /// decide what counts); each accepted object contributes a cylinder at its position sized by its hitbox radius *
+    /// <paramref name="radiusScale"/>, refreshed by the library each frame on the framework thread, fluent.
     /// </summary>
     /// <param name="predicate">Returns true for objects the decal should not paint on.</param>
     /// <param name="radiusScale">Multiplier on each accepted object's hitbox radius (default 1).</param>
@@ -38,8 +37,8 @@ public sealed partial class SceneNode
     }
 
     /// <summary>
-    /// Full control: the callback receives each game object and returns the exact <see cref="ExcludeVolume"/> to use, or
-    /// null to skip it. Refreshed by the library each frame on the framework thread. Fluent.
+    /// Full control: the callback receives each game object and returns the exact <see cref="ExcludeVolume"/> to use,
+    /// or null to skip it; refreshed by the library each frame on the framework thread, fluent.
     /// </summary>
     /// <param name="selector">Per-object volume selector; return null to skip an object.</param>
     public SceneNode ExcludeObjects(Func<IGameObject, ExcludeVolume?> selector)
@@ -54,7 +53,7 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Excludes a fixed set of volumes (no game objects, no per-frame recompute). Fluent.</summary>
+    /// <summary>Excludes a fixed set of volumes (no game objects, no per-frame recompute); fluent.</summary>
     /// <param name="volumes">The exclusion volumes; null or empty paints over everything.</param>
     public SceneNode ExcludeVolumes(IReadOnlyList<ExcludeVolume> volumes)
     {
@@ -64,7 +63,7 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Excludes volumes produced by your own collector, recomputed each frame on the framework thread (no game objects). Fluent.</summary>
+    /// <summary>Excludes volumes produced by your own collector, recomputed each frame on the framework thread (no game objects); fluent.</summary>
     /// <param name="collector">Returns the exclusion volumes to apply this frame.</param>
     public SceneNode ExcludeVolumes(Func<IReadOnlyList<ExcludeVolume>> collector)
     {
@@ -73,7 +72,7 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Clears any exclusions so the decal paints over everything again. Fluent.</summary>
+    /// <summary>Clears any exclusions so the decal paints over everything again; fluent.</summary>
     public SceneNode ClearExclusions()
     {
         ReleaseExclusions();

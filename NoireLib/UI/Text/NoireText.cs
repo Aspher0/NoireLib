@@ -6,20 +6,17 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Text at any size, without ImGui's blur.<br/>
-/// An ImGui font is a bitmap atlas rasterized once at a fixed size, so <c>SetWindowFontScale</c> and a scaled font push
-/// do not rasterize anything larger, they sample that bitmap larger: a heading at twice the base size is a pixel-crawled
-/// upscale of a small glyph, and no ImGui setting fixes it. NoireText builds a real font at the size asked for and draws
-/// with that.
+/// Text at any size, without ImGui's blur. An ImGui font is a bitmap atlas rasterized once at a fixed size, so a
+/// scaled font push does not rasterize larger, it samples that bitmap larger; NoireText builds a real font at the
+/// size asked for instead.
 /// </summary>
 /// <remarks>
-/// Ask for a size by role (<see cref="TextSize"/>) rather than by number wherever you can. Roles resolve through
-/// <see cref="NoireTheme"/>, which is what lets a skin move the whole type scale from one place; a number at a call site
-/// is a number thirty other call sites will each pick differently.<br/>
+/// Ask for a size by role (<see cref="TextSize"/>) rather than by number: roles resolve through
+/// <see cref="NoireTheme"/>, so a skin can move the whole type scale from one place.<br/>
 /// Sizes are logical pixels at 100%, like every other measurement in NoireUI. See <see cref="NoireUI.Scale"/>.<br/>
-/// Building a size takes a moment, and until it is ready the text is drawn at the right size by scaling the font that is
-/// already loaded. It is briefly soft rather than briefly the wrong size, so nothing on screen moves when the real font
-/// arrives. Call <see cref="Prewarm"/> at startup to have it ready before anything is drawn.
+/// Building a size takes a moment; until ready, text draws at the right size by scaling the font already loaded, so
+/// nothing on screen moves when the real font arrives. Call <see cref="Prewarm"/> at startup to have it ready
+/// first.
 /// </remarks>
 /// <example>
 /// <code>
@@ -131,9 +128,9 @@ public static partial class NoireText
     {
         At(NoireTheme.Current.ResolveTextSize(size), text, static t =>
         {
-            // Measured inside the scope, so the width comes from the font that is about to draw rather than from
-            // whatever was current outside it. That is also why CalcSize is not what is called here: it resolves and
-            // pushes a font of its own, and the one already pushed is the one this has to measure against.
+            // Measured inside the scope, so the width comes from the font about to draw. CalcSize is not used here
+            // since it resolves and pushes a font of its own, and the one already pushed is what this has to
+            // measure against.
             var offset = (ImGui.GetContentRegionAvail().X - CalcSizeInCurrentFont(t).X) * 0.5f;
 
             if (offset > 0f)
@@ -147,11 +144,9 @@ public static partial class NoireText
     /// Draws text with some of its characters picked out in another color, for showing why a row survived a filter.
     /// </summary>
     /// <remarks>
-    /// Pairs with <see cref="Helpers.FuzzyMatcher"/>, which reports exactly these positions. Showing them is most of what
-    /// makes a fuzzy filter feel trustworthy rather than arbitrary: without them a list that quietly reorders itself
-    /// looks like it is guessing.<br/>
-    /// Drawn as a run of pieces joined with no spacing, so it sits on one line and does not wrap. That is what a
-    /// filter row wants; wrap the text yourself if you need more than a line.
+    /// Pairs with <see cref="Helpers.FuzzyMatcher"/>, which reports exactly these positions.<br/>
+    /// Drawn as a run of pieces joined with no spacing, so it sits on one line and does not wrap; wrap the text
+    /// yourself if you need more than a line.
     /// </remarks>
     /// <param name="text">The text to draw.</param>
     /// <param name="indices">
@@ -264,23 +259,20 @@ public static partial class NoireText
     /// Measures text as it would be drawn at an explicit size.
     /// </summary>
     /// <remarks>
-    /// Measured with the font pushed, which is the whole point: a layout built on a measurement taken in one font and
-    /// drawn in another is wrong everywhere by a few pixels, and neither of the two looks like the one lying. It
-    /// therefore answers for whatever would draw *right now*, including the stretched stand-in used while a size is
-    /// still building.<br/>
-    /// Needs a frame in progress, not a plugin: with no font built for the size it measures against the stand-in,
-    /// which is the same path <see cref="Tracked(string, float, float)"/> takes and is what makes the answer match
-    /// what would be drawn in the same conditions.
+    /// Measured with the font pushed: a layout built on a measurement taken in one font and drawn in another is
+    /// wrong everywhere by a few pixels. Answers for whatever would draw right now, including the stretched
+    /// stand-in used while a size is still building.<br/>
+    /// Needs a frame in progress: with no font built for the size, it measures against the stand-in, the same path
+    /// <see cref="Tracked(string, float, float)"/> takes.
     /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The size the text would occupy, in real pixels.</returns>
     public static Vector2 CalcSize(string text, float sizePx)
     {
-        // Asked of the gate rather than of the service directly. The question is whether ImGui may be called at all,
-        // which is what this guard has always been for: the reads below fault rather than fail with no context. In a
-        // plugin the two are the same answer. The difference is the headless harness, which owns a real context with
-        // no plugin behind it, and where this otherwise returns zero for every measurement the library takes.
+        // Asked of the gate rather than the service directly: the reads below fault rather than fail with no
+        // context. In a plugin the two answers are the same; the difference is the headless harness, which owns a
+        // real context with no plugin behind it.
         if (!UiDraw.Available)
             return Vector2.Zero;
 
@@ -303,9 +295,9 @@ public static partial class NoireText
     /// Measures text against the font already pushed, through the same cache as everything else.
     /// </summary>
     /// <remarks>
-    /// For a caller that is already inside a font scope and must not resolve or push another one. The key is the same
-    /// shape the rest of the cache uses, with the current font's size standing in for both the size asked for and the
-    /// size measured with, which is what it is: the font in hand is the font the answer belongs to.
+    /// For a caller already inside a font scope that must not resolve or push another one. Uses the same key shape
+    /// as the rest of the cache, with the current font's size standing in for both the size asked for and measured
+    /// with.
     /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <returns>The size the text occupies in the current font.</returns>
@@ -356,12 +348,11 @@ public static partial class NoireText
     /// Asks for a size to be built, without drawing or measuring anything.
     /// </summary>
     /// <remarks>
-    /// The one text call that is safe outside a frame, and the reason it exists. Every other call here pushes a font
-    /// handle and asks ImGui to measure, both of which need a frame in progress: reaching for
-    /// <see cref="CalcSize(string, float)"/> from a constructor to warm the cache is a crash rather than a warm cache.
-    /// This only tells the cache the size is wanted, so it can be built before the frame that needs it.<br/>
-    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface always
-    /// draws are covered by <see cref="Prewarm(bool)"/>.
+    /// The one text call safe outside a frame: every other call here pushes a font handle and asks ImGui to
+    /// measure, both of which need a frame in progress, so reaching for <see cref="CalcSize(string, float)"/> from a
+    /// constructor to warm the cache is a crash rather than a warm cache.<br/>
+    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface
+    /// always draws are covered by <see cref="Prewarm(bool)"/>.
     /// </remarks>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     public static void Request(float sizePx) => UiFontCache.Get(sizePx);
@@ -370,10 +361,8 @@ public static partial class NoireText
     /// How many distinct pixel sizes may be built before the cache refuses more.
     /// </summary>
     /// <remarks>
-    /// Every size is an atlas entry, and every rebuild re-rasterizes all of them, so this is a real budget rather than
-    /// a formality. The default suits one type scale; a host offering the reader several scales has as many sizes as
-    /// steps times scale and should raise it deliberately, rather than discover it as a heading that quietly stopped
-    /// growing because the cache had started drawing it at the nearest size it already held.
+    /// Every size is an atlas entry, and every rebuild re-rasterizes all of them. The default suits one type scale;
+    /// a host offering several scales needs as many sizes as steps times scales.
     /// </remarks>
     public static int MaxCachedSizes
     {
@@ -385,11 +374,7 @@ public static partial class NoireText
     /// Asks for several sizes to be built, without drawing or measuring anything.
     /// </summary>
     /// <remarks>
-    /// The one text call that is safe outside a frame, and the reason it exists. Every other call here pushes a font
-    /// handle and asks ImGui to measure, both of which need a frame in progress. This only tells the cache the sizes
-    /// are wanted, so they can be built before the frame that needs them.<br/>
-    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface always
-    /// draws are covered by <see cref="Prewarm(bool)"/>.
+    /// The one text call safe outside a frame; see <see cref="Request(float)"/>.
     /// </remarks>
     /// <param name="sizesPx">The sizes at 100%.</param>
     public static void Request(ReadOnlySpan<float> sizesPx)
@@ -410,11 +395,10 @@ public static partial class NoireText
     /// How far below the top of a line the text drawn in it looks centred, for lining a drawn shape up with a label.
     /// </summary>
     /// <remarks>
-    /// A line is as tall as the font's em box, and letters do not sit in the middle of it. The box reserves room under
-    /// the baseline for descenders that most labels never use, so a shape centred on the box sits visibly high against
-    /// the text beside it: a tick box next to a row label, or the cross on a chip next to its tag.<br/>
-    /// Measured on the capital band rather than on a particular string, so a row of labels keeps one baseline instead
-    /// of each shifting by whether it happens to contain a 'g'.
+    /// A line is as tall as the font's em box, and letters do not sit in the middle of it: the box reserves room
+    /// under the baseline for descenders most labels never use, so a shape centred on the box sits visibly high
+    /// against the text beside it. Measured on the capital band rather than a particular string, so a row of labels
+    /// keeps one baseline regardless of descenders.
     /// </remarks>
     /// <example>
     /// <code>
@@ -432,11 +416,8 @@ public static partial class NoireText
     /// How far below the top of a line the text drawn in it looks centred, for lining a drawn shape up with a label.
     /// </summary>
     /// <remarks>
-    /// A line is as tall as the font's em box, and letters do not sit in the middle of it. The box reserves room under
-    /// the baseline for descenders that most labels never use, so a shape centred on the box sits visibly high against
-    /// the text beside it.<br/>
-    /// Measured on the capital band rather than on a particular string, so a row of labels keeps one baseline instead
-    /// of each shifting by whether it happens to contain a 'g'.
+    /// See <see cref="CenterOffset(TextSize)"/> for why this is measured on the capital band rather than a
+    /// particular string.
     /// </remarks>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The distance from the top of the line to the text's optical centre, in real pixels.</returns>
@@ -515,9 +496,8 @@ public static partial class NoireText
     /// Where the capital band sits in a line, as a fraction of the line's height.
     /// </summary>
     /// <remarks>
-    /// Separated out because it is the part worth being sure about and the only part that can be checked without a
-    /// font: everything around it is reading metrics off ImGui. Clamped, so a font reporting a band outside its own
-    /// box moves a label by a few pixels rather than throwing the row out of the widget.
+    /// Separated out as the only part that can be checked without a font. Clamped, so a font reporting a band
+    /// outside its own box moves a label by a few pixels rather than throwing the row out of the widget.
     /// </remarks>
     /// <param name="bandTop">The top of the capital band, measured down from the top of the line.</param>
     /// <param name="bandBottom">The baseline, measured down from the top of the line.</param>
@@ -541,9 +521,9 @@ public static partial class NoireText
     /// common symbols is used, plus whatever the user's Dalamud language needs.
     /// </summary>
     /// <remarks>
-    /// This is the setting that decides how long a type scale takes to become available, because rasterizing is per
-    /// glyph and per size. A complete font is several thousand glyphs; the shipped range is around seven hundred. Widen
-    /// it when your plugin draws text the default cannot render, and expect the build to take proportionally longer.
+    /// Decides how long a type scale takes to become available, since rasterizing is per glyph and per size: a
+    /// complete font is several thousand glyphs, the shipped range around seven hundred. Widen it when your plugin
+    /// draws text the default cannot render.
     /// </remarks>
     /// <example>
     /// <code>
@@ -557,13 +537,10 @@ public static partial class NoireText
     /// How long the type scale must hold still before a size that is not built yet is rasterized.
     /// </summary>
     /// <remarks>
-    /// This exists for the live font-size setting. A size being dragged is a different size every frame, so building
-    /// the moment one is asked for spends a rasterization on every step of the drag and fills the size cache with
-    /// values the user passed through on the way to the one they wanted. Held back, a whole sweep costs one build, at
-    /// the size they stopped on.<br/>
-    /// While the scale is moving, text draws at the right size with the stretched stand-in, which is what a slider
-    /// wants to show anyway: the size is what is being chosen, and it tracks exactly. Shorten this for a scale that
-    /// changes in steps rather than by dragging; lengthen it if a build is expensive enough to be worth waiting out.
+    /// For a live font-size setting: a size being dragged is a different size every frame, so building immediately
+    /// would rasterize every step of the drag. Held back, a whole sweep costs one build, at the size it stopped on.
+    /// While moving, text draws at the right size with the stretched stand-in. Shorten this for a scale that changes
+    /// in steps rather than by dragging; lengthen it if a build is expensive enough to be worth waiting out.
     /// </remarks>
     public static TimeSpan RebuildSettleDelay { get; set; } = TimeSpan.FromMilliseconds(120);
 
@@ -572,9 +549,8 @@ public static partial class NoireText
     /// merged in.
     /// </summary>
     /// <remarks>
-    /// Set this and NoireText stops deciding anything about the typeface: it still owns the size cache, the scale and
-    /// the drawing, and the callback owns what a size actually contains. Passing the complete Dalamud font is one line,
-    /// and is what NoireText did before it was made fast.
+    /// NoireText still owns the size cache, the scale and the drawing; the callback owns what a size actually
+    /// contains.
     /// </remarks>
     /// <example>
     /// <code>
@@ -588,19 +564,15 @@ public static partial class NoireText
     /// Builds the current theme's type scale, so it is ready before anything asks to draw with it.
     /// </summary>
     /// <remarks>
-    /// Optional. Without it the first draw starts the build and text is drawn at the right size with a scaled stand-in
-    /// until it finishes, which is a second or two of slightly soft headings and nothing worse.<br/>
-    /// Call it when your plugin loads, or after setting a theme. Safe to call repeatedly: a size already built is not
-    /// built again.
+    /// Optional: without it, the first draw starts the build and text is drawn at the right size with a scaled
+    /// stand-in until it finishes. Safe to call repeatedly; a size already built is not built again.
     /// </remarks>
     /// <param name="wait">
-    /// Whether to block until the sizes are rasterized rather than letting them arrive over the following frames.<br/>
-    /// Pass <see langword="true"/> from a plugin constructor to trade a longer load for an interface that is never seen
-    /// mid-build. It is a real trade: rasterizing glyphs takes as long as it takes, and that time moves to your load
-    /// rather than disappearing. Do not pass it from a draw callback, where the time would come out of the frame.<br/>
-    /// The rasterization runs on the calling thread, so it is finished when this returns. That is the point: an atlas
-    /// left to rebuild itself is driven by an event Dalamud raises on the main thread, which has not run yet when a
-    /// constructor is executing, so there would be nothing under way to wait for.
+    /// Whether to block until the sizes are rasterized, rather than letting them arrive over the following frames.
+    /// Pass <see langword="true"/> from a plugin constructor to trade a longer load for an interface never seen
+    /// mid-build; do not pass it from a draw callback, where that time would come out of the frame. Runs on the
+    /// calling thread, since an atlas left to rebuild itself waits on a main-thread event that has not fired yet
+    /// during construction.
     /// </param>
     public static void Prewarm(bool wait = false) => UiFontCache.BuildScale(wait);
 
@@ -609,9 +581,7 @@ public static partial class NoireText
     #region Scopes
 
     /// <summary>
-    /// Runs a block of drawing at a named size.<br/>
-    /// Everything inside draws at that size, raw ImGui included, so a block of mixed text takes the size once rather
-    /// than repeating it per call.
+    /// Runs a block of drawing at a named size. Everything inside draws at that size, raw ImGui included.
     /// </summary>
     /// <param name="size">The step of the type scale to draw at.</param>
     /// <param name="body">The drawing to run.</param>
@@ -623,9 +593,7 @@ public static partial class NoireText
     }
 
     /// <summary>
-    /// Runs a block of drawing at a named size.<br/>
-    /// Everything inside draws at that size, raw ImGui included, so a block of mixed text takes the size once rather
-    /// than repeating it per call.
+    /// Runs a block of drawing at a named size. Everything inside draws at that size, raw ImGui included.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="size">The step of the type scale to draw at.</param>
@@ -660,8 +628,7 @@ public static partial class NoireText
 
         NoireUI.EnsureFrameServices();
 
-        // Every text call in the frame lands in one row. Text is the cost an interface is least likely to suspect and
-        // most likely to be spending, and a size that has not been built yet is paid for here.
+        // Every text call in the frame lands in one row; a size not yet built is paid for here.
         using var draw = UiDraw.Begin();
 
         var handle = UiFontCache.Get(sizePx);
@@ -692,10 +659,9 @@ public static partial class NoireText
     /// Stretches the current font to a target size, for the frames before the real one at that size has been built.
     /// </summary>
     /// <remarks>
-    /// This is the blurry scaling NoireText exists to replace, used deliberately and briefly. The alternative is to
-    /// leave the text at whatever size the current font happens to be, which is what an unbuilt handle pushes as, and
-    /// that is worse in the way that shows: every heading starts small and jumps when its font arrives, taking the
-    /// layout around it along. Scaled, the text is the right size from the first frame and merely sharpens.
+    /// The alternative is leaving text at whatever size the current font happens to be: an unbuilt handle pushes
+    /// exactly that size, so every heading would start small and jump when its font arrives, taking the layout
+    /// around it along. Scaled, text is the right size from the first frame and merely sharpens.
     /// </remarks>
     /// <param name="sizePx">The target size at 100%.</param>
     /// <returns>The window font scale to restore, or <see langword="null"/> when nothing was changed.</returns>

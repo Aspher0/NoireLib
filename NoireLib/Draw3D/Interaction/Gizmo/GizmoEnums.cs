@@ -36,13 +36,12 @@ public enum GizmoSpace
 public enum GizmoDepth
 {
     /// <summary>
-    /// Occluded by the game world (walls / terrain) but always drawn on top of other 3D objects. The default and the
-    /// editor-friendly choice: the handle stays visible over the object it edits, yet hides behind a wall like real
-    /// geometry.
+    /// Occluded by the game world (walls / terrain) but always drawn on top of other 3D objects; the default,
+    /// staying visible over the object it edits while hiding behind a wall like real geometry.
     /// </summary>
     OnTopOfObjects,
 
-    /// <summary>Drawn on top of absolutely everything: world and 3D objects alike (x-ray). A handle is never hidden.</summary>
+    /// <summary>Drawn on top of absolutely everything: world and 3D objects alike (x-ray); a handle is never hidden.</summary>
     AlwaysOnTop,
 
     /// <summary>Fully depth-tested: occluded by the world <i>and</i> by other 3D objects (can be buried inside the object it edits).</summary>
@@ -54,15 +53,15 @@ public enum GizmoBackend
 {
     /// <summary>
     /// In-world depth gizmos: real depth-tested geometry drawn through <see cref="Im.ImDraw3D"/> and hit-tested with the
-    /// render-time camera: occludes correctly, never wobbles under camera motion, can render through walls, and supports
-    /// per-axis universal snapping. Pick it when you want depth-correct, in-world handles over the ImGuizmo look.
+    /// render-time camera - occludes correctly, never wobbles under camera motion, can render through walls, and
+    /// supports per-axis universal snapping.
     /// </summary>
     Native,
 
     /// <summary>
     /// The classic 2D-projected ImGui gizmo, drawn by <c>Dalamud.Bindings.ImGuizmo</c> and fed the render camera's
-    /// view/projection. Same API surface as <see cref="Native"/>. Familiar look, flat (always on top, no depth
-    /// occlusion), and it snaps translation in the gizmo's own frame to match the native backend. The default.
+    /// view/projection - same API surface as <see cref="Native"/>, flat (always on top, no depth occlusion),
+    /// snapping translation in the gizmo's own frame to match the native backend; the default.
     /// </summary>
     ImGuizmo,
 }

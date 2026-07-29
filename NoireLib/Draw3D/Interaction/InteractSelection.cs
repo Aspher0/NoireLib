@@ -40,12 +40,12 @@ public sealed class InteractSelection
     public SelectionMode Mode { get; set; } = SelectionMode.Single;
 
     /// <summary>
-    /// Maximum number of nodes the selection may hold in <see cref="SelectionMode.Multi"/> (0 or less means unlimited).
-    /// When an add would exceed it, the oldest node is dropped so the newest is always included. Default 0.
+    /// Maximum number of nodes the selection may hold in <see cref="SelectionMode.Multi"/> (0 or less means
+    /// unlimited, the default); when an add would exceed it, the oldest node is dropped so the newest is always included.
     /// </summary>
     public int MaxCount { get; set; }
 
-    /// <summary>The current selection, in the order nodes were added. Do not mutate; use the methods.</summary>
+    /// <summary>The current selection, in the order nodes were added; do not mutate, use the methods.</summary>
     public IReadOnlyList<SceneNode> Nodes => nodes;
 
     /// <summary>The number of selected nodes.</summary>
@@ -61,8 +61,8 @@ public sealed class InteractSelection
     public bool Contains(SceneNode node) => node != null && nodes.Contains(node);
 
     /// <summary>
-    /// Applies a pick to the selection under the current <see cref="Mode"/> and the given modifiers.
-    /// Picking empty space (<paramref name="node"/> null) clears the selection unless a modifier is held.
+    /// Applies a pick to the selection under the current <see cref="Mode"/> and the given modifiers; picking empty
+    /// space (<paramref name="node"/> null) clears the selection unless a modifier is held.
     /// </summary>
     /// <param name="node">The picked node, or null for empty space.</param>
     /// <param name="modifiers">Modifier keys held during the pick.</param>
@@ -137,7 +137,7 @@ public sealed class InteractSelection
             nodes.RemoveAt(0);
     }
 
-    /// <summary>Removes <paramref name="node"/> from the selection. Returns whether it was present.</summary>
+    /// <summary>Removes <paramref name="node"/> from the selection; returns whether it was present.</summary>
     public bool Remove(SceneNode node)
     {
         if (node == null || !nodes.Remove(node))

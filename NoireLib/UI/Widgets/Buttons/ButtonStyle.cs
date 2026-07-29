@@ -5,10 +5,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The look of a button drawn with <see cref="NoireButtons"/>.<br/>
-/// Everything here is optional: a button given no style takes its colors from <see cref="Tone"/> against
-/// <see cref="NoireTheme.Current"/>, and every value left <see langword="null"/> keeps doing that. Set one and it wins
-/// for that value alone.
+/// The look of a button drawn with <see cref="NoireButtons"/>. Every value left <see langword="null"/> resolves
+/// through <see cref="Tone"/> and <see cref="NoireTheme.Current"/>; setting one overrides only that value.
 /// </summary>
 /// <example>
 /// <code>
@@ -53,10 +51,7 @@ public sealed class ButtonStyle
     /// <summary>The icon color. When <see langword="null"/>, the label color is used.</summary>
     public Vector4? IconColor { get; set; }
 
-    /// <summary>
-    /// Whether the label is centred in the button. Defaults to <see langword="true"/>; turn it off for a left-aligned
-    /// label in a full-width button, which is how list rows and menu entries read.
-    /// </summary>
+    /// <summary>Whether the label is centred in the button. Defaults to <see langword="true"/>.</summary>
     public bool CenterLabel { get; set; } = true;
 
     /// <summary>
@@ -68,11 +63,6 @@ public sealed class ButtonStyle
     /// The colour a hold-to-confirm button fills with. When <see langword="null"/>, a markedly brighter form of the
     /// button's own colour is used.
     /// </summary>
-    /// <remarks>
-    /// Deliberately a long way from the base colour rather than one derived state along: a fill that only differs by a
-    /// hover's worth of brightness is invisible on a coloured button, and a hold nobody can see reads as a button that
-    /// does not work.
-    /// </remarks>
     public Vector4? HoldFillColor { get; set; }
 
     /// <summary>
@@ -82,17 +72,14 @@ public sealed class ButtonStyle
 
     /// <summary>
     /// Replaces the button's own painting entirely, while NoireUI keeps doing the sizing, the hit testing and the state
-    /// tracking.<br/>
-    /// This is what makes a bespoke button a piece of configuration rather than a fork: draw a beveled plate, a notched
-    /// polygon or a gradient, and it still behaves like every other button.
+    /// tracking.
     /// </summary>
     /// <remarks>
     /// The label is not drawn for you when this is set. Draw it yourself from the arguments, or leave it out.
     /// </remarks>
     public Action<UiButtonDraw>? CustomDraw { get; set; }
 
-    // What the painter actually draws from. Each logical value above is scaled here and nowhere else, so a value cannot
-    // end up scaled twice by two call sites each being careful, and a new one is not silently left unscaled.
+    // What the painter draws from: each logical value above is scaled here, and only here.
 
     internal float ResolveBorderSize()
         => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : NoireTheme.Current.ResolveBorderSize();
@@ -105,9 +92,7 @@ public sealed class ButtonStyle
 
     internal float ScaledHoldBorderThickness => NoireUI.Scaled(HoldBorderThickness);
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public ButtonStyle Clone() => new()
     {
@@ -133,12 +118,8 @@ public sealed class ButtonStyle
     /// Copies every field of <paramref name="source"/> into this style, leaving no reference to it.
     /// </summary>
     /// <remarks>
-    /// What <see cref="Clone"/> does, into a style that already exists. For a surface that needs a per-item variant of
-    /// a caller's style on every frame: cloning there allocates one of these per item per frame, and a segmented
-    /// control with four options was measured at roughly 315 bytes a segment. The scratch it copies into is reused,
-    /// which is safe only because a style is read by the drawing it is handed to before anything else can run.<br/>
-    /// Kept beside <see cref="Clone"/> so the two field lists are visibly the same list; a field added to one and not
-    /// the other is a variant that silently ignores that setting.
+    /// Copies into a reused style instead of allocating via <see cref="Clone"/>, for a per-item variant drawn every
+    /// frame. Keep this field list identical to <see cref="Clone"/>'s.
     /// </remarks>
     /// <param name="source">The style to copy from.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>

@@ -1,8 +1,7 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials, and one of the few patterns
-/// that reads as craftsmanship rather than as decoration.
+/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials.
 /// </summary>
 /// <remarks>
 /// The curve is a hypotrochoid, the shape a pen traces through a hole in a small circle rolling inside a larger one.
@@ -29,8 +28,8 @@ public sealed class GuillocheStyle
     public float RingSpacing { get; set; } = 0.12f;
 
     /// <summary>
-    /// How far each ring is turned relative to the one outside it, in fractions of a full turn. Half a lobe is what
-    /// produces the interlaced look.
+    /// How far each ring is turned relative to the one outside it, in fractions of a full turn: half a lobe produces
+    /// the interlaced look.
     /// </summary>
     public float RingRotationTurns { get; set; }
 
@@ -41,18 +40,17 @@ public sealed class GuillocheStyle
     public float RotationTurns { get; set; }
 
     /// <summary>
-    /// How many line segments each ring is drawn with. Zero, the default, picks a count from each ring's own radius, so
-    /// a small rosette is not drawn with segments a fraction of a pixel long and an inner ring costs less than the one
-    /// around it.
+    /// How many line segments each ring is drawn with. Zero, the default, scales the count to each ring's own radius,
+    /// so a small rosette is not over-tessellated and an inner ring costs less than the one around it.
     /// </summary>
     /// <remarks>
-    /// Setting this fixes the count for every ring regardless of size, which is worth doing only when you want two
-    /// patterns of different sizes drawn with exactly the same geometry.
+    /// Setting this fixes the count for every ring regardless of size, for two differently sized patterns that must
+    /// share exactly the same geometry.
     /// </remarks>
     public int Segments { get; set; }
 
     /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public GuillocheStyle Clone() => (GuillocheStyle)MemberwiseClone();

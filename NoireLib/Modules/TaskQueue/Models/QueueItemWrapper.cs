@@ -16,12 +16,12 @@ public class QueueItemWrapper
     public NoireTaskQueue? OwningQueue { get; internal set; }
 
     /// <summary>
-    /// The system ID given to the task or batch when it was created. This is a unique identifier that can be used to track the item throughout its lifecycle.
+    /// The system ID given to the task or batch when it was created.
     /// </summary>
     public Guid SystemId { get; }
 
     /// <summary>
-    /// The custom ID assigned to the task or batch, if any. This can be used for user-defined tracking or categorization.
+    /// The custom ID assigned to the task or batch, if any.
     /// </summary>
     public string? CustomId { get; }
 
@@ -52,36 +52,35 @@ public class QueueItemWrapper
     }
 
     /// <summary>
-    /// Creates a new instance of the QueueItemWrapper class that encapsulates the properties of the specified QueuedTask.
+    /// Creates a QueueItemWrapper for a <see cref="QueuedTask"/>.
     /// </summary>
-    /// <param name="task">The QueuedTask instance containing the data to initialize the QueueItemWrapper. Must not be null.</param>
-    /// <returns>A QueueItemWrapper that represents the provided QueuedTask, including its identifiers and state information.</returns>
+    /// <param name="task">The task to wrap.</param>
+    /// <returns>The wrapping QueueItemWrapper.</returns>
     public static QueueItemWrapper FromTask(QueuedTask task)
         => new(task, task.OwningQueue, task.SystemId, task.CustomId, task.IsBlocking, QueueItemType.Task, Environment.TickCount64);
 
     /// <summary>
-    /// Creates a new instance of the QueueItemWrapper class that encapsulates the properties of the specified
-    /// TaskBatch.
+    /// Creates a QueueItemWrapper for a <see cref="TaskBatch"/>.
     /// </summary>
-    /// <param name="batch">The TaskBatch instance containing the data to initialize the QueueItemWrapper. Must not be null.</param>
-    /// <returns>A QueueItemWrapper that represents the provided TaskBatch, including its identifiers and state information.</returns>
+    /// <param name="batch">The batch to wrap.</param>
+    /// <returns>The wrapping QueueItemWrapper.</returns>
     public static QueueItemWrapper FromBatch(TaskBatch batch)
         => new(batch, batch.OwningQueue, batch.SystemId, batch.CustomId, batch.IsBlocking, QueueItemType.Batch, batch.QueuedAtTicks);
 
     /// <summary>
     /// Gets the underlying item associated with this instance.
     /// </summary>
-    /// <returns>The underlying item, which can be of any type, representing the data encapsulated by this instance.</returns>
+    /// <returns>The underlying item.</returns>
     public object GetUnderlyingItem() => item;
 
     /// <summary>
-    /// Gets the wrapped item as a QueuedTask. Should only be called if IsTask is true, otherwise an InvalidCastException will be thrown.
+    /// Gets the wrapped item as a QueuedTask; throws InvalidCastException unless IsTask is true.
     /// </summary>
     /// <returns>The wrapped item as a QueuedTask.</returns>
     public QueuedTask AsTask() => (QueuedTask)item;
 
     /// <summary>
-    /// Gets the wrapped item as a TaskBatch. Should only be called if IsBatch is true, otherwise an InvalidCastException will be thrown.
+    /// Gets the wrapped item as a TaskBatch; throws InvalidCastException unless IsBatch is true.
     /// </summary>
     /// <returns>The wrapped item as a TaskBatch.</returns>
     public TaskBatch AsBatch() => (TaskBatch)item;
@@ -102,7 +101,7 @@ public class QueueItemWrapper
     /// <summary>
     /// Gets the string representation of the wrapped item, optionally showing the currently executing task if the item is a batch.
     /// </summary>
-    /// <param name="showTaskIdentifierIfBatch">If true and the item is a batch with an executing task, returns that task's identifier; otherwise returns the batch identifier.</param>
+    /// <param name="showTaskIdentifierIfBatch">Whether to show the executing task's identifier when the item is a batch.</param>
     /// <returns>The identifier string of the item or its currently executing task.</returns>
     public string GetIdentifier(bool showTaskIdentifierIfBatch = true)
     {

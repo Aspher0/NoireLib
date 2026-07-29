@@ -108,7 +108,7 @@ internal sealed unsafe class GBufferInject : IDisposable
             return;
         }
 
-        // Everything below this line runs against the game's pipeline. The restore in the finally is what keeps
+        // Everything below this line runs against the game's pipeline. The restore in the finally block prevents
         // a failure here from becoming the game's problem.
         guard.Capture(ctx);
         try
@@ -224,7 +224,7 @@ internal sealed unsafe class GBufferInject : IDisposable
             return false;
 
         // The depth test always runs, so walls occlude the object under every variant below. What varies is
-        // whether the object writes depth back - which is what makes it occlude the world, and what makes its
+        // whether the object writes depth back: doing so makes it occlude the world in turn, and makes its
         // surface exist for every later pass that reads depth.
         //
         // GREATER_EQUAL, not LESS: FFXIV renders reversed-Z infinite-far, so near maps to 1 and far to 0 and
@@ -265,8 +265,7 @@ internal sealed unsafe class GBufferInject : IDisposable
         // Opaque into all five targets. Deferred geometry cannot blend: each target holds a different quantity,
         // and blending a normal against the wall behind it produces a direction that describes neither.
         // The write-mask-zero variant keeps the draw and its depth behaviour while writing no target at all,
-        // which is how an artefact caused by describing the surface is told apart from one caused by occupying
-        // the pixels.
+        // isolating whether an artefact comes from describing the surface or merely from occupying the pixels.
         for (var i = 0; i < BlendStateCount; i++)
         {
             var blendDesc = default(D3D11_BLEND_DESC);

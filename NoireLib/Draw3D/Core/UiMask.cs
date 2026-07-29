@@ -166,8 +166,8 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
     private const int SampleCount = GridX * GridY;
     private const int CheckIntervalFrames = 120;
     // "The UI touched this sample": one 8-bit step. Untouched pixels are bit-identical between the snapshots, so
-    // anything above zero is the UI; this only guards float-format rounding, and must not be raised into "faint UI
-    // reads as none" - that is the mistake that let the layer bleed through semi-transparent HUD panels.
+    // anything above zero is the UI; this only guards float-format rounding. Raising it risks reading faint UI
+    // (semi-transparent HUD panels) as untouched, letting the layer bleed through it.
     private const float TouchedThreshold = 1f / 255f;
 
     // "This sample changed grossly": the bar for deciding the two snapshots are not the same image at all. Kept
@@ -268,7 +268,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         const uint DoNotWait = (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT;
         D3D11_MAPPED_SUBRESOURCE mappedBefore, mappedAfter;
         if (ctx->Map((ID3D11Resource*)beforeStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, DoNotWait, &mappedBefore) < 0)
-            return; // still in flight (essentially never) - evaluate on the next cycle
+            return; // still in flight (rare) - evaluate on the next cycle
 
         if (ctx->Map((ID3D11Resource*)afterStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, DoNotWait, &mappedAfter) < 0)
         {

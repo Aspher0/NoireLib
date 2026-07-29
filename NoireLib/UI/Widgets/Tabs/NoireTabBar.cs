@@ -9,14 +9,12 @@ namespace NoireLib.UI;
 /// or a toast action, and each tab carries its own body so nothing is drawn for the ones that are closed.
 /// </summary>
 /// <remarks>
-/// ImGui has a perfectly good tab bar and a genuinely bad story for opening a tab from code. The only lever is
-/// <c>ImGuiTabItemFlags.SetSelected</c>, and it has to be set for exactly one frame: leave it set and the tab is welded
-/// open with the user unable to click away, clear it on the wrong frame and the switch silently does not happen. Every
-/// plugin that wants "the changelog button opens the What's New tab" hand-rolls that dance, and the edge cases are
-/// where it goes wrong.<br/>
-/// <see cref="SwitchTab"/> is that dance done once. It is callable from any thread, callable before the bar has ever
-/// drawn, does nothing if the tab is already open, keeps only the last request when called twice before a frame runs,
-/// and refuses an unknown or unreachable tab with one log rather than silently.
+/// The only lever ImGui gives you is <c>ImGuiTabItemFlags.SetSelected</c>, and it has to be set for exactly one
+/// frame: leave it set and the tab is welded open with the user unable to click away, clear it on the wrong frame
+/// and the switch silently does not happen.<br/>
+/// <see cref="SwitchTab"/> handles all of that. It is callable from any thread, callable before the bar has ever
+/// drawn, does nothing if the tab is already open, keeps only the last request when called twice before a frame
+/// runs, and refuses an unknown or unreachable tab with one log rather than silently.
 /// </remarks>
 /// <example>
 /// <code>
@@ -95,13 +93,12 @@ public sealed partial class NoireTabBar
     /// Whether the mouse wheel scrolls the tab strip while the pointer is over it. On by default.
     /// </summary>
     /// <remarks>
-    /// ImGui's own tab bar does not do this. Its only way to reach a tab that has scrolled off is the little arrows at
-    /// the end of the bar, or selecting the last visible tab so the bar scrolls one along and repeating, which
+    /// ImGui's own tab bar does not do this. Its only way to reach a tab that has scrolled off is the little arrows
+    /// at the end of the bar, or selecting the last visible tab so the bar scrolls one along and repeating, which
     /// changes the open tab as the price of looking for another one. Wheeling over the strip moves it without
     /// selecting anything.<br/>
-    /// This does nothing while every tab already fits, so it costs nothing to leave on. It also keeps the wheel from
-    /// scrolling the surrounding window at the same time, because a wheel that scrolls two things at once is worse
-    /// than one that scrolls the wrong one.
+    /// This does nothing while every tab already fits, so it costs nothing to leave on. It also keeps the wheel
+    /// from scrolling the surrounding window at the same time.
     /// </remarks>
     public bool WheelScrolls { get; set; } = true;
 
@@ -178,10 +175,7 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// What a switch request should do, given the tabs and the tab currently open.
     /// </summary>
-    /// <remarks>
-    /// Separated from the drawing because it is the whole of what this widget exists to get right, and the only part
-    /// that can be checked without an ImGui context.
-    /// </remarks>
+    /// <remarks>Separated from the drawing: the only part that can be checked without an ImGui context.</remarks>
     /// <param name="tabs">The tabs as they stand.</param>
     /// <param name="current">The tab open as of the last draw, if any.</param>
     /// <param name="requested">The tab being asked for.</param>

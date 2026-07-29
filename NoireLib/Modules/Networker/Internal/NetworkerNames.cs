@@ -5,8 +5,8 @@ using System.Text;
 namespace NoireLib.Networker.Internal;
 
 /// <summary>
-/// Derives kernel object names, the LAN beacon port, and the beacon network hash from a network name.<br/>
-/// Strong hashing makes cross-network collisions a non-issue; the full network name is verified in handshakes anyway.
+/// Derives kernel object names, the LAN beacon port, and the beacon network hash from a network name; strong
+/// hashing makes cross-network collisions a non-issue, and the full network name is verified in handshakes anyway.
 /// </summary>
 internal static class NetworkerNames
 {

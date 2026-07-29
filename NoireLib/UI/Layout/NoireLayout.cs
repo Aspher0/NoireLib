@@ -11,12 +11,10 @@ namespace NoireLib.UI;
 /// <c>if (child.Success)</c> to get wrong.
 /// </summary>
 /// <remarks>
-/// Every body runs through the same guard, so raw ImGui stays fully available inside one: a push left unpopped is
-/// unwound at the container boundary and logged once naming the container, instead of quietly recolouring everything
-/// drawn after it.<br/>
+/// Every body runs through the same guard: a push left unpopped is unwound at the container boundary and logged once
+/// naming the container, instead of quietly recolouring everything drawn after it.<br/>
 /// Each container has a state overload taking the value the body needs, so the body can stay a <see langword="static"/>
-/// lambda. The simpler overload allocates one delegate per call, which is a few dozen bytes a frame and invisible in
-/// most UIs; the state overload is there for the cases where it is not.
+/// lambda instead of allocating a delegate per call.
 /// </remarks>
 [NoireFacade]
 public static partial class NoireLayout
@@ -58,10 +56,9 @@ public static partial class NoireLayout
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
     /// <remarks>
-    /// An amount of zero or less indents by nothing at all, which is deliberately unlike ImGui's own <c>Indent</c>:
-    /// that one reads zero as "use the default step", so an animated indent easing down to zero would jump a whole
-    /// step outwards on its last frame instead of arriving where it was heading. Ask for the default step by name with
-    /// <see cref="DefaultIndent"/>.
+    /// Zero or less indents by nothing at all, deliberately unlike ImGui's own <c>Indent</c>: that reads zero as "use
+    /// the default step", which would jump an animated indent easing to zero back outwards on its last frame. Ask for
+    /// the default step by name with <see cref="DefaultIndent"/>.
     /// </remarks>
     /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
     /// <param name="body">The drawing to indent.</param>
@@ -76,10 +73,9 @@ public static partial class NoireLayout
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
     /// <remarks>
-    /// An amount of zero or less indents by nothing at all, which is deliberately unlike ImGui's own <c>Indent</c>:
-    /// that one reads zero as "use the default step", so an animated indent easing down to zero would jump a whole
-    /// step outwards on its last frame instead of arriving where it was heading. Ask for the default step by name with
-    /// <see cref="DefaultIndent"/>.
+    /// Zero or less indents by nothing at all, deliberately unlike ImGui's own <c>Indent</c>: that reads zero as "use
+    /// the default step", which would jump an animated indent easing to zero back outwards on its last frame. Ask for
+    /// the default step by name with <see cref="DefaultIndent"/>.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
@@ -114,7 +110,7 @@ public static partial class NoireLayout
     public static float DefaultIndent => NoireService.IsInitialized() ? ImGui.GetStyle().IndentSpacing : NoireUI.Scaled(21f);
 
     /// <summary>
-    /// Puts the body in its own id namespace, so two copies of the same widget code can coexist without colliding.
+    /// Puts the body in its own id namespace.
     /// </summary>
     /// <param name="id">The id to push.</param>
     /// <param name="body">The drawing to namespace.</param>
@@ -126,7 +122,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Puts the body in its own id namespace, so two copies of the same widget code can coexist without colliding.
+    /// Puts the body in its own id namespace.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">The id to push.</param>
@@ -149,8 +145,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Draws the body greyed out and unclickable when <paramref name="disabled"/> is true, and normally when it is not,
-    /// so the two cases are one call rather than two branches.
+    /// Draws the body greyed out and unclickable when <paramref name="disabled"/> is true, and normally when it is not.
     /// </summary>
     /// <param name="disabled">Whether to disable the body.</param>
     /// <param name="body">The drawing to gate.</param>
@@ -223,10 +218,9 @@ public static partial class NoireLayout
     /// Wraps the text in the body at <paramref name="width"/> pixels from the current cursor.
     /// </summary>
     /// <remarks>
-    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one. Passing a screen
-    /// coordinate (the natural mistake, since laying a panel out uses screen coordinates) puts the wrap point far off to
-    /// the right, where it silently does nothing and the text simply never wraps. This takes a width and does the
-    /// conversion, so the mistake is not reachable.
+    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one: passing a screen
+    /// coordinate puts the wrap point far off to the right, where text silently never wraps. This takes a width and
+    /// converts it, so the mistake is not reachable.
     /// </remarks>
     /// <param name="width">The wrap width in pixels, measured from the cursor.</param>
     /// <param name="body">The drawing to wrap.</param>
@@ -241,9 +235,9 @@ public static partial class NoireLayout
     /// Wraps the text in the body at <paramref name="width"/> pixels from the current cursor.
     /// </summary>
     /// <remarks>
-    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one, so passing a screen
-    /// coordinate puts the wrap point far off to the right where it silently does nothing. This takes a width and does
-    /// the conversion, so the mistake is not reachable.
+    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one: passing a screen
+    /// coordinate puts the wrap point far off to the right, where text silently never wraps. This takes a width and
+    /// converts it, so the mistake is not reachable.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="width">The wrap width in pixels, measured from the cursor.</param>
@@ -267,8 +261,7 @@ public static partial class NoireLayout
 
     /// <summary>
     /// Draws the body inside a scrolling, clipped child region.<br/>
-    /// The body is not called when the region is entirely clipped away, which is the case a hand-written
-    /// <c>BeginChild</c> has to remember to check.
+    /// The body is not called when the region is entirely clipped away.
     /// </summary>
     /// <param name="id">A unique id for the region.</param>
     /// <param name="size">The region size. A zero component fills the available space; a negative one leaves that many pixels.</param>
@@ -284,8 +277,7 @@ public static partial class NoireLayout
 
     /// <summary>
     /// Draws the body inside a scrolling, clipped child region.<br/>
-    /// The body is not called when the region is entirely clipped away, which is the case a hand-written
-    /// <c>BeginChild</c> has to remember to check.
+    /// The body is not called when the region is entirely clipped away.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the region.</param>
@@ -346,8 +338,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Draws the body as a tooltip only while the item drawn just before is hovered, so the hover test and the tooltip
-    /// are one call.
+    /// Draws the body as a tooltip only while the item drawn just before is hovered.
     /// </summary>
     /// <param name="body">The tooltip contents.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>

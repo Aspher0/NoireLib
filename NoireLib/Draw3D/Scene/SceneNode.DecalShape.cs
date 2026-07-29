@@ -8,15 +8,15 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Scene;
 
 /// <summary>
-/// An opt-in wireframe of a decal's painted shape: the circle, ring, pie or rectangle the material's SDF actually paints,
-/// traced as a closed world-space line lying on the decal's own plane. A placement / sizing aid - turn it on to position
-/// and size a decal by eye, off to ship. The line is re-emitted every frame through the immediate layer (camera-facing,
-/// so it stays crisp and is never distorted by the decal's non-uniform scale).
+/// An opt-in wireframe of a decal's painted shape - the circle, ring, pie or rectangle the material's SDF actually
+/// paints - traced as a closed world-space line lying on the decal's own plane, re-emitted every frame through the
+/// immediate layer (camera-facing, so it stays crisp and is never distorted by the decal's non-uniform scale); a
+/// placement / sizing aid, turned on to position and size a decal by eye, off to ship.
 /// <br/>
-/// It traces the shape rather than the projection volume deliberately. That volume is an oriented box whose footprint is
-/// the SDF's <i>bounding square</i> and whose sweep runs well above and below the painted surface, so for anything but a
-/// full-footprint circle it is far larger than the paint and centered where the paint is not - a pie's box is centered on
-/// its apex and spans twice its radius - which reads as stray lines crossing the view rather than as the decal.
+/// It traces the shape rather than the projection volume deliberately: that volume is an oriented box whose footprint
+/// is the SDF's <i>bounding square</i> and whose sweep runs well above and below the painted surface, so for anything
+/// but a full-footprint circle it is far larger than the paint and centered where the paint is not, reading as stray
+/// lines crossing the view rather than as the decal.
 /// </summary>
 public sealed partial class SceneNode
 {
@@ -26,11 +26,11 @@ public sealed partial class SceneNode
     /// <summary>The immediate-layer style for the outline: a world-depth-tested line, so it reads as a real marking on the surface.</summary>
     private static readonly ImShapeStyle DecalShapeEdgeStyle = new();
 
-    /// <summary>Reusable point buffer for the outline loops. Render-thread only (see <see cref="DecalOverlayService"/>), so one per thread costs nothing and keeps the per-frame trace allocation-free.</summary>
+    /// <summary>Reusable point buffer for the outline loops; render-thread only (see <see cref="DecalOverlayService"/>), so one per thread costs nothing and keeps the per-frame trace allocation-free.</summary>
     [System.ThreadStatic]
     private static List<Vector3>? decalShapePath;
 
-    /// <summary>The outline color (straight alpha); alpha 0 = the opt-in outline is off. Driven by <see cref="ShowDecalShape"/> / <see cref="HideDecalShape"/>.</summary>
+    /// <summary>The outline color (straight alpha); alpha 0 = the opt-in outline is off, driven by <see cref="ShowDecalShape"/> / <see cref="HideDecalShape"/>.</summary>
     private Vector4 decalShapeColor;
 
     /// <summary>The outline width, in world units.</summary>
@@ -41,13 +41,13 @@ public sealed partial class SceneNode
 
     /// <summary>
     /// Shows a wireframe outline tracing the shape this node's decal paints - the same SDF the
-    /// <see cref="MaterialDomain.GroundDecal"/> shader evaluates, so the line lands exactly on the painted edge. Toggle it
-    /// back off with <see cref="HideDecalShape"/>; calling it again updates the color / width. Fluent.<br/>
-    /// It follows the material's <see cref="Material.Shape"/> and <see cref="Material.ShapeParams"/> live, and mirrors the
-    /// decal's <see cref="DecalSurface"/> constraint, so it tracks the decal through any edit. No-op (logged) when the
-    /// node carries no decal material.
+    /// <see cref="MaterialDomain.GroundDecal"/> shader evaluates, so the line lands exactly on the painted edge; toggle
+    /// it back off with <see cref="HideDecalShape"/> (calling it again updates the color / width), fluent.<br/>
+    /// It follows the material's <see cref="Material.Shape"/> and <see cref="Material.ShapeParams"/> live, and mirrors
+    /// the decal's <see cref="DecalSurface"/> constraint, so it tracks the decal through any edit; no-op (logged) when
+    /// the node carries no decal material.
     /// </summary>
-    /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible). Null uses the decal's own color, made opaque.</param>
+    /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible); null uses the decal's own color, made opaque.</param>
     /// <param name="edgeWidth">Outline thickness in world units (default 0.03).</param>
     public SceneNode ShowDecalShape(Vector4? color = null, float edgeWidth = DefaultDecalShapeWidth)
     {
@@ -66,7 +66,7 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Hides the decal-shape outline, if shown. Fluent.</summary>
+    /// <summary>Hides the decal-shape outline, if shown; fluent.</summary>
     public SceneNode HideDecalShape()
     {
         decalShapeColor = default;
@@ -87,15 +87,16 @@ public sealed partial class SceneNode
     }
 
     /// <summary>
-    /// Emits this node's decal-shape outline into the immediate layer for this frame. Render-thread only, driven off
+    /// Emits this node's decal-shape outline into the immediate layer for this frame; render-thread only, driven off
     /// <see cref="NoireDraw3D.OnRenderOverlay"/> by <see cref="DecalOverlayService"/> (the opt-in path) or by
-    /// <see cref="Scene3D.TraceDecalShapes"/> (wireframe mode). Reads the shape and world matrix under the graph lock and
-    /// skips a destroyed, hidden, or no-longer-decal node.
+    /// <see cref="Scene3D.TraceDecalShapes"/> (wireframe mode), reading the shape and world matrix under the graph
+    /// lock and skipping a destroyed, hidden, or no-longer-decal node.
     /// </summary>
     /// <param name="im">The immediate layer to draw into.</param>
     /// <param name="force">
-    /// Trace even when this node never opted in, using the decal's own color - what wireframe mode needs, since it must
-    /// show every decal rather than only the ones an author flagged. An explicit <see cref="ShowDecalShape"/> color still wins.
+    /// Trace even when this node never opted in, using the decal's own color - what wireframe mode needs, since it
+    /// must show every decal rather than only the ones an author flagged; an explicit <see cref="ShowDecalShape"/>
+    /// color still wins.
     /// </param>
     internal void DrawDecalShapeEdges(ImDraw3D im, bool force = false)
     {
@@ -134,7 +135,7 @@ public sealed partial class SceneNode
     /// <summary>A decal color at full alpha - the outline's default, so it reads as the decal it traces.</summary>
     private static Vector4 OpaqueOf(Vector4 color) => new(color.X, color.Y, color.Z, 1f);
 
-    /// <summary>Effective visibility: this node and every ancestor is visible. Caller holds <see cref="Scene3D.GraphLock"/>.</summary>
+    /// <summary>Effective visibility: this node and every ancestor is visible; caller holds <see cref="Scene3D.GraphLock"/>.</summary>
     private bool IsEffectivelyVisibleNoLock()
     {
         for (var n = this; n != null; n = n.parent)

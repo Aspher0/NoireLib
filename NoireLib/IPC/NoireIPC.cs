@@ -356,9 +356,9 @@ public static class NoireIPC
         => GetCallGateFactoryResult(SubscriberFactoryMethods, NormalizeName(fullName), callGateTypes);
 
     /// <summary>
-    /// Checks whether an IPC provider is currently available for the specified channel and signature.
-    /// Availability probing avoids invoking delegates that require parameters or represent actions, because synthetic test calls can have side effects or fail for valid providers.
-    /// Only parameterless function IPCs are probe-invoked.
+    /// Checks whether an IPC provider is currently available for the specified channel and signature. Only
+    /// parameterless function IPCs are probe-invoked; actions and parameterized functions are not, since synthetic
+    /// test calls could have side effects or fail for valid providers.
     /// </summary>
     /// <param name="name">The local or fully qualified IPC name to check.</param>
     /// <param name="parameterTypes">The parameter types expected by the IPC signature.</param>

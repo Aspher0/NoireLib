@@ -8,9 +8,8 @@ namespace NoireLib.GameWatcher;
 /// Observes the friend list through the game's social data (info proxy) - remote presence beyond the object
 /// table: online state and location changes for friends anywhere.<br/>
 /// The proxy is refreshed in the background (<c>RequestData</c>) so friend facts stay current without the
-/// friend list being open - but the refresh is <b>skipped while the friend-list window is open</b>, because
-/// refreshing then re-sorts and scrolls the addon. While the window is open the game keeps the list live
-/// anyway, so the passive reads still see updates. Values are seconds-grained and can lag reality.
+/// friend list being open - skipped while the friend-list window is open, since refreshing then re-sorts
+/// and scrolls the addon. Values are seconds-grained and can lag reality.
 /// </summary>
 internal sealed class FriendSource : GameWatcherSource
 {
@@ -136,9 +135,8 @@ internal sealed class FriendSource : GameWatcherSource
     }
 
     /// <summary>
-    /// Refreshes the social proxy on the configured interval - but only while the friend-list window is closed,
-    /// so a background refresh never re-sorts or scrolls the addon the player is looking at. While the window is
-    /// open the timer is held (not advanced), so the first refresh fires as soon as it closes.
+    /// Refreshes the social proxy on the configured interval while the friend-list window is closed. The timer
+    /// is held (not advanced) while the window is open, so the first refresh fires as soon as it closes.
     /// </summary>
     private void MaybeRequestRefresh(DateTimeOffset now)
     {

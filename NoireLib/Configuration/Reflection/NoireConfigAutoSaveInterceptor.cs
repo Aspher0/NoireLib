@@ -40,15 +40,13 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
     /// <param name="invocation"></param>
     public void Intercept(IInvocation invocation)
     {
-        // Execute the original method/property
         invocation.Proceed();
 
         var methodName = invocation.Method.Name;
 
-        // The member copy that transfers a loaded configuration onto this wrapper assigns through these same setters,
-        // and those assignments carry the values that were just read from disk, so writing them back is redundant. The
-        // flag is scoped to the thread performing the copy, which is the thread that reaches this, so a genuine change
-        // made on another thread while a copy runs still persists.
+        // The member copy that transfers a loaded configuration onto this wrapper assigns through these same
+        // setters with values just read from disk, so writing them back here is redundant. Thread-scoped, so a
+        // genuine change on another thread while a copy runs still persists.
         if (NoireConfigBase.IsInternalCopying)
             return;
 
@@ -63,7 +61,6 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
     /// <param name="targetType"></param>
     private static void ValidateVirtualMembers(Type targetType)
     {
-        // Check for non-virtual properties with [AutoSave]
         var nonVirtualProperties = targetType
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.GetCustomAttribute<AutoSaveAttribute>() != null)
@@ -75,7 +72,6 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
                 $"Make the property virtual to enable auto-save.");
         }
 
-        // Check for non-virtual methods with [AutoSave]
         var nonVirtualMethods = targetType
             .GetMethods(BindingFlags.Public | BindingFlags.Instance)
             .Where(m => m.GetCustomAttribute<AutoSaveAttribute>() != null)

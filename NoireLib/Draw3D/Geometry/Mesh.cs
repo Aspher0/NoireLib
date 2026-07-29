@@ -7,10 +7,10 @@ namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
 /// An immutable GPU mesh (vertex + index buffer) with a precomputed bounding sphere.<br/>
-/// <b>Creation is synchronous and safe from any thread</b> - D3D11 devices are free-threaded - so a
-/// background asset load produces ready-to-draw meshes directly.<br/>
-/// <b>Ownership:</b> the creator disposes it. Nodes and renderers only reference meshes; sharing one
-/// mesh across a thousand nodes is the intended usage.
+/// <b>Creation is synchronous and thread-safe</b> (D3D11 devices are free-threaded), so a background asset load
+/// produces ready-to-draw meshes directly.<br/>
+/// <b>Ownership:</b> the creator disposes it; nodes and renderers only reference it, and sharing one mesh across
+/// many nodes is intended usage.
 /// </summary>
 public sealed unsafe class Mesh : IDisposable
 {
@@ -46,22 +46,21 @@ public sealed unsafe class Mesh : IDisposable
     /// <summary>CPU 32-bit index copy, retained when requested at creation (null for 16-bit meshes).</summary>
     public uint[]? CpuIndices32 { get; }
 
-    /// <summary>True once disposed. Draws referencing a disposed mesh are skipped and counted, never a crash.</summary>
+    /// <summary>True once disposed; draws referencing a disposed mesh are skipped and counted, never a crash.</summary>
     public bool IsDisposed => disposed;
 
     /// <summary>
-    /// Number of coarser level-of-detail meshes attached below this one (0 = none). The renderer draws a lower LOD when
-    /// the object is small on screen; culling, picking and bounds always use this full-resolution mesh. Generated
-    /// automatically for large imported models (see <see cref="MeshSimplifier.BuildLods"/>), off otherwise.
+    /// Number of coarser level-of-detail meshes attached below this one (0 = none); the renderer draws a lower LOD
+    /// based on screen size, but culling, picking and bounds always use this full-resolution mesh, generated
+    /// automatically for large imported models (see <see cref="MeshSimplifier.BuildLods"/>) and off otherwise.
     /// </summary>
     public int LodCount => lods?.Length ?? 0;
 
     /// <summary>
-    /// Attaches a finest-first chain of coarser LOD meshes, transferring their ownership to this mesh (they are freed
-    /// when it is). Replaces any existing chain. Pass an empty array to clear it. Called by the importer; usable
-    /// directly for hand-authored LODs.
+    /// Attaches a finest-first chain of coarser LOD meshes, transferring their ownership to this mesh (freed when
+    /// it is) and replacing any existing chain; pass an empty array to clear it.
     /// </summary>
-    /// <param name="levels">Coarser meshes, ordered from most to least detailed. Null or empty clears the chain.</param>
+    /// <param name="levels">Coarser meshes, ordered from most to least detailed; null or empty clears the chain.</param>
     public void SetLods(Mesh[]? levels)
     {
         var old = lods;
@@ -72,8 +71,8 @@ public sealed unsafe class Mesh : IDisposable
     }
 
     /// <summary>
-    /// The mesh to draw at the given LOD level: 0 (or no chain) returns this full-resolution mesh; higher levels return
-    /// progressively coarser ones, clamped to the coarsest available. The renderer's screen-size selection drives it.
+    /// The mesh to draw at the given LOD level: 0 (or no chain) returns this full-resolution mesh, higher levels
+    /// return progressively coarser ones clamped to the coarsest available, driven by the renderer's screen-size selection.
     /// </summary>
     /// <param name="level">0 = full detail; 1..<see cref="LodCount"/> = coarser levels.</param>
     public Mesh SelectLod(int level)
@@ -86,10 +85,10 @@ public sealed unsafe class Mesh : IDisposable
     }
 
     /// <summary>
-    /// Casts a <b>model-space</b> ray against this mesh's triangles via a lazily-built BVH and returns the nearest hit -
-    /// the acceleration that keeps hover-picking a dense mesh from scanning every triangle each frame. The direction is
-    /// treated as-is, so <paramref name="t"/> comes back in the units of <paramref name="localDirection"/>. False when
-    /// the mesh kept no CPU geometry (created without <c>keepCpuData</c>), is disposed, or the ray misses. Any thread.
+    /// Casts a <b>model-space</b> ray against this mesh's triangles via a lazily-built BVH and returns the nearest
+    /// hit, with <paramref name="t"/> in the units of <paramref name="localDirection"/>; returns false when the mesh
+    /// kept no CPU geometry (created without <c>keepCpuData</c>), is disposed, or the ray misses, and is safe to
+    /// call from any thread.
     /// </summary>
     /// <param name="localOrigin">Ray origin in model space.</param>
     /// <param name="localDirection">Ray direction in model space.</param>

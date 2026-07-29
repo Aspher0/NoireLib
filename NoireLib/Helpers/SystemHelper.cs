@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A helper class for system-related operations.
+/// System-related process, file and shell helpers.
 /// </summary>
 public static class SystemHelper
 {

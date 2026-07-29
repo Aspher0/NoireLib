@@ -34,7 +34,6 @@ public partial class NoireTaskQueue
             return this;
         }
 
-        // If starting from paused state, resume delay-based tasks and timeouts
         if (QueueState == QueueState.Paused)
         {
             ResumeAllQueueTimers();

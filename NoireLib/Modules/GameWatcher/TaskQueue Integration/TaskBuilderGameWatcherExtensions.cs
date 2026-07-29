@@ -13,9 +13,8 @@ namespace NoireLib.GameWatcher;
 public static class TaskBuilderGameWatcherExtensions
 {
     /// <summary>
-    /// Completes the task when a game condition holds - e.g.
-    /// <c>.CompleteWhen(GameConditions.TerritoryIs(198).And(GameConditions.ScreenReady))</c>.
-    /// The condition is evaluated by the queue on the framework thread.
+    /// Completes the task when a game condition holds. The condition is evaluated by the queue on the
+    /// framework thread.
     /// </summary>
     /// <typeparam name="TSelf">The concrete builder type (inferred).</typeparam>
     /// <param name="builder">The task builder.</param>

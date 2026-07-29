@@ -15,7 +15,7 @@ public enum DeselectMode
 
     /// <summary>
     /// A left click on empty world (no object under the cursor and not over game/plugin UI) that did not become a
-    /// camera pan clears the selection. A click-and-drag (a camera pan) never deselects.
+    /// camera pan clears the selection; a click-and-drag never deselects.
     /// </summary>
     ClickEmpty = 1,
 

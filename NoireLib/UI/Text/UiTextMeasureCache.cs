@@ -9,17 +9,13 @@ namespace NoireLib.UI;
 /// Remembers what a string measured, so a label that has not changed is not re-measured on every frame it is drawn.
 /// </summary>
 /// <remarks>
-/// Measuring text is not free: it pushes a font handle, walks the string a glyph at a time, and does that after the
-/// string has been marshalled from UTF-16 to UTF-8. A layout built by measuring its labels therefore pays for every
-/// label, every frame, to arrive at the answer it had last frame.<br/>
-/// The cache is keyed on everything that can change the answer: the text, the size asked for, the size of whatever font
-/// is current (which is what the fallback path measures with), the UI scale, and the font generation, which moves
-/// whenever the atlas is rebuilt and a size that was being approximated becomes real. A key that is complete is what
-/// makes this safe; a stale text measurement is a layout that is wrong everywhere by a few pixels and does not look
-/// like a caching bug.<br/>
-/// Built on <see cref="HotPathCache{TKey, TValue}"/> rather than carrying its own dictionaries, so there is one
-/// implementation of the pattern in the library rather than two that can drift apart. Reached only from the draw
-/// thread, because measuring needs a frame in progress, which is the assumption that primitive is built on.
+/// Measuring text pushes a font handle, walks the string a glyph at a time, and does that after marshalling
+/// UTF-16 to UTF-8; unmeasured, that cost repeats every label every frame.<br/>
+/// Keyed on everything that can change the answer: the text, the size asked for, the current font's size (what the
+/// fallback path measures with), the UI scale, and the font generation. A stale measurement is a layout wrong
+/// everywhere by a few pixels, not obviously a caching bug.<br/>
+/// Built on <see cref="HotPathCache{TKey, TValue}"/> rather than its own dictionaries. Reached only from the draw
+/// thread, since measuring needs a frame in progress.
 /// </remarks>
 internal static class UiTextMeasureCache
 {
@@ -32,12 +28,11 @@ internal static class UiTextMeasureCache
     /// Everything one glyph's rendering depends on.
     /// </summary>
     /// <remarks>
-    /// Separate from <see cref="Key"/> because a glyph is a codepoint rather than a string, and the point of caching
-    /// one is to answer without a string existing at all. A tracked label measures every character it draws on every
-    /// frame it is drawn, and the alphabet a plugin uses is small and fixed, so this fills in the first few frames and
-    /// only hits afterwards.<br/>
-    /// There is no size asked for here: the caller has already pushed the font it is measuring with, so the font in
-    /// hand is the whole answer. See <see cref="AmbientKey"/> for why the font is identified rather than described.
+    /// Separate from <see cref="Key"/>: a glyph is a codepoint rather than a string, and caching one answers without
+    /// a string existing at all. A tracked label measures every character on every frame it draws; the alphabet a
+    /// plugin uses is small and fixed, so this fills in the first few frames and only hits afterwards.<br/>
+    /// No size asked for here: the caller has already pushed the font it is measuring with. See
+    /// <see cref="AmbientKey"/> for why the font is identified rather than described.
     /// </remarks>
     private readonly record struct GlyphKey(int Codepoint, nint Font, float SizePx, float Scale, int Generation);
 
@@ -45,11 +40,10 @@ internal static class UiTextMeasureCache
     /// Everything a measurement taken against the font already pushed depends on.
     /// </summary>
     /// <remarks>
-    /// Carries the font itself rather than only its size, which <see cref="Key"/> does not have to. Every measurement
-    /// filed under <see cref="Key"/> is taken against a font this library resolved for a size, so the size names the
-    /// font. A caller measuring in the font it has pushed may have pushed anything, and two different fonts reporting
-    /// the same size are not the same measurement: the icon font and the body font at the same pixel size would share
-    /// a key and answer for each other.
+    /// Carries the font itself rather than only its size, unlike <see cref="Key"/>: a caller measuring in the font it
+    /// has pushed may have pushed anything, and two different fonts at the same size are not the same measurement.
+    /// Without this, the icon font and the body font at the same pixel size would share a key and answer for each
+    /// other.
     /// </remarks>
     private readonly record struct AmbientKey(string Text, nint Font, float SizePx, float Scale, int Generation);
 
@@ -57,9 +51,9 @@ internal static class UiTextMeasureCache
     /// How many measurements are kept before the cache starts over.
     /// </summary>
     /// <remarks>
-    /// An interface draws a stable set of labels, so in practice this fills once and then only hits. It is a bound
-    /// rather than a budget: what it protects against is a label that is a different string every frame, such as a
-    /// live counter, which would otherwise grow the dictionary without ever hitting it.
+    /// A bound rather than a budget: an interface draws a stable set of labels, so this fills once and then only
+    /// hits. Protects against a label that is a different string every frame, such as a live counter, which would
+    /// otherwise grow the dictionary without ever hitting it.
     /// </remarks>
     private const int MaxEntries = 4096;
 
@@ -113,9 +107,8 @@ internal static class UiTextMeasureCache
     /// paints anything at all.
     /// </summary>
     /// <remarks>
-    /// Deliberately not the glyph's atlas quad. The atlas spreads its glyphs across several textures and which one a
-    /// glyph lives on is the renderer's business, so painting stays a draw-list text call per glyph; what this cache
-    /// removes is the measuring around those calls.
+    /// Deliberately not the glyph's atlas quad: the atlas spreads glyphs across several textures, so painting stays
+    /// a draw-list text call per glyph. This cache only removes the measuring around those calls.
     /// </remarks>
     /// <param name="Advance">How far the glyph moves the pen.</param>
     /// <param name="Visible">Whether the glyph paints anything. A space advances the pen and draws nothing.</param>
@@ -131,9 +124,8 @@ internal static class UiTextMeasureCache
     /// One metrics table per font and size for the first 128 codepoints, which is nearly every character a label draws.
     /// </summary>
     /// <remarks>
-    /// The per-codepoint cache answers correctly but answering costs a key hash and a probe per character per frame,
-    /// and a tracked label asks for every character it draws. Resolving the table once per run turns the per-character
-    /// ask into an array index. Codepoints past the table fall back to the per-codepoint cache.
+    /// The per-codepoint cache costs a key hash and a probe per character per frame; resolving this table once per
+    /// run turns that into an array index. Codepoints past it fall back to the per-codepoint cache.
     /// </remarks>
     private static readonly HotPathCache<GlyphTableKey, GlyphMetrics[]> AsciiGlyphs = new(64);
 
@@ -257,9 +249,9 @@ internal static class UiTextMeasureCache
     /// Identifies the font currently pushed, for the keys that measure against it.
     /// </summary>
     /// <remarks>
-    /// The pointer rather than anything read out of the font. It is only ever compared, never followed, and a font
-    /// that is freed and replaced takes a new address, which is exactly the invalidation wanted. The generation in the
-    /// key covers the case of a new font landing at a recycled address.
+    /// The pointer rather than anything read out of the font: only ever compared, never followed. A freed and
+    /// replaced font takes a new address, which is the invalidation wanted; the generation in the key covers a new
+    /// font landing at a recycled address.
     /// </remarks>
     /// <returns>A value identifying the current font, or 0 when there is none.</returns>
     internal static unsafe nint CurrentFont()
@@ -272,10 +264,9 @@ internal static class UiTextMeasureCache
     /// The key a measurement is stored under, read from the live scale and font generation.
     /// </summary>
     /// <remarks>
-    /// Both are read here rather than handed to <see cref="HotPathCache{TKey, TValue}.InvalidateIfChanged"/>, which
-    /// would drop the whole cache when either moved. Carrying them in the key instead means a scale that moves and
-    /// moves back finds its old measurements still there, and the atlas rebuild that follows a scale change does not
-    /// discard the measurements taken at the scale being returned to.
+    /// Read here rather than handed to <see cref="HotPathCache{TKey, TValue}.InvalidateIfChanged"/>, which would
+    /// drop the whole cache when either moved. Carried in the key instead, so a scale that moves and moves back
+    /// finds its old measurements still there.
     /// </remarks>
     private static Key SizeKey(string text, float sizePx, float ambientSizePx)
         => new(text, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation);

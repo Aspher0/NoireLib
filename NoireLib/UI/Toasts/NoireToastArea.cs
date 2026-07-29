@@ -119,28 +119,25 @@ public class NoireToastArea : NoireDrawable
     public int MaxVisible { get; set; } = 4;
 
     /// <summary>
-    /// How many toasts may wait in total before the oldest are dropped.<br/>
-    /// Bounded on purpose: a loop raising a toast per frame against a hidden interface is otherwise a memory leak.
+    /// How many toasts may wait in total before the oldest are dropped. Bounded on purpose: a loop raising a toast
+    /// per frame against a hidden interface is otherwise a memory leak.
     /// </summary>
     public int Capacity { get; set; } = 64;
 
     /// <summary>
-    /// Whether the newest toast appears at the top of the stack rather than the bottom.<br/>
-    /// The default puts the newest nearest a bottom anchor, which is where the eye already is; flip it for a stack
-    /// anchored to the top of the screen.
+    /// Whether the newest toast appears at the top of the stack rather than the bottom. The default puts the newest
+    /// nearest a bottom anchor, which is where the eye already is; flip it for a stack anchored to the top.
     /// </summary>
     public bool NewestFirst { get; set; }
 
     /// <summary>
-    /// Whether the stack is kept in front of every other window, including the plugin's own, for clicks as well as for
-    /// drawing.<br/>
-    /// On by default: a notification hidden behind the window that raised it has not notified anyone, and a toast whose
-    /// action button cannot be clicked through an overlapping window is no better. Turn it off for a stack that should
-    /// sit in the normal window order.
+    /// Whether the stack is kept in front of every other window, including the plugin's own, for clicks as well as
+    /// drawing. On by default, so a notification's own button is always clickable. Turn it off for a stack that
+    /// should sit in the normal window order.
     /// </summary>
     /// <remarks>
-    /// Being drawn on top and receiving the mouse are two different orders in ImGui, and moving only the first is what
-    /// produces a toast that is plainly visible above a window and whose buttons do nothing. This moves both.
+    /// Being drawn on top and receiving the mouse are two different orders in ImGui; moving only the first would
+    /// leave a toast visible but its buttons dead. This moves both.
     /// </remarks>
     public bool AlwaysOnTop { get; set; } = true;
 
@@ -168,10 +165,10 @@ public class NoireToastArea : NoireDrawable
     /// Copies the toasts into the reused snapshot buffer, for the drawing to walk.
     /// </summary>
     /// <remarks>
-    /// What <see cref="GetToasts"/> does, borrowed rather than allocated, because this one runs on every frame the area
-    /// holds a toast. The copy is the point rather than an implementation detail: it is what lets a toast's own action
-    /// dismiss it, or raise another, without the frame that drew the button walking a list that changed underneath it.
-    /// The lock is held only for the copy, so a callback firing later in the frame is free to take it.
+    /// What <see cref="GetToasts"/> does, borrowed rather than allocated since this runs every frame the area holds
+    /// a toast. The copy lets a toast's own action dismiss it, or raise another, without the frame that drew the
+    /// button walking a list that changed underneath it. The lock is held only for the copy, so a callback firing
+    /// later in the frame is free to take it.
     /// </remarks>
     /// <returns>A borrowed buffer holding the toasts in order. Dispose it to give the array back.</returns>
     private PooledBuffer<NoireToast> SnapshotToasts()
@@ -254,9 +251,9 @@ public class NoireToastArea : NoireDrawable
     /// <inheritdoc/>
     protected override void DrawCore()
     {
-        // Borrowed for the frame rather than allocated in it, and rented per frame rather than kept between them: a
-        // toast's action button runs the consumer's code in the middle of the stack being drawn, so a buffer belonging
-        // to the area rather than to the frame could be cleared and refilled underneath the loop still walking it.
+        // Borrowed for the frame rather than kept between them: a toast's action button runs consumer code
+        // mid-draw, so a buffer owned by the area rather than the frame could be cleared and refilled underneath
+        // the loop still walking it.
         using var snapshot = SnapshotToasts();
         using var buffer = PooledBuffer<NoireToast>.Rent(Math.Min(snapshot.Length, Math.Max(1, MaxVisible)));
 
@@ -267,19 +264,15 @@ public class NoireToastArea : NoireDrawable
 
         var visible = buffer.Span[..count];
 
-        // Sized and placed exactly, from heights measured this frame rather than from what the window happened to be
-        // last frame. An auto-resizing window is always one frame behind its own contents, which a bottom-anchored
-        // stack turns into visible jitter: the whole column chases the animation upwards as it grows and downwards as
-        // it shrinks.
+        // Sized and placed exactly, from heights measured this frame: an auto-resizing window is always one frame
+        // behind its own contents, which a bottom-anchored stack turns into visible jitter as the column chases the
+        // animation.
         //
-        // The height is rounded up to a whole pixel, and that is load-bearing rather than tidiness. A bottom-anchored
-        // window is placed at (fixed edge - its own height), so the edge the stack hangs from comes back as
-        // (placed position + height) and the two are meant to cancel. They only cancel while the height is a whole
-        // number: a window position is snapped to the pixel grid, and snapping a fractional height leaves behind the
-        // fraction, which changes every frame that the height animates. The stack then slides back and forth across a
-        // pixel for exactly as long as a toast is arriving or leaving, which is the whole of that jitter. Rounding
-        // makes the snap a no-op, because snapping something shifted by a whole number of pixels shifts the result by
-        // the same whole number.
+        // The height is rounded up to a whole pixel deliberately, not for tidiness. A bottom-anchored window sits at
+        // (fixed edge - its own height), so the edge the stack hangs from is recovered as (placed position +
+        // height); the two only cancel when the height is a whole number, since window positions snap to the pixel
+        // grid and a fractional height leaves its fraction behind, sliding the stack across a pixel for as long as
+        // a toast animates.
         var height = ResolveStackHeight(total);
         var size = new Vector2(ScaledWidth, height);
         var viewport = ImGui.GetMainViewport();
@@ -311,9 +304,9 @@ public class NoireToastArea : NoireDrawable
     /// retires the ones that have finished leaving.
     /// </summary>
     /// <remarks>
-    /// Runs before anything is drawn because the window has to be sized and positioned from the total, and a toast on
-    /// its way out contributes a shrinking share of it: that is what makes the stack close up smoothly behind a
-    /// dismissed toast instead of the rest jumping into the gap.
+    /// Runs before anything is drawn, since the window has to be sized and positioned from the total; a toast on
+    /// its way out contributes a shrinking share, so the stack closes up smoothly behind it instead of the rest
+    /// jumping into the gap.
     /// </remarks>
     /// <param name="snapshot">The toasts to consider, oldest first.</param>
     /// <param name="visible">Receives the toasts to draw, in stack order. Never filled beyond its own length.</param>
@@ -384,15 +377,12 @@ public class NoireToastArea : NoireDrawable
     /// Draws the measured stack, laid out from whichever edge of it is pinned to the screen.
     /// </summary>
     /// <remarks>
-    /// The direction matters, and getting it wrong is what makes a stack fidget. The window is sized to the stack every
-    /// frame, so on a bottom-anchored area its bottom edge is the fixed one and its top edge moves as toasts arrive,
-    /// leave and shrink. Laying out downwards from that moving top edge makes every toast's position depend on the
-    /// height of every toast before it, and on the window's own height as well: the two only cancel while nothing else
-    /// changes, and any wobble in either (a toast whose contents resize, one entering or leaving the visible window,
-    /// a share of height clamped at its floor) leaks into all of them at once.<br/>
-    /// Laid out from the pinned edge instead, a toast's position depends only on the toasts between it and that edge.
-    /// A toast collapsing as it leaves moves the ones further from the anchor and nothing else, and since toasts expire
-    /// oldest first and the oldest sits furthest from the anchor, the usual case moves nothing at all.
+    /// Laid out from the pinned edge, not the moving one: on a bottom-anchored area, the window's bottom edge stays
+    /// fixed while its top moves as toasts arrive, leave and shrink. Laying out downwards from that moving edge
+    /// would make every toast's position depend on the height of every toast before it and on the window's own
+    /// height, so any wobble in either leaks into all of them at once. From the pinned edge, a toast's position
+    /// depends only on the toasts between it and that edge, and since toasts expire oldest first, the usual case
+    /// moves nothing at all.
     /// </remarks>
     /// <param name="visible">The toasts to draw, in stack order.</param>
     /// <param name="height">The window's own height, which is the measured total rounded up to a whole pixel.</param>
@@ -416,13 +406,12 @@ public class NoireToastArea : NoireDrawable
             return;
         }
 
-        // The far edge is the window's own near edge plus its own height: the one pair of numbers guaranteed to cancel
-        // back to the fixed screen edge the window was placed against. Reading the size back out of ImGui instead, or
-        // using the unrounded measured total, each reintroduces a number that only nearly agrees, and the difference is
-        // spent again on every toast in the stack.
+        // The far edge is the window's near edge plus its own height, the one pair of numbers guaranteed to cancel
+        // back to the fixed screen edge. Reading the size back from ImGui, or using the unrounded total, would each
+        // reintroduce a number that only nearly agrees, spent again on every toast in the stack.
         //
-        // Everything below hangs off this, so a toast's position depends only on the toasts between it and the anchor.
-        // The rounding slack, always under a pixel, lands at the far end where there is nothing to disturb.
+        // Everything below hangs off this, so a toast's position depends only on the toasts between it and the
+        // anchor. The rounding slack, always under a pixel, lands at the far end where there is nothing to disturb.
         var bottom = MathF.Floor(window.Y + height);
 
         for (var index = visible.Length - 1; index >= 0; index--)
@@ -439,9 +428,9 @@ public class NoireToastArea : NoireDrawable
     /// The gap between two toasts, as a whole number of pixels.
     /// </summary>
     /// <remarks>
-    /// Snapped for the same reason the slots are, and it has to be read from one place because the height of the stack
-    /// and the layout of the stack both count it: a gap rounded in one and not the other would leave the toasts and the
-    /// window they sit in disagreeing by a pixel per toast.
+    /// Snapped for the same reason the slots are: read from one place because both the stack's height and its
+    /// layout count it, and a gap rounded in one but not the other would leave the toasts and the window
+    /// disagreeing by a pixel per toast.
     /// </remarks>
     private float StackGap => MathF.Ceiling(Style.ScaledGap);
 
@@ -449,14 +438,11 @@ public class NoireToastArea : NoireDrawable
     /// The room a toast is given in the stack, as a whole number of pixels, never less than one.
     /// </summary>
     /// <remarks>
-    /// Whole pixels, and the reason is a feedback loop rather than tidiness. ImGui floors the cursor down to the pixel
-    /// grid after every item it lays out, so the height a block of content measures depends on the fraction of a pixel
-    /// it started at: the same toast measures a pixel taller or shorter depending on where it happens to sit. That
-    /// measurement is what the next frame's slot is built from, and each slot shifts every toast further from the
-    /// anchor, so a stack laid out on fractional boundaries has every toast nudging its neighbours' measurements about.
-    /// The result is a wobble that grows with distance from the anchor, which is exactly how far the error has had to
-    /// accumulate.<br/>
-    /// Kept on the grid, a toast always measures the same height, and the stack holds still.
+    /// Whole pixels, for a feedback loop rather than tidiness: ImGui floors the cursor to the pixel grid after
+    /// every item, so a block's measured height depends on the fraction of a pixel it started at, and that
+    /// measurement becomes the next frame's slot, shifting every toast further from the anchor. Fractional
+    /// boundaries let every toast nudge its neighbours' measurements, wobbling more the further from the anchor.
+    /// Kept on the grid, a toast always measures the same height and the stack holds still.
     /// </remarks>
     /// <param name="content">The height the toast's contents want.</param>
     /// <returns>The slot height in whole pixels.</returns>
@@ -466,12 +452,9 @@ public class NoireToastArea : NoireDrawable
     /// The height the stack's window is given, from the height its contents measured.
     /// </summary>
     /// <remarks>
-    /// A whole pixel, and that is the entire point of the method existing. A bottom-anchored window is placed at
-    /// (fixed screen edge - its own height), so the edge the stack hangs from is recovered as (placed position +
-    /// height). Window positions are snapped to the pixel grid, and snapping only cancels back out of that sum when the
-    /// height is a whole number of pixels: snapping a value shifted by a whole number shifts the result by the same
-    /// whole number, while a fractional height leaves its fraction behind. That leftover changes on every frame the
-    /// height animates, so the whole stack slides across a pixel for as long as a toast is arriving or leaving.
+    /// A whole pixel: a bottom-anchored window is placed at (fixed edge - its own height), so the edge it hangs
+    /// from is recovered as (placed position + height), and the two only cancel when the height is a whole number
+    /// of pixels. See the note in <see cref="DrawCore"/> for why a fractional height causes jitter.
     /// </remarks>
     /// <param name="total">The height the toasts measured for themselves.</param>
     /// <returns>The window height to use, and to hang the stack from.</returns>
@@ -529,10 +512,10 @@ public class NoireToastArea : NoireDrawable
             var body = new Vector2(min.X, AnchoredAtBottom() ? max.Y - full : min.Y);
             var painted = new Vector2(max.X, body.Y + full);
 
-            // The background is painted at the toast's full height and cropped to the slot, which is what makes a
-            // leaving toast look like it is being covered rather than squashed. The countdown instead uses the slot
-            // itself, so its geometry and the clip rectangle are the same rectangle: an outline drawn to one boundary
-            // and cropped at another loses a different amount on each side.
+            // The background is painted at the toast's full height and cropped to the slot, so a leaving toast
+            // looks covered rather than squashed. The countdown uses the slot itself instead, so its geometry and
+            // the clip rectangle match: an outline drawn to one boundary and cropped at another would lose a
+            // different amount on each side.
             PaintBackground(drawList, body, painted, accent, alpha, rounding, theme);
             PaintTimer(drawList, min, max, toast, accent, alpha, rounding);
 
@@ -544,10 +527,9 @@ public class NoireToastArea : NoireDrawable
 
             ImGui.EndGroup();
 
-            // Frozen once a toast starts leaving, so its share of the stack only ever shrinks. Its contents are drawn
-            // clipped to a slot that is closing and offset by the slide, and a height re-measured under either would
-            // feed back into the share computed from it: the collapse would stop being monotonic and every toast
-            // further from the anchor would wobble along with it.
+            // Frozen once a toast starts leaving, so its share of the stack only ever shrinks: a height re-measured
+            // while clipped and slid would feed back into the share computed from it, and the collapse would stop
+            // being monotonic, wobbling every toast further from the anchor.
             if (!toast.IsDismissed)
                 toast.LastHeight = ResolveSlotHeight(ImGui.GetItemRectSize().Y + (Style.ScaledPadding.Y * 2f));
         }

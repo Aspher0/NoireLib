@@ -147,7 +147,7 @@ public sealed class PlateStyle
     #endregion
 
     /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public PlateStyle Clone() => (PlateStyle)MemberwiseClone();

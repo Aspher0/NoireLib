@@ -9,15 +9,15 @@ public record HotkeyTriggeredEvent(HotkeyEntry Hotkey);
 
 /// <summary>
 /// Event fired when a hotkey binding changes.<br/>
-/// Published on the framework thread, so subscribers may touch game state directly, and so a rebind captured by
-/// the detection timer reaches subscribers on the same thread as one made by the plugin itself.
+/// Published on the framework thread, so subscribers may touch game state directly, whether the rebind came from
+/// the plugin or from detection capturing one.
 /// </summary>
 /// <param name="Hotkey">
-/// The live hotkey entry, already carrying the new binding. It is not a snapshot: a further rebind before this
-/// event is delivered shows through, and a subscriber that writes to the entry writes to the registered one.
+/// The live hotkey entry carrying the new binding, not a snapshot: a further rebind before delivery shows
+/// through, and a subscriber write applies to the registered entry.
 /// </param>
 /// <param name="IsNewBinding">
-/// Whether the binding actually differed from the one the hotkey already had, as of the moment it was written.
+/// Whether the binding differed from the previous one at the moment it was written.
 /// </param>
 public record HotkeyBindingChangedEvent(HotkeyEntry Hotkey, bool IsNewBinding);
 
@@ -31,9 +31,8 @@ public record HotkeyListeningStartedEvent(string HotkeyId, HotkeyListenMode Mode
 
 /// <summary>
 /// Event fired when hotkey listening stops.<br/>
-/// Published on the framework thread, so subscribers may touch game state directly, and so a stop that detection
-/// performs from its own timer thread after capturing a binding reaches subscribers on the same thread as one the
-/// plugin requests itself.
+/// Published on the framework thread, so subscribers may touch game state directly, whether the stop came from
+/// the plugin or from detection capturing a binding.
 /// </summary>
 /// <param name="HotkeyId">The hotkey identifier.</param>
 /// <param name="WasCancelled">Whether listening was cancelled without binding.</param>

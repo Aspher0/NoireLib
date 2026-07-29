@@ -11,9 +11,6 @@ namespace NoireLib.UI;
 /// setting is no longer the shipped one.
 /// </summary>
 /// <remarks>
-/// Each of these is a small thing that every plugin writes again, slightly differently, and gets slightly wrong: the
-/// unit that drifts away from its number, the duration stored in milliseconds that the user has to do arithmetic on,
-/// the hex box that throws while it is being typed, the validation that refuses a keystroke without saying why.<br/>
 /// Everything is immediate and stateless from the caller's side: pass the value by reference, take the return as
 /// "changed this frame". The one piece of state, the text of a duration or a colour while it is being typed, lives in
 /// <see cref="NoireUiSession"/> for as long as the field has focus and is dropped when it loses it.
@@ -38,8 +35,8 @@ public static class NoireInputs
     /// The style used by the overloads that take a unit rather than a style.
     /// </summary>
     /// <remarks>
-    /// Reused rather than allocated per call, and only ever read inside the call that set it. Drawing runs on one
-    /// thread, so there is nothing here for a second caller to see half-written.
+    /// Reused rather than allocated per call; drawing runs on one thread, so nothing here is seen half-written by a
+    /// second caller.
     /// </remarks>
     private static readonly NumberStyle Shorthand = new();
 
@@ -61,9 +58,8 @@ public static class NoireInputs
     /// The width the label column is padded out to, at 100%. See <see cref="NoireUI.Scale"/>.
     /// </summary>
     /// <remarks>
-    /// A minimum rather than a fixed width: a run of settings lines its fields up without anyone measuring anything,
-    /// and a label longer than the column pushes its own field along rather than being clipped. Set it to zero for
-    /// rows that each size to their own label.
+    /// A minimum rather than a fixed width, so a label longer than the column pushes its own field along rather than
+    /// being clipped. Set it to zero for rows that each size to their own label.
     /// </remarks>
     public static float LabelWidth { get; set; } = 110f;
 
@@ -137,7 +133,7 @@ public static class NoireInputs
     /// </summary>
     /// <remarks>
     /// Shares the decimal field's drawing, so the unit and the stepper behave identically. Values are exact to
-    /// ±16,777,216, which is past anything a person types into a settings window.
+    /// ±16,777,216.
     /// </remarks>
     /// <param name="label">The label shown before the field. Also the widget's id.</param>
     /// <param name="value">The value, updated in place.</param>
@@ -145,8 +141,7 @@ public static class NoireInputs
     /// <returns>True on the frame the value changes.</returns>
     public static bool Number(string label, ref int value, NumberStyle? style)
     {
-        // Copied into a scratch style rather than cloned, since a clone here would allocate on every field on every
-        // frame for the sake of two fields the caller cannot set wrongly anyway.
+        // Copied into a scratch style rather than cloned, avoiding an allocation on every field every frame.
         var source = style ?? NumberDefaults;
 
         WholeNumbers.Unit = source.Unit;
@@ -174,15 +169,14 @@ public static class NoireInputs
     /// </summary>
     /// <remarks>
     /// A percent sign in the unit has to be doubled, or ImGui reads it as the start of another conversion and prints
-    /// something nobody asked for. That is the one character that turns a unit into a bug.
+    /// something nobody asked for.
     /// </remarks>
     private static string BuildFormat(NumberStyle style)
     {
         var decimals = Math.Clamp(style.Decimals, 0, 9);
         var unit = style.Unit ?? string.Empty;
 
-        // Cached because a format is a constant per configuration, and the field it belongs to is redrawn every frame:
-        // built inline, every numeric field on screen would compose the same short string sixty times a second.
+        // Cached, since a format is constant per configuration but the field redraws every frame.
         var key = new FormatKey(decimals, unit);
 
         if (NumberFormats.TryGet(key, out var cached))
@@ -202,8 +196,7 @@ public static class NoireInputs
     private readonly record struct FormatKey(int Decimals, string Unit);
 
     /// <summary>
-    /// How many distinct number formats are kept. A format is a decimal count and a unit, so a plugin has as many as it
-    /// has kinds of field, and the bound only matters for a unit built from a value.
+    /// How many distinct number formats are kept. Only matters when a unit is built from a runtime value.
     /// </summary>
     private const int MaxNumberFormats = 256;
 
@@ -217,10 +210,9 @@ public static class NoireInputs
     /// A field that reads a duration the way people write one: <c>90s</c>, <c>1m30s</c>, <c>1h30</c>, <c>1:30</c>.
     /// </summary>
     /// <remarks>
-    /// The value is a <see cref="TimeSpan"/>, so nothing downstream has to know which unit the field was typed in.
     /// While the field has focus it holds the text as typed; on leaving it, the text is read and the value written, or
-    /// the text is put back to the value and the reason slides in underneath.<br/>
-    /// See <see cref="DurationHelper"/> for exactly what is accepted.
+    /// the text is put back to the value and the reason slides in underneath. See <see cref="DurationHelper"/> for
+    /// exactly what is accepted.
     /// </remarks>
     /// <param name="label">The label shown before the field. Also the widget's id.</param>
     /// <param name="value">The duration, updated in place.</param>
@@ -235,8 +227,7 @@ public static class NoireInputs
         var resolved = style ?? DurationDefaults;
         var changed = false;
 
-        // The reading is given a column of its own rather than whatever is left over, so the field does not resize as
-        // the text is typed and the reading never lands somewhere too narrow to sit on one line.
+        // The reading gets a column of its own, not leftover space, so the field does not resize as the text is typed.
         var previewWidth = resolved.ShowPreview
             ? NoireText.CalcSize("00h00m00s", TextSize.Caption).X + NoireUI.Scaled(8f)
             : 0f;
@@ -315,10 +306,7 @@ public static class NoireInputs
     /// <summary>
     /// A colour field you can paste a hex into, with a swatch that opens a picker.
     /// </summary>
-    /// <remarks>
-    /// The point of the hex box is that a colour can be moved between plugins, a theme file and a chat message as six
-    /// characters. Both shorthands are accepted, so <c>#f00</c> is red.
-    /// </remarks>
+    /// <remarks>Both shorthands are accepted, so <c>#f00</c> is red.</remarks>
     /// <param name="label">The label shown before the field. Also the widget's id.</param>
     /// <param name="value">The colour, updated in place.</param>
     /// <param name="style">How the field behaves. When <see langword="null"/>, the shipped defaults.</param>
@@ -415,8 +403,8 @@ public static class NoireInputs
     /// Wraps any drawing in the same refusal message the fields here use, for a widget this class does not ship.
     /// </summary>
     /// <remarks>
-    /// The body draws whatever it likes and returns whether it changed anything; the message appears under it, sliding
-    /// in rather than snapping, so a row does not jump the moment a keystroke makes a value invalid.
+    /// The body draws whatever it likes and returns whether it changed anything; the message appears under it,
+    /// sliding in rather than snapping.
     /// </remarks>
     /// <param name="id">A stable id for the message's animation.</param>
     /// <param name="error">The message to show, or <see langword="null"/> when there is nothing wrong.</param>
@@ -434,8 +422,8 @@ public static class NoireInputs
     /// Wraps any drawing in the same refusal message the fields here use, for a widget this class does not ship.
     /// </summary>
     /// <remarks>
-    /// The body draws whatever it likes and returns whether it changed anything; the message appears under it, sliding
-    /// in rather than snapping, so a row does not jump the moment a keystroke makes a value invalid.
+    /// The body draws whatever it likes and returns whether it changed anything; the message appears under it,
+    /// sliding in rather than snapping.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A stable id for the message's animation.</param>
@@ -472,8 +460,8 @@ public static class NoireInputs
 
         var radius = NoireUI.Scaled(3.5f);
 
-        // A field is a frame taller than the line of text inside it, and SameLine puts the cursor back at the top of
-        // the line, so the row's height is what centres the dot on the field rather than on the field's first line.
+        // A field is taller than its text line, and SameLine returns the cursor to the line's top; the row height
+        // centres the dot on the field, not just the line.
         var rowHeight = MathF.Max(NoireText.LineHeight(), ImGui.GetFrameHeight());
         var size = new Vector2(radius * 4f, rowHeight);
 
@@ -515,12 +503,11 @@ public static class NoireInputs
     /// Draws the label and sizes the field that follows it.
     /// </summary>
     /// <remarks>
-    /// The label doubles as the id, and anything after a "###" in it is the stable part, exactly as in ImGui. That is
-    /// what lets a renamed or translated label keep the field's state.<br/>
-    /// Shared with <see cref="NoireSliders"/>, which draws its own control rather than an ImGui field but has to line
-    /// its label column up with the fields above and below it.
+    /// The label doubles as the id, and anything after a "###" in it is the stable part, exactly as in ImGui, so a
+    /// renamed or translated label keeps the field's state. Shared with <see cref="NoireSliders"/>, whose custom
+    /// control still lines up with the fields around it.
     /// </remarks>
-    /// <returns>How much of the row the label column took, so a caller drawing its own control knows where it starts.</returns>
+    /// <returns>How much of the row the label column took.</returns>
     internal static float BeginRow(string label, float width, out string id, bool sizeField = true, float extraReserve = 0f, float? labelWidth = null)
     {
         UiLabel.Split(label, out var visible, out id);
@@ -542,12 +529,9 @@ public static class NoireInputs
             NoireText.Draw(visible);
             ImGui.PopTextWrapPos();
 
-            // Padded to a shared column so a run of settings lines its fields up, and never clipped: a label longer
-            // than the column pushes its own field along rather than being cut off.
-            // A width given by the caller is the column, not a floor for it. The shared default is a minimum so a run
-            // of settings lines up without anyone measuring, but a page laying its own rows out has already decided
-            // where the controls start, and growing the column for one long label puts that row out of line with the
-            // rest, which is exactly what the caller was trying to prevent.
+            // Padded to a shared column so a run of settings lines up, and a label longer than the column pushes its
+            // own field along rather than being clipped. A caller-given width is the column itself, not a floor: the
+            // shared default is a minimum, but an explicit one is fixed.
             column = labelWidth is { } stated
                 ? NoireUI.Scaled(stated) + gap
                 : MathF.Max(NoireText.CalcSize(visible).X, NoireUI.Scaled(LabelWidth)) + gap;
@@ -576,8 +560,7 @@ public static class NoireInputs
     /// Draws a refusal under a field, sliding it in and back out again.
     /// </summary>
     /// <remarks>
-    /// The message is remembered for as long as it takes to slide out, or there would be nothing to draw on the frames
-    /// after it stops applying, and the row would snap shut instead of closing.
+    /// The message is remembered until it finishes sliding out, or the row would snap shut instead of closing.
     /// </remarks>
     private static void DrawError(string id, string? error)
     {
@@ -602,8 +585,8 @@ public static class NoireInputs
 
         var start = ImGui.GetCursorScreenPos();
 
-        // Drawn before the space for it is reserved, so the height comes from what the message actually took: one that
-        // wraps to two lines needs two lines of room, and reserving a single line would put the next field through it.
+        // Drawn before its space is reserved, so the height comes from what the message actually took: a two-line
+        // wrap needs two lines of room, or the next field would overlap it.
         ImGui.SetCursorScreenPos(new Vector2(start.X, start.Y - ((1f - presence) * NoireUI.Scaled(5f))));
 
         NoireText.Colored(
@@ -611,8 +594,8 @@ public static class NoireInputs
             message,
             TextSize.Caption);
 
-        // The gap belongs to the message rather than to whatever follows it, since what follows is the next row of a
-        // settings column and has no reason to know a refusal is showing above it.
+        // The gap belongs to the message, not to whatever follows it: the next row has no reason to know a refusal
+        // is showing above it.
         var height = MathF.Max(0f, ImGui.GetItemRectMax().Y - start.Y) + NoireUI.Scaled(6f);
 
         ImGui.SetCursorScreenPos(start);
@@ -623,9 +606,9 @@ public static class NoireInputs
     /// Remembers that the text in a field could not be read, until it is typed in again.
     /// </summary>
     /// <remarks>
-    /// Held rather than reported on the frame it happens, which is the difference between a message and a flicker. A
-    /// <c>Validate</c> refusal is recomputed from the value on every frame and so persists on its own; a parse failure
-    /// happens on exactly one frame, when the field loses focus, and would otherwise slide straight back out again.
+    /// Held rather than reported only on the frame it happens. A <c>Validate</c> refusal is recomputed from the value
+    /// on every frame and so persists on its own; a parse failure happens on exactly one frame, when the field loses
+    /// focus, and would otherwise slide straight back out again.
     /// </remarks>
     private static void Refuse(string id, string message) => NoireUiSession.Set(UiIds.For("NoireInputs.Refused.", id), message);
 

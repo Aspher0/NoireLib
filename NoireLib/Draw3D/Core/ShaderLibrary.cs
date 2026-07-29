@@ -10,7 +10,7 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// A compiled VS+PS pair with its input layout. Failed pipelines render nothing (self-disable rung 1).
+/// A compiled VS+PS pair with its input layout. Failed pipelines render nothing.
 /// </summary>
 internal sealed unsafe class ShaderPipeline : IDisposable
 {
@@ -47,7 +47,7 @@ internal sealed unsafe class ShaderPipeline : IDisposable
 
 /// <summary>
 /// Named pipeline cache over the embedded HLSL sources. Variants are #define permutations; a compile
-/// error disables only the owning pipeline (log-once, ladder rung 1) and never throws into the frame.
+/// error disables only the owning pipeline (logged once) and never throws into the frame.
 /// </summary>
 internal sealed unsafe class ShaderLibrary : IDisposable
 {
@@ -299,8 +299,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         fixed (byte* pIColor = icolor)
         {
             // Every element of Vertex3D is declared for every pipeline; a shader that does not read a
-            // semantic simply leaves it unconsumed, which D3D11 permits, so only the shaders that use the
-            // tangent had to change when it was added.
+            // semantic simply leaves it unconsumed, which D3D11 permits.
             var elements = stackalloc D3D11_INPUT_ELEMENT_DESC[10];
             var count = 0u;
             elements[count++] = Element(pPosition, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT, 0, 0);

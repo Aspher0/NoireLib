@@ -17,12 +17,12 @@ public sealed class BadgeStyle
     /// from the anchor. Defaults to 1.
     /// </summary>
     /// <remarks>
-    /// The one knob for "make it bigger". Everything below is a logical pixel value that can also be set on its own,
-    /// but moving them one at a time to grow a badge means keeping five numbers in proportion by hand.<br/>
-    /// It multiplies with <see cref="NoireUI.Scale"/> rather than replacing it, so a badge scaled here still follows
-    /// the user's interface scale.<br/>
-    /// The text is drawn with a font built at the size this works out to, so each distinct value in use is a distinct
-    /// font size. A few are free; a value that varies per badge across dozens of them is not.
+    /// The one knob for "make it bigger": everything below is a logical pixel value that can also be set on its
+    /// own, but moving them one at a time means keeping five numbers in proportion by hand. Multiplies with
+    /// <see cref="NoireUI.Scale"/> rather than replacing it, so a badge scaled here still follows the user's
+    /// interface scale.<br/>
+    /// The text is drawn with a font built at the size this works out to, so each distinct value in use is a
+    /// distinct font size: a few are free, a value that varies per badge across dozens of them is not.
     /// </remarks>
     public float Scale { get; set; } = 1f;
 

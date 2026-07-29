@@ -14,8 +14,8 @@ public static class Draw3DWorld
 {
     /// <summary>
     /// Spawns the collision geometry within <paramref name="radius"/> of <paramref name="center"/> as a node the scene
-    /// owns (flat-shaded). Returns the node, or null when no collision is under the query (or off the framework thread).
-    /// A debugging / world-preview aid - the same source <see cref="SpawnWorldDecal"/> projects onto.
+    /// owns (flat-shaded), returning the node, or null when no collision is under the query (or off the framework
+    /// thread) - a debugging / world-preview aid, the same source <see cref="SpawnWorldDecal"/> projects onto.
     /// </summary>
     /// <param name="scene">The target scene.</param>
     /// <param name="center">World-space query centre.</param>
@@ -37,10 +37,10 @@ public static class Draw3DWorld
     }
 
     /// <summary>
-    /// Projects a decal footprint onto the real world surface near <paramref name="center"/> and spawns it as a node the
-    /// scene owns - it conforms to terrain, walls and furniture (unlike the screen-space <see cref="Material.Decal"/>).
-    /// Give it a translucent <b>textured</b> material (the texture's alpha is the footprint) or a flat translucent colour.
-    /// Returns the node, or null when nothing is under the footprint.
+    /// Projects a decal footprint onto the real world surface near <paramref name="center"/> and spawns it as a node
+    /// the scene owns - it conforms to terrain, walls and furniture (unlike the screen-space <see cref="Material.Decal"/>)
+    /// - with a translucent <b>textured</b> material (the texture's alpha is the footprint) or a flat translucent
+    /// colour; returns the node, or null when nothing is under the footprint.
     /// </summary>
     /// <param name="scene">The target scene.</param>
     /// <param name="center">World-space centre of the footprint (roughly on the surface).</param>

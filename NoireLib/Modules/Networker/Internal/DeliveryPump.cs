@@ -28,20 +28,19 @@ internal sealed class DeliveryPump : IDisposable
 
     /// <summary>
     /// Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
-    /// <see cref="Drain"/> as the only way to run them.<br/>
-    /// This is the seam for exercising queueing, ordering and the discard-on-disposal policy without a running game.
+    /// <see cref="Drain"/> as the only way to run them; the seam for exercising queueing, ordering and the
+    /// discard-on-disposal policy without a running game.
     /// </summary>
     internal bool ForceQueuedDelivery { get; init; }
 
     /// <summary>
-    /// Whether deliveries run on the posting thread.<br/>
-    /// Without an initialized NoireLib there is no framework thread to marshal onto, so inline is the only option.
+    /// Whether deliveries run on the posting thread; without an initialized NoireLib there is no framework thread to marshal onto.
     /// </summary>
     public bool InlineMode => !NoireService.IsInitialized() && !ForceQueuedDelivery;
 
     /// <summary>
     /// Queues a delivery for the framework thread, or runs it inline when there is no framework thread to marshal
-    /// onto. Deliveries posted after disposal are discarded, and so is anything still queued when disposal runs.
+    /// onto; deliveries posted after disposal are discarded, and so is anything still queued when disposal runs.
     /// </summary>
     /// <param name="action">The delivery to run.</param>
     public void Post(Action action)
@@ -57,7 +56,7 @@ internal sealed class DeliveryPump : IDisposable
 
         if (Interlocked.Increment(ref queuedCount) > capacity)
         {
-            // Drop the oldest delivery to make room; reliability's documented bounded-queue limit.
+            // Drop the oldest delivery to make room; keeps the queue bounded.
             if (queue.TryDequeue(out _))
                 Interlocked.Decrement(ref queuedCount);
 
@@ -100,10 +99,9 @@ internal sealed class DeliveryPump : IDisposable
     }
 
     /// <summary>
-    /// Detaches from the framework update and discards every delivery still queued.<br/>
-    /// The backlog is dropped rather than drained: disposal happens while the networker is being torn down, and the
-    /// queued deliveries describe a network it has already left. A delivery that must reach a consumer therefore
-    /// cannot be posted here and then left to disposal; it has to be run before the pump is disposed.
+    /// Detaches from the framework update and discards every delivery still queued (dropped, not drained, since
+    /// they describe a network already left); anything that must reach a consumer must run before the pump is
+    /// disposed, not be posted here.
     /// </summary>
     public void Dispose()
     {

@@ -6,8 +6,7 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A helper class for manipulating Windows' OS windows state.<br/>
-/// For example, maximizing, minimizing, switching between fullscreen, borderless, windowed, changing resolution, etc.
+/// Manipulates Windows OS window state: maximize, minimize, fullscreen, borderless, resolution.
 /// </summary>
 public static class WindowHelper
 {
@@ -228,7 +227,7 @@ public static class WindowHelper
     }
 
     /// <summary>
-    /// Sets the screen mode and resolution for the game, updating both the game's configuration and the actual window state.<br/>
+    /// Sets the screen mode and resolution for the game, updating both the game's configuration and the actual window state.
     /// </summary>
     /// <param name="width">The desired screen width.</param>
     /// <param name="height">The desired screen height.</param>

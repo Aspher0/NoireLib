@@ -5,10 +5,8 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Dialogs you await.<br/>
-/// Asking the user a question is a question, so it reads like one: <c>if (await NoireModal.ConfirmAsync(...))</c>.
-/// There is no popup-open boolean to declare, no "pending action" field to stash the answer against, and no callback
-/// that runs three frames later somewhere else in the file.
+/// Dialogs you await: <c>if (await NoireModal.ConfirmAsync(...))</c>. No popup-open boolean, no "pending action"
+/// field, no callback that runs later elsewhere in the file.
 /// </summary>
 /// <remarks>
 /// Dialogs queue: raising two shows the first, then the second. The queue is safe to add to from any thread.<br/>
@@ -194,9 +192,9 @@ public static class NoireModal
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        // Touching the host here is what guarantees a dialog is presented: it creates and registers the drawable on the
-        // first ask, so an awaited dialog cannot sit in a queue nobody draws. There is nothing to draw onto before
-        // NoireLib is initialized, so the dialog simply queues until there is.
+        // Touching the host here creates and registers the drawable on the first ask, so an awaited dialog cannot
+        // sit in a queue nobody draws. There is nothing to draw onto before NoireLib is initialized, so the dialog
+        // simply queues until there is.
         if (NoireService.IsInitialized())
             _ = Host;
 

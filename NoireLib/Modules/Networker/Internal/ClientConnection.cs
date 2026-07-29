@@ -207,17 +207,15 @@ internal sealed class ClientConnection : IDisposable
         if (Interlocked.Exchange(ref disposed, 1) != 0)
             return;
 
-        // The goodbye is what lets the hub drop this peer at once. Without one it only notices at the next ping
-        // timeout, and every instance on the network keeps a departed peer in its list until then, so the frame is
-        // worth getting out. It is written in the background and takes the socket down with it once it is out: this
-        // runs during a plugin unload or a SetActive(false), both of which reach it from the framework thread, where
-        // waiting for a socket write would stall the game's frame.
+        // The goodbye lets the hub drop this peer at once instead of waiting for the next ping timeout. It is
+        // sent in the background: Dispose runs on the framework thread (plugin unload or SetActive(false)),
+        // where blocking on a socket write would stall the game's frame.
         connection?.CloseAfterSending(
             new Envelope { Kind = EnvelopeKind.Goodbye, Origin = owner.SelfId },
             ex => owner.InternalLog($"Goodbye to hub failed: {ex.Message}"));
 
-        // Cancelling is what ends the read and watchdog loops: both wait on the token, so neither depends on the
-        // socket having closed first, which is what allows the close to trail the goodbye.
+        // Cancelling ends the read and watchdog loops without waiting for the socket to close first, so the
+        // close can trail the goodbye.
         lifetime.Cancel();
         lifetime.Dispose();
         completion.TrySetResult();

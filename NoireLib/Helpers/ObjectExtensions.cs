@@ -15,12 +15,9 @@ namespace NoireLib.Helpers.ObjectExtensions;
 public static class ObjectExtensions
 {
     /// <summary>
-    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>. It is built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
-    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
-    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
-    /// this process can assign, which would make the shape of a clone depend on unrelated code.<br/>
-    /// Every setting is left at its default, matching what the round trip has always produced.
+    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>, built via <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>
+    /// rather than <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> so it never picks up
+    /// <see cref="JsonConvert.DefaultSettings"/>, a mutable process-global other code could set.
     /// </summary>
     private static readonly JsonSerializer CloneSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {

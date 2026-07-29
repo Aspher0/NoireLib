@@ -25,14 +25,12 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     #region Private Properties and Fields
 
     /// <summary>
-    /// Writes and reads the translation snapshot exchanged by the JSON import/export methods. It is built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
-    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
-    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
-    /// this process can assign, which would let unrelated code reshape an exported file or change how an imported one
-    /// is read.<br/>
-    /// Formatting is deliberately left unset so that each export can choose it on its own writer rather than mutating
-    /// this shared instance. TypeNameHandling stays None so an imported file can never name a type into existence.
+    /// Writes and reads the translation snapshot exchanged by the JSON import/export methods. Built via
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> rather than <see cref="JsonConvert"/> or
+    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>, so no process-global
+    /// <see cref="JsonConvert.DefaultSettings"/> is merged into how an export or import is handled.<br/>
+    /// Formatting is left unset so each export chooses it on its own writer. TypeNameHandling stays None so an
+    /// imported file can never name a type into existence.
     /// </summary>
     private static readonly JsonSerializer TranslationSerializer = CreateTranslationSerializer();
 
@@ -103,16 +101,14 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     /// <param name="active">Whether the module should be active upon creation.</param>
     /// <param name="enableLogging">Whether to enable logging for this module.</param>
     /// <param name="defaultLocale">The default locale used for fallback, as declared by the plugin.<br/>
-    /// This is where resolving the default locale starts rather than where it ends, because a previous session may have
-    /// stored something that outranks it. The full precedence, highest first:<br/>
+    /// Resolution precedence, highest first:<br/>
     /// 1. A persisted <see cref="DefaultLocaleSource"/> of <see cref="Localizer.DefaultLocaleSource.Windows"/> or
-    /// <see cref="Localizer.DefaultLocaleSource.GameClient"/>, which resolves the default locale from that source.<br/>
-    /// 2. A default locale selected in a previous session through <see cref="SetDefaultLocale(string)"/> or
-    /// <see cref="UseCustomDefaultLocale(string)"/>, which is a choice and is therefore restored over a declaration.<br/>
+    /// <see cref="Localizer.DefaultLocaleSource.GameClient"/>.<br/>
+    /// 2. A default locale selected in a previous session via <see cref="SetDefaultLocale(string)"/> or
+    /// <see cref="UseCustomDefaultLocale(string)"/>.<br/>
     /// 3. This value.<br/>
-    /// Because it is read again on every construction and never persisted, this is the right place to declare a default
-    /// that should follow the plugin's code. Nothing is silently discarded: with no persisted source and no earlier
-    /// selection, which is the state of a fresh configuration, this value is what the module uses.</param>
+    /// Read again on every construction and never persisted itself, so this is where to declare a default that should
+    /// follow the plugin's code rather than a user's prior choice.</param>
     /// <param name="currentLocale">The initial current locale. If null, <paramref name="defaultLocale"/> is used.</param>
     /// <param name="returnKeyWhenMissing">Whether missing keys should return the key itself.</param>
     /// <param name="allowParentCultureFallback">Whether parent culture fallback should be used.</param>
@@ -495,8 +491,6 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     /// <returns>The module instance for chaining.</returns>
     public NoireLocalizer UseCustomDefaultLocale(string locale)
     {
-        // SetDefaultLocale already selects the Custom source, records the selection and persists, so there is nothing
-        // left to repeat here.
         return SetDefaultLocale(locale);
     }
 
@@ -534,15 +528,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     public event Action<LocalizationTranslationChangedEvent>? TranslationChanged;
 
     /// <summary>
-    /// Event raised the first time a translation lookup fails for a given key and requested locale.<br/>
-    /// It reports that a key started missing, not how often it is looked up. A key missing from text that a window
-    /// draws every frame fails on every frame, so raising this per failure would deliver the same fact at frame rate;
-    /// later failures for the same key and requested locale are counted but stay silent.
-    /// <see cref="GetMissingTranslationCounts"/> and <see cref="GetStatistics"/> carry the exact totals for a consumer
-    /// that needs frequency rather than the edge.<br/>
-    /// The same key raises this again for a different requested locale, since failing to resolve it there is a
-    /// separate fact with its own attempted chain. The record of what has already been raised lasts for the lifetime
-    /// of the module and is reset by <see cref="ClearAllTranslations"/>.
+    /// Event raised the first time a translation lookup fails for a given key and requested locale; later failures
+    /// for the same pair are counted but stay silent, avoiding one event per frame for text drawn every frame.
+    /// Fires again for the same key under a different requested locale.<br/>
+    /// <see cref="GetMissingTranslationCounts"/> and <see cref="GetStatistics"/> report the full miss counts. The
+    /// per-key-and-locale record resets with <see cref="ClearAllTranslations"/>.
     /// </summary>
     public event Action<LocalizationMissingTranslationEvent>? MissingTranslation;
 
@@ -1041,7 +1031,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             throw new ArgumentException("File path cannot be null or whitespace.", nameof(filePath));
 
         // FileHelper creates the directory structure, applies the library's UTF-8 default, and reports failure rather
-        // than throwing, so the sentinel is turned back into the exception this fluent method has always thrown.
+        // than throwing, so the sentinel is turned back into an exception here.
         if (!FileHelper.WriteTextToFile(filePath, ExportToJson(indented)))
             throw new IOException($"Failed to write the localization file: {filePath}");
 
@@ -1399,9 +1389,8 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         if (AutoCreateMissingKeysInDefaultLocale)
             AddTranslation(DefaultLocale, key, key, overwrite: false);
 
-        // A key missing from text drawn every frame fails every frame. Reporting each failure would hand the consumer,
-        // and the log, the same fact at frame rate, so only the first failure per key and requested locale is
-        // announced. The allocation of the attempted-locale list is inside this branch for the same reason.
+        // Only the first failure per key and requested locale is announced, matching MissingTranslation's contract;
+        // the attempted-locale list is allocated only here, on that same first-failure path.
         if (isFirstMiss)
         {
             var evt = new LocalizationMissingTranslationEvent(locale, key, attemptedLocales.ToList());
@@ -1485,9 +1474,9 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         config.SelectedLocale = CurrentLocale;
         config.DefaultLocaleSource = DefaultLocaleSource;
 
-        // Selecting a custom default locale is what SetDefaultLocale does and what nothing else does. Storing the
-        // locale in effect on every save would instead record whatever the active source last resolved to, and the next
-        // session would restore that as a selection nobody made.
+        // Only SetDefaultLocale selects a custom default locale. Storing the locale in effect on every save would
+        // instead record whatever the active source last resolved to, and the next session would restore that as a
+        // selection nobody made.
         if (recordDefaultLocaleSelection)
         {
             config.CustomDefaultLocale = DefaultLocale;

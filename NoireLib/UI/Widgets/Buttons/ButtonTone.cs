@@ -1,9 +1,7 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// What a button means, which is what decides its colors.<br/>
-/// Picking a tone is the everyday way to color a button: it reads from <see cref="NoireTheme.Current"/>, so the whole
-/// interface re-tints together and no call site holds a hardcoded color.
+/// What a button means, deciding its colors. Reads from <see cref="NoireTheme.Current"/>.
 /// </summary>
 public enum ButtonTone
 {

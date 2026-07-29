@@ -4,11 +4,8 @@ using System.Collections.Concurrent;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides keyed throttling functionality, allowing independent throttling for different operations.<br/>
-/// Each key maintains its own Throttler instance, preventing interference between different operations.<br/>
-/// Provides easy-to-use static methods to throttle actions based on unique keys.<br/>
-/// NoireLib must be initialized before using this helper.<br/>
-/// See <see cref="Throttler"/> for more details.
+/// Keyed throttling: each key gets its own independent <see cref="Throttler"/> instance. NoireLib must be
+/// initialized before use.
 /// </summary>
 public static class ThrottleHelper
 {
@@ -48,7 +45,7 @@ public static class ThrottleHelper
     }
 
     /// <summary>
-    /// Throttles the specified function for a given key. Each key has independent throttling.
+    /// Throttles the specified function for a given key.
     /// </summary>
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="key">The key to identify this throttle instance.</param>
@@ -63,7 +60,7 @@ public static class ThrottleHelper
     }
 
     /// <summary>
-    /// Throttles the specified action for a given key. Each key has independent throttling.
+    /// Throttles the specified action for a given key.
     /// </summary>
     /// <param name="key">The key to identify this throttle instance.</param>
     /// <param name="interval">The interval between executions for this key.</param>

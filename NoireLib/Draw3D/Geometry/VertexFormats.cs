@@ -22,14 +22,9 @@ public struct Vertex3D
     public Vector4 Color;
 
     /// <summary>
-    /// Model-space tangent (xyz) and bitangent handedness (w, -1 or +1), or all zero when the mesh carries
-    /// none.<br/>
-    /// This is what makes a normal map bend the surface the way its author saw it: the map's X and Y are
-    /// meaningless without the frame they were painted in, and a frame derived from screen-space derivatives
-    /// lands several degrees off the authored one - measured against the game's own copy of a model, whose
-    /// shading normal ran ten degrees from ours on strong relief. Shaders that consume a normal map use this
-    /// frame when <c>w</c> is nonzero and fall back to the derivative frame when it is zero, so meshes built
-    /// without tangents (primitives, imports that carry none) keep working unchanged.
+    /// Model-space tangent (xyz) and bitangent handedness (w, -1 or +1), or all zero when the mesh carries none;
+    /// shaders use this frame when <c>w</c> is nonzero and fall back to a derivative frame when it is zero, so
+    /// meshes built without tangents keep working unchanged.
     /// </summary>
     public Vector4 Tangent;
 

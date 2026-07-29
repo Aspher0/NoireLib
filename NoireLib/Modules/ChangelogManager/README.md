@@ -78,8 +78,7 @@ public class MyChangelog : BaseChangelogVersion
 }
 ```
 
-Helper methods are provided to create entries easily (see [Creating Changelogs](#creating-changelogs) for details).<br/>
-That's it! You have created your first changelog.
+Helper methods are provided to create entries easily (see [Creating Changelogs](#creating-changelogs) for details).
 
 ---
 
@@ -101,7 +100,7 @@ var changelogManager = new NoireChangelogManager(
 );
 ```
 
-Additionnaly, you can modify the following properties after having created the module:
+You can also modify the following properties after creating the module:
 
 - `ShouldAutomaticallyShowChangelog`: If true, the changelog window will automatically open when a new version is detected. Default: `false`.
 - `DisplayWindowName`: Optional custom name for the changelog window (set it with `SetWindowName`). Default: `"Changelog"`.
@@ -144,9 +143,7 @@ changelogManager?
 
 ### Automatic Display
 
-When `ShouldAutomaticallyShowChangelog` is enabled:
-- The changelog window opens automatically when a new version is detected
-- Therefore, when users update the plugin, they will see the changelog for the new version
+When `ShouldAutomaticallyShowChangelog` is enabled, the changelog window opens automatically when a new version is detected.
 
 If you would rather control when the window is shown, you can disable this feature and call `ShowWindow()` manually.
 
@@ -312,8 +309,7 @@ When `ShouldAutomaticallyShowChangelog` is enabled, the window automatically ope
 
 ## EventBus Integration
 
-The `NoireChangelogManager` can publish events to a `NoireEventBus` for all important changelog actions.<br/>
-This allows you to react to user interactions with the changelog.
+The `NoireChangelogManager` can publish events to a `NoireEventBus` for all important changelog actions.
 
 ### Quick Example
 
@@ -436,7 +432,7 @@ changelogManager?.ClearVersions();
 - Set `ShouldAutomaticallyShowChangelog = true`.
 - Ensure the module is active (`IsActive = true`).
 - Check that a new version is detected (compare with last seen version).
-- Additionnaly, you can manually call `ClearLastSeenVersion()`, set `ShouldAutomaticallyShowChangelog = true`, and check if the changelog window appears the next time the module is initialized.
+- You can also manually call `ClearLastSeenVersion()`, set `ShouldAutomaticallyShowChangelog = true`, and check if the changelog window appears the next time the module is initialized.
 
 ### EventBus events not firing
 - Ensure an `EventBus` is provided to the ChangelogManager (either in constructor or via property).

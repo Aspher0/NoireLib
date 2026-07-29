@@ -108,6 +108,54 @@ public class Draw3DGameModelTests
         decoded.Should().BeGreaterThan(0);
     }
 
+    /// <summary>
+    /// The model's own bounding box, which the layout walk reaches on its way past the per-bone boxes. It is
+    /// the collision of the 84 925 placements in the game whose collision is a box rather than a mesh, so a
+    /// box read from the wrong place there is a crate a path routes straight through.
+    /// </summary>
+    [Fact]
+    public void LoadFile_RealGameModels_ReadsABoundingBoxThatEnclosesTheGeometry()
+    {
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
+
+        var checkedModels = 0;
+        foreach (var path in SampleModels)
+        {
+            if (!game.FileExists(path))
+                continue;
+
+            var model = game.GetFile<GameModelFile>(path)!;
+
+            model.BoundingBoxMax.X.Should().BeGreaterThanOrEqualTo(model.BoundingBoxMin.X);
+            model.BoundingBoxMax.Y.Should().BeGreaterThanOrEqualTo(model.BoundingBoxMin.Y);
+            model.BoundingBoxMax.Z.Should().BeGreaterThanOrEqualTo(model.BoundingBoxMin.Z);
+            (model.BoundingBoxMax - model.BoundingBoxMin).Length().Should().BeGreaterThan(0.001f,
+                because: "a zero-extent box means the walk stopped short of the bounding boxes");
+
+            // Tolerance is proportional because the box bounds every level of detail and every shape the
+            // model can take, while the decoded geometry is only the first level's rest pose.
+            var slack = 0.05f + (model.BoundingBoxMax - model.BoundingBoxMin).Length() * 0.05f;
+            foreach (var mesh in GameModelLoader.Decode(model))
+            {
+                foreach (var vertex in mesh.Geometry.Vertices)
+                {
+                    vertex.Position.X.Should().BeInRange(model.BoundingBoxMin.X - slack, model.BoundingBoxMax.X + slack);
+                    vertex.Position.Y.Should().BeInRange(model.BoundingBoxMin.Y - slack, model.BoundingBoxMax.Y + slack);
+                    vertex.Position.Z.Should().BeInRange(model.BoundingBoxMin.Z - slack, model.BoundingBoxMax.Z + slack);
+                }
+            }
+
+            checkedModels++;
+        }
+
+        checkedModels.Should().BeGreaterThan(0);
+    }
+
     /// <summary>Materials covering both shader packages and both color table layouts.</summary>
     private static readonly string[] SampleMaterials =
     [

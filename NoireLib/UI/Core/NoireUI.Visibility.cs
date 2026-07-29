@@ -13,7 +13,7 @@ public static partial class NoireUI
     /// <remarks>
     /// Dalamud decides hiding once per plugin, so the only way one window can stay up in gpose while another goes away
     /// is for Dalamud to stop hiding either and for each window to answer for itself. Setting this switches off
-    /// Dalamud's hiding for the states named, and from that point <see cref="ShouldHide"/> is what hides a window.<br/>
+    /// Dalamud's hiding for the states named; from that point, <see cref="ShouldHide"/> hides a window instead.<br/>
     /// <b>Every window then has to consult <see cref="ShouldHide"/>,</b> including the ones that want the ordinary
     /// behaviour: a window that asks nothing is no longer hidden by anyone. <see cref="NoireWindow"/> does it for you.
     /// </remarks>

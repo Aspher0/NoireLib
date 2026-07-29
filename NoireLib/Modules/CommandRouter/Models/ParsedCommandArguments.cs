@@ -4,8 +4,7 @@ using System.Collections.Generic;
 namespace NoireLib.CommandRouter;
 
 /// <summary>
-/// Holds the parsed argument values from a dispatched subcommand invocation.<br/>
-/// Provides typed retrieval of arguments by name.
+/// Holds the parsed argument values from a dispatched subcommand invocation, with typed retrieval by name.
 /// </summary>
 public sealed class ParsedCommandArguments
 {

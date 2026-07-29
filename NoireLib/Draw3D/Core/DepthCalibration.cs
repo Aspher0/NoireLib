@@ -5,13 +5,12 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Runtime self-calibration of the game's depth-buffer value convention.<br/>
-/// Every perspective depth mapping is affine in 1/w (w = clip-space w after <c>v*ViewProj</c>):
-/// reversed-Z infinite far is <c>z = near/w</c>, reversed finite and standard finite are
-/// <c>z = a + b/w</c> with other constants. Instead of trusting any camera field to tell us which,
-/// this fits (a, b) from ground truth - the game's own collision raycasts vs. actual depth texels -
-/// and the shaders compare depths through the fitted mapping. A wrong near plane, a swapped
-/// projection matrix or an engine convention change degrade to one recalibration, not a visual bug.
+/// Runtime self-calibration of the game's depth-buffer value convention. Every perspective depth mapping is
+/// affine in 1/w (w = clip-space w after <c>v*ViewProj</c>): reversed-Z infinite far is <c>z = near/w</c>,
+/// reversed finite and standard finite are <c>z = a + b/w</c> with other constants. Rather than trusting any
+/// camera field, this fits (a, b) from ground truth (the game's own collision raycasts vs. actual depth
+/// texels), so a wrong near plane, a swapped projection matrix or an engine convention change degrade to one
+/// recalibration rather than a visual bug.
 /// </summary>
 internal sealed class DepthCalibration
 {
@@ -162,15 +161,14 @@ internal sealed class DepthCalibration
         => lastAttemptFrame == long.MinValue || frameId - lastAttemptFrame >= interval;
 
     /// <summary>
-    /// The depth-buffer value mapping (<c>sample = A + B/clipW</c>) computed directly from the camera's
-    /// own convention flags, returned in the shader-facing <see cref="ShaderParams"/> layout (x = A, y = B,
-    /// z = 1 valid). FFXIV is reversed-Z infinite-far (StandardZ=false, FiniteFarPlane=false, RTM
-    /// "reverse-Z depth stencil"), which gives <c>sample = near/clipW</c>; <c>/noire3d probe</c> confirms
-    /// this matches the buffer exactly on surfaces the collision raycast agrees with.<br/>
-    /// This is preferred over the raycast fit (<see cref="Update"/>) for rendering: it needs no readback,
-    /// is available on the first frame, tracks a per-frame near-plane change, cannot be "lost", and carries
-    /// no fit bias - the raycast surface and the rendered depth texel are frequently DIFFERENT surfaces,
-    /// which biased the fit and made ground decals slide under camera motion.
+    /// The depth-buffer value mapping (<c>sample = A + B/clipW</c>) computed directly from the camera's own
+    /// convention flags, returned in the shader-facing <see cref="ShaderParams"/> layout (x = A, y = B, z = 1
+    /// valid). FFXIV is reversed-Z infinite-far (StandardZ=false, FiniteFarPlane=false), which gives
+    /// <c>sample = near/clipW</c>.<br/>
+    /// Preferred over the raycast fit (<see cref="Update"/>) for rendering: it needs no readback, is available
+    /// on the first frame, tracks a per-frame near-plane change, cannot be "lost", and carries no fit bias -
+    /// the raycast surface and the rendered depth texel are frequently DIFFERENT surfaces, which biased the fit
+    /// and made ground decals slide under camera motion.
     /// </summary>
     /// <param name="near">Camera near-plane distance.</param>
     /// <param name="far">Camera far-plane distance (ignored unless <paramref name="finiteFar"/>).</param>

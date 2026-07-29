@@ -5,9 +5,8 @@ using System.Collections.Generic;
 namespace NoireLib.TaskQueue;
 
 /// <summary>
-/// Represents a task in the queue with its execution logic and completion conditions.<br/>
-/// Meant to be used with the <see cref="NoireTaskQueue"/> module.<br/>
-/// For ease of use, consider using the <see cref="TaskBuilder"/> to create tasks and enqueue them.
+/// Represents a task in the queue with its execution logic and completion conditions, for use with <see cref="NoireTaskQueue"/>.
+/// Use <see cref="TaskBuilder"/> to create and enqueue tasks.
 /// </summary>
 public class QueuedTask
 {
@@ -30,11 +29,10 @@ public class QueuedTask
     /// Whether the queue has already run its finalization for this task.
     /// </summary>
     /// <remarks>
-    /// <see cref="Status"/> is public and settable, so a consumer can resolve a task by writing a terminal status
-    /// directly. Such a write is invisible to the queue's own completion, failure and cancellation paths, which
-    /// is what used to make it lose its callback and its statistics. The queue sets this whenever it finalizes a
-    /// task itself, so the reconciliation at the end of each pass can tell a status it produced from one it did
-    /// not, and finish the second kind properly.
+    /// <see cref="Status"/> is public and settable; a consumer can write a terminal status directly, bypassing the
+    /// queue's own completion, failure and cancellation paths and losing the callback and statistics. The queue
+    /// sets this flag when it finalizes a task itself, so reconciliation can distinguish the two and finish the
+    /// latter properly.
     /// </remarks>
     internal bool QueueFinalized { get; set; }
 
@@ -44,44 +42,37 @@ public class QueuedTask
     public string? CustomId { get; set; }
 
     /// <summary>
-    /// Whether this task blocks subsequent tasks from executing until it completes.<br/>
-    /// When true, the queue will wait for this task to complete before starting the next task.
+    /// Whether this task blocks subsequent tasks from executing until it completes.
     /// </summary>
     public bool IsBlocking { get; set; }
 
     /// <summary>
-    /// The action to execute when the task starts.<br/>
-    /// When null, the task is considered a no-op and will complete based on the completion condition, useful for awaiting a condition only.
+    /// The action to execute when the task starts; when null, the task is a no-op that completes based on the completion condition alone.
     /// </summary>
     public Action? ExecuteAction { get; set; }
 
     /// <summary>
-    /// The completion condition that determines when the task is done.<br/>
-    /// See <see cref="TaskCompletionCondition"/> for possible conditions.
+    /// The completion condition that determines when the task is done.
     /// </summary>
     public TaskCompletionCondition? CompletionCondition { get; set; }
 
     /// <summary>
-    /// Optional callback invoked when the task completes successfully.<br/>
-    /// Returns the task.
+    /// Optional callback invoked when the task completes successfully.
     /// </summary>
     public Action<QueuedTask>? OnCompleted { get; set; }
 
     /// <summary>
-    /// Optional callback invoked when the task is cancelled.<br/>
-    /// Returns the task.
+    /// Optional callback invoked when the task is cancelled.
     /// </summary>
     public Action<QueuedTask>? OnCancelled { get; set; }
 
     /// <summary>
-    /// Optional callback invoked when the task fails.<br/>
-    /// Returns the task and the exception that caused the failure.
+    /// Optional callback invoked when the task fails.
     /// </summary>
     public Action<QueuedTask, Exception>? OnFailed { get; set; }
 
     /// <summary>
-    /// The current status of this task.<br/>
-    /// See <see cref="TaskStatus"/> for possible values.
+    /// The current status of this task.
     /// </summary>
     public TaskStatus Status { get; set; }
 
@@ -197,14 +188,12 @@ public class QueuedTask
     internal long? StallPausedAtTicks { get; set; }
 
     /// <summary>
-    /// Optional delay to wait after the task's condition is met or action completes (if no condition).
-    /// This delay executes after the task would normally complete.
-    /// If <see cref="PostCompletionDelayProvider"/> is set, it will be used to determine the delay at runtime.
+    /// Optional delay to wait after the task's condition is met or action completes (if no condition). If <see cref="PostCompletionDelayProvider"/> is set, it is used instead, evaluated at runtime.
     /// </summary>
     public TimeSpan? PostCompletionDelay { get; set; }
 
     /// <summary>
-    /// Optional provider for post-completion delay. If set, this function will be called at the moment the post-completion delay is about to start, and its result will be used as the delay.
+    /// Optional provider for the post-completion delay; if set, it is called when the delay is about to start and its result used as the delay.
     /// </summary>
     public Func<QueuedTask, TimeSpan?>? PostCompletionDelayProvider { get; set; }
 
@@ -260,7 +249,7 @@ public class QueuedTask
     }
 
     /// <summary>
-    /// Used internally to clone tasks without an owning queue, or for creating tasks with no owning queue.
+    /// Used internally to create tasks with no owning queue.
     /// </summary>
     /// <param name="customId"></param>
     /// <param name="isBlocking"></param>
@@ -444,8 +433,7 @@ public class QueuedTask
     }
 
     /// <summary>
-    /// Clones this task, creating a new instance with the same properties.<br/>
-    /// Used for immutable statistics.
+    /// Clones this task into a new instance with the same properties, for immutable statistics.
     /// </summary>
     /// <returns>A copy of the QueuedTask.</returns>
     public QueuedTask Clone()

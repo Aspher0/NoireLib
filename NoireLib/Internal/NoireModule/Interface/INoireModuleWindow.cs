@@ -1,14 +1,12 @@
 namespace NoireLib.Core.Modules;
 
 /// <summary>
-/// An interface for NoireLib module windows.
-/// Provides basic functionality for windows that are managed by NoireLib modules.
+/// Interface for windows managed by NoireLib modules.
 /// </summary>
 public interface INoireModuleWindow
 {
     /// <summary>
-    /// Gets or sets whether the window is currently open.<br/>
-    /// Included to make sure Dalamud Windowing is properly integrated.
+    /// Whether the window is currently open.
     /// </summary>
     bool IsOpen { get; set; }
 

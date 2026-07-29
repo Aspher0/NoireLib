@@ -12,6 +12,7 @@ You are reading the documentation for the `EncryptionHelper` static helper.
 - [File Encryption](#file-encryption)
 - [Formats & Wire Layout](#formats--wire-layout)
 - [Security Notes](#security-notes)
+- [See Also](#see-also)
 
 ---
 
@@ -164,3 +165,10 @@ The PBKDF2 iteration count is stored in the payload, so a future change to the d
 - Default PBKDF2 iterations are tuned for security; lower them only in tests where speed matters.
 - Argon2id defaults: 64 MiB memory, 3 iterations, parallelism 1, 32-byte hash.
 - AES keys and derived key material are zeroed (`CryptographicOperations.ZeroMemory`) after use.
+
+---
+
+## See Also
+
+- [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
+- [ShareCodeHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/ShareCode/README.md) - the pasteable share-string format, which signs with this helper

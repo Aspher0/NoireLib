@@ -62,10 +62,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>
     /// One render-target bind. <see cref="Format"/> is the VIEW's format, not the texture's: a typeless
-    /// texture is viewed as UNORM by one pass and SRGB by another, and it is recorded for single-target binds
-    /// too because that is the only way a pass is identifiable by what it writes rather than by its size. The
-    /// velocity buffer a temporal resolve consumes is exactly that case - one target, half resolution, and
-    /// nothing but its format distinguishes it from any other half-resolution post-process step.
+    /// texture can be viewed as UNORM by one pass and SRGB by another. Recorded even for single-target binds,
+    /// so a pass is identifiable by what it writes rather than by its size.
     /// </summary>
     private readonly record struct Bind(uint NumViews, nint Rtv0Resource, DXGI_FORMAT Format, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
 
@@ -120,8 +118,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>
     /// Binds in the last captured frame. The frame is <b>not</b> a fixed length - it moves with what is on
-    /// screen - so an index read from one run does not name the same pass in the next, and a span picked from
-    /// an earlier log can land on an entirely different stage. This is what a sweep sizes itself against.
+    /// screen - so an index or span from one run does not reliably name the same pass in the next; a frame
+    /// sweep sizes itself against this count.
     /// </summary>
     private int lastFrameBindCount;
 
@@ -153,8 +151,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     /// Fired inside the game's G-buffer pass, at its FIRST draw, with the pass's targets already bound.<br/>
     /// Firing at the bind instead would be too early: the game clears and sets up between binding the targets
     /// and issuing the first draw, so anything written at bind time can be wiped. Firing at the first draw also
-    /// puts the callback after the frame's camera-constant commit, which is what the injected geometry needs to
-    /// be projected with.<br/>
+    /// places the callback after the frame's camera-constant commit, so the injected geometry projects with
+    /// the right camera.<br/>
     /// The callback must leave the pipeline exactly as it found it. It draws into the game's own targets, so
     /// unrestored state corrupts the game's frame rather than Draw3D's.
     /// </summary>
@@ -249,7 +247,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     /// <summary>
     /// The committed present-composition buffer, or 0 before one has been learned. The same resource the
     /// <see cref="Injector"/> is handed, still readable at present time - by then the game has drawn its native UI
-    /// into it, which is what lets the over-everything composite difference the two states to find the UI.
+    /// into it, so the over-everything composite can difference the two states to find the UI.
     /// </summary>
     public nint PresentBuffer => presentBuffer;
 
@@ -350,13 +348,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         RefreshOmHookState();
     }
 
-    /// <summary>
-    /// Arms a capture that also writes out what a span of binds actually produced, as images.<br/>
-    /// <b>Why this exists.</b> A wrong pixel in the final image says nothing about which pass made it wrong, and
-    /// naming a suspect pass and toggling its game setting only ever rules out the passes a setting exposes.
-    /// Reading the intermediate targets walks the frame in order and finds the first one where the pixel is
-    /// already wrong, which identifies the pass by observation rather than by elimination.
-    /// </summary>
+    /// <summary>Arms a capture that also writes out what a span of binds actually produced, as images.</summary>
     /// <param name="from">First bind index to write out (indices come from a <c>rtlog</c> run).</param>
     /// <param name="count">How many consecutive binds to write out.</param>
     /// <param name="folder">Where the images go.</param>
@@ -374,11 +366,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     }
 
     /// <summary>
-    /// Arms a dump spread evenly across the whole frame rather than over a chosen span.<br/>
-    /// This is the one to reach for first. A bind index is not a stable name for a pass - the frame grows and
-    /// shrinks with what is on screen, so a span chosen from an earlier log can land nowhere near the pass it
-    /// named. A sweep covers the frame end to end in a single run, which brackets where a pixel changes without
-    /// depending on any index surviving between runs.
+    /// Arms a dump spread evenly across the whole frame rather than over a chosen span, so it does not depend
+    /// on a bind index staying stable across runs.
     /// </summary>
     /// <param name="count">How many binds to write out, spread across the frame.</param>
     /// <param name="folder">Where the images go.</param>
@@ -626,7 +615,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
 
         // The G-buffer pass: several targets bound together with the main scene depth. Post-process passes also
-        // bind multiple targets, but never with the scene's depth-stencil, which is what separates them.
+        // bind multiple targets, but never with the scene's depth-stencil - that is the distinguishing signal.
         if (GBufferInjectionEnabled && !gbufferDoneThisFrame && numViews >= GBufferMinTargets && pDsv != 0 && IsMainSceneDepth(pDsv))
             gbufferPassArmed = true;
 
@@ -896,8 +885,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     /// <summary>
     /// Reports the target set of every multi-target bind.<br/>
     /// The G-buffer pass is the one to look for: several full-resolution targets with a depth-stencil, followed
-    /// by a burst of draws. Its formats say what may be written into each channel, which is what an injected
-    /// draw has to match exactly - a normal written into the wrong precision is lit, just lit wrongly.
+    /// by a burst of draws. Its formats say what may be written into each channel; an injected draw must match
+    /// them exactly - a normal written into the wrong precision is lit, just lit wrongly.
     /// </summary>
     private void AppendMultiTargets(StringBuilder sb)
     {

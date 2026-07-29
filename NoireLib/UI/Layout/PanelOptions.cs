@@ -6,9 +6,8 @@ namespace NoireLib.UI;
 /// How a <see cref="NoirePanel"/> holds its body: the room around it, how wide it is, and the header above it.
 /// </summary>
 /// <remarks>
-/// The chrome itself is not here. A panel is a container that measures its body and hands the result to something that
-/// paints a box, so the box's own look belongs to that thing's style: a <see cref="FrameStyle"/> or a
-/// <see cref="PlateStyle"/>. This is only what the container decides.
+/// The chrome itself is not here: a panel measures its body and hands the result to something that paints a box, so
+/// its own look belongs to that thing's style, a <see cref="FrameStyle"/> or a <see cref="PlateStyle"/>.
 /// </remarks>
 public sealed class PanelOptions
 {

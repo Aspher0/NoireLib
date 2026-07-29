@@ -51,8 +51,8 @@ public enum CharacterAspect
     JobLevel = 1 << 10,
 
     /// <summary>
-    /// World-space position. There is deliberately no raw position-changed event (a per-frame firehose);
-    /// this aspect is reserved for distance and region watchers, which live on the Objects source.
+    /// World-space position. No raw position-changed event exists (a per-frame firehose); use the
+    /// distance/region watchers on the Objects source instead.
     /// </summary>
     Position = 1 << 11,
 

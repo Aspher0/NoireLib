@@ -85,10 +85,7 @@ public sealed class Scope
     /// <summary>The local player only. This is the default for every scoped subscription helper.</summary>
     public static Scope LocalPlayer { get; } = new(RootKind.LocalPlayer);
 
-    /// <summary>
-    /// Every member of the local player's party, including the local player.<br/>
-    /// Narrow with <c>.Where(s =&gt; !s.Flags.HasFlag(SubjectFlags.IsLocalPlayer))</c> to exclude yourself.
-    /// </summary>
+    /// <summary>Every member of the local player's party, including the local player.</summary>
     public static Scope Party { get; } = new(RootKind.Party);
 
     /// <summary>Every member of the local player's alliance (excluding your own party).</summary>
@@ -138,10 +135,7 @@ public sealed class Scope
 
     #region Modifiers
 
-    /// <summary>
-    /// Narrows this scope with a snapshot predicate. Predicates are modifiers, never roots:
-    /// the root still defines what gets iterated, so a predicate can reduce dispatches but never widen the cost.
-    /// </summary>
+    /// <summary>Narrows this scope with a predicate; predicates can only reduce matches, never widen the root's iteration.</summary>
     /// <param name="predicate">The predicate a subject snapshot must satisfy.</param>
     /// <returns>A new scope with the predicate appended.</returns>
     public Scope Where(Func<CharacterSnapshot, bool> predicate)
@@ -242,8 +236,8 @@ public sealed class Scope
 
     /// <summary>
     /// Cheap pre-capture root test used during iteration: decides whether a subject is worth diffing at all,
-    /// from data available without materializing a snapshot. Predicates are deliberately not applied here -
-    /// they run at dispatch, against real snapshots.
+    /// from data available without materializing a snapshot. Predicates are not applied here - they run at
+    /// dispatch, against real snapshots.
     /// </summary>
     /// <param name="probe">The light-weight per-subject probe.</param>
     /// <returns>True when the subject may match this scope.</returns>

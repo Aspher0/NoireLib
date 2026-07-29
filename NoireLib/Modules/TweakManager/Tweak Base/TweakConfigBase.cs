@@ -10,12 +10,10 @@ using System.Text;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Base class for tweak-specific configurations.<br/>
-/// Extends <see cref="NoireConfigBase"/> to inherit versioning and migration support
-/// via <see cref="ConfigMigrationAttribute"/>, but seals all file-based operations.<br/>
-/// Only the <see cref="NoireTweakManager"/> controls persistence.
-/// Tweaks and consumers cannot save or load config files directly.<br/>
-/// Use <see cref="ToJson"/> to get a read-only JSON snapshot of the current configuration.
+/// Base class for tweak-specific configurations. Extends <see cref="NoireConfigBase"/> to inherit versioning and
+/// migration support via <see cref="ConfigMigrationAttribute"/>, but seals all file-based operations: only the
+/// <see cref="NoireTweakManager"/> controls persistence, and tweaks and consumers cannot save or load config
+/// files directly. Use <see cref="ToJson"/> for a read-only JSON snapshot.
 /// </summary>
 [Serializable]
 public abstract class TweakConfigBase : NoireConfigBase
@@ -44,8 +42,7 @@ public abstract class TweakConfigBase : NoireConfigBase
     }
 
     /// <summary>
-    /// The owning tweak instance for this configuration, if any.
-    /// This is populated automatically by <see cref="TweakBase{TConfig}"/> when the tweak is created.
+    /// The owning tweak instance for this configuration, if any; populated automatically by <see cref="TweakBase{TConfig}"/> when the tweak is created.
     /// </summary>
     [JsonIgnore]
     public TweakBase? Parent { get; internal set; }
@@ -54,16 +51,15 @@ public abstract class TweakConfigBase : NoireConfigBase
     public sealed override string GetConfigFileName() => string.Empty;
 
     /// <summary>
-    /// Tweak configs are not loaded from disk on initialization.<br/>
-    /// The <see cref="NoireTweakManager"/> manages all persistence.
+    /// Tweak configs are not loaded from disk on initialization; the <see cref="NoireTweakManager"/> manages all persistence.
     /// </summary>
     [JsonIgnore]
     public sealed override bool LoadFromDiskOnInitialization => false;
 
     /// <summary>
-    /// Signals that this tweak configuration has changed and requests the owning tweak to persist the change.
-    /// When a <see cref="TweakBase"/> parent is attached, this method will call <see cref="TweakBase.MarkConfigDirty"/>
-    /// on the parent which in turn asks the manager to save the configuration.
+    /// Signals that this tweak configuration has changed and requests the owning tweak to persist the change,
+    /// calling <see cref="TweakBase.MarkConfigDirty"/> on the attached <see cref="TweakBase"/> parent, which in
+    /// turn asks the manager to save.
     /// </summary>
     /// <returns><see langword="true"/> when the parent tweak was notified; otherwise, this method throws when no parent is attached.</returns>
     /// <exception cref="InvalidOperationException">Thrown when no parent tweak is attached to receive the save request.</exception>
@@ -77,8 +73,7 @@ public abstract class TweakConfigBase : NoireConfigBase
     }
 
     /// <summary>
-    /// Loading is managed exclusively by <see cref="NoireTweakManager"/>.<br/>
-    /// Calling this method directly is not supported and will throw <see cref="InvalidOperationException"/>.
+    /// Loading is managed exclusively by <see cref="NoireTweakManager"/>; calling this method directly throws <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <returns>This method never returns normally.</returns>
     /// <exception cref="InvalidOperationException">Always thrown.</exception>
@@ -87,8 +82,7 @@ public abstract class TweakConfigBase : NoireConfigBase
             "Tweak configs cannot be loaded directly. The TweakManager handles config loading.");
 
     /// <summary>
-    /// Deletion is managed exclusively by <see cref="NoireTweakManager"/>.<br/>
-    /// Calling this method directly is not supported and will throw <see cref="InvalidOperationException"/>.
+    /// Deletion is managed exclusively by <see cref="NoireTweakManager"/>; calling this method directly throws <see cref="InvalidOperationException"/>.
     /// </summary>
     /// <returns>This method never returns normally.</returns>
     /// <exception cref="InvalidOperationException">Always thrown.</exception>
@@ -97,14 +91,13 @@ public abstract class TweakConfigBase : NoireConfigBase
             "Tweak configs cannot be deleted directly. The TweakManager handles config management.");
 
     /// <summary>
-    /// Tweak configs are not file-backed. Always returns <see langword="false"/>.
+    /// Tweak configs are not file-backed; always returns <see langword="false"/>.
     /// </summary>
     /// <returns><see langword="false"/> always.</returns>
     public sealed override bool Exists() => false;
 
     /// <summary>
-    /// Returns a read-only JSON snapshot of this configuration.<br/>
-    /// Consumers may use this for display, export, or custom persistence logic.
+    /// Returns a read-only JSON snapshot of this configuration, for display, export, or custom persistence logic.
     /// </summary>
     /// <returns>A JSON string representing the current configuration state.</returns>
     public string ToJson()

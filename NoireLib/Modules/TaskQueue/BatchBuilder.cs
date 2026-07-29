@@ -4,9 +4,8 @@ using System.Collections.Generic;
 namespace NoireLib.TaskQueue;
 
 /// <summary>
-/// Base class for <see cref="BatchBuilder"/> and <see cref="BatchBuilder{TModule}"/>.<br/>
-/// Uses the Curiously Recurring Template Pattern (CRTP) so that every fluent method returns
-/// the concrete derived type, preserving the full API regardless of how deep the chain goes.
+/// Base class for <see cref="BatchBuilder"/> and <see cref="BatchBuilder{TModule}"/>. Uses CRTP so
+/// every fluent method returns the concrete derived type.
 /// </summary>
 /// <typeparam name="TSelf">The concrete builder type.</typeparam>
 public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
@@ -15,8 +14,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     protected readonly TaskBatch batch;
 
     /// <summary>
-    /// Initializes a new builder instance.<br/>
-    /// The <see cref="TaskBatch"/> will be created as blocking by default.
+    /// Initializes a new builder instance, with the batch blocking by default.
     /// </summary>
     /// <param name="customId">Optional custom identifier for the batch.</param>
     protected BatchBuilderBase(string? customId = null)
@@ -37,8 +35,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets whether the batch is blocking.<br/>
-    /// When a batch is blocking, the queue will wait for it to complete before starting the next item.
+    /// Marks the batch as blocking, so the queue waits for it to complete before starting the next item.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf AsBlocking()
@@ -48,8 +45,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets whether the batch is non-blocking.<br/>
-    /// When a batch is non-blocking, the queue will start the next item immediately after starting this batch.
+    /// Marks the batch as non-blocking, so the queue starts the next item immediately after starting this batch.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf AsNonBlocking()
@@ -192,8 +188,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the batch fails or is cancelled.<br/>
-    /// This is a convenience method for handling both failure and cancellation with the same callback.
+    /// Sets the callback for when the batch fails or is cancelled.
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch fails or is cancelled.</param>
     /// <param name="stopQueue">Whether to stop the queue when the batch is cancelled. A value of <see langword="null"/> means no change.</param>
@@ -325,8 +320,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay for the batch.<br/>
-    /// Once the batch completes, the queue will wait this amount of time before proceeding with the rest of the queue.
+    /// Sets a post-completion delay: once the batch completes, the queue waits this long before continuing.
     /// </summary>
     /// <param name="delay">The delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the batch fails (default: false).</param>
@@ -341,8 +335,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay for the batch using a predicate function.<br/>
-    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at batch creation), allowing for dynamic delay calculation.
+    /// Sets a post-completion delay using a predicate, evaluated when the delay is about to start, not at batch creation.
     /// </summary>
     /// <param name="delayPredicate">A function that returns the delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the batch fails (default: false).</param>
@@ -357,8 +350,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay for the batch using a predicate function with access to the batch.<br/>
-    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at batch creation), allowing for dynamic delay calculation based on batch state.
+    /// Sets a post-completion delay using a predicate with batch access, evaluated when the delay is about to start, not at batch creation.
     /// </summary>
     /// <param name="delayPredicate">A function that receives the batch and returns the delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the batch fails (default: false).</param>
@@ -509,8 +501,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Adds multiple tasks to the batch using a configurator pattern.<br/>
-    /// This allows creating and enqueueing multiple tasks in a fluent manner.
+    /// Adds multiple tasks to the batch using a configurator pattern.
     /// </summary>
     /// <param name="configurator">Action that receives a configurator for creating and enqueueing tasks.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -546,15 +537,13 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
 }
 
 /// <summary>
-/// Fluent builder for creating task batches with a clean API.<br/>
-/// See <see cref="TaskBatch"/> for more information on each property.<br/>
-/// For a queue-bound variant where <see cref="BatchBuilder{TModule}.Enqueue"/> is directly available, use <see cref="BatchBuilder{TModule}"/>.
+/// Fluent builder for creating task batches. See <see cref="TaskBatch"/> for property details.
+/// Use <see cref="BatchBuilder{TModule}"/> for a queue-bound variant with a direct <see cref="BatchBuilder{TModule}.Enqueue"/>.
 /// </summary>
 public class BatchBuilder : BatchBuilderBase<BatchBuilder>
 {
     /// <summary>
-    /// Creates a new batch builder.<br/>
-    /// The <see cref="TaskBatch"/> will be created as blocking by default.
+    /// Creates a new batch builder, with the batch blocking by default.
     /// </summary>
     /// <param name="customId">Optional custom identifier for the batch.</param>
     public BatchBuilder(string? customId = null) : base(customId) { }
@@ -568,9 +557,8 @@ public class BatchBuilder : BatchBuilderBase<BatchBuilder>
 }
 
 /// <summary>
-/// Queue-bound variant of <see cref="BatchBuilder"/> that carries a typed <typeparamref name="TModule"/> reference.<br/>
-/// All fluent methods return <see cref="BatchBuilder{TModule}"/>, so <see cref="Enqueue"/> is always reachable
-/// at the end of any chain without casting.
+/// Queue-bound variant of <see cref="BatchBuilder"/> carrying a typed <typeparamref name="TModule"/> reference.
+/// All fluent methods return <see cref="BatchBuilder{TModule}"/>, so <see cref="Enqueue"/> is reachable without casting.
 /// </summary>
 /// <typeparam name="TModule">The concrete <see cref="NoireTaskQueue"/> type this builder is bound to.</typeparam>
 public class BatchBuilder<TModule> : BatchBuilderBase<BatchBuilder<TModule>> where TModule : NoireTaskQueue
@@ -578,8 +566,7 @@ public class BatchBuilder<TModule> : BatchBuilderBase<BatchBuilder<TModule>> whe
     private readonly TModule taskQueue;
 
     /// <summary>
-    /// Creates a new queue-bound builder for <paramref name="taskQueue"/>.<br/>
-    /// The <see cref="TaskBatch"/> will be created as blocking by default.
+    /// Creates a new queue-bound builder for <paramref name="taskQueue"/>, with the batch blocking by default.
     /// </summary>
     /// <param name="taskQueue">The queue this builder is bound to.</param>
     /// <param name="customId">Optional custom identifier for the batch.</param>
@@ -625,8 +612,7 @@ public class BatchBuilder<TModule> : BatchBuilderBase<BatchBuilder<TModule>> whe
 }
 
 /// <summary>
-/// Configurator for creating tasks within a batch context.<br/>
-/// Provides a fluent API for creating multiple tasks and adding them to a batch.
+/// Configurator for creating tasks within a batch context.
 /// </summary>
 public class BatchTaskConfigurator
 {
@@ -638,8 +624,7 @@ public class BatchTaskConfigurator
     }
 
     /// <summary>
-    /// Creates a new task builder bound to the parent batch.<br/>
-    /// Call <see cref="BatchTaskBuilder.Enqueue"/> to add the task to the batch.
+    /// Creates a new task builder bound to the parent batch. Call <see cref="BatchTaskBuilder.Enqueue"/> to add the task.
     /// </summary>
     /// <param name="customId">Optional custom identifier for the task.</param>
     /// <returns>A batch-bound task builder.</returns>

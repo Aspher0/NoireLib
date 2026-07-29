@@ -15,8 +15,7 @@ public ref struct PooledBuffer<T>
     /// The array the pool handed over, or <see langword="null"/> once it has been given back.
     /// </summary>
     /// <remarks>
-    /// Cleared on return, which is what makes a second <see cref="Dispose"/> do nothing rather than return the same
-    /// array again.
+    /// Cleared on return, so a second <see cref="Dispose"/> does nothing rather than return the same array again.
     /// </remarks>
     private T[]? rented;
 

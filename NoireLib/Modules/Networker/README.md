@@ -408,11 +408,11 @@ networker.OnStateChanged(state =>
 
 The transitions a consumer can observe are `Stopped` to `Starting` on activation, `Starting` to `Ready` once the instance has joined, `Ready` to `Reelecting` when the hub disappears, `Reelecting` to `Ready` once a new hub is elected, and any state to `Stopped` on deactivation or disposal.
 
-`Stopped` is always the last transition a handler sees, and it is delivered before `SetActive(false)` or `Dispose()` returns rather than on a later frame, so a handler that mirrors `State` into your own UI never gets stranded showing `Ready` after the networker has gone. By the time it runs, the peer list is empty, `IsHub` is false, and sends are refused, which is exactly the state it is reporting. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations) for the threading detail.
+`Stopped` is always the last transition a handler sees, delivered before `SetActive(false)` or `Dispose()` returns rather than on a later frame, so a handler that mirrors `State` into your own UI never gets stranded showing `Ready` after the networker has gone. By the time it runs, the peer list is empty, `IsHub` is false, and sends are refused. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations) for the threading detail.
 
 ### How Election Looks From Here
 
-Election needs nothing from you and is worth understanding only to know what you are seeing in the logs:
+Election needs nothing from you; understanding it only helps make sense of the logs:
 
 - Any instance may become the hub. The first one to acquire the network's named kernel mutex takes the role, and `IsHub` reports it.
 - Nothing about the API changes based on the role. A hub and a client send, receive, and request identically.
@@ -532,13 +532,11 @@ networker.Dispose();
 
 Modules registered through `NoireLibMain.AddModule` are disposed with the library, so an explicit call is only needed when you manage the lifecycle yourself. `SetActive(false)` performs the same teardown while leaving the module reusable; activating it again rejoins the network.
 
-Teardown does not wait on the network. The departure announcement is written in the background and closes its socket once it is out, so disposing from the framework thread does not stall a frame waiting for peers to acknowledge anything. The announcement is best-effort, as it always was: if it cannot be written, peers fall back to noticing the departure at their next ping timeout instead.
+Teardown does not wait on the network. The departure announcement is written in the background and closes its socket once it is out, so disposing from the framework thread does not stall a frame waiting for peers to acknowledge anything. The announcement is best-effort: if it cannot be written, peers fall back to noticing the departure at their next ping timeout instead.
 
 ---
 
 ## Delivery Guarantees and Limitations
-
-This section documents behavior that is easier to read here than to discover in production.
 
 ### Everything Consumer-Visible Runs on the Framework Thread
 

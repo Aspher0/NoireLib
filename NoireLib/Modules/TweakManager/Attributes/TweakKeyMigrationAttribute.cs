@@ -3,12 +3,10 @@ using System;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Declares a previous <see cref="TweakBase.InternalKey"/> for automatic migration of persisted data.<br/>
-/// When the <see cref="NoireTweakManager"/> registers a tweak, it checks for this attribute and automatically
-/// moves everything the old key holds to the current key: the enabled state, the serialized config, and the
-/// user's favorite.<br/>
-/// Nothing is moved if the current key already holds data of its own.<br/>
-/// Apply multiple times if a tweak has been renamed more than once.
+/// Declares a previous <see cref="TweakBase.InternalKey"/> for automatic migration of persisted data. When the
+/// <see cref="NoireTweakManager"/> registers a tweak, it moves everything the old key holds (enabled state,
+/// serialized config, favorite) to the current key, unless the current key already holds data of its own. Apply
+/// multiple times if a tweak has been renamed more than once.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public sealed class TweakKeyMigrationAttribute : Attribute

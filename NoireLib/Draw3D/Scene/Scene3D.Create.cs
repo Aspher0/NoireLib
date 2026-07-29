@@ -14,7 +14,7 @@ namespace NoireLib.Draw3D.Scene;
 /// </summary>
 public sealed partial class Scene3D
 {
-    /// <summary>Spawns a node with a mesh it <b>owns</b>, built from geometry data. The scene frees it on <see cref="Dispose"/>.</summary>
+    /// <summary>Spawns a node with a mesh it <b>owns</b>, built from geometry data; the scene frees it on <see cref="Dispose"/>.</summary>
     /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>).</param>
     /// <param name="material">The material to draw with.</param>
     /// <param name="position">Local position (scene root space).</param>
@@ -29,8 +29,8 @@ public sealed partial class Scene3D
         return node;
     }
 
-    /// <summary>Spawns a node drawing a <b>shared</b> mesh you own (one mesh, many nodes - the instancing path). You (or <see cref="Own"/>) dispose the mesh.</summary>
-    /// <param name="sharedMesh">The mesh to reference. Never owned by the node.</param>
+    /// <summary>Spawns a node drawing a <b>shared</b> mesh you own (one mesh, many nodes - the instancing path); you (or <see cref="Own"/>) dispose the mesh.</summary>
+    /// <param name="sharedMesh">The mesh to reference; never owned by the node.</param>
     /// <param name="material">The material to draw with.</param>
     /// <param name="position">Local position (scene root space).</param>
     /// <param name="name">Optional debug/lookup name.</param>

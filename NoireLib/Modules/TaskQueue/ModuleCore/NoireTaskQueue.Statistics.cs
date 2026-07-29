@@ -262,9 +262,7 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
-    /// Determines whether the queue is currently processing items, including both running and paused states.<br/>
-    /// This method considers the queue to be processing if it is either actively running or temporarily paused.<br/>
-    /// Use this method to check if the queue is engaged in processing, regardless of whether it is momentarily paused.
+    /// Determines whether the queue is engaged in processing, i.e. running or paused.
     /// </summary>
     /// <returns>true if the queue is in a running or paused state; otherwise, false.</returns>
     public bool IsQueueProcessing()

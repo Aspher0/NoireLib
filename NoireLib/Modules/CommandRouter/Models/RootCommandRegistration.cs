@@ -33,8 +33,8 @@ public sealed class RootCommandRegistration
     public int DisplayOrder { get; internal set; }
 
     /// <summary>
-    /// An optional predicate that must return true for the root command to be available.<br/>
-    /// When it returns false the whole command is blocked, including its subcommands and its generated help.
+    /// An optional predicate that must return true for the root command to be available; returning false blocks the
+    /// whole command, including its subcommands and generated help.
     /// </summary>
     public Func<bool>? Condition { get; internal set; }
 

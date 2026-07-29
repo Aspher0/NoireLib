@@ -32,8 +32,8 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     }
 
     // The registry runs with exception propagation on: each handler is wrapped so that this module's HandleException
-    // applies the EventExceptionMode (counting, logging, and re-throwing for LogAndThrow), and propagation is what
-    // lets a LogAndThrow re-throw reach the publisher and abort the remaining handlers.
+    // applies the EventExceptionMode (counting, logging, and re-throwing for LogAndThrow). Propagation lets a
+    // LogAndThrow re-throw reach the publisher and abort the remaining handlers.
     private readonly NoireSubscriptionRegistry<Type, object> registry = new(propagateHandlerExceptions: true);
 
     // The ledger is this module's view of its subscriptions, kept in sync with the registry under ledgerLock. Each

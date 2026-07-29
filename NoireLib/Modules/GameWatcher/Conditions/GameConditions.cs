@@ -202,12 +202,8 @@ public static class GameConditions
 
     /// <summary>
     /// An event latch: becomes (and stays) true when a matching watcher event is dispatched - edge-triggered
-    /// capture with level-triggered consumption. One-shot per instance; re-arm with
-    /// <see cref="GameEventLatchCondition{TEvent}.Reset"/>.<br/>
-    /// The subscription arms on the first <see cref="GameCondition.IsMet"/> evaluation, or immediately with
-    /// <paramref name="armImmediately"/> (capture may then precede whatever work you gate on it).
-    /// Works for library and custom (<see cref="NoireGameWatcher.Publish{TEvent}"/>) events alike -
-    /// no EventBus involved.
+    /// capture with level-triggered consumption. Works for library and custom
+    /// (<see cref="NoireGameWatcher.Publish{TEvent}"/>) events alike.
     /// </summary>
     /// <typeparam name="TEvent">The event type to latch on.</typeparam>
     /// <param name="watcher">The watcher whose events feed the latch.</param>

@@ -19,11 +19,9 @@ public partial class NoireTaskQueue
             var processedBatch = currentBatch;
             ProcessBatch(processedBatch);
 
-            // A blocking batch owns the pass, which is what every batch used to do: this returned unconditionally,
-            // so TaskBatch.IsBlocking was settable through BatchBuilder.AsNonBlocking, reported by ToString, and
-            // read nowhere. A non-blocking batch instead lets the rest of the queue keep moving alongside it, the
-            // way a non-blocking task does. The batch item itself is Processing rather than Queued while it runs,
-            // so falling through cannot re-select it.
+            // A blocking batch owns the pass and returns; a non-blocking batch lets the rest of the queue keep
+            // moving alongside it, like a non-blocking task. The batch item is Processing rather than Queued
+            // while it runs, so falling through cannot re-select it.
             if (currentBatch == null || processedBatch.IsBlocking)
                 return;
         }
@@ -136,15 +134,12 @@ public partial class NoireTaskQueue
     /// Finishes the tasks and batches a consumer resolved by writing a terminal status directly.
     /// </summary>
     /// <remarks>
-    /// <see cref="QueuedTask.Status"/> and <see cref="TaskBatch.Status"/> are public and settable, so resolving
-    /// work by assigning a status is a supported thing to do from anywhere, including from inside a completion
-    /// condition. Such a write never travelled the queue's own paths, so it used to take effect while losing
-    /// everything those paths do: no callback fired, no event was published, and a batch written complete
-    /// stranded every task it held.<br/>
-    /// This runs once at the end of each pass and finishes those items properly. It deliberately restores
-    /// observations only, not policy: a status written by hand states an outcome, so it raises the callback, the
-    /// event and the statistics, but it does not apply StopQueueOnFail, StopQueueOnCancel or the parent-batch
-    /// modes. Those belong to the queue methods that express the intent to run them, which stay available.
+    /// <see cref="QueuedTask.Status"/> and <see cref="TaskBatch.Status"/> are public and settable, so a consumer
+    /// can resolve work by assigning a status directly, including from inside a completion condition; doing so
+    /// bypasses the queue's own paths, so no callback fires and no event publishes. This runs once at the end of
+    /// each pass to finish those items properly. It restores the callback, event and statistics for the outcome
+    /// that was written, but not policy: it does not apply StopQueueOnFail, StopQueueOnCancel or the parent-batch
+    /// modes, which stay available through the ordinary queue methods.
     /// </remarks>
     private void ReconcileConsumerWrittenStatuses()
     {
@@ -237,9 +232,8 @@ public partial class NoireTaskQueue
         batch.QueueFinalized = true;
         batch.FinishedAtTicks ??= Environment.TickCount64;
 
-        // A batch written terminal is over, so the work it still holds cannot run. Cancelling those tasks is what
-        // stops them being left non-terminal for the rest of the queue's life, and it routes each through the
-        // ordinary reconciliation below so they raise their own callbacks too.
+        // A batch resolved terminal cancels the tasks it still holds, routing each through the ordinary
+        // reconciliation below so they raise their own callbacks.
         foreach (var task in batch.Tasks)
         {
             if (IsInTerminalStatus(task))
@@ -312,10 +306,8 @@ public partial class NoireTaskQueue
     /// Advances the task a container is currently on by one pass.
     /// </summary>
     /// <remarks>
-    /// Shared by the queue and the batch machines, which ran two copies of this state machine that differed only
-    /// in where a resolved task is routed. What genuinely separates the two levels is not in here: the queue
-    /// keeps a stored current task while a batch recomputes its earliest unfinished one, and only the queue's
-    /// selection may pick a batch. Those stay with the callers.
+    /// Shared by the queue and batch levels. The queue keeps a stored current task, while a batch recomputes its
+    /// earliest unfinished one each time; only the queue's own selection may pick a batch.
     /// </remarks>
     /// <param name="current">The task the container is on.</param>
     /// <param name="batch">The batch that holds the task, or null at the queue level.</param>
@@ -331,9 +323,8 @@ public partial class NoireTaskQueue
     {
         if (current.Status == TaskStatus.Queued && current.Metadata is RetryDelayMetadata)
         {
-            // Reachable at the queue level only: a batch resolves its current task by looking for one already
-            // executing or waiting, so a batch task parked on a retry delay is never the current task and is
-            // re-picked by ordinary selection instead.
+            // Reachable at the queue level only: a batch resolves its current task by looking for one executing
+            // or waiting, so a retry-delayed batch task is never current and gets re-picked by ordinary selection.
             taskToProcess = current;
             current.Status = TaskStatus.Executing;
         }
@@ -431,11 +422,10 @@ public partial class NoireTaskQueue
     /// Applies the outcomes collected by <see cref="CollectWaitingTaskOutcomes"/>, outside the lock.
     /// </summary>
     /// <remarks>
-    /// Both loops re-validate before acting, and the two checks are deliberately different. A task collected as
-    /// complete is skipped only if it was finished as cancelled or failed, so a consumer who resolves a task by
-    /// writing Completed directly still gets its callback. A task collected as failing is skipped on any terminal
-    /// status. Without this, a condition that cancels a task already collected earlier in the same pass had that
-    /// cancellation silently overwritten.
+    /// A task collected as complete is skipped only if it was finished as cancelled or failed, so a consumer who
+    /// resolves a task by writing Completed directly still gets its callback. A task collected as failing is
+    /// skipped on any terminal status; otherwise a condition that cancels a task already collected earlier in
+    /// the same pass would have that cancellation silently overwritten.
     /// </remarks>
     /// <param name="batch">The batch that holds the tasks, or null at the queue level.</param>
     /// <param name="toComplete">The tasks whose conditions were met.</param>
@@ -594,10 +584,8 @@ public partial class NoireTaskQueue
             if (batchCurrentTask != null)
                 AdvanceCurrentTask(batchCurrentTask, batch, ref taskToProcess, ref earlyReturn, ref shouldWaitForBlocking);
 
-            // Materialized before the walk, exactly as the queue level does. ProcessWaitingTaskStatus evaluates
-            // consumer completion conditions, and a condition is free to add a task to this very batch. Enumerating
-            // lazily let that structural change surface as "Collection was modified" mid-walk, which the tick
-            // handler then swallowed, abandoning the whole pass along with any completion it had already decided on.
+            // Materialized before the walk: a completion condition can add a task to this batch, and a lazy
+            // enumeration would throw "Collection was modified" mid-walk, abandoning the whole pass.
             var batchWaitingTasks = batch.Tasks.Where(t =>
                 (t.Status == TaskStatus.WaitingForCompletion || t.Status == TaskStatus.WaitingForPostDelay) &&
                 !ReferenceEquals(t, batchCurrentTask)).ToList();
@@ -771,11 +759,10 @@ public partial class NoireTaskQueue
     /// Reports whether a task has been resolved to an outcome that a pending completion must not overwrite.
     /// </summary>
     /// <remarks>
-    /// Deliberately narrower than <see cref="IsInTerminalStatus"/>. A task a consumer callback has cancelled or
-    /// failed must keep that outcome, which is the case a pending completion would otherwise overwrite. A task
-    /// already marked completed is not excluded, because completing it is what the pending work was going to do
-    /// anyway: running it still raises the completion callback the consumer expects, and skipping it would
-    /// silently drop that callback for anyone who resolves a task by writing its status directly.
+    /// Narrower than <see cref="IsInTerminalStatus"/>: a task a consumer callback has cancelled or failed must
+    /// keep that outcome, since a pending completion would otherwise overwrite it. A task already marked
+    /// completed is not excluded, since running the pending completion still raises the callback a direct-write
+    /// consumer expects; skipping it would silently drop that callback.
     /// </remarks>
     /// <param name="task">The task to test.</param>
     /// <returns>True if the task was finished as something other than completed; otherwise, false.</returns>
@@ -815,13 +802,11 @@ public partial class NoireTaskQueue
             }
             catch (Exception ex)
             {
-                // A completion condition is consumer code and is evaluated on every pass. Left uncaught, its
-                // exception unwinds the whole processing pass, which leaves this task neither completed nor
-                // failed and stops the queue from making progress again, with nothing surfaced. The fault is
-                // contained to the task that caused it instead: the exception is recorded on the task and the
-                // ordinary failure route is signalled, so whichever caller collected this task applies its own
-                // failure handling. The queue level fails the task, and the batch level routes it through the
-                // batch's failure mode.
+                // A completion condition is consumer code, evaluated every pass; left uncaught, its exception
+                // would unwind the whole processing pass, stopping the queue from progressing with nothing
+                // surfaced. The fault is contained to the task instead: the exception is recorded on the task
+                // and the ordinary failure route is signalled, so the queue level fails the task and the batch
+                // level routes it through the batch's failure mode.
                 if (EnableLogging)
                     NoireLogger.LogError(this, ex, $"Completion condition threw for task: {task}");
 
@@ -1357,11 +1342,9 @@ public partial class NoireTaskQueue
                 }
                 else if (batch.Tasks.Count > 0 && batch.Tasks.All(t => t.Status == TaskStatus.Cancelled))
                 {
-                    // Cancelling tasks one by one never touched batch status, so a batch that had every one of
-                    // its tasks cancelled still arrived here and reported itself Completed, raising OnCompleted
-                    // for work none of which ran. A batch that ends with nothing done is cancelled, not complete.
-                    // Only the all-cancelled case is treated this way: a batch where some tasks completed and
-                    // others were cancelled did reach its end, so it still reports Completed.
+                    // A batch that ends with nothing done reports Cancelled, not Completed. Only the all-cancelled
+                    // case is treated this way: a batch with some tasks completed and others cancelled still
+                    // reports Completed.
                     batchCancelled = true;
                 }
                 else
@@ -1563,9 +1546,8 @@ public partial class NoireTaskQueue
     /// </summary>
     private static Exception CreateTaskTimeoutOrRetryException(QueuedTask task)
     {
-        // A failure the task already carries is the real cause and takes precedence over a synthesized one. A
-        // completion condition that threw records its exception on the task, so reading it here is what lets
-        // every fail path report what actually went wrong instead of a timeout that never happened.
+        // A failure the task already carries takes precedence: a completion condition that throws records its
+        // exception on the task, so fail paths report the real cause instead of a synthesized timeout.
         if (task.FailureException != null)
             return task.FailureException;
 

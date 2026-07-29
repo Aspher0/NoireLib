@@ -14,8 +14,8 @@ namespace NoireLib.FileWatcher;
 /// <param name="EventType">The semantic type of this event.</param>
 /// <param name="OccurredAtUtc">The UTC timestamp when this event occurred.</param>
 /// <param name="NativeChangeType">The native change type as reported by the underlying filesystem watcher for this event.</param>
-/// <param name="OldFullPath">The old full path of the target that triggered this event, if this event is a rename event and the underlying filesystem watcher provides this information.</param>
-/// <param name="OldName">The old name of the target that triggered this event, if this event is a rename event and the underlying filesystem watcher provides this information.</param>
+/// <param name="OldFullPath">The previous full path, for rename events when the underlying watcher provides it.</param>
+/// <param name="OldName">The previous name, for rename events when the underlying watcher provides it.</param>
 /// <param name="WatchKey">The watch key associated with the watch registration that captured this event, if available.</param>
 public sealed record FileWatchNotification(
     string WatchId,

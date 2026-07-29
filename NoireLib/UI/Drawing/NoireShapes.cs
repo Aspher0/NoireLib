@@ -13,7 +13,7 @@ namespace NoireLib.UI;
 /// Everything here paints into an ImGui draw list, and everything composes: the shapes are drawn by the same
 /// <see cref="Fill"/>, <see cref="Stroke"/> and <see cref="Bevel"/> that are public, over paths the public
 /// <see cref="RectPath"/> generates. A shape NoireUI does not ship is your own path handed to the same three calls.<br/>
-/// Coordinates are screen space, in real pixels, because that is what a draw list takes and what
+/// Coordinates are screen space, in real pixels: what a draw list takes, and what
 /// <c>ImGui.GetCursorScreenPos</c> and <c>GetItemRectMin</c> give you. The numbers NoireUI ships a default for
 /// (a bevel depth, a tick length, a glow spread) are logical and scaled for you. See <see cref="NoireUI.Scale"/>.<br/>
 /// This has nothing to do with the Draw3D renderer, which paints the game world through D3D11. The two share no code
@@ -32,8 +32,7 @@ namespace NoireLib.UI;
 public static partial class NoireShapes
 {
     /// <summary>
-    /// The most points <see cref="RectPath"/> can ever write, so a caller can size a buffer once and stop thinking
-    /// about it.
+    /// The most points <see cref="RectPath"/> can ever write.
     /// </summary>
     public const int MaxRectPathPoints = 128;
 
@@ -43,9 +42,9 @@ public static partial class NoireShapes
     /// Whether the shapes drawn here are antialiased. On by default.
     /// </summary>
     /// <remarks>
-    /// Antialiasing is a draw list flag rather than a per-call argument, so it is whatever the host last left it as.
-    /// NoireUI sets it around its own drawing instead of inheriting it, because the difference between a shape that is
-    /// smooth and one that is visibly stepped should not depend on a setting somewhere else in the process.<br/>
+    /// Antialiasing is a draw list flag rather than a per-call argument, so it is whatever the host last left it as;
+    /// NoireUI sets it around its own drawing instead of inheriting it, so shape smoothness does not depend on a
+    /// setting elsewhere in the process.<br/>
     /// Turn it off for the shapes here without touching anything else, if a plugin has deliberately traded
     /// antialiasing for fill rate.
     /// </remarks>
@@ -143,16 +142,15 @@ public static partial class NoireShapes
     #region Gradient
 
     /// <summary>
-    /// Runs a block of drawing and shades everything it drew along a line, which is how any shape at all becomes a
-    /// gradient: a rounded plate, a notched one, an arc, a run of text.
+    /// Runs a block of drawing and shades everything it drew along a line: a rounded plate, a notched one, an arc, a
+    /// run of text.
     /// </summary>
     /// <remarks>
-    /// ImGui's own gradient is a single axis-aligned rectangle with no rounding, which is why this is a scope over
-    /// arbitrary drawing rather than one more shape.<br/>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn. That is deliberate: ImGui carries its
-    /// antialiasing in the alpha of the outer vertices, so replacing alpha outright would give every shaded shape hard,
-    /// jagged edges. The practical consequence is that a body drawn in white takes the gradient exactly, a body drawn
-    /// in a color is tinted by it, and a gradient that fades to zero alpha fades the shape out.<br/>
+    /// ImGui's own gradient is a single axis-aligned rectangle with no rounding. This is a scope over arbitrary
+    /// drawing instead, not one more shape.<br/>
+    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, since ImGui carries its antialiasing
+    /// in the alpha of the outer vertices: a body drawn in white takes the gradient exactly, a body drawn in a color
+    /// is tinted by it, and a gradient that fades to zero alpha fades the shape out.<br/>
     /// Nests. An inner gradient shades only what it drew, and the outer one then shades that again.
     /// </remarks>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
@@ -175,13 +173,13 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Runs a block of drawing and shades everything it drew along a line, which is how any shape at all becomes a
-    /// gradient: a rounded plate, a notched one, an arc, a run of text.
+    /// Runs a block of drawing and shades everything it drew along a line: a rounded plate, a notched one, an arc, a
+    /// run of text.
     /// </summary>
     /// <remarks>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, so a body drawn in white takes the
-    /// gradient exactly, a body drawn in a color is tinted by it, and a gradient fading to zero alpha fades the shape
-    /// out. Alpha is multiplied rather than replaced because ImGui carries its antialiasing there.<br/>
+    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, since ImGui carries its antialiasing
+    /// there: a body drawn in white takes the gradient exactly, a body drawn in a color is tinted by it, and a
+    /// gradient fading to zero alpha fades the shape out.<br/>
     /// Nests. An inner gradient shades only what it drew, and the outer one then shades that again.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
@@ -265,13 +263,12 @@ public static partial class NoireShapes
     /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
     /// </summary>
     /// <remarks>
-    /// The gradient a shape radiating from a point actually wants. Done as a line, it has to be done once per arm,
-    /// because each arm points a different way: a sunburst of sixty rays in three layers ran this a hundred and eighty
-    /// times a frame, and the cost was almost entirely in being called rather than in the arithmetic. Distance from the
-    /// centre is the same measure for every arm, so the whole shape is one pass.<br/>
-    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm is
-    /// slightly further from the centre than its projection along the arm. That is the more correct of the two for a
-    /// shape whose fade is meant to be radial.
+    /// Distance from a centre is the same measure for every arm, so a whole radiating shape is shaded in one pass
+    /// instead of once per arm: a sunburst of sixty rays in three layers called the per-arm version a hundred and
+    /// eighty times a frame, and the cost was almost entirely in being called rather than in the arithmetic.<br/>
+    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm sits
+    /// slightly further from the centre than its projection along the arm; that is the more correct answer for a
+    /// radial fade.
     /// </remarks>
     /// <param name="drawList">The list holding the vertices.</param>
     /// <param name="start">The first vertex to shade.</param>
@@ -358,9 +355,9 @@ public static partial class NoireShapes
             var position = Math.Clamp(Vector2.Dot(vertex.Pos - from, axis) * inverseLength, 0f, 1f);
             var tint = Vector4.Lerp(fromColor, toColor, position);
 
-            // Only the alpha of what is already there is wanted, because that is what carries the antialiased edge and
-            // it is multiplied rather than replaced. Reading the one channel rather than unpacking all four keeps this
-            // loop off the native converter, which it would otherwise cross twice for every vertex of every gradient.
+            // Only the alpha of what is already there is wanted, since it carries the antialiased edge and is
+            // multiplied rather than replaced. Reading the one channel rather than unpacking all four keeps this loop
+            // off the native converter, which it would otherwise cross twice for every vertex of every gradient.
             var existing = ColorHelper.UintAlpha(vertex.Col);
             vertex.Col = ColorHelper.Vector4ToUint(tint with { W = existing * tint.W });
         }
@@ -464,12 +461,12 @@ public static partial class NoireShapes
     /// </summary>
     /// <remarks>
     /// A cut deep enough to reach half a side collapses the centres of the two arcs meeting there onto one point, so
-    /// those arcs share an endpoint. A pill does that on <b>both</b> sides: once mid-path where the right-hand arcs
-    /// meet, and once at the wrap where the left-hand ones do. Every duplicate has to go, not only the wrap, because
-    /// each one is a zero-length edge with no direction to build a join from, and a join built from nothing renders as
-    /// a spike straight across the shape.<br/>
-    /// Applied to every path rather than only to the pill case, since the same collapse happens to a fully notched
-    /// rectangle and to any degenerate rectangle thin enough for two corners to meet.
+    /// those arcs share an endpoint. A pill does this on <b>both</b> sides: once mid-path where the right-hand arcs
+    /// meet, once at the wrap where the left-hand ones do. Every duplicate has to go, not only the wrap: each is a
+    /// zero-length edge with no direction to build a join from, and a join built from nothing renders as a spike
+    /// across the shape.<br/>
+    /// Applied to every path, not only the pill case, since the same collapse happens to a fully notched rectangle
+    /// and to any degenerate rectangle thin enough for two corners to meet.
     /// </remarks>
     /// <param name="points">The path to compact, in place.</param>
     /// <param name="count">How many points it holds.</param>
@@ -545,22 +542,18 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Strokes a closed path with a light source, so the edges facing the light are lit and the ones facing away fall
-    /// into shadow. What makes a flat fill read as a raised plate.
+    /// Strokes a closed path with a light source: edges facing the light are lit, edges facing away fall into shadow.
     /// </summary>
     /// <remarks>
-    /// Works on any closed path, which is the point: a notched plate bevels its diagonal cuts, and a rounded one turns
-    /// smoothly from light to shadow around each corner, both from the same call.<br/>
-    /// The path is expected to wind clockwise, which is what <see cref="RectPath"/> produces.
+    /// Works on any closed path: a notched plate bevels its diagonal cuts, and a rounded one turns smoothly from
+    /// light to shadow around each corner, both from the same call.<br/>
+    /// The path is expected to wind clockwise, matching what <see cref="RectPath"/> produces.
     /// </remarks>
     /// <param name="points">The closed path, in clockwise order.</param>
     /// <param name="light">The color of the edges facing the light.</param>
     /// <param name="shadow">The color of the edges facing away from it.</param>
     /// <param name="thickness">The bevel thickness, in real pixels.</param>
-    /// <param name="direction">
-    /// Where the light comes from. Defaults to above and to the left, which is where interfaces have lit things from
-    /// since interfaces had raised things in them.
-    /// </param>
+    /// <param name="direction">Where the light comes from. Defaults to above and to the left.</param>
     public static void Bevel(ReadOnlySpan<Vector2> points, Vector4 light, Vector4 shadow, float thickness = 1f, Vector2 direction = default)
     {
         using var draw = UiDraw.BeginMethod();

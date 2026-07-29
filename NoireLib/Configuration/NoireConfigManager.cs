@@ -15,19 +15,14 @@ public static class NoireConfigManager
     private static readonly ConcurrentDictionary<Type, INoireConfig> ConfigCache = new();
 
     /// <summary>
-    /// Gets or creates a configuration instance of the specified type.
-    /// The configuration is automatically loaded from disk if it exists, otherwise a new instance is created.<br/>
-    /// The returned instance is cached and shared by every later caller, with one exception: an instance whose load
-    /// failed against a configuration that is actually there is returned but not cached, so that the next call tries
-    /// again instead of being handed defaults forever. A load fails that way when the file exists but cannot be read
-    /// or parsed, and when no path to it can be resolved at all, which is the state of a configuration reached before
-    /// NoireLib is initialized. Caching those would mean a configuration touched a moment too early, or during a
-    /// transient file error, permanently shadows the user's real settings, and that the first save afterwards writes
-    /// the defaults over them.<br/>
-    /// A first run, where the file simply does not exist yet, is not a failure of this kind: the defaults are the real
-    /// configuration until something saves them, so that instance is cached like any other. A configuration loaded
-    /// into a degraded state (see <see cref="NoireConfigBase.IsDegraded"/>) is cached as well, because its load
-    /// succeeded and it is the live instance whose saves are being refused on purpose.
+    /// Gets or creates a configuration instance of the specified type, loaded from disk if a file exists. The
+    /// instance is cached and shared by later callers, except when a load fails against a file that exists but
+    /// could not be read or parsed: that instance is returned but not cached, so the next call retries instead of
+    /// being handed defaults forever.<br/>
+    /// A first run with no file yet is cached normally, since the defaults are the real configuration until
+    /// something saves them. A configuration loaded into a degraded state (see
+    /// <see cref="NoireConfigBase.IsDegraded"/>) is cached as well, since its load succeeded and its saves are
+    /// refused on purpose.
     /// </summary>
     /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
     /// <returns>The configuration instance, or null if creation/loading failed.</returns>
@@ -46,9 +41,8 @@ public static class NoireConfigManager
         {
             config = new T();
 
-            // Evaluated inside the boundary because the second operand reaches a virtual member a derived
-            // configuration may override. A successful load has already cached the instance from inside Load, so this
-            // only ever decides what happens to a failure.
+            // The second operand reaches a virtual member a derived configuration may override. A successful load
+            // already cached the instance from inside Load; this only decides what happens to a failure.
             cacheable = config.Load() || config.IsUnwrittenDefault;
         }
         catch (Exception ex)
@@ -72,8 +66,8 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Gets or creates a configuration instance of the specified type without caching.
-    /// This is useful if you want a fresh instance every time.
+    /// Gets or creates a configuration instance of the specified type without caching, returning a fresh instance
+    /// every time.
     /// </summary>
     /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
     /// <returns>The configuration instance, or null if creation/loading failed.</returns>
@@ -212,15 +206,11 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Saves all cached configurations to disk.<br/>
-    /// Each configuration is saved inside its own boundary, so one that cannot be written costs only its own write and
-    /// every other cached configuration is still saved. <see cref="NoireConfigBase.Save"/> is virtual and resolves its
-    /// file path through another virtual member, so a configuration can throw out of it rather than report false;
-    /// without a boundary per configuration the first one to do so would end the run and leave every configuration
-    /// after it silently unwritten, which loses settings that have nothing to do with the one that misbehaved.<br/>
-    /// A configuration that refuses to write because it is <see cref="NoireConfigBase.IsDegraded"/> is not reported as
-    /// a fault here. The refusal is the protection working as intended, and it already explains itself where it is
-    /// decided. It still counts against the return value, because the configuration was not written.
+    /// Saves all cached configurations to disk. Each is saved inside its own boundary, so a configuration that
+    /// throws or fails to write does not stop the others.<br/>
+    /// A configuration that refuses because it is <see cref="NoireConfigBase.IsDegraded"/> is not reported as a
+    /// fault here, since it already explains itself where it is decided, but it still counts against the return
+    /// value.
     /// </summary>
     /// <returns>True if every cached configuration is on disk, whether it was written now or was already up to date;
     /// false if any of them is not, whether it failed to write or refused to.</returns>
@@ -238,9 +228,8 @@ public static class NoireConfigManager
 
                 allSuccess = false;
 
-                // A degraded configuration reports false every time anything asks it to save, which for a configuration
-                // with members marked [AutoSave] is as often as anything assigns to one. Reporting that as a fault here
-                // would bury the log under an error per pass for a state the configuration itself has already explained.
+                // A degraded configuration reports false on every save attempt, which for [AutoSave] members can be
+                // often; not logged here since it already explains itself where it is decided.
                 if (config is NoireConfigBase { IsDegraded: true })
                     continue;
 
@@ -270,14 +259,12 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Replaces the cached instance for a type, but only when one is already cached.<br/>
-    /// A configuration with <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and then handed to
-    /// consumers wrapped in an auto-save proxy. Loading caches the raw instance here, while consumers mutate the proxy,
-    /// so a later <see cref="SaveAllCached"/> would write the raw load-time values over the file the proxy has kept
-    /// current. Swapping the cached entry for the proxy keeps this cache and the instance consumers hold as one object.
-    /// <br/>
-    /// Only an entry that already exists is swapped: a load that failed was deliberately left uncached by
-    /// <see cref="GetConfig{T}"/> so the next call retries, and adding an instance here would defeat that.
+    /// Replaces the cached instance for a type, but only when one is already cached. A configuration with
+    /// <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and handed to consumers as an
+    /// auto-save proxy; swapping the cache entry for the proxy keeps <see cref="SaveAllCached"/> writing the values
+    /// consumers are changing rather than the raw load-time snapshot.<br/>
+    /// Only an existing entry is swapped: a failed load is deliberately left uncached by <see cref="GetConfig{T}"/>
+    /// so the next call retries, and adding one here would defeat that.
     /// </summary>
     /// <param name="configType">The configuration type whose cached instance is being replaced.</param>
     /// <param name="config">The instance to cache in its place.</param>
@@ -300,8 +287,7 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Registers a migration for a configuration type.
-    /// This is useful for organizing migrations outside of the configuration class.
+    /// Registers a migration for a configuration type, for organizing migrations outside the configuration class.
     /// </summary>
     /// <typeparam name="T">The configuration type.</typeparam>
     /// <param name="migration">The migration to register.</param>

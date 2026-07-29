@@ -13,11 +13,9 @@ public static class ColorHelper
     /// Converts a display color to linear light, where multiplying two colors means what it physically means.
     /// </summary>
     /// <remarks>
-    /// <b>Convert once, at the point where the color's origin is known.</b> A color picked in a UI, read from a
-    /// hex string or taken from the game's dye table is display-encoded and belongs here first; a shader
-    /// constant is already linear and must not be passed through this at all. Both look like three floats in
-    /// 0..1 and nothing downstream can tell them apart, so a second conversion is silent and lands the color
-    /// noticeably dark rather than obviously wrong.
+    /// <b>Convert once, where the color's origin is known.</b> UI colors, hex strings and the game's dye table are
+    /// display-encoded; shader constants are already linear and must never pass through this. Both look like three
+    /// floats in 0..1, so a double conversion is silent and only shows up as a color reading too dark.
     /// </remarks>
     /// <param name="color">A display-encoded color, each channel in 0..1.</param>
     /// <returns>The same color in linear light.</returns>
@@ -55,7 +53,7 @@ public static class ColorHelper
     /// <summary>
     /// Converts a HEX color string to a Vector3 representing RGB values between 0 and 1.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. Alpha value will be ignored if provided.</param>
+    /// <param name="hex">Hex color: "#123456", "#1234", "#123" or "#12345678", with or without "#". Alpha is ignored.</param>
     /// <returns>A Vector3 representation of the HEX string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static Vector3 HexToVector3(string hex)
@@ -65,10 +63,9 @@ public static class ColorHelper
     /// Reads a HEX color string without throwing when it is not one.
     /// </summary>
     /// <remarks>
-    /// This is the form to use behind a text field. A hex being typed is invalid for most of the keystrokes it takes to
-    /// write, so the throwing form would raise an exception on nearly every frame of the entry.<br/>
-    /// Accepts the three-digit and four-digit shorthands as well as the full six and eight, with or without the "#",
-    /// because those are what people paste.
+    /// Use this behind a text field: a hex being typed is invalid for most keystrokes, and the throwing form would
+    /// raise an exception almost every frame.<br/>
+    /// Accepts three, four, six or eight hex digits, with or without the "#".
     /// </remarks>
     /// <param name="hex">The HEX value of the color, for example "#123456", "#123", or "1234abcd".</param>
     /// <param name="color">The color, or <see cref="Vector4.Zero"/> when the string was not a HEX color.</param>
@@ -142,7 +139,7 @@ public static class ColorHelper
     /// <summary>
     /// Converts a HEX color string to a Vector4 representing RGBA values between 0 and 1.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
+    /// <param name="hex">Hex color: "#123456", "#1234", "#123" or "#12345678", with or without "#". Missing alpha defaults to 255.</param>
     /// <returns>A Vector4 representation of the HEX string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static Vector4 HexToVector4(string hex)
@@ -231,11 +228,8 @@ public static class ColorHelper
     /// Converts a Vector4 representing RGBA values between 0 and 1 to a uint color value used by ImGui.
     /// </summary>
     /// <remarks>
-    /// Packed here rather than by calling ImGui's own converter, which is a native call. That is immaterial once, and
-    /// it is not immaterial in a gradient: shading a shape converts every vertex it just produced, so a single
-    /// decorative ornament crossed the managed boundary a couple of thousand times a frame to do arithmetic. The
-    /// layout and the rounding are ImGui's and are asserted against it, so this stays a faster route to the same
-    /// answer rather than a second opinion about what a colour is.
+    /// Packs the value directly rather than through ImGui's native converter, for per-vertex gradient work. Layout
+    /// and rounding match ImGui's own conversion.
     /// </remarks>
     /// <param name="color">The Vector4 color to convert.</param>
     /// <returns>The uint representation of the Vector4 color provided.</returns>
@@ -251,9 +245,6 @@ public static class ColorHelper
     /// <summary>
     /// The alpha channel of a packed ImGui color, from 0 to 1.
     /// </summary>
-    /// <remarks>
-    /// For the callers that want only the alpha and would otherwise unpack all four channels to reach it.
-    /// </remarks>
     /// <param name="color">The packed color.</param>
     /// <returns>The alpha, from 0 to 1.</returns>
     public static float UintAlpha(uint color) => ((color >> 24) & 0xFFu) / 255f;
@@ -261,7 +252,7 @@ public static class ColorHelper
     /// <summary>
     /// Converts a hexadecimal color string to its equivalent 32-bit unsigned integer representation.
     /// </summary>
-    /// <param name="hex">The HEX value of the color. Format: "#123456", "#1234", "#123" or "#12345678". "#" Optionnal. If no alpha value was provided, it will be set to 1 (255).</param>
+    /// <param name="hex">Hex color: "#123456", "#1234", "#123" or "#12345678", with or without "#". Missing alpha defaults to 255.</param>
     /// <returns>A uint representation of the HEX color string provided.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is null, empty, or not in a valid format.</exception>
     public static uint HexToUint(string hex)
@@ -340,9 +331,7 @@ public static class ColorHelper
         => new(color.X, color.Y, color.Z, Math.Clamp(color.W * factor, 0f, 1f));
 
     /// <summary>
-    /// Gets the perceived brightness of a color, from 0 (black) to 1 (white).<br/>
-    /// Uses the Rec. 709 weighting, so it tracks how bright a color looks rather than the average of its channels:
-    /// pure green reads far brighter than pure blue, which a plain average would miss.
+    /// Gets the perceived brightness of a color, from 0 (black) to 1 (white), using Rec. 709 weighting rather than a flat channel average.
     /// </summary>
     /// <param name="color">The color to measure. Its alpha is ignored.</param>
     /// <returns>The perceived brightness.</returns>

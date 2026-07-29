@@ -8,9 +8,8 @@ namespace NoireLib.UI;
 /// Letter-spaced text, which ImGui has no notion of.
 /// </summary>
 /// <remarks>
-/// Tracking is what makes a short label read as a heading rather than as small body text, and it is the whole of the
-/// difference between a caps label that looks designed and one that looks shouted. ImGui draws a string in one call at
-/// the font's own advances, so the only way to open them up is to place each glyph.
+/// ImGui draws a string in one call at the font's own advances, so the only way to add space between characters is
+/// to place each glyph individually.
 /// </remarks>
 public static partial class NoireText
 {
@@ -26,12 +25,12 @@ public static partial class NoireText
     /// </summary>
     /// <param name="text">The text to draw.</param>
     /// <param name="tracking">
-    /// Extra space per character, in **ems**: a fraction of the size the text is drawn at, the way CSS letter-spacing
-    /// works. Being a fraction rather than a pixel count is what makes one value right at every step of the type scale
-    /// and at every UI scale, so it is never scaled and never restated.
+    /// Extra space per character, in ems: a fraction of the size the text is drawn at, the way CSS letter-spacing
+    /// works. A fraction rather than a pixel count, so one value is right at every step of the type scale and every
+    /// UI scale.
     /// </param>
     /// <param name="size">The step of the type scale to draw it at.</param>
-    /// <returns>The size the run occupies, so a caller placing something beside it need not measure it again.</returns>
+    /// <returns>The size the run occupies.</returns>
     public static Vector2 Tracked(string text, float tracking = CapsTracking, TextSize size = TextSize.Body)
         => Tracked(text, tracking, NoireTheme.Current.ResolveTextSize(size));
 
@@ -70,8 +69,8 @@ public static partial class NoireText
     /// Measures text as it would be drawn with tracking, at an explicit size.
     /// </summary>
     /// <remarks>
-    /// Measured with the font pushed, which is the whole point: a layout built on a measurement taken in one font and
-    /// drawn in another is wrong everywhere by a few pixels, and neither of the two looks like the one lying.
+    /// Measured with the font pushed: a layout built on a measurement taken in one font and drawn in another is
+    /// wrong everywhere by a few pixels.
     /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
@@ -79,11 +78,9 @@ public static partial class NoireText
     /// <returns>The size the text would occupy, in real pixels.</returns>
     public static Vector2 TrackedSize(string text, float tracking, float sizePx)
     {
-        // The guard is not about the font, which InFont handles being unavailable. It is what makes this safe to call
-        // with no ImGui context at all: the walk below reads the cursor and measures glyphs, and both fault rather
-        // than fail without one. Deleting it outright was tried and crashed the test run; asking the gate instead
-        // keeps the protection and lets the headless harness, which owns a context with no plugin behind it, reach
-        // the measurement. See NoireText.CalcSize for the same reasoning.
+        // Not about the font, which InFont handles being unavailable: the walk below reads the cursor and measures
+        // glyphs, both of which fault without an ImGui context. Asking the gate lets the headless harness, which
+        // owns a context with no plugin behind it, still reach the measurement. See NoireText.CalcSize.
         if (string.IsNullOrEmpty(text) || !UiDraw.Available)
             return Vector2.Zero;
 
@@ -94,13 +91,10 @@ public static partial class NoireText
     /// Places a run with the font for a size pushed, falling back to the stretched stand-in while that size builds.
     /// </summary>
     /// <remarks>
-    /// The same two paths <see cref="Highlighted"/> takes, for the same reason: a measurement and the drawing it feeds
-    /// have to happen in the same font or the layout is wrong by a few pixels everywhere, with neither of the two
-    /// looking like the one that lied.<br/>
-    /// Calls <see cref="PlaceGlyphs"/> directly rather than taking a body to run. It took a delegate when both callers
-    /// wanted the size out of it, and a lambda assigning to a local captures that local, so every tracked label built a
-    /// display class and a delegate on every frame it was drawn. Returning the size instead removes both, and there was
-    /// never a second thing for the body to be.
+    /// The same two paths <see cref="Highlighted"/> takes, for the same reason: a measurement and the drawing it
+    /// feeds have to happen in the same font, or the layout is wrong by a few pixels everywhere.<br/>
+    /// Calls <see cref="PlaceGlyphs"/> directly rather than taking a body to run: a lambda capturing the size to
+    /// return would allocate a display class and a delegate on every frame a tracked label draws.
     /// </remarks>
     /// <param name="sizePx">The size at 100%.</param>
     /// <param name="text">The text to place.</param>
@@ -134,15 +128,13 @@ public static partial class NoireText
     /// Places each character in turn, and reports the run's size.
     /// </summary>
     /// <remarks>
-    /// Drawn straight onto the draw list rather than as one ImGui item per character: a text item per glyph would put
-    /// the whole run at the mercy of item spacing and make every label a different width from its own measurement. One
-    /// <see cref="ImGui.Dummy"/> at the end reserves what was actually drawn, so a tracked label lays out like any
-    /// other item.<br/>
-    /// Each glyph is still its own draw-list text call, deliberately. The font atlas spreads its glyphs across several
-    /// textures and which one a glyph lives on is the renderer's business: the text call binds the right texture per
-    /// glyph, where a hand-written quad samples whatever texture the current command happens to hold and draws noise
-    /// off another page. What the metrics cache removes is the measuring around those calls, and a space is skipped
-    /// outright rather than handed to a call that paints nothing.
+    /// Drawn straight onto the draw list rather than as one ImGui item per character, which would put the run at
+    /// the mercy of item spacing. One <see cref="ImGui.Dummy"/> at the end reserves what was drawn, so a tracked
+    /// label lays out like any other item.<br/>
+    /// Each glyph is still its own draw-list text call: the font atlas spreads glyphs across several textures, and
+    /// the text call binds the right one per glyph, where a hand-written quad would draw noise off another page.
+    /// The metrics cache only removes the measuring around those calls; a space is skipped outright rather than
+    /// handed to a call that paints nothing.
     /// </remarks>
     /// <param name="text">The text to place.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
@@ -185,9 +177,9 @@ public static partial class NoireText
 
             var codepoint = length == 2 ? char.ConvertToUtf32(text[at], text[at + 1]) : text[at];
 
-            // Remembered once per character per font size rather than re-measured per frame. A label is redrawn every
-            // frame and its glyphs do not change between them, and the alphabet an interface uses is small and fixed,
-            // so this fills in the first frames and only hits afterwards.
+            // Remembered once per character per font size rather than re-measured per frame: a label's glyphs do
+            // not change between frames, and an interface's alphabet is small and fixed, so this fills in the
+            // first frames and only hits afterwards.
             if (!run.TryGet(codepoint, out var metrics))
             {
                 metrics = BuildGlyphMetrics(codepoint, fontSize);
@@ -208,9 +200,8 @@ public static partial class NoireText
             at += length;
         }
 
-        // The trailing gap belongs after the last character and is not part of the run, exactly as a trailing space
-        // would not be. Leaving it in makes every tracked label sit a gap left of where it should when it is centred
-        // or right-aligned.
+        // The trailing gap belongs after the last character, not the run: left in, every tracked label would sit a
+        // gap left of where it should when centred or right-aligned.
         var size = new Vector2(MathF.Max(0f, x - spacing), height);
 
         if (paint)
@@ -223,9 +214,9 @@ public static partial class NoireText
     /// Reads a glyph's advance and visibility out of the font in hand, scaled to the size it is being drawn at.
     /// </summary>
     /// <remarks>
-    /// The font's glyph table holds metrics at the font's own baked size, while the run may be drawn at another: the
-    /// stand-in path stretches a built font while the right size rasterizes. A codepoint the font does not carry
-    /// comes back as the font's fallback glyph, which is what ImGui's own renderer draws for it too.
+    /// The font's glyph table holds metrics at the font's own baked size, while the run may be drawn at another
+    /// during the stand-in path. A codepoint the font does not carry comes back as the font's fallback glyph,
+    /// matching what ImGui's own renderer draws for it.
     /// </remarks>
     /// <param name="codepoint">The character, as a full codepoint.</param>
     /// <param name="fontSize">The size the run is drawn at, in real pixels.</param>

@@ -168,7 +168,7 @@ public sealed class UiStyle
     }
 
     /// <summary>
-    /// Creates an independent copy, so a derived style can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public UiStyle Clone()

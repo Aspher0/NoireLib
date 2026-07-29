@@ -19,8 +19,8 @@ public sealed class CollapsibleOptions
     /// Off by default, like every persistence switch in the library.
     /// </summary>
     /// <remarks>
-    /// The id is what the state is keyed on, so it has to be stable across sessions. A section given a blank id, or one
-    /// built from something that changes each run, refuses to persist and logs once rather than filling the state file
+    /// The id must be stable across sessions, since state is keyed on it. A section given a blank id, or one built
+    /// from something that changes each run, refuses to persist and logs once rather than filling the state file
     /// with entries nothing will ever read back.
     /// </remarks>
     public bool Persist { get; set; }
@@ -32,7 +32,7 @@ public sealed class CollapsibleOptions
 
     /// <summary>
     /// Extra content drawn on the header row, right-aligned: a count, a reset button, a status chip.<br/>
-    /// Drawn whether the section is open or closed, so a summary stays visible once the detail is folded away.
+    /// Drawn whether the section is open or closed.
     /// </summary>
     public Action? HeaderExtras { get; set; }
 

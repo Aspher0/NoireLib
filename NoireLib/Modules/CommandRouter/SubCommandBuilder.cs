@@ -195,7 +195,7 @@ public sealed class SubCommandBuilder
     }
 
     /// <summary>
-    /// Sets an availability predicate. The subcommand will only execute when this predicate returns true.
+    /// Sets an availability predicate that must return true for the subcommand to execute.
     /// </summary>
     /// <param name="condition">The availability predicate.</param>
     /// <returns>The builder instance for chaining.</returns>

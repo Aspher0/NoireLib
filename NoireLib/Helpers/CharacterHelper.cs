@@ -2,15 +2,34 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using System.Linq;
 
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Helper class for in-game character-related operations.
+/// In-game character-related helpers.
 /// </summary>
 public static class CharacterHelper
 {
+    /// <summary>
+    /// Whether a character is logged in and their state is loaded, so character data is safe to read.<br/>
+    /// Login alone is not enough: it fires before the client finishes assembling the character, and reading the
+    /// teleport list, housing data or quest journal before then walks pointers the game has not filled in yet,
+    /// taking the client down with an uncatchable access violation. Gate any character data read on this.
+    /// </summary>
+    public static unsafe bool IsStateReady
+    {
+        get
+        {
+            if (!NoireService.IsInitialized() || !NoireService.ClientState.IsLoggedIn)
+                return false;
+
+            var state = PlayerState.Instance();
+            return state != null && state->IsLoaded;
+        }
+    }
+
     /// <summary>
     /// Retrieves the memory address of the given character.
     /// </summary>

@@ -41,7 +41,7 @@ public sealed partial class Scene3D
 
     internal Scene3D(string? name) => Name = name;
 
-    /// <summary>Creates a node parented to the scene root.<br/>Thread-safe.</summary>
+    /// <summary>Creates a node parented to the scene root; thread-safe.</summary>
     /// <param name="name">Optional debug/lookup name.</param>
     public SceneNode CreateNode(string? name = null)
     {
@@ -55,7 +55,7 @@ public sealed partial class Scene3D
         }
     }
 
-    /// <summary>Removes a node (and its subtree) from the scene. Returns false when the node is not part of it.</summary>
+    /// <summary>Removes a node (and its subtree) from the scene; returns false when the node is not part of it.</summary>
     /// <param name="node">The node to remove.</param>
     public bool Remove(SceneNode node)
     {
@@ -107,9 +107,9 @@ public sealed partial class Scene3D
     internal void OnNodeRemoved() => nodeCount--;
 
     /// <summary>
-    /// Adopts a detached node subtree (e.g. an imported model's root) as a scene root. O(1) reparent, any thread.
-    /// Throws when the scene is disposed, matching <see cref="CreateNode"/>: a disposed scene has already run its
-    /// teardown, so a root added afterwards would never be freed by it.
+    /// Adopts a detached node subtree (e.g. an imported model's root) as a scene root: O(1) reparent, any thread,
+    /// throwing when the scene is disposed (matching <see cref="CreateNode"/>) since a disposed scene has already
+    /// run its teardown and a root added afterwards would never be freed by it.
     /// </summary>
     /// <exception cref="ObjectDisposedException">The scene has been disposed.</exception>
     internal void AdoptRoot(SceneNode node)
@@ -125,8 +125,8 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
-    /// Traces every visible ground decal in this scene as its painted shape (wireframe mode). Render-thread only, called
-    /// before the immediate layer is consumed so the outlines land this frame.
+    /// Traces every visible ground decal in this scene as its painted shape (wireframe mode); render-thread only,
+    /// called before the immediate layer is consumed so the outlines land this frame.
     /// <br/>
     /// Wireframe mode has nothing to rasterize for a decal - the box carries no shape, only the volume the SDF runs in -
     /// so the pass drops decals and this draws what they actually paint instead.
@@ -144,7 +144,7 @@ public sealed partial class Scene3D
         }
     }
 
-    /// <summary>Walks a subtree emitting decal outlines. Each node re-checks its own visibility and material.</summary>
+    /// <summary>Walks a subtree emitting decal outlines; each node re-checks its own visibility and material.</summary>
     private static void TraceDecalShapesRecursive(SceneNode node, Im.ImDraw3D im)
     {
         if (!node.Visible)
@@ -164,10 +164,10 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
-    /// Traces every visible ground decal in this scene as its projection box - the volume the SDF is evaluated in - for
-    /// <see cref="NoireDraw3D.DecalVolumeOutlines"/>. Render-thread only, called before the immediate layer is consumed so
-    /// the boxes land this frame. Independent of <see cref="TraceDecalShapes"/>: turn both on to see the painted shape
-    /// sitting inside the volume that produced it.
+    /// Traces every visible ground decal in this scene as its projection box - the volume the SDF is evaluated in -
+    /// for <see cref="NoireDraw3D.DecalVolumeOutlines"/>; render-thread only, called before the immediate layer is
+    /// consumed so the boxes land this frame, independent of <see cref="TraceDecalShapes"/> (turn both on to see the
+    /// painted shape sitting inside the volume that produced it).
     /// </summary>
     /// <param name="im">The immediate layer to draw into.</param>
     internal void TraceDecalVolumes(Im.ImDraw3D im)
@@ -182,7 +182,7 @@ public sealed partial class Scene3D
         }
     }
 
-    /// <summary>Walks a subtree emitting decal projection boxes. Each node re-checks its own visibility and material.</summary>
+    /// <summary>Walks a subtree emitting decal projection boxes; each node re-checks its own visibility and material.</summary>
     private static void TraceDecalVolumesRecursive(SceneNode node, Im.ImDraw3D im)
     {
         if (!node.Visible)
@@ -202,8 +202,8 @@ public sealed partial class Scene3D
     }
 
     /// <summary>
-    /// Runs OnPrepareFrame + features on the render thread. A feature that throws is detached and
-    /// logged once; everything else keeps running.
+    /// Runs OnPrepareFrame + features on the render thread; a feature that throws is detached and logged once,
+    /// everything else keeps running.
     /// </summary>
     internal void FirePrepare(in FrameContext frame)
     {

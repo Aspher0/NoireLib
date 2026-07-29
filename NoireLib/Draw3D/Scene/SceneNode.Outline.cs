@@ -14,8 +14,8 @@ public sealed partial class SceneNode
     public bool HasOutline => Renderer is { } renderer && renderer.OutlineColor.W > 0f;
 
     /// <summary>
-    /// Shows a real silhouette outline around this node in the given color. No-op (logged) when the node has no
-    /// renderer. Calling it again updates the color/width. Fluent.
+    /// Shows a real silhouette outline around this node in the given color; no-op (logged) when the node has no
+    /// renderer, calling it again updates the color/width, fluent.
     /// </summary>
     /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible).</param>
     /// <param name="widthPixels">Outline thickness in screen pixels (default 4).</param>
@@ -33,7 +33,7 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Removes the outline, if any. Fluent.</summary>
+    /// <summary>Removes the outline, if any; fluent.</summary>
     public SceneNode HideOutline()
     {
         if (Renderer is { } renderer)

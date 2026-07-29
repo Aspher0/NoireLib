@@ -5,11 +5,8 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides keyed debouncing functionality, allowing independent debouncing for different operations.<br/>
-/// Each key maintains its own Debouncer instance, preventing interference between different operations.<br/>
-/// Provides easy-to-use static methods to debounce actions based on unique keys.<br/>
-/// NoireLib must be initialized before using this helper.<br/>
-/// See <see cref="Debouncer"/> for more details.
+/// Keyed debouncing: each key gets its own independent <see cref="Debouncer"/> instance. NoireLib must be
+/// initialized before use.
 /// </summary>
 public static class DebounceHelper
 {
@@ -49,8 +46,8 @@ public static class DebounceHelper
     }
 
     /// <summary>
-    /// Debounces the specified action for a given key. Each key has independent debouncing.
-    /// If called multiple times, only the last call will execute after the delay period.
+    /// Debounces the specified action for a given key. If called multiple times, only the last call executes
+    /// after the delay period.
     /// </summary>
     /// <param name="key">The key to identify this debounce instance.</param>
     /// <param name="delay">The delay to wait before executing the action.</param>
@@ -62,8 +59,8 @@ public static class DebounceHelper
     }
 
     /// <summary>
-    /// Debounces the specified asynchronous function for a given key. Each key has independent debouncing.
-    /// If called multiple times, only the last call will execute after the delay period.
+    /// Debounces the specified asynchronous function for a given key. If called multiple times, only the last call
+    /// executes after the delay period.
     /// </summary>
     /// <param name="key">The key to identify this debounce instance.</param>
     /// <param name="delay">The delay to wait before executing the action.</param>

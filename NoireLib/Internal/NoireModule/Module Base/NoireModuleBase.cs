@@ -16,23 +16,20 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     private static readonly Dictionary<(Type, string), int> ModuleInstanceCounters = new();
     private static readonly object CounterLock = new();
 
-    // Volatile because the activation hooks are driven from the framework thread while modules read the flag from
-    // timer callbacks, thread pool continuations and their own worker threads. A bool never tears, so the concern
-    // is a reader carrying on against a stale value rather than reading a corrupt one.
+    // Volatile: activation hooks run on the framework thread while modules read this flag from timers, thread pool
+    // continuations and worker threads. A bool never tears, so the risk is a stale read, not a corrupt one.
     private volatile bool isActive = false;
 
     // Interlocked rather than a bool so that the first caller of Dispose can be identified atomically.
     private int disposeState = 0;
 
     /// <summary>
-    /// Defines whether the module is currently active.<br/>
-    /// Reads <see langword="false"/> once the module has been disposed.<br/>
+    /// Whether the module is currently active. Reads <see langword="false"/> once disposed.<br/>
     /// Assigning this property records the state without running <see cref="OnActivated"/> or
-    /// <see cref="OnDeactivated"/>; call <see cref="SetActive"/> to run the transition as well. Assigning it is
-    /// how an <see cref="OnActivated"/> implementation refuses an activation it cannot carry out.<br/>
-    /// This is not a disposal guard: it says whether the module is switched on, and a caller can switch a disposed
-    /// module back on through this setter. Guard work that must never outlive the module on
-    /// <see cref="IsDisposed"/> instead.
+    /// <see cref="OnDeactivated"/>; call <see cref="SetActive"/> to run the transition too. This is how an
+    /// <see cref="OnActivated"/> implementation can refuse its own activation.<br/>
+    /// Not a disposal guard: a caller can switch a disposed module back on through this setter. Guard against
+    /// outliving disposal on <see cref="IsDisposed"/> instead.
     /// </summary>
     public bool IsActive
     {
@@ -41,12 +38,10 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Whether <see cref="Dispose"/> has run on this module.<br/>
-    /// Disposal is terminal, so a module that reads <see langword="true"/> here never returns to service. Guard
-    /// anything that would outlive disposal on this: a timer callback, a queued delivery, or a public entry point
-    /// that would otherwise build a resource nothing is left to tear down again.<br/>
-    /// Reads <see langword="true"/> as soon as disposal is claimed, so a guard placed on it also turns away work
-    /// racing a teardown that is still running.
+    /// Whether <see cref="Dispose"/> has run on this module. Disposal is terminal: guard anything that must not
+    /// outlive it (a timer callback, a queued delivery, a public entry point) on this.<br/>
+    /// Reads <see langword="true"/> as soon as disposal is claimed, so a guard here also turns away work racing a
+    /// teardown still in progress.
     /// </summary>
     protected internal bool IsDisposed => Volatile.Read(ref disposeState) != 0;
 
@@ -56,8 +51,8 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     public string? ModuleId { get; set; } = null;
 
     /// <summary>
-    /// The instance counter for this specific module instance.<br/>
-    /// Used internally to differentiate between multiple instances of the same module type and ID.
+    /// The instance counter for this specific module instance, used to differentiate multiple instances of the
+    /// same module type and ID.
     /// </summary>
     public int InstanceCounter { get; private set; }
 
@@ -115,9 +110,8 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     protected abstract void OnDeactivated();
 
     /// <summary>
-    /// Gets the next instance counter for this specific module type and ID combination.<br/>
-    /// This ensures that multiple instances of the same module with the same ID get unique counters.<br/>
-    /// Prevents duplicate modules to cause crashes or unexpected behavior if the said modules have their own windows.
+    /// Gets the next instance counter for this specific module type and ID combination, so multiple instances with
+    /// the same ID get unique counters.
     /// </summary>
     /// <returns>The next instance counter.</returns>
     private int GetNextInstanceCounter()
@@ -135,8 +129,8 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Gets a unique identifier string combining the ModuleId and InstanceCounter.<br/>
-    /// Used for Window IDs and other unique identification needs.
+    /// Gets a unique identifier string combining the ModuleId and InstanceCounter, used for window IDs and other
+    /// unique identification needs.
     /// </summary>
     /// <returns>The unique identifier string.</returns>
     public string GetUniqueIdentifier()
@@ -163,14 +157,12 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Sets the active state of the module.<br/>
-    /// Runs <see cref="OnActivated"/> or <see cref="OnDeactivated"/> when the state actually changes, and does
-    /// nothing at all when it already holds the requested value.<br/>
-    /// Activating a disposed module is refused, since disposal is terminal; create a new instance instead.
-    /// Deactivating one is not, so that a module can deactivate itself from its own teardown.<br/>
-    /// Drive this from one thread. Reading the current state and performing the transition that follows are not
-    /// one atomic step, so two threads changing the state at the same time can both conclude they own the
-    /// transition and run the hooks concurrently or in the wrong order.
+    /// Sets the active state of the module, running <see cref="OnActivated"/> or <see cref="OnDeactivated"/> only
+    /// when the state actually changes.<br/>
+    /// Activating a disposed module is refused; deactivating one is not, so a module can deactivate itself from
+    /// its own teardown.<br/>
+    /// Drive this from one thread: reading the current state and transitioning are not atomic, so concurrent
+    /// callers can both run the hooks.
     /// </summary>
     /// <param name="active">Whether to activate the module.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -179,10 +171,9 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
         if (IsActive == active)
             return (TModule)this;
 
-        // Everything OnActivated would wire back up was released by the teardown, so allowing this would attach a
-        // disposed module to the framework and run it against resources that are gone. Only activation is refused:
-        // disposal is claimed before a module's teardown runs, and a teardown that deactivates the module itself
-        // still has to reach OnDeactivated.
+        // Everything OnActivated would wire up again was released by the teardown; allowing this would attach a
+        // disposed module to resources that are gone. Deactivation is still allowed because a teardown that
+        // deactivates itself must still reach OnDeactivated.
         if (active && IsDisposed)
         {
             NoireLogger.LogWarning((TModule)this, "Cannot activate a disposed module. Create a new instance instead.");
@@ -225,33 +216,29 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Internal method that disposes the module resources.<br/>
-    /// Not to be confused with <see cref="Dispose"/>, which is the public method.<br/>
-    /// Do not call <see cref="Dispose"/> in this method to avoid infinite recursion.
+    /// Disposes the module's own resources; distinct from the public <see cref="Dispose"/>. Do not call
+    /// <see cref="Dispose"/> from here, which would recurse infinitely.
     /// </summary>
     protected abstract void DisposeInternal();
 
     /// <summary>
-    /// Runs the module's teardown. Called by <see cref="Dispose"/> exactly once, after disposal has been claimed
-    /// and before <see cref="IsActive"/> is cleared.<br/>
-    /// Overridden by the bases that own resources of their own, so that a module keeps the guarantees
-    /// <see cref="Dispose"/> makes no matter which base it derives from.
+    /// Runs the module's teardown. Called by <see cref="Dispose"/> exactly once, after disposal is claimed and
+    /// before <see cref="IsActive"/> is cleared. Overridden by bases that own their own resources, so every
+    /// module keeps <see cref="Dispose"/>'s guarantees regardless of base.
     /// </summary>
     private protected virtual void DisposeCore() => DisposeInternal();
 
     /// <summary>
-    /// Disposes the module completely.<br/>
-    /// This is here because modules may have windows. This way, windows can be disposed automatically.<br/>
-    /// Tears the module down once. A module is reachable for disposal both from the consumer that owns it and
-    /// from the library disposing its modules, so a second call returns having done nothing.<br/>
+    /// Disposes the module completely. Idempotent: a module is reachable for disposal both from its owner and
+    /// from the library disposing its modules, so a second call does nothing.<br/>
     /// Once this returns, <see cref="IsDisposed"/> reads <see langword="true"/> and <see cref="IsActive"/> reads
     /// <see langword="false"/>.<br/>
-    /// Do not call manually unless you are managing module lifecycles yourself (i.e. Without using <see cref="NoireLibMain.AddModule{T}(T)"/>).
+    /// Do not call manually unless you manage module lifecycles yourself, without <see cref="NoireLibMain.AddModule{T}(T)"/>.
     /// </summary>
     public virtual void Dispose()
     {
-        // Claimed before any teardown runs, so that a second call cannot re-enter a teardown, including one racing
-        // this call and one arriving after a teardown that threw partway through and left the module half torn down.
+        // Claimed before any teardown runs, so a second call cannot re-enter a teardown: one racing this call, or
+        // one arriving after a teardown that threw partway and left the module half torn down.
         if (Interlocked.Exchange(ref disposeState, 1) != 0)
             return;
 
@@ -261,13 +248,10 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
         }
         finally
         {
-            // Cleared after the teardown, not before it: a module whose teardown deactivates itself needs the
-            // module to still read as active for its own SetActive(false) to reach OnDeactivated at all. Assigned
-            // directly rather than routed through SetActive, so that disposal never runs a deactivation hook a
-            // module did not already ask for; teardown belongs in DisposeInternal, and firing OnDeactivated here
-            // would run it twice for every module that tears down in both places.
-            // The finally is what stops a teardown that throws partway from leaving a disposed module reporting
-            // itself as active.
+            // Cleared after teardown, not before: a module whose teardown deactivates itself needs IsActive still
+            // true for its own SetActive(false) to reach OnDeactivated. Assigned directly rather than through
+            // SetActive, so disposal never fires a deactivation hook a module did not already trigger itself.
+            // The finally stops a teardown that throws partway from leaving a disposed module reporting itself as active.
             isActive = false;
         }
     }
@@ -275,8 +259,8 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
 
 /// <summary>
 /// Base class for modules within the NoireLib library.<br/>
-/// Allows for multiple instances of the same module type with unique identifiers and instance counters.<br/>
-/// Will initialize the configuration of type <typeparamref name="TConfiguration"/> on static constructor to make sure it's loaded on initialization of the module.
+/// Allows for multiple instances of the same module type with unique identifiers and instance counters. Eagerly
+/// loads <typeparamref name="TConfiguration"/> in the static constructor.
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
 /// <typeparam name="TConfiguration">The type of the configuration associated with the module.</typeparam>

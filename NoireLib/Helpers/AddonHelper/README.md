@@ -17,6 +17,7 @@ You are reading the documentation for the `AddonHelper` static helper.
 - [Extension Methods](#extension-methods)
 - [Safety Model](#safety-model)
 - [API Reference](#api-reference)
+- [See Also](#see-also)
 
 ---
 
@@ -291,7 +292,7 @@ NoireAddon a3    = eventData.ToNoireAddon();
 ```
 
 `NoireAddon` also has implicit conversions from `AtkUnitBase*` and `AtkUnitBasePtr`, and both wrappers convert
-implicitly to `bool` (`NoireAddon` → `IsReady`, `NoireAddonNode` → `IsValid`).
+implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 
 ---
 
@@ -324,3 +325,9 @@ implicitly to `bool` (`NoireAddon` → `IsReady`, `NoireAddonNode` → `IsValid`
 **`NoireAddonNode`** - `IsValid`, `NodeId`, `IsTextNode`, `IsComponentNode`, `IsVisible`, `Width`, `Height`,
 `ScreenX`, `ScreenY`, `Text`, `TryReadText`, `TrySetText`, `SetVisible`, `Show`, `Hide`, `SetAlpha`,
 `AddEvent`, `AddClickEvent`, `AddHoverEvents`, `AddCursorOnHover`, `Addon`.
+
+---
+
+## See Also
+
+- [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)

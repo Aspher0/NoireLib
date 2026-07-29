@@ -514,8 +514,8 @@ The window only opens while the module is active, and closes when the module is 
 
 ## EventBus Integration
 
-The `NoireTweakManager` can publish events to a `NoireEventBus` for all important tweak actions.<br/>
-This allows you to react to what users turn on and off without polling the manager.
+The `NoireTweakManager` can publish events to a `NoireEventBus` for all important tweak actions, so you can react
+to what users turn on and off without polling the manager.
 
 ### Quick Example
 
@@ -581,8 +581,7 @@ tweakManager.ImportTweakConfigs(configs);
 ```
 
 An import restores state you are holding rather than asking for a write, so it follows `AutomaticPersistence` like any
-other change: with the setting off it is applied in memory only, which is what you want when your own store is the one
-that matters.
+other change: with the setting off it is applied in memory only, for when your own store is the one that matters.
 
 You can force a write at any time, whatever the setting says:
 
@@ -634,13 +633,12 @@ var migrated = tweakManager?.ExecuteKeyMigrations();
 Pending mappings are applied automatically when the module initializes. A mapping whose old key holds nothing to move
 is kept, so it still applies if that data turns up later; one that has been applied is discarded.
 
-Registering a mapping writes nothing by itself. A mapping is a declaration your code makes on every run rather than
+Registering a mapping writes nothing by itself: it is a declaration your code makes on every run rather than
 state the user built up, so writing one would keep it applying after the `AddKeyMigration` call that declared it is
-gone, and would rewrite the configuration merely because the plugin started. The move a mapping produces is the state,
-and that is what gets written.
+gone, and would rewrite the configuration merely because the plugin started. Only the move a mapping produces gets written.
 
-A migration that moves something is written to disk when `AutomaticPersistence` is on, which is what makes it a
-one-time move. With persistence off, the move is applied in memory only and is redone from the same old keys on the
+A migration that moves something is written to disk when `AutomaticPersistence` is on, making it a one-time move.
+With persistence off, the move is applied in memory only and is redone from the same old keys on the
 next load, so store the result yourself with `GetAllTweakConfigs()` if it has to survive a restart.
 
 ### Title Bar Buttons

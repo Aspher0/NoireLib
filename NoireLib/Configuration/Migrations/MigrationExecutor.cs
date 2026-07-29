@@ -14,11 +14,9 @@ namespace NoireLib.Configuration.Migrations;
 public static class MigrationExecutor
 {
     /// <summary>
-    /// Migrations registered at runtime, keyed by configuration type.<br/>
-    /// Registration is a public entry point and every plugin sharing this process reaches the same table, so a
-    /// registration can run while another plugin is loading a configuration and reading it. The lists are treated as
-    /// immutable once published and a registration replaces the whole list rather than appending to the one in the
-    /// table, which lets a read take a list that nothing can go on to mutate underneath it.
+    /// Migrations registered at runtime, keyed by configuration type. Every plugin sharing this process reaches the
+    /// same table, so lists are treated as immutable once published; a registration replaces the whole list rather
+    /// than appending, so a concurrent read never sees a list mid-mutation.
     /// </summary>
     private static readonly ConcurrentDictionary<Type, List<IConfigMigration>> RuntimeMigrations = new();
 
@@ -183,17 +181,16 @@ public static class MigrationExecutor
     }
 
     /// <summary>
-    /// Registers a migration dynamically at runtime.
-    /// This is useful for organizing migrations in separate classes outside the config.
+    /// Registers a migration dynamically at runtime, for organizing migrations in separate classes outside the
+    /// config.
     /// </summary>
     /// <param name="configType">The configuration type to register the migration for.</param>
     /// <param name="migration">The migration instance to register.</param>
     public static void RegisterMigration(Type configType, IConfigMigration migration)
     {
         // Copy on write: the replacement list is built off to the side and swapped in as one value, so a concurrent
-        // read either sees the table without this migration or with it, and never a list mid-append. AddOrUpdate
-        // retries its factory against the current value if another registration lands first, so two registrations
-        // racing on the same type both survive.
+        // read never sees a list mid-append. AddOrUpdate retries its factory if another registration lands first,
+        // so two racing registrations both survive.
         RuntimeMigrations.AddOrUpdate(
             configType,
             _ => new List<IConfigMigration> { migration },

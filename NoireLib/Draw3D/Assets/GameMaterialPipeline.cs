@@ -22,31 +22,27 @@ public static class GameMaterialPipeline
     private static bool warnedNotReady;
 
     /// <summary>
-    /// Why the pipeline is unavailable, or null when it is usable.<br/>
-    /// Materials fall back to the standard lit shader when this is set, which draws the same texture without
-    /// confining the tint, so a dye applied through <see cref="GameMaterial.ToGameShaded"/> has no visible
-    /// effect. Surface this wherever that difference would otherwise read as the dye doing nothing.
+    /// Why the pipeline is unavailable, or null when it is usable; materials then fall back to the standard
+    /// lit shader, so a dye applied through <see cref="GameMaterial.ToGameShaded"/> has no visible effect,
+    /// worth surfacing wherever that would otherwise read as the dye doing nothing.
     /// </summary>
     public static string? Unavailable { get; private set; }
 
     /// <summary>
-    /// Whether the pipeline is registered, so a material built now draws with it rather than falling back.<br/>
-    /// <b>A caller that keeps built materials around has to watch this.</b> Registration fails while the
-    /// renderer has no device, and <see cref="GameMaterial.ToGameShaded"/> then returns a plain lit material -
-    /// same texture, but no dye, no normal map and no specular. That material is not repaired when the device
-    /// arrives, because nothing owns it any more. Rebuild on the transition from false to true, or the first
-    /// object of a session is quietly flatter than every one after it.<br/>
-    /// Unlike <see cref="Unavailable"/> this is meaningful before the first registration attempt, which is
-    /// exactly when the decision has to be made.
+    /// Whether the pipeline is registered, so a material built now draws with it rather than falling back;
+    /// <b>a caller that keeps built materials around must watch this</b> and rebuild on the false-to-true
+    /// transition, since a material built before registration is not repaired later and stays flatter than
+    /// ones built after.<br/>
+    /// Unlike <see cref="Unavailable"/>, this is meaningful before the first registration attempt, exactly
+    /// when the decision has to be made.
     /// </summary>
     public static bool Ready => registered;
 
     /// <summary>
-    /// Registers the pipeline if it is not already, and reports whether it is usable.<br/>
-    /// Failure disables only this pipeline; callers fall back to the standard lit shader. A missing shader
-    /// resource is permanent and is not retried, while a renderer that has not started yet is retried on
-    /// every call, so the first material built before the device exists does not disable the pipeline for
-    /// the rest of the session.
+    /// Registers the pipeline if it is not already, and reports whether it is usable; a missing shader
+    /// resource is a permanent failure (not retried), while a renderer that has not started yet is retried on
+    /// every call, so the first material built before the device exists does not disable the pipeline for the
+    /// rest of the session.
     /// </summary>
     public static bool EnsureRegistered()
     {

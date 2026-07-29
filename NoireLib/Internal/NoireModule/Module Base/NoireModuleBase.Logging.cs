@@ -5,14 +5,11 @@ namespace NoireLib.Core.Modules;
 
 /// <summary>
 /// Module-facing logging helpers.<br/>
-/// These forward to <see cref="NoireLogger"/> with the module as the caller, and carry the
-/// <see cref="EnableLogging"/> gate so a module does not repeat <c>if (EnableLogging) NoireLogger.LogX(this, ...)</c>
-/// at every call site.<br/>
+/// Forward to <see cref="NoireLogger"/> with the module as the caller, gated by <see cref="EnableLogging"/> so
+/// call sites do not repeat the check themselves.<br/>
 /// The informational levels (<see cref="LogInfo(ref NoireLogHandler)"/>, <see cref="LogDebug(ref NoireLogHandler)"/>,
-/// <see cref="LogVerbose(ref NoireLogHandler)"/>) are gated by <see cref="EnableLogging"/> and take a
-/// <see cref="NoireLogHandler"/> for interpolated messages, so an interpolated string is never built while logging is
-/// off. Warnings, errors and fatal messages are reported regardless of <see cref="EnableLogging"/> and take a plain
-/// message, since they are always formatted.
+/// <see cref="LogVerbose(ref NoireLogHandler)"/>) take a <see cref="NoireLogHandler"/> so an interpolated message
+/// is never built while logging is off. Warnings, errors and fatal messages always report and take a plain string.
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
 public abstract partial class NoireModuleBase<TModule>

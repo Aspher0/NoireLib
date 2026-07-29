@@ -13,13 +13,13 @@ namespace NoireLib.UI;
 /// One property of that projection shapes everything below. It divides by the absolute value of the clip-space w
 /// rather than by w itself, so a point behind the camera comes back already reflected through the centre of the
 /// screen: its direction from the centre is the true one, and it stays continuous as a point crosses the camera
-/// plane. Only the magnitude is meaningless there, which is why an off-screen marker is placed from the direction
+/// plane. Only the magnitude is meaningless there. An off-screen marker is placed from the direction
 /// alone and never from the projected coordinate.
 /// </remarks>
 public static class UiWorldProjection
 {
     /// <summary>
-    /// How far from the centre a projected point has to be, in pixels, before the direction to it is worth reading.
+    /// How far from the centre a projected point has to be, in pixels, before its direction counts.
     /// </summary>
     /// <remarks>
     /// A point almost exactly behind the camera projects onto the centre, where the direction is whatever the last bit
@@ -53,7 +53,7 @@ public static class UiWorldProjection
     /// </summary>
     /// <remarks>
     /// The scale is the reference distance over the actual one, so an element is exactly its authored size at the
-    /// reference and half of it at twice that, clamped at both ends. Clamping is what stops a marker underfoot from
+    /// reference and half of it at twice that, clamped at both ends: clamping stops a marker underfoot from
     /// filling the screen and one across the zone from becoming a single unreadable pixel.
     /// </remarks>
     /// <param name="distance">The distance to the element, in yalms.</param>
@@ -76,12 +76,11 @@ public static class UiWorldProjection
     /// How large an element is at a given distance, ramping between two distances the way the distance fade does.
     /// </summary>
     /// <remarks>
-    /// The alternative to <see cref="DistanceScale"/>, and the one to reach for when the two distances that matter are
-    /// the ones you can name. Perspective shrinking is authored by a reference distance and a pair of clamps, which is
-    /// physically right but answers "where does it stop shrinking" only indirectly; this states both ends outright, and
-    /// reads as the same pair of numbers as <see cref="DistanceAlpha"/>.<br/>
+    /// The alternative to <see cref="DistanceScale"/>: perspective shrinking is authored by a reference distance
+    /// and a pair of clamps, which is physically right but answers "where does it stop shrinking" only indirectly;
+    /// this states both ends outright, and reads as the same pair of numbers as <see cref="DistanceAlpha"/>.<br/>
     /// A range that does not run forwards is treated as a hard change at <paramref name="from"/> rather than as an
-    /// error, which is what a slider dragged past its partner produces.
+    /// error, since a slider dragged past its partner produces exactly that.
     /// </remarks>
     /// <param name="distance">The distance to the element, in yalms.</param>
     /// <param name="from">Where shrinking begins. At or below it the element is at <paramref name="maxScale"/>.</param>
@@ -108,9 +107,9 @@ public static class UiWorldProjection
     /// values instead.
     /// </summary>
     /// <remarks>
-    /// This exists for text. Drawing at a size the glyphs were not rasterized at is the blur <see cref="NoireText"/>
-    /// exists to avoid, and asking for a real font at every distance instead would be a full glyph atlas per pixel of
-    /// distance. Stepped, the whole range costs a handful of sizes, each of them sharp.
+    /// Drawing at a size the glyphs were not rasterized at is the blur <see cref="NoireText"/> exists to avoid, and
+    /// asking for a real font at every distance instead would be a full glyph atlas per pixel of distance. Stepped,
+    /// the whole range costs a handful of sizes, each of them sharp.
     /// </remarks>
     /// <param name="scale">The scale to round.</param>
     /// <param name="step">The step to round to. Zero or less leaves the scale untouched.</param>
@@ -154,9 +153,9 @@ public static class UiWorldProjection
     /// a point behind the camera can project to anywhere at all, the centre of the screen included, and clamping a point
     /// that is already inside the viewport leaves it exactly where it was. The result is a marker for something behind
     /// you sitting in the middle of the screen instead of on an edge.<br/>
-    /// The answer is where the <em>centre</em> of the element goes, so it is placed with a centred pivot. The element's
-    /// own size and the margin are taken out of the box it travels in, which is what keeps the whole element inside the
-    /// margin rather than hanging over the edge by half of itself.
+    /// The answer is where the <em>centre</em> of the element goes, so it is placed with a centred pivot. The
+    /// element's own size and the margin are taken out of the box it travels in, keeping the whole element inside
+    /// the margin rather than hanging over the edge by half of itself.
     /// </remarks>
     /// <param name="viewport">The viewport to stay inside.</param>
     /// <param name="direction">The direction from the centre, from <see cref="OffScreenDirection"/>. Need not be normalized.</param>

@@ -7,9 +7,9 @@ namespace NoireLib.Draw3D.Core;
 /// A writable depth-stencil view over the game's scene depth buffer, used ONLY by
 /// <see cref="Enums.NameplateOcclusion.DepthAware"/>: at pre-UI injection time Draw3D re-rasterizes its opaque
 /// objects' depth into the game's buffer (greater-equal tested against the world's own depth), so the game's
-/// later nameplate pass occludes against 3D objects that stand in front of a character.<br/>
-/// This deliberately departs from the usual rule that the game's depth buffer is read-only; hence it is
-/// fail-soft, and re-derives itself whenever the underlying texture changes (resolution, GPose, upscaler).
+/// later nameplate pass occludes against 3D objects that stand in front of a character. This deliberately departs
+/// from the usual rule that the game's depth buffer is read-only; hence it is fail-soft, and re-derives itself
+/// whenever the underlying texture changes (resolution, GPose, upscaler).
 /// </summary>
 internal sealed unsafe class GameDepthTarget : System.IDisposable
 {

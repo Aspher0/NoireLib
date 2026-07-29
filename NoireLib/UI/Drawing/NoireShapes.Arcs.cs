@@ -10,8 +10,7 @@ namespace NoireLib.UI;
 /// </summary>
 /// <remarks>
 /// Angles here are turns rather than radians: 0 is twelve o'clock and a quarter is three o'clock, so a three quarter
-/// arc is written as 0.75 and a gauge reading 40 percent is written as 0.4. That matches how every other fraction in
-/// NoireUI is expressed, and it removes the question of which direction zero points in.
+/// arc is written as 0.75 and a gauge reading 40 percent is written as 0.4.
 /// </remarks>
 public static partial class NoireShapes
 {
@@ -26,8 +25,7 @@ public static partial class NoireShapes
     #region Arcs
 
     /// <summary>
-    /// The most points <see cref="ArcPath"/> can ever write, so a caller can size a buffer once and stop thinking
-    /// about it.
+    /// The most points <see cref="ArcPath"/> can ever write.
     /// </summary>
     public const int MaxArcPathPoints = 257;
 
@@ -68,9 +66,9 @@ public static partial class NoireShapes
 
         var segments = SegmentsFor(sweep, radius);
 
-        // A closed loop must not repeat its first point. The edge back to the start is the one the stroke or the fill
-        // adds for itself, so a repeated point leaves that edge zero length: it has no direction to build a join from,
-        // and it draws as a spike at the seam rather than as nothing.
+        // A closed loop must not repeat its first point: the edge back to the start is the one the stroke or the fill
+        // adds for itself, so a repeated point leaves that edge zero length, with no direction to build a join from,
+        // and it draws as a spike at the seam.
         var count = closed ? segments : segments + 1;
 
         if (count > points.Length)
@@ -122,8 +120,8 @@ public static partial class NoireShapes
     /// Fills a slice of a ring, or a slice of a disc when <paramref name="innerRadius"/> is zero.
     /// </summary>
     /// <remarks>
-    /// The shape a radial gauge is made of. An inner radius is drawn as a thick arc rather than as a filled band, which
-    /// is what keeps the ends square and the edges antialiased however far round it goes.
+    /// The shape a radial gauge is made of. An inner radius is drawn as a thick arc rather than as a filled band,
+    /// keeping the ends square and the edges antialiased however far round it goes.
     /// </remarks>
     /// <param name="centre">The centre of the circle, in screen space.</param>
     /// <param name="innerRadius">The inner radius, in real pixels. Zero fills to the centre.</param>
@@ -224,8 +222,8 @@ public static partial class NoireShapes
 
         var duty = Math.Clamp(style.Duty, 0.01f, 1f);
 
-        // A stated distance wins over the ratio: it exists for lining the hole up with something drawn at a fixed
-        // radius, and scales with the UI rather than with the burst.
+        // A stated distance wins over the ratio: it lines the hole up with something drawn at a fixed radius, and
+        // scales with the UI rather than with the burst.
         var inner = style.InnerSize is { } innerSize
             ? Math.Clamp(NoireUI.Scaled(innerSize), 0f, 0.99f * radius)
             : Math.Clamp(style.InnerRatio, 0f, 0.99f) * radius;
@@ -233,9 +231,9 @@ public static partial class NoireShapes
         var half = slot * duty * 0.5f;
         var softness = Math.Clamp(style.Softness, 0f, 1f);
 
-        // A soft side is built the way the glow is: layers that each carry part of the alpha, narrowing inwards so
-        // they accumulate towards the middle of the ray and leave its edge at a fraction of full strength. An angular
-        // fade cannot be a linear gradient, because the ray's sides converge, so stacking is what is left.
+        // A soft side is built the way the glow is: layers each carry part of the alpha, narrowing inwards so they
+        // accumulate towards the middle of the ray and leave its edge at a fraction of full strength. An angular fade
+        // cannot be a linear gradient, because the ray's sides converge; stacking layers is the alternative.
         var layers = softness > 0f ? Math.Clamp((int)MathF.Ceiling(softness * 8f), 2, 8) : 1;
 
         var tipped = inner <= 0.5f;
@@ -273,14 +271,14 @@ public static partial class NoireShapes
         var burstSin = MathF.Sin(burst);
 
         // A fading burst is written as raw geometry with the fade in the vertex colors, one reservation for the whole
-        // shape. The general path below is a filled polygon per ray per layer, each an own call into ImGui, plus the
-        // shading pass over every vertex produced: for the shipped default of sixty soft rays that was a hundred and
-        // eighty calls a frame, and it was almost all of what a burst cost.
-        // The results match: the fade is linear between the radii, which is exactly what interpolating full-alpha
-        // inner vertices towards zero-alpha rim vertices draws. The rim carries no alpha, so the antialiased fringe
-        // the polygon path would add there has nothing to smooth; the ray sides are softened by the layers, as they
-        // are on the general path; and an inner edge, when the rays start off the centre, sits at the burst's faint
-        // working alpha where the missing single pixel of fringe does not read.
+        // shape. The general path below draws a filled polygon per ray per layer plus a shading pass over every
+        // vertex: for the shipped default of sixty soft rays that was a hundred and eighty calls a frame, almost all
+        // of what a burst cost.
+        // The results match: the fade is linear between the radii, exactly what interpolating full-alpha inner
+        // vertices towards zero-alpha rim vertices produces. The rim carries no alpha, so the antialiased fringe the
+        // polygon path would add there has nothing to smooth; the ray sides are softened by the layers, as on the
+        // general path; and an inner edge, when the rays start off the centre, sits at the burst's faint working
+        // alpha where the missing single pixel of fringe does not read.
         if (shading && style.Rays * layers * 4 <= 60000)
         {
             FillFadedBurst(drawList, centre, inner, tipped, radius, color, style.Rays, layers, layerAlphas, directions, stride, burstCos, burstSin);
@@ -318,14 +316,14 @@ public static partial class NoireShapes
                     count = 4;
                 }
 
-                // The layer's own alpha goes into the fill rather than into the fade, which is what lets one fade serve
-                // every layer: each layer differs by its tint, and they all share the same ramp from centre to rim.
+                // The layer's own alpha goes into the fill rather than into the fade, so one fade serves every layer:
+                // each layer differs by its tint, and they all share the same ramp from centre to rim.
                 Fill(wedge[..count], tint);
             }
         }
 
-        // Scales what the fills already laid down rather than replacing it, so each layer keeps the alpha that makes it
-        // a layer and the rays keep their colour.
+        // Scales what the fills already laid down rather than replacing it, so each layer keeps its own alpha and the
+        // rays keep their colour.
         if (shading)
             ShadeRadial(drawList, firstVertex, drawList.VtxBuffer.Size, centre, inner, radius);
     }
@@ -336,10 +334,10 @@ public static partial class NoireShapes
     /// </summary>
     /// <remarks>
     /// A ray converging at the centre is a triangle; a ray starting off the centre is a quad whose inner corners
-    /// carry the full layer alpha, which is where the radial ramp holds it at full strength.<br/>
+    /// carry the full layer alpha, where the radial ramp holds it at full strength.<br/>
     /// The vertex and index spans are the region the reservation just appended, so nothing here reaches past what it
-    /// asked for. The base vertex id is read after the reservation, which is what keeps the indices right when the
-    /// reservation itself rolled the buffer over to a new draw command.
+    /// asked for. The base vertex id is read after the reservation, keeping the indices right when the reservation
+    /// itself rolled the buffer over to a new draw command.
     /// </remarks>
     /// <param name="drawList">The list to write into.</param>
     /// <param name="centre">Where the rays converge, in screen space.</param>
@@ -512,9 +510,9 @@ public static partial class NoireShapes
     /// How many points a guilloche ring of a given radius is drawn with.
     /// </summary>
     /// <remarks>
-    /// Taken from the radius rather than from the lobe count alone, which is what the count used to be. A count that
-    /// ignores the radius spends the same hundreds of points on a rosette an inch across as on one filling the window:
-    /// at a small radius those segments are a fraction of a pixel each, which costs a great deal and shows nothing.
+    /// Taken from the radius rather than from the lobe count alone. A count that ignores the radius spends the same
+    /// hundreds of points on a rosette an inch across as on one filling the window: at a small radius those segments
+    /// are a fraction of a pixel each, which costs a great deal and shows nothing.
     /// </remarks>
     /// <param name="radius">The ring's radius, in real pixels.</param>
     /// <param name="lobes">How many petals the rosette has.</param>
@@ -531,10 +529,9 @@ public static partial class NoireShapes
     /// What a sunburst's ray directions are decided by, and nothing else.
     /// </summary>
     /// <remarks>
-    /// Neither the radius nor the rotation is here. The rays are unit directions scaled on the way out, and the burst
-    /// is turned as a whole on the way out too, so one entry serves a sunburst of any size at any angle. That is what
-    /// lets a rotating burst, which is the reason one is usually drawn, hit the cache on every frame instead of missing
-    /// on all of them.
+    /// Neither the radius nor the rotation is here: the rays are unit directions scaled and turned on the way out, so
+    /// one entry serves a sunburst of any size at any angle, and a rotating burst still hits the cache every frame
+    /// instead of missing on all of them.
     /// </remarks>
     /// <param name="Rays">How many rays radiate from the centre.</param>
     /// <param name="HalfWidth">Half the angular width of a ray, in radians.</param>

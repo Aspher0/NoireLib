@@ -7,11 +7,8 @@ using System.Collections.Generic;
 namespace NoireLib.TaskQueue;
 
 /// <summary>
-/// A module providing task queuing and processing, in a blocking or non-blocking way, based on conditions and callbacks.<br/>
-/// Useful for processing tasks one at a time while awaiting certain conditions, or for scheduling tasks to be executed under specific scenarios.<br/>
-/// See <see cref="QueuedTask"/> and <see cref="TaskCompletionCondition"/> for task definitions and completion conditions.<br/>
-/// See <see cref="TaskBuilder"/> for building and enqueuing tasks comprehensively and easily with chainable methods.<br/>
-/// See <see cref="TaskBatch"/> and <see cref="BatchBuilder"/> for batch operations.
+/// A module providing task queuing and processing, blocking or non-blocking, based on conditions and callbacks.
+/// See <see cref="QueuedTask"/> and <see cref="TaskCompletionCondition"/> for task definitions, <see cref="TaskBuilder"/> for building and enqueuing tasks, and <see cref="TaskBatch"/>/<see cref="BatchBuilder"/> for batch operations.
 /// </summary>
 public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
 {
@@ -34,8 +31,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     private long accumulatedProcessingMillis;
 
     /// <summary>
-    /// The associated EventBus instance for publishing queue events or subscribing to events for task completion conditions.<br/>
-    /// If <see langword="null"/>, no events will be published, and event-based completion conditions will not function.
+    /// The associated EventBus for publishing queue events and subscribing to event-based completion conditions; if null, neither functions.
     /// </summary>
     public NoireEventBus? EventBus { get; set; } = null;
 
@@ -93,8 +89,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         : base(moduleId, active, enableLogging, shouldProcessQueueAutomatically, shouldStopQueueOnComplete, eventBus) { }
 
     /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
+    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>, for internal module management only.
     /// </summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
@@ -126,10 +121,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     protected override void OnActivated()
     {
-        // Processing is driven by the framework update, which does not exist until NoireLib is initialized.
-        // Activating beforehand records the active state and wires nothing, rather than faulting on a null
-        // service. The module stays inert in that state and does not start processing once NoireLib initializes,
-        // since nothing revisits the decision; activate it again afterwards to start processing.
+        // Requires NoireLib to be initialized; if activated before that, the module stays inert and must be activated again afterwards to process.
         if (!NoireService.IsInitialized())
         {
             NoireLogger.LogWarning(this, "Task Queue activated before NoireLib was initialized. The queue will not be processed until the module is activated again once NoireLib is initialized.");
@@ -147,8 +139,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// </summary>
     protected override void OnDeactivated()
     {
-        // Detaching is all that needs the service: an activation that happened while NoireLib was not
-        // initialized never attached this handler, and there is no framework to detach it from anyway.
+        // Detaching is the only part that needs the service; an activation before NoireLib was initialized never attached the handler.
         if (NoireService.IsInitialized())
             NoireService.Framework.Update -= OnFrameworkUpdate;
 
@@ -191,12 +182,10 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// Runs a single queue processing pass, the same one a framework frame runs.
     /// </summary>
     /// <remarks>
-    /// Processing is otherwise reachable only from the framework update, which needs a running game, so this is
-    /// the entry point that lets the queue be stepped deterministically without one.<br/>
-    /// It deliberately does not test <see cref="NoireModuleBase{TModule}.IsActive"/>: that flag records whether
-    /// the module is wired to the frame loop, which is a question about the caller rather than about processing.
-    /// The queue state gate does belong to processing and is kept here, so a pass driven from anywhere obeys the
-    /// same rule a frame does.
+    /// Otherwise reachable only from the framework update, which needs a running game; this lets the queue be
+    /// stepped deterministically without one. It deliberately does not test
+    /// <see cref="NoireModuleBase{TModule}.IsActive"/>, since that flag is about whether the module is wired to
+    /// the frame loop, not about processing; the queue state gate does belong to processing and stays here.
     /// </remarks>
     internal void TickOnce()
     {
@@ -213,8 +202,8 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
                 NoireLogger.LogError(this, ex, "Error in queue processing.");
         }
 
-        // Deliberately outside the try above and in its own guard, so that a pass which threw still reconciles
-        // what it managed to change, and a consumer callback that throws from here cannot mask a processing error.
+        // In its own try, separate from the one above, so a pass that threw still reconciles what it changed,
+        // and a callback throwing here cannot mask a processing error.
         try
         {
             ReconcileConsumerWrittenStatuses();

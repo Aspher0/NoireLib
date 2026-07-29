@@ -3,8 +3,7 @@ using System;
 namespace NoireLib.TaskQueue;
 
 /// <summary>
-/// Helper class for storing unsafe pointers in task metadata.<br/>
-/// Since pointers cannot be directly stored as objects, this class wraps them as IntPtr.
+/// Helper class for storing unsafe pointers in task metadata, wrapped as IntPtr.
 /// </summary>
 /// <typeparam name="T">The pointer type (must be an unmanaged type).</typeparam>
 public class PointerMetadata<T> where T : unmanaged

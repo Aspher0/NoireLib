@@ -20,7 +20,7 @@ public sealed class FrameStyle
 {
     #region Shape
 
-    /// <summary>How the corners are cut. Defaults to square, which is what a frame usually wants.</summary>
+    /// <summary>How the corners are cut. Defaults to square.</summary>
     public CornerShape CornerShape { get; set; } = CornerShape.Square;
 
     /// <summary>
@@ -32,8 +32,7 @@ public sealed class FrameStyle
     public RectCorners Corners { get; set; } = RectCorners.All;
 
     /// <summary>
-    /// How far inside the given rectangle the frame is drawn, at 100%. Useful for setting a frame off the content it
-    /// surrounds without moving the content.
+    /// How far inside the given rectangle the frame is drawn, at 100%.
     /// </summary>
     public float Inset { get; set; }
 
@@ -82,10 +81,10 @@ public sealed class FrameStyle
     /// </summary>
     /// <remarks>
     /// Ticks are dropped once two of them would meet, because brackets crossing in the middle read as a smaller frame
-    /// rather than as corners. That is right for a rect that has merely become small and wrong for one that is meant to
-    /// be a strip, which loses its edge entirely. <see cref="TickFallback.Brackets"/> draws a full-height bracket at
-    /// each end instead, at the same inset, length, thickness and color the ticks would have had, so a frame that
-    /// changes between the two shapes does not appear to move.
+    /// rather than as corners: right for a rect that has merely become small, wrong for one meant to be a strip, which
+    /// loses its edge entirely. <see cref="TickFallback.Brackets"/> draws a full-height bracket at each end instead,
+    /// at the same inset, length, thickness and color the ticks would have had, so a frame switching between the two
+    /// shapes does not appear to move.
     /// </remarks>
     public TickFallback TickFallback { get; set; } = TickFallback.None;
 
@@ -124,7 +123,7 @@ public sealed class FrameStyle
     #endregion
 
     /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public FrameStyle Clone() => (FrameStyle)MemberwiseClone();

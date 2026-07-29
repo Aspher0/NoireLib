@@ -12,9 +12,9 @@ namespace NoireLib.UI;
 /// twelve thousand short-lived strings a second, for a set of values that never changed. That is not a large amount of
 /// memory, but it is a steady stream of garbage in the one place a plugin cannot afford a collection: the draw thread.
 /// <br/>
-/// The strings this returns are byte-identical to the interpolation each call replaces, which is not a detail: widget
-/// ids travel into <see cref="NoireUiState"/> keys, so an id that changed shape would silently orphan every value a
-/// user had saved under the old one.<br/>
+/// The strings this returns are byte-identical to the interpolation each call replaces: widget ids travel into
+/// <see cref="NoireUiState"/> keys, so an id that changed shape would silently orphan every value a user had saved
+/// under the old one.<br/>
 /// Reached only from the draw thread, so the dictionary needs no lock.
 /// </remarks>
 internal static class UiIds

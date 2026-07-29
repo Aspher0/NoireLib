@@ -5,12 +5,11 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Terminal chat output for the render-thread diagnostics. Draw3D's render body runs on the render thread, and its
-/// default path runs mid-frame from inside one of the game's own D3D calls; printing to chat from there re-enters the
-/// game's chat system underneath itself, which is not something the game tolerates. Every report routes through here
-/// so the print lands on the framework thread instead, one frame later at worst.
-/// <br/>
-/// Diagnostics always log the full report through <see cref="NoireLogger"/> as well, so a print that cannot be
-/// delivered (NoireLib torn down between arming and reporting) costs the summary line, never the findings.
+/// default path runs mid-frame from inside one of the game's own D3D calls; printing to chat from there re-enters
+/// the game's chat system underneath itself. Every report routes through here so the print lands on the framework
+/// thread instead, one frame later at worst. Diagnostics always log the full report through
+/// <see cref="NoireLogger"/> as well, so a print that cannot be delivered (NoireLib torn down between arming and
+/// reporting) costs the summary line, never the findings.
 /// </summary>
 internal static class DiagnosticChat
 {

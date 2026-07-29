@@ -26,8 +26,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     public bool HasWindow => ModuleWindow != null;
 
     /// <summary>
-    /// Gets whether the module's window is currently open.<br/>
-    /// Reads <see langword="false"/> when the module holds no window, which <see cref="HasWindow"/> reports.<br/>
+    /// Whether the module's window is currently open; false when the module holds no window (see <see cref="HasWindow"/>).
     /// Use <see cref="SetShowWindow"/>, <see cref="ShowWindow"/>, <see cref="HideWindow"/> or <see cref="ToggleWindow"/> to change it.
     /// </summary>
     public bool IsWindowOpen => ModuleWindow?.IsOpen == true;
@@ -205,9 +204,9 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// <exception cref="InvalidOperationException">Thrown if the module holds a window and the NoireLib window system is not initialized.</exception>
     protected TModule UnregisterWindow()
     {
-        // Checked before the window system is: a module holding no window has nothing to unregister, and
-        // demanding a window system to establish that would make disposal throw for every module whose window is
-        // optional and absent, which in turn skips the rest of its teardown.
+        // Checked before the window system is: a module with no window has nothing to unregister, and requiring a
+        // window system here would make disposal throw, and skip the rest of teardown, for every module whose
+        // window is merely absent.
         if (ModuleWindow == null)
             return (TModule)this;
 
@@ -307,8 +306,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
 
 /// <summary>
 /// Base class for modules that integrate a window within the NoireLib library.<br/>
-/// Inherits from <see cref="NoireModuleBase{TModule}"/>.<br/>
-/// Will initialize the configuration of type <typeparamref name="TConfiguration"/> on static constructor to make sure it's loaded on initialization of the module.
+/// Inherits from <see cref="NoireModuleBase{TModule}"/>. Eagerly loads <typeparamref name="TConfiguration"/> in the
+/// static constructor.
 /// </summary>
 /// <typeparam name="TModule">The type of the module.</typeparam>
 /// <typeparam name="TWindow">The type of the window associated with the module.</typeparam>

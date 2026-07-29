@@ -38,7 +38,7 @@ public sealed class SliderStyle
     /// <summary>
     /// The colour the filled part ends at, for a fill that ramps along its length.
     /// </summary>
-    /// <remarks>Leave <see langword="null"/> for a flat fill, which is what a plain slider wants.</remarks>
+    /// <remarks>Leave <see langword="null"/> for a flat fill.</remarks>
     public Vector4? FillTo { get; set; }
 
     /// <summary>The shape of the handle.</summary>
@@ -79,42 +79,28 @@ public sealed class SliderStyle
     /// <summary>
     /// Writes the value as words rather than as a number. When <see langword="null"/>, the number is written.
     /// </summary>
-    /// <remarks>
-    /// For a slider whose positions are named rather than counted: a type scale reading "Smallest" through "Bigger"
-    /// says what it does, where the same slider reading 1 to 5 asks the reader to work out which end is which.
-    /// Overrides <see cref="ValueFormat"/> when set.
-    /// </remarks>
+    /// <remarks>Overrides <see cref="ValueFormat"/> when set.</remarks>
     public Func<float, string>? ValueText { get; set; }
 
-    /// <summary>
-    /// The row label's colour. When <see langword="null"/>, the theme's ordinary text.
-    /// </summary>
-    /// <remarks>
-    /// Worth its own value rather than inheriting: a slider usually sits in a run of settings whose labels are quieter
-    /// than body text, and one row coming out at full strength reads as emphasis nobody asked for.
-    /// </remarks>
+    /// <summary>The row label's colour. When <see langword="null"/>, the theme's ordinary text.</summary>
     public Vector4? LabelColor { get; set; }
 
     /// <summary>
     /// How wide the label column is, at 100%. When <see langword="null"/>, <see cref="NoireInputs.LabelWidth"/>.
     /// </summary>
     /// <remarks>
-    /// Shared with the input fields by default so a run of settings lines up, and settable here for a design whose
-    /// other rows are laid out by hand: a slider that keeps the library's column while its neighbours use another is
-    /// the one row in the stack whose control does not start where the rest do.
+    /// Shared with the input fields by default so a run of settings lines up; settable here when a row's neighbours
+    /// use a different column.
     /// </remarks>
     public float? LabelWidth { get; set; }
 
     /// <summary>
     /// Paints the slider instead of the shipped drawing.
     /// </summary>
-    /// <remarks>
-    /// The widget keeps the sizing, the hit testing, the dragging and the value; the hook only paints. That is what
-    /// makes a completely bespoke slider a matter of configuration rather than of writing one from scratch.
-    /// </remarks>
+    /// <remarks>The widget keeps the sizing, the hit testing, the dragging and the value; the hook only paints.</remarks>
     public Action<UiSliderDraw>? CustomDraw { get; set; }
 
-    /// <summary>Returns a copy, so a shared style can be varied for one slider without affecting the rest.</summary>
+    /// <summary>Returns a copy.</summary>
     /// <returns>A shallow copy.</returns>
     public SliderStyle Clone() => (SliderStyle)MemberwiseClone();
 }

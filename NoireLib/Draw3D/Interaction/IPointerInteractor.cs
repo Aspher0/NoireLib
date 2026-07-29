@@ -10,7 +10,7 @@ namespace NoireLib.Draw3D.Interaction;
 /// </summary>
 public interface IPointerInteractor
 {
-    /// <summary>Higher wins when several interactors are hit at once (a gizmo drawn on top should outrank scene nodes). Nodes hit-test at priority 0.</summary>
+    /// <summary>Higher wins when several interactors are hit at once (a gizmo drawn on top should outrank scene nodes); nodes hit-test at priority 0.</summary>
     int Priority { get; }
 
     /// <summary>When false the interactor is skipped entirely (no hit-testing, no drawing).</summary>
@@ -71,18 +71,18 @@ public interface IPointerInteractor
 
     /// <summary>
     /// True when this interactor reads ImGui IO itself and owns the mouse through its <b>own</b> ImGui window (the
-    /// ImGuizmo gizmo backend), instead of being ray-hit-tested by <see cref="NoireInteract"/>. A self-driven
+    /// ImGuizmo gizmo backend), instead of being ray-hit-tested by <see cref="NoireInteract"/>; a self-driven
     /// interactor runs its input and draw in a pre-pass <i>before</i> scene hover resolution (via
-    /// <see cref="DrawSelfDriven"/>); while it reports it owns the mouse, the frame is a hard pass for scene picking
-    /// and NoireInteract shows no capture window of its own. Default <b>false</b> (an ordinary ray-hit-tested interactor).
+    /// <see cref="DrawSelfDriven"/>), and while it reports it owns the mouse, the frame is a hard pass for scene
+    /// picking and NoireInteract shows no capture window of its own. Default <b>false</b> (an ordinary ray-hit-tested interactor).
     /// </summary>
     bool SelfDriven => false;
 
     /// <summary>
     /// For a <see cref="SelfDriven"/> interactor only: run its own input and draw for this frame and return whether it
-    /// owns the mouse right now (a handle is hovered or being dragged). Called in the pre-pass before scene hover
-    /// resolution, so the answer gates scene picking and the capture window this frame, not a frame late. Never called
-    /// when <see cref="SelfDriven"/> is false. Default: no-op.
+    /// owns the mouse right now (a handle is hovered or being dragged); called in the pre-pass before scene hover
+    /// resolution, so the answer gates scene picking and the capture window this frame, not a frame late, and never
+    /// called when <see cref="SelfDriven"/> is false. Default: no-op.
     /// </summary>
     /// <param name="frame">The current frame snapshot.</param>
     bool DrawSelfDriven(in FrameContext frame) => false;
@@ -90,7 +90,7 @@ public interface IPointerInteractor
     /// <summary>
     /// Whether a hit reported by <see cref="HitTest"/> should be blocked when something the game draws (a wall,
     /// terrain, a character) is nearer to the camera than the hit point, under
-    /// <see cref="NoireInteract.ObstacleOcclusionMode"/>. Default <b>false</b>: interactor geometry stays grabbable
+    /// <see cref="NoireInteract.ObstacleOcclusionMode"/>; default <b>false</b>, interactor geometry stays grabbable
     /// through obstacles. The native gizmo returns true when its handles are world-occluded (its depth mode is not
     /// fully on top), so a handle behind an obstacle is not grabbable there.
     /// </summary>

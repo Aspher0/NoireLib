@@ -10,8 +10,7 @@ namespace NoireLib.TaskQueue;
 public partial class NoireTaskQueue
 {
     /// <summary>
-    /// Will create a new <see cref="TaskBuilder{TModule}"/> instance for building and enqueuing a task with chainable methods.<br/>
-    /// By default, the task will be of blocking type.
+    /// Creates a new <see cref="TaskBuilder{TModule}"/> for building and enqueuing a task with chainable methods, blocking by default.
     /// </summary>
     /// <param name="customId">The optional custom ID to give the task.</param>
     /// <returns>The <see cref="TaskBuilder{TModule}"/> instance for chaining.</returns>
@@ -265,8 +264,7 @@ public partial class NoireTaskQueue
     /// Skips the next N tasks in the queue by cancelling them.
     /// </summary>
     /// <param name="count">The number of queued tasks to skip. Needs to be greater than 0.</param>
-    /// <param name="includeCurrentTask">If true, will mark the currently executing task for skipping if it exists.<br/>
-    /// If true, argument <paramref name="count"/> will include the current task in the skip count.</param>
+    /// <param name="includeCurrentTask">Whether to mark the currently executing task for skipping, if any, counting it toward <paramref name="count"/>.</param>
     /// <param name="boundaryType">Defines how context boundaries are checked.
     /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.</param>
     /// <returns>The number of tasks that were actually skipped.</returns>
@@ -287,9 +285,8 @@ public partial class NoireTaskQueue
                 int skipped = 0;
                 bool isInBatch = IsCurrentContextBatch;
 
-                // Resolved once and then kept away from the walks, whether or not it was skipped here. The walks
-                // resolve any unfinished task, so without this the current task would be taken by them even when
-                // the caller asked not to include it, and taken twice when they asked to include it.
+                // Resolved once and kept from the walks below: without this, the current task would be picked up
+                // by them even when the caller asked to exclude it, or picked up twice when asked to include it.
                 var currentSkipTarget = GetCurrentSkipTarget();
 
                 if (includeCurrentTask && currentSkipTarget != null && CancelTaskInternal(currentSkipTarget))
@@ -395,8 +392,7 @@ public partial class NoireTaskQueue
     }
 
     /// <summary>
-    /// Executes an action with pause/resume pattern.<br/>
-    /// The queue will be paused before executing the action and resumed afterwards if it was running before.<br/>
+    /// Executes an action with the queue paused, resumed afterwards if it was running before.
     /// </summary>
     private T ExecuteWithPauseResume<T>(Func<T> action)
     {
@@ -1075,10 +1071,9 @@ public partial class NoireTaskQueue
                         }
                         else if (item.IsBatch)
                         {
-                            // The batch itself is offered to the predicate before its contents are. A caller that
-                            // matches on batches rather than tasks, which is what CancelAllBatches does, has no
-                            // other way to match: descending straight into the tasks only ever presents task
-                            // wrappers, so such a predicate could never be true and the call always reported zero.
+                            // The batch itself is offered to the predicate before its contents are, so a predicate
+                            // matching on batches (as CancelAllBatches does) can match; descending straight into
+                            // the tasks would only ever present task wrappers.
                             if (predicate(item))
                             {
                                 items.Add(item);
@@ -1165,11 +1160,9 @@ public partial class NoireTaskQueue
 
         UnsubscribeTask(task);
 
-        // Captured before the callback runs, so that what follows can tell a status the callback moved from one
-        // the task already had. Testing the status alone conflated the two: a task cancelled while it was already
-        // waiting on a post completion delay matched, stood the cancellation down, and was then finished by the
-        // ordinary post delay route, so the call reported success while the task ended up completed and raised
-        // both its cancellation and its completion callback.
+        // Captured before the callback runs, to distinguish a status the callback changed from one the task
+        // already had; otherwise a task already waiting on a post-completion delay would report cancelled
+        // success while finishing through the ordinary post-delay route, raising both callbacks.
         var statusBeforeCallback = task.Status;
 
         try
@@ -1227,10 +1220,9 @@ public partial class NoireTaskQueue
         }
 
         // Routed through the same two helpers the post-cancellation-delay finalizer uses, so a task cancelled
-        // with a post delay and one cancelled without it reach the same parent-batch policies and the same batch
-        // TaskCancellationMode. Without this the mode was reachable only when a post delay happened to be
-        // configured. The parent policies take precedence: if one of them acted on the batch, the batch's own
-        // mode is not applied on top.
+        // with or without a post delay reaches the same parent-batch policies and batch TaskCancellationMode.
+        // The parent policies take precedence: if one acted on the batch, the batch's own mode is not applied
+        // on top.
         if (task.ParentBatch != null && !HandleTaskParentBatchPolicies(task, isFailure: false, isCancellation: true))
             HandleBatchTaskCancellation(task.ParentBatch, task);
 
@@ -1265,11 +1257,9 @@ public partial class NoireTaskQueue
                 tasksCancelled++;
                 task.QueueFinalized = true;
 
-                // Raised here as well as by the per-task cancel routes, so a consumer sees one contract however
-                // the task came to be cancelled. Cancelling a batch used to resolve its tasks silently, which
-                // left a task callback that fires or not depending only on which call did the cancelling. The
-                // whole per-task path is deliberately not reused: it applies the parent-batch policies, which
-                // would reach back into the batch being cancelled here.
+                // Raised here as well as by the per-task cancel routes, so a consumer sees the same contract
+                // regardless of how the task was cancelled. The per-task path is not reused here since it
+                // applies parent-batch policies, which would reach back into the batch being cancelled.
                 try
                 {
                     task.OnCancelled?.Invoke(task);
@@ -1539,9 +1529,9 @@ public partial class NoireTaskQueue
         if (skipped >= count)
             return skipped;
 
-        // Materialized before the walk: cancelling a task runs consumer callbacks and can apply policies that
-        // structurally change the queue, StopQueueOnCancel being the plainest of them, since stopping the queue
-        // clears it. Walking the live list while doing that threw "Collection was modified" out of the skip call.
+        // Materialized before the walk: cancelling a task runs consumer callbacks that can structurally change
+        // the queue (StopQueueOnCancel clears it), and walking the live list during that throws
+        // "Collection was modified".
         foreach (var item in unifiedQueue.ToList())
         {
             if (skipped >= count)

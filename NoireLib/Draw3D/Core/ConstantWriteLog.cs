@@ -7,12 +7,9 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Records every payload written to the game's small constant buffers during a few frames, rather than only
-/// the last one.<br/>
-/// <b>Why the last write is not enough:</b> a deferred renderer draws one light at a time through the same
-/// buffer, rewriting it per light. A tracker that keeps only the final contents sees a single buffer whose
-/// value changes constantly, which reads as noise and gets subtracted as self-changing - so the lights are
-/// discarded precisely because there are many of them. Keeping every write turns that noise back into the
-/// list it always was.
+/// the last one. A deferred renderer draws one light at a time through the same buffer, rewriting it per
+/// light, so a tracker that keeps only the final contents sees a single value that changes constantly and
+/// discards the lights precisely because there are many of them.
 /// </summary>
 internal sealed class ConstantWriteLog
 {
@@ -20,10 +17,8 @@ internal sealed class ConstantWriteLog
     private const int MaxRecords = 4096;
 
     /// <summary>
-    /// Bytes kept per payload.<br/>
-    /// This has to cover a whole buffer, not a guessed-at prefix. A record's stride is only readable when the
-    /// rows after the first few are present too: truncating to a prefix hides where one entry ends and the next
-    /// begins, which is the single thing a repeating layout is recognised by.
+    /// Bytes kept per payload. Must cover a whole buffer, not a guessed-at prefix: a repeating layout is only
+    /// recognised when the rows after the first few are present too.
     /// </summary>
     private const int MaxRecordBytes = 512;
 
@@ -43,7 +38,7 @@ internal sealed class ConstantWriteLog
     /// <summary>How many payloads have been recorded.</summary>
     public int Count => records.Count;
 
-    /// <summary>Whether the record cap was reached, which means later passes in the frame were never seen.</summary>
+    /// <summary>Whether the record cap was reached: later passes in the frame were never seen.</summary>
     public bool Truncated => dropped > 0;
 
     /// <summary>How many payloads were dropped after the cap.</summary>
@@ -57,10 +52,9 @@ internal sealed class ConstantWriteLog
     /// </summary>
     /// <param name="frames">How many frames to record.</param>
     /// <param name="byteWidth">
-    /// When above zero, only buffers of exactly this size are recorded.<br/>
-    /// This matters more than it looks: a frame's early passes write thousands of object transforms, and an
-    /// unfiltered log fills its budget on them before the deferred lighting pass runs at all. Restricting to one
-    /// size class is what makes a late pass reachable.
+    /// When above zero, only buffers of exactly this size are recorded. A frame's early passes write thousands
+    /// of object transforms, and an unfiltered log fills its budget on them before the deferred lighting pass
+    /// ever runs.
     /// </param>
     public void Arm(int frames, int byteWidth = 0)
     {
@@ -110,10 +104,9 @@ internal sealed class ConstantWriteLog
     }
 
     /// <summary>
-    /// Groups the recorded payloads and reports the ones that look like a list of lights.<br/>
-    /// A light record carries a colour and a position, so a buffer written many times per frame with a
-    /// colour-shaped row in the same place each time is the shape being looked for. The report shows the
-    /// distinct payloads so a repeating layout is visible by eye.
+    /// Groups the recorded payloads and reports the ones that look like a list of lights: a colour-shaped row
+    /// in the same place each time, written many times per frame. Shows the distinct payloads so a repeating
+    /// layout is visible by eye.
     /// </summary>
     /// <param name="maxGroups">How many buffers to report.</param>
     /// <param name="maxPerGroup">How many distinct payloads to show per buffer.</param>
@@ -152,7 +145,7 @@ internal sealed class ConstantWriteLog
             byBuffer[record.Pointer] = group;
         }
 
-        // Most distinct payloads first: that is what a list of many different lights looks like.
+        // Most distinct payloads first: a list of many different lights has many distinct payloads.
         var ordered = new List<KeyValuePair<nint, (int ByteWidth, int Writes, List<byte[]> Distinct)>>(byBuffer);
         ordered.Sort((a, b) => b.Value.Distinct.Count.CompareTo(a.Value.Distinct.Count));
 
@@ -197,11 +190,10 @@ internal sealed class ConstantWriteLog
     }
 
     /// <summary>
-    /// The distinct payloads recorded, pooled across every buffer instead of grouped by one.<br/>
-    /// Pooling is deliberate. The game cycles a small ring of buffers so it never overwrites one the GPU is still
-    /// reading, which means the same record lands in a different buffer from one frame to the next. Keyed by
-    /// buffer, every entry would read as new on every capture and a comparison between two captures would be
-    /// entirely noise. The set of payloads is the thing that is actually stable.
+    /// The distinct payloads recorded, pooled across every buffer instead of grouped by one. The game cycles a
+    /// small ring of buffers, so the same record lands in a different buffer from one frame to the next; keyed
+    /// by buffer, every entry would read as new on every capture. Only the set of payloads stays stable across
+    /// captures.
     /// </summary>
     public List<byte[]> DistinctPayloads()
     {
@@ -216,11 +208,10 @@ internal sealed class ConstantWriteLog
     }
 
     /// <summary>
-    /// Reports how a recorded payload set changed against an earlier one.<br/>
-    /// This is the step that turns a shape into a fact. Every reading so far has been "this looks like a light",
-    /// which two wrong answers have already shown is not enough. A payload that appears, vanishes, or has one row
-    /// rewritten precisely when a light in the room was switched is a light, whatever it looks like; a payload
-    /// that sits unchanged across that switch is not one, however much it resembles a colour and a position.
+    /// Reports how a recorded payload set changed against an earlier one. A payload that appears, vanishes, or
+    /// has one row rewritten precisely when a light in the room was switched is a light, whatever it looks
+    /// like; a payload that sits unchanged across that switch is not one, however much it resembles a colour
+    /// and a position.
     /// </summary>
     /// <param name="before">The payload set captured before the lighting was altered.</param>
     /// <param name="after">The payload set captured after it.</param>

@@ -8,9 +8,9 @@ namespace NoireLib.UI;
 /// in, and the colors NoireUI would have used.
 /// </summary>
 /// <remarks>
-/// The hook is called with the geometry already resolved and the item already submitted, so hit testing, keyboard
-/// navigation and the returned click are handled whatever the hook draws. Reading <see cref="Color"/> rather than
-/// hardcoding one keeps a custom button following the theme like every other.
+/// Called with the geometry already resolved and the item already submitted: hit testing, keyboard navigation and
+/// the returned click are handled whatever the hook draws. Read <see cref="Color"/> rather than hardcoding one to
+/// stay on theme.
 /// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the button.</param>
@@ -44,12 +44,8 @@ public readonly record struct UiButtonDraw(
     /// Draws the button's own label, centred, in the colour NoireUI would have used.
     /// </summary>
     /// <remarks>
-    /// A hook replaces the whole of the drawing, the label included, which is right: a hook that could not move or
-    /// restyle the text would not be a custom button. But the usual reason for one is a surface ImGui cannot express
-    /// behind an otherwise ordinary label, so writing the text out by hand every time is a tax on the common case.
-    /// This is that line, and it matches <c>DrawLabel</c> on the combo box's row renderer.<br/>
-    /// Centred, because a custom-drawn button is nearly always a shape with its label in the middle. A hook wanting it
-    /// anywhere else has <see cref="Label"/>, <see cref="TextColor"/> and <see cref="DrawList"/>.
+    /// Always centred. For a label positioned elsewhere, use <see cref="Label"/>, <see cref="TextColor"/> and
+    /// <see cref="DrawList"/> directly.
     /// </remarks>
     public void DrawLabel() => DrawLabel(TextColor);
 

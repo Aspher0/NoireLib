@@ -67,7 +67,7 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
     }
 
     /// <summary>
-    /// Creates a keyboard binding from a <see cref="VirtualKey"/>, for example <c>new HotkeyBinding(VirtualKey.G, ctrl: true)</c>.
+    /// Creates a keyboard binding from a <see cref="VirtualKey"/>.
     /// </summary>
     /// <param name="key">The key of the binding.</param>
     /// <param name="ctrl">Whether Ctrl must be held for this binding.</param>
@@ -132,7 +132,7 @@ public struct HotkeyBinding : IEquatable<HotkeyBinding>
     public static implicit operator HotkeyBinding(int vkCode) => new(vkCode);
 
     /// <summary>
-    /// Creates a modifierless keyboard binding from a <see cref="VirtualKey"/>, so a plain key can be assigned wherever a binding is expected.
+    /// Implicitly creates a modifierless keyboard binding from a <see cref="VirtualKey"/>.
     /// </summary>
     /// <param name="key">The key of the binding.</param>
     public static implicit operator HotkeyBinding(VirtualKey key) => new(key);

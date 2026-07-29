@@ -192,9 +192,8 @@ public static class NoireAnim
         => Spring(id, string.Empty, target, stiffness, damping);
 
     /// <summary>
-    /// Eases a value between 0 (hidden) and 1 (shown), for fading and sliding something in and out.<br/>
-    /// The point of using this rather than a bare <see cref="Ease(string, string, float, float, UiEasing)"/> is that it
-    /// reads as presence at the call site: a widget draws while the result is above zero, not while the flag is true.
+    /// Eases a value between 0 (hidden) and 1 (shown), for fading and sliding something in and out. Reads as
+    /// presence at the call site: a widget draws while the result is above zero, not while a flag is true.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="subKey">Which property of that widget this is.</param>

@@ -3,8 +3,8 @@ using Newtonsoft.Json;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Represents the persisted configuration for a single tweak.<br/>
-/// Stores the enabled state, serialized config JSON, and config schema version.
+/// Represents the persisted configuration for a single tweak, storing the enabled state, serialized config JSON,
+/// and config schema version.
 /// </summary>
 public class TweakConfigEntry
 {
@@ -15,16 +15,15 @@ public class TweakConfigEntry
     public bool Enabled { get; set; }
 
     /// <summary>
-    /// The serialized JSON of the tweak's <see cref="TweakConfigBase"/> instance.<br/>
-    /// <see langword="null"/> if the tweak has no configuration or uses default values.
+    /// The serialized JSON of the tweak's <see cref="TweakConfigBase"/> instance; <see langword="null"/> if the
+    /// tweak has no configuration or uses default values.
     /// </summary>
     [JsonProperty("configJson")]
     public string? ConfigJson { get; set; }
 
     /// <summary>
-    /// The schema version of the stored <see cref="ConfigJson"/>.<br/>
-    /// Used by <see cref="TweakConfigBase"/> migration support to determine
-    /// whether migrations are needed during deserialization.
+    /// The schema version of the stored <see cref="ConfigJson"/>, used by <see cref="TweakConfigBase"/> migration
+    /// support to determine whether migrations are needed during deserialization.
     /// </summary>
     [JsonProperty("configVersion")]
     public int ConfigVersion { get; set; }

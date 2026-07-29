@@ -117,8 +117,8 @@ public sealed class CooldownWatcher : GameWatcherFacade
 
     /// <summary>
     /// Subscribes to estimated cooldown starts of <b>other characters</b> - inferred from observed action
-    /// usage plus sheet recast data (doctrine tier 4). Estimates drift with skill/spell speed, haste effects
-    /// and unseen charge usage; never treat them as exact.
+    /// usage plus sheet recast data. Estimates drift with skill/spell speed, haste effects and unseen charge
+    /// usage; never treat them as exact.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="options">Optional subscription settings.</param>

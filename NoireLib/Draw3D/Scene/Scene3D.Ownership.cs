@@ -14,17 +14,17 @@ public sealed partial class Scene3D : IDisposable
     private readonly List<IDisposable> ownedDisposables = new();
     private bool disposed;
 
-    /// <summary>The always-there <see cref="NoireDraw3D.MainScene"/> is owned by the library (disposed at shutdown, never by the consumer). Extra scenes are yours.</summary>
+    /// <summary>The always-there <see cref="NoireDraw3D.MainScene"/> is owned by the library (disposed at shutdown, never by the consumer); extra scenes are yours.</summary>
     internal bool IsHubOwned { get; set; }
 
-    /// <summary>True once <see cref="Dispose"/> has run. A disposed scene rejects new node creation.</summary>
+    /// <summary>True once <see cref="Dispose"/> has run; a disposed scene rejects new node creation.</summary>
     public bool IsDisposed => disposed;
 
     /// <summary>
     /// Hands the scene responsibility for a disposable - a mesh shared across several of the scene's nodes, a texture,
-    /// an imported <see cref="Assets.Model3D"/>, an editor, any custom <see cref="IDisposable"/>. Returns it unchanged
-    /// so it can be captured inline. <see cref="Dispose"/> frees everything owned this way (idempotent - freeing a
-    /// disposable twice is safe).
+    /// an imported <see cref="Assets.Model3D"/>, an editor, any custom <see cref="IDisposable"/> - returning it
+    /// unchanged so it can be captured inline; <see cref="Dispose"/> frees everything owned this way (idempotent -
+    /// freeing a disposable twice is safe).
     /// </summary>
     /// <typeparam name="T">The disposable type (returned unchanged).</typeparam>
     /// <param name="disposable">The disposable to hand to the scene.</param>
@@ -47,7 +47,7 @@ public sealed partial class Scene3D : IDisposable
         return disposable;
     }
 
-    /// <summary>Stops the scene owning a disposable (so a later <see cref="Dispose"/> won't free it). Returns whether it was owned.</summary>
+    /// <summary>Stops the scene owning a disposable (so a later <see cref="Dispose"/> won't free it); returns whether it was owned.</summary>
     /// <param name="disposable">The disposable to release from the scene's ownership.</param>
     public bool Disown(IDisposable disposable)
     {
@@ -60,8 +60,8 @@ public sealed partial class Scene3D : IDisposable
 
     /// <summary>
     /// Frees everything the scene owns: every node (and its owned meshes), every <see cref="Own{T}"/>-registered
-    /// disposable, and the scene's registration with the renderer (so it stops drawing). Idempotent. The library's
-    /// <see cref="NoireDraw3D.MainScene"/> ignores this - it lives for the library's lifetime.
+    /// disposable, and the scene's registration with the renderer (so it stops drawing); idempotent, and the
+    /// library's <see cref="NoireDraw3D.MainScene"/> ignores this since it lives for the library's lifetime.
     /// </summary>
     public void Dispose()
     {
@@ -78,8 +78,8 @@ public sealed partial class Scene3D : IDisposable
     }
 
     /// <summary>
-    /// Frees the scene's contents (owned disposables + all nodes) without touching the hub registration. Shared by
-    /// <see cref="Dispose"/> and the hub's own shutdown. Returns false when it was already disposed (idempotent).
+    /// Frees the scene's contents (owned disposables + all nodes) without touching the hub registration, shared by
+    /// <see cref="Dispose"/> and the hub's own shutdown; returns false when it was already disposed (idempotent).
     /// </summary>
     internal bool DisposeContentsInternal()
     {

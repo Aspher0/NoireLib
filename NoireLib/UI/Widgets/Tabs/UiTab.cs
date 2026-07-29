@@ -72,10 +72,7 @@ public sealed class UiTab
     /// </remarks>
     public Func<bool>? Enabled { get; set; }
 
-    /// <summary>
-    /// Why the tab is disabled, shown on hover. Worth setting whenever <see cref="Enabled"/> is, because a control that
-    /// is dead for no stated reason reads as broken.
-    /// </summary>
+    /// <summary>Why the tab is disabled, shown on hover.</summary>
     public string? DisabledReason { get; set; }
 
     /// <summary>Whether the tab carries a close button. Off by default. See <see cref="NoireTabBar.OnTabClosed"/>.</summary>

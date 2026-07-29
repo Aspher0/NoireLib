@@ -4,10 +4,9 @@ using System.Collections.Generic;
 namespace NoireLib.UI;
 
 /// <summary>
-/// What NoireUI knows about itself: live counts, the faults it has hit, and the ladder that switches off the narrowest
-/// broken thing rather than logging the same exception every frame forever.<br/>
-/// Reached through <see cref="NoireUI.Diagnostics"/>. It answers the question a UI library otherwise cannot: why did
-/// nothing draw.
+/// What NoireUI knows about itself: live counts, recent faults, and the fault ladder that disables the narrowest
+/// broken thing rather than repeating the same exception every frame. Reached through
+/// <see cref="NoireUI.Diagnostics"/>.
 /// </summary>
 public sealed class UiDiagnostics
 {
@@ -22,22 +21,19 @@ public sealed class UiDiagnostics
     private int currentFrame = -1;
 
     /// <summary>
-    /// Invoked once for every fault, on the thread the fault happened on. The fault is already logged when this runs;
-    /// this is the hook for surfacing it in your own UI.<br/>
-    /// An exception thrown by the handler is swallowed, so a broken reporter cannot take the frame down with it.
+    /// Invoked once per fault, on the thread it happened on. Already logged by the time this runs; an exception
+    /// thrown by the handler is swallowed.
     /// </summary>
     public Action<UiFault>? OnFault { get; set; }
 
     /// <summary>
-    /// Whether NoireUI unwinds ImGui style stacks that were pushed and never popped.<br/>
-    /// On by default. Turning it off leaves an unbalanced stack alone, which is what raw ImGui does on its own.
+    /// Whether NoireUI unwinds ImGui style stacks that were pushed and never popped. On by default.
     /// </summary>
     public bool RepairStackLeaks { get; set; } = true;
 
     /// <summary>
-    /// How many frames in a row a drawable may throw before the hub stops drawing it automatically.<br/>
-    /// The ladder disables that one drawable and nothing else, so a single broken element cannot take the rest of the UI
-    /// with it, and the log says so once instead of every frame. Set to 0 to never disable anything.
+    /// How many frames in a row a drawable may throw before the hub stops drawing it automatically. Disables that one
+    /// drawable only. Set to 0 to never disable anything.
     /// </summary>
     public int FaultTolerance { get; set; } = 10;
 

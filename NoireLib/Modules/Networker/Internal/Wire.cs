@@ -212,9 +212,9 @@ internal static class Wire
     }
 
     /// <summary>
-    /// Reads a standalone wire model from UTF-8 JSON, returning null when the bytes are malformed.<br/>
-    /// Callers are handed bytes they do not control (a socket, a broadcast datagram, a shared mapped file), so a
-    /// failure is reported rather than thrown.
+    /// Reads a standalone wire model from UTF-8 JSON, returning null when the bytes are malformed; callers are
+    /// handed bytes they do not control (a socket, a broadcast datagram, a shared mapped file), so a failure is
+    /// reported rather than thrown.
     /// </summary>
     public static T? DecodeModel<T>(byte[] bytes) where T : class
     {

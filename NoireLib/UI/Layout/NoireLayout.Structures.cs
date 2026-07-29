@@ -17,8 +17,8 @@ public static partial class NoireLayout
     #region Splitter
 
     /// <summary>
-    /// The smallest a splitter lets a pane become when the caller names no minimum, at 100%. Small enough not to fight
-    /// a deliberate layout, large enough that a pane cannot be dragged shut and then never found again.
+    /// The smallest a splitter lets a pane become when the caller names no minimum, at 100%: large enough that a pane
+    /// cannot be dragged shut and never found again.
     /// </summary>
     private const float DefaultSplitterMinimum = 40f;
 
@@ -26,17 +26,14 @@ public static partial class NoireLayout
     private const string GrabKey = "grab";
 
     /// <summary>
-    /// Draws a draggable divider that resizes the pane before it.<br/>
-    /// ImGui ships no splitter at all, so every plugin that wants a resizable sidebar writes the same invisible button,
-    /// mouse-delta and cursor dance. This is that, done once.
+    /// Draws a draggable divider that resizes the pane before it.
     /// </summary>
     /// <remarks>
-    /// The value is clamped every frame, not only while dragging, so a size restored from a config written on a wider
-    /// screen is corrected on the first frame rather than leaving a pane off the edge.
+    /// The value is clamped every frame, not only while dragging.
     /// </remarks>
     /// <param name="id">A unique id for the splitter.</param>
-    /// <param name="size">The size of the pane before the splitter, read and written. In real pixels: it is driven by
-    /// the mouse, so every measurement here shares that space rather than being written at 100%.</param>
+    /// <param name="size">The size of the pane before the splitter, read and written, in real pixels: it is driven
+    /// by the mouse.</param>
     /// <param name="minSize">The smallest the pane may become. Zero uses a usable default, which does scale.</param>
     /// <param name="maxSize">The largest the pane may become. Zero leaves it bounded only by the space
     /// available.</param>
@@ -44,14 +41,12 @@ public static partial class NoireLayout
     /// <param name="vertical">Whether the divider is a vertical bar, resizing the pane to its left. Set it to
     /// <see langword="false"/> for a horizontal bar resizing the pane above it.</param>
     /// <param name="length">How long the divider is, across the panes it separates. Zero fills the space remaining in
-    /// the current region, which is only what you want when the panes do too: give it the pane height (or width) when
-    /// they are a fixed size, or the divider will run past them.</param>
+    /// the current region; pass the pane's fixed height (or width) explicitly, or the divider runs past it.</param>
     /// <returns>True while the splitter is being dragged.</returns>
     public static bool Splitter(string id, ref float size, float minSize = 0f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
     {
-        // Written into a scratch rather than a fresh options object, which this composed on every frame every splitter
-        // drew. The shorthand overload is the one most callers reach for, so it is the one that must not cost more than
-        // passing the options in.
+        // Written into a shared scratch, not a fresh options object, so the shorthand overload allocates nothing per
+        // frame.
         Shorthand.MinSize = minSize;
         Shorthand.MaxSize = maxSize;
         Shorthand.Thickness = thickness;
@@ -66,10 +61,8 @@ public static partial class NoireLayout
     /// through.
     /// </summary>
     /// <remarks>
-    /// Reused rather than allocated per call, and only ever read inside the call that set it. Drawing runs on one
-    /// thread, so there is nothing here for a second caller to see half-written. Every field the shorthand exposes is
-    /// written on each call, so nothing carries over from the splitter before it; the rest keep their defaults, which
-    /// is what the shorthand promises.
+    /// Reused rather than allocated per call, and only read inside the call that set it: drawing is single threaded.
+    /// Every field the shorthand exposes is written on each call; the rest keep their defaults.
     /// </remarks>
     private static readonly SplitterOptions Shorthand = new();
 
@@ -80,12 +73,11 @@ public static partial class NoireLayout
     /// The value is clamped every frame, not only while dragging, so a size restored from a config written on a wider
     /// screen is corrected on the first frame rather than leaving a pane off the edge.<br/>
     /// A design that already draws its own divider wants the handle without the line: give
-    /// <see cref="SplitterOptions.CustomDraw"/> a hook that draws nothing, and the pane becomes resizable without
-    /// anything about it changing.
+    /// <see cref="SplitterOptions.CustomDraw"/> a hook that draws nothing.
     /// </remarks>
     /// <param name="id">A unique id for the splitter.</param>
-    /// <param name="size">The size of the pane before the splitter, read and written. In real pixels: it is driven by
-    /// the mouse, so every measurement here shares that space rather than being written at 100%.</param>
+    /// <param name="size">The size of the pane before the splitter, read and written, in real pixels: it is driven
+    /// by the mouse.</param>
     /// <param name="options">How it behaves and looks.</param>
     /// <returns>True while the splitter is being dragged.</returns>
     public static bool Splitter(string id, ref float size, SplitterOptions options)
@@ -156,11 +148,9 @@ public static partial class NoireLayout
     /// Where a splitter's pane edge belongs for a pointer at the given position, clamped to its bounds.
     /// </summary>
     /// <remarks>
-    /// Read from where the pointer <b>is</b>, never from how far it moved. A mouse delta that the clamp throws away is
-    /// a delta the size never received, so accumulating deltas leaves the divider ahead of the pointer by everything
-    /// that was discarded, for the rest of the drag: push past the minimum, come back, and the divider is already
-    /// moving while the cursor is still nowhere near it. Resolving against the position makes overshooting free.<br/>
-    /// Pure and separate so the arithmetic can be tested, since a drag is the one thing that cannot demonstrate it.
+    /// Read from where the pointer <b>is</b>, never from how far it moved, so a clamped delta cannot accumulate into
+    /// drift between the divider and the pointer.<br/>
+    /// Pure and separate so the arithmetic can be tested, since a live drag cannot demonstrate it.
     /// </remarks>
     /// <param name="pointer">The pointer's position along the axis being resized, in screen coordinates.</param>
     /// <param name="grabOffset">The distance from the pointer to the pane edge, taken when the drag started.</param>
@@ -176,11 +166,11 @@ public static partial class NoireLayout
 
     /// <summary>
     /// A section that folds away, with an optional memory of whether it was open.<br/>
-    /// The body takes the usual form: it is simply not called while the section is closed, so nothing inside a folded
-    /// section costs anything and there is no end call to forget.
+    /// The body is simply not called while the section is closed: nothing inside a folded section runs, and there is
+    /// no end call to forget.
     /// </summary>
-    /// <param name="id">A unique id for the section. Also the key its open state is stored under when
-    /// <see cref="CollapsibleOptions.Persist"/> is set, so it has to be stable across sessions.</param>
+    /// <param name="id">A unique id for the section, also the key its open state is stored under when
+    /// <see cref="CollapsibleOptions.Persist"/> is set; must be stable across sessions.</param>
     /// <param name="label">The heading.</param>
     /// <param name="body">The drawing to fold away.</param>
     /// <param name="options">How the section behaves and looks. When <see langword="null"/>, an open, unpersisted
@@ -194,8 +184,8 @@ public static partial class NoireLayout
 
     /// <summary>
     /// A section that folds away, with an optional memory of whether it was open.<br/>
-    /// The body takes the usual form: it is simply not called while the section is closed, so nothing inside a folded
-    /// section costs anything and there is no end call to forget.
+    /// The body is simply not called while the section is closed: nothing inside a folded section runs, and there is
+    /// no end call to forget.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the section.</param>
@@ -303,13 +293,11 @@ public static partial class NoireLayout
     #region Flow
 
     /// <summary>
-    /// Lays items out left to right, wrapping to a new line when the next one will not fit.<br/>
-    /// This is what chips, tags and small cards need and what ImGui has no answer for: <c>SameLine</c> alone cannot
-    /// know whether the item after it fits, so a hand-written row either overflows or breaks early.
+    /// Lays items out left to right, wrapping to a new line when the next one will not fit.
     /// </summary>
     /// <remarks>
-    /// The measure runs before each item is drawn, which is the only way the decision can be made in an immediate-mode
-    /// pass. It only has to be close: a measurement a few pixels short wraps one item early, never off the edge.
+    /// The measure runs before each item is drawn. It only has to be close: a measurement a few pixels short wraps
+    /// one item early, never off the edge.
     /// </remarks>
     /// <typeparam name="T">The item type.</typeparam>
     /// <param name="items">The items to lay out.</param>
@@ -371,12 +359,11 @@ public static partial class NoireLayout
     /// <c>GetContentRegionAvail</c> answers.
     /// </summary>
     /// <remarks>
-    /// This is the question every widget that defaults to "the space available" is really asking, and ImGui has no
-    /// direct answer for it: the content region always reports the *window's* right edge, so a widget inside a page
-    /// that centres its content in a narrower column runs straight past it.<br/>
-    /// The one narrower right edge ImGui carries is the text wrap position, so a widget inside a
+    /// ImGui's content region always reports the *window's* right edge, so a widget inside a page that centres its
+    /// content in a narrower column runs straight past it.<br/>
+    /// The one narrower edge ImGui carries is the text wrap position: a widget inside a
     /// <see cref="WrapText(float, Action)"/> or a hand-rolled <c>PushTextWrapPos</c> column stops where the prose
-    /// around it stops. Failing that, the window's content edge is the honest answer.
+    /// around it stops. Failing that, the window's content edge is the answer.
     /// </remarks>
     /// <returns>The width available in real pixels.</returns>
     public static float ContentWidth()
@@ -386,13 +373,12 @@ public static partial class NoireLayout
     /// Works out where a wrapping row has to stop.
     /// </summary>
     /// <remarks>
-    /// ImGui has no concept of a right margin. Indenting moves the left edge only, and the content region keeps
-    /// reporting the window's own right edge however deeply nested the drawing is, so a row inside a hand-drawn panel
-    /// wraps against the window and overflows the panel.<br/>
-    /// The one narrower right edge ImGui does carry is the text wrap position, which is exactly what
-    /// <see cref="WrapText(float, Action)"/> sets, so a row inside one wraps where its text does. Failing that there is
-    /// nothing left to infer from and the window's content edge is the honest answer, which is why the explicit
-    /// <paramref name="width"/> exists: a panel that owns a width nobody else can see should say so.
+    /// ImGui has no concept of a right margin: indenting moves the left edge only, and the content region keeps
+    /// reporting the window's own right edge regardless of nesting, so a row inside a hand-drawn panel wraps against
+    /// the window and overflows it.<br/>
+    /// The one narrower right edge ImGui does carry is the text wrap position, matching
+    /// <see cref="WrapText(float, Action)"/> where set. Failing that, the window's content edge is the fallback; the
+    /// explicit <paramref name="width"/> lets a panel with a width nobody else can see state it directly.
     /// </remarks>
     /// <param name="width">An explicit row width, or zero to work it out.</param>
     /// <returns>The screen x coordinate the row must not cross.</returns>
@@ -444,16 +430,15 @@ public static partial class NoireLayout
     /// </summary>
     /// <remarks>
     /// An unstable key is worse than no memory at all: the state file grows an entry per session and never restores
-    /// one, and the only symptom is a section that silently forgets. Refusing once, by name, is the whole point.
+    /// one, and the only symptom is a section that silently forgets.
     /// </remarks>
     private static string? ResolvePersistKey(string id, bool persist)
     {
         if (!persist)
             return null;
 
-        // Built through the id cache rather than interpolated, because a persisting section resolves its key on every
-        // frame it draws while the key itself is a constant of the section. The bytes are the same either way, which
-        // matters here more than elsewhere: this key is what the state file is written under.
+        // Built through the id cache rather than interpolated, since this key is resolved every frame and its bytes
+        // must stay stable: the state file is keyed on them.
         if (!string.IsNullOrWhiteSpace(id))
             return UiIds.Join("Collapsible.", id, ".open");
 

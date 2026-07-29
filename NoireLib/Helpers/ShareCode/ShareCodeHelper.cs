@@ -267,12 +267,11 @@ public static class ShareCodeHelper
     /// </summary>
     private static JsonSerializer CreateSerializer(JsonSerializerSettings? jsonSettings)
     {
-        // Create rather than CreateDefault: CreateDefault merges JsonConvert.DefaultSettings, a process-global any other
-        // code in this process can assign and reassign at runtime, which would let the JSON behind a code differ between
-        // the moment it was written and the moment it is read back.
+        // Create rather than CreateDefault, which merges the mutable process-global JsonConvert.DefaultSettings and
+        // would let the JSON differ between when a code was written and when it is read back.
         var serializer = JsonSerializer.Create(jsonSettings);
 
-        // Type resolution driven by payload content is what turns a stranger's paste into an instruction to construct
+        // Type resolution driven by payload content would turn a stranger's paste into an instruction to construct
         // arbitrary types. It stays off for every caller regardless of what was passed.
         serializer.TypeNameHandling = TypeNameHandling.None;
 
@@ -296,8 +295,8 @@ public static class ShareCodeHelper
     /// Decompresses a payload, giving up the moment it grows past the ceiling.
     /// </summary>
     /// <remarks>
-    /// The ceiling is checked on every chunk rather than on the finished buffer, which is the whole point: a zip bomb is
-    /// small until it is decompressed, so measuring afterwards means the damage is already done.
+    /// The ceiling is checked on every chunk rather than on the finished buffer: a zip bomb is small until it is
+    /// decompressed, so measuring afterwards means the damage is already done.
     /// </remarks>
     private static bool TryInflate(byte[] compressed, int maxBytes, out byte[] result, out ShareCodeError error)
     {

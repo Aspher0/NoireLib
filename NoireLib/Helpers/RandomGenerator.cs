@@ -8,8 +8,7 @@ using System.Text;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A static helper class for generating cryptographically secure random outputs such as GUIDs, strings, numbers, bytes, and more.
-/// All methods use <see cref="RandomNumberGenerator"/> for cryptographic security.
+/// Generates cryptographically secure random values (GUIDs, strings, numbers, bytes and more) via <see cref="RandomNumberGenerator"/>.
 /// </summary>
 public static class RandomGenerator
 {

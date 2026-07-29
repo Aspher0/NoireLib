@@ -120,9 +120,7 @@ internal sealed unsafe class ScenePass : IDisposable
 
     /// <summary>
     /// How many collected items this frame are <see cref="DecalProjection.HighestOnly"/> ground decals (retained or
-    /// immediate) - gates the collision height-map pass (&gt; 0). Scoped to that projection because it is the map's only
-    /// consumer: a scene of ordinary decals needs no height-map and pays nothing for one. The count itself is what
-    /// <c>/noire3d topsurface</c> reports, so "my decal is not HighestOnly" is answerable without a debugger.
+    /// immediate) - gates the collision height-map pass (&gt; 0). Backs the <c>/noire3d topsurface</c> report.
     /// </summary>
     public int CountTopSurfaceDecals()
     {
@@ -134,10 +132,9 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     /// <summary>
-    /// The highest box-top world Y across this frame's <see cref="DecalProjection.HighestOnly"/> decals - the ceiling the
-    /// top-down height-map is clipped to (<see cref="RenderWorldHeight"/>), so overhead geometry (a room's roof/upper
-    /// floor) above every such decal's box never masks the ground below. <see cref="float.NegativeInfinity"/> when there
-    /// are none.
+    /// The highest box-top world Y across this frame's <see cref="DecalProjection.HighestOnly"/> decals - the ceiling
+    /// the top-down height-map is clipped to (<see cref="RenderWorldHeight"/>), so overhead geometry above a decal's box
+    /// never masks the ground below. <see cref="float.NegativeInfinity"/> when there are none.
     /// </summary>
     public float MaxTopSurfaceDecalBoxTopY()
     {
@@ -156,7 +153,7 @@ internal sealed unsafe class ScenePass : IDisposable
         => item.Mat.Domain == MaterialDomain.GroundDecal && item.Mat.ProjectionMode > 0.5f;
 
     /// <summary>World-space top Y of a decal's unit box (local [-0.5,0.5]³ transformed by <paramref name="world"/>): the
-    /// AABB-max Y, i.e. the vertical bound of what the decal paints. Row-vector convention (world = local*M).</summary>
+    /// AABB-max Y. Row-vector convention (world = local*M).</summary>
     private static float BoxTopY(in Matrix4x4 world)
         => world.M42 + 0.5f * (MathF.Abs(world.M12) + MathF.Abs(world.M22) + MathF.Abs(world.M32));
 
@@ -362,19 +359,14 @@ internal sealed unsafe class ScenePass : IDisposable
 
     /// <summary>
     /// Depth-aware nameplate policy for the over-everything composite: for each plate rect, decides whether the plate
-    /// is in front of or behind the Draw3D content covering it. Output factors feed the composite as <i>UI visibility</i>
+    /// is in front of or behind the Draw3D content covering it. Output factors feed the composite as UI visibility
     /// inside the rect: 1 = the plate's letters keep reading on top (plate in front, or nothing covers it);
     /// <paramref name="behindFactor"/> = the plate is behind your shape, so the shape covers its letters (0 = fully,
-    /// toward 1 = letters faintly showing through).<br/>
-    /// The rects are never visible - they only gate WHERE the per-pixel UI mask applies, so every boundary on screen is
-    /// the letters' own shape. Under the game UI none of this runs: the game's plate pass tests the depth Draw3D stamps
-    /// and does the same job on the GPU.
+    /// toward 1 = letters faintly showing through). The rects themselves are never visible; they only gate where the
+    /// per-pixel UI mask applies. Under the game UI none of this runs: the game's plate pass does the same job on
+    /// the GPU.
     /// </summary>
-    /// <param name="coveringItemFar">
-    /// Optional diagnostics: receives, per plate, the far-surface distance of the item that covered it (0 = nothing
-    /// did). This is the other half of the comparison the plate report prints, and the only way to tell a plate that
-    /// is genuinely behind your content from one whose own distance was read wrong.
-    /// </param>
+    /// <param name="coveringItemFar">Optional diagnostics: per-plate far-surface distance of the covering item (0 = none).</param>
     public void ComputeRectOcclusion(in FrameContext frame, Vector4[] rects, float[] plateDistances, float[] factors, int count, float behindFactor, float[]? coveringItemFar = null)
     {
         // Projection scale for a conservative screen-space radius; the fallback constant only matters
@@ -502,8 +494,7 @@ internal sealed unsafe class ScenePass : IDisposable
             fixed (Vertex3D* v = vSpan)
             {
                 // The alignment is the vertex stride itself (as the index ring's is sizeof(ushort)), so the
-                // returned offset is always a whole number of vertices. A literal here once hid a stride
-                // change behind a corrupted first dynamic draw.
+                // returned offset is always a whole number of vertices.
                 if (!dynVertexRing.TryWrite(device, ctx, v, (uint)(vSpan.Length * sizeof(Vertex3D)), (uint)sizeof(Vertex3D), out dynVbOffset))
                     hasDynamic = false;
             }
@@ -639,7 +630,7 @@ internal sealed unsafe class ScenePass : IDisposable
             if (pipeline == null)
             {
                 i0 += run;
-                continue; // pipeline self-disabled (rung 1) - renders nothing
+                continue; // pipeline self-disabled - renders nothing
             }
 
             // States.
@@ -861,10 +852,9 @@ internal sealed unsafe class ScenePass : IDisposable
     /// <summary>
     /// Nameplate occlusion (<see cref="Enums.NameplateOcclusion.DepthAware"/>): re-rasterizes this frame's
     /// opaque, depth-casting mesh items into an external depth-stencil view - the game's scene depth - depth-only
-    /// (no colour), greater-equal tested so the world still occludes them. Run right AFTER <see cref="Execute"/>:
-    /// it reuses the already-collected, already-sorted items. The caller owns the StateGuard; this binds its own
-    /// target/states and restores nothing. Skips decals, transparents and dynamic markers - only solid geometry
-    /// should hide a nameplate.
+    /// (no colour), greater-equal tested so the world still occludes them. Must run right after <see cref="Execute"/>,
+    /// reusing the already-collected, already-sorted items. The caller owns the StateGuard; this binds its own
+    /// target/states and restores nothing. Skips decals, transparents and dynamic markers.
     /// </summary>
     public void ProjectOpaqueDepth(
         RenderDevice device,
@@ -883,8 +873,8 @@ internal sealed unsafe class ScenePass : IDisposable
         EnsureBuffers(device);
 
         // Re-upload the frame VP (the composite rebound cbuffers after Execute). The rebuilt reversed-Z Z column
-        // makes SV_Position.z = near/clipW, which /noire3d probe confirmed matches the game's own depth buffer -
-        // so our writes are directly comparable to the world's.
+        // makes SV_Position.z = near/clipW, matching the game's own depth buffer, so our writes are directly
+        // comparable to the world's.
         var frameData = new FrameCBData
         {
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
@@ -986,10 +976,10 @@ internal sealed unsafe class ScenePass : IDisposable
 
     /// <summary>
     /// Renders the cached collision-world mesh top-down into an R32F height-map (each texel = the highest collision Y in
-    /// that XZ column, via MAX blend) up to <paramref name="heightCeiling"/> - collision above it (a room's roof/upper
-    /// floor) is discarded so it never masks the ground below. A <see cref="DecalProjection.HighestOnly"/> decal samples
-    /// it (bounded further to its own box top) to skip surfaces below its column's topmost one - the floor under a table.
-    /// Nothing else reads it. Standalone (own target and states) so it runs before <see cref="Execute"/>.
+    /// that XZ column, via MAX blend) up to <paramref name="heightCeiling"/> - collision above it is discarded so it
+    /// never masks the ground below. A <see cref="DecalProjection.HighestOnly"/> decal samples it (bounded further to
+    /// its own box top) to skip surfaces below its column's topmost one. Nothing else reads it. Standalone (own target
+    /// and states) so it runs before <see cref="Execute"/>.
     /// <paramref name="heightMatrix"/> is the CPU-built affine world-XZ-to-clip map (matching <c>WorldHeightRegion</c>);
     /// the mesh's vertices are relative to <paramref name="meshCenter"/>.
     /// <br/>
@@ -1078,7 +1068,7 @@ internal sealed unsafe class ScenePass : IDisposable
     /// <summary>
     /// Draws the outlined items into two targets, reusing the already-collected+sorted items:
     /// <paramref name="maskRt"/> (rgb = outline colour, a = coverage) holds each object's <b>FULL silhouette, ignoring
-    /// occlusion</b>, so the composite outlines the whole object rather than every fragment poking through a fence;
+    /// occlusion</b>, so the composite outlines the whole object rather than only its unoccluded fragments;
     /// <paramref name="visRt"/> (r = worldVisible) marks, per silhouette pixel, whether it is in front of the game world
     /// - the composite then hides the finished outline wherever the nearest silhouette pixel is behind a wall/character.
     /// Solid meshes draw their whole silhouette with no depth test; ground decals GE-test their emitted ground device-z

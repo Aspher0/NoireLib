@@ -12,9 +12,9 @@ namespace NoireLib.UI;
 /// <c>###</c> replaces the id outright. Splitting that costs a substring, and a widget is redrawn every frame, so a
 /// settings page whose fields carry stable ids produced two short-lived strings per field sixty times a second for a
 /// split that never changed.<br/>
-/// The strings handed back are equal to the substrings each call replaces, which matters beyond the bytes: an id
-/// travels into <see cref="NoireUiState"/> keys, so a split that returned different text would orphan every value a
-/// user had saved under it.<br/>
+/// The strings handed back are equal to the substrings each call replaces: an id travels into
+/// <see cref="NoireUiState"/> keys, so a split that returned different text would orphan every value a user had
+/// saved under it.<br/>
 /// Reached only from the draw thread, like <see cref="UiIds"/>, so the caches need no lock.
 /// </remarks>
 internal static class UiLabel
@@ -26,8 +26,8 @@ internal static class UiLabel
     private const int MaxEntries = 4096;
 
     /// <summary>
-    /// A label, as itself. A record struct rather than a bare string because <see cref="HotPathCache{TKey, TValue}"/>
-    /// takes a struct key, which is what keeps a lookup from boxing.
+    /// A label, as itself. A record struct rather than a bare string, since <see cref="HotPathCache{TKey, TValue}"/>
+    /// takes a struct key and this keeps a lookup from boxing.
     /// </summary>
     private readonly record struct Key(string Label);
 

@@ -8,13 +8,8 @@ namespace NoireLib.UI;
 /// <seealso cref="NoireInputs.Number(string, ref float, NumberStyle?)"/>
 public sealed class NumberStyle
 {
-    /// <summary>
-    /// The unit written after the number, inside the field. For example <c>ms</c>, <c>%</c>, <c>yalms</c>.
-    /// </summary>
-    /// <remarks>
-    /// Inside rather than beside it, because a unit in a separate label is a unit that drifts away from its number the
-    /// first time the row is laid out differently.
-    /// </remarks>
+    /// <summary>The unit written after the number, inside the field.</summary>
+    /// <remarks>Drawn inside the field rather than a separate label, so it never drifts from the number.</remarks>
     public string? Unit { get; set; }
 
     /// <summary>How much one press of the stepper moves the value. Zero hides the stepper.</summary>
@@ -38,19 +33,13 @@ public sealed class NumberStyle
     /// The value the field considers unmodified. When set, a dot appears beside the field once the value differs, and
     /// clicking it puts this back.
     /// </summary>
-    /// <remarks>
-    /// This is the whole of the "modified from default" affordance: give it the shipped default and the rest happens.
-    /// Left unset, no dot is drawn and the field behaves as any other.
-    /// </remarks>
+    /// <remarks>Left unset, no dot is drawn and the field behaves as any other.</remarks>
     public float? Default { get; set; }
 
     /// <summary>
     /// Refuses a value for a reason the field cannot know. Return an error message, or <see langword="null"/> to accept.
     /// </summary>
-    /// <remarks>
-    /// The value is still written. This reports rather than blocks, because a field that silently refuses a keystroke
-    /// is a field the user fights: the message slides in under it and says what is wrong.
-    /// </remarks>
+    /// <remarks>The value is still written; this reports rather than blocking the keystroke.</remarks>
     public Func<float, string?>? Validate { get; set; }
 
     /// <summary>

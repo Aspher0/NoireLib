@@ -4,10 +4,9 @@ namespace NoireLib.GameWatcher;
 
 /// <summary>
 /// The recast state of an action.<br/>
-/// For the local player this is exact (read from the game's action manager).
-/// For other characters it is an <b>estimate</b> inferred from observed action usage and sheet recast data -
-/// <see cref="IsEstimate"/> is true, and the value drifts with skill/spell speed, haste effects and unseen
-/// charge usage. Never treat estimated values as exact.
+/// For the local player this is exact (read from the game's action manager). For other characters it is an
+/// <b>estimate</b> inferred from observed usage and sheet recast data (<see cref="IsEstimate"/> is true),
+/// drifting with skill/spell speed, haste effects and unseen charge usage.
 /// </summary>
 public sealed record CooldownSnapshot
 {
@@ -32,10 +31,7 @@ public sealed record CooldownSnapshot
     /// <summary>The maximum number of charges (1 for non-charge actions).</summary>
     public required uint MaxCharges { get; init; }
 
-    /// <summary>
-    /// True when this value was inferred from observed usage rather than read from the game.<br/>
-    /// Estimated values drift and must not be treated as exact.
-    /// </summary>
+    /// <summary>True when this value was inferred from observed usage rather than read from the game.</summary>
     public required bool IsEstimate { get; init; }
 
     /// <summary>The UTC timestamp when the snapshot was captured (or the estimate was computed).</summary>

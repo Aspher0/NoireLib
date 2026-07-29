@@ -10,16 +10,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A stateful combo box widget with quality-of-life features:<br/>
-/// - An optional filter text input at the top of the dropdown, automatically focused when the dropdown opens, and either
-/// pinned above the options or scrolling with them (see <see cref="FilterPinned"/>).<br/>
-/// - Arrow keys cycle the highlighted option inside the open dropdown; Enter confirms it. The wheel scrolls the option
-/// list, as it does in any list.<br/>
-/// - An optional "hold a binding + mouse wheel" shortcut cycling the selection while hovering the closed combo, with or without looping.
-/// The binding is a <see cref="HotkeyBinding"/> matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey, and can be
-/// driven straight from that module through <see cref="BindWheelCycleHotkey"/> so the user can rebind it.<br/>
-/// - An optional automatic hint tooltip advertising the wheel shortcut, drawn with <see cref="NoireTooltip"/>.<br/>
-/// Create one instance per combo, keep it, and call <see cref="Draw"/> every frame inside your window.
+/// A stateful combo box widget: an optional filter with fuzzy matching, arrow-key and wheel navigation, and an
+/// optional held-binding wheel shortcut on the closed combo. Create one instance per combo, keep it, and call
+/// <see cref="Draw"/> every frame inside your window.
 /// </summary>
 /// <typeparam name="T">The type of the items of the combo box.</typeparam>
 [NoireFacadeFactory]
@@ -63,9 +56,8 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Whether this combo's id was generated rather than given. A generated id is a new GUID every session, so nothing
-    /// keyed on it can be restored, and <see cref="FilterMemory"/> refuses to persist against one rather than writing
-    /// entries nothing reads back. Session-scoped memory is unaffected: it expires with the id it is keyed on.
+    /// Whether this combo's id was generated rather than given. A generated id is a new GUID every session, so
+    /// <see cref="FilterMemory"/> refuses to persist against one; session-scoped memory is unaffected.
     /// </summary>
     public bool HasGeneratedId { get; }
 
@@ -80,9 +72,8 @@ public class NoireComboBox<T>
     public string? Label { get; set; } = null;
 
     /// <summary>
-    /// The width of the combo box. When <see langword="null"/>, the default ImGui item width is used.<br/>
-    /// In real pixels, not scaled: this is handed straight to ImGui as the next item width, so it belongs in the same
-    /// space as the <c>GetContentRegionAvail</c> it is usually set from. See <see cref="NoireUI.Scale"/>.
+    /// The width of the combo box. When <see langword="null"/>, the default ImGui item width is used. In real
+    /// pixels, not scaled.
     /// </summary>
     public float? Width { get; set; } = null;
 
@@ -95,14 +86,10 @@ public class NoireComboBox<T>
     /// Paints the closed combo as a <see cref="NoireShapes.Plate"/> instead of as an ImGui frame.
     /// </summary>
     /// <remarks>
-    /// ImGui draws a combo's box from its own style, which is one flat colour and a rounding, so a design wanting a
-    /// ramped surface, a chamfered corner or a bevel has no way to ask for one. Setting this hands the box to
-    /// <see cref="NoireShapes"/>: the plate is drawn first and ImGui's own frame is pushed transparent over it, so the
-    /// preview text, the hit box, the popup and the keyboard all keep working exactly as they did.<br/>
-    /// The arrow becomes ours too, because ImGui draws its own in the text colour and a gold chevron beside ivory text
-    /// is not reachable from one colour. Use <see cref="BoxArrowColor"/> to set it, or
-    /// <see cref="ImGuiComboFlags.NoArrowButton"/> to have none.<br/>
-    /// When <see langword="null"/>, the combo is an ordinary ImGui one.
+    /// The plate is drawn first and ImGui's own frame is pushed transparent over it, so the preview text, the hit
+    /// box, the popup and the keyboard all keep working. The arrow becomes ours too; set it with
+    /// <see cref="BoxArrowColor"/>, or use <see cref="ImGuiComboFlags.NoArrowButton"/> for none. When
+    /// <see langword="null"/>, the combo is an ordinary ImGui one.
     /// </remarks>
     public PlateStyle? BoxStyle { get; set; }
 
@@ -114,24 +101,15 @@ public class NoireComboBox<T>
     /// <summary>How wide the chevron is, at 100%. See <see cref="NoireUI.Scale"/>.</summary>
     public float BoxArrowSize { get; set; } = 6f;
 
-    /// <summary>
-    /// How far the chevron sits from the box's right edge, at 100%.
-    /// </summary>
-    /// <remarks>
-    /// Its own value rather than the frame padding it used to take, which is sized for text and leaves a mark drawn to
-    /// the edge of its own bounds sitting against the border.
-    /// </remarks>
+    /// <summary>How far the chevron sits from the box's right edge, at 100%.</summary>
     public float BoxArrowInset { get; set; } = 12f;
 
     /// <summary>
     /// How the dropdown itself is drawn: its surface, its border, its padding and its rows.
     /// </summary>
     /// <remarks>
-    /// Restyling the closed box and leaving the dropdown alone is worse than restyling neither, because the two are
-    /// seen one after the other: a plated combo that opens into ImGui's own grey popup reads as the styling having
-    /// failed. Every value falls back to the theme, so setting one thing does not mean setting all of them.<br/>
-    /// Applied as ImGui style pushes around the popup, so the filter box, the scrollbar and the rows all follow it
-    /// without the combo having to draw any of them itself.
+    /// Every value falls back to the theme, so setting one thing does not mean setting all of them. Applied as ImGui
+    /// style pushes around the popup, so the filter box, the scrollbar and the rows all follow it automatically.
     /// </remarks>
     public ComboPopupStyle? PopupStyle { get; set; }
 
@@ -187,11 +165,9 @@ public class NoireComboBox<T>
     /// How long the search text is remembered. Defaults to <see cref="UiMemoryScope.None"/>.
     /// </summary>
     /// <remarks>
-    /// For a combo whose filter is a working set rather than a lookup: a long list the user keeps narrowed to the same
-    /// handful of entries. <see cref="UiMemoryScope.Session"/> keeps it until the plugin reloads;
-    /// <see cref="UiMemoryScope.Persisted"/> keeps it across reloads and needs a stable id.<br/>
-    /// Anything other than <see cref="UiMemoryScope.None"/> implies <see cref="ClearFilterOnOpen"/> being off, since a
-    /// search restored and then cleared on the first opening would have been restored for nothing.
+    /// <see cref="UiMemoryScope.Session"/> keeps it until the plugin reloads; <see cref="UiMemoryScope.Persisted"/>
+    /// keeps it across reloads and needs a stable id. Anything other than <see cref="UiMemoryScope.None"/> implies
+    /// <see cref="ClearFilterOnOpen"/> being off.
     /// </remarks>
     public UiMemoryScope FilterMemory
     {
@@ -214,10 +190,8 @@ public class NoireComboBox<T>
     /// Whether the closed-combo wheel shortcut cycles only what the current search matches.
     /// </summary>
     /// <remarks>
-    /// The pairing that makes a persisted search worth having: narrow a long list once, then wheel through those few
-    /// entries on the closed combo without opening it again.<br/>
-    /// With no search text this changes nothing, because everything matches. When the current selection is not itself
-    /// a match, cycling enters the matches at one end rather than refusing, so the shortcut always goes somewhere.
+    /// With no search text this changes nothing, because everything matches. When the current selection is not
+    /// itself a match, cycling enters the matches at one end rather than refusing.
     /// </remarks>
     public bool WheelCycleFiltered { get; set; }
 
@@ -225,20 +199,16 @@ public class NoireComboBox<T>
     /// Whether the filter matches fuzzily and orders the options by how well they matched. Defaults to <see langword="true"/>.
     /// </summary>
     /// <remarks>
-    /// Fuzzy means the typed characters need only appear in order, so "cmbl" finds "Combat Log", and the best match is
-    /// listed first. See <see cref="FuzzyMatcher"/>.<br/>
-    /// Turn it off for a plain case-insensitive "contains" match that leaves the options in the order they were given.
-    /// A <see cref="FilterPredicate"/> of your own overrides both.
+    /// Fuzzy means the typed characters need only appear in order, and the best match is listed first. See
+    /// <see cref="FuzzyMatcher"/>. Turn it off for a plain case-insensitive "contains" match that leaves the options
+    /// in the order they were given. A <see cref="FilterPredicate"/> of your own overrides both.
     /// </remarks>
     public bool FilterFuzzy { get; set; } = true;
 
     /// <summary>
     /// Whether the characters the filter matched are picked out in the option list. Defaults to <see langword="true"/>.
     /// </summary>
-    /// <remarks>
-    /// Only applies while <see cref="FilterFuzzy"/> is on and something has been typed. It is most of what makes a
-    /// fuzzy list feel trustworthy rather than arbitrary: an order nobody can account for reads as a guess.
-    /// </remarks>
+    /// <remarks>Only applies while <see cref="FilterFuzzy"/> is on and something has been typed.</remarks>
     public bool FilterHighlight { get; set; } = true;
 
     /// <summary>
@@ -246,15 +216,13 @@ public class NoireComboBox<T>
     /// </summary>
     public Vector4? FilterHighlightColor { get; set; }
 
-    /// <summary>
-    /// Draws each option yourself: an icon and a label, a second line, a badge, anything.
-    /// </summary>
+    /// <summary>Draws each option yourself.</summary>
     /// <remarks>
-    /// The combo keeps the row and everything about it that is not paint: its size, its hit testing, its selection and
-    /// keyboard state, its filtering and its scrolling. Call <see cref="UiComboItemDraw{T}.DrawLabel"/> for the
-    /// ordinary text, filter highlighting included, rather than reimplementing it.<br/>
-    /// Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line, or virtualization will
-    /// place them wrongly. An exception thrown here is caught and logged once rather than taking the frame down.
+    /// The combo keeps the row and everything about it that is not paint: its size, its hit testing, its selection
+    /// and keyboard state, its filtering and its scrolling. Call <see cref="UiComboItemDraw{T}.DrawLabel"/> for the
+    /// ordinary text, filter highlighting included, rather than reimplementing it. Set <see cref="ItemHeight"/>
+    /// alongside this when the rows are taller than one line, or virtualization will place them wrongly. An
+    /// exception thrown here is caught and logged once rather than taking the frame down.
     /// </remarks>
     public Action<UiComboItemDraw<T>>? ItemRenderer { get; set; }
 
@@ -273,11 +241,10 @@ public class NoireComboBox<T>
     /// When <see langword="null"/>, the default, it turns itself on past <see cref="VirtualizeThreshold"/> options.
     /// </summary>
     /// <remarks>
-    /// A dropdown over every item in the game is forty thousand rows, and drawing all of them every frame to show
-    /// fifteen is what makes a picker unusable. Virtualizing draws only what is on screen.<br/>
-    /// It requires every row to be the same height. That is free for ordinary text options and is why an
-    /// <see cref="ItemRenderer"/> drawing something taller has to declare <see cref="ItemHeight"/>. Force it off here
-    /// if your rows genuinely vary.
+    /// A dropdown over every item in the game is forty thousand rows; virtualizing draws only what is on screen.
+    /// Every row must be the same height, which is automatic for ordinary text options; an
+    /// <see cref="ItemRenderer"/> drawing taller rows must declare <see cref="ItemHeight"/>, or turn this off if
+    /// rows genuinely vary.
     /// </remarks>
     public bool? Virtualize { get; set; }
 
@@ -290,11 +257,8 @@ public class NoireComboBox<T>
     /// How many option rows were actually drawn the last time the dropdown was open.
     /// </summary>
     /// <remarks>
-    /// The number virtualization exists to keep small, and the only honest way to see whether it is doing anything:
-    /// ImGui already skips the drawing of an off-screen item on its own, so an unvirtualized long list costs less than
-    /// it looks like it should and the difference is easy to mistake for nothing. What a clipper removes is the work
-    /// done <i>per row before</i> ImGui gets to decide it is off screen, which here is a display string, a fuzzy match
-    /// and a font push.
+    /// What virtualization removes is the per-row work done before ImGui decides an item is off screen: a display
+    /// string, a fuzzy match and a font push.
     /// </remarks>
     public int DrawnRowCount { get; private set; }
 
@@ -340,14 +304,13 @@ public class NoireComboBox<T>
     public bool WheelCycleEnabled { get; set; } = false;
 
     /// <summary>
-    /// An optional binding that must be held for the closed-combo wheel cycling to trigger.<br/>
-    /// A plain <see cref="VirtualKey"/> converts implicitly (<c>combo.WheelCycleBinding = VirtualKey.CONTROL;</c>), and the full
-    /// <see cref="HotkeyBinding"/> surface is available for a modifier combination, a key plus modifiers, or a gamepad button
-    /// (<c>new HotkeyBinding(VirtualKey.G, ctrl: true)</c>).<br/>
-    /// Defaults to an empty binding, meaning no key is required. The binding is matched with the same rules as a
-    /// <see cref="NoireHotkeyManager"/> hotkey (see <see cref="KeybindsHelper.IsBindingHeld"/>).<br/>
-    /// Ignored while a hotkey is attached through <see cref="BindWheelCycleHotkey"/>; read <see cref="ResolvedWheelCycleBinding"/>
-    /// for the binding actually in effect.
+    /// An optional binding that must be held for the closed-combo wheel cycling to trigger. A plain
+    /// <see cref="VirtualKey"/> converts implicitly; the full <see cref="HotkeyBinding"/> surface covers a modifier
+    /// combination, a key plus modifiers, or a gamepad button. Defaults to an empty binding, meaning no key is
+    /// required. Matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey (see
+    /// <see cref="KeybindsHelper.IsBindingHeld"/>). Ignored while a hotkey is attached through
+    /// <see cref="BindWheelCycleHotkey"/>; read <see cref="ResolvedWheelCycleBinding"/> for the binding actually in
+    /// effect.
     /// </summary>
     public HotkeyBinding WheelCycleBinding { get; set; } = default;
 
@@ -385,11 +348,11 @@ public class NoireComboBox<T>
     public FocusStyle? FocusStyle { get; set; }
 
     /// <summary>
-    /// The binding the closed-combo wheel cycling currently requires: the live binding of the hotkey attached through
-    /// <see cref="BindWheelCycleHotkey"/> when there is one, otherwise <see cref="WheelCycleBinding"/>.<br/>
-    /// An attached hotkey is read on every access rather than copied, so a rebinding (through
-    /// <see cref="NoireHotkeyManager.DrawKeybindInputButton"/> or any other path) applies immediately, with no bookkeeping on your side.
-    /// An attached hotkey that is disabled or no longer registered resolves to an empty binding, which disables the cycling
+    /// The binding the closed-combo wheel cycling currently requires: the live binding of the hotkey attached
+    /// through <see cref="BindWheelCycleHotkey"/> when there is one, otherwise <see cref="WheelCycleBinding"/>. An
+    /// attached hotkey is read on every access rather than copied, so a rebinding through
+    /// <see cref="NoireHotkeyManager.DrawKeybindInputButton"/> (or any other path) applies immediately. An attached
+    /// hotkey that is disabled or no longer registered resolves to an empty binding, which disables the cycling
     /// rather than making it unconditional.
     /// </summary>
     public HotkeyBinding ResolvedWheelCycleBinding
@@ -406,9 +369,8 @@ public class NoireComboBox<T>
     /// </summary>
     /// <param name="binding">The resolved binding, or an empty binding when there is none to honor.</param>
     /// <returns>
-    /// False when a hotkey is attached but cannot be honored (disabled, or unregistered from its manager since it was attached),
-    /// in which case the cycling must stay off entirely: an empty binding would otherwise read as "no key required" and make the
-    /// cycling unconditional, the opposite of what gating it behind that hotkey asked for.
+    /// False when an attached hotkey cannot be honored (disabled, or unregistered since attaching), so the cycling
+    /// stays off rather than becoming unconditional.
     /// </returns>
     private bool TryResolveWheelCycleBinding(out HotkeyBinding binding)
     {
@@ -429,13 +391,13 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>, so the user can rebind the
-    /// shortcut through the manager and the combo (and its hint tooltip) follows automatically.<br/>
-    /// The hotkey's binding is only ever read, never triggered: the manager keeps owning it, its own callback is untouched, and it stays
-    /// usable as a regular hotkey at the same time. This is a convenience over <see cref="WheelCycleBinding"/>, which stays available.<br/>
-    /// Does not enable the cycling on its own; set <see cref="WheelCycleEnabled"/> as well.<br/>
-    /// Note that <see cref="NoireHotkeyManager.RegisterHotkey"/> requires every hotkey to carry a callback, so a hotkey registered only to
-    /// gate a combo takes an empty one: the combo reads the binding, not the trigger.
+    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>, so the
+    /// user can rebind the shortcut through the manager and the combo (and its hint tooltip) follow automatically.
+    /// The hotkey's binding is only ever read, never triggered: the manager keeps owning it, and it stays usable as
+    /// a regular hotkey at the same time. This is a convenience over <see cref="WheelCycleBinding"/>, which stays
+    /// available. Does not enable the cycling on its own; set <see cref="WheelCycleEnabled"/> as well.
+    /// <see cref="NoireHotkeyManager.RegisterHotkey"/> requires every hotkey to carry a callback, so one registered
+    /// only to gate a combo takes an empty one: the combo reads the binding, not the trigger.
     /// </summary>
     /// <example>
     /// <code>
@@ -577,13 +539,12 @@ public class NoireComboBox<T>
         var preview = selectedIndex >= 0 ? DisplayOf(items[selectedIndex]) : PreviewPlaceholder;
         var label = string.IsNullOrEmpty(Label) ? UiIds.For("###NoireCombo_", Id) : UiIds.Labelled(Label, "###NoireCombo_", Id);
 
-        // Cap the dropdown to exactly what it is meant to show. Left alone, ImGui budgets the popup at eight options and
-        // knows nothing about the filter input, so the filter pushes the option list past the budget and the popup grows
-        // a scrollbar around the list's own: two nested scrollbars for one list.
-        // The dropdown's own style is pushed before its height is measured, not after. The measurement reads the window
-        // padding and item spacing in force, so pushing afterwards budgets the popup against whatever the host happened
-        // to have set: the popup comes out too short for its own contents, and it grows a scrollbar around the option
-        // list's, which is the two-scrollbar case.
+        // Capped to exactly what it is meant to show: left alone, ImGui budgets the popup at eight options and knows
+        // nothing about the filter input, so the filter would push the list past the budget and grow a second,
+        // nested scrollbar.
+        // The dropdown's style is pushed before its height is measured, not after: the measurement reads the window
+        // padding and item spacing in force, and pushing afterwards would budget the popup against the host's own
+        // settings instead, coming out too short and growing that same second scrollbar.
         var popup = BeginPopupStyle();
 
         ApplyPopupConstraints();
@@ -677,12 +638,10 @@ public class NoireComboBox<T>
         if (style.TextColor is { } text)
             pushed.Push(ImGuiCol.Text, text);
 
-        // Snapped to whole pixels, which is what keeps a dropdown holding fewer options than it shows from growing a
-        // scrollbar anyway. ImGui floors a window's size whenever a size constraint is present, and a combo popup
-        // always has one (if the caller sets none, BeginCombo sets its own), while the test that decides the scrollbar
-        // compares the unfloored ContentSize + WindowPadding * 2 against that floored size. ContentSize is itself
-        // floored, so the two differ by exactly the fraction in the padding: at any UI scale that is not a whole
-        // multiple, a padding of 6 becomes 7.5 and the popup is half a pixel short of its own contents forever.
+        // Snapped to whole pixels: ImGui floors a window's size whenever a size constraint is present, and a combo
+        // popup always has one, but compares that floored size against an unfloored ContentSize + WindowPadding * 2.
+        // The two differ by exactly the padding's fraction, so at a non-whole UI scale a padding of 6 becomes 7.5
+        // and the popup ends up half a pixel short of its own contents.
         var padding = NoireUI.Scaled(style.Padding);
 
         pushed.Push(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize);
@@ -779,16 +738,16 @@ public class NoireComboBox<T>
 
 
     /// <summary>
-    /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/> options.<br/>
-    /// Mirrors how ImGui itself sizes a popup from an option count, so a dropdown holding fewer options still shrinks to fit.
+    /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/>
+    /// options. Mirrors how ImGui itself sizes a popup from an option count.
     /// </summary>
     /// <summary>
     /// Records the height the dropdown actually needs, taken from ImGui rather than worked out.
     /// </summary>
     /// <remarks>
-    /// This is the exact quantity ImGui compares against the window's height to decide whether to show a scrollbar, so
-    /// asking for it back as a minimum next frame cannot disagree with it. <c>ContentSize</c> is what <c>Begin</c>
-    /// derived from the previous frame, which is the same value that test uses.
+    /// The exact quantity ImGui compares against the window's height to decide the scrollbar, so asking for it back
+    /// as a minimum next frame cannot disagree with it. <c>ContentSize</c> is what <c>Begin</c> derived from the
+    /// previous frame, which is the same value that test uses.
     /// </remarks>
     private void RecordPopupHeight()
     {
@@ -806,17 +765,16 @@ public class NoireComboBox<T>
     /// <see cref="VisibleItemCount"/> options once there are more of them than that.
     /// </summary>
     /// <remarks>
-    /// The minimum is what stops a dropdown holding fewer options than it shows from scrolling anyway, and it is a
-    /// measurement rather than a prediction on purpose. ImGui decides the scrollbar with
-    /// <c>ContentSize + WindowPadding * 2 &gt; SizeFull.y</c>, and floors <c>SizeFull</c> whenever a size constraint is
-    /// present at all, so a height worked out in advance has to come out equal to a value that was then rounded down,
-    /// and every fraction anywhere in the layout is a scrollbar. Asking for the measured height back, rounded up,
-    /// forces the comparison the other way whatever the layout turns out to contain.
+    /// The minimum is a measurement rather than a prediction, on purpose: ImGui decides the scrollbar with
+    /// <c>ContentSize + WindowPadding * 2 &gt; SizeFull.y</c> and floors <c>SizeFull</c> whenever a size constraint
+    /// is present, so a height worked out in advance would be compared against a rounded-down value and any
+    /// fraction in the layout becomes a scrollbar. Asking for the measured height back, rounded up, forces the
+    /// comparison the other way.
     /// </remarks>
     private void ApplyPopupConstraints()
     {
-        // A list longer than the dropdown is capped and scrolls, which is the whole point of the cap. Only a list that
-        // fits gets the floor it needs to stop scrolling.
+        // A list longer than the dropdown is capped and scrolls. Only a list that fits gets the floor it needs to
+        // stop scrolling.
         if (filteredIndices.Count > Math.Max(1, VisibleItemCount))
         {
             ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
@@ -839,20 +797,18 @@ public class NoireComboBox<T>
 
         if (FilterEnabled)
         {
-            // Measured at the size the filter box is drawn at, which is the dropdown's own rather than whatever is in
-            // force out here. This runs before the popup is begun, so ImGui's frame height answers for the host's font,
-            // and a dropdown whose text is larger than its host's was budgeted a filter row shorter than the one it
-            // draws. The popup then overflowed its cap by the difference and grew a scrollbar around a list that fits,
-            // which the pinned layout hid because it carries a spacing of slack the free one does not.
+            // Measured at the dropdown's own text size, not whatever is in force out here: this runs before the
+            // popup begins, so ImGui's frame height would otherwise answer for the host's font. A dropdown with
+            // larger text than its host would be budgeted a filter row shorter than the one it draws, overflowing
+            // the cap and growing a scrollbar around a list that fits.
             var line = PopupStyle?.TextSizePx is { } filterSize
                 ? NoireText.CalcSize(" ", filterSize).Y
                 : ImGui.GetTextLineHeight();
 
             height += line + (style.FramePadding.Y * 2f) + style.ItemSpacing.Y;
 
-            // With the filter pinned, the options live in a fixed-height child that scrolls on its own and the popup is
-            // meant to wrap it snugly. The popup then measures exactly this cap, and asking it to fit its content into a
-            // budget equal to that content is what a rounding hair away from equality turns into a stray scrollbar.
+            // With the filter pinned, the options live in a fixed-height child sized to this same cap: a budget
+            // equal to its own content means a rounding hair of difference becomes a stray scrollbar.
             if (FilterPinned)
                 height += style.ItemSpacing.Y;
         }
@@ -922,9 +878,9 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Draws the option list, in a scrolling child of its own when the filter is pinned above it, or straight into the
-    /// dropdown when the filter is free to scroll away with the options.<br/>
-    /// Exactly one of the two scrolls in either case, which is what keeps the dropdown to a single scrollbar.
+    /// Draws the option list, in a scrolling child of its own when the filter is pinned above it, or straight into
+    /// the dropdown when the filter is free to scroll away with the options. Exactly one of the two scrolls in
+    /// either case, keeping the dropdown to a single scrollbar.
     /// </summary>
     private void DrawItemList()
     {
@@ -934,17 +890,16 @@ public class NoireComboBox<T>
             return;
         }
 
-        // Sized to the options it holds rather than to the space left over, so a short list shrinks the dropdown instead
-        // of leaving it padded out with dead space.
-        // Rounded up, because ImGui floors a child's size while the content it was measured for keeps its fraction: a
-        // row step landing on anything but a whole pixel leaves the region a pixel short of the rows it was sized to
-        // hold, and a pixel short is a scrollbar on a list that fits.
+        // Sized to the options it holds rather than the space left over, so a short list shrinks the dropdown instead
+        // of leaving it padded with dead space.
+        // Rounded up, because ImGui floors a child's size while the content keeps its fraction: a row step landing
+        // off a whole pixel leaves the region a pixel short, and a pixel short is a scrollbar on a list that fits.
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
         var listHeight = MathF.Ceiling((visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y);
 
-        // And taken up to what the list actually reported needing the last time it was drawn, for the same reason the
-        // dropdown itself is: a height worked out from the row step has to come out equal to a content size ImGui
-        // measured, and the two disagree by whatever the layout rounded. The measurement cannot.
+        // Taken up to what the list reported needing last time, for the same reason as the dropdown itself: a height
+        // worked out from the row step disagrees with what ImGui measured by whatever the layout rounded off; the
+        // measurement cannot.
         if (filteredIndices.Count <= VisibleItemCount)
             listHeight = MathF.Max(listHeight, MathF.Ceiling(neededListHeight));
 
@@ -995,9 +950,8 @@ public class NoireComboBox<T>
             return;
         }
 
-        // A clipper is told the row height rather than left to measure it, which costs it a pass and needs every row
-        // drawn once anyway. That is only correct while the rows are a uniform height, which is why a renderer that
-        // draws taller ones has to say so through ItemHeight.
+        // A clipper is told the row height rather than left to measure it, which would cost a pass over every row
+        // anyway. Only correct while rows are a uniform height. A taller renderer must declare ItemHeight.
         var clipper = new ImGuiListClipper();
         clipper.Begin(filteredIndices.Count, ResolveRowStep());
 
@@ -1034,10 +988,9 @@ public class NoireComboBox<T>
         var isHighlighted = position == highlightIndex;
         var display = DisplayOf(item);
 
-        // The selectable carries no label of its own and the content is drawn over it, because a label is one colour
-        // and one font, and this needs the theme's type scale, the filter highlighting and possibly a renderer's
-        // icons. The content lands where the label would have, since a selectable renders its own at the cursor it
-        // was given.
+        // The selectable carries no label of its own; the content is drawn over it instead, since this needs the
+        // theme's type scale, filter highlighting and possibly a renderer's icons, not one colour and one font. The
+        // content lands where the label would have, since a selectable renders its own at the given cursor.
         var start = ImGui.GetCursorPos();
 
         if (ImGui.Selectable(UiIds.For("###NoireComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.None, new Vector2(0f, ResolveItemHeight())))
@@ -1107,9 +1060,9 @@ public class NoireComboBox<T>
     /// The height one option occupies, which every row must share for virtualization to place them correctly.
     /// </summary>
     /// <remarks>
-    /// Measured through <see cref="NoireText"/> rather than from ImGui's current font, because that is what draws the
-    /// labels: a theme that moves its body size moves the rows with it, and a row sized from the other font would be
-    /// wrong by exactly the difference.
+    /// Measured through <see cref="NoireText"/>, which draws the labels, rather than ImGui's current font: a
+    /// theme change to body size moves the rows with it, and sizing from the other font would be wrong by
+    /// exactly the difference.
     /// </remarks>
     private float ResolveItemHeight()
     {
@@ -1150,17 +1103,14 @@ public class NoireComboBox<T>
     /// that stops a cycling scroll from also moving the window.
     /// </summary>
     /// <remarks>
-    /// One pass for everything the hover needs, so the binding is resolved and the held keys are read once per frame
-    /// rather than once per concern: reading the keys is a system call per key, which is the expensive kind of read to
-    /// repeat sixty times a second.<br/>
-    /// The wheel claim has to be made while the combo is still the last submitted item, because ImGui attaches the
-    /// claim to that item and the hint tooltip submits items of its own; that is why it happens before the tooltip
-    /// rather than after. ImGui settles what a wheel event scrolls at the start of a frame, before any widget code
-    /// runs, so the claim cannot be handed back afterwards, only declared in advance; ImGui honors it by dropping the
-    /// event for scrolling entirely while the raw wheel value stays readable, which is what the cycling runs on. The
-    /// claim is made only while the combo is really cycling, so an ordinary scroll over an idle combo still moves the
-    /// window, and it applies from the next frame on, since ImGui matches it against the item hovered on the previous
-    /// one; in practice a binding is always already held for a frame before the wheel turns.
+    /// One pass for everything the hover needs: the binding is resolved and the held keys are read once per frame,
+    /// since reading a key is a system call. The wheel claim must be made while the combo is still the last
+    /// submitted item, since ImGui attaches the claim to that item and the tooltip submits items of its own
+    /// afterward. ImGui settles what a wheel event scrolls at the start of the frame, before any widget code runs,
+    /// so the claim can only be declared in advance; it then drops the event for scrolling while leaving the raw
+    /// wheel value readable, which the cycling runs on. Made only while the combo is really cycling, so an ordinary
+    /// scroll over an idle combo still moves the window, and it applies from the next frame on, since ImGui matches
+    /// it against the item hovered the previous one.
     /// </remarks>
     private void HandleClosedComboInteractions()
     {
@@ -1289,9 +1239,8 @@ public class NoireComboBox<T>
     /// Builds the key the search is remembered under.
     /// </summary>
     /// <remarks>
-    /// A generated id is refused only for the persisted scope. Session memory lasts exactly as long as that generated
-    /// id does, so keying on one is safe there and refusing it would deny the feature to every widget built without a
-    /// name for no benefit at all.
+    /// A generated id is refused only for the persisted scope; session memory lasts exactly as long as that id does,
+    /// so keying on one there is safe.
     /// </remarks>
     private bool TryGetFilterKey(out string key)
     {
@@ -1360,7 +1309,6 @@ public class NoireComboBox<T>
     /// The current search text.
     /// </summary>
     /// <remarks>
-    /// Readable so a plugin can show or save what the user narrowed the list to, and settable so it can put one back.
     /// Setting it rebuilds the matches immediately, so <see cref="WheelCycleFiltered"/> is scoped correctly even if
     /// the dropdown is never opened.
     /// </remarks>
@@ -1453,9 +1401,8 @@ public class NoireComboBox<T>
         {
             cachedHintBinding = binding;
             hasCachedHint = true;
-            // Keycaps and text rather than mouse and arrow glyphs. The icons read as decoration at tooltip size and are
-            // drawn from the icon font, so they are also the one part of the hint a consumer's font and styling cannot
-            // reach; a keycap is drawn from the theme and says "press this" more plainly than a picture of a mouse.
+            // Keycaps and text rather than mouse and arrow glyphs: the icon font is the one part of the hint a
+            // consumer's own font and styling cannot reach, and a keycap is drawn from the theme instead.
             cachedHintContent = new NoireContent();
 
             if (binding.IsEmpty)

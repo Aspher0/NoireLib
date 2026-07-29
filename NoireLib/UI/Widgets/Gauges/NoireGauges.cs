@@ -6,14 +6,12 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Small readouts that show a number as a shape: rings, bars, pips and countdowns. Immediate and stateless, so they
-/// compose anywhere a widget can go, including inside a table cell, on a world label, or on a button.
+/// Small readouts that show a number as a shape: rings, bars, pips and countdowns. Immediate and stateless.
 /// </summary>
 /// <remarks>
-/// Every gauge takes a fraction from 0 to 1 and draws at the cursor, reserving exactly the space it used, so it sits
-/// in a layout like any other item. Nothing is registered, nothing is remembered, and drawing one twice draws two.<br/>
-/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>, and every size is a logical pixel
-/// value at 100%. See <see cref="NoireUI.Scale"/>.
+/// Every gauge takes a fraction from 0 to 1 and draws at the cursor, reserving exactly the space it used. Nothing is
+/// registered, nothing is remembered, and drawing one twice draws two. Colours left <see langword="null"/> resolve
+/// through <see cref="NoireTheme"/>, and every size is a logical pixel value at 100%. See <see cref="NoireUI.Scale"/>.
 /// </remarks>
 /// <example>
 /// <code>
@@ -48,8 +46,8 @@ public static partial class NoireGauges
     /// Draws a ring with its label already worked out.
     /// </summary>
     /// <remarks>
-    /// The label is passed rather than read off the style so that a countdown can put the time left on a caller's style
-    /// without copying it. Copying it per frame is what a countdown used to cost.
+    /// The label is passed rather than read off the style, so a countdown can set the time left without copying the
+    /// style per frame.
     /// </remarks>
     /// <param name="value">The fraction filled, from 0 to 1.</param>
     /// <param name="style">How to draw it.</param>
@@ -101,7 +99,8 @@ public static partial class NoireGauges
     /// Draws a bar with its label already worked out.
     /// </summary>
     /// <remarks>
-    /// See the ring's private overload for why the label is passed rather than read off the style.
+    /// The label is passed rather than read off the style, so a countdown can set the time left without copying the
+    /// style per frame.
     /// </remarks>
     /// <param name="value">The fraction filled, from 0 to 1.</param>
     /// <param name="style">How to draw it.</param>
@@ -128,10 +127,10 @@ public static partial class NoireGauges
         {
             var fillMax = new Vector2(origin.X + (width * fraction), max.Y);
 
-            // The fill is clipped to the track's own rounded shape rather than rounded itself: a short bar with its own
-            // rounding is a lozenge floating inside the track, and a full one has a visible seam at the right end.
-            // Taken from the window's own list because this call establishes a redirect, and resolving the list the way
-            // a shape does would read back a redirect already in force and make the call a no-op.
+            // Clipped to the track's rounded shape rather than rounded itself: a short bar would otherwise float as
+            // a lozenge inside the track, and a full one would show a seam at the right end.
+            // Taken from the window's own list: resolving it the way a shape does would read back the redirect this
+            // call establishes and no-op.
             using var inner = UiDraw.BeginWindow();
 
             NoireShapes.On(inner.List, (origin, max, fillMax, fill, style, rounding), static state =>
@@ -203,9 +202,7 @@ public static partial class NoireGauges
 
     #region Pips
 
-    /// <summary>
-    /// Draws a row of pips, the readout for a count small enough to be seen rather than read: stacks, charges, lives.
-    /// </summary>
+    /// <summary>Draws a row of pips, the readout for a count small enough to be seen rather than read.</summary>
     /// <param name="filled">How many pips are filled. Clamped to the total.</param>
     /// <param name="total">How many pips there are.</param>
     /// <param name="style">How to draw them, or <see langword="null"/> for the default pips.</param>
@@ -250,10 +247,7 @@ public static partial class NoireGauges
     /// <summary>
     /// Draws a ring counting down, labelled with the time left.
     /// </summary>
-    /// <remarks>
-    /// The ring empties as the time runs out rather than filling, because a countdown that fills reads as progress
-    /// toward something rather than as time being spent.
-    /// </remarks>
+    /// <remarks>The ring empties as the time runs out rather than filling.</remarks>
     /// <param name="remaining">How much time is left.</param>
     /// <param name="total">How long the countdown started at.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
@@ -279,8 +273,8 @@ public static partial class NoireGauges
     /// Writes the time left on a countdown, never as a negative.
     /// </summary>
     /// <remarks>
-    /// A countdown that has run out reads <c>0s</c> rather than counting up past zero, and the text is remembered for
-    /// as long as the second lasts: a countdown redraws sixty times for each value it shows.
+    /// Reads <c>0s</c> rather than counting past zero into negative. Cached for the second, since a countdown redraws
+    /// roughly sixty times per shown value.
     /// </remarks>
     /// <param name="remaining">How much time is left.</param>
     /// <returns>The time left, in shorthand.</returns>
@@ -309,9 +303,8 @@ public static partial class NoireGauges
     /// Works out what colour a gauge fills with at a given value.
     /// </summary>
     /// <remarks>
-    /// The lowest threshold the value has fallen to or below wins, so a bar can carry a warning band and a critical
-    /// one at once and always paint the more urgent of the two. With no thresholds the base colour is used, and with
-    /// no base colour the theme's accent is.
+    /// The lowest threshold the value has fallen to or below wins. With no thresholds the base colour is used, and
+    /// with no base colour the theme's accent is.
     /// </remarks>
     /// <param name="value">The fraction being drawn, from 0 to 1.</param>
     /// <param name="thresholds">The thresholds to consider, or <see langword="null"/> for none.</param>

@@ -6,11 +6,10 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the
-/// game's depth buffer is never written by Draw3D.<br/>
-/// Prefers borrowing the game's own pre-made SRV (QI-validated); otherwise creates one from the
-/// typeless texture family. Re-derives itself whenever the underlying texture changes (resolution,
-/// GPose, upscaler changes) and fails soft to depth-off mode on anything unknown.
+/// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the game's
+/// depth buffer is never written by Draw3D. Prefers borrowing the game's own pre-made SRV (QI-validated);
+/// otherwise creates one from the typeless texture family. Re-derives itself whenever the underlying texture
+/// changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on anything unknown.
 /// </summary>
 internal sealed unsafe class SceneDepth : IDisposable
 {

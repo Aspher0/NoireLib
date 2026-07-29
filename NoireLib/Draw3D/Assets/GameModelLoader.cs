@@ -9,27 +9,26 @@ namespace NoireLib.Draw3D.Assets;
 
 /// <summary>One drawable piece of a game model: its geometry and the material path it asks for.</summary>
 /// <param name="Geometry">Decoded vertices and indices, ready for <see cref="Scene.Scene3D.Spawn(MeshData, Materials.Material, Vector3, string, bool)"/>.</param>
-/// <param name="MaterialPath">The material this piece references. Character models store this relative, beginning with a slash.</param>
+/// <param name="MaterialPath">The material this piece references; character models store this relative, beginning with a slash.</param>
 public readonly record struct GameModelMesh(MeshData Geometry, string MaterialPath);
 
 /// <summary>
-/// Loads models out of the game's own archives and decodes them into renderer geometry.<br/>
-/// Reads files by their game path (for example <c>bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl</c>);
-/// nothing is spawned in the game and no game function is called, so a loaded model is inert geometry
-/// that exists only in this renderer.<br/>
-/// <b>Vertex colors are not imported.</b> The game stores shader data there (blend and wetness masks)
-/// rather than albedo, so applying it as a tint paints models in false colors. Pass
+/// Loads models out of the game's own archives and decodes them into renderer geometry, by game path (for
+/// example <c>bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl</c>); nothing is spawned in the game
+/// and no game function is called, so a loaded model is inert geometry that exists only in this renderer.<br/>
+/// <b>Vertex colors are not imported by default</b>: the game stores shader data there (blend and wetness
+/// masks) rather than albedo, so applying it as a tint paints models in false colors - pass
 /// <c>importVertexColors: true</c> only for assets known to author real colors.<br/>
-/// Materials are not resolved yet: each piece reports the path it wants and is drawn with whatever
-/// material the caller supplies. Use <see cref="GameModelFile"/> directly for full access to levels of
-/// detail, vertex declarations and per-mesh buffer layout.
+/// Materials are not resolved yet - each piece reports the path it wants and is drawn with whatever material
+/// the caller supplies; use <see cref="GameModelFile"/> directly for full access to levels of detail, vertex
+/// declarations and per-mesh buffer layout.
 /// </summary>
 public static class GameModelLoader
 {
     /// <summary>Loads and decodes a model from the game archives.</summary>
     /// <param name="gamePath">Archive path of the model, such as <c>bgcommon/.../fun_b0_m0001.mdl</c>.</param>
     /// <param name="lod">Level of detail to decode, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply the model's vertex color channel. Off by default (see the type remarks).</param>
+    /// <param name="importVertexColors">Apply the model's vertex color channel; off by default, since it holds shader data rather than albedo.</param>
     /// <returns>One entry per mesh in the requested level of detail, or an empty array if the file does not exist.</returns>
     public static GameModelMesh[] Load(string gamePath, int lod = 0, bool importVertexColors = false)
     {
@@ -47,7 +46,7 @@ public static class GameModelLoader
     /// <summary>Decodes one level of detail of an already-parsed model.</summary>
     /// <param name="file">The parsed model.</param>
     /// <param name="lod">Level of detail to decode, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply the model's vertex color channel. Off by default (see the type remarks).</param>
+    /// <param name="importVertexColors">Apply the model's vertex color channel; off by default, since it holds shader data rather than albedo.</param>
     public static GameModelMesh[] Decode(GameModelFile file, int lod = 0, bool importVertexColors = false)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -111,18 +110,14 @@ public static class GameModelLoader
             var t = uv is null ? Vector4.Zero : ReadElement(data, level, mesh, uv.Value, v);
 
             // The position's fourth component is baked per-vertex occlusion: the game's own background
-            // shaders write it into the G-buffer's occlusion channel (multiplied by a per-instance sky
-            // visibility), which is what darkens carved recesses. It rides in the color's alpha, which
-            // background models leave free - they declare no color element.
+            // shaders write it into the G-buffer's occlusion channel (multiplied by per-instance sky
+            // visibility), darkening carved recesses. It rides in the color's alpha, which background
+            // models leave free since they declare no color element.
             var c = importVertexColors && color is not null
                 ? ReadElement(data, level, mesh, color.Value, v)
                 : new Vector4(1f, 1f, 1f, OcclusionFrom(position.Value.Type, p.W));
 
-            // Positions and normals are taken as authored. An earlier version negated Z here, reasoning that
-            // one reflection converts the handedness and flips the winding at the same time - which is true
-            // about the winding and wrong about the shape, because a reflection mirrors the model. It arrived
-            // as text on a texture reading backwards and, confirmed in game, the whole model mirrored. The
-            // winding is handled on its own below, where it belongs.
+            // Positions and normals are taken as authored; the winding is handled separately below.
             var vertexNormal = Vector3.Normalize(new Vector3(n.X, n.Y, n.Z));
 
             vertices[v] = new Vertex3D(
@@ -141,8 +136,7 @@ public static class GameModelLoader
             indices[i] = BitConverter.ToUInt16(data, indexBase + (i * sizeof(ushort)));
 
         // The game authors its triangles counter-clockwise-front and this renderer is clockwise-front, so the
-        // winding is reversed here - on its own, rather than as a side effect of reflecting the geometry.
-        // Without it the model renders inside out and its near faces are culled away.
+        // winding is reversed here. Without it the model renders inside out and its near faces are culled away.
         for (var i = 0; i + 2 < indices.Length; i += 3)
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
 
@@ -153,13 +147,12 @@ public static class GameModelLoader
     }
 
     /// <summary>
-    /// Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry.<br/>
-    /// The game stores the <b>bitangent</b>, packed into normalized bytes (<c>xyz</c> as <c>v*2-1</c>), with
-    /// the handedness flag in <c>w</c>. The tangent is reconstructed as <c>cross(bitangent, normal) * h</c>,
-    /// which is the inversion of the standard frame relation <c>bitangent = cross(normal, tangent) * h</c>;
-    /// the shader rebuilds the bitangent from that same relation, so the round trip lands on the authored
-    /// frame. A degenerate stored vector returns zero, which the shaders treat as "no authored frame" and
-    /// answer with the derivative fallback rather than shading with garbage.
+    /// Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry: the
+    /// game stores the <b>bitangent</b> packed into normalized bytes (<c>xyz</c> as <c>v*2-1</c>) with the
+    /// handedness flag in <c>w</c>, and the tangent is reconstructed as <c>cross(bitangent, normal) * h</c>
+    /// (the inversion of the standard frame relation <c>bitangent = cross(normal, tangent) * h</c>, which the
+    /// shader rebuilds so the round trip lands on the authored frame); a degenerate stored vector returns
+    /// zero, which the shaders treat as "no authored frame" and answer with the derivative fallback.
     /// </summary>
     /// <param name="packed">The element as read: bytes already normalized to 0..1.</param>
     /// <param name="normal">The vertex normal, already normalized.</param>

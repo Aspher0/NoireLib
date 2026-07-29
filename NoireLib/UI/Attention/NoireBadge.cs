@@ -9,12 +9,10 @@ namespace NoireLib.UI;
 /// Count and dot badges: the small mark that says a thing has something waiting on it.
 /// </summary>
 /// <remarks>
-/// Immediate and stateless. A badge is drawn over a rectangle you already have, so it composes with anything rather
-/// than wrapping it: the element draws itself normally, and the badge goes on top afterwards.<br/>
-/// <see cref="OnLast(int, BadgeStyle)"/> is the everyday call, because the rectangle is nearly always the widget just
-/// submitted.<br/>
-/// Nothing here submits an ImGui item or moves the cursor, so a badge never shifts what is around it. That is the
-/// whole reason it can be dropped after any widget, a tab header included.
+/// Immediate and stateless: a badge is drawn over a rectangle you already have, so it composes with anything
+/// rather than wrapping it. <see cref="OnLast(int, BadgeStyle)"/> is the everyday call, since the rectangle is
+/// nearly always the widget just submitted. Nothing here submits an ImGui item or moves the cursor, so a badge can
+/// be dropped after any widget, a tab header included.
 /// </remarks>
 /// <example>
 /// <code>
@@ -78,10 +76,10 @@ public static class NoireBadge
         var color = ColorHelper.Vector4ToUint(
             ColorHelper.ScaleAlpha(resolved.TextColor ?? NoireTheme.Current.Resolve(ThemeColor.Text), alpha));
 
-        // Written straight onto the draw list rather than through a text call, because a badge must add nothing to the
-        // layout it is drawn over. An ImGui text call submits an item: it advances the cursor and grows the current
-        // line's bounding box, so the widgets after it on the row shift across and the row itself changes height. The
-        // font scope is still NoireText's, so the glyphs are rasterized at this size rather than resampled.
+        // Written straight onto the draw list rather than through a text call: an ImGui text call submits an item,
+        // advancing the cursor and growing the line's bounding box, so widgets after it on the row would shift and
+        // the row would change height. The font scope is still NoireText's, so glyphs are rasterized at this size
+        // rather than resampled.
         NoireText.At(textSizePx, (textAt, color, text), static state =>
         {
             using var draw = UiDraw.Begin();
@@ -143,22 +141,19 @@ public static class NoireBadge
     /// Works out where a badge of a given size sits against the element it marks.
     /// </summary>
     /// <remarks>
-    /// Separated from the drawing because it is the part worth being certain about, and the only part that can be
-    /// checked without an ImGui context.
+    /// Separated from the drawing, and the only part that can be checked without an ImGui context. A badge is
+    /// never moved to fit anywhere; where it might overflow, the caller clips instead, so a badge on an element
+    /// going out of view leaves with it rather than being stranded at the edge still showing a count.
     /// </remarks>
     /// <param name="target">The element being marked.</param>
     /// <param name="size">The size of the badge, in real pixels.</param>
     /// <param name="style">The style carrying the anchor and the offset.</param>
     /// <returns>The badge's own rectangle.</returns>
-    /// <remarks>
-    /// A badge is never moved to fit anywhere. Somewhere it may not overflow, the caller clips instead, so a badge on
-    /// an element going out of view leaves with it rather than being stranded at the edge still showing a count.
-    /// </remarks>
     internal static UiRect Place(UiRect target, Vector2 size, BadgeStyle style)
     {
         // The anchor picks a point on the element and the badge is centred on it, so a corner anchor straddles the
-        // corner rather than sitting inside or outside it. That is what makes one badge style look right on a small
-        // icon and on a wide button both.
+        // corner rather than sitting inside or outside it. One badge style then looks right on a small icon and a
+        // wide button both.
         var anchor = target.PointAt(style.Anchor) + (NoireUI.Scaled(style.Offset) * style.Scale);
 
         return new UiRect(anchor - (size * 0.5f), size);

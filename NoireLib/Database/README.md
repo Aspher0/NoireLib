@@ -447,7 +447,7 @@ PRAGMA user_version;
 
 ### Preventing Preloading Databases at Initialization
 
-By default, databases are preloaded when the plugin loads. This is the recommended setting to avoid loading SQLite files during gameplay.
+By default, databases are preloaded when the plugin loads, which avoids loading SQLite files during gameplay.
 Set `LoadDatabaseOnInit` to `false` to prevent that if needed.
 
 ```csharp

@@ -52,12 +52,19 @@ Added: every NoireUI surface is now also reachable under the NoireUI root (Noire
         <None Include="ipc\README.md" />
         <None Include="Configuration\README.md" />
         <None Include="Helpers\AddonHelper\README.md" />
+        <None Include="Helpers\ShareCode\README.md" />
         <None Include="Helpers\EncryptionHelper\README.md" />
+        <None Include="Helpers\GameData\README.md" />
+        <None Include="Helpers\FuzzyMatcher\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
+        <None Include="Modules\ObservedStore\README.md" />
         <None Include="Modules\GameWatcher\README.md" />
         <None Include="modules\filewatcher\README.md" />
         <None Include="modules\historylogger\README.md" />
+        <None Include="modules\networker\README.md" />
+        <None Include="modules\commandrouter\README.md" />
+        <None Include="modules\tweakmanager\README.md" />
         <None Include="modules\hotkeymanager\README.md" />
         <None Include="modules\localizer\README.md" />
         <None Include="Modules\TaskQueue\README.md" />
@@ -69,6 +76,7 @@ Added: every NoireUI surface is now also reachable under the NoireUI root (Noire
 
     <ItemGroup>
         <EmbeddedResource Include="Draw3D\Shaders\*.hlsl*" />
+        <EmbeddedResource Include="Automation\Navigation\Data\navdata.json" />
     </ItemGroup>
 
     <ItemGroup>

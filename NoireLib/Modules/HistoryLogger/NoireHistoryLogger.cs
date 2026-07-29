@@ -150,11 +150,11 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     }
 
     /// <summary>
-    /// Removes a log entry from memory, and from the database when it is persisted.<br/>
-    /// Respects the <see cref="AllowUserClearInMemory"/> and <see cref="AllowUserClearDatabase"/> permissions.<br/>
-    /// Pass the entry <see cref="AddEntry(HistoryLogEntry)"/> returned, or one read from a snapshot. An entry built by
-    /// hand is not the one the module stored: persistence stamps the stored copy with a database id, and normalization
-    /// can rewrite its fields, so whether it matches anything is not something to rely on.
+    /// Removes a log entry from memory, and from the database when persisted, respecting the
+    /// <see cref="AllowUserClearInMemory"/> and <see cref="AllowUserClearDatabase"/> permissions.<br/>
+    /// Pass the entry <see cref="AddEntry(HistoryLogEntry)"/> returned, or one read from a snapshot. A hand-built
+    /// entry is not the one the module stored: persistence stamps the stored copy with a database id, and
+    /// normalization can rewrite its fields, so it is not guaranteed to match.
     /// </summary>
     /// <param name="entry">The entry to remove.</param>
     /// <returns><see langword="true"/> if an entry was removed.</returns>
@@ -384,7 +384,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <param name="category">Optional category.</param>
     /// <param name="level">Optional severity level.</param>
     /// <param name="source">Optional source name.</param>
-    /// <returns>The entry as it is stored, which is what <see cref="RemoveEntry"/> accepts.</returns>
+    /// <returns>The entry as it is stored; pass this to <see cref="RemoveEntry"/>.</returns>
     public HistoryLogEntry AddEntry(string message, string? category = null, HistoryLogLevel level = HistoryLogLevel.Info, string? source = null)
     {
         var entry = new HistoryLogEntry
@@ -404,9 +404,9 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// </summary>
     /// <param name="entry">The entry to add.</param>
     /// <returns>
-    /// The entry as it is stored: normalized, and carrying the database <see cref="HistoryLogEntry.Id"/> persistence
-    /// assigned it. It differs from <paramref name="entry"/>, which stays untouched, so keep this value rather than the
-    /// one handed in for a later <see cref="RemoveEntry"/>.
+    /// The entry as it is stored: normalized, and carrying the database <see cref="HistoryLogEntry.Id"/> if persisted.
+    /// Differs from <paramref name="entry"/>, which stays untouched; keep this value for a later
+    /// <see cref="RemoveEntry"/> call.
     /// </returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="entry"/> is <see langword="null"/>.</exception>
     public HistoryLogEntry AddEntry(HistoryLogEntry entry)
@@ -500,8 +500,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <param name="replaceExisting">Whether to replace existing entries.</param>
     public void LoadEntriesFromDatabase(bool replaceExisting)
     {
-        // Ascending by id keeps the oldest entry at index 0, which is what both the append path and the
-        // front-trimming in TrimEntries assume. Loading newest first would make trimming drop the newest rows.
+        // Ascending by id keeps the oldest entry at index 0: both the append path and TrimEntries's front-trim
+        // assume that order. Loading newest first would make trimming drop the newest rows instead.
         var models = HistoryLogEntryModel.ExecuteQuery(databaseName, builder => builder.OrderByAsc("id").Get());
         var loadedEntries = models.Select(ToEntryFromModel).Where(entry => entry != null).Cast<HistoryLogEntry>().ToList();
 
@@ -574,10 +574,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <returns><see langword="true"/> if an entry was removed.</returns>
     private static bool RemoveMatchingEntry(List<HistoryLogEntry> target, HistoryLogEntry entry)
     {
-        // A persisted entry is matched on its database id rather than by value. The id names the row exactly, whereas
-        // value equality of the record cannot be relied on across storage: a timestamp written to the database and read
-        // back goes through text and is reinterpreted on the way in, so a reloaded entry is not dependably equal to the
-        // one that was written, and a list refilled by a reload would not yield to a Remove by value.
+        // A persisted entry is matched on its database id, not by value: a timestamp round-trips through text on
+        // save and reload, so a reloaded entry is not dependably equal by value to the one that was written.
         if (entry.Id is not long id)
             return target.Remove(entry);
 

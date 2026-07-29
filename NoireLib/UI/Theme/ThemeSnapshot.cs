@@ -9,8 +9,7 @@ namespace NoireLib.UI;
 /// <remarks>
 /// A share code is authored by a stranger, so decoding never targets the live theme directly. This type holds plain
 /// strings and numbers, has no behaviour, and is turned into a theme by <see cref="ToTheme"/> only after it has been
-/// read successfully. Colors travel as HEX strings rather than four floats, which keeps a code short and makes it
-/// readable if anyone ever inspects one.
+/// read successfully. Colors travel as HEX strings rather than four floats.
 /// </remarks>
 public sealed class ThemeSnapshot
 {
@@ -31,9 +30,8 @@ public sealed class ThemeSnapshot
 
     /// <summary>How far the hovered state moves a color.</summary>
     /// <remarks>
-    /// The four derivation values below carry the same defaults as <see cref="NoireTheme"/> rather than starting at
-    /// zero, so a code written before one of them existed decodes to a usable theme instead of one with everything
-    /// faded to nothing.
+    /// The four derivation values below carry the same defaults as <see cref="NoireTheme"/> rather than zero, so a
+    /// code written before one existed still decodes to a usable theme.
     /// </remarks>
     public float HoverShift { get; set; } = 0.12f;
 

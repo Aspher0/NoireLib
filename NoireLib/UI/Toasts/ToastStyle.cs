@@ -35,8 +35,7 @@ public sealed class ToastStyle
     public float Gap { get; set; } = 8f;
 
     /// <summary>
-    /// The width at 100% of the colored stripe down the leading edge of a toast, which is what makes a severity readable
-    /// before the text is. Zero removes it.
+    /// The width at 100% of the colored stripe down the leading edge of a toast. Zero removes it.
     /// </summary>
     public float StripeWidth { get; set; } = 3f;
 
@@ -66,9 +65,8 @@ public sealed class ToastStyle
     public float TimerTintAlpha { get; set; } = 0.16f;
 
     /// <summary>
-    /// Whether the countdown shrinks as the time runs out rather than growing.<br/>
-    /// Draining is the default because it reads as time left; growing reads as progress towards something, which is
-    /// what <see cref="NoireToast.Progress"/> is for.
+    /// Whether the countdown shrinks as the time runs out rather than growing. Draining is the default since it
+    /// reads as time left; growing reads as progress, which <see cref="NoireToast.Progress"/> is for.
     /// </summary>
     public bool TimerDrains { get; set; } = true;
 
@@ -96,9 +94,9 @@ public sealed class ToastStyle
     /// The height of a toast's progress bar, at 100%.
     /// </summary>
     /// <remarks>
-    /// Its own value rather than one derived from <see cref="TimerThickness"/>: the countdown and the progress bar are
-    /// two different things that happen to both be bars, and tying them together meant adjusting the countdown quietly
-    /// resized every progress toast.
+    /// Its own value rather than one derived from <see cref="TimerThickness"/>: the countdown and the progress bar
+    /// are two different things that happen to both be bars, and deriving one from the other would let adjusting
+    /// the countdown silently resize every progress toast.
     /// </remarks>
     public float ProgressHeight { get; set; } = 4f;
 
@@ -112,8 +110,8 @@ public sealed class ToastStyle
     /// </summary>
     public float TransitionDuration { get; set; } = 0.22f;
 
-    // What the toast area actually draws from. Each logical value above is scaled here and nowhere else, so a value
-    // cannot end up scaled twice by two call sites each being careful, and a new one is not silently left unscaled.
+    // What the toast area actually draws from. Scaled here and nowhere else, so a value is never scaled twice or
+    // left unscaled.
 
     internal float ScaledBorderSize => NoireUI.Scaled(BorderSize);
 

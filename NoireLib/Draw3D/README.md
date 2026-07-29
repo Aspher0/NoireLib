@@ -25,7 +25,7 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
 });
 ```
 
-> **Zero-latency rule:** `Im` calls made inside `Scene3D.OnPrepareFrame` or an `ISceneFeature` render *this* frame; calls made elsewhere render at most one frame late. For markers you will never notice - it is documented so nobody debugs it as a bug.
+> **Zero-latency rule:** `Im` calls made inside `Scene3D.OnPrepareFrame` or an `ISceneFeature` render *this* frame; calls made elsewhere render at most one frame late. For markers you will never notice.
 
 > **What you may do there:** those two callbacks run on the **render thread**, and on the default under-UI path they run *mid-frame, from inside one of the game's own D3D calls*. Touch the scene graph, `Im`, and your own state - nothing else. Reading game state, printing to chat, or calling a Dalamud game service from there re-enters the game underneath itself; do that work on the framework thread and leave the result somewhere the callback can read.
 
@@ -122,9 +122,9 @@ NoireDraw3D.Performance.MinScreenPixels = 0f;   // 0 = off; else skip objects sm
 NoireDraw3D.Performance.Supersample = 1f;       // 1 = off; 2 = 2x2 SSAA (fixes distance shimmer, 4x the layer fill)
 ```
 
-LOD and the culls all default off, so nothing is swapped or disappears unexpectedly. Reach for LOD in scenes with many heavy models; the culls pay off with many far or tiny objects (`MinScreenPixels = 1` is a near-free win there, and outlined/selected objects are exempt so a highlight never vanishes). All of it applies to the main game view only, never to a render-to-texture pass.
+LOD and the culls all default off. The culls pay off with many far or tiny objects (`MinScreenPixels = 1` is a near-free win there; outlined/selected objects are exempt so a highlight never vanishes). Applies to the main game view only, never a render-to-texture pass.
 
-> **Anti-aliasing.** The 3D layer has no MSAA of its own (the game world does), so a *dense* mesh - a detailed glTF model - shimmers along its edges at a distance where the anti-aliased world does not. `Performance.Supersample = 2` renders the layer at 2x and box-downsamples it at composite, which removes the shimmer at the cost of 4x the layer's fill and VRAM (opt-in for that reason). Model LOD is the lighter alternative: thinning distant geometry also removes the aliasing, trading detail for fill instead.
+> **Anti-aliasing.** The 3D layer has no MSAA of its own (the game world does), so a *dense* mesh - a detailed glTF model - shimmers along its edges at a distance where the anti-aliased world does not. `Performance.Supersample = 2` renders the layer at 2x and box-downsamples it at composite, at the cost of 4x the layer's fill and VRAM. Model LOD is the lighter alternative: thinning distant geometry also removes the aliasing, trading detail for fill instead.
 
 > **Picking is BVH-accelerated.** Hover/click hit-testing against a `keepCpuData` mesh uses a bounding-volume hierarchy built once per mesh, so hovering a dense imported model (hundreds of thousands of triangles) costs an O(log n) ray query per frame, not a scan of every triangle.
 
@@ -185,7 +185,7 @@ Submit it from `Scene3D.OnPrepareFrame` rather than from a UI callback, or the o
 
 **This is the only part of Draw3D that draws inside the game's frame rather than into its own target**, so it does nothing until a caller opts in, and it lapses again a few frames after the last submission.
 
-`NoireDraw3D.GameLit` holds what gets written into each channel of the game's buffer. Every default is a value measured off the game's own geometry, so an object that looks right needs none of it; the properties exist because several of those channels have a known value and an unknown meaning, and the way to settle one is to change it and see what responds:
+`NoireDraw3D.GameLit` holds what gets written into each channel of the game's buffer. Every default is a value measured off the game's own geometry, so an object that looks right needs none of it:
 
 | Property | What it is |
 |---|---|
@@ -195,7 +195,7 @@ Submit it from `Scene3D.OnPrepareFrame` rather than from a UI callback, or the o
 | `MaterialCeiling` | The top of rtv1's range selects a mode rather than a value (red at `0.999` turns the reflection green), and a specular map reaches `1.0` in places, so the channels are held below this. |
 | `Stencil` | The mark stamped into the stencil plane. **The game's deferred light volumes test this**, so geometry carrying no mark receives no light at all. Defaults to `Draw3DGameLit.LitStencilMark`; leave it alone unless you know why. |
 | `AlbedoOverride` | Forces a flat albedo. Black is the test that separates a wrong G-buffer from a downstream pass that never reads it. |
-| `WriteColor`, `WriteDepth` | Turn off each half of what the injection puts into the game's frame. Not independent in practice: the depth write is what makes the colour write survive the rest of the pass, so with depth off the world simply draws over the object. |
+| `WriteColor`, `WriteDepth` | Turn off each half of what the injection puts into the game's frame. Not independent in practice: with depth off, the world simply draws over the object and the colour write does not survive the rest of the pass. |
 
 ## Picking
 
@@ -222,11 +222,11 @@ var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact tr
 > **The two layering modes keep the UI readable by opposite means, and both are letter-exact.**
 >
 > - **`UnderGameUi`** composites *before* the game draws its UI, so the game paints its HUD over the layer by itself. Nothing to configure, nothing to mask, no cost. The trade is that the UI always wins: the layer can never cover any of it.
-> - **`OverEverything`** composites *after*, so the UI is already there - which is exactly what makes it decidable. `KeepUiOnTop` masks the layer back off the UI, and because the UI now exists, a nameplate can be `Covered` outright or dimmed rather than merely occluded or not.
+> - **`OverEverything`** composites *after*, so the UI is already there and decidable. `KeepUiOnTop` masks the layer back off the UI, and because the UI now exists, a nameplate can be `Covered` outright or dimmed rather than merely occluded or not.
 >
-> **Where `OverEverything`'s mask comes from.** Not the backbuffer's alpha channel - FFXIV writes no UI coverage there, which is why an earlier design that read it was inert in every frame it ever ran. Instead Draw3D photographs the game's present buffer at the pre-UI injection point and again at present time, and **differences the two**: wherever the image changed, the UI painted. Same texture both times, so the snapshots always agree on format and resolution, and antialiased glyph edges come out as partial coverage for free.
+> **Where `OverEverything`'s mask comes from.** Not the backbuffer's alpha channel - FFXIV writes no UI coverage there. Instead Draw3D photographs the game's present buffer at the pre-UI injection point and again at present time, and **differences the two**: wherever the image changed, the UI painted. Same texture both times, so the snapshots always agree on format and resolution, and antialiased glyph edges come out as partial coverage for free.
 >
-> Two consequences worth knowing. The mask rides the same render-thread hook the under-UI path uses, so a frame whose injection point cannot fire has no "before" photo and composites unmasked. And a UI pixel that blends to exactly the colour beneath it reads as no-UI - correct, since it is invisible either way.
+> Two consequences: the mask rides the same render-thread hook the under-UI path uses, so a frame whose injection point cannot fire has no "before" photo and composites unmasked. And a UI pixel that blends to exactly the colour beneath it reads as no-UI - correct, since it is invisible either way.
 >
 > `/noire3d uimask` reports whether the difference is finding the UI at all, and the sampled grid it is looking at. If protection ever looks inert, that command answers it in one line rather than leaving you guessing.
 
@@ -269,7 +269,7 @@ A disposed texture in any slot skips the draw rather than binding a stale pointe
 | `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: >= 90 % within 1e-3). |
 | `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
 | `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead - the same line `ShowDecalShape()` draws. |
-| `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike. The global "where is this decal actually landing"; an `ImDraw3D` shape has no node to call `ShowDecalShape()` on, so this is the only way to outline one. Implied by `wire`. |
+| `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike, including `ImDraw3D` shapes, which have no node to call `ShowDecalShape()` on. Implied by `wire`. |
 | `/noire3d camtrace [frames]` | Camera-phase "swim" trace: pixel-anchored residuals for the struct-camera history and the captured GPU camera (the `cap` row), plus the inject-vs-fallback split and the capture state (run it while panning/zooming hard). |
 | `/noire3d cbprobe [frames]` | Camera-constant discovery report: every constant buffer observed on the upload paths, its update mechanism and VS slot, and the candidate camera windows with match errors. The answer to "is the capture locked, and on what". |
 | `/noire3d gpucam` | A/B toggle between the captured GPU camera constants (default, swim-free) and the struct snapshot. Turning it off deliberately reintroduces the old load-scaled swim for comparison. |
@@ -282,7 +282,7 @@ A disposed texture in any slot skips the draw rather than binding a stale pointe
 | `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. The answer to "is keeping the UI on top actually doing anything". |
 | `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Separates the two ways nameplate layering looks broken on screen but is not the same bug: factor 1 on a covered plate means the mask never found its pixels; factor 0 on a plate that should read on top means the occlusion test decided wrongly. |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log, with every bind's pixel format (injection-point diagnostics). |
-| `/noire3d framedump [sweep [count]\|<from> [count]]` | Writes out what render-target binds actually produced, as images. `sweep` (the default) spreads them across the whole frame, which is where to start: the frame's length moves with what is on screen, so a bind index read from an earlier run does not name the same pass in the next one. Narrow with an explicit span afterwards, using indices from the bind table that same run prints. Finds the first pass where a pixel is already wrong, which a wrong final image cannot tell you. Each dump stalls the frame. |
+| `/noire3d framedump [sweep [count]\|<from> [count]]` | Writes out what render-target binds actually produced, as images, to find the first pass where a pixel is already wrong. `sweep` (the default) spreads them across the whole frame - start there, since the frame's length moves with what is on screen and a bind index from an earlier run may not name the same pass next time. Narrow with an explicit span afterwards, using indices from the bind table that run prints. Each dump stalls the frame. |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
 

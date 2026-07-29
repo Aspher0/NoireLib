@@ -8,26 +8,14 @@ namespace NoireLib.UI;
 /// file taken away: nothing is written to disk, and everything is gone on reload.
 /// </summary>
 /// <remarks>
-/// For the state that is worth keeping while someone works and worth forgetting afterwards: a search a window was left
-/// narrowed to, which tab was open, a panel scrolled halfway, a preview left expanded. Persisting those is worse than
-/// not, because a plugin that reopens three days later still filtered to something the user has forgotten typing looks
-/// broken rather than helpful.<br/>
-/// <br/>
-/// Two differences from <see cref="NoireUiState"/> follow from there being no file, and both are in this store's
-/// favour:
 /// <list type="bullet">
-/// <item>
-/// <b>Any type may be stored</b>, including ones that do not serialize. Values are held as they are rather than
-/// round-tripped through JSON, so a reference type comes back as the same instance.
-/// </item>
-/// <item>
-/// <b>A generated widget id is safe to key on.</b> A GUID id is a new one every session, which is exactly why
-/// <see cref="NoireUiState"/> refuses it, and exactly why it does not matter here: this store's lifetime is that
-/// session too, so the key and the value expire together.
-/// </item>
+/// <item><b>Any type may be stored</b>, including ones that do not serialize: values are held as-is rather than
+/// round-tripped through JSON.</item>
+/// <item><b>A generated widget id is safe to key on</b>, unlike in <see cref="NoireUiState"/>, since this store's
+/// lifetime is the session too, so the key and the value expire together.</item>
 /// </list>
-/// Static per plugin, not per process. NoireLib is compiled into each plugin rather than shared, so one plugin's
-/// session state cannot collide with another's.
+/// Static per plugin, not per process: NoireLib is compiled into each plugin, so one plugin's session state cannot
+/// collide with another's.
 /// </remarks>
 /// <example>
 /// <code>
@@ -82,7 +70,7 @@ public static class NoireUiSession
     /// </summary>
     /// <remarks>
     /// A value stored under the same key as a different type reads as absent rather than throwing, matching
-    /// <see cref="NoireUiState"/>: one widget's mistake about a key must not take another widget down.
+    /// <see cref="NoireUiState"/>.
     /// </remarks>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="key">The entry key.</param>
@@ -109,8 +97,7 @@ public static class NoireUiSession
             return true;
         }
 
-        // A stored null is a real value for a reference or nullable type, and reporting it as absent would make it
-        // impossible to remember "nothing" as distinct from "never set".
+        // A stored null is a real value, distinct from never having been set.
         if (stored == null && default(T) == null)
             return true;
 

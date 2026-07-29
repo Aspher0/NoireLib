@@ -13,9 +13,8 @@ namespace NoireLib.UI;
 /// A reusable block of rich inline content, built from segments (text, icons, images, keycaps, arbitrary widgets).<br/>
 /// Segments flow on the same line, vertically centered against each other, until <see cref="AddNewLine"/> or
 /// <see cref="AddSeparator"/> starts a new one.<br/>
-/// It is not tied to any one surface: a custom tooltip (<see cref="NoireTooltip"/>) renders one, and so can any window,
-/// label or cell of your own through the public <see cref="Draw"/>.<br/>
-/// Example: <c>new NoireContent().AddText("Hold ").AddKeyCap("Ctrl").AddText(" and scroll")</c>.
+/// It is not tied to any one surface: a custom tooltip (<see cref="NoireTooltip"/>) renders one, and so can any
+/// window, label or cell of your own through the public <see cref="Draw"/>.
 /// </summary>
 [NoireFacadeFactory]
 public sealed class NoireContent
@@ -75,9 +74,8 @@ public sealed class NoireContent
     /// The runs of same-line segments, one entry per line, derived from where the break segments sit.
     /// </summary>
     /// <remarks>
-    /// Content is add-only, so the grouping is a property of the segment list rather than of any frame; it is rebuilt
-    /// only when a segment has been added. Grouping per draw instead cost a pooled buffer rented and cleared on every
-    /// frame a tooltip was open.
+    /// Content is add-only, so the grouping is a property of the segment list rather than of any frame; it is
+    /// rebuilt only when a segment has been added, not per draw.
     /// </remarks>
     private readonly List<(int Start, int Count, bool SeparatorAfter)> lines = new();
 
@@ -355,10 +353,10 @@ public sealed class NoireContent
     /// Puts the gap between two lines in front of the second one rather than after the first.
     /// </summary>
     /// <remarks>
-    /// Trailing spacing after the last line is not free here: the line advance is a <c>SetCursorPosY</c> rather than a
-    /// real item, and ImGui grows a window's content height to any cursor position set inside it without the
-    /// compensation it applies to items. Spacing after the final line therefore became a permanent extra strip of
-    /// padding along the bottom of every tooltip, leaving them visibly heavier underneath than on top.
+    /// Trailing spacing after the last line is not free here: the line advance is a <c>SetCursorPosY</c> rather than
+    /// a real item, and ImGui grows a window's content height to any cursor position set inside it without the
+    /// compensation it applies to items. Spacing after the final line would be a permanent extra strip of padding
+    /// along the bottom of every tooltip.
     /// </remarks>
     /// <param name="isFirstLine">Whether the line about to be drawn is the first, which needs no gap in front of it.</param>
     private static void SpaceBeforeLine(bool isFirstLine)
@@ -372,8 +370,8 @@ public sealed class NoireContent
     /// </summary>
     /// <remarks>
     /// The heights are taken in one pass and read back in the second, rather than measured again for each segment's
-    /// centering. A segment as tall as the line is drawn without touching the cursor's vertical position at all, which
-    /// makes the single-segment line, the shape almost every tooltip is, cost no centering work.
+    /// centering. A segment as tall as the line is drawn without touching the cursor's vertical position at all: the
+    /// single-segment line, the shape almost every tooltip is, costs no centering work.
     /// </remarks>
     private void DrawLine(int start, int count, bool isFirstLine, in MeasureStamp stamp, Vector2 keyCapPadding, float lineHeight, Span<float> lineHeights)
     {
@@ -553,8 +551,7 @@ public sealed class NoireContent
             drawList.AddText(position + padding, ImGui.GetColorU32(ImGuiCol.Text), segment.Utf8.AsSpan());
         }
 
-        // Reserved whether or not anything was painted, so a caller's layout does not move depending on whether there
-        // was a list to paint into.
+        // Reserved whether or not anything was painted, so layout does not shift when there is nothing to paint into.
         ImGui.Dummy(tileSize);
     }
 }

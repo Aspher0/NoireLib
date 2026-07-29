@@ -7,11 +7,9 @@ namespace NoireLib.UI;
 /// <see cref="UiProfilerExtensions.Measure(UiProfiler, string)"/>.
 /// </summary>
 /// <remarks>
-/// A <see langword="ref struct"/> so it lives on the stack and a measurement costs no allocation, which matters for a
-/// thing wrapped around every widget in the library.<br/>
-/// Closing twice is a no-op. That is not defensive tidiness: <c>using var scope = ...</c> followed by an explicit
-/// <c>scope.Dispose()</c> disposes once explicitly and once at the end of the block, and without this the scope would
-/// be counted twice, the second reading running from its original start to the end of the enclosing block.
+/// A <see langword="ref struct"/> so it lives on the stack and costs no allocation.<br/>
+/// Closing twice is a no-op: <c>using var scope = ...</c> followed by an explicit <c>scope.Dispose()</c> disposes
+/// once explicitly and once at the end of the block, and without this guard the scope would be counted twice.
 /// </remarks>
 public ref struct UiProfileScope
 {
@@ -48,10 +46,10 @@ public ref struct UiProfileScope
 /// Opens the measurement an instance widget records itself under.
 /// </summary>
 /// <remarks>
-/// The widgets are not <see cref="NoireDrawable"/>s and are drawn by their owner rather than by the hub, so measuring
-/// the hub's pass alone would report nothing for most of an interface. Each widget opens one of these instead.<br/>
-/// Only for the <c>{kind}:{id}</c> shape, which carries a runtime id and so cannot be derived from a call site. A
-/// static surface takes its name from <see cref="UiDraw"/> instead, which hands over the draw list at the same time.
+/// Widgets are not <see cref="NoireDrawable"/>s and are drawn by their owner rather than by the hub; measuring the
+/// hub's pass alone would report nothing for most of an interface. Each widget opens one of these instead.<br/>
+/// For the <c>{kind}:{id}</c> shape, which carries a runtime id and cannot be derived from a call site. A static
+/// surface takes its name from <see cref="UiDraw"/> instead.
 /// </remarks>
 internal static class UiProfile
 {
@@ -63,10 +61,10 @@ internal static class UiProfile
     /// <returns>The open scope. Dispose it to close the measurement.</returns>
     internal static UiProfileScope Widget(string kind, string id)
     {
-        // The name is composed only while the profiler is on, since composing it costs a dictionary lookup of its
-        // own. UiIds returns the same string instance for the same widget every frame, which is what lets the handle
-        // be found by reference rather than by hashing the composed id again. The scope is built directly rather than
-        // through the Measure extension, sparing a call on a path every widget takes every frame.
+        // Composed only while the profiler is on, since composing it costs a dictionary lookup of its own. UiIds
+        // returns the same string instance for the same widget every frame, so the handle is found by reference
+        // rather than by hashing the composed id again. Built directly rather than through the Measure extension,
+        // sparing a call on a path every widget takes every frame.
         var profiler = NoireUI.Profiler;
         return new UiProfileScope(profiler, profiler.Enabled ? UiScopeName.ForInstance(UiIds.Join(kind, ":", id)) : null);
     }
@@ -103,8 +101,8 @@ public static class UiProfilerExtensions
     /// Times everything up to the returned scope's disposal, under a name already resolved to a handle.
     /// </summary>
     /// <remarks>
-    /// The form the library's own hot paths use. A caller entering the same scope every frame resolves its handle once
-    /// and holds it, which is what keeps a measurement from hashing its own name. See <see cref="UiScopeName"/>.
+    /// The form the library's own hot paths use: a caller entering the same scope every frame resolves its handle
+    /// once and holds it, avoiding hashing the name on every measurement. See <see cref="UiScopeName"/>.
     /// </remarks>
     /// <param name="profiler">The profiler to measure on.</param>
     /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>

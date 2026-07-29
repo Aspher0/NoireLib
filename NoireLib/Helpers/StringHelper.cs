@@ -7,7 +7,7 @@ using System.Text.RegularExpressions;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Helper class with various string utility methods.
+/// String utility helpers.
 /// </summary>
 public static class StringHelper
 {
@@ -16,7 +16,7 @@ public static class StringHelper
     /// </summary>
     /// <param name="longString">The original string to shorten.</param>
     /// <param name="charsToShow">The number of characters to show from the start and end of the string combined (excluding the ellipsis).</param>
-    /// <returns>A shortned string. For example: "ARandomLongString" with <paramref name="charsToShow"/> set to 8 will return "ARan...ring".</returns>
+    /// <returns>The shortened string, keeping the start and end joined by an ellipsis.</returns>
     public static string ShortenString(this string longString, int charsToShow = 8)
     {
         if (longString.Length <= charsToShow)
@@ -231,8 +231,7 @@ public static class StringHelper
     }
 
     /// <summary>
-    /// Determines whether the content of two strings is equal, optionally ignoring case differences.<br/>
-    /// The strings are stripped off of all whitespace characters before the comparison, so only the actual content of the strings is compared.
+    /// Determines whether the content of two strings is equal, optionally ignoring case. Whitespace is stripped from both before comparing.
     /// </summary>
     /// <param name="value1">The first string to compare.</param>
     /// <param name="value2">The second string to compare.</param>
@@ -252,8 +251,7 @@ public static class StringHelper
     /// Returns a new string containing only the non-whitespace characters from the input string.
     /// </summary>
     /// <param name="value">The string from which to remove all whitespace characters.</param>
-    /// <returns>A string consisting of the non-whitespace characters from the input string.<br/>
-    /// If the input is null or empty, the original value is returned.</returns>
+    /// <returns>The non-whitespace characters from the input, or the input itself if null or empty.</returns>
     public static string GetContentOnly(this string value)
     {
         if (string.IsNullOrEmpty(value))

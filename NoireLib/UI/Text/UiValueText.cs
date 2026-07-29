@@ -10,13 +10,11 @@ namespace NoireLib.UI;
 /// What a value reads as on screen, remembered so that a value which has not moved is not written out again.
 /// </summary>
 /// <remarks>
-/// A widget showing a number, a duration or a colour redraws every frame, and formatting is the one part of that which
-/// produces a string. The value behind it changes when the user drags something or when a second ticks over, which is
-/// rarely and never sixty times a second, so the frames in between were spending a string to arrive at the text already
-/// on screen.<br/>
-/// Every cache here is bounded rather than budgeted: a field bound to something that genuinely does change every frame
-/// would otherwise grow one without ever hitting it. At the bound the cache starts over, so the worst case is the cost
-/// of not caching at all.<br/>
+/// A widget showing a number, a duration or a colour redraws every frame; formatting is the part of that which
+/// produces a string. The value behind it rarely changes, so the frames in between were spending a string to
+/// arrive at the text already on screen.<br/>
+/// Every cache here is bounded rather than budgeted: at the bound it starts over, so the worst case is the cost of
+/// not caching at all.<br/>
 /// Reached only from the draw thread, like <see cref="UiIds"/>, so the caches need no lock.
 /// </remarks>
 internal static class UiValueText
@@ -31,14 +29,14 @@ internal static class UiValueText
     /// A number, and everything that changes how it reads.
     /// </summary>
     /// <remarks>
-    /// The culture is held as well as the format, because the same number and the same format read differently under
-    /// another one and a field that kept the old text would be wrong in a way nothing else would explain.
+    /// The culture is held as well as the format: the same number and format read differently under another
+    /// culture, and a stale cache entry would be wrong in a way nothing else explains.
     /// </remarks>
     private readonly record struct NumberKey(float Value, string Format, string Culture);
 
     /// <summary>
-    /// A duration, as itself. Wrapped rather than used directly because the cache takes a key that is a record struct,
-    /// which is what writes the equality a lookup needs without boxing.
+    /// A duration, as itself. Wrapped rather than used directly, since the cache's key must be a record struct for
+    /// the equality a lookup needs without boxing.
     /// </summary>
     private readonly record struct DurationKey(TimeSpan Value);
 
@@ -157,9 +155,9 @@ internal static class UiValueText
     /// The glyph an icon is drawn as, in the icon font.
     /// </summary>
     /// <remarks>
-    /// <see cref="FontAwesomeIconExtensions.ToIconString"/> builds a one-character string from the enum value, which
-    /// measured 24 bytes a call. Every icon in the library is drawn and measured through it on every frame, and an
-    /// icon button pays it twice: once to size itself and once to paint. The set is an enum, so this fills once.
+    /// <see cref="FontAwesomeIconExtensions.ToIconString"/> builds a one-character string from the enum value,
+    /// measured at 24 bytes a call; an icon button pays it twice, once to size itself and once to paint. The set is
+    /// an enum, so this fills once.
     /// </remarks>
     /// <param name="icon">The icon to write.</param>
     /// <returns>The glyph, as a string.</returns>

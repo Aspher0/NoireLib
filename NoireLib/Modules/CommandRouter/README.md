@@ -196,8 +196,8 @@ sub.Handle(async () => await DoSomethingAsync());
 sub.Handle(async args => await DoSomethingAsync(args.Get<int>("count")));
 ```
 
-An async handler is not awaited on the framework thread. Its outcome is reported once its task settles, so history
-and events reflect what the handler actually did rather than an assumed success.
+An async handler is not awaited on the framework thread; its outcome is reported once the task settles, so history
+and events reflect what actually happened.
 
 ### Visibility and Ordering
 
@@ -373,8 +373,7 @@ and leaves `GetHistory()` permanently empty.
 
 ## EventBus Integration
 
-The `NoireCommandRouter` can publish events to a `NoireEventBus` for command execution and failure.<br/>
-This allows you to react to what users run without wrapping every handler yourself.
+The `NoireCommandRouter` can publish events to a `NoireEventBus` for command execution and failure.
 
 ### Quick Example
 
@@ -465,9 +464,9 @@ var commands = NoireLibMain.GetModule<NoireCommandRouter>("PluginCommands");
 ### The command does nothing
 - Ensure NoireLib is initialized before adding the module.
 - Confirm the module is active (`IsActive == true`); an inactive router unregisters its commands from Dalamud.
-- Check that a handler is actually set. A subcommand with no handler and no children reports that it has none.
-- Check any `WithCondition` predicate on the command or on the subcommands above it. A false condition anywhere in
-  the chain blocks everything inside it.
+- Check that a handler is set: a subcommand with no handler and no children reports that it has none.
+- Check any `WithCondition` predicate on the command or its ancestors; a false condition anywhere in the chain
+  blocks everything inside it.
 - Verify no other plugin already owns the same slash command; Dalamud refuses the second registration and the failure
   is logged.
 - Check the dalamud logs with `/xllog`.
@@ -480,7 +479,7 @@ var commands = NoireLibMain.GetModule<NoireCommandRouter>("PluginCommands");
   first.
 
 ### An argument is not parsed
-- Check the declared type. A value that does not convert is reported to the user and the handler does not run.
+- Check the declared type; a value that fails to convert is reported to the user and the handler does not run.
 - Arguments are positional unless `WithUnorderedOptionalArguments` is set.
 - Use quotes for a value containing spaces.
 - Numbers use the invariant culture, so `1.5` parses and `1,5` does not.

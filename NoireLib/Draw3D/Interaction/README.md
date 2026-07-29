@@ -16,7 +16,7 @@ Both are guaranteed regardless of frame-rate, and the whole decision table is un
 
 ## Clickable objects
 
-The easy path: spawn a node and make it selectable in one call. `MakeSelectable` opts the node into interaction, adds a built-in hover highlight (brightens the tint x1.2 by default), and routes a left-click into the node's **scene selection**. `MakeInteractable` is the hover/click-only variant (no selection). Both leave any `OnHoverEnter` / `OnClick` you set completely alone - the highlight is applied *around* your handlers, never composed into them, so you can set (or replace) your callbacks before or after and the highlight still works:
+The easy path: spawn a node and make it selectable in one call. `MakeSelectable` opts the node into interaction, adds a hover highlight, and routes a left-click into the node's **scene selection**; `MakeInteractable` is the hover/click-only variant (no selection). Both leave your own `OnHoverEnter` / `OnClick` handlers untouched - the highlight wraps around them, never replaces them:
 
 ```csharp
 var node = scene.Spawn(MeshBuilder.Box(), material, pos, "switch")
@@ -24,9 +24,9 @@ var node = scene.Spawn(MeshBuilder.Box(), material, pos, "switch")
 node.OnClick = h => Toggle(h.Node);            // still yours; runs alongside select
 ```
 
-> The highlight captures the node's resting tint on hover-enter and restores it on exit. It is **idempotent and never stacks**: calling `MakeSelectable` / `MakeInteractable` again just replaces the transform, so a re-opted-in node cannot compound its own tint. Pass your own transform (`MakeSelectable(t => t * 2f)`), return the input unchanged for no visual feedback, or drop it entirely with `ClearHoverHighlight()` when you drive the tint yourself.
+> The highlight captures the node's resting tint on hover-enter and restores it on exit; idempotent and never stacks, since calling `MakeSelectable` / `MakeInteractable` again just replaces the transform. Pass your own transform (`MakeSelectable(t => t * 2f)`), return the input unchanged for no visual feedback, or drop it with `ClearHoverHighlight()`.
 
-A model made of several meshes selects as **one object** through `SelectionProxy`: parent the mesh nodes under a group node and point each part's proxy at the group, and clicking any part selects - and gizmo-moves - the whole. Only the selection routes through; hover feedback and `OnClick` stay on the part actually under the cursor. The editor's `SelectionOutline` covers each selected node's subtree, so selecting a mesh-less group still shows its silhouette.
+A model made of several meshes selects as **one object** through `SelectionProxy`: parent the mesh nodes under a group node and point each part's proxy at the group, so clicking any part selects (and gizmo-moves) the whole, while hover feedback and `OnClick` stay on the part actually under the cursor. The editor's `SelectionOutline` covers each selected node's subtree, so selecting a mesh-less group still shows its silhouette.
 
 ```csharp
 var root = scene.CreateNode("chair");
@@ -84,7 +84,7 @@ onDeletePressed = () =>
 
 **Deselecting is configurable** (`NoireDraw3D.Interaction.DeselectOn`, a `[Flags]` `DeselectMode`); "deselect" is global to the pointer (it clears every scene's selection), while the selections themselves stay per-scene:
 
-- `ClickEmpty` (default): a left click on empty world (no object under the cursor, not over UI) that *is not* a camera pan clears the selection. A click-and-drag (the FFXIV camera pan) never deselects; the arbiter tells the two apart by the drag threshold, so this is safe to leave on during normal play.
+- `ClickEmpty` (default): a left click on empty world (no object under the cursor, not over UI) that *is not* a camera pan clears the selection. A click-and-drag never deselects; the arbiter tells the two apart by the drag threshold.
 - `Key`: clears on `DeselectKeyHeld` (default **Escape**; point it at any key). Off unless you add the flag.
 - `None`: never auto-deselect; you own the selection.
 
@@ -113,7 +113,7 @@ foreach (var n in scene.Roots) n.MakeSelectable();
 // teardown: nothing - scene.Dispose() disposes the editor too (editor.Dispose() is optional early teardown).
 ```
 
-The editor subscribes to its scene's `Selection.Changed` and attaches its `Gizmo` to the current pick - one node, or the whole group - so you never write the count-0/1/many follow branch. Because a scene's selection only holds that scene's nodes, an editor naturally reacts to picks in its own scene only (when scenes overlap on screen, the front-most hit across all scenes wins the pick, and only the owning scene's editor updates). `MultiSelect` drives the selection mode as a scoped setting, restored on dispose - no lingering global.
+The editor subscribes to its scene's `Selection.Changed` and attaches its `Gizmo` to the current pick - one node, or the whole group. Because a scene's selection only holds that scene's nodes, an editor naturally reacts to picks in its own scene only (when scenes overlap on screen, the front-most hit across all scenes wins the pick, and only the owning scene's editor updates). `MultiSelect` drives the selection mode as a scoped setting, restored on dispose - no lingering global.
 
 ## NoireGizmo: move / rotate / scale
 
@@ -168,7 +168,7 @@ Every frame `NoireInteract.Update()` (auto-driven from `UiBuilder.Draw`) runs th
 
 **UI is a hard pass.** Whenever the cursor is over another UI surface, Draw3D neither hovers, picks, nor captures; the object *behind* the UI is never touched (`ForeignUiHasMouse`). Two surfaces count: a **foreign ImGui window** (another plugin's, detected from `WantCaptureMouse`, with our own capture window discounted so we never mistake ourselves for foreign), and **native game UI** (a HUD window, inventory, friend list, detected from the game via `NoireDraw3D.IsCursorOverGameUi`, since native addons are not ImGui and never set `WantCaptureMouse`). Game-UI detection tests the addon's **collision nodes** (the game's own hit regions), not its padded bounding box, so the transparent margin around a HUD element (the gaps beside action-bar slots, a window's padding) does not falsely block a 3D object behind it; near-fullscreen transparent overlay roots (nameplates, fly-text) are excluded so they never blanket the viewport. Turn game-UI blocking off entirely with `NoireDraw3D.Interaction.GameUiBlocksInteraction = false`. With `NoireDraw3D.Interaction.DebugLog` on, a `[Interact/Gate]` log line prints (on change) exactly why a spot is a hard pass, naming the game addon when it is the cause.
 
-**Obstacles can be a hard pass (`ObstacleOcclusionMode`).** By default the mode is `Off`, so objects are always hoverable/clickable and picking is reliable at every camera angle. Opt into `HoldToClickThrough` to have whatever is really in front of a 3D object block hovering and clicking it; hold the click-through key (`ClickThroughHeld`, default **Alt**; Ctrl/Shift are the selection modifiers) to reach objects behind it. `Always` never clicks through. The occluding surface is read from the **game depth buffer** (throttled, and cached between reads since the depth resource copies whole), so an obstacle is *anything the game rendered* - not only walls, terrain and houses but static meshes, fences, decorations, and equally **characters, mounts and NPCs**; it falls back to the game's collision raycast (level geometry only) on frames where depth is unreadable. Note that once enabled, the ground an object rests on can occlude it at grazing camera angles. Native gizmo handles obey the same rule unless their depth mode is `AlwaysOnTop`, in which case they stay grabbable through anything.
+**Obstacles can be a hard pass (`ObstacleOcclusionMode`).** By default the mode is `Off`, so objects are always hoverable/clickable and picking is reliable at every camera angle. Opt into `HoldToClickThrough` to have whatever is really in front of a 3D object block hovering and clicking it; hold the click-through key (`ClickThroughHeld`, default **Alt**; Ctrl/Shift are the selection modifiers) to reach objects behind it. `Always` never clicks through. The occluding surface is read from the **game depth buffer** (throttled, and cached between reads since the depth resource copies whole), so an obstacle is *anything the game rendered* - not only walls, terrain and houses but static meshes, fences, decorations, and equally **characters, mounts and NPCs**; it falls back to the game's collision raycast (level geometry only) on frames where depth is unreadable. Once enabled, the ground an object rests on can occlude it at grazing camera angles. Native gizmo handles obey the same rule unless their depth mode is `AlwaysOnTop`, in which case they stay grabbable through anything.
 
 **Decals pick their shape, not their box.** A ground-decal node is hit-tested against its rendered footprint SDF (the ring's annulus, the sector's wedge, the rect) on the real ground surface (mirroring `GroundDecal.hlsl`), so hovering the hole of a ring or outside a sector's arc correctly misses.
 

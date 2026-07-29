@@ -39,8 +39,8 @@ public sealed class GameWatcherOptions
     public CombatSourceOptions Combat { get; set; } = new();
 
     /// <summary>
-    /// The safety-poll interval for addon node and visibility watchers. Node watchers re-evaluate on addon
-    /// refresh events; the safety poll catches addons that mutate nodes without a refresh. Default: 250 ms.
+    /// The safety-poll interval for addon node and visibility watchers - catches addons that mutate nodes
+    /// without a refresh event. Default: 250 ms.
     /// </summary>
     public TimeSpan AddonSafetyPollInterval { get; set; } = TimeSpan.FromMilliseconds(250);
 
@@ -48,8 +48,8 @@ public sealed class GameWatcherOptions
     /// How often the Friends source refreshes the game's social proxy in the background (via
     /// <c>InfoProxyFriendList.RequestData</c>) so friend online/offline/location updates without the friend
     /// list being open. Default: a jittered 30–40 seconds (floored at 30) so the request timing is not a
-    /// detectable fixed beat. The refresh is <b>skipped while the friend-list window is open</b> so it never
-    /// re-sorts or scrolls the addon; the game keeps the list live while it is open anyway.
+    /// detectable fixed beat. Skipped while the friend-list window is open, so the refresh never re-sorts or
+    /// scrolls the addon.
     /// </summary>
     public JitteredInterval FriendsRefreshCadence { get; set; } = JitteredInterval.Default;
 
@@ -89,8 +89,8 @@ public sealed class ChatSourceOptions
 {
     /// <summary>
     /// The number of chat messages retained in history. 0 (default) disables history.<br/>
-    /// Configuring a capacity marks the Chat source always-on - a capacity that silently collected nothing
-    /// would be a footgun (unless the source is explicitly disabled, which wins and is logged).
+    /// Configuring a capacity marks the Chat source always-on, unless explicitly disabled (which wins and is
+    /// logged).
     /// </summary>
     public int HistoryCapacity { get; set; }
 

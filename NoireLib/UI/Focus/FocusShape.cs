@@ -4,9 +4,8 @@ namespace NoireLib.UI;
 /// The mark drawn around the control holding keyboard focus.
 /// </summary>
 /// <remarks>
-/// All four are deliberately geometric and hard edged, because focus has to be told apart from every soft, glowing or
-/// tinted mark a theme uses for hover, selection and emphasis. A focus mark that differs from those only in brightness
-/// is read as "this one is selected more", which is not a thing an interface can mean.
+/// All four are deliberately geometric and hard edged: focus has to differ from the soft, glowing or tinted marks
+/// a theme uses for hover, selection and emphasis in kind, not merely in brightness. See <see cref="NoireFocus"/>.
 /// </remarks>
 public enum FocusShape
 {
@@ -39,9 +38,8 @@ public enum FocusShape
     /// style set to this; <see cref="NoireFocus.Enabled"/> is the switch for turning it off everywhere.
     /// </summary>
     /// <remarks>
-    /// Last rather than first, so the value a <see cref="FocusStyle"/> falls back to is a mark that can be seen. This
-    /// is what says where the keyboard is, and an accessibility affordance whose default is "invisible" fails quietly
-    /// for the people who need it.
+    /// Last rather than first, so the value a <see cref="FocusStyle"/> falls back to is a mark that can be seen: an
+    /// accessibility affordance defaulting to invisible fails quietly for the people who need it.
     /// </remarks>
     None,
 }

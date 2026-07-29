@@ -124,9 +124,8 @@ hotkeyManager?.RegisterHotkey(new HotkeyEntry
 
 ### HotkeyEntry fields
 
-- `Id`: Unique identifier. Required. Matched ignoring case, so `my.hotkey` and `My.Hotkey` are one hotkey, and
-  either spelling works everywhere an id is taken (`TryGetHotkey`, `SetHotkeyBinding`, `DrawKeybindInputButton`,
-  `StartListening`, `UnregisterHotkey`, and the stored keybinds).
+- `Id`: Unique identifier. Required. Matched ignoring case everywhere an id is taken, so `my.hotkey` and
+  `My.Hotkey` are the same hotkey.
 - `DisplayName`: Label used by the binding UI. Defaults to `Id` if empty.
 - `Binding`: Initial `HotkeyBinding`.
 - `Callback`: Action invoked when the hotkey triggers. Required.
@@ -165,7 +164,7 @@ Binding = GamepadButtons.R2   // Converts implicitly too
 
 `KeybindsHelper.IsBindingHeld(binding)` answers "is this binding held right now" using the exact rules this module triggers with (exact modifiers for a keyboard binding, required modifiers only for a modifier-only one, raw state for a gamepad button). It reads the physical keyboard, so it needs no active frame and works from any thread.
 
-This is what lets another widget be gated by a hotkey the user rebinds here without reimplementing the matching. `NoireComboBox<T>.BindWheelCycleHotkey` is the shipped example; see the [NoireLib.UI documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md#plugging-in-the-hotkey-manager).
+Lets another widget be gated by a hotkey the user rebinds here without reimplementing the matching. `NoireComboBox<T>.BindWheelCycleHotkey` is the shipped example; see the [NoireLib.UI documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/UI/README.md#plugging-in-the-hotkey-manager).
 
 ```csharp
 if (hotkeyManager.TryGetHotkey("my.hotkey", out var entry) && KeybindsHelper.IsBindingHeld(entry.Binding))
@@ -260,10 +259,9 @@ RepeatDelayMax = TimeSpan.FromMilliseconds(120)
 ```
 
 ### HoldAndRepeat
-Waits `HoldDelay`, triggers once, then repeats on the same cadence as `Repeat`. It composes the two: the initial
-delay is `HoldDelay`, and the repeat interval is `FixedRepeatDelay`, or the `RepeatDelayMin`/`RepeatDelayMax` range
-when `UseRandomRepeatDelay` is set. Use it for a key that should fire after a deliberate press and then auto-repeat,
-without a separate first trigger the instant it goes down.
+Waits `HoldDelay`, triggers once, then repeats on the same cadence as `Repeat`: the initial delay is `HoldDelay`,
+and the repeat interval is `FixedRepeatDelay`, or the `RepeatDelayMin`/`RepeatDelayMax` range when
+`UseRandomRepeatDelay` is set.
 
 ```csharp
 ActivationMode = HotkeyActivationMode.HoldAndRepeat,
@@ -314,10 +312,10 @@ one frame is one save, not one per property.
 
 ## Taking a Key for a Moment
 
-`BlockGameInput` is the hotkey's **standing** answer: it is persisted, and a stored hotkey overrides the values it
-is registered with on the next load. That makes it the wrong tool for a key you want only while something is
-happening — a panel being worked in, a mode being held. Written for a moment, it is saved forever, and the key
-stays swallowed on every launch afterwards with the moment long since over.
+`BlockGameInput` is the hotkey's **standing**, persisted answer: a stored hotkey overrides the values it is
+registered with on the next load. It is the wrong tool for a key wanted only while something is happening (a
+panel being worked in, a mode being held), since a value written for the moment is saved and stays in effect on
+every later launch.
 
 For that, suppress it instead:
 
@@ -334,7 +332,7 @@ hotkey.ReleaseGameInputSuppression();
   of the session and nothing beyond it.
 - Calls **nest**. Two callers can suppress the same hotkey, and the key goes back to the game when the last one
   releases. Releasing more than was taken is ignored rather than left as a debt against the next suppression.
-- `IsGameInputSuppressed` reports whether anything is holding the key right now, which is what a UI should show.
+- `IsGameInputSuppressed` reports whether anything is holding the key right now.
 
 `NoireReorderableList` is the worked example: its `BlockGameInputWhileActive` holds a suppression while a row is
 focused in a focused window, and leaves the hotkey's own settings exactly as it found them.
@@ -357,10 +355,10 @@ That covers `Callback`, `OnHotkeyTriggered`, `OnHotkeyChanged`, and all four eve
 (`HotkeyTriggeredEvent`, `HotkeyBindingChangedEvent`, `HotkeyListeningStartedEvent`,
 `HotkeyListeningStoppedEvent`).
 
-The binding and listening surfaces need this as much as the trigger ones do, because the module changes bindings
-from **two** different threads: your own call to `SetHotkeyBinding`, and the detection timer capturing a rebind
-in `DrawKeybindInputButton`. Marshalling everything to the framework thread is what stops your handler's thread
-from depending on which of those reached it.
+The binding and listening surfaces need this as much as the trigger ones do: the module changes bindings from
+**two** different threads, your own call to `SetHotkeyBinding` and the detection timer capturing a rebind in
+`DrawKeybindInputButton`. Marshalling everything to the framework thread keeps your handler's thread independent
+of which one reached it.
 
 ### Trigger delivery
 
@@ -412,17 +410,16 @@ A stored record carries the binding **and every option**: `DisplayName`, `Enable
 `BlockWhenTextInputActive`, `RequireGameFocus`, and `BlockGameInput`. A change a user makes at runtime therefore
 survives a restart.
 
-`Callback` and `SuppressGameInput` are the exceptions, and deliberately so: both are runtime state rather than
-settings, and neither is written to a record.
+`Callback` and `SuppressGameInput` are the exceptions: both are runtime state rather than settings, and neither
+is written to a record.
 
 On load, the stored record **overrides** the values a hotkey is registered with, the same way the stored binding
 already did. The values you pass to `RegisterHotkey` are the defaults for a hotkey that has never been stored; once
 a hotkey is stored, its stored options win. Changing a default in your code later will not move a user who already
 has that hotkey stored, exactly as changing a default binding would not.
 
-That is worth keeping in mind when writing an option from code rather than from a settings panel: whatever you
-write is the user's stored answer from then on, and a value written for the moment will still be there next launch.
-For anything momentary, use [a suppression](#taking-a-key-for-a-moment) instead.
+Writing an option from code rather than from a settings panel has the same effect: whatever you write becomes the
+user's stored answer from then on. For anything momentary, use [a suppression](#taking-a-key-for-a-moment) instead.
 
 ### Upgrading from an older config
 
@@ -503,8 +500,7 @@ hotkeyManager?.UnregisterHotkey("my.hotkey");
 ```
 
 To change any other option, set it on the live entry from `TryGetHotkey`; see
-[Changing a Hotkey at Runtime](#changing-a-hotkey-at-runtime). There is no need to unregister and re-add a hotkey
-to reconfigure it.
+[Changing a Hotkey at Runtime](#changing-a-hotkey-at-runtime).
 
 ### Query registered hotkeys
 

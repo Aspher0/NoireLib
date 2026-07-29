@@ -7,9 +7,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A label pinned to a place in the world rather than to the screen: over a gathering node, above a target's head,
-/// on the spot a mechanic is about to land. It is projected every frame, fades and shrinks with distance, and behaves
-/// like a quest marker once the point it follows leaves the screen.
+/// A label pinned to a place in the world rather than to the screen. It is projected every frame, fades and
+/// shrinks with distance, and behaves like a quest marker once the point it follows leaves the screen.
 /// </summary>
 /// <remarks>
 /// What it follows is read on the framework thread and handed to the draw pass as a position, never as a live object.
@@ -155,9 +154,9 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// How opaque the plate behind the label is, from 0 for none at all to 1 for the colour as given. Defaults to 0.8.
     /// </summary>
     /// <remarks>
-    /// Scales the alpha of <see cref="Background"/> rather than replacing the colour, so the plate can be faded without
-    /// the caller having to rebuild the theme's own surface colour to do it. Zero leaves the text floating on the world
-    /// with no plate at all, which is what a dense field of markers usually wants.
+    /// Scales the alpha of <see cref="Background"/> rather than replacing the colour, so the plate can be faded
+    /// without the caller having to rebuild the theme's own surface colour to do it. Zero leaves the text floating
+    /// on the world with no plate at all.
     /// </remarks>
     public float BackgroundOpacity { get; set; } = 0.8f;
 
@@ -191,8 +190,7 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// A fixed multiplier on the whole label: the text, the padding, the rounding and the arrow together. Defaults to 1.
     /// </summary>
     /// <remarks>
-    /// This is the size knob to reach for when a label should simply be larger or smaller than the rest, and it applies
-    /// whether or not the label also scales with distance: the two multiply.<br/>
+    /// Applies whether or not the label also scales with distance: the two multiply.<br/>
     /// It is a multiplier rather than a pixel size so that it moves the plate with the text. Setting
     /// <see cref="TextSize"/> alone leaves the padding and the arrow where they were, which reads as a label whose
     /// proportions drift as it grows.<br/>
@@ -239,10 +237,10 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// its bounds. Zero scales smoothly instead.
     /// </summary>
     /// <remarks>
-    /// Text is the reason this exists. <see cref="NoireText"/> draws at a size by building a real font at it, and a
-    /// label scaled continuously would ask for one per pixel of distance; each is a full glyph atlas, and the cache
-    /// that holds them is deliberately small. Stepped, a label costs a handful of sizes across its whole range and
-    /// every one of them is rasterized rather than resampled.<br/>
+    /// <see cref="NoireText"/> draws at a size by building a real font at it, and a label scaled continuously would
+    /// ask for one per pixel of distance; each is a full glyph atlas, and the cache that holds them is deliberately
+    /// small. Stepped, a label costs a handful of sizes across its whole range and every one of them is rasterized
+    /// rather than resampled.<br/>
     /// The default spans <see cref="MinScale"/> to <see cref="MaxScale"/> in four steps. Set it smaller for a finer
     /// ramp and more sizes, or to zero to scale smoothly and accept that the text is stretched between sizes.
     /// </remarks>
@@ -288,11 +286,9 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// Whether the label is kept in front of every other window, for clicks as well as for drawing. Off by default.
     /// </summary>
     /// <remarks>
-    /// Being drawn on top and receiving the mouse are two different orders in ImGui, and moving only the first is what
-    /// produces a marker plainly visible above a window and completely dead under it. This moves both, so a label that
-    /// takes input at all (see <see cref="OnClick"/>) stays clickable where it overlaps a window.<br/>
-    /// Off by default because a marker that covers the window a plugin is asking you to read is worse than one hidden
-    /// behind it, and a world label is drawn wherever the world happens to put it.
+    /// Being drawn on top and receiving the mouse are two different orders in ImGui; moving only the first produces
+    /// a marker plainly visible above a window but completely dead to clicks under it. This moves both, so a label
+    /// that takes input at all (see <see cref="OnClick"/>) stays clickable where it overlaps a window.
     /// </remarks>
     public bool AlwaysOnTop { get; set; }
 
@@ -411,11 +407,11 @@ public sealed class NoireWorldLabel : NoireDrawable
         }
         else
         {
-            // Off screen, only the direction to the point survives the projection, so the label is placed on the edge
-            // along it rather than at the coordinate. It is pinned by its centre, which is what PinToEdge answers with,
-            // so the authored pivot does not apply and would push it back off the screen it was just pulled onto.
-            // The arrow stands off past the plate, so it is given room inside the margin rather than being allowed to
-            // hang over an edge the label itself was carefully kept clear of.
+            // Off screen, only the direction to the point survives the projection, so the label is placed on the
+            // edge along it rather than at the coordinate. It is pinned by its centre, the point that PinToEdge
+            // returns, so the authored pivot does not apply and would push it back off the screen
+            // it was just pulled onto. The arrow stands off past the plate, so it is given room inside the margin
+            // rather than being allowed to hang over an edge the label itself was kept clear of.
             var margin = NoireUI.Scaled(EdgeMargin)
                 + (OffScreen == WorldLabelOffScreen.EdgeArrow ? NoireUI.Scaled(ArrowSize + ArrowGap) : 0f);
 
@@ -451,7 +447,7 @@ public sealed class NoireWorldLabel : NoireDrawable
         if (AlwaysOnTop)
             flags |= UiWindowOrder.TopLayerFlag;
 
-        // A pivot on SetNextWindowPos is what makes an auto-sized window placeable at all: the size is not known until
+        // A pivot on SetNextWindowPos makes an auto-sized window placeable at all: the size is not known until
         // after it has been drawn, and ImGui is the only thing that can apply it without a frame of lag.
         ImGui.SetNextWindowPos(position, ImGuiCond.Always, pivot);
 
@@ -565,9 +561,9 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// Draws the arrow that points off screen toward the world point, the way a quest marker does.
     /// </summary>
     /// <remarks>
-    /// The arrow points outward, along the direction the label was pinned by, because that is where the thing it marks
-    /// actually is. Pointing it at the projected coordinate instead is what makes a marker for something behind you
-    /// point back into the middle of the screen, which reads as an instruction to walk into your own camera.
+    /// The arrow points outward, along the direction the label was pinned by, since that is where the thing it
+    /// marks actually is. Pointing it at the projected coordinate instead would make a marker for something
+    /// behind you point back into the middle of the screen, reading as an instruction to walk into your own camera.
     /// </remarks>
     /// <param name="pinned">Where the label ended up, at its centre.</param>
     /// <param name="direction">The direction the label was pinned along.</param>

@@ -72,9 +72,7 @@ public sealed class BarStyle
     internal Vector4 ResolveMarkColor()
         => MarkColor ?? NoireTheme.Current.Resolve(ThemeColor.Border);
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public BarStyle Clone() => (BarStyle)MemberwiseClone();
 }

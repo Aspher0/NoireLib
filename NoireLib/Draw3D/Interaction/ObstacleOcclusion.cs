@@ -12,7 +12,7 @@ public enum ObstacleOcclusion
     /// <summary>Ignore obstacles: a 3D object is always hoverable/clickable, even straight through one (x-ray picking).</summary>
     Off,
 
-    /// <summary>An obstacle in front of an object always blocks picking it. No override.</summary>
+    /// <summary>An obstacle in front of an object always blocks picking it; no override.</summary>
     Always,
 
     /// <summary>Obstacles block by default, but objects behind them become clickable while <see cref="NoireInteract.ClickThroughHeld"/> is held (default: Alt).</summary>

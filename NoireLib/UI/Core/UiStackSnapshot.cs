@@ -4,9 +4,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The depth of the ImGui style stacks at a point in time, and the ability to unwind back to it.<br/>
-/// Every NoireUI container captures one before it runs a body and restores it afterwards, which is what makes a raw
-/// <c>ImGui.PushStyleColor</c> left unpopped inside that body a single log line rather than a window that stays the wrong
-/// colour for the rest of the frame.
+/// Every NoireUI container captures one before it runs a body and restores it afterwards, turning a raw
+/// <c>ImGui.PushStyleColor</c> left unpopped inside that body into a single log line rather than a window that stays
+/// the wrong colour for the rest of the frame.
 /// </summary>
 /// <remarks>
 /// NoireUI's own pushes are already balanced by construction (every container pops in a <c>finally</c>). This exists for

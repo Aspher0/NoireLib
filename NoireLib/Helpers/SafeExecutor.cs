@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A class containing methods to execute actions safely, with automatic logging and various features.
+/// Executes actions safely, with automatic logging.
 /// </summary>
 public static class SafeExecutor
 {

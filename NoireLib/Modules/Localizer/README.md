@@ -247,10 +247,10 @@ changes it. When they disagree, the module resolves the default locale in this o
 |------------|--------|-----------|
 | 1 | `DefaultLocaleSource.Windows` / `.GameClient` | The persisted source is one of these; the locale is resolved from it. |
 | 2 | Persisted `CustomDefaultLocale` | A previous session called `SetDefaultLocale()` or `UseCustomDefaultLocale()`. |
-| 3 | `defaultLocale` constructor argument | Neither of the above applies, which is the state of a fresh configuration. |
+| 3 | `defaultLocale` constructor argument | Neither of the above applies (a fresh configuration). |
 
-This is why `CustomDefaultLocale` is only consulted alongside `HasCustomDefaultLocaleSelection`. It holds a locale from
-the moment the configuration file exists, so restoring it whenever it is populated would overwrite the constructor
+`CustomDefaultLocale` is only consulted alongside `HasCustomDefaultLocaleSelection`: it holds a locale from the
+moment the configuration file exists, so restoring it whenever it is populated would overwrite the constructor
 argument with a value nobody picked, and no caller could ever set a default locale.
 
 ```csharp
@@ -263,7 +263,7 @@ var localizer = new NoireLocalizer(defaultLocale: "fr-FR");
 localizer.SetDefaultLocale("de-DE");
 ```
 
-**Note:** `SelectedLocale` (the *active* locale, which is what `DrawLocaleCombo()` and `SetCurrentLocale()` write) is
+**Note:** `SelectedLocale` (the *active* locale that `DrawLocaleCombo()` and `SetCurrentLocale()` write) is
 separate from all of this and is always restored when present. The precedence above only decides `DefaultLocale`, the
 last resort of the [fallback chain](#fallback-resolution-order).
 

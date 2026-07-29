@@ -25,7 +25,7 @@ You are reading the documentation for the `NoireTaskQueue` module.
 ## Overview
 
 The `NoireTaskQueue` is a module that manages task queuing and processing with support for:
-- **Blocking and non-blocking tasks** for flexible execution flow
+- **Blocking and non-blocking tasks**
 - **Batch processing** to group related tasks with shared failure/cancellation handling
 - **Multiple completion conditions** (predicate, event-based, immediate)
 - **Automatic retry logic** with configurable stall detection
@@ -37,12 +37,6 @@ The `NoireTaskQueue` is a module that manages task queuing and processing with s
 - **Comprehensive callbacks** for task and batch lifecycle events
 - **Queue state management** (start, pause, resume, stop, skip, jump/goto)
 - **Queue-bound builders** (`TaskBuilder<TModule>`, `BatchBuilder<TModule>`) for streamlined enqueuing
-
-This module is ideal for scenarios where you need to:
-- Execute tasks sequentially with specific completion conditions
-- Wait for game state changes before proceeding
-- Group related tasks into batches with shared error handling
-- Handle asynchronous operations with retry logic
 
 ---
 

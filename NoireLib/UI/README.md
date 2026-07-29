@@ -152,7 +152,7 @@ button.AutoDraw = null;      // follow the master again
 ```
 
 - **`NoireUI.AutoDraw`** is a `bool`, default `false`. It is the default policy every element inherits, **not** a kill switch.
-- **`component.AutoDraw`** is a `bool?`, default `null`, meaning "follow the master". An explicit value always wins, in either direction, including over a master that is off. Every one of those values was set by the same plugin, so a master that overrode an explicit request would only be lying to its author.
+- **`component.AutoDraw`** is a `bool?`, default `null`, meaning "follow the master". An explicit value always wins, in either direction, including over a master that is off.
 - `NoireOverlayButton` ships with an explicit `true`, because an overlay exists precisely so nothing has to draw it. Set it to `null` to follow the master instead.
 - **`Draw()` always works**, whatever the policy says. Call it from your own draw code to control layering; the hub skips anything already drawn manually on the same frame, so the two modes compose instead of doubling up.
 - Draw order is yours by construction: if you call them, you ordered them. The hub only orders what you left to it.
@@ -190,9 +190,9 @@ NoireUI.ClearReducedMotion();                   // hand it back to the host
 NoireUI.StringProvider = key => myLocalizer.GetOrNull(key);   // null falls back to the shipped English
 ```
 
-**`ReducedMotion` follows Dalamud's own setting until a plugin assigns it.** It is an accessibility preference the user has already stated once, to the host, and a library that ignored it would have every plugin using it ask again.
+**`ReducedMotion` follows Dalamud's own setting until a plugin assigns it.** It is an accessibility preference the user has already stated once, to the host.
 
-Assigning takes it over for good, including assigning `false` — a plugin asking for full motion is an answer, not the absence of one. If you offer the choice in your own settings, offer the way back too, or a preference the user set once in Dalamud quietly becomes a second copy your plugin now owns. Persist the override only when it exists (`TryGet` rather than `Get` with a default), or every load writes your default over the host's answer.
+Assigning takes it over for good, including assigning `false` - a plugin asking for full motion is an answer, not the absence of one. If you offer the choice in your own settings, offer the way back too, or a preference the user set once in Dalamud quietly becomes a second copy your plugin now owns. Persist the override only when it exists (`TryGet` rather than `Get` with a default), or every load writes your default over the host's answer.
 
 NoireLib depends on no localization system and ships no locale files.
 
@@ -249,7 +249,7 @@ Everything here runs on a game's draw thread and runs again next frame. Work tha
 
 Measure before optimizing, with the profiler below, and read the **self** column rather than the total. A scope is not free to open, so a surface entered hundreds of times a frame carries more instrumentation in its reading than one entered once; compare like with like, and prefer allocated bytes, which the act of measuring does not move.
 
-**This bar is enforced, not merely stated.** Every drawing surface in this namespace has a test that runs it inside a real ImGui frame and asserts what it allocated, and the assertion is zero: widgets, layout scopes, panels, shapes, text, content, badges and attention alike. That is what makes the guarantee a consumer's rather than a reviewer's, because none of the causes found so far were visible by reading the widget. Two were lambdas capturing a parameter, which the compiler allocates on entry to the method rather than at the point of use, so a hook nobody had set cost every button in the frame. One was a shorthand overload composing the options object it forwarded. One was a value formatted to a string that had not changed, and one an id interpolated on every frame of a section whose id is a constant. A new surface is not finished until it has its own zero, and a surface that cannot be driven headless, because it is a drawable needing an initialized plugin, has its ids asserted against the literal they replaced instead.
+**This bar is enforced, not merely stated.** Every drawing surface in this namespace has a test that runs it inside a real ImGui frame and asserts what it allocated, and the assertion is zero: widgets, layout scopes, panels, shapes, text, content, badges and attention alike. A new surface is not finished until it has its own zero, and a surface that cannot be driven headless, because it is a drawable needing an initialized plugin, has its ids asserted against the literal they replaced instead.
 
 ### Allocation
 
@@ -372,7 +372,7 @@ NoireUiSession.Set("myplugin.roster.search", search);
 var search = NoireUiSession.Get("myplugin.roster.search", string.Empty);
 ```
 
-For the state that is worth keeping while someone works and worth forgetting afterwards: a search a window was left narrowed to, which tab was open, a panel scrolled halfway. Persisting those is worse than not — a plugin that reopens three days later still filtered to something the user has forgotten typing looks broken rather than helpful.
+For the state that is worth keeping while someone works and worth forgetting afterwards: a search a window was left narrowed to, which tab was open, a panel scrolled halfway. Persisting those is worse than not - a plugin that reopens three days later still filtered to something the user has forgotten typing looks broken rather than helpful.
 
 Two differences follow from there being no file, and both are in this store's favour:
 
@@ -415,7 +415,7 @@ Every drawing surface the library ships measures itself, so switching this on at
 
 **Measuring starts at widget resolution, and `Detailed` opens the per-method rows.** The everyday question is which widget is the expensive one, and the widget and surface rows answer it for a few microseconds a frame. Setting `NoireUI.Profiler.Detailed = true` (the **Detail** checkbox in the window) additionally measures every drawing helper as a row of its own, `NoireShapes.Glow` and the like, which is the resolution to switch on once a widget's row has named the suspect. Those fine rows are most of what measuring costs: a decorated window opens a scope per shape it paints, several hundred a frame against a few dozen coarse ones. Nothing goes missing while it is off; an unmeasured method scope folds into the widget or surface around it, so the totals stay complete either way.
 
-**Scopes nest, so each is reported twice over.** *Total* includes everything measured inside a scope; *self* does not. Self is the one that adds up — totalling the total column counts a widget once for itself and again for every scope enclosing it, which is how an interface comes out looking several times its real cost. `TotalAverageMs` sums self time for exactly that reason.
+**Scopes nest, so each is reported twice over.** *Total* includes everything measured inside a scope; *self* does not. Self is the one that adds up - totalling the total column counts a widget once for itself and again for every scope enclosing it, which is how an interface comes out looking several times its real cost. `TotalAverageMs` sums self time for exactly that reason.
 
 The figure your host reports for the whole plugin will always be larger than this total: it covers the windowing and the ImGui work around anything instrumented here. Use this to compare parts of your interface against each other, not to reconcile with the host.
 
@@ -457,7 +457,7 @@ NoireTheme.Current = NoireTheme.FromAccent("#C8A96A");   // one color in, a whol
 NoireTheme.Current.Danger = myRed;                       // override one token, inherit the rest
 ```
 
-Resolution runs in three steps, always in this order: **the value the widget was given, then the theme, then the ImGui style.** That is what lets one theme set two colors and leave everything else alone.
+Resolution runs in three steps, always in this order: **the value the widget was given, then the theme, then the ImGui style.**
 
 **Derived states, not stored ones.** `Hover()` and `Active()` derive from the base color instead of holding separate values, so a re-skin can never leave a stale hover color behind.
 
@@ -511,7 +511,7 @@ if (NoireButtons.Button("Save", ButtonTone.Accent))
     Save();
 ```
 
-A **tone** is what a button means (`Neutral`, `Accent`, `Success`, `Warning`, `Danger`, `Ghost`), which is what decides its colors. Passing a tone allocates nothing; pass a `ButtonStyle` when you want to override individual values.
+A **tone** is what a button means (`Neutral`, `Accent`, `Success`, `Warning`, `Danger`, `Ghost`) and decides its colors. Passing a tone allocates nothing; pass a `ButtonStyle` when you want to override individual values.
 
 **Hold to confirm** is the alternative to a confirmation dialog for a destructive action. The pause is the confirmation.
 
@@ -584,7 +584,7 @@ Give it a `length` whenever the panes are a fixed size. Left at zero it fills th
 
 The value is clamped every frame, not only while dragging, so a width restored from a config written on a wider screen is corrected on the first frame instead of leaving a pane off the edge.
 
-**The divider is resolved from where the pointer is, never from how far it moved.** A mouse delta that the clamp throws away is a delta the size never received, so accumulating deltas leaves the divider ahead of the pointer by everything discarded — push past the minimum, come back, and it starts moving while the cursor is still nowhere near it, for the rest of the drag. Reading the position instead makes overshooting free: the divider sits at the bound until the pointer comes back past it, and is never anywhere but under the cursor. The offset between the two is taken once when the drag starts, so grabbing the divider off-centre does not snap it. (Same rule as `NoireSliders`, and the arithmetic is a tested pure method for the same reason: a drag is the one thing that cannot demonstrate it.)
+**The divider is resolved from where the pointer is, never from how far it moved.** A mouse delta that the clamp throws away is a delta the size never received, so accumulating deltas leaves the divider ahead of the pointer by everything discarded - push past the minimum, come back, and it starts moving while the cursor is still nowhere near it, for the rest of the drag. Reading the position instead makes overshooting free: the divider sits at the bound until the pointer comes back past it, and is never anywhere but under the cursor. The offset between the two is taken once when the drag starts, so grabbing the divider off-centre does not snap it. (Same rule as `NoireSliders`, and the arithmetic is a tested pure method for the same reason: a drag is the one thing that cannot demonstrate it.)
 
 **A `SplitterOptions` overload opens the look up**, including a `CustomDraw` hook. The grab area and the divider are separate there: `Thickness` is how much of the pointer's path counts as the handle, `LineWidth` is the hairline drawn down the middle of it, and those are rarely the same number.
 
@@ -597,7 +597,7 @@ NoireLayout.Splitter("split", ref paneWidth, new SplitterOptions
 });
 ```
 
-That empty hook is the point of it. A design that already paints a rule between two panes wants the handle without a second line on top of it, and the splitter still owns the drag, the cursor and the clamping whatever the hook draws — so an existing divider becomes draggable with nothing about it changing. `UiSplitterDraw.DrawLine()` gives you the shipped line back when the hook only means to add to it.
+That empty hook is the point of it. A design that already paints a rule between two panes wants the handle without a second line on top of it, and the splitter still owns the drag, the cursor and the clamping whatever the hook draws - so an existing divider becomes draggable with nothing about it changing. `UiSplitterDraw.DrawLine()` gives you the shipped line back when the hook only means to add to it.
 
 **Put the handle in the same window as the panes' edge, not over it.** ImGui hit tests windows before items, and a child region is a window: a handle placed across the seam from the parent is underneath whichever region the pointer is over and never gets the click. Draw it inside one of the two regions, along its edge.
 
@@ -629,7 +629,7 @@ NoireLayout.Flow(tags, tag => ImGui.CalcTextSize(tag) + padding * 2f, DrawChip);
 NoireLayout.Flow(tags, Measure, DrawChip, width: myPanelWidth);
 ```
 
-Left at zero they use the text wrap position if one is set (which is what `NoireLayout.WrapText` sets, so a row inside one wraps where its text does), and the window's content edge otherwise. **A panel that owns a width nobody else can see has to say so.**
+Left at zero they use the text wrap position if one is set (set by `NoireLayout.WrapText`, so a row inside one wraps where its text does), and the window's content edge otherwise. **A panel that owns a width nobody else can see has to say so.**
 
 `NoireLayout.ContentWidth()` is that same answer on its own, and is what any widget defaulting to "the space available" should ask instead of `GetContentRegionAvail()`. The difference only shows up inside a page that centres its content in a narrower column: the content region still reports the window's edge, so a field sized from it runs past the end of everything around it.
 
@@ -650,7 +650,7 @@ new FrameStyle { TickLength = 11f, TickColor = gold });
 
 `Frame` draws a `FrameStyle` border; `Plate` draws a `PlateStyle` fill. Both take their body, so there is nothing to close, and a body that throws still leaves the draw list balanced.
 
-**The chrome is drawn after the body and appears behind it.** That is the whole mechanism, and it is why the alternative every plugin writes by hand does not work: you cannot paint a box before you know how tall it is, and drawing it from the height the same content happened to have *last* frame lags by a frame the moment anything inside animates. The panel splits the window's draw list into a chrome channel and a content channel, so the two can be drawn in one order and composited in the other.
+**The chrome is drawn after the body and appears behind it.** You cannot paint a box before you know how tall it is, and drawing it from the height the same content happened to have *last* frame lags by a frame the moment anything inside animates. The panel splits the window's draw list into a chrome channel and a content channel, so the two can be drawn in one order and composited in the other.
 
 **Nested panels do not split again, and must not.** A draw list can only carry one split at a time. They do not need to: chrome from every depth shares one channel and content shares the other, so an inner panel's chrome lands on top of its parent's chrome and still behind all content, which is the order the nesting means. The split is tracked per draw list rather than as a depth count, because a body may open a child window and a child window draws to a list of its own.
 
@@ -694,19 +694,19 @@ public override void Draw()
 }
 ```
 
-It covers both halves of what "in front" means, because either alone is visibly wrong. **Clicks** follow the display list, which it moves the window to the front of. **Drawing** follows the draw layer first, and the display list is reordered whenever a window is focused — after every plugin has drawn and before the frame is rendered, so a window holding its place by the display list alone is drawn *behind* for one frame every time an overlapping window is clicked, and no plugin code runs late enough to undo it. So it lifts the window into the top draw layer as well.
+It covers both halves of what "in front" means, because either alone is visibly wrong. **Clicks** follow the display list, which it moves the window to the front of. **Drawing** follows the draw layer first, and the display list is reordered whenever a window is focused - after every plugin has drawn and before the frame is rendered, so a window holding its place by the display list alone is drawn *behind* for one frame every time an overlapping window is clicked, and no plugin code runs late enough to undo it. So it lifts the window into the top draw layer as well.
 
 It does that by setting the layer's flag on the window **after** it has been begun. The layer is read at render time, so the flag counts for that frame while none of what the same flag does inside `Begin` happens at all: the window is not moved to the cursor, its background and border keep reading the fields an ordinary window reads, and its default item width is unchanged. There is nothing to pass at `PreDraw`.
 
-The layer covers the whole of the ordinary one, so anything a window opens over itself has to join it. Every NoireUI popup does that on its own, by inheriting the layer of the window that opened it. A popup of your own calls `KeepInFront()` from inside itself — which is also what settles the order between the two, since among the windows in front the last caller each frame wins.
+The layer covers the whole of the ordinary one, so anything a window opens over itself has to join it. Every NoireUI popup does that on its own, by inheriting the layer of the window that opened it. A popup of your own calls `KeepInFront()` from inside itself - which is also what settles the order between the two, since among the windows in front the last caller each frame wins.
 
-**Four flag sets, because the trade-offs are real ones.** `Flags` is the default: no title bar, background, border or scrollbar, and ImGui keeps the drag, so the window can be picked up anywhere it is not already busy. `FixedFlags` adds no-resize. `HandleOnlyFlags` adds `NoMove` for a design whose empty space is not spare, with `DragFrom` naming the handle. `FixedBodyFlags` stops the window scrolling as a whole, for one whose masthead and rail stay put while a region inside it scrolls.
+**Four flag sets.** `Flags` is the default: no title bar, background, border or scrollbar, and ImGui keeps the drag, so the window can be picked up anywhere it is not already busy. `FixedFlags` adds no-resize. `HandleOnlyFlags` adds `NoMove` for a design whose empty space is not spare, with `DragFrom` naming the handle. `FixedBodyFlags` stops the window scrolling as a whole, for one whose masthead and rail stay put while a region inside it scrolls.
 
-`DragFrom` holds the drag by window id, so it survives the pointer outrunning the handle. `ChromeButton` draws the window's own buttons — `ChromeGlyph.Close`, `Minimize`, `Restore`, `Menu` — from strokes rather than an icon font, so chrome does not depend on FontAwesome being in the atlas. One `ChromeButtonStyle` covers every glyph, so a row of them cannot drift apart in size, weight or hover behaviour; a bare mark floating in a corner reads as debris, so each carries a plate that lights on hover.
+`DragFrom` holds the drag by window id, so it survives the pointer outrunning the handle. `ChromeButton` draws the window's own buttons - `ChromeGlyph.Close`, `Minimize`, `Restore`, `Menu` - from strokes rather than an icon font, so chrome does not depend on FontAwesome being in the atlas. One `ChromeButtonStyle` covers every glyph, so a row of them cannot drift apart in size, weight or hover behaviour; a bare mark floating in a corner reads as debris, so each carries a plate that lights on hover.
 
-**What a custom window gives up:** Dalamud's pin, clickthrough and background-blur controls live on its title bar, and a window with `NoTitleBar` does not get one. They are Dalamud's own state rather than the plugin's, so they cannot be redrawn from a menu of your own. Offer what the window genuinely owns instead — opacity, collapse, close.
+**What a custom window gives up:** Dalamud's pin, clickthrough and background-blur controls live on its title bar, and a window with `NoTitleBar` does not get one. They are Dalamud's own state rather than the plugin's, so they cannot be redrawn from a menu of your own. Offer what the window genuinely owns instead - opacity, collapse, close.
 
-**`WindowChromeStyle.Opacity` fades the surface, not the contents.** It scales the plate's fill alpha; the text, the border and the controls stay at full strength. Pushing ImGui's global alpha instead fades everything, which is not a translucent window but a dim one — what a window wants to see through is its background. Anything a window paints behind its content itself (a masthead, a hero) should be scaled by the same number.
+**`WindowChromeStyle.Opacity` fades the surface, not the contents.** It scales the plate's fill alpha; the text, the border and the controls stay at full strength. Pushing ImGui's global alpha instead fades everything, which is not a translucent window but a dim one - what a window wants to see through is its background. Anything a window paints behind its content itself (a masthead, a hero) should be scaled by the same number.
 
 **`DragFrom` refuses unless the window carries `NoMove`.** It is the *replacement* for ImGui's drag, not an addition to it: with both running, the movement is applied twice per frame from two different reference points, and the contents visibly swim and lag behind the frame as it is dragged. Use `HandleOnlyFlags` when you want a handle.
 
@@ -766,7 +766,7 @@ NoireToast.Undo($"{selected.Count} presets deleted", () => RestorePresets(select
 
 **The countdown.** `ToastStyle.Timer` decides how a toast shows the time it has left: `BottomBar` (the default), `TopBar`, `Stripe` (beside the severity stripe, not over it), `Border` (traced clockwise from the top left, half a thickness inside the edge so all four sides come out the same weight), `TintLeftToRight`, `TintRightToLeft`, or `None`. `TimerThickness`, `TimerColor`, `TimerTintAlpha` and `TimerDrains` tune it. It is inert on a toast with no duration, which has nothing to count down to.
 
-A toast that vanishes with no warning reads as a glitch, and one that is visibly about to vanish while being read is worth reaching for, which is what the hover pause is for.
+A toast that vanishes with no warning reads as a glitch, and one that is visibly about to vanish while being read is worth reaching for.
 
 **Live progress** for work in flight, coloured by `ProgressColor` / `ProgressTrackColor` / `ProgressHeight`. The filled part defaults to a slightly darker form of the severity colour (`ProgressDarken`), so the bar sits under the message rather than competing with the stripe and the icon, which are already showing that colour at full strength. A toast with a progress reading stays until you dismiss it:
 
@@ -794,21 +794,21 @@ new NoireToast("Only in this corner").Show(area);
 
 **Being on top is two orders in ImGui, and `AlwaysOnTop` moves both.** Drawing is decided by the draw layer first and the display list second; input is decided by the display list alone. Promote only the layer (`ImGuiWindowFlags.Tooltip`) and the element is painted over everything while receiving none of the clicks aimed at it. Reorder only the display list and clicking a window behind moves it in front for one frame before the next frame puts things back, which shows up as a flicker. `AlwaysOnTop` does both: the layer keeps the drawing immune to that churn, the reorder keeps the input right.
 
-It deliberately does not take keyboard focus, which would make text fields in every other window impossible to type in. Within the top layer the last window to ask each frame wins, which is what keeps a tooltip above an always-on-top element it overlaps.
+It deliberately does not take keyboard focus, which would make text fields in every other window impossible to type in. Within the top layer the last window to ask each frame wins, keeping a tooltip above an always-on-top element it overlaps.
 
-**A toast leaving does not move the ones that stay.** The stack is laid out from whichever of its edges is pinned to the screen, not from the window's own top. The window is sized to the stack every frame, so on a bottom-anchored area (the default) the bottom edge is the fixed one and the top edge moves as toasts arrive, leave and shrink. From the pinned edge, a toast's position depends only on the toasts between it and that edge — so a leaving toast disturbs the ones further from the anchor and nothing else, and since toasts expire oldest first and the oldest sits furthest from the anchor, the usual case moves nothing at all.
+**A toast leaving does not move the ones that stay.** The stack is laid out from whichever of its edges is pinned to the screen, not from the window's own top. The window is sized to the stack every frame, so on a bottom-anchored area (the default) the bottom edge is the fixed one and the top edge moves as toasts arrive, leave and shrink. From the pinned edge, a toast's position depends only on the toasts between it and that edge - so a leaving toast disturbs the ones further from the anchor and nothing else, and since toasts expire oldest first and the oldest sits furthest from the anchor, the usual case moves nothing at all.
 
 **A leaving toast holds still while it goes.** Its slot closes toward the edge the stack hangs from, so the toast is painted from that same edge and cropped to the slot: it looks covered rather than squashed, and it does not drift across the screen while the slot shrinks around it. Painting from the opposite edge is the difference between a toast fading out where it stands and one sliding as it goes.
 
-**The stack's height is rounded up to a whole pixel, and that is load-bearing.** A bottom-anchored window is placed at *(fixed screen edge − its own height)*, so the edge the stack hangs from is recovered as *(placed position + height)* and the two are meant to cancel. They only cancel while the height is a whole number. Window positions are snapped to the pixel grid, and snapping a value shifted by a whole number of pixels shifts the result by that same whole number — but a fractional height leaves its fraction behind:
+**The stack's height is rounded up to a whole pixel, and that is load-bearing.** A bottom-anchored window is placed at *(fixed screen edge - its own height)*, so the edge the stack hangs from is recovered as *(placed position + height)* and the two are meant to cancel. They only cancel while the height is a whole number. Window positions are snapped to the pixel grid, and snapping a value shifted by a whole number of pixels shifts the result by that same whole number - but a fractional height leaves its fraction behind:
 
 ```
-bottom = snap(C − total) + total  =  C − frac(C − total)
+bottom = snap(C - total) + total  =  C - frac(C - total)
 ```
 
-`total` sweeps continuously while a toast arrives or leaves, so `frac` sweeps 0→1 over and over and the anchored edge sawtooths across a pixel. Every remaining toast hangs off that edge, so the whole stack wanders for exactly as long as the animation runs. Rounding the height makes the snap a no-op and the edge exactly constant. `NoireToastAreaTests` pins it both ways: invariant with the rounding, demonstrably not without it.
+`total` sweeps continuously while a toast arrives or leaves, so `frac` sweeps 0 to 1 over and over and the anchored edge sawtooths across a pixel. Every remaining toast hangs off that edge, so the whole stack wanders for exactly as long as the animation runs. Rounding the height makes the snap a no-op and the edge exactly constant. `NoireToastAreaTests` pins it both ways: invariant with the rounding, demonstrably not without it.
 
-**Every slot and gap is on the pixel grid too**, which closes the other half of the same problem. ImGui floors the cursor onto the grid after each item it lays out, so the height a block of content *measures* depends on the fraction of a pixel it started at — the same toast measures a pixel taller or shorter depending where it sits. That measurement becomes the next frame's slot, and each slot shifts every toast further from the anchor, so on fractional boundaries every toast nudges its neighbours' measurements about. The wobble that produces grows with distance from the anchor, because that is how far the error has had to accumulate: the toasts nearest the anchor look fine while the ones at the far end visibly shake. Kept on the grid, a toast always measures the same height and nothing propagates. The two roundings compose — once the slots are whole, the total already is, so the stack height adds no slack and the anchored edge stays exactly where it was.
+**Every slot and gap is on the pixel grid too**, which closes the other half of the same problem. ImGui floors the cursor onto the grid after each item it lays out, so the height a block of content *measures* depends on the fraction of a pixel it started at - the same toast measures a pixel taller or shorter depending where it sits. That measurement becomes the next frame's slot, and each slot shifts every toast further from the anchor, so on fractional boundaries every toast nudges its neighbours' measurements about. The wobble that produces grows with distance from the anchor, because that is how far the error has had to accumulate: the toasts nearest the anchor look fine while the ones at the far end visibly shake. Kept on the grid, a toast always measures the same height and nothing propagates. The two roundings compose - once the slots are whole, the total already is, so the stack height adds no slack and the anchored edge stays exactly where it was.
 
 A leaving toast's measured height is frozen for the same reason: its contents are drawn clipped to a closing slot and offset by the slide, and re-measuring under either would feed back into the share of the stack computed from it.
 
@@ -984,7 +984,7 @@ button.DrawConditions = OverlayDrawConditions.AlwaysDraw;
 
 **These flags apply to the button that carries them, and to nothing else.** Keeping one overlay visible during a cutscene leaves your windows hiding exactly as they would have, and leaves every other overlay answering for itself.
 
-That is worth spelling out, because Dalamud decides whether to hide plugin UI **once per plugin**, inside the draw callback it invokes for you: an overlay drawn from there could only be exempted by exempting your whole plugin along with it. NoireLib avoids that by not drawing overlays from your callback at all - they are drawn beside it, straight from Dalamud's frame, so nothing Dalamud decides about your plugin's UI reaches them and each overlay is free to answer for itself.
+Dalamud decides whether to hide plugin UI **once per plugin**, inside the draw callback it invokes for you: an overlay drawn from there could only be exempted by exempting your whole plugin along with it. NoireLib avoids that by not drawing overlays from your callback at all - they are drawn beside it, straight from Dalamud's frame, so nothing Dalamud decides about your plugin's UI reaches them and each overlay is free to answer for itself.
 
 The single exception is a Dalamud that NoireLib cannot install its own draw hook into (a future version that moves what NoireLib reaches for). Overlays then fall back to being drawn with the rest of your UI, and Dalamud's per-plugin hiding applies to them all at once - so setting any flag on one overlay would also keep the rest of your plugin's UI visible in that state. NoireLib logs a warning when it happens, and you can check for it:
 
@@ -1006,7 +1006,7 @@ button.AutoDraw = false;
 button.Draw();
 ```
 
-`AutoDraw` is a `bool?`: `null` follows the `NoireUI.AutoDraw` master default instead of deciding for itself. An overlay button starts at an explicit `true` because that is what an overlay is for. See [Automatic drawing](#automatic-drawing) for the full rule.
+`AutoDraw` is a `bool?`: `null` follows the `NoireUI.AutoDraw` master default instead of deciding for itself. An overlay button starts at an explicit `true`. See [Automatic drawing](#automatic-drawing) for the full rule.
 
 `Draw()` is available whatever the setting is, and the hub skips anything already drawn manually on the same frame, so calling it yourself once in a while does not double-draw.
 
@@ -1136,7 +1136,7 @@ That is the whole setup. The attachment registers itself and applies every frame
 | off | on | is pinned to its height, and still resizes horizontally |
 | on | on | does not resize |
 
-Matching is written as `SizeConstraints`, not as `Size`, and that is what makes the axes independent. A `Size` is both axes at once: matching only the width would still have to write *some* height, and the only height available to write is the one it last wrote. That pins the axis nobody asked to match to itself, forever — a feedback loop rather than a setting. A minimum and maximum can speak per axis, so a matched axis is the two meeting and a free axis spans nothing to everything, which is the same "no constraint" Dalamud writes itself.
+Matching is written as `SizeConstraints`, not as `Size`, which keeps the axes independent. A `Size` is both axes at once: matching only the width would still have to write *some* height, and the only height available to write is the one it last wrote. That pins the axis nobody asked to match to itself, forever - a feedback loop rather than a setting. A minimum and maximum can speak per axis, so a matched axis is the two meeting and a free axis spans nothing to everything, which is the same "no constraint" Dalamud writes itself.
 
 ### Taking the window, and giving it back
 
@@ -1146,7 +1146,7 @@ This matters because Dalamud reapplies a position and a set of constraints every
 
 ### Visibility is decided before the frame, not during it
 
-`FollowVisibility` is applied on the framework tick rather than from `Apply`. Dalamud tests whether a window is open, then calls its `PreDraw` and draws it, in that order and in one pass — so a window closed from `PreDraw` has already been let through the test and draws once anyway. Deciding a tick earlier is what makes a window that cannot be shown never appear at all, rather than flashing up for a single frame.
+`FollowVisibility` is applied on the framework tick rather than from `Apply`. Dalamud tests whether a window is open, then calls its `PreDraw` and draws it, in that order and in one pass - so a window closed from `PreDraw` has already been let through the test and draws once anyway. Deciding a tick earlier means a window that cannot be shown never appears at all, rather than flashing up for a single frame.
 
 That leaves one thing for the caller. Nothing can intercept `window.IsOpen = true`, so opening a window whose game window is absent still closes it again immediately, which looks like the button doing nothing. Ask first:
 
@@ -1292,7 +1292,7 @@ if (jobCombo.Draw())
 
 With `FilterEnabled = true`, the dropdown shows a text input at the top, **automatically focused when the dropdown opens**.
 
-**Typing filters fuzzily by default**: the characters need only appear in order, so `dkn` finds `Dark Knight`, and the options are reordered so the best match leads. The characters that matched are picked out in the accent, which is what makes the reordering something a user can account for rather than something that looks like guessing. The scorer is [`FuzzyMatcher`](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/Fuzzy/README.md).
+**Typing filters fuzzily by default**: the characters need only appear in order, so `dkn` finds `Dark Knight`, and the options are reordered so the best match leads. The characters that matched are picked out in the accent, so the reordering is something a user can account for rather than something that looks like guessing. The scorer is [`FuzzyMatcher`](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/FuzzyMatcher/README.md).
 
 ```csharp
 combo.FilterHint = "Search a job...";
@@ -1334,7 +1334,7 @@ combo.FilterPinned = false;  // The whole dropdown scrolls, filter included
 
 The dropdown shows **exactly one scrollbar**, in either mode, and **none at all while every option fits**.
 
-That second half is a **measurement, not a calculation**, and the distinction took five attempts to arrive at. ImGui decides the scrollbar with `ContentSize + WindowPadding * 2 > SizeFull.y`, and floors `SizeFull` whenever a size constraint is present at all — which for a combo popup is always, since `BeginCombo` sets its own when you set none. So a height worked out in advance has to come out equal to a value that is then rounded down, and every fraction anywhere in the layout — the padding, the row step, the filter row, the spacing — is a scrollbar over a list that fits. Each correction to that arithmetic fixed one configuration and left another.
+That second half is a **measurement, not a calculation**. ImGui decides the scrollbar with `ContentSize + WindowPadding * 2 > SizeFull.y`, and floors `SizeFull` whenever a size constraint is present at all - which for a combo popup is always, since `BeginCombo` sets its own when you set none. So a height worked out in advance has to come out equal to a value that is then rounded down, and every fraction anywhere in the layout - the padding, the row step, the filter row, the spacing - is a scrollbar over a list that fits.
 
 So the dropdown and its option list both **record what ImGui reported needing** and ask for it back, rounded up, as a size *minimum* on the next frame. That is the same quantity the scrollbar test uses, so it cannot disagree with it, whatever the layout turns out to contain. The cap on `VisibleItemCount` still applies when the list is genuinely longer than the dropdown, which is the one case where a pixel of error is invisible because a scrollbar belongs there.
 
@@ -1342,7 +1342,7 @@ So the dropdown and its option list both **record what ImGui reported needing** 
 
 ### Long lists
 
-Past `VirtualizeThreshold` options (100 by default) the list draws through a clipper, so only the rows on screen cost anything. A dropdown over every item in the game is forty thousand rows, and drawing all of them every frame to show fifteen is what makes a picker unusable.
+Past `VirtualizeThreshold` options (100 by default) the list draws through a clipper, so only the rows on screen cost anything. A dropdown over every item in the game is forty thousand rows; drawing all of them every frame to show fifteen makes a picker unusable.
 
 ```csharp
 combo.Virtualize = null;          // Default: on past the threshold
@@ -1394,7 +1394,7 @@ combo.BoxStyle = new PlateStyle
 combo.BoxArrowColor = gold;
 ```
 
-`PopupStyle` does the same for the dropdown, and the two belong together: restyling the closed box and leaving the dropdown as ImGui's grey popup is worse than restyling neither, because the two are seen one after the other and the mismatch reads as the styling having failed. It carries the surface, border, rounding, padding, row padding and spacing, hovered and selected row colours, text, and the scrollbar — pushed as ImGui style around the popup, so the filter box and the scrollbar follow it without the combo drawing either.
+`PopupStyle` does the same for the dropdown, and the two belong together: restyling the closed box and leaving the dropdown as ImGui's grey popup is worse than restyling neither, because the two are seen one after the other and the mismatch reads as the styling having failed. It carries the surface, border, rounding, padding, row padding and spacing, hovered and selected row colours, text, and the scrollbar - pushed as ImGui style around the popup, so the filter box and the scrollbar follow it without the combo drawing either.
 
 The plate is drawn first and ImGui's own frame is pushed transparent over it, so the preview text, the hit box, the popup, the filter and the keyboard all keep working exactly as they did. The rectangle is worked out before the combo is submitted rather than read back afterwards, because a plate drawn after the combo would cover its own preview text; `ImGui.CalcItemWidth()` is the width ImGui itself is about to use, so the two cannot disagree.
 
@@ -1487,7 +1487,7 @@ if (tags.Draw())
     config.Tags = tags.Tags.ToArray();
 ```
 
-**Pasting is the reason this exists over a text box.** A run containing any of `Separators` (comma, semicolon, newline, tab by default) comes apart into one chip each, empty pieces dropped, so a trailing comma does not produce an empty tag. People paste comma-separated lists constantly, and a field that swallows one as a single tag is the thing they then undo by hand.
+**Pasted text splits on `Separators`** (comma, semicolon, newline, tab by default) into one chip each, empty pieces dropped, so a trailing comma does not produce an empty tag.
 
 **Backspace on the empty input takes the last chip back for editing** rather than deleting it. Deleting is what the cross on a chip is for; backspace is for fixing a typo in something already committed.
 
@@ -1504,7 +1504,7 @@ tags.TrimWhitespace = true;        // Default
 
 **`RemoveAt(index)` removes a position; `Remove(tag)` removes the first tag that matches.** With `AllowDuplicates` on those are different chips, and the position is the one the user clicked. The chips themselves are keyed on their index for the same reason: two chips carrying the same text would otherwise share one ImGui id, and only the first of them would ever be clickable.
 
-Suggestions are ranked with [`FuzzyMatcher`](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/Fuzzy/README.md) and shown under the field while there is text to match, with tags already held dropped from the list.
+Suggestions are ranked with [`FuzzyMatcher`](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/FuzzyMatcher/README.md) and shown under the field while there is text to match, with tags already held dropped from the list.
 
 ## Picking several at once (NoireMultiCombo)
 
@@ -1531,7 +1531,7 @@ combo.ClearSelection();
 
 The preview names up to `PreviewMaxItems` items and summarises the rest (`PreviewOverflowFormat`, default `+{0} more`). `PreviewFunc` replaces it entirely; if yours throws, the built-in preview is used rather than the widget breaking.
 
-The **All** and **None** shortcuts are scoped to what the filter is currently showing, which is what "all" means with a search box directly above it. `ShowSelectAll = false` hides them.
+The **All** and **None** shortcuts are scoped to what the filter is currently showing. `ShowSelectAll = false` hides them.
 
 Everything the single-select combo does about filtering applies here too: fuzzy matching, matched-character highlighting, and a clipper past `VirtualizeThreshold`. The dropdown shows **exactly one scrollbar**, around the option list: the popup is capped at the full row budget and the list is sized to what the filter actually leaves, so a short list shrinks rather than padding out with dead space.
 
@@ -1558,7 +1558,7 @@ if (items.Draw())
 
 **Display names are built once, when the sheet is read.** That is the part that matters more than the drawing: the fuzzy filter scores every row on every keystroke, so reading names on demand would decode forty thousand SeStrings per character typed. The clipper only saves the drawing; precomputing saves the filtering.
 
-`Include` is a predicate rather than a fixed set of categories, so the decision stays yours: equippable items, unlocked emotes, worlds on one data centre are all this callback and nothing else. `SkipEmptyNames` is on by default, because most game sheets are mostly blank — unused ids, placeholders and internal entries all carry an empty name.
+`Include` is a predicate rather than a fixed set of categories, so the decision stays yours: equippable items, unlocked emotes, worlds on one data centre are all this callback and nothing else. `SkipEmptyNames` is on by default, because most game sheets are mostly blank - unused ids, placeholders and internal entries all carry an empty name.
 
 Changing `Language` reloads on its own. Changing `Display`, `Icon` or `Include` needs a `Reload()`, since the picker cannot notice a callback being reassigned.
 
@@ -1588,9 +1588,9 @@ NoireInputs.Duration("Cooldown", ref config.Cooldown, new DurationStyle
 });
 ```
 
-`90s`, `1m30s`, `1h30`, `2m 30s`, `1.5h` and `1:30` all read. A bare tail takes the unit below the one before it, which is what makes `1h30` ninety minutes. The reading is shown beside the field while you type, and is **written only when the field loses focus**: half of `1m30s` is itself a valid duration, and committing per keystroke would take the setting to one minute on the way to ninety seconds. `DurationHelper` is the parser on its own, and is as useful behind a command argument as behind a field.
+`90s`, `1m30s`, `1h30`, `2m 30s`, `1.5h` and `1:30` all read. A bare tail takes the unit below the one before it, so `1h30` reads as ninety minutes. The reading is shown beside the field while you type, and is **written only when the field loses focus**: half of `1m30s` is itself a valid duration, and committing per keystroke would take the setting to one minute on the way to ninety seconds. `DurationHelper` is the parser on its own, and is as useful behind a command argument as behind a field.
 
-**A colour takes a pasted hex**, in either shorthand or full, with a swatch that opens a picker. `ColorHelper.TryHexToVector4` is the form that does not throw, which is what a box being typed into needs.
+**A colour takes a pasted hex**, in either shorthand or full, with a swatch that opens a picker. `ColorHelper.TryHexToVector4` is the form that does not throw, needed for a box being typed into.
 
 **A row lays itself out inside the column it is in, not the window.** Labels are padded to a shared `NoireInputs.LabelWidth` (110 logical px, a minimum rather than a fixed width, so a longer label pushes its own field along instead of being clipped) and aligned to the frame padding so they sit level with the text in the field beside them. The field takes the rest of the column, and the column comes from `NoireLayout.ContentWidth()` rather than `GetContentRegionAvail()`, which reports the *window's* right edge and would run a field straight past a page that centres its content.
 
@@ -1628,11 +1628,11 @@ A column needs a header and a `Text`, and everything follows from it: the column
 
 **`SortKey` is for when the text does not sort the way the data does.** A level written `"100"` sorts before `"80"` as text; a duration written `"1m30s"` sorts after `"1h"`. Return the underlying value and the column sorts on that while still showing the text. `Sort` takes a full `Comparison<T>` when neither is enough.
 
-**The table never copies your rows.** It holds the list you gave it and works in indices into it, so the row a renderer or a selection sees is the one you own. Filtering and sorting run when something changes rather than every frame — editing the list in place is the one thing it cannot notice, so call `Invalidate()`.
+**The table never copies your rows.** It holds the list you gave it and works in indices into it, so the row a renderer or a selection sees is the one you own. Filtering and sorting run when something changes rather than every frame - editing the list in place is the one thing it cannot notice, so call `Invalidate()`.
 
 **The rightmost column takes whatever width is left over**, so the table always fills itself and its cells reach the edge. Its own `Width` is ignored for that reason, and it carries no resize grip, there being nothing to its right to hand width to. Which column that is follows the *display* order, so dragging a header somewhere else takes the behaviour with it.
 
-**Every other column keeps a width of its own.** That is what makes the header menu's "size column to fit" mean anything: auto-fitting a fixed column sets an exact pixel width, while auto-fitting a stretch column sets a weight ImGui then renormalises against every other column, so each use nudges all of them by a pixel or two. Dragging a border is fine either way.
+**Every other column keeps a width of its own:** auto-fitting a fixed column sets an exact pixel width, while auto-fitting a stretch column sets a weight ImGui then renormalises against every other column, so each use nudges all of them by a pixel or two. Dragging a border is fine either way.
 
 **Ties break on the source index.** `List.Sort` is an introsort and promises nothing about equal elements, so sorting on a column where hundreds of rows tie would reshuffle them every time anything else changed. Sorting is deterministic here, and the order inside a group is the order the rows arrived in.
 
@@ -1696,13 +1696,13 @@ list.BindReorderHotkeys(hotkeys, "list.moveUp", "list.moveDown");   // rebindabl
 
 Modifiers are matched exactly, so the default fires on the bare arrow and not on ctrl with it, and `ResolvedMoveUpBinding` reports whichever is actually in force.
 
-**With hotkeys attached, the list swallows the key from the game only while the shortcut is live**: a row focused, and the window focused. The defaults are the game's own movement keys, and a hotkey left blocking permanently would take the arrow keys away for as long as the plugin is loaded, which is not a trade a reorderable list is entitled to make on anyone's behalf. `BlockGameInputWhileActive` turns the whole behaviour off.
+**With hotkeys attached, the list swallows the key from the game only while the shortcut is live**: a row focused, and the window focused. The defaults are the game's own movement keys, and a hotkey left blocking permanently would take the arrow keys away for as long as the plugin is loaded. `BlockGameInputWhileActive` turns the whole behaviour off.
 
-**The key is taken through `HotkeyEntry.SuppressGameInput`, never by writing `BlockGameInput`.** That option is a persisted setting belonging to whoever registered the hotkey: a stored hotkey overrides the values it is registered with on the next load, so a widget writing its own momentary state there does not merely override an answer that is not its to give, it saves that state as the hotkey's standing one and the key stays swallowed on every launch afterwards, with no way left to turn it off. A suppression is runtime only and reference-counted, so the most a mistake can cost is the rest of the session.
+**The key is taken through `HotkeyEntry.SuppressGameInput`, never by writing `BlockGameInput`.** That option is a persisted setting belonging to whoever registered the hotkey: a stored hotkey overrides the values it is registered with on the next load, so a widget writing its own momentary state there would save it as the hotkey's standing one, with the key swallowed on every launch afterwards and no way left to turn it off. A suppression is runtime only and reference-counted, so the most a mistake can cost is the rest of the session.
 
-**The block expires on its own, and that is what makes it safe.** Blocking works by clearing the key out of the game's key state on every framework tick, so a raised block that nothing lowers swallows that key until the plugin unloads — and the case that most needs it lowered is the list *not being drawn*, which is exactly when a call inside `Draw` cannot run. So a raised block is renewed one frame at a time and released by a watchdog once the frames stop coming: closing the window, switching tab, emptying the list, detaching the hotkeys or turning `BlockGameInputWhileActive` off all hand the keys straight back. A frame of slack is allowed first, because the watchdog runs on the framework tick and the renewal on the draw, and a tick landing between the two would otherwise take the keys back from a list still being worked in. The focus is dropped with it, so a list that comes back into view comes back neutral rather than silently holding the keys again.
+**The block expires on its own.** Blocking works by clearing the key out of the game's key state on every framework tick, so a raised block that nothing lowers swallows that key until the plugin unloads - and the case that most needs it lowered is the list *not being drawn*, which is exactly when a call inside `Draw` cannot run. So a raised block is renewed one frame at a time and released by a watchdog once the frames stop coming: closing the window, switching tab, emptying the list, detaching the hotkeys or turning `BlockGameInputWhileActive` off all hand the keys straight back. A frame of slack is allowed first, because the watchdog runs on the framework tick and the renewal on the draw, and a tick landing between the two would otherwise take the keys back from a list still being worked in. The focus is dropped with it, so a list that comes back into view comes back neutral rather than silently holding the keys again.
 
-**Clicking anywhere outside the list drops the focus**, tested against the rows' own bounds rather than against whether ImGui reports something hovered. Clicking another control is the ordinary way to stop working in a list, and a hover test counts that as still being in it — which would leave the keys held while the user is plainly somewhere else. Dragging is awkward in a long list and unavailable to some people entirely; the keyboard path costs one branch and is the difference between a reorderable list and a reorderable list somebody can use.
+**Clicking anywhere outside the list drops the focus**, tested against the rows' own bounds rather than against whether ImGui reports something hovered. Clicking another control is the ordinary way to stop working in a list, and a hover test counts that as still being in it - which would leave the keys held while the user is plainly somewhere else.
 
 **`Duplicate` matters for anything mutable.** Without it the copy and the original are the same object, and editing either edits both. A record needs `step with { ... }`; a class needs a real copy.
 
@@ -1742,7 +1742,7 @@ tabs.SwitchTab("filters");   // from another window, a hotkey, a command, a toas
 tabs.Current;                // "general"
 ```
 
-**Why this exists.** ImGui has a perfectly good tab bar and a genuinely bad story for opening a tab from code. The only lever is `ImGuiTabItemFlags.SetSelected`, and it has to be set for **exactly one frame**: leave it set and the tab is welded open with the user unable to click away, clear it on the wrong frame and the switch silently does not happen. So every plugin that wants "the changelog button opens the What's New tab" hand-rolls a `pendingTab` field and a flag-clearing dance, and most get the edge cases wrong.
+ImGui's only lever for opening a tab from code is `ImGuiTabItemFlags.SetSelected`, and it has to be set for **exactly one frame**: leave it set and the tab is welded open with the user unable to click away, clear it on the wrong frame and the switch silently does not happen.
 
 `SwitchTab` is that dance done once, and the edge cases are the feature:
 
@@ -1769,15 +1769,15 @@ tabs.Current;                // "general"
 
 Each `UiTab` carries its own `Body`, so nothing runs for a closed tab and there is no end call to forget. `Label` may change every frame, length included, without the tab losing its identity or its place: ImGui is keyed on `Id`, which never changes.
 
-**A tab disabled while it is open stays open.** `Enabled` gates *reaching* a tab, not what it shows. Closing it under the user would move them somewhere they did not ask to go, and blanking it would leave them looking at nothing with no way to tell what happened. Set `DisabledReason` whenever you set `Enabled` — a control that is dead for no stated reason reads as broken.
+**A tab disabled while it is open stays open.** `Enabled` gates *reaching* a tab, not what it shows. Closing it under the user would move them somewhere they did not ask to go, and blanking it would leave them looking at nothing with no way to tell what happened. Set `DisabledReason` whenever you set `Enabled` - a control that is dead for no stated reason reads as broken.
 
 **On reordering.** `Reorderable` lets the user drag tabs, but ImGui owns the order it draws them in and does not report it back, so `Tabs` is left exactly as you wrote it. A reordering is for that session and is not something to persist.
 
-**The wheel scrolls the strip.** ImGui's own tab bar ignores it, so reaching a tab that has scrolled off means clicking the little arrows, or selecting the last visible tab so the bar creeps one along and repeating — which changes the open tab as the price of looking for another one. `WheelScrolls` (on by default) makes the wheel move the strip while the pointer is over it, selecting nothing. It does nothing while every tab already fits, so it costs nothing to leave on.
+**The wheel scrolls the strip.** ImGui's own tab bar ignores it, so reaching a tab that has scrolled off means clicking the little arrows, or selecting the last visible tab so the bar creeps one along and repeating - which changes the open tab as the price of looking for another one. `WheelScrolls` (on by default) makes the wheel move the strip while the pointer is over it, selecting nothing. It does nothing while every tab already fits, so it costs nothing to leave on.
 
-It also stops the windows behind it scrolling on the same notch, and that has to be a **refusal rather than an undo**. ImGui hands the wheel to the hovered window inside `NewFrame`, before a single widget has drawn, so by the time a tab bar could notice, the scrolling has already happened. Undoing it afterwards does not work either, because the window that moved is usually not the one the bar is drawn in: ImGui walks up from the hovered window to the first ancestor that can actually scroll, which for a bar inside a non-scrolling column is the page behind it. So while the pointer is over the strip, the bar marks that whole ancestor chain as not scrolling with the mouse, which is what makes the same walk find nothing willing to move. It is set a frame ahead, which costs nothing: a pointer rests on the strip for many frames before a notch arrives. Nothing has to be restored, because `Begin` reassigns a window's flags from its own arguments every frame.
+It also stops the windows behind it scrolling on the same notch, and that has to be a **refusal rather than an undo**. ImGui hands the wheel to the hovered window inside `NewFrame`, before a single widget has drawn, so by the time a tab bar could notice, the scrolling has already happened. Undoing it afterwards does not work either, because the window that moved is usually not the one the bar is drawn in: ImGui walks up from the hovered window to the first ancestor that can actually scroll, which for a bar inside a non-scrolling column is the page behind it. So while the pointer is over the strip, the bar marks that whole ancestor chain as not scrolling with the mouse, defeating that same walk. It is set a frame ahead, which costs nothing: a pointer rests on the strip for many frames before a notch arrives. Nothing has to be restored, because `Begin` reassigns a window's flags from its own arguments every frame.
 
-**`Width` keeps it inside your column.** ImGui builds a tab bar out to the window's right edge and takes no width at all, so a bar inside a page that centres its content in a narrower column runs past the column and out the other side. Left at `0` the bar asks `NoireLayout.ContentWidth()`, which answers for the column rather than the window; set it to hold the bar to a width of your own. It only ever narrows — a bar cannot be given more room than the window it is in.
+**`Width` keeps it inside your column.** ImGui builds a tab bar out to the window's right edge and takes no width at all, so a bar inside a page that centres its content in a narrower column runs past the column and out the other side. Left at `0` the bar asks `NoireLayout.ContentWidth()`, which answers for the column rather than the window; set it to hold the bar to a width of your own. It only ever narrows - a bar cannot be given more room than the window it is in.
 
 ---
 
@@ -1801,7 +1801,7 @@ NoireAttention.ApplyOffset("password"); // read back on the frames that follow, 
 
 Both are immediate and stateless, and both draw **over** a rectangle you already have rather than wrapping anything, so they compose with any widget without it knowing.
 
-**A badge costs no layout.** It writes straight to the draw list and submits no ImGui item, so it never moves the cursor, never widens the row, and never changes the line's height. That is what lets it be dropped after any widget, including a tab header, without the things around it shifting. Drawing the number with an ordinary text call would not do: an ImGui text call *is* an item, so it advances the cursor and grows the current line's bounding box, and everything after it on the row moves across and up.
+**A badge costs no layout.** It writes straight to the draw list and submits no ImGui item, so it never moves the cursor, never widens the row, and never changes the line's height, which lets it be dropped after any widget, including a tab header, without the things around it shifting. Drawing the number with an ordinary text call would not do: an ImGui text call *is* an item, so it advances the cursor and grows the current line's bounding box, and everything after it on the row moves across and up.
 
 **States and events are different things.** `Pulse` and `Glow` are states: they run for as long as the condition holds and you pass that condition every frame, so nothing is registered and nothing has to be stopped. `Shake`, `Bounce` and `Flash` are events: fired once by id, they play themselves out and return to zero on their own.
 
@@ -1819,7 +1819,7 @@ A shake or a bounce moves where a widget is *drawn*, not where it thinks it is. 
 
 A count of zero or less draws nothing, so `NoireBadge.OnLast(count)` can be called unconditionally rather than wrapped in an `if`.
 
-**A badge is never moved to fit.** It straddles the corner it is anchored to and stays there, wherever the element goes. Somewhere it may not overflow, clip rather than reposition: a badge belongs to its element, so it should leave with it. `NoireTabBar` clips to the ends of its bar, which is why a tab scrolled halfway off has half a badge and one scrolled off entirely has none — the same thing the tab itself does. Pushing the badge back inside instead would strand it at the edge, still showing a count for a tab that is no longer there.
+**A badge is never moved to fit.** It straddles the corner it is anchored to and stays there, wherever the element goes. Somewhere it may not overflow, clip rather than reposition: a badge belongs to its element, so it should leave with it. `NoireTabBar` clips to the ends of its bar, which is why a tab scrolled halfway off has half a badge and one scrolled off entirely has none - the same thing the tab itself does. Pushing the badge back inside instead would strand it at the edge, still showing a count for a tab that is no longer there.
 
 **`Scale` is the size knob.** Every measurement below it is also settable on its own, but growing a badge that way means keeping five numbers in proportion by hand:
 
@@ -1827,9 +1827,9 @@ A count of zero or less draws nothing, so `NoireBadge.OnLast(count)` can be call
 NoireBadge.OnLast(unread, new BadgeStyle { Scale = 2f });   // twice the size, still in proportion
 ```
 
-It moves the text, the padding, the minimum size, the dot, the outline and the offset from the anchor together, and multiplies with `NoireUI.Scale` rather than replacing it, so a badge sized here still follows the user's own interface scale. The text is drawn with a font built at the size it works out to, so each distinct value in use is a distinct font size — a few are free, one that varies per badge across dozens of them is not.
+It moves the text, the padding, the minimum size, the dot, the outline and the offset from the anchor together, and multiplies with `NoireUI.Scale` rather than replacing it, so a badge sized here still follows the user's own interface scale. The text is drawn with a font built at the size it works out to, so each distinct value in use is a distinct font size - a few are free, one that varies per badge across dozens of them is not.
 
-**All of it is decoration, so all of it stops under `NoireUI.ReducedMotion`** while what is underneath keeps working: a pulsing button is still a button, a shaken field still holds its text. The one exception is `Glow`, which holds at full strength rather than disappearing — marking the element is the point, and that survives losing the movement.
+**All of it is decoration, so all of it stops under `NoireUI.ReducedMotion`** while what is underneath keeps working: a pulsing button is still a button, a shaken field still holds its text. The one exception is `Glow`, which holds at full strength rather than disappearing - marking the element is the point, and that survives losing the movement.
 
 ## Keyboard focus (NoireFocus)
 
@@ -1843,7 +1843,7 @@ ImGui.InputText("##notes", ref notes, 256);
 NoireFocus.OnLast();                           // a control the library does not provide
 ```
 
-**Focus and selection have to differ in kind, not in degree.** Hover, selection and emphasis are drawn with soft marks: a glow, a tint, a lit plate. Focus is drawn hard edged, and that is the whole design. Two marks that differ only in brightness are read as "this one is selected harder", which is not a thing an interface can mean — and a glow spent on selection is the loudest mark in the vocabulary spent on the quietest state. The natures differ too, which is what decides who gets which: focus is singular, transient and moves on every keystroke, while selection is plural, persistent and moves rarely.
+**Focus and selection have to differ in kind, not in degree.** Hover, selection and emphasis are drawn with soft marks: a glow, a tint, a lit plate. Focus is drawn hard edged, and that is the whole design. Two marks that differ only in brightness are read as "this one is selected harder", which is not a thing an interface can mean - and a glow spent on selection is the loudest mark in the vocabulary spent on the quietest state. The natures differ too: focus is singular, transient and moves on every keystroke, while selection is plural, persistent and moves rarely.
 
 | `FocusShape` | What it is | Where it fits |
 |---|---|---|
@@ -1853,7 +1853,7 @@ NoireFocus.OnLast();                           // a control the library does not
 | `Underline` | A bar along the bottom edge alone | Quietest. Reads naturally on a text field, which already has a frame |
 | `None` | Nothing | How one widget opts out while the rest keep their mark |
 
-**Three levels of control, all optional.** `NoireFocus.Enabled = false` turns the mark off everywhere. Every widget that draws one takes a style of its own — `NumberStyle.Focus`, `DurationStyle.Focus`, `HexColorStyle.Focus`, `NoireComboBox.FocusStyle`, `NoireTagInput.FocusStyle` — so one field can differ from the rest, or go unmarked with `Shape = FocusShape.None`. And `FocusStyle.CustomDraw` replaces the painter outright:
+**Three levels of control, all optional.** `NoireFocus.Enabled = false` turns the mark off everywhere. Every widget that draws one takes a style of its own - `NumberStyle.Focus`, `DurationStyle.Focus`, `HexColorStyle.Focus`, `NoireComboBox.FocusStyle`, `NoireTagInput.FocusStyle` - so one field can differ from the rest, or go unmarked with `Shape = FocusShape.None`. And `FocusStyle.CustomDraw` replaces the painter outright:
 
 ```csharp
 combo.FocusStyle = new FocusStyle { Shape = FocusShape.None };          // this one widget, unmarked
@@ -1870,9 +1870,9 @@ numberStyle.Focus = new FocusStyle
 
 The hook is handed the rect with the spread and arrival already applied, the faded colour, the control's own rectangle, and `Arrival` from 0 to 1, so a custom mark can animate with the arrival rather than against it. `DrawShape()` paints the shipped look, for a hook adding to it rather than replacing it; a hook that draws nothing is another way to suppress one widget's mark.
 
-**The movement runs on arrival and never at rest.** `ArrivalSeconds` (0.12 by default) is how long the mark takes to settle onto a control that has just taken focus, drifting in from `ArrivalSpread` further out and fading up as it lands. An arrival is either focus moving to a different control or focus returning to one it left — the second is detected from a gap in the frames the mark was drawn on, since nothing tells a stateless surface that focus went away. Seeing *where focus went* is the hard part of keyboard navigation, and a short movement answers it; a mark that kept moving would be animating underneath the text the user is in the middle of typing, and would collide with `NoireAttention.Pulse`, which already means "this needs attention" rather than "this is where you are".
+**The movement runs on arrival and never at rest.** `ArrivalSeconds` (0.12 by default) is how long the mark takes to settle onto a control that has just taken focus, drifting in from `ArrivalSpread` further out and fading up as it lands. An arrival is either focus moving to a different control or focus returning to one it left - the second is detected from a gap in the frames the mark was drawn on, since nothing tells a stateless surface that focus went away. Seeing *where focus went* is the hard part of keyboard navigation, and a short movement answers it; a mark that kept moving would be animating underneath the text the user is in the middle of typing, and would collide with `NoireAttention.Pulse`, which already means "this needs attention" rather than "this is where you are".
 
-**It is the one mark that survives `NoireUI.ReducedMotion`.** Everything in `NoireAttention` stops there, deliberately. Focus does not: the arrival simply does not run, and the mark is placed instantly at full strength. The people navigating by keyboard are exactly the people who need to see where the keyboard is, so dropping the signal along with the motion would fail its own audience. `NoireFocus.Enabled = false` is available and is a real accessibility loss, not a cosmetic preference.
+**It is the one mark that survives `NoireUI.ReducedMotion`.** Everything in `NoireAttention` stops there; Focus does not, since the arrival simply does not run and the mark is placed instantly at full strength. `NoireFocus.Enabled = false` is available, and turning it off is a real accessibility loss, not a cosmetic preference.
 
 Arms on `Corners` and `Brackets` are sized by `ArmRatio`, a fraction of the control's shorter side, so one style reads correctly on a text field, a tall list box and a small icon button alike; `ArmLength` overrides it with a fixed distance where that is wanted, the way `SunburstStyle.InnerSize` overrides `InnerRatio`. Either is clamped so two arms on one edge cannot meet, since a mark that closes is a frame drawn the expensive way and stops reading as corners at all.
 
@@ -1989,7 +1989,7 @@ File/game sources go through Dalamud's shared texture cache: they are cheap to r
 
 ## The UI scale
 
-Dalamud lets the user pick how large the interface is, and applies that scale to the ImGui style: text, frame padding and everything else you read out of `ImGui.GetStyle()` already arrives at the right size. Numbers a library ships do not. NoireUI handles this in one place, and the rule is worth knowing because getting it wrong is invisible on the machine you develop on.
+Dalamud lets the user pick how large the interface is, and applies that scale to the ImGui style: text, frame padding and everything else you read out of `ImGui.GetStyle()` already arrives at the right size. Numbers a library ships do not. NoireUI handles this in one place; getting the rule wrong is invisible on the machine you develop on.
 
 ```csharp
 NoireUI.Scale                       // the user's scale, where 1 is 100%
@@ -2077,7 +2077,7 @@ Set either before the first size is built (next to `Prewarm`), since a size alre
 
 A plugin that offers the type scale as a setting hands NoireText a different size on every frame of a slider drag. Building each one would spend a rasterization on every step of the gesture and fill the size cache with values the user only passed through.
 
-So a size that is not built yet is only rasterized once the scale has held still for `NoireText.RebuildSettleDelay` (120 ms by default). A whole sweep costs one build, at the size the user stopped on. While it is moving, text draws at the right size with the stretched stand-in, which is what a slider wants to show anyway: the size is the thing being chosen, and it tracks exactly. Drag back over a size that is already built and it is sharp immediately, because that is a cache hit rather than a build.
+So a size that is not built yet is only rasterized once the scale has held still for `NoireText.RebuildSettleDelay` (120 ms by default). A whole sweep costs one build, at the size the user stopped on. While it is moving, text draws at the right size with the stretched stand-in: the size is the thing being chosen, and it tracks exactly. Drag back over a size that is already built and it is sharp immediately, because that is a cache hit rather than a build.
 
 Sizes are cached at whole pixels. Glyphs are rasterized onto a pixel grid, so a tenth of a pixel is not a different font; at whole pixels a slider sweep asks for a couple of dozen distinct sizes instead of several hundred. Sizes that fall out of the scale and go unused are dropped after 20 seconds, so a session spent fiddling with the setting does not accumulate them.
 
@@ -2108,7 +2108,7 @@ public Plugin()
 
 It is a real trade rather than a speed-up. The rasterization takes as long as it takes; `wait` only decides whether it is spent on your load or on your first frames. Use it from a constructor, never from a draw callback, where the time would come out of the frame.
 
-With `wait`, the glyphs are rasterized on the calling thread and are finished when the call returns. That detail is the whole reason it works: an atlas left to rebuild itself is driven by an event Dalamud raises **on the main thread**, and in a constructor no frame has run yet, so there is nothing under way to wait for and the build quietly starts later, on your first frame.
+With `wait`, the glyphs are rasterized on the calling thread and are finished when the call returns: an atlas left to rebuild itself is driven by an event Dalamud raises **on the main thread**, and in a constructor no frame has run yet, so there is nothing under way to wait for and the build quietly starts later, on your first frame.
 
 Safe to call repeatedly: a size already built is not built again.
 
@@ -2127,11 +2127,11 @@ var width = NoireText.TrackedSize("OVERLAYS", NoireText.CapsTracking, TextSize.C
 
 `Tracked` returns the size it drew, so a caller placing something beside a tracked label does not need the second call. Each glyph's advance is measured once per font size and remembered, not re-measured on every frame the label is drawn, and neither call allocates.
 
-**Never measure text outside a frame.** `CalcSize`, `Draw`, `Tracked` and the rest push a font handle and call into ImGui, both of which need a frame in progress — reaching for one from a plugin or window constructor to warm the cache is a crash, not a warm cache. `NoireText.Request(sizePx)` is the frame-safe call: it only tells the cache a size is wanted, so it can be built before the frame that needs it. Use it for sizes a host can switch to at runtime, such as a reader-facing type scale; `Prewarm` already covers the sizes the interface always draws.
+**Never measure text outside a frame.** `CalcSize`, `Draw`, `Tracked` and the rest push a font handle and call into ImGui, both of which need a frame in progress - reaching for one from a plugin or window constructor to warm the cache is a crash, not a warm cache. `NoireText.Request(sizePx)` is the frame-safe call: it only tells the cache a size is wanted, so it can be built before the frame that needs it. Use it for sizes a host can switch to at runtime, such as a reader-facing type scale; `Prewarm` already covers the sizes the interface always draws.
 
 **`UiFontCache.MaxSizes` bounds how many distinct sizes exist.** Every size is an atlas entry and every rebuild re-rasterizes all of them, so it is a real budget. The default of 16 suits one type scale; a host offering the reader several scales has steps times scale many sizes and should raise it deliberately, rather than have its largest heading silently drawn at its second-largest size.
 
-**Tracking is in ems, a fraction of the size the text is drawn at, exactly as CSS letter-spacing works.** That is what makes one value right at every step of the type scale and at every UI scale, so it is never scaled and never restated. `CapsTracking` is the shipped default: capitals have no ascenders or descenders to separate them and need noticeably more room than lower case to stop reading as one block.
+**Tracking is in ems, a fraction of the size the text is drawn at, exactly as CSS letter-spacing works.** One value is therefore right at every step of the type scale and at every UI scale, never scaled and never restated. `CapsTracking` is the shipped default: capitals have no ascenders or descenders to separate them and need noticeably more room than lower case to stop reading as one block.
 
 The run is drawn onto the draw list and reserved with a single `Dummy`, rather than as one text item per character, so item spacing cannot creep in between the glyphs and a label always measures exactly what it draws. The trailing gap after the last character is not part of the run, or every tracked label would sit a gap left of where a centred or right-aligned layout put it.
 
@@ -2151,7 +2151,7 @@ NoireShapes.Plate(min, max, new PlateStyle { CornerShape = CornerShape.Notched, 
 NoireShapes.Frame(min, max, new FrameStyle { TickLength = 14f, Inset = 6f });
 ```
 
-**Which numbers are logical and which are real.** The same rule as everywhere else, and it is worth stating because this is the one place both kinds sit side by side. A coordinate or size you pass as an *argument* is **real pixels**: it came from `GetCursorScreenPos`, from `GetItemRectMin`, or from arithmetic on those, and scaling it would corrupt an expression that reads as correct. A value on a `PlateStyle` or a `FrameStyle` is **logical**, written at 100%, and scaled where it resolves, because those are numbers NoireUI ships a default for. See [The UI scale](#the-ui-scale).
+**Which numbers are logical and which are real.** The same rule as everywhere else, stated here because this is the one place both kinds sit side by side. A coordinate or size you pass as an *argument* is **real pixels**: it came from `GetCursorScreenPos`, from `GetItemRectMin`, or from arithmetic on those, and scaling it would corrupt an expression that reads as correct. A value on a `PlateStyle` or a `FrameStyle` is **logical**, written at 100%, and scaled where it resolves, because those are numbers NoireUI ships a default for. See [The UI scale](#the-ui-scale).
 
 **Antialiasing is NoireUI's, not the host's.** It is a draw list flag rather than a per-call argument, so it is normally whatever was last left set somewhere else in the process. `NoireShapes` sets it around its own drawing and puts it back afterwards, because whether a shape comes out smooth or visibly stepped should not depend on a setting it does not own. `NoireShapes.AntiAlias` turns it off for these shapes alone.
 
@@ -2208,7 +2208,7 @@ NoireShapes.Gradient(min, max, GradientAxis.Horizontal, accent, warning, () =>
 
 Pass two points instead of a `GradientAxis` for any angle at all. `NoireShapes.GradientRect` is the shorthand for the ordinary case.
 
-**Colour is replaced and alpha is multiplied.** That is deliberate and worth knowing, because it decides how you draw the body: ImGui carries its antialiasing in the alpha of the outer vertices of every shape, so replacing alpha outright would give every shaded shape hard, jagged edges. The practical consequences are that a body drawn in white takes the gradient exactly, a body drawn in a colour is tinted by it, and a gradient that fades to zero alpha fades the shape out.
+**Colour is replaced and alpha is multiplied.** ImGui carries its antialiasing in the alpha of the outer vertices of every shape, so replacing alpha outright would give every shaded shape hard, jagged edges. The practical consequences are that a body drawn in white takes the gradient exactly, a body drawn in a colour is tinted by it, and a gradient that fades to zero alpha fades the shape out.
 
 Nesting works: an inner gradient shades only what it drew, and the outer one then shades that again.
 
@@ -2228,7 +2228,7 @@ NoireShapes.Frame(min, max, new FrameStyle
 
 Set `TickLength` to zero and this is an ordinary outline again.
 
-**Corner ticks suppress themselves when they would meet.** Two brackets crossing in the middle read as a smaller frame rather than as corners, so below twice the tick length on either axis the frame draws none. That is the right answer for a rectangle that has merely become small and the wrong one for a strip, which loses its edge entirely — a window collapsed to a title bar, say. `TickFallback.Brackets` draws a full-height bracket at each end instead, at the inset, length, thickness and colour the ticks would have had, so a frame moving between the two shapes keeps its marks where they were:
+**Corner ticks suppress themselves when they would meet.** Two brackets crossing in the middle read as a smaller frame rather than as corners, so below twice the tick length on either axis the frame draws none. That is the right answer for a rectangle that has merely become small and the wrong one for a strip, which loses its edge entirely - a window collapsed to a title bar, say. `TickFallback.Brackets` draws a full-height bracket at each end instead, at the inset, length, thickness and colour the ticks would have had, so a frame moving between the two shapes keeps its marks where they were:
 
 ```csharp
 new FrameStyle { TickLength = 16f, TickFallback = TickFallback.Brackets };
@@ -2296,7 +2296,7 @@ NoireShapes.GlowPath(myPoints, goldHi, 8f);                           // any con
 
 Each vertex moves along the bisector of its two edges, by the distance that keeps both edges parallel to where they started. That is a real outward offset rather than a scale about the centre, which only agrees with one for shapes that happen to be regular. The miter is floored so a sharp corner is blunted rather than shooting a spike across the interface.
 
-**`Clipped` keeps a whole composition inside a box.** A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. It is a scope for the same reason the gradient is — one call contains however many shapes the composition turns out to be.
+**`Clipped` keeps a whole composition inside a box.** A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. It is a scope for the same reason the gradient is - one call contains however many shapes the composition turns out to be.
 
 ```csharp
 NoireShapes.Clipped(min, max, () => { PaintSunburst(); PaintRosette(); });

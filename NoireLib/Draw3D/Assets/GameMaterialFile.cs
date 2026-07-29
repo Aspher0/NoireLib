@@ -7,7 +7,7 @@ namespace NoireLib.Draw3D.Assets;
 
 /// <summary>A texture slot of a game material.</summary>
 /// <param name="Path">Archive path of the texture.</param>
-/// <param name="Flags">Slot flags. Bit 0x8000 marks the DirectX 11 variant of the file.</param>
+/// <param name="Flags">Slot flags; bit 0x8000 marks the DirectX 11 variant of the file.</param>
 public readonly record struct GameMaterialTexture(string Path, ushort Flags)
 {
     /// <summary>Whether this slot refers to the DirectX 11 variant of the texture.</summary>
@@ -34,7 +34,7 @@ public readonly record struct GameMaterialConstant(uint Id, ushort ByteOffset, u
 /// </summary>
 public static class GameShaderNames
 {
-    /// <summary>Sampler and constant names known to this library. Adding one is enough to resolve its identifier.</summary>
+    /// <summary>Sampler and constant names known to this library; adding one is enough to resolve its identifier.</summary>
     public static readonly IReadOnlyList<string> Known =
     [
         "g_SamplerNormal", "g_SamplerIndex", "g_SamplerDiffuse", "g_SamplerSpecular",
@@ -134,7 +134,7 @@ public sealed class GameMaterialFile : FileResource
     /// <summary>Packed blob the constants index into.</summary>
     public byte[] ShaderValues { get; private set; } = [];
 
-    /// <summary>Raw color table bytes, empty when the material has none. Rows are half-precision floats.</summary>
+    /// <summary>Raw color table bytes (rows are half-precision floats), empty when the material has none.</summary>
     public byte[] ColorTable { get; private set; } = [];
 
     /// <summary>Raw dye table bytes, empty when the material has none.</summary>
@@ -144,8 +144,8 @@ public sealed class GameMaterialFile : FileResource
     public bool HasColorTable => ColorTable.Length > 0;
 
     /// <summary>
-    /// Reads a named shader constant's value, or null when the material does not set it.<br/>
-    /// Values are floats; a color constant is three of them and a scalar is one.
+    /// Reads a named shader constant's value as floats (a color constant is three, a scalar one), or null
+    /// when the material does not set it.
     /// </summary>
     /// <param name="constantName">Constant name, for example <c>g_DiffuseColor</c>.</param>
     public float[]? ConstantValue(string constantName)
@@ -276,9 +276,8 @@ public sealed class GameMaterialFile : FileResource
     }
 
     /// <summary>
-    /// Extracts the color table, and the dye table behind it, from the material's data set. The table's
-    /// row count and width come from the flags rather than being fixed, which is what distinguishes the
-    /// current layout from the older half-sized one.
+    /// Extracts the color table, and the dye table behind it, from the material's data set; row count and
+    /// width come from the flags rather than being fixed (the current layout vs. the older half-sized one).
     /// </summary>
     private void ReadTables(byte[] data, int dataSetStart, uint tableFlags)
     {

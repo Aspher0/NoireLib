@@ -9,11 +9,10 @@ namespace NoireLib.Draw3D.Core;
 /// One-frame diagnostic for the game's shadow passes: which depth-only binds the frame runs, what each one
 /// renders into, and what sits in the VS constant buffers at each one's first draw.<br/>
 /// Shadow casting needs the LIGHT's view-projection, per cascade, and nothing on the CPU side hands it over -
-/// it has to be found in the constants the game's own shadow draws consume, the way the camera was. The camera
-/// capture cannot be reused as-is because its whole matching strategy validates candidates against a
-/// same-instant struct camera read, and no such reference exists for a light. So the first step is this probe:
-/// read what is actually there, classify the matrix-shaped windows (an orthographic projection reads very
-/// differently from an object's rigid world transform), and let the injection be built on those readings.<br/>
+/// it has to be found in the constants the game's own shadow draws consume. The camera capture cannot be reused
+/// as-is: its matching strategy validates candidates against a same-instant struct camera read, and no such
+/// reference exists for a light. This probe reads what is actually there and classifies the matrix-shaped
+/// windows (an orthographic projection reads very differently from an object's rigid world transform).<br/>
 /// Armed for exactly one frame; every capture is a CopyResource plus a synchronous map, so the frame it runs
 /// on stalls - a one-shot diagnostic, never a resident cost.
 /// </summary>
@@ -140,8 +139,8 @@ internal sealed unsafe class ShadowProbe : IDisposable
     /// <summary>
     /// Copies one bound constant buffer to the CPU and reports every window that reads as a matrix. The
     /// classification is deliberately shallow - the probe's job is to make the candidates visible, not to
-    /// decide; the row norms are what tell an orthographic projection (small, axis-dependent scales) from an
-    /// object's rigid world transform (unit rows), and the reader does that with the numbers in front of them.
+    /// decide. Row norms distinguish an orthographic projection (small, axis-dependent scales) from an object's
+    /// rigid world transform (unit rows); the reader makes that call from the numbers in the report.
     /// </summary>
     private void ScanBuffer(ID3D11DeviceContext* ctx, ID3D11Buffer* buffer, int slot, int byteWidth)
     {

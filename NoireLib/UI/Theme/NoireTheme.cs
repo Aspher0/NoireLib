@@ -8,19 +8,15 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// One palette the whole library follows.<br/>
-/// Every NoireUI widget resolves the colors it was not explicitly given through <see cref="Current"/>, so setting an
-/// accent here re-tints buttons, toggles, toasts, modals and section headers at once. Nothing is required: a theme that
-/// sets no colors resolves everything to the host's ImGui style, and a plugin that never touches this looks exactly as
-/// it did before.
+/// One palette the whole library follows. Every NoireUI widget resolves colors it was not given through
+/// <see cref="Current"/>. Nothing is required: an untouched theme resolves everything to the host's ImGui style.
 /// </summary>
 /// <remarks>
 /// Resolution runs in three steps, in this order: the value the widget was given, then this theme, then the ImGui style.
-/// A theme color left <see langword="null"/> falls through rather than forcing a default, which is what lets one theme
-/// override two colors and inherit the rest.<br/>
+/// A theme color left <see langword="null"/> falls through rather than forcing a default.<br/>
 /// <see cref="Hover"/> and <see cref="Active"/> derive their states from the base color rather than storing separate
-/// values, and <see cref="TintSource"/> decides which way they move. By default each color decides for itself, so a dark
-/// button brightens and a pale accent one darkens rather than washing out.
+/// values, and <see cref="TintSource"/> decides which way they move. By default each color decides for itself: a dark
+/// button brightens, a pale accent one darkens.
 /// </remarks>
 /// <example>
 /// <code>
@@ -54,8 +50,8 @@ public sealed class NoireTheme
     /// an empty theme, which resolves everything to the ImGui style.
     /// </summary>
     /// <remarks>
-    /// Static per plugin, not per process. NoireLib is compiled into each plugin rather than shared, so setting this
-    /// re-themes your own interface and cannot reach another plugin's.
+    /// Static per plugin, not per process: NoireLib is compiled into each plugin, so this cannot reach another
+    /// plugin's interface.
     /// </remarks>
     public static NoireTheme Current
     {
@@ -71,8 +67,7 @@ public sealed class NoireTheme
 
     /// <summary>
     /// Extra named colors this theme carries, for tokens a bespoke skin needs and the library does not define.<br/>
-    /// Read them back with <see cref="Resolve(string, Vector4)"/>. Nothing in NoireUI reads these; they exist so a skin
-    /// can keep its whole palette in one place instead of half here and half in its own fields.
+    /// Read them back with <see cref="Resolve(string, Vector4)"/>. Nothing in NoireUI reads these directly.
     /// </summary>
     public Dictionary<string, Vector4> CustomColors { get; } = new();
 
@@ -121,8 +116,7 @@ public sealed class NoireTheme
 
     #region Shape
 
-    // Every value in this region is a pixel measurement at 100%, scaled by NoireUI.Scale when it is resolved. Set what
-    // looks right at 100% and it holds at any scale.
+    // Values in this region are pixel measurements at 100%, scaled by NoireUI.Scale when resolved.
 
     /// <summary>
     /// The corner radius of buttons, toggles and framed widgets, at 100%. When <see langword="null"/>, the ImGui frame
@@ -156,16 +150,14 @@ public sealed class NoireTheme
 
     #region Type
 
-    // Sizes here are logical pixels at 100%, like every other measurement on this theme. NoireText scales them when it
-    // builds the font, so the number set here is the number you would have measured on a 100% monitor.
+    // Sizes here are logical pixels at 100%; NoireText scales them when it builds the font.
 
     /// <summary>
     /// The shipped proportions of the type scale, as multiples of <see cref="BodySize"/>.
     /// </summary>
     /// <remarks>
-    /// A size left unset derives from the body size through these rather than carrying an absolute default, which is
-    /// what makes moving <see cref="BodySize"/> move the whole scale. Setting a size explicitly opts that one step out
-    /// of the proportion and leaves the others following.
+    /// A size left unset derives from the body size through these rather than carrying an absolute default. Setting a
+    /// size explicitly opts that one step out of the proportion and leaves the others following.
     /// </remarks>
     private static readonly Dictionary<TextSize, float> SizeRatios = new()
     {
@@ -189,7 +181,7 @@ public sealed class NoireTheme
 
     /// <summary>
     /// The running-text size at 100%, and the root of the scale. When <see langword="null"/>, the host's own default
-    /// font size is used, so an untouched theme matches the interface around it exactly.
+    /// font size is used.
     /// </summary>
     public float? BodySize { get => GetSize(TextSize.Body); set => SetSize(TextSize.Body, value); }
 
@@ -201,7 +193,7 @@ public sealed class NoireTheme
     /// a proportion of the body size otherwise.
     /// </summary>
     /// <param name="size">The step to resolve.</param>
-    /// <returns>The size at 100%, which is what <see cref="NoireText"/> takes.</returns>
+    /// <returns>The size at 100%, before <see cref="NoireText"/> scales it.</returns>
     public float ResolveTextSize(TextSize size)
     {
         if (TextSizes.TryGetValue(size, out var explicitSize))
@@ -214,14 +206,11 @@ public sealed class NoireTheme
     }
 
     /// <summary>
-    /// The body size a theme that sets none falls back to: the host's own default font size, so text drawn through
-    /// <see cref="NoireText"/> at <see cref="TextSize.Body"/> is indistinguishable from an ordinary
-    /// <c>ImGui.TextUnformatted</c> beside it.
+    /// The body size a theme that sets none falls back to: the host's own default font size.
     /// </summary>
     /// <remarks>
-    /// A logical size, not a scaled one. Dalamud builds its own default font from this constant into a global-scaled
-    /// atlas, which is exactly what NoireText does, so the two agree at every scale.<br/>
-    /// Public because a settings screen offering the type scale has to show the user what "unset" currently means.
+    /// A logical size, not a scaled one: Dalamud builds its own default font from this constant into a global-scaled
+    /// atlas, and NoireText matches it at every scale.
     /// </remarks>
     public static float DefaultBodySize => NoireService.IsInitialized() ? UiBuilder.DefaultFontSizePx : 17f;
 
@@ -236,7 +225,7 @@ public sealed class NoireTheme
 
     /// <summary>
     /// How far <see cref="Active"/> moves a color, from 0 (no change) to 1. Larger than <see cref="HoverShift"/> by
-    /// default, so pressing reads as a further step in the same direction rather than a different state.
+    /// default.
     /// </summary>
     public float ActiveShift { get; set; } = 0.22f;
 
@@ -252,8 +241,8 @@ public sealed class NoireTheme
 
     /// <summary>
     /// What decides which way <see cref="Hover"/> and <see cref="Active"/> move a color.<br/>
-    /// Defaults to <see cref="ThemeTintSource.Item"/>, so each color decides for itself: a dark button brightens and a
-    /// pale accent one darkens, and both visibly respond. See <see cref="ThemeTintSource"/> for the alternatives.
+    /// Defaults to <see cref="ThemeTintSource.Item"/>: each color decides for itself, a dark button brightens and a
+    /// pale accent one darkens. See <see cref="ThemeTintSource"/> for the alternatives.
     /// </summary>
     public ThemeTintSource TintSource { get; set; } = ThemeTintSource.Item;
 
@@ -304,7 +293,7 @@ public sealed class NoireTheme
     public Vector4 Muted(Vector4 color) => ColorHelper.ScaleAlpha(color, MutedAlpha);
 
     /// <summary>
-    /// A text color that stays legible on top of a filled widget, for a button painted in the accent or in danger red.
+    /// A text color that stays legible on top of a filled widget.
     /// </summary>
     /// <param name="background">The color the text sits on.</param>
     /// <returns>The legible text color.</returns>
@@ -342,9 +331,8 @@ public sealed class NoireTheme
     public Vector4 Resolve(string token, Vector4 fallback)
         => CustomColors.TryGetValue(token, out var value) ? value : fallback;
 
-    // The shape values below are logical units, authored at 100% and scaled here so no widget has to remember to. The
-    // ImGui branch of each is returned untouched: Dalamud has already scaled the style, and scaling it a second time is
-    // the one way this goes wrong. Only a number NoireUI ships is ever passed through NoireUI.Scaled.
+    // Shape values below are logical units, authored at 100% and scaled here. The ImGui branch of each is returned
+    // untouched: Dalamud has already scaled the style, and scaling it again is the one way this goes wrong.
 
     /// <summary>
     /// Resolves the corner radius of framed widgets.
@@ -392,8 +380,7 @@ public sealed class NoireTheme
             : NoireService.IsInitialized() ? ImGui.GetStyle().ItemSpacing : NoireUI.Scaled(new Vector2(8f, 4f));
 
     /// <summary>
-    /// Builds a <see cref="UiStyle"/> that paints raw ImGui with this theme, so your own <c>ImGui.Button</c> calls match
-    /// the widgets around them.
+    /// Builds a <see cref="UiStyle"/> that paints raw ImGui with this theme.
     /// </summary>
     /// <remarks>
     /// Hand it to <see cref="NoireStyle.With(UiStyle, Action)"/> around a block, or around a whole window body. NoireUI
@@ -440,7 +427,7 @@ public sealed class NoireTheme
     }
 
     /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public NoireTheme Clone()
@@ -477,9 +464,8 @@ public sealed class NoireTheme
 
     /// <summary>
     /// Builds a complete palette from a single accent color.<br/>
-    /// The surface neutrals are tinted very slightly towards the accent rather than left pure grey, which is what makes
-    /// a generated palette read as chosen instead of default, and the text colors are picked for legibility against the
-    /// surface that results.
+    /// The surface neutrals are tinted slightly towards the accent rather than left pure grey, and text colors are
+    /// picked for legibility against the resulting surface.
     /// </summary>
     /// <param name="accent">The color to build around.</param>
     /// <param name="dark">Whether to build a dark palette. Defaults to dark, matching the game.</param>
@@ -517,7 +503,7 @@ public sealed class NoireTheme
     /// <summary>
     /// Builds a complete palette from a single accent color given as a HEX string.
     /// </summary>
-    /// <param name="accentHex">The accent color, for example "#C8A96A". The leading "#" is optional.</param>
+    /// <param name="accentHex">The accent color as a HEX string; the leading "#" is optional.</param>
     /// <param name="dark">Whether to build a dark palette.</param>
     /// <returns>The built theme.</returns>
     /// <exception cref="ArgumentException">Thrown when the HEX string is not a valid color.</exception>
@@ -529,8 +515,7 @@ public sealed class NoireTheme
     #region Sharing
 
     /// <summary>
-    /// The share-code kind themes are tagged with, so a code meant for something else is refused by name rather than
-    /// half-read. See <see cref="ShareCodeHelper"/>.
+    /// The share-code kind themes are tagged with. See <see cref="ShareCodeHelper"/>.
     /// </summary>
     public const string ShareCodeKind = "noire.theme";
 

@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A utility class providing file and directory operations for Dalamud plugins.
+/// File and directory operations for Dalamud plugins.
 /// </summary>
 public static class FileHelper
 {
@@ -187,6 +187,72 @@ public static class FileHelper
         {
             NoireLogger.LogError(ex, $"Failed to read from file: {filePath}", "[FileHelper] ");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads a file's raw bytes.
+    /// </summary>
+    /// <param name="filePath">The path to the file.</param>
+    /// <returns>The bytes, or null if the file is missing or the read operation failed.</returns>
+    public static byte[]? ReadBytesFromFile(string filePath)
+    {
+        if (filePath.IsNullOrWhitespace())
+            return null;
+
+        try
+        {
+            return File.Exists(filePath) ? File.ReadAllBytes(filePath) : null;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to read bytes from file: {filePath}", "[FileHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Writes raw bytes to a file so that the file is only ever seen whole.<br/>
+    /// The bytes go to a temporary file beside the target and that file is then moved over it, so a failure
+    /// part way through leaves the previous contents intact rather than a half written file. Use this for
+    /// anything a later run has to read back and trust, such as a cache or an index.
+    /// </summary>
+    /// <param name="filePath">The path to the file.</param>
+    /// <param name="bytes">The bytes to write.</param>
+    /// <returns>True if the write operation was successful; otherwise, false.</returns>
+    public static bool ReplaceFileAtomically(string filePath, byte[] bytes)
+    {
+        if (filePath.IsNullOrWhitespace() || bytes == null)
+            return false;
+
+        var temporary = filePath + ".tmp";
+
+        try
+        {
+            var directory = Path.GetDirectoryName(filePath);
+
+            if (!directory.IsNullOrWhitespace() && !EnsureDirectoryExists(directory))
+                return false;
+
+            File.WriteAllBytes(temporary, bytes);
+            File.Move(temporary, filePath, overwrite: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to write bytes to file: {filePath}", "[FileHelper] ");
+
+            try
+            {
+                if (File.Exists(temporary))
+                    File.Delete(temporary);
+            }
+            catch
+            {
+                // The temporary is beside the target and named for it, so leaving it behind is harmless.
+            }
+
+            return false;
         }
     }
 
@@ -512,19 +578,13 @@ public static class FileHelper
     /// <returns>A serializer that honours <paramref name="settings"/> without leaving the file format open to the process.</returns>
     private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? settings)
     {
-        // JsonSerializer.Create resolves every setting from the object it is given. The JsonConvert overloads and
-        // JsonSerializer.CreateDefault instead merge in JsonConvert.DefaultSettings, a process-global that any other
-        // code loaded into this process can assign, so a caller whose settings do not mention a property would silently
-        // inherit that code's choice for it. The settings object itself is never mutated; the serializer is the copy.
+        // Resolves every setting from the object given here, rather than merging in the mutable JsonConvert.DefaultSettings global.
         var serializer = JsonSerializer.Create(settings);
 
-        // Type resolution driven by file content is what turns a JSON file into an instruction to construct arbitrary
-        // types, so it is off for every caller regardless of what was passed. A file names data, never a type to build.
+        // Always off regardless of what the caller's settings ask for: a file names data, never a type to construct.
         serializer.TypeNameHandling = TypeNameHandling.None;
 
-        // A file holds exactly one JSON document, so anything after it means the file is corrupt. The JsonConvert
-        // deserialization overloads turn this on for their callers implicitly; setting it explicitly keeps content
-        // after the document rejected rather than quietly ignored.
+        // Content after the JSON document means the file is corrupt, and is rejected rather than silently ignored.
         serializer.CheckAdditionalContent = true;
 
         return serializer;
@@ -971,9 +1031,7 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Creates a zip file containing the contents of the specified directories.<br/>
-    /// Each directory can have an optional entry name to specify how it should appear in the zip file.<br/>
-    /// If no entry name is provided, the directory's name will be used as the root entry in the zip file.
+    /// Creates a zip file containing the contents of the specified directories, each under its entry name or its own directory name if none is given.
     /// </summary>
     /// <param name="sourceDirectories">A list of tuples containing the directory path and an optional entry name for each directory.</param>
     /// <param name="destinationDirectory">The directory where the zip file will be created.</param>
@@ -1031,9 +1089,7 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Creates a zip file containing the contents of the specified directory.<br/>
-    /// Each directory can have an optional entry name to specify how it should appear in the zip file.<br/>
-    /// If no entry name is provided, the directory's name will be used as the root entry in the zip file.
+    /// Creates a zip file containing the contents of the specified directory, under its entry name or its own directory name if none is given.
     /// </summary>
     /// <param name="sourceDirectory">The directory to be zipped, along with an optional entry name.</param>
     /// <param name="destinationDirectory">The directory where the zip file will be created. If not provided, the source directory's parent will be used.</param>

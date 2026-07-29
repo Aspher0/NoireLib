@@ -5,9 +5,9 @@ using System.Collections.Generic;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Abstract base class for all tweaks managed by the <see cref="NoireTweakManager"/>.<br/>
-/// Each tweak has its own lifecycle management, error tracking, and optional UI.<br/>
-/// For tweaks that require persistent configuration, use <see cref="TweakBase{TConfig}"/> instead.
+/// Abstract base class for all tweaks managed by the <see cref="NoireTweakManager"/>, with its own lifecycle
+/// management, error tracking, and optional UI. For tweaks that require persistent configuration, use
+/// <see cref="TweakBase{TConfig}"/> instead.
 /// </summary>
 public abstract class TweakBase : IDisposable
 {
@@ -17,9 +17,8 @@ public abstract class TweakBase : IDisposable
     private bool hasError;
 
     /// <summary>
-    /// The unique internal key used to identify this tweak in configuration and persistence.<br/>
-    /// Must be unique across all tweaks in a <see cref="NoireTweakManager"/> instance.<br/>
-    /// This key is used as the dictionary key for storing tweak configuration.
+    /// The unique internal key used to identify this tweak in configuration and persistence; must be unique
+    /// across all tweaks in a <see cref="NoireTweakManager"/> instance.
     /// </summary>
     public abstract string InternalKey { get; }
 
@@ -34,8 +33,7 @@ public abstract class TweakBase : IDisposable
     public abstract string Description { get; }
 
     /// <summary>
-    /// Whether this tweak should be visible in the tweak list UI.<br/>
-    /// Return <see langword="false"/> to hide the tweak from the user entirely.
+    /// Whether this tweak should be visible in the tweak list UI; return <see langword="false"/> to hide it from the user entirely.
     /// </summary>
     public virtual bool ShouldShow => true;
 
@@ -55,25 +53,22 @@ public abstract class TweakBase : IDisposable
     }
 
     /// <summary>
-    /// Whether this tweak is globally disabled via <see cref="TweakDisabledAttribute"/>.<br/>
-    /// When <see langword="true"/>, the tweak cannot be enabled.<br/>
-    /// This value is automatically populated by the <see cref="NoireTweakManager"/> during registration.
+    /// Whether this tweak is globally disabled via <see cref="TweakDisabledAttribute"/>; when true, it cannot be
+    /// enabled. Populated automatically by the <see cref="NoireTweakManager"/> during registration.
     /// </summary>
     [JsonIgnore]
     public bool IsGloballyDisabled { get; internal set; }
 
     /// <summary>
-    /// Whether this globally-disabled tweak should still be visible in the tweak list.<br/>
-    /// When <see langword="true"/>, the tweak is shown in the list with a red name and a tooltip
-    /// explaining the reason, but cannot be toggled or enabled.<br/>
-    /// Populated from <see cref="TweakDisabledAttribute.ShowInList"/> during registration.
+    /// Whether this globally-disabled tweak should still be visible in the tweak list: true shows it with a red
+    /// name and a tooltip explaining the reason, non-interactive. Populated from
+    /// <see cref="TweakDisabledAttribute.ShowInList"/> during registration.
     /// </summary>
     [JsonIgnore]
     public bool ShowWhenDisabled { get; internal set; }
 
     /// <summary>
-    /// The reason why this tweak is globally disabled, if any.<br/>
-    /// Populated from <see cref="TweakDisabledAttribute.Reason"/> during registration.
+    /// The reason why this tweak is globally disabled, if any; populated from <see cref="TweakDisabledAttribute.Reason"/> during registration.
     /// </summary>
     [JsonIgnore]
     public string? GloballyDisabledReason { get; internal set; }
@@ -105,8 +100,8 @@ public abstract class TweakBase : IDisposable
     public NoireTweakManager? Manager { get; internal set; }
 
     /// <summary>
-    /// Whether this tweak has a typed configuration class derived from <see cref="TweakConfigBase"/>.<br/>
-    /// Returns <see langword="true"/> for <see cref="TweakBase{TConfig}"/> instances, <see langword="false"/> otherwise.
+    /// Whether this tweak has a typed configuration class derived from <see cref="TweakConfigBase"/>: true for
+    /// <see cref="TweakBase{TConfig}"/> instances, false otherwise.
     /// </summary>
     [JsonIgnore]
     public virtual bool HasConfig => false;
@@ -118,28 +113,26 @@ public abstract class TweakBase : IDisposable
     public virtual bool HasConfigurationUi => HasConfig;
 
     /// <summary>
-    /// Called when the tweak is enabled by the user or automatically on startup.<br/>
-    /// Use this to set up hooks, register event listeners, subscribe to addon events, etc.
+    /// Called when the tweak is enabled by the user or automatically on startup, to set up hooks, register event
+    /// listeners, subscribe to addon events, etc.
     /// </summary>
     protected abstract void OnEnable();
 
     /// <summary>
-    /// Called when the tweak is disabled by the user or on shutdown.<br/>
-    /// Use this to remove hooks, unregister event listeners, unsubscribe from addon events, etc.
+    /// Called when the tweak is disabled by the user or on shutdown, to remove hooks, unregister event listeners,
+    /// unsubscribe from addon events, etc.
     /// </summary>
     protected abstract void OnDisable();
 
     /// <summary>
-    /// Draws the configuration UI for this tweak in the details panel.<br/>
-    /// Override this to provide tweak-specific settings controls.<br/>
-    /// The default implementation draws nothing.
+    /// Draws the configuration UI for this tweak in the details panel; override to provide tweak-specific
+    /// settings controls. The default implementation draws nothing.
     /// </summary>
     public virtual void DrawConfigUI() { }
 
     /// <summary>
-    /// Signals the <see cref="NoireTweakManager"/> that this tweak's configuration has changed
-    /// and should be persisted.<br/>
-    /// Call this after modifying any config values in <see cref="TweakBase{TConfig}.Config"/>.
+    /// Signals the <see cref="NoireTweakManager"/> that this tweak's configuration has changed and should be
+    /// persisted; call after modifying config values in <see cref="TweakBase{TConfig}.Config"/>.
     /// </summary>
     public void MarkConfigDirty()
     {
@@ -265,8 +258,7 @@ public abstract class TweakBase : IDisposable
     }
 
     /// <summary>
-    /// Override this method to dispose any managed resources held by the tweak.<br/>
-    /// Called after <see cref="OnDisable"/> during disposal.
+    /// Override to dispose any managed resources held by the tweak; called after <see cref="OnDisable"/> during disposal.
     /// </summary>
     protected virtual void DisposeManaged() { }
 }

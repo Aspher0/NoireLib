@@ -13,7 +13,7 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides simple access to native operating system file and directory pickers.
+/// Native operating system file and directory pickers.
 /// </summary>
 public static class FileDialogHelper
 {

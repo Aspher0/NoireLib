@@ -20,11 +20,11 @@ public partial class NoireNetworker
     }
 
     /// <summary>
-    /// Shares an EventBus event type with the network: local publishes of <typeparamref name="TEvent"/> on the attached bus
-    /// reach every peer, and events received from peers are published on the local bus - as if all instances shared one EventBus.<br/>
-    /// Loop-safe by construction: bridged-in publishes are never bridged back out.<br/>
-    /// Requires <see cref="NetworkerOptions.EventBus"/> to be set. When <typeparamref name="TEvent"/> implements
-    /// <see cref="INetworkerEvent"/>, its origin peer is populated on bridged-in events.
+    /// Shares an EventBus event type with the network: local publishes of <typeparamref name="TEvent"/> reach every
+    /// peer, and events received from peers are published locally. Loop-safe by construction: bridged-in publishes
+    /// are never bridged back out. Requires <see cref="NetworkerOptions.EventBus"/> to be set; when
+    /// <typeparamref name="TEvent"/> implements <see cref="INetworkerEvent"/>, its origin peer is populated on
+    /// bridged-in events.
     /// </summary>
     /// <typeparam name="TEvent">The EventBus event type to share (any JSON-serializable class).</typeparam>
     /// <param name="direction">Which directions to bridge. Defaults to <see cref="NetworkerShareDirection.Both"/>.</param>

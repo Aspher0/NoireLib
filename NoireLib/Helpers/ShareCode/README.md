@@ -1,4 +1,4 @@
-﻿# Helper Documentation : ShareCodeHelper
+# Helper Documentation : ShareCodeHelper
 
 You are reading the documentation for the `ShareCodeHelper` static helper.
 
@@ -89,7 +89,7 @@ Surrounding whitespace is ignored, because people paste with whitespace attached
 
 ## Kinds
 
-The kind is what stops a theme code being applied as a preset.
+The kind stops a theme code from being applied as a preset.
 
 ```csharp
 ShareCodeHelper.Encode("myplugin.theme", theme);      // namespace it with your plugin
@@ -125,7 +125,7 @@ ShareCodeHelper.Limits = new ShareCodeLimits
 **These are part of the format, not a tuning knob.** A code that needs more than the defaults to read is not a valid
 share code, and every conformant reader refuses it. Raising them on your side does not make such a code portable.
 
-Both ceilings are enforced *while* decoding rather than checked afterwards, which is the entire point:
+Both ceilings are enforced *while* decoding rather than checked afterwards:
 
 - A payload that expands past `MaxDecodedBytes` is abandoned partway. Decompressing with no ceiling is a zip bomb: a few
   kilobytes of paste expands to gigabytes and the game dies with no useful error. Measuring afterwards means the damage
@@ -167,9 +167,9 @@ deserializer sees whether or not compression was worth using.
   your disk writes before you have looked at a single field. Decode into a plain data type, show the user what would
   change, and copy the fields across yourself once they agree.
 
-- **Import is decode, preview, confirm, apply.** The preview is the security control, not a flourish: it is what turns
-  "a stranger's code rewrote my presets" into "I saw what would change and said yes". Never auto-apply, and never let an
-  import confirmation be remembered.
+- **Import is decode, preview, confirm, apply.** The preview is the security control, not a flourish: without it, a
+  stranger's code changes things before anyone approved them. Never auto-apply, and never let an import confirmation
+  be remembered.
 
 - **Type resolution is off and cannot be turned on.** `TypeNameHandling` is forced to `None` for every caller whatever
   settings they pass, so a `$type` hint in a payload is inert: it names no type and constructs nothing. Content after
@@ -184,4 +184,3 @@ deserializer sees whether or not compression was worth using.
 ## See Also
 
 - [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
-- [EncryptionHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/EncryptionHelper/README.md)

@@ -11,6 +11,6 @@ public enum WorldLabelOffScreen
     /// <summary>Stay on screen, pinned to the nearest edge.</summary>
     Clamp,
 
-    /// <summary>Stay pinned to the edge, with an arrow pointing the way, as a quest marker does.</summary>
+    /// <summary>Stay pinned to the edge, with an arrow pointing the way.</summary>
     EdgeArrow,
 }

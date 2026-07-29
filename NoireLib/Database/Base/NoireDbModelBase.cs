@@ -12,23 +12,18 @@ namespace NoireLib.Database;
 
 
 /// <summary>
-/// Base class representing a database model with change tracking, validation, and relationship management.<br/>
-/// To make it simpler, this class represents a table row in the database.<br/>
-/// Models can be filled with values, validated, and updated or saved to the database as a new row.<br/>
-/// Relationships between models are supported through defined relation configurations.<br/>
+/// Base class representing a database model (a table row) with change tracking, validation, and relationship
+/// management.
 /// </summary>
 public abstract class NoireDbModelBase
 {
     private static readonly ConcurrentDictionary<string, IReadOnlyCollection<string>> TableColumnsCache = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Writes and reads the JSON held inside column values. It is built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from the object below
-    /// alone. The <see cref="JsonConvert"/> overloads and <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>
-    /// instead merge in <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into
-    /// this process can assign, which would make the stored column format depend on unrelated code and could change it
-    /// between the write and the read.<br/>
-    /// TypeNameHandling stays None so a stored value can never name a type into existence when it is read back.
+    /// Writes and reads the JSON held inside column values, built via
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from the object below
+    /// alone rather than merging in the process-global <see cref="JsonConvert.DefaultSettings"/>. TypeNameHandling
+    /// stays None so a stored value can never name a type into existence when it is read back.
     /// </summary>
     private static readonly JsonSerializer ColumnSerializer = CreateColumnSerializer();
 
@@ -45,10 +40,9 @@ public abstract class NoireDbModelBase
     }
 
     /// <summary>
-    /// Writes the JSON <see cref="ToJson"/> returns when it is given no settings. It is separate from
-    /// <see cref="ColumnSerializer"/>, which writes the compact form stored inside a column, because
-    /// <see cref="ToJson"/> exports the model for a reader and has always produced the indented form.<br/>
-    /// It is built the same way and for the same reasons, so the exported JSON cannot be reshaped by unrelated code.
+    /// Writes the JSON <see cref="ToJson"/> returns when given no settings. Separate from
+    /// <see cref="ColumnSerializer"/>, which writes the compact form stored in a column; this one produces the
+    /// indented form for a reader, built the same way so the output cannot be reshaped by unrelated code.
     /// </summary>
     private static readonly JsonSerializer DefaultJsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {
@@ -175,8 +169,8 @@ public abstract class NoireDbModelBase
     protected readonly Dictionary<string, List<string>> Errors = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Fills the model with the provided column values and tracks changes.<br/>
-    /// Use this over <see cref="FillUnsafe"/> when you want to ensure that change tracking is properly maintained.<br/>
+    /// Fills the model with the provided column values and tracks changes. Use this over <see cref="FillUnsafe"/>
+    /// to keep change tracking accurate.
     /// </summary>
     /// <param name="columns">The column values to apply.</param>
     /// <returns>The current model instance.</returns>
@@ -194,8 +188,8 @@ public abstract class NoireDbModelBase
     }
 
     /// <summary>
-    /// Fills the model with the provided column values without tracking changes.<br/>
-    /// Use this over <see cref="Fill"/> for hydration from the database or when you want to bypass change tracking for any reason.
+    /// Fills the model with the provided column values without tracking changes. Use this over <see cref="Fill"/>
+    /// for hydration from the database, or to bypass change tracking.
     /// </summary>
     /// <param name="columns">The column values to apply.</param>
     /// <returns>The current model instance.</returns>
@@ -209,8 +203,8 @@ public abstract class NoireDbModelBase
     }
 
     /// <summary>
-    /// Synchronizes the original column snapshot with current values.<br/>
-    /// In short, it marks the model as clean by clearing the change tracking and updating the original values to match the current columns.
+    /// Synchronizes the original column snapshot with current values, marking the model clean and clearing tracked
+    /// changes.
     /// </summary>
     /// <returns>The current model instance.</returns>
     public NoireDbModelBase SyncOriginal()

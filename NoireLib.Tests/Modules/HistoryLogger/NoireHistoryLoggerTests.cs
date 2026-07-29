@@ -58,11 +58,22 @@ public class NoireHistoryLoggerTests : IDisposable
         }
 
         // The SQLite connections are cached per database name and hold the files open, so they are released before
-        // the directory holding them is removed.
-        NoireDatabase.DisposeAll();
-
+        // the directory holding them is removed. Only this test's own databases are disposed: NoireDatabase.DisposeAll
+        // clears the process-wide instance cache and every connection pool, which tears a concurrently running test
+        // class's database out from under it. Every name here is a fresh GUID, so nothing asks for one of these again.
         foreach (var databaseName in databasesToClean)
+        {
+            try
+            {
+                NoireDatabase.GetInstance(databaseName).Dispose();
+            }
+            catch
+            {
+                // Best effort cleanup.
+            }
+
             NoireDatabase.RemoveDatabaseDirectoryOverride(databaseName);
+        }
 
         try
         {

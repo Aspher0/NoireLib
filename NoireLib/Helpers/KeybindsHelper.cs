@@ -143,21 +143,15 @@ public static class KeybindsHelper
     }
 
     /// <summary>
-    /// The last async modifier read and the millisecond it was taken, so every caller within it shares one read.
+    /// The last async modifier read and the millisecond it was taken; reads within the same millisecond share it.
     /// </summary>
-    /// <remarks>
-    /// Reading the physical modifiers is up to nine <c>GetAsyncKeyState</c> calls, each a kernel transition, and that
-    /// measured in the tens of microseconds per read inside the game. The state is polled rather than event driven, so
-    /// two reads within the same millisecond cannot disagree in any way a poll could act on; a hotkey held for less
-    /// than a millisecond was never going to be seen by polling in the first place.
-    /// </remarks>
     private static long asyncModifierTick = -1;
     private static (bool Ctrl, bool Shift, bool Alt) asyncModifierState;
 
     /// <summary>
-    /// Returns the current modifier key state read from the physical keyboard through the Win32 async key state.<br/>
-    /// This is thread independent, needs no active frame, and is unaffected by a consumer suppressing a key through <see cref="NoireService.KeyState"/>.<br/>
-    /// The keyboard is asked at most once per millisecond; callers within the same millisecond share the read.
+    /// Returns the current modifier key state read from the physical keyboard via the Win32 async key state.<br/>
+    /// Thread independent, needs no active frame, and unaffected by a consumer suppressing a key through
+    /// <see cref="NoireService.KeyState"/>. Polled at most once per millisecond; callers within the same millisecond share the read.
     /// </summary>
     /// <returns>The current modifier key state.</returns>
     public static (bool Ctrl, bool Shift, bool Alt) GetAsyncModifierState()

@@ -224,8 +224,8 @@ public static partial class NoireUI
     /// </summary>
     /// <remarks>
     /// Dalamud decides whether to hide plugin UI once per plugin, inside the callback it invokes to draw that plugin: an
-    /// overlay drawn from there can only be exempted by exempting the whole plugin along with it, which is what the
-    /// per-plugin <c>DisableUserUiHide</c>, <c>DisableCutsceneUiHide</c> and <c>DisableGposeUiHide</c> switches do.<br/>
+    /// overlay drawn from there can only be exempted by exempting the whole plugin along with it, using the
+    /// per-plugin <c>DisableUserUiHide</c>, <c>DisableCutsceneUiHide</c> and <c>DisableGposeUiHide</c> switches.<br/>
     /// Every plugin's callback is in turn invoked from a single event inside Dalamud that carries no such gate. Subscribing
     /// to it directly puts the overlays beside the plugin's callback rather than inside it, so nothing Dalamud decides about
     /// this plugin's UI reaches them and each overlay is free to answer for itself

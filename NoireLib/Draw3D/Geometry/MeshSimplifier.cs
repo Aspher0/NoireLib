@@ -5,11 +5,12 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// CPU mesh decimation for the level-of-detail chain. The primary path is a topology-preserving <b>quadric error
-/// edge-collapse</b> (<see cref="Simplify"/>): it collapses the lowest-error edges first and keeps every vertex on an
-/// original edge, so an organic model degrades smoothly instead of shattering. A robust <b>vertex-clustering</b>
-/// fallback (<see cref="Cluster"/>) covers meshes the quadric pass cannot reduce (heavily non-manifold soup); it never
-/// produces NaN/degenerate geometry, but can bridge gaps, so it is only a backstop.<br/>
+/// CPU mesh decimation for the level-of-detail chain.
+/// The primary path is a topology-preserving <b>quadric error edge-collapse</b> (<see cref="Simplify"/>) that
+/// collapses the lowest-error edges first and keeps every vertex on an original edge, so an organic model degrades
+/// smoothly instead of shattering; a <b>vertex-clustering</b> fallback (<see cref="Cluster"/>) covers meshes the
+/// quadric pass cannot reduce (heavily non-manifold soup), never producing NaN/degenerate geometry but occasionally
+/// bridging gaps, so it is only a backstop.
 /// <see cref="BuildLods"/> assembles the chain, quadric-first with a clustering fallback per level.
 /// </summary>
 public static partial class MeshSimplifier
@@ -145,12 +146,13 @@ public static partial class MeshSimplifier
     private static readonly int[] FallbackClusterCells = { 48, 24, 12 };
 
     /// <summary>
-    /// Builds a chain of progressively coarser LOD meshes from the source geometry, ordered finest-first. Each level is
-    /// a quadric error edge-collapse to the matching fraction of the original triangle count (<paramref name="targetRatios"/>,
-    /// e.g. <c>[0.5, 0.25, 0.12]</c>); if the quadric pass cannot reduce the mesh at all, it falls back to a clustering
-    /// chain. A level no smaller than the previous one is skipped, so the chain is monotonic and may be shorter than
-    /// requested (empty when nothing reduces usefully). Meshes are created on the calling thread (devices are
-    /// free-threaded), so this runs on the import thread. The caller owns and disposes the returned meshes.
+    /// Builds a chain of progressively coarser LOD meshes from the source geometry, ordered finest-first: each level
+    /// is a quadric error edge-collapse to the matching fraction of the original triangle count
+    /// (<paramref name="targetRatios"/>, e.g. <c>[0.5, 0.25, 0.12]</c>), falling back to a clustering chain if the
+    /// quadric pass cannot reduce the mesh at all; a level no smaller than the previous one is skipped, so the chain
+    /// is monotonic and may be shorter than requested (empty when nothing reduces usefully); meshes are created on
+    /// the calling thread (devices are free-threaded), so this runs on the import thread, and the caller owns and
+    /// disposes the returned meshes.
     /// </summary>
     /// <param name="vertices">Full-resolution vertices.</param>
     /// <param name="indices">Full-resolution indices.</param>

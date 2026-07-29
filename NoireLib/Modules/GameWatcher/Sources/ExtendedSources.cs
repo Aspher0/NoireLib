@@ -1,5 +1,6 @@
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 
@@ -137,11 +138,7 @@ internal sealed class WeatherSource : GameWatcherSource
     }
 
     /// <summary>Reads the current weather row id from game memory (live read).</summary>
-    internal static unsafe byte ReadCurrentWeather()
-    {
-        var manager = FFXIVClientStructs.FFXIV.Client.Game.WeatherManager.Instance();
-        return manager == null ? (byte)0 : manager->GetCurrentWeather();
-    }
+    internal static byte ReadCurrentWeather() => WeatherHelper.Active();
 }
 
 /// <summary>
@@ -188,21 +185,15 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
         }
     }
 
-    /// <summary>
-    /// Computes the current Eorzea time of day (hour + minute + second within the 24-hour Eorzea day) from
-    /// real time. Pure - unit-testable. Eorzea time runs at 1440/70 the speed of real time.
-    /// </summary>
+    /// <inheritdoc cref="EorzeaTimeHelper.TimeOfDayAt"/>
     internal static TimeSpan ComputeEorzeaTimeOfDay(DateTimeOffset realTime)
-    {
-        var eorzeaSeconds = realTime.ToUnixTimeSeconds() * 1440L / 70L;
-        return TimeSpan.FromSeconds(eorzeaSeconds % 86400L);
-    }
+        => EorzeaTimeHelper.TimeOfDayAt(realTime);
 
-    /// <summary>Computes the current Eorzea hour (0–23) from real time. Pure - unit-testable.</summary>
-    internal static int ComputeEorzeaHour(DateTimeOffset realTime) => ComputeEorzeaTimeOfDay(realTime).Hours;
+    /// <inheritdoc cref="EorzeaTimeHelper.HourAt"/>
+    internal static int ComputeEorzeaHour(DateTimeOffset realTime) => EorzeaTimeHelper.HourAt(realTime);
 
-    /// <summary>Whether an Eorzea hour is night (18:00–5:59 ET). Pure.</summary>
-    internal static bool IsNight(int hour) => hour < 6 || hour >= 18;
+    /// <inheritdoc cref="EorzeaTimeHelper.IsNightHour"/>
+    internal static bool IsNight(int hour) => EorzeaTimeHelper.IsNightHour(hour);
 }
 
 /// <summary>

@@ -11,8 +11,8 @@ namespace NoireLib.Draw3D.Core;
 internal static unsafe class ComPtrUtil
 {
     /// <summary>
-    /// QueryInterfaces <paramref name="unknown"/> for <typeparamref name="T"/> and wraps the result with exactly one net reference.<br/>
-    /// Returns false (and an empty ComPtr) when the pointer is null or does not implement the interface.
+    /// QueryInterfaces <paramref name="unknown"/> for <typeparamref name="T"/> and wraps the result with exactly
+    /// one net reference. Returns false (and an empty ComPtr) when the pointer is null or does not implement the interface.
     /// </summary>
     public static bool TryQi<T>(IUnknown* unknown, out ComPtr<T> result) where T : unmanaged, INativeGuid, IUnknown.Interface
     {

@@ -10,13 +10,12 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Draw3D.Im;
 
 /// <summary>
-/// The immediate-mode drawing layer: call <c>Draw*</c> every frame; anything not re-requested vanishes.<br/>
-/// "Im" means <i>immediate-mode pattern</i> - nothing to do with ImGui: every call becomes real meshes
-/// through the same D3D scene pass as retained content, with no ImGui involved.<br/>
+/// The immediate-mode drawing layer: call <c>Draw*</c> every frame; anything not re-requested vanishes.
+/// "Im" means <i>immediate-mode pattern</i> - nothing to do with ImGui: every call becomes real meshes through the
+/// same D3D scene pass as retained content.<br/>
 /// <b>Timing contract:</b> calls made inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an
-/// <see cref="Scene.ISceneFeature"/> render <b>this frame, always</b>. Calls made anywhere else in a draw
-/// cycle render at most one frame late (buffered) - imperceptible for markers, documented so nobody
-/// debugs it as a bug.
+/// <see cref="Scene.ISceneFeature"/> render <b>this frame, always</b>. Calls made anywhere else render at most one
+/// frame late (buffered) - imperceptible for markers.
 /// </summary>
 public sealed class ImDraw3D
 {
@@ -256,7 +255,7 @@ public sealed class ImDraw3D
             Params0 = shapeParams,
             Params1 = new Vector4(0f, (float)shape, cmd.Style.OutlineWidth, 1f),
             // The size is baked into the footprint scale below, so pass it as the outline reference: the rim stays
-            // proportional to the drawn radius (its long-standing behaviour), not the constant-thickness rim scene decals get.
+            // proportional to the drawn radius, not the constant-thickness rim scene decals get.
             OutlineScaleRef = 0.5f * (scale.X + scale.Z),
             DecalOutlineColor = cmd.Style.OutlineColor,
         };

@@ -14,27 +14,19 @@ namespace NoireLib.UI;
 /// reused for the life of the plugin.
 /// </summary>
 /// <remarks>
-/// The reason this is a cache and not a helper that builds a font per call is texture memory. Every distinct size is a
-/// full glyph atlas, and a plugin that quietly built one per frame would grow until the game ran out of it. So the
-/// cache is bounded, refuses to grow past its limit rather than evicting something a caller may be drawing with, and
-/// says so once by name.<br/>
-/// NoireLib builds into its own atlas rather than the plugin's shared one so that adding a heading never forces the
-/// host's own fonts to rebuild alongside it.
+/// Bounded: refuses to grow past its limit rather than evicting something a caller may be drawing with, and says so
+/// once by name.<br/>
+/// Builds into its own atlas rather than the plugin's shared one, so adding a heading never forces the host's own
+/// fonts to rebuild alongside it.
 /// </remarks>
 internal static class UiFontCache
 {
     /// <summary>
-    /// How many distinct sizes may be built. An interface with more genuinely different text sizes than this is a type
-    /// scale that has stopped being one, and the atlas is the wrong place to discover that.
-    /// </summary>
-    /// <summary>
     /// How many distinct pixel sizes may be built before the cache refuses more.
     /// </summary>
     /// <remarks>
-    /// Every size is an atlas entry, and every atlas rebuild re-rasterizes all of them, so this is a real budget rather
-    /// than a formality. The default suits a plugin with one type scale; a host offering the reader several scales has
-    /// as many sizes as steps times scale, and should raise it deliberately rather than have its largest heading
-    /// silently drawn at its second-largest size.<br/>
+    /// Every atlas rebuild re-rasterizes every size, so this is a real budget: a host offering several type scales
+    /// needs as many sizes as steps times scales, or its largest heading is silently drawn at the next size down.<br/>
     /// Raise it before the first text is drawn. Lowering it below what is already built changes nothing that exists.
     /// </remarks>
     public static int MaxSizes { get; set; } = 16;
@@ -44,9 +36,9 @@ internal static class UiFontCache
     /// without this a scale of 12.999 and one of 13.001 would each take an atlas entry.
     /// </summary>
     /// <remarks>
-    /// Whole pixels. Glyphs are rasterized onto a pixel grid, so a tenth of a pixel is not a different font, it is a
-    /// different cache entry for the same one. It matters most while a size is being dragged: at a tenth of a pixel a
-    /// slider sweep asks for hundreds of distinct sizes, and at whole pixels it asks for a couple of dozen.
+    /// Whole pixels: glyphs rasterize onto a pixel grid, so a tenth of a pixel is a different cache entry for the
+    /// same font. Matters most while a size is being dragged, where whole-pixel rounding is the difference between a
+    /// couple dozen distinct sizes and hundreds.
     /// </remarks>
     private const int SizePrecision = 0;
 
@@ -62,10 +54,9 @@ internal static class UiFontCache
     /// prose uses, currency, arrows and the common symbols.
     /// </summary>
     /// <remarks>
-    /// Pairs of first and last codepoint, terminated by zero, which is the shape ImGui wants.<br/>
-    /// Around seven hundred glyphs rather than the several thousand a complete font carries. Anything outside this and
-    /// the user's own language is a deliberate trade for a type scale that is ready when the window opens: see
-    /// <see cref="NoireText.GlyphRanges"/> to widen it.
+    /// Pairs of first and last codepoint, terminated by zero: the shape ImGui expects.<br/>
+    /// Around seven hundred glyphs rather than the several thousand a complete font carries; a deliberate trade for a
+    /// type scale ready when the window opens. See <see cref="NoireText.GlyphRanges"/> to widen it.
     /// </remarks>
     private static readonly ushort[] DefaultGlyphRanges =
     [
@@ -99,9 +90,8 @@ internal static class UiFontCache
     /// it measured with is no longer the font that would draw.
     /// </summary>
     /// <remarks>
-    /// The case this exists for is the handover: a size that is still building is drawn with the stretched stand-in and
-    /// measures as the stand-in, and the frame the real font arrives it measures differently. Without a generation, a
-    /// measurement cache would keep answering with the stand-in's numbers for as long as the label went unchanged.
+    /// For the handover: a size still building measures as the stretched stand-in, and differently once the real
+    /// font arrives. Without this, a measurement cache would keep answering with the stand-in's numbers.
     /// </remarks>
     internal static int Generation => GenerationOverride?.Invoke() ?? generation;
 
@@ -109,11 +99,10 @@ internal static class UiFontCache
     /// Stands in for the real generation, so the handover can be driven without building a font atlas.
     /// </summary>
     /// <remarks>
-    /// Building a font needs a Dalamud atlas, which a test does not have, so the frame the real font arrives cannot be
-    /// reached by asking for a size and waiting. What a test needs to assert is that a measurement taken under one
-    /// generation is unreachable under the next, and that is exactly what moving this proves.<br/>
+    /// A test has no Dalamud atlas to build a font with, so the frame a real font arrives cannot be reached by
+    /// waiting; moving this proves the same invalidation instead.<br/>
     /// Null outside a test, where the real counter answers. Matches <see cref="NoireUI.FrameOverride"/> and
-    /// <see cref="NoireUI.ScaleOverride"/>, which exist for the same reason.
+    /// <see cref="NoireUI.ScaleOverride"/>.
     /// </remarks>
     internal static Func<int>? GenerationOverride { get; set; }
 
@@ -145,14 +134,12 @@ internal static class UiFontCache
     /// The font to draw a given logical size with, or <see langword="null"/> to use the font already current.
     /// </summary>
     /// <remarks>
-    /// Returns <see langword="null"/> for the host's own default size rather than building a copy of a font that
-    /// already exists, so an interface that only ever draws body text costs no atlas space at all.<br/>
-    /// A miss registers the whole of the current theme's type scale and asks for one build, rather than registering
-    /// only the size asked for. A build re-rasterizes <em>every</em> font in the atlas, so a size added later
-    /// re-rasterizes everything beside it: taking the scale in one pass is the cheaper order.<br/>
-    /// The handle it returns may still not be built. Callers must check <see cref="IFontHandle.Available"/> rather than
-    /// pushing blindly: an unbuilt handle pushes as a no-op, which draws the text at the wrong size instead of the
-    /// approximation <see cref="NoireText"/> falls back to.
+    /// Returns <see langword="null"/> for the host's own default size rather than building a copy that already
+    /// exists, so body-only text costs no atlas space.<br/>
+    /// A miss registers the whole type scale and asks for one build rather than only the size asked for, since a
+    /// build re-rasterizes every font in the atlas.<br/>
+    /// The handle may still not be built: callers must check <see cref="IFontHandle.Available"/> rather than pushing
+    /// blindly, since an unbuilt handle pushes as a no-op and draws at the wrong size.
     /// </remarks>
     /// <param name="logicalSizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The font handle, or <see langword="null"/> to draw with the current font.</returns>
@@ -166,8 +153,8 @@ internal static class UiFontCache
         if (IsHostDefault(size))
             return null;
 
-        // Broken out from NoireText so a first draw that has to register a size, prune the cold ones and ask for a
-        // rasterization is a row of its own rather than time charged to whatever text happened to be first.
+        // Broken out from NoireText, so registering a size, pruning cold ones and asking for a rasterization is its
+        // own row rather than time charged to whatever text happened to be first.
         using var draw = UiDraw.Begin();
 
         IFontHandle? handle;
@@ -183,10 +170,9 @@ internal static class UiFontCache
                 return existing.Handle;
             }
 
-            // Nothing is built for this size yet. If the scale is still moving, do not build one: a size being dragged
-            // is a different size next frame, and rasterizing each step of the drag would spend a build on every one of
-            // them and fill the cache with sizes nobody keeps. Drawing falls back to the stretched stand-in, which
-            // tracks the size exactly and is what a live slider wants to show anyway.
+            // Nothing built yet. If the scale is still moving, do not build: a size being dragged is a different size
+            // next frame, and rasterizing every step would fill the cache with sizes nobody keeps. Falls back to the
+            // stretched stand-in instead.
             if (!ScaleSettledLocked())
                 return null;
 
@@ -242,10 +228,9 @@ internal static class UiFontCache
     /// one. Callers hold <see cref="SyncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Checked here, on the way to drawing, rather than handled from <see cref="IFontAtlas.RebuildRecommend"/>. That
-    /// event also fires for every handle registered, including the ones this cache registered a line earlier, so
-    /// acting on it rebuilds the atlas once per size and then once more on the first frame. Text is only wrong if it
-    /// is about to be drawn, and this runs exactly then.
+    /// Checked here rather than handled from <see cref="IFontAtlas.RebuildRecommend"/>, which also fires for every
+    /// handle already registered: acting on it would rebuild the atlas once per size and then once more on the
+    /// first frame.
     /// </remarks>
     private static bool ScaleMovedLocked()
         => !float.IsNaN(builtScale) && MathF.Abs(NoireUI.Scale - builtScale) > 0.001f;
@@ -254,9 +239,8 @@ internal static class UiFontCache
     /// Whether the type scale has held still long enough to be worth rasterizing. Callers hold <see cref="SyncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Keyed on the whole scale rather than on one size, because every step moves together: a body size dragged from 8
-    /// to 28 is one gesture, not sixty type scales, and treating it as sixty is sixty builds and sixty cache entries.
-    /// While it is moving this reads false and nothing is built; when it stops, one build covers where it landed.
+    /// Keyed on the whole scale rather than one size: a body size dragged from 8 to 28 is one gesture, not sixty
+    /// builds and sixty cache entries. Reads false while moving; one build covers where it lands.
     /// </remarks>
     private static bool ScaleSettledLocked()
     {
@@ -302,9 +286,9 @@ internal static class UiFontCache
     /// <see cref="SyncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Without this, a plugin offering a live font-size setting fills the cache simply by being used: every value the
-    /// user settles on leaves its whole scale behind. Only sizes that are both out of the current scale and cold are
-    /// dropped, so nothing being drawn with is ever disposed.
+    /// Without this, a live font-size setting fills the cache simply by being used: every value the user settles on
+    /// leaves its whole scale behind. Only sizes both out of the current scale and cold are dropped, so nothing
+    /// being drawn with is ever disposed.
     /// </remarks>
     private static void PruneLocked()
     {
@@ -407,12 +391,9 @@ internal static class UiFontCache
     /// Rasterizes everything registered since the last build.
     /// </summary>
     /// <remarks>
-    /// The build is asked for explicitly rather than left to the atlas, and that is the whole reason this cache drives
-    /// its own rebuilds. An atlas set to rebuild itself does so from <see cref="IFontAtlas.RebuildRecommend"/>, which
-    /// Dalamud raises <em>on the main thread</em>: registered from a plugin constructor, before any frame has run, that
-    /// event has not fired, so nothing has been scheduled and there is no build to wait for. Waiting there returns
-    /// immediately and the rasterization silently starts later, on the first frame, which is exactly the delay a
-    /// blocking prewarm exists to avoid.
+    /// Asked for explicitly rather than left to the atlas: <see cref="IFontAtlas.RebuildRecommend"/> fires on the
+    /// main thread, so from a plugin constructor, before any frame has run, waiting on it returns immediately and
+    /// rasterization silently starts later, which is exactly the delay a blocking prewarm exists to avoid.
     /// </remarks>
     /// <param name="blocking">Whether to rasterize on this thread and return only once it is done.</param>
     private static void Rebuild(bool blocking)
@@ -460,8 +441,8 @@ internal static class UiFontCache
     /// </summary>
     private static void Report(int sizes, long started)
     {
-        // Bumped here rather than when the build was asked for, because what invalidates a remembered measurement is a
-        // font becoming available, which is this moment and not the one the build was queued at.
+        // Bumped here rather than when the build was asked for: what invalidates a remembered measurement is the
+        // font becoming available, not the build being queued.
         Interlocked.Increment(ref generation);
 
         NoireLogger.LogInformation(
@@ -521,15 +502,9 @@ internal static class UiFontCache
     /// Rasterizes one size, as few glyphs as it can get away with.
     /// </summary>
     /// <remarks>
-    /// The obvious call here is <c>AddDalamudDefaultFont</c>, and it is what shipped first. It is also why building a
-    /// type scale took seconds: it rasterizes the font's entire default range, then merges FontAwesome's ~1400 icons,
-    /// then the extra glyphs for the user's language, and it does that for every size. Roughly four thousand glyphs per
-    /// size, to draw a heading that says "Settings".<br/>
-    /// Instead the user's own font specification is re-sized and given a glyph range, which is the one thing
-    /// <c>AddDalamudDefaultFont</c> takes but then ignores for everything it merges. The extra glyphs for the user's
-    /// language are attached on top, so this stays correct for someone reading Japanese rather than only being fast for
-    /// someone reading English. What is dropped is the icon font and the parts of Unicode nobody is about to render in
-    /// a heading, and <see cref="NoireText.FontBuilder"/> puts either back.
+    /// The user's own font specification is re-sized and given a glyph range, with the extra glyphs for the user's
+    /// Dalamud language attached on top. Icons and the rest of Unicode are dropped; <see cref="NoireText.FontBuilder"/>
+    /// puts either back.
     /// </remarks>
     private static void BuildFont(IFontAtlasBuildToolkitPreBuild toolkit, float size)
     {
@@ -571,11 +546,9 @@ internal static class UiFontCache
     /// Creates the atlas on first use. Callers hold <see cref="SyncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Global-scaled on purpose, which is what makes every size in the public surface a logical one: Dalamud multiplies
-    /// the size by the user's scale when it rasterizes. A plain atlas would mean scaling the size here instead.<br/>
-    /// Auto-rebuilding is off, and <see cref="Rebuild"/> says why. The cost of driving it here is that a change in the
-    /// user's scale has to be noticed rather than handled for us, which is what <see cref="ScaleMovedLocked"/> does on
-    /// the way to drawing.
+    /// Global-scaled on purpose: Dalamud multiplies the size by the user's scale when it rasterizes, so every size in
+    /// the public surface stays a logical one. Auto-rebuilding is off (see <see cref="Rebuild"/>), so a scale change
+    /// has to be noticed instead, which <see cref="ScaleMovedLocked"/> does on the way to drawing.
     /// </remarks>
     private static IFontAtlas EnsureAtlas()
     {

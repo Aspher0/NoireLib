@@ -9,17 +9,15 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Reads back the game's G-buffer targets so what each one carries can be seen rather than assumed.<br/>
-/// <b>Why a readback and not a reading of the formats.</b> A format constrains what a channel could hold and
-/// says nothing about what it does hold: four of the five targets here are the same
-/// <c>B8G8R8A8_UNORM</c>, so format alone cannot tell albedo from a normal from a mask. Guessing from shape has
-/// already produced two wrong readings of a texture on this project. Pixels settle it - a normal buffer is
+/// Reads back the game's G-buffer targets so what each one carries can be seen rather than assumed. A format
+/// constrains what a channel could hold, not what it holds: four of the five targets here are the same
+/// <c>B8G8R8A8_UNORM</c>, so format alone cannot tell albedo from a normal from a mask. A normal buffer is
 /// visibly pastel and centred near the middle of its range, an albedo looks like the room, and a mask is a
 /// handful of flat values.
 /// </summary>
 internal static unsafe class GBufferProbe
 {
-    /// <summary>Per-channel statistics of one target, which is what distinguishes the kinds apart.</summary>
+    /// <summary>Per-channel statistics of one target.</summary>
     /// <param name="Min">Lowest finite value seen in each channel.</param>
     /// <param name="Max">Highest finite value seen in each channel.</param>
     /// <param name="Mean">Average of each channel, over finite values.</param>
@@ -28,9 +26,7 @@ internal static unsafe class GBufferProbe
     /// <param name="InfCount">Pixels holding an infinity in any colour channel.</param>
     /// <param name="DisplayScale">
     /// The divisor the image is written with. Chosen from a high percentile rather than the peak: dividing by
-    /// the brightest pixel means a single extreme value renders the entire rest of the frame as black, which
-    /// is how two dumps in this workstream came back as featureless black images and were nearly read as
-    /// "nothing here" instead of "one pixel is enormous".
+    /// the brightest pixel means a single extreme value renders the entire rest of the frame as black.
     /// </param>
     private readonly record struct ChannelStats(
         float[] Min,
@@ -101,8 +97,7 @@ internal static unsafe class GBufferProbe
         if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
             return "not a texture, skipped";
 
-        // Every caller writes into a folder of its own, and a dump that decodes correctly and then fails to
-        // land is the same as no dump at all.
+        // A dump that decodes correctly but fails to land on disk is the same as no dump at all.
         try
         {
             var folder = Path.GetDirectoryName(path);
@@ -151,8 +146,7 @@ internal static unsafe class GBufferProbe
 
                     var scaleNote = stats.DisplayScale < 1f ? $"  (image divided by {1f / stats.DisplayScale:F2} to be viewable)" : string.Empty;
 
-                    // Non-finite pixels are called out rather than folded into the range, because they are the
-                    // one reading that explains a result no material value can change: anything multiplied by
+                    // Non-finite pixels are called out rather than folded into the range: anything multiplied by
                     // an infinity stays infinite, and anything multiplied by a NaN stays NaN.
                     var badNote = stats.NanCount > 0 || stats.InfCount > 0
                         ? $"\n    NOT FINITE: {stats.NanCount} pixel(s) NaN, {stats.InfCount} infinite - these survive any later multiply"
@@ -175,13 +169,10 @@ internal static unsafe class GBufferProbe
     }
 
     /// <summary>
-    /// Writes the <b>stencil</b> plane of the scene depth-stencil as an image, plus a census of the values in
-    /// it.<br/>
-    /// <b>Timing is the whole point.</b> The game marks pixels in stencil during its geometry pass and its
-    /// deferred light volumes test that mark, so the value only exists between those two passes - anything
-    /// read at the end of the frame has already had it consumed and reports zero. Reading it mid-frame is the
-    /// only way to learn what the game's own geometry actually writes, rather than inferring it from which
-    /// values happen to work.
+    /// Writes the <b>stencil</b> plane of the scene depth-stencil as an image, plus a census of the values in it.
+    /// The game marks pixels in stencil during its geometry pass and its deferred light volumes test that mark,
+    /// so the value only exists between those two passes: read at the end of the frame, it has already been
+    /// consumed and reports zero.
     /// </summary>
     /// <param name="device">The render device whose context performs the copy.</param>
     /// <param name="resource">The depth-stencil texture.</param>
@@ -276,11 +267,10 @@ internal static unsafe class GBufferProbe
     }
 
     /// <summary>
-    /// Reads every G-buffer target at one screen position, averaged over a small patch.<br/>
-    /// <b>What this is for.</b> The game's own copy of a model sits in the same buffer, in the same frame,
-    /// under the same lights. Sampling both turns "ours looks a little brighter" into a per-channel difference
-    /// that can be driven to zero - and judging these by eye is what produced every wrong reading on this
-    /// workstream. Copies only the patch rather than the whole target, so it is cheap enough to run per frame.
+    /// Reads every G-buffer target at one screen position, averaged over a small patch. The game's own copy of a
+    /// model sits in the same buffer, in the same frame, under the same lights, so sampling both turns a visual
+    /// impression into a per-channel difference that can be driven to zero. Copies only the patch rather than the
+    /// whole target, so it is cheap enough to run per frame.
     /// </summary>
     /// <param name="device">The render device whose context performs the copy.</param>
     /// <param name="targets">The G-buffer resources, in bind order.</param>
@@ -399,12 +389,9 @@ internal static unsafe class GBufferProbe
     /// Decodes a mapped target into RGBA floats. Half-float targets keep their range, so values above 1 survive.
     /// </summary>
     /// <remarks>
-    /// <b>The buffer is reused, and that matters more than it looks.</b> A decoded 1920x1009 target is a 31 MB
-    /// float array, so allocating one per target put 155 MB onto the large object heap per invocation. A handful
-    /// of runs in a session was enough to leave the process permanently slower, and since frame time is what
-    /// drives every camera-timing artefact in this renderer, a diagnostic that degrades frame rate corrupts the
-    /// very thing the rest of the diagnostics measure. One buffer, grown when needed, reused for every target
-    /// and every later run.
+    /// A decoded 1920x1009 target is a 31 MB float array; allocating one per target puts it on the large object
+    /// heap per invocation, degrading frame rate and corrupting the frame-timing diagnostics elsewhere in this
+    /// renderer. One buffer, grown when needed, reused for every target and every later run.
     /// </remarks>
     private static float[] ReadPixels(in D3D11_MAPPED_SUBRESOURCE mapped, in D3D11_TEXTURE2D_DESC desc, out bool supported)
     {
@@ -692,10 +679,9 @@ internal static unsafe class GBufferProbe
     }
 
     /// <summary>
-    /// The divisor that puts <see cref="DisplayPercentile"/> of the frame below saturation.<br/>
-    /// The alternative, dividing by the brightest pixel, is unusable on any buffer holding a highlight: the
-    /// highlight sets the scale and the entire image renders black, reporting an absence of data where the
-    /// truth is one very large value.
+    /// The divisor that puts <see cref="DisplayPercentile"/> of the frame below saturation. Dividing by the
+    /// brightest pixel instead is unusable on any buffer holding a highlight: the highlight sets the scale and
+    /// the entire image renders black.
     /// </summary>
     private static float PercentileScale(int[] histogram, int total)
     {
@@ -718,9 +704,7 @@ internal static unsafe class GBufferProbe
         return 1f;
     }
 
-    /// <summary>
-    /// Writes a 24-bit BMP, which every image viewer opens and which needs no encoder.
-    /// </summary>
+    /// <summary>Writes a 24-bit BMP: opens in every image viewer and needs no encoder.</summary>
     /// <param name="path">File to write.</param>
     /// <param name="pixels">RGBA float pixels.</param>
     /// <param name="width">Image width.</param>

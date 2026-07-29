@@ -29,9 +29,8 @@ public sealed class TableColumn<T>
     /// What the column sorts on, when the text does not sort the way the data does.
     /// </summary>
     /// <remarks>
-    /// A duration written "1m30s" sorts after "1h" as text and before it as a value; a number written with thousands
-    /// separators sorts by its first digit. Return the underlying value and the column sorts on that while still
-    /// showing the text.
+    /// A duration written "1m30s" sorts after "1h" as text and before it as a value; a number written with
+    /// thousands separators sorts by its first digit.
     /// </remarks>
     public Func<T, IComparable?>? SortKey { get; set; }
 
@@ -56,7 +55,7 @@ public sealed class TableColumn<T>
     /// <summary>Whether the header sorts. On by default, and ignored when nothing describes an order.</summary>
     public bool Sortable { get; set; } = true;
 
-    /// <summary>Whether the column is drawn at all, which is what a column picker turns off.</summary>
+    /// <summary>Whether the column is drawn at all.</summary>
     public bool Visible { get; set; } = true;
 
     /// <summary>
@@ -64,9 +63,7 @@ public sealed class TableColumn<T>
     /// </summary>
     public float Width { get; set; }
 
-    /// <summary>
-    /// Paints a cell instead of the plain text: a badge, a colour, a progress bar, a button.
-    /// </summary>
+    /// <summary>Paints a cell instead of the plain text.</summary>
     /// <remarks>
     /// Only the painting. The table keeps the sizing, the selection, the sort and the filtering, and the hook is
     /// handed everything it needs to draw the row it was given.
@@ -108,10 +105,10 @@ public sealed class TableColumn<T>
     /// </summary>
     /// <remarks>
     /// Resolved in order of how much the caller said: an explicit <see cref="Sort"/>, then a <see cref="SortKey"/>,
-    /// then the text. Rule 5's shape applied to behaviour rather than to style.<br/>
+    /// then the text.<br/>
     /// The table asks this several times a frame, once to decide whether it is sortable at all and once per column
-    /// while declaring them, so the two fallbacks are held rather than converted afresh. Converting a method group of
-    /// an instance method builds a delegate every time, which measured 192 bytes a frame on a two-column table.
+    /// while declaring them, so the two fallbacks are held rather than converted afresh: converting a method group
+    /// of an instance method builds a new delegate every time.
     /// </remarks>
     /// <returns>The comparison, or <see langword="null"/>.</returns>
     public Comparison<T>? ResolveComparison()

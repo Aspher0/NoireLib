@@ -15,8 +15,8 @@ internal static class SortKey
         => (ushort)Math.Clamp((int)(distance * 10f), 0, ushort.MaxValue);
 
     /// <summary>
-    /// Depth-dominant key - [bucket:2][layer:8][depthQ:16][pipeline:8][material:16][seq:14].<br/>
-    /// Used by the transparent bucket (strict back-to-front when <paramref name="backToFront"/>).
+    /// Depth-dominant key - [bucket:2][layer:8][depthQ:16][pipeline:8][material:16][seq:14] - used by the
+    /// transparent bucket (strict back-to-front when <paramref name="backToFront"/>).
     /// </summary>
     public static ulong Make(int bucket, int layer, ushort depthQ, byte pipelineId, ushort materialId, int seq, bool backToFront)
     {
@@ -30,10 +30,9 @@ internal static class SortKey
     }
 
     /// <summary>
-    /// State-grouped key - [bucket:2][layer:8][pipeline:8][material:16][depthQ:16][seq:14].<br/>
-    /// Used by the opaque bucket (depth order is only an early-z hint there) and by transparent
-    /// materials that opted into unordered batching: identical materials become adjacent, so
-    /// instanced runs form regardless of distance.
+    /// State-grouped key - [bucket:2][layer:8][pipeline:8][material:16][depthQ:16][seq:14] - used by the opaque
+    /// bucket (depth order is only an early-z hint there) and by transparent materials that opted into unordered
+    /// batching, since identical materials become adjacent so instanced runs form regardless of distance.
     /// </summary>
     public static ulong MakeGrouped(int bucket, int layer, byte pipelineId, ushort materialId, ushort depthQ, int seq)
         => ((ulong)(uint)(bucket & 0b11) << 62)

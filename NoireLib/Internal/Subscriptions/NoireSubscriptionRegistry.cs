@@ -50,8 +50,7 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
     /// When set, the registry does not catch exceptions thrown by handlers: a synchronous throw propagates out of
     /// <see cref="Dispatch"/> / <see cref="DispatchAsync"/> and aborts the remaining handlers in the snapshot, and an
     /// async fault is left to the caller (awaited by <see cref="DispatchAsync"/>, or fire-and-forget under
-    /// <see cref="Dispatch"/>). This is for callers such as the EventBus that apply their own per-handler exception
-    /// policy and need a handler fault to reach the publisher. Defaults to <see langword="false"/>, the catch-and-report behavior.
+    /// <see cref="Dispatch"/>). Defaults to <see langword="false"/>, the catch-and-report behavior.
     /// </param>
     public NoireSubscriptionRegistry(Action<Exception, string>? exceptionHandler = null, bool propagateHandlerExceptions = false)
     {

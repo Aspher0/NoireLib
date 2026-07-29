@@ -198,9 +198,9 @@ The gate closes only when a detected update actually reached at least one channe
 | Chat message | `ShouldPrintMessageInChatOnUpdate` is `true` |
 | `NewPluginVersionDetectedEvent` | An `EventBus` is attached |
 
-The EventBus counts because a subscriber receives the detection and decides what to present, which is the same role the
-two built-in channels play. A tracker that reports only through the EventBus (see
-[Conditional Notifications](#conditional-notifications)) would otherwise never satisfy the gate and would keep polling
+The EventBus counts as a channel: a subscriber receives the detection the same way the two built-in channels
+deliver it. Otherwise a tracker that reports only through the EventBus (see
+[Conditional Notifications](#conditional-notifications)) would never satisfy the gate and would keep polling
 forever.
 
 If a newer version is detected while **every** channel is off (both flags `false` and no `EventBus`), nothing is shown
@@ -243,8 +243,8 @@ _ = updateTracker?.CheckForUpdatesNowAsync();
 await updateTracker!.CheckForUpdatesNowAsync();
 ```
 
-The returned task completes once the check has finished and its notifications have been delivered, which is what lets a
-"Check for updates" button re-enable itself:
+The returned task completes once the check has finished and its notifications have been delivered, so a
+"Check for updates" button can re-enable itself when it does:
 
 ```csharp
 if (ImGui.Button("Check for updates") && !checkInFlight)

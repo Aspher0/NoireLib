@@ -27,8 +27,8 @@ internal sealed class ElectionMutex : IDisposable
     public bool IsHeld { get; private set; }
 
     /// <summary>
-    /// Tries to acquire the election mutex without waiting. Returns true when this instance is now the hub.<br/>
-    /// Returns false once disposed, so a caller that outlives its election mutex cannot take the role back.
+    /// Tries to acquire the election mutex without waiting, returning true when this instance becomes the hub.
+    /// Once disposed, this permanently returns false.
     /// </summary>
     public bool TryAcquire()
     {
@@ -41,9 +41,9 @@ internal sealed class ElectionMutex : IDisposable
                 return true;
         }
 
-        // The holder thread signals both events for as long as it runs, so neither may be disposed before it has been
-        // joined. Disposing one underneath a live thread faults it on a signal it is entitled to make, in a frame
-        // where nothing can handle the exception.
+        // The holder thread signals both events for as long as it runs, so neither may be disposed before it is
+        // joined: disposing one under a live thread faults it on a signal it is entitled to make, with nothing
+        // to catch it.
         var acquireSignal = new ManualResetEventSlim(false);
         var releaseSignal = new ManualResetEventSlim(false);
         var acquired = false;
@@ -108,9 +108,9 @@ internal sealed class ElectionMutex : IDisposable
 
         thread.Start();
 
-        // A wait that times out leaves the thread's progress unknown, so the attempt counts as failed and the thread is
-        // asked to unwind: any mutex it did take is released as soon as it reaches the request, freeing the role for
-        // the next contender.
+        // A wait that times out leaves the thread's progress unknown, so the attempt counts as failed and the thread
+        // is asked to unwind: any mutex it took is released once it reaches the request, freeing the role for the
+        // next contender.
         if (!acquireSignal.Wait(AcquireTimeout) || !Volatile.Read(ref acquired))
         {
             releaseSignal.Set();
@@ -130,9 +130,9 @@ internal sealed class ElectionMutex : IDisposable
             }
         }
 
-        // Disposal landed while this attempt was in flight. The role was taken but nothing will ever use it, so it is
-        // handed straight back rather than published, which is what keeps a disposed election mutex from stranding the
-        // role on a thread nobody will ask to release.
+        // Disposal landed while this attempt was in flight: the role was taken but nothing will use it, so it is
+        // handed straight back rather than published, keeping a disposed election mutex from stranding the role
+        // on an unreleased thread.
         releaseSignal.Set();
         JoinAndDispose(thread, acquireSignal, releaseSignal);
         return false;
@@ -147,8 +147,8 @@ internal sealed class ElectionMutex : IDisposable
         ManualResetEventSlim? acquireSignal;
         ManualResetEventSlim? releaseSignal;
 
-        // Taking ownership of the holder state under the gate is what makes a release concurrent with an acquire safe:
-        // exactly one of the two publishes the thread, and exactly one unwinds it.
+        // Taking ownership of the holder state under the gate keeps a concurrent release and acquire safe: exactly
+        // one of the two publishes the thread, and exactly one unwinds it.
         lock (gate)
         {
             if (!IsHeld)
@@ -173,8 +173,8 @@ internal sealed class ElectionMutex : IDisposable
     }
 
     /// <summary>
-    /// Releases the role and refuses any further acquisition.<br/>
-    /// Safe to call while another thread is acquiring: the in-flight attempt observes the disposal and hands the role back.
+    /// Releases the role and refuses any further acquisition; safe to call while another thread is acquiring,
+    /// since the in-flight attempt observes the disposal and hands the role back.
     /// </summary>
     public void Dispose()
     {
@@ -190,9 +190,9 @@ internal sealed class ElectionMutex : IDisposable
     }
 
     /// <summary>
-    /// Waits for the holder thread to exit, then disposes the events it signals.<br/>
-    /// A thread that outlives the join keeps its events instead: their handles are then reclaimed by finalization,
-    /// which costs a collection, where disposing them out from under the thread would fault it.
+    /// Waits for the holder thread to exit, then disposes the events it signals; a thread that outlives the join
+    /// keeps its events instead, reclaimed later by finalization, since disposing them out from under a live
+    /// thread would fault it.
     /// </summary>
     private static void JoinAndDispose(Thread thread, ManualResetEventSlim acquireSignal, ManualResetEventSlim releaseSignal)
     {

@@ -9,9 +9,9 @@ namespace NoireLib.Draw3D.Core;
 /// One light read out of a payload the game uploaded for a frame.
 /// </summary>
 /// <param name="Position">Row 0, relative to the camera. Add the camera's own position to place it in the world.</param>
-/// <param name="Direction">Row 1. Unit length, and matching the source object's forward axis in the capture that identified this layout.</param>
+/// <param name="Direction">Row 1. Unit length, matching the source object's forward axis.</param>
 /// <param name="Color">Rows 2 and 3, which the game writes identically. Values above 1 are ordinary here - only an emitter has them.</param>
-/// <param name="Radius">The reciprocal of the light volume's uniform scale, which is how such a volume encodes its reach.</param>
+/// <param name="Radius">The light volume's reach: the reciprocal of its uniform scale.</param>
 /// <param name="TransformDisagreement">
 /// How far the volume transform's own idea of where the light is falls from <paramref name="Position"/>.<br/>
 /// The two are independent encodings of one point, so this is near zero while the layout holds and grows if it
@@ -24,7 +24,7 @@ internal readonly record struct GameLight(
     float Radius,
     float TransformDisagreement)
 {
-    /// <summary>The brightest channel, which is what separates a lit lamp from one contributing nothing.</summary>
+    /// <summary>The brightest channel.</summary>
     public float Intensity => MathF.Max(Color.X, MathF.Max(Color.Y, Color.Z));
 
     /// <summary>Whether this light contributes anything at all.</summary>
@@ -33,8 +33,7 @@ internal readonly record struct GameLight(
     /// <summary>
     /// Whether this is the scene's directional light rather than a lamp.<br/>
     /// A directional light has nowhere to be and no reach to limit, and the game says so by leaving both fields
-    /// at their identity: no position and a volume scale of one. Measured across a day/night pair in the same
-    /// room, where this record alone went from black to <c>(1.960, 1.869, 1.765)</c> while every lamp held still.
+    /// at their identity: no position and a volume scale of one.
     /// </summary>
     public bool IsDirectional => Radius is > 0.99f and < 1.01f && Position.LengthSquared() < 0.0001f;
 
@@ -43,14 +42,7 @@ internal readonly record struct GameLight(
     public Vector3 WorldPosition(Vector3 camera) => IsDirectional ? Position : Position + camera;
 }
 
-/// <summary>
-/// Reads the game's per-light records out of the payloads a write-log run captured.<br/>
-/// <b>How this layout was established.</b> Not by recognising shapes - that route produced two confident wrong
-/// readings of the specular map before it was abandoned. A lamp was removed from the room between two captures,
-/// and one payload vanished. The object's own transform was zeroed in the same capture, and the third column of
-/// that transform is byte-identical to row 1 of the payload that disappeared, which ties the record to the
-/// object that went away. That is what makes this a measurement rather than another guess.
-/// </summary>
+/// <summary>Reads the game's per-light records out of the payloads a write-log run captured.</summary>
 internal static class GameLightHarvest
 {
     /// <summary>Bytes in one record. The whole 512 B buffer carries a single light, with the tail rows unused.</summary>
@@ -76,9 +68,9 @@ internal static class GameLightHarvest
 
     /// <summary>
     /// Reads a payload as a light, if it is one.<br/>
-    /// The two tests together are what keep the material-parameter buffers out. Those share the 512 B class and
-    /// would otherwise be picked up in quantity: they satisfy the duplicated-colour test easily, since whole runs
-    /// of their rows are <c>(1, 1, 1, 1)</c>, but their row 1 has a length of 1.73 rather than 1.
+    /// The two tests together keep the material-parameter buffers out. Those share the 512 B class and would
+    /// otherwise be picked up in quantity: they satisfy the duplicated-colour test easily, since whole runs of
+    /// their rows are <c>(1, 1, 1, 1)</c>, but their row 1 has a length of 1.73 rather than 1.
     /// </summary>
     /// <param name="payload">A captured 512 B payload.</param>
     /// <param name="light">The light read out of it.</param>
@@ -121,10 +113,8 @@ internal static class GameLightHarvest
     /// slots. Its scale is the reciprocal of the light's reach, because the volume is a unit shape stretched to
     /// that reach.<br/>
     /// <b>The translation is not the position.</b> It is expressed in the volume's own rotated frame, so reading
-    /// it directly - which an earlier version of this did - yields a point that wanders as the light turns. The
-    /// rotation has to be undone: for <c>M = [R*s | t]</c>, the centre is <c>-(R^T/s)*t</c>. Doing that on the
-    /// capture that identified this layout gives <c>(0.207, 0.078, -4.696)</c> against a row 0 of
-    /// <c>(0.199, 0.073, -4.701)</c>, which is how the two fields were shown to be one point rather than two.
+    /// it directly yields a point that wanders as the light turns. The rotation has to be undone: for
+    /// <c>M = [R*s | t]</c>, the centre is <c>-(R^T/s)*t</c>.
     /// </summary>
     private static void ReadTransform(byte[] payload, out Vector3 centre, out float radius)
     {

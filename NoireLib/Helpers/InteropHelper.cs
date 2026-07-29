@@ -5,22 +5,14 @@ using System.Linq;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides static methods for various Dalamud interop functionalities such as checking external plugin availability.
+/// Dalamud interop helpers, such as checking external plugin availability.
 /// </summary>
 public static class InteropHelper
 {
-    /// <summary>
-    /// Determines the availability status of a plugin by its internal name and optional minimum version requirement.
-    /// </summary>
+    /// <summary>Determines a plugin's availability by internal name and optional minimum version.</summary>
     /// <param name="pluginInternalName">The internal name of the plugin to check for availability.</param>
-    /// <param name="minVersion">
-    /// An optional minimum version that the plugin must meet to be considered available.<br/>
-    /// If null, any installed version is accepted.
-    /// </param>
-    /// <returns>
-    /// A <see cref="PluginAvailability"/> value indicating whether the plugin is available, disabled, not
-    /// installed, or does not meet the minimum version requirement.
-    /// </returns>
+    /// <param name="minVersion">Minimum version required. Null accepts any installed version.</param>
+    /// <returns>The plugin's <see cref="PluginAvailability"/>.</returns>
     public static PluginAvailability IsPluginAvailable(string pluginInternalName, Version? minVersion = null)
     {
         // Get all installed plugins, including dev ones
@@ -42,7 +34,7 @@ public static class InteropHelper
 
     /// <inheritdoc cref="IsPluginAvailable(string, Version?)"/>
     /// <param name="pluginInternalName">The internal name of the plugin to check for availability.</param>
-    /// <param name="minVersion">The string representation of the minimum version that the plugin must meet to be considered available.</param>
+    /// <param name="minVersion">String form of the minimum version required.</param>
     /// <exception cref="FormatException"></exception>
     /// <exception cref="ArgumentNullException"></exception>
     /// <exception cref="OverflowException"></exception>

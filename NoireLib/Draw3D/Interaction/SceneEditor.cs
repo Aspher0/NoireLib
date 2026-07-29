@@ -8,14 +8,13 @@ namespace NoireLib.Draw3D.Interaction;
 
 /// <summary>
 /// The packaged "click to select, gizmo follows the selection" controller, created from and owned by a scene via
-/// <see cref="Scene3D.CreateEditor"/>. It subscribes to the scene's <see cref="Scene3D.Selection"/> and attaches its
-/// <see cref="Gizmo"/> to the current pick (one node, or the whole group), so the ~15-line follow-selection branch is
-/// gone.<br/>
-/// <b>Owned by the scene:</b> <see cref="Scene3D.Dispose"/> disposes the editor. <see cref="Dispose"/> is available for
-/// early teardown but is <b>never required</b>.<br/>
-/// <b>Scoped multi-select:</b> <see cref="MultiSelect"/> sets the scene selection's mode and restores it on dispose -
-/// no lingering global. Because the scene's selection only ever holds that scene's nodes, the editor naturally reacts
-/// to picks in its own scene only.
+/// <see cref="Scene3D.CreateEditor"/>, subscribing to the scene's <see cref="Scene3D.Selection"/> and attaching its
+/// <see cref="Gizmo"/> to the current pick (one node, or the whole group).<br/>
+/// <b>Owned by the scene:</b> <see cref="Scene3D.Dispose"/> disposes the editor; <see cref="Dispose"/> is available
+/// for early teardown but is <b>never required</b>.<br/>
+/// <b>Scoped multi-select:</b> <see cref="MultiSelect"/> sets the scene selection's mode and restores it on dispose
+/// - no lingering global - and since the scene's selection only ever holds that scene's nodes, the editor naturally
+/// reacts to picks in its own scene only.
 /// </summary>
 public sealed class SceneEditor : IDisposable
 {
@@ -37,7 +36,7 @@ public sealed class SceneEditor : IDisposable
         OnSelectionChanged(); // sync to whatever is already selected
     }
 
-    /// <summary>The gizmo the editor drives. Configure it via the flattened surface (<c>editor.Gizmo.Space = ...</c>, <c>editor.Gizmo.Snap = 0.5f</c>) or its <see cref="NoireGizmo.Options"/>.</summary>
+    /// <summary>The gizmo the editor drives; configure it via the flattened surface (<c>editor.Gizmo.Space = ...</c>, <c>editor.Gizmo.Snap = 0.5f</c>) or its <see cref="NoireGizmo.Options"/>.</summary>
     public NoireGizmo Gizmo { get; }
 
     /// <summary>The selection the editor follows - the scene's own <see cref="Scene3D.Selection"/>.</summary>
@@ -47,9 +46,9 @@ public sealed class SceneEditor : IDisposable
     public Scene3D Scene => scene;
 
     /// <summary>
-    /// Whether picking builds a multi-node selection (Ctrl-toggle / Shift-add). Setting it drives the scene selection's
-    /// mode as a <b>scoped</b> setting - the mode in effect when the editor was created is restored on <see cref="Dispose"/>,
-    /// so this never leaves a lingering global.
+    /// Whether picking builds a multi-node selection (Ctrl-toggle / Shift-add); setting it drives the scene
+    /// selection's mode as a <b>scoped</b> setting - the mode in effect when the editor was created is restored on
+    /// <see cref="Dispose"/>, so this never leaves a lingering global.
     /// </summary>
     public bool MultiSelect
     {
@@ -66,8 +65,8 @@ public sealed class SceneEditor : IDisposable
 
     /// <summary>
     /// Optional: when set, selected nodes get a real silhouette outline in this color (via
-    /// <see cref="SceneNode.ShowOutline"/>), removed on deselect. Off by default (the default selection feedback is
-    /// the gizmo plus the per-node hover tint). Set to null to turn outlines off.
+    /// <see cref="SceneNode.ShowOutline"/>), removed on deselect; off by default (the default selection feedback is
+    /// the gizmo plus the per-node hover tint), set to null to turn outlines off.
     /// </summary>
     public Vector4? SelectionOutline
     {
@@ -79,7 +78,7 @@ public sealed class SceneEditor : IDisposable
         }
     }
 
-    /// <summary>Outline thickness in screen pixels for <see cref="SelectionOutline"/> (default 4). Set before enabling the outline.</summary>
+    /// <summary>Outline thickness in screen pixels for <see cref="SelectionOutline"/> (default 4); set before enabling the outline.</summary>
     public float OutlineWidth { get; set; } = 4f;
 
     /// <summary>True once disposed.</summary>
@@ -148,8 +147,8 @@ public sealed class SceneEditor : IDisposable
     }
 
     /// <summary>
-    /// Early teardown: unwires the selection follow, disposes the gizmo and restores the selection mode. Optional -
-    /// <see cref="Scene3D.Dispose"/> does all of this for you. Idempotent.
+    /// Early teardown: unwires the selection follow, disposes the gizmo and restores the selection mode; optional,
+    /// since <see cref="Scene3D.Dispose"/> does all of this for you, and idempotent.
     /// </summary>
     public void Dispose()
     {

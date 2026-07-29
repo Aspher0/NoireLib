@@ -33,7 +33,6 @@ public sealed class RingStyle
     public float StartTurns { get; set; }
 
     /// <summary>How much of the circle a full value covers, in turns. Defaults to all of it.</summary>
-    /// <remarks>Set to 0.75 with a <see cref="StartTurns"/> of 0.625 for the open-bottomed dial a speedometer uses.</remarks>
     public float SweepTurns { get; set; } = 1f;
 
     /// <summary>Whether the fill runs clockwise. On by default.</summary>
@@ -58,9 +57,7 @@ public sealed class RingStyle
     internal Vector4 ResolveTrackColor()
         => TrackColor ?? NoireTheme.Current.Resolve(ThemeColor.SurfaceSunken);
 
-    /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
-    /// </summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public RingStyle Clone() => (RingStyle)MemberwiseClone();
 }

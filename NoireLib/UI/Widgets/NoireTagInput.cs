@@ -7,9 +7,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A field that collects short strings as chips: tags, filters, names, whitelist entries.<br/>
-/// Typing and pressing Enter adds one, pasting a comma-separated list adds all of them, backspace on an empty field
-/// takes the last one back for editing rather than destroying it, and anything refused says why instead of vanishing.
+/// A field that collects short strings as chips. Typing and pressing Enter adds one, pasting a comma-separated list
+/// adds all of them, backspace on an empty field takes the last one back for editing rather than destroying it, and
+/// anything refused says why instead of vanishing.
 /// </summary>
 /// <remarks>
 /// The rules are all yours: what separates a pasted list, whether duplicates are allowed, how many tags fit, how long
@@ -58,8 +58,7 @@ public sealed class NoireTagInput
     public string Id { get; }
 
     /// <summary>
-    /// The width of the field. When <see langword="null"/>, the space available is used.<br/>
-    /// In real pixels, not scaled. See <see cref="NoireUI.Scale"/>.
+    /// The width of the field. When <see langword="null"/>, the space available is used. In real pixels, not scaled.
     /// </summary>
     public float? Width { get; set; }
 
@@ -77,14 +76,7 @@ public sealed class NoireTagInput
     /// <summary>How two tags are compared, for duplicate detection.</summary>
     public StringComparer Comparer { get; set; }
 
-    /// <summary>
-    /// The characters that split a pasted or typed run into several tags.
-    /// </summary>
-    /// <remarks>
-    /// This is what makes pasting a list work, and it is why the field is worth having over a plain text box: people
-    /// paste comma-separated lists constantly, and a field that swallows one as a single tag is the thing they then
-    /// have to undo by hand.
-    /// </remarks>
+    /// <summary>The characters that split a pasted or typed run into several tags.</summary>
     public char[] Separators { get; set; } = [',', ';', '\n', '\r', '\t'];
 
     /// <summary>Whether the same tag may appear twice. Off by default.</summary>
@@ -273,9 +265,7 @@ public sealed class NoireTagInput
         Notify();
     }
 
-    /// <summary>
-    /// Takes the last tag back into the input for editing, which is what backspace on an empty field does.
-    /// </summary>
+    /// <summary>Takes the last tag back into the input for editing.</summary>
     /// <returns>True when there was a tag to take back.</returns>
     public bool PopLastForEditing()
     {
@@ -292,13 +282,7 @@ public sealed class NoireTagInput
 
     #region Rules, as logic
 
-    /// <summary>
-    /// Splits a run of text into candidate tags.
-    /// </summary>
-    /// <remarks>
-    /// Separated out because it is the part worth being sure about: pasting is the reason this widget exists, and a
-    /// splitter that keeps empty pieces or trims the wrong thing turns one paste into a field full of rubbish.
-    /// </remarks>
+    /// <summary>Splits a run of text into candidate tags.</summary>
     /// <param name="text">The text to split.</param>
     /// <param name="separators">The characters to split on.</param>
     /// <param name="trim">Whether surrounding whitespace is removed from each piece.</param>
@@ -460,8 +444,8 @@ public sealed class NoireTagInput
 
         for (var index = 0; index < tags.Count; index++)
         {
-            // Measured once and handed on. The measurement is cached, so the second one was a dictionary lookup rather
-            // than a walk over the glyphs, but it was still two lookups per chip per frame for one answer.
+            // Measured once and handed on: the measurement itself is cached, so a repeat lookup costs a dictionary
+            // hit rather than a walk over the glyphs.
             var size = MeasureChip(tags[index], padding);
 
             NoireLayout.FlowItem(size.X, index == 0, width: width);
@@ -495,7 +479,7 @@ public sealed class NoireTagInput
     /// built from the text would make them one, so only the first would be clickable.
     /// </remarks>
     /// <param name="tag">The tag the chip holds.</param>
-    /// <param name="index">The chip's position, which is what its id is built from.</param>
+    /// <param name="index">The chip's position, used to build its id.</param>
     /// <param name="size">The chip's size, measured by the caller laying the row out.</param>
     /// <param name="theme">The theme, resolved once for the whole row.</param>
     /// <param name="padding">The frame padding, resolved once for the whole row.</param>
@@ -506,9 +490,9 @@ public sealed class NoireTagInput
         var clicked = ImGui.InvisibleButton(UiIds.For("###NoireTagChip_", Id, index), size);
         var hovered = ImGui.IsItemHovered();
 
-        // A chip scrolled out of the page still costs two rounded rects, a label and a cross, all of which ImGui then
-        // throws away against the clip rect. The layout still has to run for every chip, since a wrapped row does not
-        // know where the next one lands until this one has been placed, but the painting does not.
+        // A chip scrolled out of the page still costs two rounded rects, a label and a cross, that ImGui then throws
+        // away against the clip rect. The layout still runs for every chip, since a wrapped row does not know where
+        // the next one lands until this one is placed, but the painting does not.
         if (!ImGui.IsRectVisible(origin, origin + size))
         {
             ImGui.SetCursorScreenPos(origin);
@@ -522,16 +506,16 @@ public sealed class NoireTagInput
         NoireShapes.Rect(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.35f : 0.20f), CornerShape.Rounded, size.Y * 0.5f);
         NoireShapes.RectOutline(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.85f : 0.45f), 1f, CornerShape.Rounded, size.Y * 0.5f);
 
-        // Both the label and the cross hang off the same line, which is the text's optical centre rather than the
-        // chip's geometric one. Centring the label on the chip would put it a couple of pixels low, because its line
-        // reserves room under the baseline that a tag rarely uses, and the cross would then sit above the letters.
+        // Both the label and the cross hang off the same line: the text's optical centre, not the chip's geometric
+        // one. Centring the label on the chip would sit it a couple of pixels low, since its line reserves room
+        // under the baseline that a tag rarely uses, and the cross would then sit above the letters.
         var middle = origin.Y + (size.Y * 0.5f);
 
         ImGui.SetCursorScreenPos(new Vector2(origin.X + padding.X, middle - NoireText.CenterOffset()));
 
-        // Wrapping is disabled for the label, because the chip was measured on the assumption that it is one line. A
-        // page that sets a wrap position for its prose would otherwise wrap the last chip on a row character by
-        // character, inside a pill drawn at the full width of the word.
+        // Wrapping is disabled for the label, since the chip was measured assuming one line. A page that sets a wrap
+        // position for its prose would otherwise wrap the last chip on a row character by character, inside a pill
+        // drawn at the full width of the word.
         ImGui.PushTextWrapPos(-1f);
         NoireText.Draw(tag);
         ImGui.PopTextWrapPos();
@@ -571,8 +555,8 @@ public sealed class NoireTagInput
 
         NoireFocus.OnLast(FocusStyle);
 
-        // Checked before committing, because a separator typed or pasted mid-run is what turns one paste into the
-        // whole list rather than a single tag holding commas.
+        // Checked before committing: a separator typed or pasted mid-run splits one paste into the whole list
+        // rather than leaving it a single tag holding commas.
         if (!committed && input.Length > 0 && ContainsSeparator(input))
         {
             AddRange(input);

@@ -10,20 +10,19 @@ namespace NoireLib.Networker;
 public sealed class NetworkerOptions
 {
     /// <summary>
-    /// Whether this network participates on the LAN. Defaults to false (same-PC only).<br/>
-    /// Note: the first LAN use may require allowing inbound connections for the game process in Windows Firewall.
+    /// Whether this network participates on the LAN (default false, same-PC only); the first LAN use may require
+    /// allowing inbound connections for the game process in Windows Firewall.
     /// </summary>
     public bool EnableLan { get; set; } = false;
 
     /// <summary>
-    /// An optional pre-shared secret gating LAN peers. The handshake proves knowledge of it without sending it over the wire.<br/>
-    /// When null and <see cref="EnableLan"/> is true, the network is open on the LAN (a log line will say so).
+    /// An optional pre-shared secret gating LAN peers, proved by handshake without sending it over the wire;
+    /// when null and <see cref="EnableLan"/> is true, the network is open on the LAN (logged).
     /// </summary>
     public string? LanSecret { get; set; } = null;
 
     /// <summary>
-    /// An optional <see cref="NoireEventBus"/> to integrate with.<br/>
-    /// Enables <see cref="NoireNetworker.ShareEvent{TEvent}(NetworkerShareDirection)"/> and the publication of networker lifecycle events.
+    /// An optional <see cref="NoireEventBus"/> to integrate with, enabling <see cref="NoireNetworker.ShareEvent{TEvent}(NetworkerShareDirection)"/> and the publication of networker lifecycle events.
     /// </summary>
     public NoireEventBus? EventBus { get; set; } = null;
 

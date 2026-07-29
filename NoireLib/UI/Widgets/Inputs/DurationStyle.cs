@@ -12,13 +12,7 @@ public sealed class DurationStyle
     /// <summary>The hint shown while the field is empty.</summary>
     public string Hint { get; set; } = "1m30s";
 
-    /// <summary>
-    /// The unit a number typed with no unit at all is measured in.
-    /// </summary>
-    /// <remarks>
-    /// Set this to whatever the setting is really counted in. A cooldown field where someone types "30" almost
-    /// certainly means thirty seconds; a poll interval where they type "500" almost certainly means milliseconds.
-    /// </remarks>
+    /// <summary>The unit a number typed with no unit at all is measured in.</summary>
     public DurationUnit BareUnit { get; set; } = DurationUnit.Seconds;
 
     /// <summary>The shortest duration accepted.</summary>
@@ -44,13 +38,7 @@ public sealed class DurationStyle
     /// </summary>
     public float Width { get; set; }
 
-    /// <summary>
-    /// Whether the duration read back is shown beside the field while it is being typed.
-    /// </summary>
-    /// <remarks>
-    /// On by default, and the reason the shorthand is usable at all: "1h30" is only obvious once something confirms it
-    /// meant ninety minutes rather than an hour and thirty seconds.
-    /// </remarks>
+    /// <summary>Whether the duration read back is shown beside the field while it is being typed. On by default.</summary>
     public bool ShowPreview { get; set; } = true;
 
     /// <summary>

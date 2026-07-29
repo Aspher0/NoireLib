@@ -6,25 +6,15 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// What each part of the interface costs to build, per frame, by name.<br/>
-/// Off by default and free when off. Turn it on, draw for a few seconds, and read <see cref="Snapshot()"/>: the answer to
-/// "which widget is the expensive one" is a list rather than a guess.
+/// What each part of the interface costs to build, per frame, by name. Off by default and free when off.
 /// </summary>
 /// <remarks>
-/// This measures the time spent <em>building</em> the draw data on the draw thread, which is the part a plugin controls
-/// and the part an optimization pass moves. It is not the GPU cost of drawing the result, and it is not everything the
-/// host times against your plugin: a host's own figure covers the whole draw callback, including the windowing and the
-/// ImGui work around whatever is instrumented here.<br/>
-/// Scopes nest, so every scope is reported twice over: <em>total</em> time, which includes everything measured inside
-/// it, and <em>self</em> time, which does not. Self time is the one that adds up. Totalling the total column counts a
-/// widget once for itself and again for every scope enclosing it, which is how a frame comes out looking several times
-/// more expensive than it is.<br/>
-/// Every drawing surface NoireUI ships opens its own scope, so turning this on attributes the frame without work at
-/// the call sites. That holds structurally rather than by convention: a surface cannot obtain a draw list without
-/// opening a scope in the same call, and an analyzer reports one that reaches for a list directly as a build error.
-/// What is still unaccounted for is the ImGui work around the surfaces, which is what the root scope's self time
-/// reports. See <see cref="RootScopeName"/>.
-/// <see cref="NoireUI.Profile{TState}(string, TState, System.Action{TState})"/> puts your own code on the same list.
+/// Measures the time spent building the draw data on the draw thread: not the GPU cost, and not the host's whole
+/// draw callback, which also includes windowing and the ImGui work around what is instrumented here.<br/>
+/// Every surface NoireUI ships opens its own scope; reaching for a draw list without one is a build error, so
+/// coverage holds structurally. What that leaves out is reported as the root scope's self time. See
+/// <see cref="RootScopeName"/>. <see cref="NoireUI.Profile{TState}(string, TState, System.Action{TState})"/> adds
+/// your own code to the same list.
 /// </remarks>
 /// <example>
 /// <code>
@@ -37,8 +27,7 @@ namespace NoireLib.UI;
 public sealed class UiProfiler
 {
     /// <summary>
-    /// How much of the rolling average one frame is worth. Low enough that a frame competing with a texture upload does
-    /// not read as a regression, high enough that a real change shows up within a second of drawing.
+    /// How much of the rolling average one frame is worth.
     /// </summary>
     private const double AverageWeight = 0.05d;
 
@@ -48,13 +37,8 @@ public sealed class UiProfiler
     /// One entry per <em>call path</em>, not per name: a node is identified by its name and the node it sits inside.
     /// </summary>
     /// <remarks>
-    /// Keying on the name alone was wrong in a way that quietly lost time. A helper called from several places, which
-    /// is what a helper is, had one row whose parent was whichever caller ran last; every other caller then showed a
-    /// self time reduced by a child that was nowhere under it, and the difference vanished from the tree. Keyed by
-    /// path, each caller gets its own node and every branch adds up.<br/>
-    /// Both halves of the key are integers: the parent's id rather than a built path string, and the name's
-    /// <see cref="UiScopeName.Id"/> rather than the name. Nothing is composed or allocated per frame, and nothing is
-    /// hashed that was not already an integer.
+    /// Keyed on two integers: the parent's node id and the name's <see cref="UiScopeName.Id"/>. Nothing is composed
+    /// or allocated per frame, and nothing is hashed that was not already an integer.
     /// </remarks>
     private readonly Dictionary<(int Parent, int Name), Node> nodes = new();
 
@@ -88,12 +72,8 @@ public sealed class UiProfiler
     /// one per piece.
     /// </summary>
     /// <remarks>
-    /// Per thread, because nesting is a property of a call stack rather than of the profiler: a scope opened on a
-    /// background thread is not inside whatever the draw thread happens to be building at that moment, and charging it
-    /// there would take the time away from a scope that never spent it.<br/>
-    /// The state used to live in five separate <see langword="[ThreadStatic]"/> fields, and every one of them cost its
-    /// own thread-local access on every open and close. Measured against a frame of several hundred scopes, folding
-    /// them into one object was a solid slice of what a scope cost.
+    /// Held per thread because nesting follows the call stack: a scope opened on a background thread must not be
+    /// charged into whatever the draw thread is currently building.
     /// </remarks>
     private sealed class ThreadState
     {
@@ -101,11 +81,9 @@ public sealed class UiProfiler
         /// The scopes currently open on this thread, innermost last, in the first <see cref="Depth"/> slots.
         /// </summary>
         /// <remarks>
-        /// A plain array indexed by hand rather than a <see cref="List{T}"/>. The list's indexer copies the whole
-        /// struct out and back for a field write, its <c>Add</c> copies it again, and removal clears slots because the
-        /// struct holds references. Writing through a <see langword="ref"/> into an array does none of that, and a
-        /// popped slot is simply left behind to be overwritten: everything it references outlives it in
-        /// <see cref="nodes"/> anyway.
+        /// A plain array written through by <see langword="ref"/> rather than a <see cref="List{T}"/>, avoiding the
+        /// copies a list's indexer and <c>Add</c> make on this struct. A popped slot is left to be overwritten;
+        /// everything it references still lives in <see cref="nodes"/>.
         /// </remarks>
         public OpenScope[] Stack = new OpenScope[64];
 
@@ -126,9 +104,7 @@ public sealed class UiProfiler
         /// The node each call site resolved to last, indexed by <see cref="UiScopeName.Id"/>.
         /// </summary>
         /// <remarks>
-        /// This is what takes a warm scope open off the lock and off the hash table. Measured in a real draw path, a
-        /// scope cost 0.418 microseconds with the shared table locked on every open and close; a frame of any size
-        /// opens several hundred, which put the instrument's own cost above a fifth of what it was reporting.
+        /// Lets a warm scope resolve without the lock or the hash table.
         /// </remarks>
         public Node?[] MemoNodes = new Node?[64];
 
@@ -153,9 +129,8 @@ public sealed class UiProfiler
         /// The node this scope accumulates into, resolved when it opened.
         /// </summary>
         /// <remarks>
-        /// Carried rather than looked up again on the way out. Rebuilding the key at close time was wrong for any
-        /// scope the root had adopted: the stack is empty by then, so the key came out with no parent, missed the node
-        /// created when it opened, and quietly made a second one carrying the same id.
+        /// Carried rather than looked up again on the way out: for a scope the root adopted, rebuilding the key at
+        /// close time would find no parent on the empty stack and create a duplicate node.
         /// </remarks>
         public Node Node;
 
@@ -173,17 +148,15 @@ public sealed class UiProfiler
         /// The counter on entry to <see cref="Open"/>, before the profiler did any of its own work.
         /// </summary>
         /// <remarks>
-        /// The difference between this and <see cref="StartedBytes"/> is what the profiler spent resolving the scope,
-        /// which is a node allocated the first time a call path is seen. The scope is not charged for it, and neither
-        /// is whatever encloses it: the enclosing scope is charged from here rather than from
-        /// <see cref="StartedBytes"/>, so the cost of measuring lands on nobody instead of on the parent.
+        /// The gap between this and <see cref="StartedBytes"/> is what resolving the scope allocated. Neither the
+        /// scope nor its parent is charged for it: the parent is charged from here rather than from
+        /// <see cref="StartedBytes"/>.
         /// </remarks>
         public long EntryBytes;
 
         /// <summary>
-        /// How many bytes were allocated inside scopes nested in this one. The byte equivalent of
-        /// <see cref="ChildTicks"/>, and subtracted for the same reason: without it a parent looks responsible for
-        /// garbage its children produced.
+        /// How many bytes were allocated inside scopes nested in this one, the byte equivalent of
+        /// <see cref="ChildTicks"/>; subtracted so a parent is not charged for its children's allocations.
         /// </summary>
         public long ChildBytes;
 
@@ -191,9 +164,8 @@ public sealed class UiProfiler
         /// Whether <see cref="UiProfiler.TrackAllocations"/> was on when this scope opened.
         /// </summary>
         /// <remarks>
-        /// Carried rather than read again on the way out, because the setting can move while a scope is open. Both
-        /// ends of a difference have to have been read for the difference to mean anything: without this, a scope
-        /// that opened while tracking was off and closed while it was on would report the thread's entire allocation
+        /// Carried rather than read again on close, since the setting can change while a scope is open. Without it, a
+        /// scope that opened with tracking off and closed with it on would report the thread's entire allocation
         /// since startup as its own.
         /// </remarks>
         public bool Tracked;
@@ -237,15 +209,15 @@ public sealed class UiProfiler
         /// Whether this scope is left out of the totals. See <see cref="SetExcluded"/>.
         /// </summary>
         /// <remarks>
-        /// Held on the node rather than in a set of ids beside it, so the totals pass reads a field it already has in
-        /// hand instead of probing a collection once per scope per read.
+        /// Held on the node rather than in a separate set of ids, so the totals pass reads a field instead of probing
+        /// a collection per scope.
         /// </remarks>
         public bool Excluded;
     }
 
     /// <summary>
-    /// Backs <see cref="Enabled"/>. A field rather than an auto-property so the hot paths read it without a call:
-    /// an unoptimized build does not inline a property getter, and this is read on every scope of every frame.
+    /// Backs <see cref="Enabled"/>. A field rather than an auto-property so hot paths read it without a call; read
+    /// on every scope of every frame.
     /// </summary>
     private bool enabled;
 
@@ -260,14 +232,12 @@ public sealed class UiProfiler
     private bool detailed;
 
     /// <summary>
-    /// Whether scopes are timed.<br/>
-    /// Off by default. A disabled profiler reads one boolean per scope and does nothing else, so leaving the
-    /// instrumentation in place costs nothing.
+    /// Whether scopes are timed. Off by default; a disabled profiler reads one boolean per scope and does nothing
+    /// else.
     /// </summary>
     /// <remarks>
-    /// Turning it on costs two <see cref="Stopwatch"/> reads and a memoized node lookup per measured scope. That is
-    /// small against what it measures, but it is not nothing: it is a diagnostic to switch on while you are looking,
-    /// not a setting to ship enabled.
+    /// Costs two <see cref="Stopwatch"/> reads and a memoized node lookup per measured scope when on: a diagnostic
+    /// to switch on while looking, not a setting to ship enabled.
     /// </remarks>
     public bool Enabled
     {
@@ -276,17 +246,14 @@ public sealed class UiProfiler
     }
 
     /// <summary>
-    /// Whether scopes also record how many bytes they allocated. Requires <see cref="Enabled"/>.<br/>
-    /// Off by default, separately from the timing, because it costs more per scope than the timing does.
+    /// Whether scopes also record how many bytes they allocated. Requires <see cref="Enabled"/>. Off by default,
+    /// separately from timing, since it costs more per scope.
     /// </summary>
     /// <remarks>
-    /// Each measured scope reads the runtime's per-thread allocation counter twice, and that is a runtime call rather
-    /// than a field read. An interface opening several hundred scopes a frame pays it several hundred times, which was
-    /// measured at roughly half of what a scope costs at all.<br/>
-    /// Switch it on while judging whether a change allocates, which is what the byte columns are for, and leave it off
-    /// while reading milliseconds. The byte figures report 0 while it is off rather than holding their last values, so
-    /// a reader cannot mistake a stale number for a live one. A scope open across a change to this setting reports 0
-    /// bytes for that one scope, since a difference needs both of its ends.
+    /// Reads the runtime's per-thread allocation counter twice per scope, a runtime call rather than a field read,
+    /// roughly doubling what a scope costs to measure.<br/>
+    /// Bytes read 0 while this is off rather than holding stale values. A scope open across a change to this
+    /// setting reports 0 bytes for that scope.
     /// </remarks>
     public bool TrackAllocations
     {
@@ -295,19 +262,14 @@ public sealed class UiProfiler
     }
 
     /// <summary>
-    /// Whether the library's per-method scopes are measured as rows of their own. Requires <see cref="Enabled"/>.<br/>
-    /// Off by default: the everyday question is "which widget is the expensive one", and the widget and surface rows
-    /// answer it at a fraction of the cost. Switch this on to break a surface down further, into rows like
-    /// <c>NoireShapes.Glow</c>, one per drawing method.
+    /// Whether the library's per-method scopes are measured as rows of their own, such as <c>NoireShapes.Glow</c>.
+    /// Requires <see cref="Enabled"/>. Off by default.
     /// </summary>
     /// <remarks>
-    /// The gate exists because the fine rows are most of what measuring costs. A decorated window opens a scope per
-    /// shape it paints, several hundred a frame, against a few dozen widget and surface scopes; measuring only the
-    /// coarse rows makes an enabled profiler cost a few microseconds a frame instead of tens.<br/>
-    /// Nothing goes missing while it is off. A method scope that is not measured folds into the scope around it, so
-    /// every millisecond still lands in the widget or surface that spent it; the fine rows only stop being listed
-    /// separately. Rows measured before the switch moved keep reporting until they fall to zero the way any scope
-    /// that stopped running does.
+    /// Fine rows are most of what measuring costs: a decorated window opens a scope per shape painted, several
+    /// hundred a frame, against a few dozen widget and surface scopes.<br/>
+    /// A method scope that is not measured folds into the scope around it, so its time still lands in the widget or
+    /// surface that spent it; the row only stops being listed separately.
     /// </remarks>
     public bool Detailed
     {
@@ -325,10 +287,9 @@ public sealed class UiProfiler
     /// only the ones something claimed.
     /// </summary>
     /// <remarks>
-    /// Wrap your entire draw in a scope of this name and the table gains a row whose total is the same span your host
-    /// times the plugin over, and whose self time is everything inside it that nothing else measured: the windowing,
-    /// the ImGui work around the widgets, and any drawing not instrumented yet. That remainder is the number worth
-    /// watching, because it is the part of the frame the profiler cannot yet explain.
+    /// Wrapping the whole draw in a scope of this name gives the table a row whose total matches what a host times
+    /// the plugin over, and whose self time is whatever nothing else measured: windowing, the ImGui work around
+    /// widgets, and anything not yet instrumented.
     /// </remarks>
     /// <example>
     /// <code>
@@ -339,8 +300,8 @@ public sealed class UiProfiler
     public const string RootScopeName = "ImGui Draw";
 
     /// <summary>
-    /// What the root scope cost in total on average, or 0 when nothing is measuring one.<br/>
-    /// Directly comparable to the figure a host reports for the plugin. See <see cref="RootScopeName"/>.
+    /// What the root scope cost in total on average, or 0 when nothing is measuring one. Directly comparable to the
+    /// figure a host reports for the plugin. See <see cref="RootScopeName"/>.
     /// </summary>
     public double RootAverageMs
     {
@@ -368,10 +329,9 @@ public sealed class UiProfiler
     /// Moves whenever the reported figures change, which is once per measured frame.
     /// </summary>
     /// <remarks>
-    /// For anything displaying a snapshot. The figures only move when a frame rolls, so a reader that rebuilds its
-    /// formatting every frame is rebuilding the same strings from the same numbers at whatever the frame rate is.
-    /// Compare this against the value held from last time and rebuild only when it differs.<br/>
-    /// Treated as opaque: it is not a frame number and not a count of anything, only a value that changes.
+    /// For a caller displaying a snapshot: figures only move when a frame rolls, so comparing this against the value
+    /// held from last time and rebuilding only when it differs avoids redoing the same formatting every frame.
+    /// Treated as opaque, not a frame number or a count of anything.
     /// </remarks>
     public int Generation
     {
@@ -406,8 +366,8 @@ public sealed class UiProfiler
     /// enough.
     /// </summary>
     /// <remarks>
-    /// For a caller reading every frame, where a fresh list and a fresh set of entries per frame is garbage produced by
-    /// the act of looking. The list is cleared first, and the order matches <see cref="Snapshot()"/>.
+    /// For a caller reading every frame, where fresh entries every frame would be garbage produced by looking.
+    /// Cleared first; order matches <see cref="Snapshot()"/>.
     /// </remarks>
     /// <param name="buffer">The list to fill. Cleared before anything is added.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="buffer"/> is <see langword="null"/>.</exception>
@@ -455,13 +415,12 @@ public sealed class UiProfiler
     }
 
     /// <summary>
-    /// The sum of every scope's self time, averaged. This is the figure that means something: because self time
-    /// excludes nested scopes, adding it up counts each piece of work exactly once.
+    /// The sum of every scope's self time, averaged. Counts each piece of work exactly once, since self time
+    /// excludes nested scopes.
     /// </summary>
     /// <remarks>
-    /// It accounts for the instrumented work only. The difference between this and what your host reports for the
-    /// plugin is everything not measured here, which includes the host's own windowing and the ImGui calls around it.
-    /// <br/>
+    /// Accounts for instrumented work only; the gap to what a host reports for the plugin is everything not
+    /// measured here, including its own windowing and the ImGui calls around it.<br/>
     /// Scopes marked through <see cref="SetExcluded"/> are left out.
     /// </remarks>
     public double TotalAverageMs
@@ -484,18 +443,14 @@ public sealed class UiProfiler
     }
 
     /// <summary>
-    /// The sum of every scope's self allocation, averaged: how many bytes a frame of interface produces.<br/>
-    /// Reads 0 unless both <see cref="Enabled"/> and <see cref="TrackAllocations"/> are on.
+    /// The sum of every scope's self allocation, averaged: how many bytes a frame of interface produces. Reads 0
+    /// unless both <see cref="Enabled"/> and <see cref="TrackAllocations"/> are on.
     /// </summary>
     /// <remarks>
-    /// The counterpart to <see cref="TotalAverageMs"/>, and the number to watch when judging whether a change helped.
-    /// Self allocation excludes nested scopes, so adding it up counts each allocation exactly once.<br/>
-    /// A steady figure above zero is garbage produced every frame on the draw thread, which is the one thread a plugin
-    /// cannot afford a collection on.<br/>
-    /// Unlike <see cref="TotalAverageMs"/>, this reads 0 rather than the last figures once tracking is switched off.
-    /// It is surfaced on <see cref="UiDiagnostics.Snapshot"/>, which a plugin may call every frame, so it has to cost
-    /// nothing when nothing is being measured; reporting a stale number as though it were live would also be worse
-    /// than reporting none.<br/>
+    /// The counterpart to <see cref="TotalAverageMs"/>; excludes nested scopes, so each allocation is counted
+    /// exactly once.<br/>
+    /// Unlike <see cref="TotalAverageMs"/>, reads 0 rather than the last figures once tracking is off, since it is
+    /// surfaced on <see cref="UiDiagnostics.Snapshot"/>, which a plugin may call every frame.<br/>
     /// Scopes marked through <see cref="SetExcluded"/> are left out.
     /// </remarks>
     public double TotalAverageBytes
@@ -524,12 +479,11 @@ public sealed class UiProfiler
     /// Leaves one scope out of <see cref="TotalAverageMs"/> and <see cref="TotalAverageBytes"/>, or puts it back.
     /// </summary>
     /// <remarks>
-    /// For the cost you have decided is not part of what you are measuring: a diagnostic window open beside the thing
-    /// being profiled, a debug overlay, a page you already know about and are not working on. The scope keeps being
-    /// measured and keeps reporting its own figures; only the sums stop counting it.<br/>
-    /// One node, not a branch. The totals are sums of self time, so a scope's mark removes exactly the figure its own
-    /// row shows and nothing else; excluding a whole branch means marking the rows in it. Marks are held on the nodes,
-    /// so <see cref="Reset"/> forgets them along with everything else it forgets.
+    /// For a cost you have decided is not part of what you are measuring, such as a diagnostic window open beside
+    /// the thing being profiled. The scope keeps being measured and keeps reporting its own figures; only the sums
+    /// stop counting it.<br/>
+    /// Marks one node, not a branch: excluding a whole branch means marking each row in it. Marks are held on the
+    /// nodes, so <see cref="Reset"/> forgets them along with everything else it forgets.
     /// </remarks>
     /// <param name="id">The scope's <see cref="UiProfileEntry.Id"/>.</param>
     /// <param name="excluded">Whether to leave it out of the totals.</param>
@@ -547,8 +501,8 @@ public sealed class UiProfiler
             {
                 node.Excluded = excluded;
 
-                // The totals have just moved without a frame rolling, so a reader gated on this would otherwise keep
-                // showing the sum that included the scope until the next measurement.
+                // Totals moved outside the normal frame roll; bump so a Generation-gated reader picks it up
+                // immediately.
                 generation++;
             }
 
@@ -637,9 +591,8 @@ public sealed class UiProfiler
     /// Finds a node by the id its entries are reported under. Callers hold <see cref="syncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// A scan rather than a second dictionary keyed by id. The nodes are keyed by call path because that is what a
-    /// measurement resolves against, and marking a scope is something a reader does by hand every so often, so a second
-    /// index maintained on every first-seen call path would cost more per frame than it saves.
+    /// A scan rather than a second dictionary keyed by id: nodes are keyed by call path, and a second index
+    /// maintained per first-seen call path would cost more than the scan saves.
     /// </remarks>
     private Node? FindLocked(int id)
     {
@@ -656,10 +609,9 @@ public sealed class UiProfiler
     /// Forgets every measurement taken so far, including the peaks.
     /// </summary>
     /// <remarks>
-    /// Worth calling right before the interaction you actually want to measure. The peak is a high-water mark, so
-    /// without a reset it keeps reporting the frame that built the window for the first time.<br/>
-    /// The nodes go with it, and so do the marks <see cref="SetExcluded"/> put on them. Use
-    /// <see cref="ClearExclusions"/> to put excluded scopes back into the totals without discarding what they measured.
+    /// The peak is a high-water mark: without a reset it keeps reporting the frame that first built the window.
+    /// Nodes go with it, and so do the marks <see cref="SetExcluded"/> put on them; use
+    /// <see cref="ClearExclusions"/> to put excluded scopes back without discarding what they measured.
     /// </remarks>
     public void Reset()
     {
@@ -671,17 +623,15 @@ public sealed class UiProfiler
             rootNode = null;
             currentFrame = -1;
 
-            // Bumped here too: clearing the nodes changes what a reader would display just as surely as a frame
-            // rolling does, and one that only watched frames would keep showing rows that no longer exist.
+            // Bumped here too: clearing the nodes changes the display as much as a frame rolling does.
             generation++;
 
-            // Every node the per-thread memos hold has just been discarded, on every thread that filled one. Bumping
-            // this is what makes those entries unreachable rather than a route back to a node no longer in the table.
+            // Bumping this makes every thread's memo entries unreachable rather than a route back to a discarded node.
             resetStamp++;
         }
 
-        // Only the calling thread's state can be reached from here; other threads notice through the stamp above.
-        // Cleared rather than merely truncated so nothing keeps the discarded nodes alive.
+        // Only the calling thread's state is reachable here; other threads notice through the stamp above.
+        // Cleared rather than truncated so nothing keeps the discarded nodes alive.
         if (threadState is { } ts)
         {
             ts.Depth = 0;
@@ -695,11 +645,9 @@ public sealed class UiProfiler
     /// Starts timing a scope. Pair with <see cref="Close"/>, which <see cref="UiProfileScope"/> does.
     /// </summary>
     /// <remarks>
-    /// A scope whose name is already the innermost open one is declined (returns 0): a surface reached through its own
-    /// public entry point holds a scope by the time its private painting helpers run, and opening the name again would
-    /// not add to the row that is already open. The profiler keys a node on its name and its parent, so the second one
-    /// would become a child row of the same name, and the outer row's self time would drain into it. Names are
-    /// interned, so the check is one reference compare.
+    /// A scope whose name is already the innermost open one is declined (returns 0), since opening it again would
+    /// make a child row of the same name and drain the outer row's self time into it. Names are interned, so the
+    /// check is one reference compare.
     /// </remarks>
     /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
     /// <returns>The timestamp the scope started at, or 0 when nothing is measured.</returns>
@@ -719,13 +667,11 @@ public sealed class UiProfiler
         var tracking = trackAllocations;
         var entryBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
 
-        // The frame number is read here, on scopes opening with nothing above them, and nowhere else. Reading it is
-        // not a field read: outside a test it is an ImGui call across the native boundary, and doing that once per
-        // scope close meant several hundred of them a frame in an interface of any size. Every scope nested in this
-        // one is in the same frame by construction, so one read answers for all of them. The lock is taken only when
-        // the frame has actually moved, so this is also the only place the shared table is locked on a warm path:
-        // once per frame rather than once per scope. RollFrameLocked re-reads the number under the lock, so two
-        // threads racing here roll the frame once between them.
+        // Read only here, on scopes with nothing above them, since every scope nested in one is in the same frame by
+        // construction. NoireUI.FrameCount is an ImGui call across the native boundary rather than a field read, so
+        // this keeps it to once per frame instead of once per scope. The lock is taken only when the frame has
+        // moved, and RollFrameLocked re-reads the number under the lock, so two racing threads roll the frame once
+        // between them.
         if (depth == 0 && NoireUI.FrameCount != currentFrame)
         {
             lock (syncRoot)
@@ -734,18 +680,16 @@ public sealed class UiProfiler
 
         var parentId = depth > 0 ? stack[depth - 1].NodeId : 0;
 
-        // A scope opened with nothing above it still belongs to the frame, even though it is not inside the root's
-        // span: NoireUI's own frame pass runs from a second draw handler, alongside the host's rather than within it,
-        // and the host times both. Adopted by the root so the tree has one trunk instead of a scattering of orphans.
+        // A scope with nothing above it still belongs to the frame: NoireUI's own frame pass runs from a second draw
+        // handler alongside the host's, not within it. Adopted by the root so the tree has one trunk instead of
+        // scattered orphans.
         if (parentId == 0 && !ReferenceEquals(name, RootScope))
             parentId = rootNodeId;
 
-        // Resolved on the way in rather than on the way out, because a scope opened inside this one needs this node's
-        // id to know where it belongs. The memo hit is checked in place rather than through a helper: a widget draws
-        // from the same place in the tree on every frame, so the answer is the one from last frame nearly every time,
-        // and reaching it costs an array index and two integer compares instead of a lock and a hash. The parent is
-        // part of the check because one call site can appear under several parents, and a memo that ignored it would
-        // file a widget's time under whichever branch happened to draw it first.
+        // Resolved on the way in, since a scope opened inside this one needs this node's id. Checked inline rather
+        // than through a helper: an array index and two integer compares instead of a lock and a hash. Parent is
+        // part of the check because one call site can appear under several parents; ignoring it would file a
+        // widget's time under whichever branch drew it first.
         var nameId = name.Id;
         Node? resolved = null;
 
@@ -776,9 +720,8 @@ public sealed class UiProfiler
 
         ts.Depth = depth + 1;
 
-        // Both counters are read last, once the profiler's own bookkeeping is done. Resolving a node allocates one the
-        // first time a call path is seen, and charging that to the scope being opened would report garbage the caller
-        // never produced.
+        // Read last, once the profiler's own bookkeeping is done: resolving a node allocates the first time a call
+        // path is seen, and charging that to the scope being opened would report garbage the caller never produced.
         slot.StartedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
         slot.Started = Stopwatch.GetTimestamp();
 
@@ -819,8 +762,8 @@ public sealed class UiProfiler
             resolved = node;
         }
 
-        // A different profiler, or a reset since the memo was filled, makes every entry in it wrong rather than stale.
-        // Clearing the node column alone is enough to stop the old entries answering.
+        // A different profiler, or a reset since the memo was filled, makes every entry wrong rather than stale;
+        // clearing the node column alone stops them answering.
         if (!ReferenceEquals(ts.MemoOwner, this) || ts.MemoStamp != resetStamp)
         {
             ts.MemoOwner = this;
@@ -850,10 +793,8 @@ public sealed class UiProfiler
     /// Hands every scope measured before the root existed over to it. Callers hold <see cref="syncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Adoption at open time only works forward: NoireUI's own draw handler can run before the host's, so on the first
-    /// frames its scopes open with no root to be adopted by. Once the root turns up they would sit outside the tree
-    /// forever, and the same scope would appear twice, once stranded and once adopted. Rehoming them here is what makes
-    /// the tree have a single trunk from the first frame rather than from the second.
+    /// NoireUI's own draw handler can run before the host's, so on the first frames its scopes open with no root to
+    /// adopt them; without rehoming, the same scope would appear twice, once stranded and once adopted.
     /// </remarks>
     private void AdoptOrphansLocked()
     {
@@ -877,8 +818,8 @@ public sealed class UiProfiler
 
             node.ParentId = rootNodeId;
 
-            // A node may already exist under the root for the same name, from a frame after the root appeared. The
-            // older readings are folded into it rather than replacing it, so nothing measured is thrown away.
+            // A node may already exist under the root for the same name; older readings are folded into it rather
+            // than replacing it.
             if (nodes.TryGetValue((rootNodeId, key.Name), out var existing))
             {
                 existing.Ticks += node.Ticks;
@@ -889,8 +830,8 @@ public sealed class UiProfiler
                 existing.PeakMs = Math.Max(existing.PeakMs, node.PeakMs);
                 existing.PeakBytes = Math.Max(existing.PeakBytes, node.PeakBytes);
 
-                // A mark on either survives the merge, because the two were always the same scope and dropping it
-                // would put a scope the reader had excluded back into the totals without saying so.
+                // A mark on either survives the merge: dropping it would put an excluded scope back into the
+                // totals without saying so.
                 existing.Excluded |= node.Excluded;
                 continue;
             }
@@ -909,9 +850,8 @@ public sealed class UiProfiler
         if (started == 0L)
             return;
 
-        // The clock and the counter are read first, before any of this method's own bookkeeping, for the same reason
-        // Open reads them last: between the two reads is the caller's work and nothing else. Reading them after the
-        // pop, as this used to, billed every scope for the cost of its own measurement.
+        // Read first, before this method's own bookkeeping, for the same reason Open reads them last: between the
+        // two reads is only the caller's work.
         var tracking = trackAllocations;
         var endedBytes = tracking ? GC.GetAllocatedBytesForCurrentThread() : 0L;
         var ended = Stopwatch.GetTimestamp();
@@ -969,9 +909,9 @@ public sealed class UiProfiler
             ref var parent = ref stack[index - 1];
             parent.ChildTicks += elapsed;
 
-            // Charged from this scope's entry rather than from where its own measurement began, so the parent is not
-            // billed for the node the profiler allocated on first seeing this call path. Identical in the steady
-            // state, and different only on the frame a scope first runs.
+            // Charged from this scope's entry rather than where its own measurement began, so the parent is not
+            // billed for the node allocated on first seeing this call path. Differs only on the frame a scope first
+            // runs.
             if (measured)
                 parent.ChildBytes += Math.Max(0L, endedBytes - frame.EntryBytes);
         }
@@ -981,20 +921,19 @@ public sealed class UiProfiler
 
         var node = frame.Node;
 
-        // Unlocked, unlike the resolution in Open. The scope stack is per thread, so the only writer of a node's
-        // counters is the thread whose scope is closing, and a reader is either that same thread or a snapshot taking
-        // the lock. Two threads drawing the same widget at once could lose a count here, which is a number in a
-        // diagnostic rather than a corrupted structure, and it is worth that: locking these five additions cost more
-        // than everything they measure on a surface entered hundreds of times a frame.
+        // Unlocked, unlike the resolution in Open: the only writer of a node's counters is the thread whose scope is
+        // closing, and a reader is either that thread or a snapshot taking the lock. Two threads drawing the same
+        // widget at once could lose a count here; locking these five additions would cost more than everything they
+        // measure on a surface entered hundreds of times a frame.
         node.Ticks += elapsed;
         node.SelfTicks += self;
         node.Bytes += allocated;
         node.SelfBytes += selfAllocated;
         node.Calls++;
 
-        // A scope the root adopted ran alongside the root rather than inside it, so the root's own clock and counter
-        // never saw it. Added to the root's totals here, and deliberately not to its self figures, which keeps the
-        // branch adding up: the root's self plus every child, adopted or nested, is the root's total.
+        // A scope the root adopted ran alongside it rather than inside it, so the root's clock never saw it. Added
+        // to the root's totals here, deliberately not to its self figures: the root's self plus every child,
+        // adopted or nested, is the root's total.
         if (index == 0 && rootNode is { } root && node.ParentId == rootNodeId && node.Id != rootNodeId)
         {
             root.Ticks += elapsed;
@@ -1006,13 +945,10 @@ public sealed class UiProfiler
     /// Closes off the previous frame's totals when the frame number moves. Callers hold <see cref="syncRoot"/>.
     /// </summary>
     /// <remarks>
-    /// Rolled up here, on the way into a measurement, rather than from the hub's per-frame pass. A scope can be measured
-    /// by a plugin that never registered a drawable and so never runs that pass, and a profiler that only reported for
-    /// hub-driven interfaces would be silently empty for exactly the plugin most likely to be looking at it.<br/>
-    /// Called only when a scope opens with nothing above it, which is once per frame in a nested interface rather than
-    /// once per scope. The previous frame's figures are therefore closed off before any of this frame's measurements
-    /// land, which is what the roll has to guarantee and is the same point in the sequence as closing the first scope
-    /// of the frame.
+    /// Rolled up here rather than from the hub's per-frame pass, since a plugin that never registers a drawable
+    /// never runs that pass and would otherwise see an empty profiler.<br/>
+    /// Called only when a scope opens with nothing above it: once per frame rather than once per scope, and before
+    /// any of this frame's measurements land.
     /// </remarks>
     private void RollFrameLocked()
     {
@@ -1023,14 +959,14 @@ public sealed class UiProfiler
 
         currentFrame = frame;
 
-        // Moved here rather than on every close: this is the one place the reported figures change, so a reader that
-        // watches it rebuilds exactly as often as there is something new to show.
+        // Moved here rather than on every close: the one place the reported figures change, so a Generation reader
+        // rebuilds only when there is something new.
         generation++;
 
         foreach (var node in nodes.Values)
         {
-            // A scope that did not run this frame reports zero rather than holding its last value, so a widget that has
-            // been closed stops contributing to the average instead of looking permanently expensive.
+            // A scope that did not run this frame reports zero rather than holding its last value, so a closed
+            // widget stops contributing to the average instead of looking permanently expensive.
             var ms = ToMilliseconds(node.Ticks);
             var selfMs = ToMilliseconds(node.SelfTicks);
 

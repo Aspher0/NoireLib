@@ -6,9 +6,9 @@ namespace NoireLib.UI;
 /// How a <see cref="NoireWindowChrome.ChromeButton"/> is drawn. Every value is optional and falls back to the theme.
 /// </summary>
 /// <remarks>
-/// A window drawing its own chrome will want its buttons to match it, so everything the drawing branches on is here
-/// rather than derived: the plate behind the mark, its shape, both colours of the mark, and how much thicker it gets
-/// under the pointer. One style covers every glyph, so a row of them cannot drift apart.
+/// Everything the drawing branches on is here rather than derived: the plate behind the mark, its shape, both
+/// colours of the mark, and how much thicker it gets under the pointer. One style covers every glyph, so a row of
+/// them cannot drift apart.
 /// </remarks>
 public sealed class ChromeButtonStyle
 {
@@ -46,7 +46,7 @@ public sealed class ChromeButtonStyle
     /// <summary>How thick the mark is under the pointer, at 100%.</summary>
     public float HoveredThickness { get; set; } = 1.8f;
 
-    /// <summary>Returns a copy, so a shared style can be varied for one button.</summary>
+    /// <summary>Returns a copy.</summary>
     /// <returns>A shallow copy.</returns>
     public ChromeButtonStyle Clone() => (ChromeButtonStyle)MemberwiseClone();
 }

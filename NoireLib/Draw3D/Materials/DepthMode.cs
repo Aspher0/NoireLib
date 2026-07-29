@@ -7,16 +7,15 @@ namespace NoireLib.Draw3D.Materials;
 /// </summary>
 public enum DepthMode
 {
-    /// <summary>Pixels behind world geometry are hidden (or faded, see <see cref="Material.DepthFade"/>). The default.</summary>
+    /// <summary>Pixels behind world geometry are hidden (or faded, see <see cref="Material.DepthFade"/>); the default.</summary>
     TestOnly = 0,
 
     /// <summary>Pixels ignore world geometry entirely and draw on top of it (x-ray).</summary>
     Ignore = 1,
 
     /// <summary>
-    /// Occluded by the game world (walls / terrain) like <see cref="TestOnly"/>, but drawn on top of other Draw3D
-    /// objects - the transparent-bucket private depth test is skipped. The mix an editor gizmo wants: visible over the
-    /// object it edits, yet still hidden behind a real wall. Only meaningful in the transparent bucket.
+    /// Occluded by the game world like <see cref="TestOnly"/>, but drawn on top of other Draw3D objects since the
+    /// transparent-bucket depth test is skipped; only meaningful in the transparent bucket.
     /// </summary>
     WorldOnly = 2,
 }

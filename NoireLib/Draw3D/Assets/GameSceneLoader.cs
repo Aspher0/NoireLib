@@ -22,19 +22,18 @@ public readonly record struct GameScenePart(
 /// <summary>
 /// Loads a scene definition (<c>.sgb</c>) out of the game archives and decodes every model it places.<br/>
 /// Furniture is stored as a scene: the file the game spawns for an item is its sgb, which places one or
-/// more models with transforms and may nest further scenes (planters, exterior sets). Loading the scene
-/// rather than a single model is what makes a multi-part item appear whole.<br/>
+/// more models with transforms and may nest further scenes (planters, exterior sets).<br/>
 /// Like <see cref="GameModelLoader"/>, only files are read: nothing is spawned in the game itself.
 /// </summary>
 public static class GameSceneLoader
 {
-    /// <summary>How deep nested scenes are followed. The archives nest one level; the cap only breaks reference cycles.</summary>
+    /// <summary>How deep nested scenes are followed; the archives nest one level, the cap only breaks reference cycles.</summary>
     private const int MaxDepth = 4;
 
     /// <summary>Loads a scene and decodes every model it places, including models placed by nested scenes.</summary>
     /// <param name="sgbPath">Archive path of the scene, such as <c>bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb</c>.</param>
     /// <param name="lod">Level of detail to decode for each model, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply each model's vertex color channel. Off by default (see <see cref="GameModelLoader"/>).</param>
+    /// <param name="importVertexColors">Apply each model's vertex color channel; off by default (see <see cref="GameModelLoader"/>).</param>
     /// <returns>One entry per placed model, or an empty array if the scene does not exist.</returns>
     public static GameScenePart[] Load(string sgbPath, int lod = 0, bool importVertexColors = false)
     {

@@ -5,9 +5,8 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Blend state catalog keys.<br/>
-/// <see cref="CompositeRgb"/> is premultiplied with the alpha write masked off - the backbuffer's
-/// alpha channel is the game's native-UI coverage (our per-pixel mask source, and other overlay
+/// Blend state catalog keys. <see cref="CompositeRgb"/> is premultiplied with the alpha write masked off - the
+/// backbuffer's alpha channel is the game's native-UI coverage (our per-pixel mask source, and other overlay
 /// libraries read it too), so the composite must never write into it.
 /// </summary>
 internal enum BlendKey { Opaque = 0, Premultiplied = 1, Additive = 2, CompositeRgb = 3, Max = 4 }

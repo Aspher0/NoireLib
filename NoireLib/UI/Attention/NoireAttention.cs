@@ -10,13 +10,12 @@ namespace NoireLib.UI;
 /// became important, a shake or a bounce when something happened to it.
 /// </summary>
 /// <remarks>
-/// Two kinds of motion, and the difference decides which call to reach for. <see cref="Pulse"/> and <see cref="Glow"/>
-/// are <em>states</em>: they run for as long as the condition holds, and the caller passes that condition every frame.
-/// <see cref="Shake"/> and <see cref="Bounce"/> are <em>events</em>: they are fired once by id and play themselves out.
-/// <br/>
-/// All of it is decoration, so all of it stops under <see cref="NoireUI.ReducedMotion"/>. What is underneath keeps
-/// working: a pulsing button is still a button, a shaken field still holds its text, and nothing moves position in a
-/// way that could put a control somewhere the mouse is not.
+/// Two kinds of motion. <see cref="Pulse"/> and <see cref="Glow"/> are <em>states</em>: they run for as long as
+/// the condition holds, passed every frame. <see cref="Shake"/> and <see cref="Bounce"/> are <em>events</em>: fired
+/// once by id, and play themselves out.<br/>
+/// All of it is decoration and stops under <see cref="NoireUI.ReducedMotion"/>: a pulsing button is still a
+/// button, a shaken field still holds its text, and nothing moves position in a way that could put a control
+/// somewhere the mouse is not.
 /// </remarks>
 /// <example>
 /// <code>
@@ -71,9 +70,9 @@ public static class NoireAttention
         if (!active || !UiDraw.Available || target.IsEmpty)
             return;
 
-        // The glow breathes rather than sitting still, because a static halo reads as part of the skin within seconds
-        // and stops being noticed at all. Under reduced motion it holds at full strength instead of disappearing: the
-        // point is to mark the element, and that survives without the movement.
+        // The glow breathes rather than sitting still: a static halo reads as part of the skin within seconds and
+        // stops being noticed. Under reduced motion it holds at full strength instead of disappearing, so the
+        // element is still marked.
         var strength = NoireUI.ReducedMotion ? 1f : NoireAnim.Pulse(period, 0.45f, 1f);
         var resolved = ColorHelper.ScaleAlpha(color ?? NoireTheme.Current.Resolve(ThemeColor.Accent), strength);
         var reach = NoireUI.Scaled(spread);
@@ -209,9 +208,9 @@ public static class NoireAttention
     /// The sub keys the three event motions store themselves under.
     /// </summary>
     /// <remarks>
-    /// The caller's id is the entry's id and these name which motion it is, which is the split
-    /// <see cref="UiFrameState"/> keys on. Composed into one string instead, the caller's id would be re-interpolated on
-    /// every frame every shaken or flashing widget is read back, and reading back is the per-frame half of this API.
+    /// The caller's id is the entry's id, and these name which motion it is: the split <see cref="UiFrameState"/>
+    /// keys on. Composed into one string instead, the caller's id would be re-interpolated on every frame every
+    /// shaken or flashing widget is read back.
     /// </remarks>
     private const string ShakeKey = "attention.shake";
 

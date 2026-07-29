@@ -8,10 +8,8 @@ namespace NoireLib.UI;
 /// Sliders drawn by the library rather than by ImGui, so they can be restyled to the last pixel.
 /// </summary>
 /// <remarks>
-/// ImGui's slider is drawn from its own style and cannot be replaced: a track and a rectangular grab, coloured from
-/// four style entries and no more. A design that wants a hairline track with a lit diamond running along it has no way
-/// to ask for one. So the drawing is ours, and it goes through the same style-plus-custom-draw shape as the buttons and
-/// toggles: the widget keeps the arithmetic, the hook paints.<br/>
+/// The drawing goes through the same style-plus-custom-draw shape as the buttons and toggles: the widget keeps the
+/// arithmetic, the hook paints.<br/>
 /// The label column matches <see cref="NoireInputs"/>, so a slider between two number fields lines up with them.
 /// </remarks>
 /// <example>
@@ -179,8 +177,8 @@ public static class NoireSliders
         var style = args.Style;
         var size = NoireUI.Scaled(style.GrabSize);
 
-        // Lifted a little while it is being used, which is the whole of the feedback a slider needs and reads as the
-        // handle being picked up rather than as a colour change nobody notices mid-drag.
+        // Lifted a little while it is being used, reading as the handle being picked up rather than a colour change
+        // nobody notices mid-drag.
         if (args.Held)
             size *= 1.12f;
 
@@ -198,8 +196,8 @@ public static class NoireSliders
 
         if (style.Grab == SliderGrab.Diamond)
         {
-            // The halo follows the diamond rather than its bounding box. Growing the rectangle instead leaves a lit
-            // square sitting behind the handle, which is the tell that the glow knows nothing about what it is lighting.
+            // The halo follows the diamond rather than its bounding box: growing the rectangle instead leaves a lit
+            // square sitting behind the handle.
             if (style.GlowColor is { } diamondGlow)
             {
                 Span<Vector2> path = stackalloc Vector2[4];
@@ -209,8 +207,8 @@ public static class NoireSliders
                     NoireShapes.GlowPath(path[..count], diamondGlow, NoireUI.Scaled(style.GlowSpread));
             }
 
-            // Painted white inside a gradient scope when it ramps, because the scope recolours whatever the body
-            // emitted: a flat white shape is what gives the ramp the full range to work over.
+            // Painted white inside a gradient scope when it ramps, since the scope recolours whatever the body
+            // emitted.
             if (style.GrabColorTo is { } to)
                 NoireShapes.Gradient(min, max, GradientAxis.Vertical, color, to, (centre, half), static s => NoireShapes.Diamond(s.centre, s.half, Vector4.One));
             else
@@ -271,10 +269,10 @@ public static class NoireSliders
     /// What value a pointer position on the track means.
     /// </summary>
     /// <remarks>
-    /// Taken from where the pointer is rather than from how far it has moved, which is the decision worth being sure
-    /// about: a drag driven by mouse delta accumulates a drift away from the cursor over a long gesture, and a click on
-    /// the track then jumps by that drift rather than to where it was aimed. Reading the position outright makes a
-    /// click and a drag the same operation and leaves nothing to accumulate.<br/>
+    /// Taken from where the pointer is rather than from how far it has moved: a drag driven by mouse delta
+    /// accumulates a drift away from the cursor over a long gesture, and a click on the track then jumps by that
+    /// drift rather than to where it was aimed. Reading the position outright makes a click and a drag the same
+    /// operation and leaves nothing to accumulate.<br/>
     /// Clamped rather than refused past the ends, because dragging off the end of a track means "as far as it goes".
     /// </remarks>
     /// <param name="pointerX">Where the pointer is, in screen pixels.</param>
@@ -298,9 +296,7 @@ public static class NoireSliders
         return Math.Clamp(value, min, max);
     }
 
-    /// <summary>
-    /// How far along its range a value sits, which is where the handle goes and how much of the track is filled.
-    /// </summary>
+    /// <summary>How far along its range a value sits.</summary>
     /// <remarks>
     /// A range of no width answers zero rather than dividing by it: a slider whose two ends are the same number is not
     /// an error worth throwing over, it is a slider with nowhere to go.
@@ -322,10 +318,9 @@ public static class NoireSliders
     /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
     /// </summary>
     /// <remarks>
-    /// The argument is handed over rather than captured. A lambda written at the call site to close over it would
-    /// capture a **parameter** of the calling method, and Roslyn builds that display class on entry to the method
-    /// rather than at the point of use, so every slider in the frame allocated one whether or not it had a custom
-    /// draw to run. See the same fix on <see cref="NoireButtons"/>.
+    /// The argument is passed explicitly rather than captured by a closure: Roslyn allocates a display class at
+    /// method entry for a lambda that captures a parameter, even on frames where the branch does not run. See the
+    /// same fix on <see cref="NoireButtons"/>.
     /// </remarks>
     /// <typeparam name="TArg">The argument type.</typeparam>
     /// <param name="callback">The callback to run.</param>

@@ -213,10 +213,7 @@ internal static unsafe class GameRenderSources
     /// policy regions for the composite's per-pixel UI mask (nameplate layering over everything).
     /// Fails soft: any inconsistency returns 0 rects - plates read on top for this frame only.
     /// </summary>
-    /// <param name="rawDistances">
-    /// Optional diagnostics: receives the game's own <c>DistanceFromCamera</c> per plate, unconverted. Reported next to
-    /// the measured distance so the squared-units finding stays checkable rather than a claim in a comment.
-    /// </param>
+    /// <param name="rawDistances">Optional diagnostics: the game's raw (squared) <c>DistanceFromCamera</c> per plate.</param>
     public static int CollectNamePlateRects(Vector4[] rects, float[] distances, int max, Vector2 displaySize, float[]? rawDistances = null)
     {
         if (displaySize.X <= 0 || displaySize.Y <= 0)
@@ -274,12 +271,11 @@ internal static unsafe class GameRenderSources
                 // plate covers pixels the UI never drew, where the mask reads no coverage and nothing changes.
                 rect = new Vector4(rect.X - PlateRectPadding, rect.Y - PlateRectPadding, rect.Z + PlateRectPadding, rect.W + PlateRectPadding);
 
-                // DistanceFromCamera is a SQUARED distance and must be rooted before it can be compared against the
-                // linear world distances the occlusion test works in. Used raw it made every plate read as impossibly
-                // far (15.0 for a character standing 3.9m away) and lose every comparison, so nameplates were covered
-                // by content sitting well behind them and DepthAware behaved identically to Covered.
-                // NamePlatePos is not a usable substitute here: it reads as the world origin, which turns a distance
-                // measured from it into the camera's distance from (0,0,0) - a large number that fails just as badly.
+                // DistanceFromCamera is a SQUARED distance and must be rooted before comparing it against the linear
+                // world distances the occlusion test works in; used raw, every plate reads as impossibly far and
+                // loses every comparison, so DepthAware degrades to always-Covered.
+                // NamePlatePos is not a substitute: it reads as the world origin, so a distance measured from it is
+                // the camera's distance from (0,0,0) - equally unusable.
                 var plateDistanceSq = info->DistanceFromCamera;
                 if (plateDistanceSq <= 0f)
                     continue; // no usable distance - leave this plate reading on top rather than guess at its depth
@@ -360,12 +356,12 @@ internal static unsafe class GameRenderSources
     }
 
     /// <summary>
-    /// Whether a screen point (framebuffer pixels) lies over an interactive part of a visible game addon, i.e. the
-    /// cursor is over native game UI a click should belong to. The point must fall inside the addon's root rect (a quick
+    /// Whether a screen point (framebuffer pixels) lies over an interactive part of a visible game addon - the cursor
+    /// is over native game UI a click should belong to. The point must fall inside the addon's root rect (a quick
     /// reject that keeps the near-fullscreen overlay skip) and over one of its visible <b>collision nodes</b>, the
-    /// regions the game itself hit-tests. Testing collision nodes rather than the padded root rect means the transparent
-    /// margins around HUD elements (the empty space beside action-bar slots, a window's padding) do not falsely block
-    /// picking a 3D object behind them. Fails soft to false. Read on the main/draw thread.
+    /// regions the game itself hit-tests. Testing collision nodes rather than the padded root rect means transparent
+    /// margins around HUD elements do not falsely block picking a 3D object behind them. Fails soft to false. Read on
+    /// the main/draw thread.
     /// </summary>
     /// <param name="pointPx">The point to test, in framebuffer pixels (the ImGui mouse space Dalamud shares with the game).</param>
     /// <param name="displaySize">The framebuffer size, for the near-fullscreen overlay skip.</param>
@@ -452,11 +448,10 @@ internal static unsafe class GameRenderSources
 
     /// <summary>
     /// Whether the point falls in a visible collision node reachable from this node list. Component nodes are recursed
-    /// into to any depth (their collision nodes live in their own list, so a component's inner controls, such as an
-    /// action-bar slot or a window button, are only found this way), and a collision node counts only when its whole
-    /// ancestor chain is visible. The game leaves a node's own visibility flag set while a hidden parent hides it on
-    /// screen, so the parent-chain check is what stops a switched-off element (a hidden hotbar-number badge) from
-    /// blocking. A display-only addon (a job gauge) carries no collision nodes, so it never blocks; interactive UI does.
+    /// into to any depth, since their collision nodes live in their own list, and a collision node counts only when its
+    /// whole ancestor chain is visible - the game leaves a node's own visibility flag set while a hidden parent hides
+    /// it on screen, so the parent-chain check catches a switched-off element that would otherwise block. A
+    /// display-only addon carries no collision nodes, so it never blocks; interactive UI does.
     /// </summary>
     private static bool NodeListHit(AtkResNode** nodes, int nodeCount, float unitScale, Vector2 pointPx, bool isActionBar, int depth)
     {
@@ -507,8 +502,8 @@ internal static unsafe class GameRenderSources
 
     /// <summary>
     /// Whether a visible collision node has no visible non-collision sibling under the same parent. True marks a phantom
-    /// hit region: a hotbar keeps the number-badge collision node visible while the label / arrows beside it are hidden,
-    /// so "nothing visible next to the collision" is the signal that the control is switched off and should not block.
+    /// hit region: a hotbar keeps the number-badge collision node visible while the label and arrows beside it are
+    /// hidden, so an isolated collision means the control is switched off and should not block.
     /// </summary>
     private static bool CollisionLacksVisibleSibling(AtkResNode** nodes, int nodeCount, AtkResNode* collision)
     {

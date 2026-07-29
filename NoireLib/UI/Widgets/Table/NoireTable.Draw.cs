@@ -56,10 +56,10 @@ public sealed partial class NoireTable<T>
         var width = NoireLayout.ContentWidth();
         var outerHeight = Height > 0f ? Height : ImGui.GetContentRegionAvail().Y;
 
-        // Body and footer are two tables inside one bordered frame, so they read as one table with a row pinned to the
-        // bottom of it. A table has a single scroll region and ImGui can only freeze rows at the *top*, so a totals row
-        // inside the body is one you have to scroll to the end of the list to read; and a second table outside the
-        // frame is visibly a separate box rather than part of the table it belongs to.
+        // Body and footer are two tables inside one bordered frame, so they read as one table with a row pinned to
+        // the bottom. ImGui can only freeze rows at the *top* of a table's single scroll region, so a totals row
+        // inside the body needs a scroll to the end to read; a second table outside the frame reads as a separate
+        // box instead of part of the one it belongs to.
         bool opened;
 
         using (UiPush.Style(ImGuiStyleVar.ChildBorderSize, 1f))
@@ -88,8 +88,7 @@ public sealed partial class NoireTable<T>
         SetupColumns();
         ApplyPendingColumnWidth();
 
-        // Frozen so the headers stay put while the body scrolls, which is the whole reason a table beats a list of
-        // rows once it is longer than a screen.
+        // Frozen so the headers stay put while the body scrolls.
         ImGui.TableSetupScrollFreeze(0, ShowColumnFilters ? 2 : 1);
         ImGui.TableHeadersRow();
 
@@ -105,10 +104,10 @@ public sealed partial class NoireTable<T>
 
         if (footing)
         {
-            // Put back where the table actually ends. EndTable submits the table as an item, so by the time it returns
-            // the cursor has already been advanced past a line of item spacing, and the footer would sit that far below
-            // the rows however the spacing is pushed afterwards. Where the body starts plus how tall it was told to be
-            // is the one answer that owes nothing to ImGui's own bookkeeping.
+            // Put back where the table actually ends: EndTable submits the table as an item, so by the time it
+            // returns the cursor has advanced past a line of item spacing, and the footer would sit that far below
+            // the rows however the spacing is pushed afterwards. Where the body started plus how tall it was told
+            // to be is the one answer that owes nothing to ImGui's own bookkeeping.
             ImGui.SetCursorScreenPos(new Vector2(ImGui.GetCursorScreenPos().X, bodyTop + bodyHeight));
             DrawFooter(inner.X);
         }
@@ -128,9 +127,9 @@ public sealed partial class NoireTable<T>
     {
         var text = search;
 
-        // Room is reserved for the widest count the table can report, whether or not one is showing. Sized to the
-        // count actually there, the field would resize on the first keystroke, and with no room at all the count wraps
-        // under the field and pushes the whole table down.
+        // Room is reserved for the widest count the table can report, whether or not one is showing: sized to the
+        // count actually there, the field would resize on the first keystroke, and with no room at all the count
+        // wraps under the field and pushes the whole table down.
         var counterWidth = NoireText.CalcSize(Counter(rows.Count, rows.Count), TextSize.Caption).X + NoireUI.Scaled(10f);
 
         ImGui.SetNextItemWidth(MathF.Max(NoireUI.Scaled(80f), NoireLayout.ContentWidth() - counterWidth));
@@ -154,9 +153,8 @@ public sealed partial class NoireTable<T>
     /// How many rows the search left, written as <c>12 of 340</c>.
     /// </summary>
     /// <remarks>
-    /// Cached because the search box asks for it on every frame, twice: once for the count it is showing and once for
-    /// the widest count it could show, which is what the column beside the field is sized to. Both change when rows are
-    /// added or the search is retyped, and at no other time.
+    /// Cached, since the search box asks for it twice every frame: once for the count it is showing and once for
+    /// the widest count it could show. Both change only when rows are added or the search is retyped.
     /// </remarks>
     /// <param name="visible">How many rows the search left.</param>
     /// <param name="total">How many rows there are.</param>
@@ -201,15 +199,15 @@ public sealed partial class NoireTable<T>
                 : ImGuiTableColumnFlags.None;
 
             // The rightmost column takes whatever width is left over, so the table always fills itself: with every
-            // column keeping a width of its own, resizing one leaves a strip of nothing on the right and the last
-            // column's cells stop short of the edge. Its own Width is ignored for that reason, and it carries no grip
-            // either, there being nothing to its right to hand width to. Which column that is follows the display
-            // order, so dragging a header takes the behaviour with it.
+            // column keeping a width of its own, resizing one would leave a strip of nothing on the right. Its own
+            // Width is ignored for that reason and it carries no grip, there being nothing to its right to hand
+            // width to. Which column that is follows the display order, so dragging a header takes the behaviour
+            // with it.
             var isTrailing = slot == trailing;
 
-            // Every other column keeps a width of its own, which is what makes the header menu's "size column to fit"
-            // correct: auto-fitting a fixed column sets an exact pixel width, while auto-fitting a stretch column sets
-            // a weight that is then renormalised against every other column, moving all of them a pixel or two.
+            // Every other column keeps a width of its own: auto-fitting a fixed column sets an exact pixel width,
+            // while auto-fitting a stretch column sets a weight that is then renormalised against every other
+            // column, moving all of them a pixel or two.
             flags |= isTrailing
                 ? ImGuiTableColumnFlags.WidthStretch | ImGuiTableColumnFlags.NoResize
                 : ImGuiTableColumnFlags.WidthFixed;
@@ -263,8 +261,8 @@ public sealed partial class NoireTable<T>
             return;
         }
 
-        // The first spec is the primary one, which is the only order a single sort column needs. Reading further would
-        // mean walking the array by hand for a tiebreak the pipeline already provides from the source index.
+        // The first spec is the primary one, the only order a single sort column needs; reading further would mean
+        // walking the array for a tiebreak the pipeline already provides from the source index.
         var index = (int)primary.ColumnUserID;
 
         if (index < 0 || index >= Columns.Count)
@@ -325,9 +323,9 @@ public sealed partial class NoireTable<T>
             return changed;
         }
 
-        // The height is left for the clipper to measure rather than guessed at. A table row is as tall as its cell
-        // padding plus its tallest cell, which a caller's renderer can change, and a guess that is too tall makes the
-        // clipper show fewer rows than fit: the body ends in a gap and the footer is pushed out of the table.
+        // The height is left for the clipper to measure rather than guessed at: a row is as tall as its cell
+        // padding plus its tallest cell, which a caller's renderer can change, and a guess that is too tall makes
+        // the clipper show fewer rows than fit, ending the body in a gap and pushing the footer out of the table.
         var clipper = new ImGuiListClipper();
         clipper.Begin(visible.Count, -1f);
 
@@ -379,9 +377,9 @@ public sealed partial class NoireTable<T>
 
             slot++;
 
-            // Addressed rather than advanced to. TableNextColumn walks the columns in *display* order, so once the
-            // user has dragged a header somewhere else it no longer lines up with this loop's declaration order and
-            // every cell's contents go into the wrong column. TableSetColumnIndex names the column outright.
+            // Addressed rather than advanced to: TableNextColumn walks the columns in *display* order, so once a
+            // header has been dragged it no longer lines up with this loop's declaration order and every cell's
+            // contents would go into the wrong column. TableSetColumnIndex names the column outright.
             if (!ImGui.TableSetColumnIndex(slot))
                 continue;
 
@@ -398,20 +396,20 @@ public sealed partial class NoireTable<T>
                     contentLeft + ImGui.GetContentRegionAvail().X));
             }
 
-            // The selectable goes in the first cell and spans the row, so clicking anywhere on the row selects it
-            // without a column of its own for the hit target. Its label is empty and the cell is drawn over it at the
-            // same cursor: a selectable renders its label wherever it was given, and SameLine would put the cell after
-            // an item that is as wide as the whole row.
+            // The selectable goes in the first cell and spans the row, so clicking anywhere on it selects the row
+            // without a hit-target column of its own. Its label is empty and the cell is drawn over it at the same
+            // cursor: a selectable renders its label wherever it was given, and SameLine would put the cell after an
+            // item as wide as the whole row.
             if (first && SelectionMode != TableSelection.None)
             {
                 var cellStart = ImGui.GetCursorPos();
                 var style = ImGui.GetStyle();
 
-                // A selectable grows its hit box by half the item spacing above and below, on purpose, so that stacked
-                // selectables leave no click-gap between them. In a table the gap between rows is the *cell padding*,
-                // not the item spacing, so a theme whose spacing is the larger of the two overshoots into the rows
-                // either side: two rows report hovered at once and the click goes to whichever was submitted last.
-                // Handing it exactly the cell padding makes that expansion land on the row's own edges.
+                // A selectable grows its hit box by half the item spacing above and below, on purpose, so stacked
+                // selectables leave no click-gap between them. In a table the gap between rows is the *cell
+                // padding*, not the item spacing, so a theme whose spacing is the larger of the two overshoots into
+                // the rows either side: two rows report hovered at once and the click goes to whichever was
+                // submitted last. Handing it exactly the cell padding keeps that expansion on the row's own edges.
                 using (UiPush.Style(ImGuiStyleVar.ItemSpacing, new Vector2(style.ItemSpacing.X, style.CellPadding.Y * 2f)))
                 {
                     // Passed as never selected: this is the hit target only. A selectable paints its highlight over
@@ -459,8 +457,8 @@ public sealed partial class NoireTable<T>
     /// Selects a row from a click, adding to the selection when a modifier says so.
     /// </summary>
     /// <remarks>
-    /// A plain click always selects rather than toggling, which is what every list in every application does: a click
-    /// that deselects the row under the cursor reads as the click having missed. Toggling is what the modifier is for.
+    /// A plain click always selects rather than toggling: a click that deselects the row under the cursor reads as
+    /// the click having missed. Toggling is what the modifier is for.
     /// </remarks>
     private void Toggle(T row, bool wasSelected)
     {
@@ -508,8 +506,7 @@ public sealed partial class NoireTable<T>
     /// </summary>
     /// <remarks>
     /// The column's own filter wins over the box above it for that column, since it is the more specific thing the
-    /// user typed about it. Showing the matched characters is most of what makes a fuzzy filter feel trustworthy
-    /// rather than arbitrary: without them a table that quietly keeps a row looks like it is guessing.
+    /// user typed about it.
     /// </remarks>
     private void DrawCellText(TableColumn<T> column, T row)
     {
@@ -665,7 +662,7 @@ public sealed partial class NoireTable<T>
     /// </summary>
     /// <remarks>
     /// ImGui numbers only the columns it was given, so its index counts visible columns while ours counts every
-    /// declared one. Walking the visible ones is what keeps the two the same thing once a column is hidden.
+    /// declared one. Walking the visible ones keeps the two in step once a column is hidden.
     /// </remarks>
     private TableColumn<T>? ColumnAt(int position)
     {

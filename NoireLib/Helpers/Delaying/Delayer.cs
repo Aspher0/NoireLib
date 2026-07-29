@@ -9,12 +9,10 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Provides delayed trigger functionality that executes an action only if it hasn't been cancelled before the specified delay.
-/// Useful for showing loading indicators, timeout handlers, or any deferred action that should be cancelled if the primary operation completes quickly.<br/>
-/// For example, you might want to show a loading spinner only if a data fetch takes longer than 500ms. You can use this class to schedule the spinner display after 500ms, and cancel it if the data fetch completes sooner.<br/>
-/// Each trigger is independent with its own delay, allowing multiple triggers to be started and managed individually.<br/>
-/// Use <see cref="DelayerHelper"/> instead, unless you know what you're doing.<br/>
-/// If you are using this class, then do not forget to call <see cref="Dispose"/>.
+/// Executes an action after a delay, unless cancelled first. Useful for a loading indicator or timeout handler
+/// that should be skipped if the primary operation finishes quickly.<br/>
+/// Each trigger is independent, with its own delay.<br/>
+/// Prefer <see cref="DelayerHelper"/> unless you need this directly; if you use it, remember to call <see cref="Dispose"/>.
 /// </summary>
 public class Delayer : IDisposable
 {
@@ -30,7 +28,6 @@ public class Delayer : IDisposable
 
     /// <summary>
     /// Starts a delayed trigger that will execute the action after the specified delay unless cancelled.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
@@ -66,7 +63,6 @@ public class Delayer : IDisposable
 
     /// <summary>
     /// Starts a delayed trigger that will execute the asynchronous action after the specified delay unless cancelled.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
@@ -103,7 +99,6 @@ public class Delayer : IDisposable
     /// <summary>
     /// Starts a delayed trigger with a condition that will be checked before execution.
     /// The action will be cancelled if the condition returns true after the delay.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
@@ -148,7 +143,6 @@ public class Delayer : IDisposable
     /// <summary>
     /// Starts a delayed trigger with an asynchronous condition that will be checked before execution.
     /// The action will be cancelled if the condition returns true after the delay.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The asynchronous action to execute after the delay.</param>
@@ -333,7 +327,6 @@ public class Delayer : IDisposable
     /// <summary>
     /// Starts a delayed trigger without waiting for it to complete.
     /// Useful for fire-and-forget scenarios.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>
@@ -347,7 +340,6 @@ public class Delayer : IDisposable
     /// <summary>
     /// Starts a delayed trigger with a condition without waiting for it to complete.
     /// Useful for fire-and-forget scenarios.
-    /// Each trigger is independent and will execute after its own delay.
     /// </summary>
     /// <param name="delay">The delay before executing the action.</param>
     /// <param name="action">The action to execute after the delay.</param>

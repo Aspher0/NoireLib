@@ -3,11 +3,9 @@ using System.Numerics;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// The immutable per-frame snapshot every part of the renderer consumes: one camera snapshot per presented
-/// frame, taken at a stable point and passed by <c>in</c> reference, so nothing reads camera state after it
-/// is built.<br/>
-/// Shaders consume only <see cref="ViewProj"/>/<see cref="InvViewProj"/> (the VP-only contract);
-/// <see cref="View"/>/<see cref="Proj"/> exist for diagnostics only.
+/// The immutable per-frame snapshot every part of the renderer consumes: one camera snapshot per presented frame,
+/// taken at a stable point and passed by <c>in</c> reference. Shaders consume only <see cref="ViewProj"/>/
+/// <see cref="InvViewProj"/> (the VP-only contract); <see cref="View"/>/<see cref="Proj"/> exist for diagnostics only.
 /// </summary>
 public readonly struct FrameContext
 {
@@ -71,8 +69,8 @@ public readonly struct FrameContext
     }
 
     /// <summary>
-    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w <= 0).<br/>
-    /// This is the same math the GPU performs - used by the parity validator and available to consumers for labels/anchors.
+    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w <= 0). Same
+    /// math the GPU performs; used by the parity validator and available to consumers for labels/anchors.
     /// </summary>
     /// <param name="world">World-space position.</param>
     /// <param name="screen">Receives the screen position in pixels.</param>

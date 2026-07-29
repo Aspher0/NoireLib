@@ -4,8 +4,6 @@
 /// How a toast shows the time it has left before it dismisses itself.
 /// </summary>
 /// <remarks>
-/// Worth showing at all because a toast that vanishes with no warning reads as a glitch, and one that is about to
-/// vanish while being read is worth reaching for. Which shape suits depends on the toast, so it is a setting.<br/>
 /// Every mode is inert on a toast with no duration: there is nothing to count down to.
 /// </remarks>
 public enum ToastTimerMode

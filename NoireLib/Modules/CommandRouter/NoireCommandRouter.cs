@@ -14,10 +14,9 @@ using System.Threading.Tasks;
 namespace NoireLib.CommandRouter;
 
 /// <summary>
-/// A module providing structured slash-command registration and dispatch.<br/>
-/// Supports subcommands, aliases, typed arguments, auto-generated help text,
-/// async command execution, availability predicates, command history,
-/// and optional <see cref="NoireEventBus"/> integration.
+/// A module providing structured slash-command registration and dispatch: subcommands, aliases, typed arguments,
+/// auto-generated help, async handlers, availability predicates, command history, and optional
+/// <see cref="NoireEventBus"/> integration.
 /// </summary>
 public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 {
@@ -40,8 +39,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     #region Constructors & Event Bus
 
     /// <summary>
-    /// The associated <see cref="NoireEventBus"/> instance for publishing command events.<br/>
-    /// When set, <see cref="CommandExecutedEvent"/> and <see cref="CommandFailedEvent"/> are published automatically.
+    /// The associated <see cref="NoireEventBus"/> instance for publishing command events; when set,
+    /// <see cref="CommandExecutedEvent"/> and <see cref="CommandFailedEvent"/> are published automatically.
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
 
@@ -80,8 +79,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         : base(moduleId, active, enableLogging, enableAutoHelp, maxHistorySize, eventBus) { }
 
     /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
+    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>,
+    /// for internal module management only.
     /// </summary>
     /// <param name="moduleId">The module ID.</param>
     /// <param name="active">Whether to activate the module on creation.</param>
@@ -140,9 +139,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     #region Module Configuration
 
     /// <summary>
-    /// Gets or sets whether auto-generated help output is enabled.<br/>
-    /// When true, typing the root command with no subcommand (and no default handler) or with the "help" subcommand
-    /// will print an auto-generated help listing to chat.
+    /// Whether auto-generated help output is enabled: when true, the root command with no subcommand and no default
+    /// handler, or a "help" token, prints a generated listing to chat.
     /// </summary>
     public bool EnableAutoHelp { get; set; } = true;
 
@@ -158,9 +156,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Gets or sets the maximum number of <see cref="CommandHistoryEntry"/> records to retain.<br/>
-    /// Once the limit is reached, the oldest entries are discarded first.<br/>
-    /// A value of 0 disables history recording entirely, leaving <see cref="GetHistory"/> permanently empty.
+    /// The maximum number of <see cref="CommandHistoryEntry"/> records to retain, oldest discarded first; 0 disables
+    /// recording entirely, leaving <see cref="GetHistory"/> permanently empty.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is negative.</exception>
     public int MaxHistorySize
@@ -174,8 +171,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Sets the maximum number of command history entries to retain.<br/>
-    /// A value of 0 disables history recording entirely.
+    /// Sets the maximum number of command history entries to retain; 0 disables recording entirely.
     /// </summary>
     /// <param name="maxSize">The maximum history size. Must not be negative.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -192,11 +188,10 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     #region Public API
 
     /// <summary>
-    /// Maps a root slash command and returns a <see cref="RootCommandBuilder"/> for configuring subcommands and behavior.<br/>
-    /// If the module is currently active, the command is registered with Dalamud immediately.<br/>
-    /// If a command with the same name was already mapped, the previous mapping is replaced.
+    /// Maps a root slash command and returns a <see cref="RootCommandBuilder"/> for configuring it; registers with
+    /// Dalamud immediately if the module is active, and replaces any existing mapping of the same name.
     /// </summary>
-    /// <param name="command">The root slash command string (e.g. "/somecommand"). A leading '/' is added automatically if missing.</param>
+    /// <param name="command">The root slash command string (e.g. "/somecommand"), with a leading '/' added automatically if missing.</param>
     /// <returns>A <see cref="RootCommandBuilder"/> for fluently configuring the command.</returns>
     public RootCommandBuilder Map(string command)
     {
@@ -206,8 +201,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         if (!command.StartsWith('/'))
             command = "/" + command;
 
-        // Lower-cased so the canonical spelling handed to Dalamud (and shown in its help listing) does not depend
-        // on how the caller happened to capitalize it. Lookups here are case-insensitive regardless.
+        // Lower-cased so Dalamud's canonical spelling and help listing do not depend on caller capitalization;
+        // lookups here are case-insensitive regardless.
         command = command.ToLowerInvariant();
 
         var registration = new RootCommandRegistration(command);
@@ -287,8 +282,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Gets a read-only snapshot of the command history, ordered oldest first.<br/>
-    /// The returned list is a copy, so it stays safe to iterate while further commands execute.
+    /// Gets a read-only snapshot of the command history, ordered oldest first, as a copy that stays safe to iterate
+    /// while further commands execute.
     /// </summary>
     /// <returns>A list of <see cref="CommandHistoryEntry"/> records.</returns>
     public IReadOnlyList<CommandHistoryEntry> GetHistory()
@@ -344,8 +339,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             NoireService.CommandManager.AddHandler(registration.Command, commandInfo);
 
-            // Only tracked once Dalamud actually owns the handler, so a failed registration does not leave the
-            // registration looking live to RefreshDalamudCommandInfo and UnregisterFromDalamud.
+            // Set only once Dalamud owns the handler, so a failed registration does not look live to
+            // RefreshDalamudCommandInfo or UnregisterFromDalamud.
             registration.DalamudCommandInfo = commandInfo;
 
             if (EnableLogging)
@@ -374,8 +369,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// The entry point Dalamud invokes for every mapped command, on the framework thread.<br/>
-    /// Resolves the registration for <paramref name="command"/> and dispatches the invocation through the router.
+    /// The entry point Dalamud invokes for every mapped command, on the framework thread; resolves the registration
+    /// for <paramref name="command"/> and dispatches it through the router.
     /// </summary>
     /// <param name="command">The root slash command that was typed.</param>
     /// <param name="rawArgs">The raw argument string as received from Dalamud.</param>
@@ -407,19 +402,15 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     {
         try
         {
-            // The root condition gates the command as a whole, so it is checked before anything is dispatched or
-            // printed. Everything below is scoped to this command, which makes a blocked root block its raw handler,
-            // its default handler, every subcommand, and its own help, exactly as a blocked subcommand blocks
-            // everything nested beneath it.
+            // The root condition gates everything below it: the raw handler, the default handler, every
+            // subcommand, and the command's own help.
             if (registration.Condition != null && !registration.Condition())
             {
                 if (EnableLogging)
                     NoireLogger.LogDebug(this, $"Command '{command}' condition returned false.");
 
-                // The outcome is recorded before it is announced. Printing to chat can throw, and an outcome that is
-                // known must not be lost to a failure in reporting it, nor be replaced by that failure: the catch below
-                // records a rootless entry and publishes CommandFailedEvent carrying whatever escaped, which would name
-                // the chat fault rather than the command that was actually refused.
+                // Recorded before printing: if PrintToChat throws, the outer catch below must not overwrite this
+                // outcome with the chat failure instead of the actual refusal.
                 AddHistoryEntry(command, rawArgs, null, false);
                 NoireLogger.PrintToChat(XivChatType.Debug, $"Command '{command}' is not available right now.");
                 return;
@@ -522,8 +513,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
             if (currentSubCommand.Handler == null)
             {
-                // Help is a service rather than a failed invocation, so it is the one way out of here that records
-                // nothing, and it is taken before the outcome below is recorded.
+                // Printing help here is not a failure: unlike the paths below, it records no history entry.
                 if (currentSubCommand.SubCommands.Count > 0 && remainingTokens.Length == 0 && EnableAutoHelp)
                 {
                     PrintHelp(registration, currentSubCommand, resolvedPath);
@@ -588,9 +578,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             NoireLogger.LogError(this, ex, $"Error dispatching command '{command} {rawArgs}'.");
 
-            // Dalamud invokes this on the framework thread, so anything escaping here takes the game down with it.
-            // Reporting the failure is itself allowed to fail (a consumer event handler can throw), so it is
-            // contained rather than trusted.
+            // Dalamud invokes this on the framework thread, so an escaping exception here crashes the game.
+            // Reporting is wrapped in SafeExecutor since a consumer's event handler can itself throw.
             SafeExecutor.ExecuteSafely(() =>
             {
                 AddHistoryEntry(command, rawArgs, null, false);
@@ -617,9 +606,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Converts the tokens of an invocation into the arguments its handler expects.<br/>
-    /// Rejecting an invocation hands the explanation back through <paramref name="error"/> rather than printing it, so
-    /// that the caller records the outcome before announcing it.
+    /// Converts the tokens of an invocation into the arguments its handler expects; a rejection is returned through
+    /// <paramref name="error"/> rather than printed, so the caller can record the outcome before announcing it.
     /// </summary>
     /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
     /// <param name="argTokens">The tokens left over once the subcommand path was consumed.</param>
@@ -691,9 +679,9 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to the
-    /// first optional argument whose type accepts it.<br/>
-    /// Rejects through <paramref name="error"/> rather than printing, for the reason <see cref="ParseArguments"/> gives.
+    /// Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to
+    /// the first optional argument whose type accepts it; rejects through <paramref name="error"/> rather than
+    /// printing, as with <see cref="ParseArguments"/>.
     /// </summary>
     /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
     /// <param name="parsed">The result being filled in.</param>
@@ -741,8 +729,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             var token = argTokens[i];
 
-            // The first optional argument the token converts cleanly into claims it, and the converted value is
-            // kept from that same attempt rather than reproduced by converting a second time.
+            // The first optional argument the token converts into claims it; the converted value from that attempt
+            // is reused, not reconverted.
             CommandArgumentDefinition? matchedArgument = null;
             object? converted = null;
 
@@ -799,9 +787,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 else
                     task = ((Func<Task>)subCommand.Handler)();
 
-                // The outcome of an async handler is only known once its task settles, so reporting is deferred to
-                // the continuation rather than assumed here. Awaiting instead would stall the framework thread for
-                // the whole duration of the handler.
+                // Reporting is deferred to the continuation since the outcome is unknown until the task settles;
+                // awaiting here would stall the framework thread for the handler's duration.
                 _ = task.ContinueWith(completedTask => ReportAsyncOutcome(completedTask, command, rawArgs, subCommandPath), TaskScheduler.Default);
                 return;
             }
@@ -853,9 +840,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Runs outcome reporting on the framework thread.<br/>
-    /// Publishing reaches consumer event handlers inline on the calling thread, and those handlers routinely touch
-    /// game state, which is only safe on the framework thread. Runs inline when NoireLib is not initialized.
+    /// Runs outcome reporting on the framework thread, since publishing invokes consumer handlers inline and those
+    /// routinely touch game state; runs inline instead when NoireLib is not initialized.
     /// </summary>
     private static void ReportOnFrameworkThread(Action report)
     {

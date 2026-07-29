@@ -37,9 +37,9 @@ public class LocalizerConfigInstance : NoireConfigBase
     /// <summary>
     /// Gets or sets whether <see cref="CustomDefaultLocale"/> records a default locale that was selected at runtime,
     /// through <see cref="NoireLocalizer.SetDefaultLocale(string)"/> or <see cref="NoireLocalizer.UseCustomDefaultLocale(string)"/>.<br/>
-    /// This is what separates a stored selection from the value <see cref="CustomDefaultLocale"/> starts life with.
-    /// A localizer restores a stored selection over the default locale it was constructed with, and must not do the
-    /// same for a value nobody picked, which would make that constructor argument unreachable.
+    /// Distinguishes a stored selection from the value <see cref="CustomDefaultLocale"/> starts life with. A
+    /// localizer restores a stored selection over the constructor's default locale, but must not do that for a
+    /// value nobody picked, which would make that constructor argument unreachable.
     /// </summary>
     [AutoSave]
     public bool HasCustomDefaultLocaleSelection { get; set; } = false;

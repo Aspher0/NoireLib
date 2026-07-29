@@ -7,9 +7,9 @@ namespace NoireLib.Draw3D.Scene;
 /// Draws the opt-in decal overlays on the render thread: nodes that turned on a painted-shape outline
 /// (<see cref="SceneNode.ShowDecalShape"/>) or a projection-box wireframe (<see cref="SceneNode.ShowDecalVolume"/>) are
 /// traced here each frame off <see cref="NoireDraw3D.OnRenderOverlay"/> - the same zero-latency point the native gizmo
-/// uses - so an overlay tracks the live camera and lands this frame. Consumers never plumb a per-frame call. A node
-/// registers once and keeps the slot while either overlay is on. Fail-soft: a destroyed or fully turned-off node
-/// auto-unregisters; a node that throws while emitting is logged and skipped.
+/// uses - so an overlay tracks the live camera and lands this frame; a node registers once and keeps the slot while
+/// either overlay is on. Fail-soft: a destroyed or fully turned-off node auto-unregisters; a node that throws while
+/// emitting is logged and skipped.
 /// </summary>
 internal static class DecalOverlayService
 {
@@ -24,7 +24,7 @@ internal static class DecalOverlayService
     private static readonly List<SceneNode> Scratch = new();
     private static bool hooked;
 
-    /// <summary>Registers a node for per-frame decal-overlay drawing (idempotent). Hooks the render overlay on first use.</summary>
+    /// <summary>Registers a node for per-frame decal-overlay drawing (idempotent); hooks the render overlay on first use.</summary>
     public static void Register(SceneNode node)
     {
         lock (Sync)
@@ -35,7 +35,7 @@ internal static class DecalOverlayService
         }
     }
 
-    /// <summary>Stops drawing a node's decal overlays. Callers check the other overlay first - a node needs the slot while either is on.</summary>
+    /// <summary>Stops drawing a node's decal overlays; callers check the other overlay first, since a node needs the slot while either is on.</summary>
     public static void Unregister(SceneNode node)
     {
         lock (Sync)

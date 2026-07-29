@@ -15,7 +15,7 @@ namespace NoireLib.GameWatcher;
 /// Subscribe through the domain facades (<see cref="Characters"/>, <see cref="Party"/>, <see cref="Zone"/>, …),
 /// query current state through the same facades, and await game state with <see cref="GameCondition"/> /
 /// <see cref="WaitFor{TEvent}"/>. Sources activate on demand: the first subscription touching a source spins
-/// it up, disposing the last token shuts it down - there is nothing to enable manually.<br/><br/>
+/// it up, disposing the last token shuts it down.<br/><br/>
 /// Every handler, filter, sampler and wait continuation runs <b>inline on the framework thread</b>.
 /// <b>Never sync-block (<c>.Wait()</c> / <c>.Result</c>) on a watcher task from the framework thread - always await.</b>
 /// </summary>
@@ -378,8 +378,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         => ActiveOptions.Sources.TryGetValue(kind, out var configured) ? configured : SourceOverride.Default;
 
     /// <summary>
-    /// Histories only collect while their source runs, so a configured history capacity implies AlwaysOn -
-    /// a capacity that silently collected nothing would be a footgun.
+    /// Histories only collect while their source runs, so a configured history capacity implies AlwaysOn.
     /// </summary>
     private bool HasImpliedAlwaysOn(SourceKind kind) => kind switch
     {

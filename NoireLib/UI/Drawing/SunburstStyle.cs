@@ -19,17 +19,17 @@ public sealed class SunburstStyle
     public float Duty { get; set; } = 0.5f;
 
     /// <summary>
-    /// Where the rays begin, as a fraction of the radius. Zero starts them at the centre, which is what makes them
-    /// converge to a point.
+    /// Where the rays begin, as a fraction of the radius. Zero starts them at the centre, so they converge to a
+    /// point.
     /// </summary>
     public float InnerRatio { get; set; }
 
     /// <summary>
     /// Where the rays begin, as a distance from the centre at 100% (see <see cref="NoireUI.Scale"/>), for lining the
     /// burst up with something that has a size of its own rather than a share of the radius.<br/>
-    /// Takes precedence over <see cref="InnerRatio"/> when set. A ratio moves with the radius, so a burst sized from
-    /// a window has its hole grow and shrink as the window does; a distance stays put, which is what an ornament
-    /// drawn at a fixed radius inside the burst needs the hole to do.
+    /// Takes precedence over <see cref="InnerRatio"/> when set: a ratio moves with the radius, so a burst sized from
+    /// a window has its hole grow and shrink as the window does, while a distance stays put for an ornament drawn at
+    /// a fixed radius inside the burst.
     /// </summary>
     /// <remarks>
     /// Clamped to stay inside the radius, so a burst smaller than the hole asked for draws a thin outer band rather
@@ -52,14 +52,13 @@ public sealed class SunburstStyle
     /// How much of each ray's width is spent fading out at its sides, from 0 to 1.
     /// </summary>
     /// <remarks>
-    /// Zero leaves the sides hard, and they are then only as smooth as the one pixel of antialiasing the fill itself
-    /// provides. That is enough for a handful of wide rays and visibly stepped once there are many narrow ones, which
-    /// is the case this exists for. It is also the more truthful look: light does not have an edge.
+    /// Zero leaves the sides hard, only as smooth as the one pixel of antialiasing the fill itself provides: enough
+    /// for a handful of wide rays, visibly stepped once there are many narrow ones.
     /// </remarks>
     public float Softness { get; set; } = 0.35f;
 
     /// <summary>
-    /// Creates an independent copy, so a variant can be adjusted without touching the original.
+    /// Creates an independent copy.
     /// </summary>
     /// <returns>The copy.</returns>
     public SunburstStyle Clone() => (SunburstStyle)MemberwiseClone();

@@ -35,10 +35,9 @@ public sealed class GameMaterial : IDisposable
     public bool IsDyeableFurniture => File.ShaderPackage == DyeableFurnitureShader;
 
     /// <summary>
-    /// The color a dyeable surface renders when nothing states a stain: stain row 1, Snow White, as the
-    /// display color the table holds. An undyed placement renders its scene's stated default stain
-    /// (<see cref="GameSgbFile.DefaultStain"/>); this is the fallback for a scene stating none. See
-    /// docs/Draw3D Game Assets Status.md for the measurements behind this value.
+    /// The color a dyeable surface renders when nothing states a stain (stain row 1, Snow White, the
+    /// table's own display color) - the fallback below <see cref="GameSgbFile.DefaultStain"/>, used only
+    /// when a scene states no default stain either (see docs/Draw3D Game Assets Status.md).
     /// </summary>
     public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
 
@@ -46,25 +45,24 @@ public sealed class GameMaterial : IDisposable
     public GpuTexture? BaseColor { get; }
 
     /// <summary>
-    /// The normal map, or null when the material names none.<br/>
-    /// Red and green carry the tangent-space normal; blue carries a further channel whose meaning depends on
-    /// the shader package, and alpha is unused on the background materials measured so far.
+    /// The normal map, or null when the material names none; red and green carry the tangent-space normal,
+    /// blue carries a further channel whose meaning depends on the shader package, and alpha is unused on
+    /// the background materials measured so far.
     /// </summary>
     public GpuTexture? Normal { get; }
 
     /// <summary>
-    /// The specular map, or null when the material names none.<br/>
-    /// On background materials red is graded and weighted high, green sits in a narrow band, and blue is
-    /// effectively unused. Red reads as a reflectivity or occlusion term and green as a gloss term; both are
-    /// exposed rather than assumed, because a statistical shape is not a proof of meaning.
+    /// The specular map, or null when the material names none; on background materials red is graded and
+    /// weighted high (read as reflectivity/occlusion), green sits in a narrow band (read as gloss), and blue
+    /// is effectively unused, both exposed rather than assumed.
     /// </summary>
     public GpuTexture? Specular { get; }
 
     /// <summary>
-    /// The material's diffuse color constant, or null when it sets none. On dyeable furniture it holds an
-    /// exact stain-table color, but it is not what renders: an undyed placement shows the scene's default
-    /// stain (<see cref="GameSgbFile.DefaultStain"/>), or <see cref="UndyedStain"/> when none is stated.
-    /// Exposed as parsed data; see docs/Draw3D Game Assets Status.md for its measured behavior.
+    /// The material's diffuse color constant, or null when it sets none; on dyeable furniture it holds an
+    /// exact stain-table color that is not what actually renders (an undyed placement shows the scene's
+    /// default stain, <see cref="GameSgbFile.DefaultStain"/>, or <see cref="UndyedStain"/> when none is
+    /// stated), exposed here as parsed data (see docs/Draw3D Game Assets Status.md).
     /// </summary>
     public Vector3? DiffuseColor
     {
@@ -77,36 +75,34 @@ public sealed class GameMaterial : IDisposable
 
     /// <summary>
     /// Builds the material this asset should normally be drawn with: opaque, lit, and with any dye color
-    /// confined to the area the color map's alpha marks as dyeable.<br/>
-    /// This is the correct path for game assets. <see cref="ToLit"/> and <see cref="ToUnlit"/> remain as
-    /// diagnostics, and are what the standard shaders can express without reading the mask.<br/>
-    /// <b>Falls back to <see cref="ToLit"/></b> when the material has no base color texture or the mask
-    /// pipeline is unavailable, in which case <paramref name="dye"/> is silently ignored because the lit
-    /// shader cannot confine it. Check <see cref="GameMaterialPipeline.Unavailable"/> to tell that apart
-    /// from a dye that simply had nothing to color.
+    /// confined to the area the color map's alpha marks as dyeable (<see cref="ToLit"/> and <see cref="ToUnlit"/>
+    /// remain as diagnostics only); <b>falls back to <see cref="ToLit"/></b> when the material has no base color
+    /// texture or the mask pipeline is unavailable, silently ignoring <paramref name="dye"/> since the lit
+    /// shader cannot confine it - check <see cref="GameMaterialPipeline.Unavailable"/> to tell that apart from
+    /// a dye that simply had nothing to color.
     /// </summary>
     /// <param name="dye">
-    /// Color applied to the dyeable area only, as a display color - the encoding a color picker and the game's
-    /// dye table both use. Null renders <see cref="UndyedStain"/>, the game's fallback for an empty stain
-    /// slot; pass the color of the scene's default stain (<see cref="GameSgbFile.DefaultStain"/>) to render
-    /// an item exactly as an undyed placement shows it.
+    /// Color applied to the dyeable area only, as a display color (matching a color picker and the game's dye
+    /// table); null renders <see cref="UndyedStain"/>, the game's fallback for an empty stain slot, or pass the
+    /// scene's default stain (<see cref="GameSgbFile.DefaultStain"/>) to render an item exactly as an undyed
+    /// placement shows it.
     /// </param>
-    /// <param name="tint">Multiplied over the whole surface afterwards. White leaves it untouched.</param>
-    /// <param name="normalStrength">How far the normal map bends the surface normal. 0 draws with the geometric normal alone, and values above 1 exaggerate it.</param>
+    /// <param name="tint">Multiplied over the whole surface afterwards; white leaves it untouched.</param>
+    /// <param name="normalStrength">How far the normal map bends the surface normal (0 = geometric normal alone, above 1 exaggerates it).</param>
     /// <param name="specularStrength">
-    /// How strongly the specular map contributes a highlight, with its green channel read as roughness.<br/>
-    /// <b>Off by default</b>: the background surfaces measured so far are matte in game, and the community shader
-    /// reference marks this map's mask channels as not fully understood.
+    /// How strongly the specular map contributes a highlight (green channel read as roughness); <b>off by
+    /// default</b>, since measured background surfaces are matte in game and this map's channels are not
+    /// fully understood.
     /// </param>
     /// <param name="dyeReference">
-    /// How the dye meets the masked area. 0 multiplies the authored color by the dye, which matches the game.
-    /// A positive value is the authored color the dye should land on exactly: the area is divided by it first,
-    /// so the texture carries only relative shading - an authoring tool, not a model of the game.
+    /// How the dye meets the masked area: 0 multiplies the authored color by the dye (matches the game); a
+    /// positive value is the authored color the dye should land on exactly, dividing the area by it first so
+    /// the texture carries only relative shading - an authoring tool, not a model of the game.
     /// </param>
     /// <param name="ignoreSceneLight">
-    /// Takes this renderer's lighting out of the picture, leaving the surface at the colors its texture and dye give it.<br/>
-    /// This is the absence of our light rather than the presence of the game's: it exists so a color difference and a
-    /// lighting difference can be told apart, which is otherwise impossible by eye.
+    /// Takes this renderer's lighting out of the picture, leaving the surface at the colors its texture and
+    /// dye give it; this is the absence of our light rather than the presence of the game's, letting a color
+    /// difference and a lighting difference be told apart.
     /// </param>
     public Material ToGameShaded(
         Vector3? dye = null,
@@ -116,10 +112,9 @@ public sealed class GameMaterial : IDisposable
         float dyeReference = 0f,
         bool ignoreSceneLight = false)
     {
-        // Falling back costs the dye, the normal map and the specular response while still drawing the
-        // texture, so the result looks like a plausible material rather than like a failure - and it is built
-        // once and kept, so it does not repair itself when the device arrives a frame later. Callers that hold
-        // materials watch GameMaterialPipeline.Ready and rebuild on the transition.
+        // Falling back still draws the texture, just without dye, normal map or specular; it does not
+        // self-repair once the device arrives, so callers holding materials watch GameMaterialPipeline.Ready
+        // and rebuild on the transition.
         if (BaseColor is null || !GameMaterialPipeline.EnsureRegistered())
             return ToLit(tint);
 
@@ -150,8 +145,8 @@ public sealed class GameMaterial : IDisposable
     }
 
     /// <summary>Builds a lit material that draws with this material's base color texture.</summary>
-    /// <param name="tint">Multiplied over the material's color. White leaves it untouched.</param>
-    /// <param name="applyDiffuseColor">Multiply <see cref="DiffuseColor"/> over every pixel. See its remarks: this is right for the areas the game tints and too dark for the areas it does not.</param>
+    /// <param name="tint">Multiplied over the material's color; white leaves it untouched.</param>
+    /// <param name="applyDiffuseColor">Multiply <see cref="DiffuseColor"/> over every pixel; right for the areas the game tints, too dark for the areas it does not.</param>
     public Material ToLit(Vector4? tint = null, bool applyDiffuseColor = false)
     {
         var color = ResolveColor(tint, applyDiffuseColor);
@@ -159,14 +154,13 @@ public sealed class GameMaterial : IDisposable
     }
 
     /// <summary>
-    /// Builds an unlit material, showing the texture's own colors with no shading applied.<br/>
-    /// Useful for telling a texture problem apart from a lighting one: unlit output that matches the game
-    /// means the textures are right and the difference is this renderer's light, not the asset.<br/>
-    /// <b>Drawn opaque</b>, unlike the general unlit material. These surfaces are opaque and their alpha is a
-    /// dyeable mask rather than coverage, so blending on it both erases the fixed detail it marks and drops
-    /// the depth test that keeps the model's own near faces in front of its far ones.
+    /// Builds an unlit material showing the texture's own colors with no shading applied, useful for telling a
+    /// texture problem from a lighting one (matching the game means the textures are right and the difference
+    /// is this renderer's light); <b>drawn opaque</b>, unlike the general unlit material, since these surfaces'
+    /// alpha is a dyeable mask rather than coverage and blending on it would both erase the fixed detail it
+    /// marks and drop the depth test that keeps the model's near faces in front of its far ones.
     /// </summary>
-    /// <param name="tint">Multiplied over the material's color. White leaves it untouched.</param>
+    /// <param name="tint">Multiplied over the material's color; white leaves it untouched.</param>
     /// <param name="applyDiffuseColor">Multiply <see cref="DiffuseColor"/> over every pixel.</param>
     public Material ToUnlit(Vector4? tint = null, bool applyDiffuseColor = false)
     {
@@ -215,7 +209,7 @@ public static class GameMaterialLoader
     /// <summary>Sampler names that carry the specular map, in the order they are preferred.</summary>
     private static readonly string[] SpecularSamplers = ["g_SamplerSpecular", "g_SamplerSpecularMap0"];
 
-    /// <summary>Loads a material and its base color texture.</summary>
+    /// <summary>Loads a material and its base color, normal and specular textures.</summary>
     /// <param name="materialGamePath">Archive path of the material.</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>The resolved material, or null when the file does not exist.</returns>
@@ -269,9 +263,9 @@ public static class GameMaterialLoader
     }
 
     /// <summary>
-    /// Turns a material path taken from a model into a loadable archive path.<br/>
-    /// Background models store the path outright. Character models store it relative, beginning with a
-    /// slash, and it resolves against the model's own folder plus a numbered variant directory.
+    /// Turns a material path taken from a model into a loadable archive path: background models store it
+    /// outright, character models store it relative (beginning with a slash), resolved against the model's
+    /// own folder plus a numbered variant directory.
     /// </summary>
     /// <param name="modelGamePath">Archive path of the model that referenced the material.</param>
     /// <param name="materialPath">The path as the model stores it.</param>
@@ -315,15 +309,12 @@ public static class GameMaterialLoader
     }
 
     /// <summary>
-    /// Candidate archive paths for a relative material name whose file lives outside the model's own tree,
-    /// derived from the name itself.<br/>
-    /// A character material's filename encodes its owner: <c>mt_c0201b0001_a.mtrl</c> is character
-    /// <c>c0201</c>, body <c>b0001</c>, and its file lives under the human body directory - not under the
-    /// equipment folder of whatever model referenced it. An equipment model referencing its wearer's skin
-    /// material is exactly that case, and resolving the name against the model's folder produces a path that
-    /// does not exist, which surfaced as a garment whose body parts drew with no material at all. Multiple
-    /// candidates are returned because the human directories are split on whether a variant folder exists;
-    /// the caller takes the first that loads.
+    /// Candidate archive paths for a relative material name whose file lives outside the model's own tree (an
+    /// equipment model referencing its wearer's skin material is the typical case), derived from the name
+    /// itself: a character material's filename encodes its owner, e.g. <c>mt_c0201b0001_a.mtrl</c> is character
+    /// <c>c0201</c> body <c>b0001</c>, living under the human body directory rather than the referencing
+    /// model's equipment folder; multiple candidates are returned since the human directories are split on
+    /// whether a variant folder exists, and the caller takes the first that loads.
     /// </summary>
     /// <param name="materialPath">The relative material name, beginning with a slash.</param>
     /// <param name="variant">Variant directory for the kinds that use one.</param>

@@ -62,8 +62,8 @@ public sealed class NoireToast
     public ToastSeverity Severity { get; set; }
 
     /// <summary>
-    /// How long the toast stays before dismissing itself. <see cref="TimeSpan.Zero"/> makes it stay until it is
-    /// dismissed, which is what an error with an action wants.
+    /// How long the toast stays before dismissing itself. <see cref="TimeSpan.Zero"/> makes it stay until
+    /// dismissed.
     /// </summary>
     public TimeSpan Duration { get; set; }
 
@@ -245,9 +245,8 @@ public sealed class NoireToast
     public static NoireToast Error(string message) => Show(message, ToastSeverity.Error);
 
     /// <summary>
-    /// Shows a toast offering to undo what just happened.<br/>
-    /// This is the pattern that replaces a confirmation dialog for a reversible action: do the thing immediately, and
-    /// offer a way back for a few seconds instead of asking first.
+    /// Shows a toast offering to undo what just happened, in place of a confirmation dialog: do the thing
+    /// immediately, and offer a way back for a few seconds instead of asking first.
     /// </summary>
     /// <param name="message">What happened, phrased in the past tense.</param>
     /// <param name="onUndo">How to put it back.</param>

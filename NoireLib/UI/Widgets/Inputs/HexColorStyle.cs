@@ -9,12 +9,8 @@ namespace NoireLib.UI;
 /// <seealso cref="NoireInputs.HexColor(string, ref Vector4, HexColorStyle?)"/>
 public sealed class HexColorStyle
 {
-    /// <summary>
-    /// Whether the alpha channel is part of the colour. Off by default, since most settings are an opaque colour.
-    /// </summary>
-    /// <remarks>
-    /// With it off the field reads and writes six digits and leaves alpha alone; with it on, eight.
-    /// </remarks>
+    /// <summary>Whether the alpha channel is part of the colour. Off by default.</summary>
+    /// <remarks>With it off the field reads and writes six digits and leaves alpha alone; with it on, eight.</remarks>
     public bool ShowAlpha { get; set; }
 
     /// <summary>Whether clicking the swatch opens a picker. On by default.</summary>

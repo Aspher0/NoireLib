@@ -48,8 +48,8 @@ public static class UiAddon
     /// Gets the bounds of a native game window, or <see langword="null"/> when it is not on screen.
     /// </summary>
     /// <remarks>
-    /// This is the shape <see cref="UiPosition.TryResolve(Vector2, Vector2, Vector2, Func{string, UiRect?}, out Vector2)"/>
-    /// takes, so a caller can substitute its own source of rectangles for a preview, an editor, or a test.
+    /// Matches the delegate signature that <see cref="UiPosition.TryResolve(Vector2, Vector2, Vector2, Func{string, UiRect?}, out Vector2)"/>
+    /// takes. Another source of rectangles can be substituted for a preview, an editor, or a test.
     /// </remarks>
     /// <param name="addonName">The addon name, for example <c>_PartyList</c>.</param>
     /// <returns>The bounds, or <see langword="null"/>.</returns>

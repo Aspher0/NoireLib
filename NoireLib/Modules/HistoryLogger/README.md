@@ -570,8 +570,8 @@ bool isWindowOpen = logger?.IsWindowOpen ?? false;
   intercept a non-virtual member; each one it has to skip is named in a warning.
 - Check that `logAllMethods` is set correctly. With it off, only members carrying `[NoireLog]` are logged.
 - Confirm you are calling the proxy that `CreateLoggedProxy` returned rather than the original instance.
-- Note that `RegisterTypeForAutoLogging<T>()` only supplies the default used when `logAllMethods` is left
-  null, so passing `logAllMethods` explicitly ignores it.
+- `RegisterTypeForAutoLogging<T>()` only supplies the default used when `logAllMethods` is left null, so
+  passing `logAllMethods` explicitly ignores it.
 
 ### Entries being trimmed unexpectedly
 - Check `MaxInMemoryEntries` value (default: 2000).

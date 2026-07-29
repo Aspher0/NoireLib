@@ -4,8 +4,8 @@ namespace NoireLib.Helpers;
 /// A unit of time, ordered from the smallest to the largest.
 /// </summary>
 /// <remarks>
-/// The order is what <see cref="DurationHelper"/> reads a bare number against: in "1h30" the 30 takes the unit one step
-/// below the hour, because that is what someone typing it meant.
+/// <see cref="DurationHelper"/> reads a bare number against this order: in "1h30" the 30 takes the unit one step
+/// below the hour.
 /// </remarks>
 public enum DurationUnit
 {

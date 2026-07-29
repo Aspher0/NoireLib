@@ -13,9 +13,8 @@ namespace NoireLib.Configuration.Migrations;
 public class MigrationBuilder
 {
     /// <summary>
-    /// Settings for every conversion performed by this builder. TypeNameHandling stays None: a migrated property is
-    /// read from the user's configuration file on disk, so honouring a type name embedded in that file would let the
-    /// file choose which type to instantiate.
+    /// Settings for every conversion performed by this builder. TypeNameHandling stays None: honouring a type name
+    /// embedded in the user's file would let the file choose which type to instantiate.
     /// </summary>
     private static readonly JsonSerializerSettings ConversionSettings = new()
     {
@@ -24,12 +23,11 @@ public class MigrationBuilder
     };
 
     /// <summary>
-    /// The serializer every conversion runs through.<br/>
-    /// Built with <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
+    /// The serializer every conversion runs through, built with
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from
     /// <see cref="ConversionSettings"/> alone. The serializer-less <see cref="JToken.FromObject(object)"/> and
-    /// <see cref="JToken.ToObject{T}()"/> overloads instead route through
-    /// <see cref="JsonSerializer.CreateDefault()"/>, which merges in <see cref="JsonConvert.DefaultSettings"/>, a
-    /// process-global that any other code loaded into this process can assign. Nothing here may use those overloads.
+    /// <see cref="JToken.ToObject{T}()"/> overloads instead merge in the process-global
+    /// <see cref="JsonConvert.DefaultSettings"/>; nothing here may use those overloads.
     /// </summary>
     private static readonly JsonSerializer ConversionSerializer = JsonSerializer.Create(ConversionSettings);
 
@@ -62,9 +60,7 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Deletes a property from the JSON.<br/>
-    /// Does not need to be called if you omit the property in your configuration class.<br/>
-    /// Added for completeness.
+    /// Deletes a property from the JSON. Not needed if the property is simply omitted from the configuration class.
     /// </summary>
     /// <param name="propertyName">The name of the property to delete.</param>
     /// <returns>The MigrationBuilder instance for chaining.</returns>
@@ -75,9 +71,8 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Deletes multiple properties from the JSON.<br/>
-    /// Does not need to be called if you omit the properties in your configuration class.<br/>
-    /// Added for completeness.
+    /// Deletes multiple properties from the JSON. Not needed if the properties are simply omitted from the
+    /// configuration class.
     /// </summary>
     /// <param name="propertyNames">The names of the properties to delete.</param>
     /// <returns>The MigrationBuilder instance for chaining.</returns>
@@ -123,9 +118,8 @@ public class MigrationBuilder
     }
 
     /// <summary>
-    /// Adds a new property with a default value.<br/>
-    /// Does not need to be called since you add the property in your configuration class with a default value.<br/>
-    /// Added for completeness.
+    /// Adds a new property with a default value. Not needed if the property is simply added to the configuration
+    /// class with a default value.
     /// </summary>
     /// <typeparam name="T">The type of the property to add.</typeparam>
     /// <param name="propertyName">The name of the property to add.</param>

@@ -6,12 +6,12 @@ using System;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// A helper class for working with Emotes.
+/// Helpers for working with emotes.
 /// </summary>
 public static class EmoteHelper
 {
     /// <summary>
-    /// Retrieves an Emote by its command, searching through all client languages or just the specified <paramref name="clientLanguage"/> parameter.
+    /// Retrieves an Emote by its command, searching all client languages or only <paramref name="clientLanguage"/> if given.
     /// </summary>
     /// <param name="command">The emote command, in any supported game client language. With or without the "/".</param>
     /// <param name="clientLanguage">The client language to search in. If null, searches all languages.</param>
@@ -56,7 +56,7 @@ public static class EmoteHelper
     }
 
     /// <summary>
-    /// Tries to retrieve an Emote by its ID.
+    /// Retrieves an Emote by its row id.
     /// </summary>
     /// <param name="emoteId">The ID of the Emote to retrieve.</param>
     /// <returns>The Emote if found; otherwise, null.</returns>
@@ -92,8 +92,7 @@ public static class EmoteHelper
     /// Retrieves the character states the specified emote can be performed in.
     /// </summary>
     /// <remarks>
-    /// This has not been fully tested and may not be accurate for all emotes, although I strongly believe
-    /// it is correct for all the emotes listed in the Emote addon at the very least.
+    /// Not fully verified; may be inaccurate for some emotes.
     /// </remarks>
     /// <param name="emote">The Emote to retrieve conditions for.</param>
     /// <returns>The states the emote can be performed in, as an <see cref="Enums.EmoteCondition"/>.</returns>

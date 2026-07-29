@@ -10,9 +10,8 @@ using System.Text;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A dropdown that selects several things at once, and does not close when you pick one.<br/>
-/// The everyday case ImGui has no answer for: a filter set, a list of enabled categories, a set of jobs. Every option
-/// is a checkbox, the preview summarises what is chosen, and the popup stays open until you are finished with it.
+/// A dropdown that selects several things at once and does not close when you pick one. Every option is a checkbox,
+/// the preview summarises what is chosen, and the popup stays open until you are finished.
 /// </summary>
 /// <remarks>
 /// Selection is by value rather than by index, so it survives the item list being replaced. Hand a comparer to the
@@ -73,8 +72,8 @@ public sealed class NoireMultiCombo<T>
     public string? Label { get; set; }
 
     /// <summary>
-    /// The width of the widget. When <see langword="null"/>, the default ImGui item width is used.<br/>
-    /// In real pixels, not scaled: this is handed straight to ImGui. See <see cref="NoireUI.Scale"/>.
+    /// The width of the widget. When <see langword="null"/>, the default ImGui item width is used. In real pixels,
+    /// not scaled.
     /// </summary>
     public float? Width { get; set; }
 
@@ -147,10 +146,7 @@ public sealed class NoireMultiCombo<T>
     /// <summary>The label of the shortcut clearing the selection.</summary>
     public string SelectNoneText { get; set; } = "None";
 
-    /// <summary>
-    /// Whether picking an option closes the dropdown. Defaults to <see langword="false"/>, which is the point of this
-    /// widget: choosing several things should not mean reopening the list between each one.
-    /// </summary>
+    /// <summary>Whether picking an option closes the dropdown. Defaults to <see langword="false"/>.</summary>
     public bool CloseOnSelect { get; set; }
 
     /// <summary>How many options the dropdown is sized to hold.</summary>
@@ -311,13 +307,12 @@ public sealed class NoireMultiCombo<T>
 
         var label = string.IsNullOrEmpty(Label) ? string.Empty : Label;
 
-        // Without this the popup falls back to ImGui's own cap of roughly eight rows, while the option list inside it
-        // is a child sized for VisibleItemCount plus a filter row and the shortcuts above it. The content then
-        // overflows the popup and both of them grow a scrollbar: one around the list, one around the popup holding it.
-        // Snapped to whole pixels, for the reason the combo box snaps its own: ImGui floors a window's size whenever a
-        // size constraint is present, and the test that decides the scrollbar adds the window padding to the content
-        // size unfloored. Any fraction in the padding therefore leaves the popup permanently short of what it holds,
-        // which is a scrollbar on a dropdown that fits, at every UI scale that is not a whole multiple.
+        // Without this the popup falls back to ImGui's own cap of roughly eight rows, while the option list inside
+        // it is a child sized for VisibleItemCount plus a filter row and the shortcuts above it: the content
+        // overflows and both grow a scrollbar, one around the list and one around the popup holding it.
+        // Snapped to whole pixels for the same reason the combo box snaps its own: ImGui floors a window's size
+        // whenever a size constraint is present, but the scrollbar test adds the window padding to the content size
+        // unfloored, so any fraction in the padding leaves the popup permanently short of what it holds.
         var hostPadding = ImGui.GetStyle().WindowPadding;
         using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(hostPadding.X), MathF.Round(hostPadding.Y)));
 
@@ -383,8 +378,8 @@ public sealed class NoireMultiCombo<T>
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         var width = (ImGui.GetContentRegionAvail().X - spacing) * 0.5f;
 
-        // Scoped to what the filter is showing rather than to everything, because that is what "all" means with a
-        // filter box directly above it.
+        // Scoped to what the filter is showing rather than to everything. With a filter box directly above it,
+        // "all" means what is currently shown.
         if (ImGui.Button(UiIds.Labelled(SelectAllText, "###NoireMultiComboAll_", Id), new Vector2(width, 0f)))
         {
             var changed = false;
@@ -488,11 +483,10 @@ public sealed class NoireMultiCombo<T>
         var isHighlighted = position == highlightIndex;
         var start = ImGui.GetCursorPos();
 
-        // Closing is asked for outright rather than left to the selectable's own flag. ImGui only closes a popup from
-        // a selectable whose own window carries the popup flag, and these rows live in a child window inside the
-        // popup, so that flag decides nothing here in either direction: without this, CloseOnSelect did nothing at
-        // all. Closing the current popup works from a child, because it acts on the popup stack rather than on the
-        // window doing the asking.
+        // Closing is asked for outright rather than left to the selectable's own flag: ImGui only closes a popup
+        // from a selectable whose own window carries the popup flag, and these rows live in a child window inside
+        // the popup, so that flag decides nothing here. Closing the current popup still works from a child, since
+        // it acts on the popup stack rather than the window doing the asking.
         if (ImGui.Selectable(UiIds.For("###NoireMultiComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.DontClosePopups, new Vector2(0f, ResolveItemHeight())))
         {
             Toggle(item);
@@ -572,13 +566,11 @@ public sealed class NoireMultiCombo<T>
     /// Builds the text shown on the closed box, naming the selected items and summarising the rest.
     /// </summary>
     /// <remarks>
-    /// Composed into a builder the widget keeps and only turned into a string when the text has actually changed. This
-    /// runs on every frame the combo draws, open or closed, and the selection behind it moves when the user picks
-    /// something and at no other time, so the frames in between were producing the string already on the box.<br/>
-    /// The items are walked rather than <see cref="Selected"/> read, because that property snapshots the selection into
-    /// a new list on every read and this needs only the first few of them. A custom <see cref="PreviewFunc"/> is still
-    /// handed that snapshot, which is the shape it is declared with, and still runs every frame: it is the consumer's
-    /// callback and the library promises nothing about when it is called.
+    /// Composed into a builder the widget keeps and only turned into a string when the text has actually changed.
+    /// This runs every frame the combo draws, open or closed, while the selection behind it moves only when the
+    /// user picks something. The items are walked rather than <see cref="Selected"/> read, since that property
+    /// snapshots the selection into a new list on every read and this needs only the first few. A custom
+    /// <see cref="PreviewFunc"/> still receives that snapshot and still runs every frame.
     /// </remarks>
     /// <returns>The preview text.</returns>
     internal string BuildPreview()
@@ -637,9 +629,9 @@ public sealed class NoireMultiCombo<T>
     /// The summary of everything the preview did not name, for example <c>+2 more</c>.
     /// </summary>
     /// <remarks>
-    /// Cached because it is composed through a format string, which allocates, and it changes only when the selection
-    /// crosses <see cref="PreviewMaxItems"/>. Shared across every multi-combo in the process, which is why the format
-    /// is part of the key.
+    /// Cached, since composing it through a format string allocates and it changes only when the selection crosses
+    /// <see cref="PreviewMaxItems"/>. Shared across every multi-combo in the process, so the format is part of the
+    /// key.
     /// </remarks>
     /// <param name="format">The format to compose with. <c>{0}</c> is the count.</param>
     /// <param name="remaining">How many items were not named.</param>
@@ -667,18 +659,17 @@ public sealed class NoireMultiCombo<T>
     /// <see cref="VisibleItemCount"/> options.
     /// </summary>
     /// <remarks>
-    /// The full budget rather than what the current filter leaves, so it is always an upper bound on what the option
-    /// list will actually ask for. The popup then sizes itself to its content and stops short of this, which is what
-    /// keeps the single scrollbar around the list rather than one there and one around the popup.
+    /// The full budget rather than what the current filter leaves, so it is always an upper bound on what the
+    /// option list will actually ask for. The popup then sizes itself to its content and stops short of this,
+    /// keeping a single scrollbar around the list rather than one there and one around the popup.
     /// </remarks>
     private float MeasureMaxPopupHeight()
     {
         var visibleCount = Math.Max(1, VisibleItemCount);
 
-        // Nothing to cap while everything fits, so nothing is capped and the popup comes out exactly as tall as its own
-        // contents. A cap computed to that same height has to agree with ImGui about every row, gap and padding at
-        // once, in a measurement taken before the popup exists, and a pixel under it is a scrollbar over a list that
-        // fits. It only ever mattered for a list longer than the dropdown, where a scrollbar belongs anyway.
+        // Nothing to cap while everything fits: the popup comes out exactly as tall as its own contents. A cap
+        // computed to that same height would have to agree with ImGui about every row, gap and padding at once, in
+        // a measurement taken before the popup exists, and a pixel under it is a scrollbar over a list that fits.
         if (filteredIndices.Count <= visibleCount)
             return float.MaxValue;
 

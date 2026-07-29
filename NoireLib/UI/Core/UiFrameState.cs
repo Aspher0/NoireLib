@@ -262,8 +262,8 @@ public static class UiFrameState
     }
 
     /// <summary>
-    /// The entries of one value type. Segregating by type keeps values unboxed, which is what makes a per-frame write of
-    /// a float or a small struct allocation-free.
+    /// The entries of one value type. Segregating by type keeps values unboxed, so a per-frame write of a float or a
+    /// small struct is allocation-free.
     /// </summary>
     private static class Store<T>
     {

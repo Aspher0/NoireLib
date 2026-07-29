@@ -1,8 +1,8 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The named colors a <see cref="NoireTheme"/> is built from.<br/>
-/// Every widget resolves the colors it needs through these, so overriding one re-tints everything that uses it.
+/// The named colors a <see cref="NoireTheme"/> is built from. Every widget resolves the colors it needs through
+/// these.
 /// </summary>
 public enum ThemeColor
 {

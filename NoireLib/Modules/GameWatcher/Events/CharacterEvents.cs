@@ -10,9 +10,7 @@ public interface ICharacterScopedEvent
 }
 
 /// <summary>
-/// Fired when a character appears in the object table.<br/>
-/// The object table is the client's entire view of the area, so with a scope this <i>is</i> the presence
-/// event: someone entering the place you are in.
+/// Fired when a character appears in the object table.
 /// </summary>
 /// <param name="Current">The subject's first snapshot.</param>
 /// <param name="DuringZoneChange">True when the spawn happened while the client was loading between areas - the whole table respawns on zone transitions.</param>
@@ -203,10 +201,9 @@ public sealed record CharacterEmoteLoopEndedEvent(CharacterSnapshot Previous, Ch
 }
 
 /// <summary>
-/// Fired when a character's played emote id changes - one-shot emotes, looping emotes and cposes alike, with
-/// the exact emote id (read from the character's emote controller, no hook involved).<br/>
-/// A one-shot emote is a fired animation, not a state: it produces this single event as the id becomes set and
-/// has no end signal. Looping-emote start/end pairs exist separately
+/// Fired when a character's played emote id changes - one-shot, looping and cposes alike - with the exact
+/// id read from the emote controller (no hook).<br/>
+/// A one-shot emote fires this once with no end signal; loop start/end are separate events
 /// (<see cref="CharacterEmoteLoopStartedEvent"/>/<see cref="CharacterEmoteLoopEndedEvent"/>).
 /// </summary>
 /// <param name="Character">The snapshot of the character playing the emote.</param>

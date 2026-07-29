@@ -23,24 +23,20 @@ public class HotkeyManagerConfigInstance : NoireConfigBase
     public override string GetConfigFileName() => "HotkeyManagerConfig";
 
     /// <summary>
-    /// Persisted hotkeys keyed by hotkey id.<br/>
-    /// Lookups are case insensitive, matching how hotkey ids are compared everywhere else.
+    /// Persisted hotkeys keyed by hotkey id, case insensitive, matching how hotkey ids are compared everywhere else.
     /// </summary>
     public Dictionary<string, PersistedHotkey> Hotkeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Restores the case insensitive comparer of <see cref="Hotkeys"/> once a load from disk has finished.<br/>
-    /// Deserialization always builds a fresh dictionary with the default ordinal comparer, so a config read
-    /// back from disk would otherwise resolve hotkeys case sensitively while every other lookup of the same
-    /// id ignores case. This is the only boundary that can introduce the wrong comparer, so normalizing it
-    /// here keeps read paths free of repair work and of the write that repairing would need.
+    /// Restores the case insensitive comparer of <see cref="Hotkeys"/> after a load from disk, since
+    /// deserialization always rebuilds the dictionary with the default ordinal comparer.
     /// </summary>
     /// <param name="context">The streaming context supplied by the serializer.</param>
     [OnDeserialized]
     internal void NormalizeHotkeysComparer(StreamingContext context)
     {
-        // A file whose Hotkeys entry is null leaves the property null, since deserialization replaces
-        // rather than populates the instance the property initializer created.
+        // A file whose Hotkeys entry is null leaves the property null: deserialization replaces the
+        // instance the property initializer created rather than populating it.
         if (Hotkeys == null)
         {
             Hotkeys = new Dictionary<string, PersistedHotkey>(StringComparer.OrdinalIgnoreCase);

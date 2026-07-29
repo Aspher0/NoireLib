@@ -4,9 +4,8 @@ using System;
 namespace NoireLib.TaskQueue;
 
 /// <summary>
-/// Base class for <see cref="TaskBuilder"/> and <see cref="TaskBuilder{TModule}"/>.<br/>
-/// Uses the Curiously Recurring Template Pattern (CRTP) so that every fluent method returns
-/// the concrete derived type, preserving the full API regardless of how deep the chain goes.
+/// Base class for <see cref="TaskBuilder"/> and <see cref="TaskBuilder{TModule}"/>. Uses CRTP so
+/// every fluent method returns the concrete derived type.
 /// </summary>
 /// <typeparam name="TSelf">The concrete builder type (e.g. <see cref="TaskBuilder"/> or <see cref="TaskBuilder{TModule}"/>).</typeparam>
 public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
@@ -15,8 +14,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     protected readonly QueuedTask task;
 
     /// <summary>
-    /// Initialises a new builder instance.<br/>
-    /// The <see cref="QueuedTask"/> will be created as blocking by default.
+    /// Initialises a new builder instance, with the task blocking by default.
     /// </summary>
     /// <param name="customId">Optional custom identifier for the task.</param>
     protected TaskBuilderBase(string? customId = null)
@@ -27,7 +25,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     // -- Fluent configuration ----------------------------------
 
     /// <summary>
-    /// Sets the custom ID for the task. Used to identify the task in logs and callbacks, or for future retrieval.
+    /// Sets the custom ID for the task.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf WithCustomId(string customId)
@@ -37,8 +35,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets whether the task is blocking.<br/>
-    /// When a task is blocking, the queue will wait for it to complete before starting the next task.
+    /// Marks the task as blocking, so the queue waits for it to complete before starting the next task.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf AsBlocking()
@@ -48,9 +45,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets whether the task is non-blocking.<br/>
-    /// By default, tasks are non-blocking unless specified otherwise.<br/>
-    /// When a task is non-blocking, the queue will start the next task immediately after starting this one, without waiting for it to complete.
+    /// Marks the task as non-blocking, so the queue starts the next task immediately after starting this one.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf AsNonBlocking()
@@ -70,7 +65,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the action to execute when the task starts, with access to the current task instance.<br/>
+    /// Sets the action to execute when the task starts, with access to the current task instance.
     /// </summary>
     /// <param name="action">The action that receives the current task as a parameter.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -81,9 +76,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a predicate-based completion condition.<br/>
-    /// This condition will be evaluated periodically to determine if the task is complete.<br/>
-    /// For example, you may want the condition to be "Is the character in map X?". Whenever the condition returns true, the task will be marked as complete.
+    /// Sets a predicate-based completion condition.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf WithCondition(Func<bool> condition)
@@ -93,7 +86,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a predicate-based completion condition with access to the current task instance.<br/>
+    /// Sets a predicate-based completion condition with access to the current task instance.
     /// </summary>
     /// <param name="condition">The condition function that receives the current task as a parameter.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -104,21 +97,15 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets an event-based completion condition using the <see cref="NoireEventBus"/>.<br/>
-    /// The task will complete when an event of type <typeparamref name="TEvent"/> is published to the event bus and if that event filter matches.<br/>
-    /// For example, you may want the task to complete when a "PlayerEnterMap(int mapId)" is published, and only if the mapId matches your condition.<br/>
-    /// You can also use parameterless events and you can also omit the filter.
+    /// Sets an event-based completion condition using the <see cref="NoireEventBus"/>: completes when an event of type <typeparamref name="TEvent"/> is published and the filter (if any) matches.
     /// </summary>
     /// <param name="filter">Optional filter to conditionally accept events.</param>
-    /// <param name="allowCaptureWhileQueued">If true, events can be captured while the task is still queued. If false (default), events can only be captured when the task is executing or waiting for completion.</param>
+    /// <param name="allowCaptureWhileQueued">Whether to capture events while the task is still queued (default false).</param>
     /// <param name="eventCaptureDepth">
-    /// Maximum depth (maximum number of tasks allowed between current and target tasks) from the current executing task where events can be captured.<br/>
-    /// Only applies when allowCaptureWhileQueued is true. Null (default) means no depth limit.<br/>
-    /// A value of 0 means only the current executing task can capture events.<br/>
-    /// A value of 5 means a maximum of 5 tasks can be between the current task and the target task (capturing events).
+    /// Maximum depth from the current task where events can be captured, when <paramref name="allowCaptureWhileQueued"/> is true: null (default) is unlimited, 0 is only the current task, N allows N tasks between current and target.
     /// </param>
     /// <param name="boundaryType">
-    /// Defines how context boundaries are checked for depth calculation. <br/>
+    /// Defines how context boundaries are checked for depth calculation.
     /// CrossContext (default): fully cross-context, SameContext: same batch or both standalone, SameContextStrict: no batch separation allowed.
     /// </param>
     /// <returns>The builder instance for chaining.</returns>
@@ -133,8 +120,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay.<br/>
-    /// Once the task completes, the queue will wait this amount of time before proceeding with the rest of the tasks.
+    /// Sets a post-completion delay: once the task completes, the queue waits this long before continuing.
     /// </summary>
     /// <param name="delay">The delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
@@ -149,8 +135,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay using a predicate function.<br/>
-    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation.
+    /// Sets a post-completion delay using a predicate, evaluated when the delay is about to start, not at task creation.
     /// </summary>
     /// <param name="delayPredicate">A function that returns the delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
@@ -165,8 +150,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a post-completion delay using a predicate function with access to the task.<br/>
-    /// The delay will be evaluated at the moment the post-completion delay is about to start (not at task creation), allowing for dynamic delay calculation based on task state.
+    /// Sets a post-completion delay using a predicate with task access, evaluated when the delay is about to start, not at task creation.
     /// </summary>
     /// <param name="delayPredicate">A function that receives the task and returns the delay duration.</param>
     /// <param name="applyOnFailure">Whether to apply the delay when the task fails (default: false).</param>
@@ -191,9 +175,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a custom completion condition.<br/>
-    /// This is an advanced option for when you need more control over the completion logic.<br/>
-    /// See <see cref="TaskCompletionCondition"/> for more information.
+    /// Sets a custom completion condition.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf WithCompletionCondition(TaskCompletionCondition condition)
@@ -221,8 +203,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the task is cancelled and optionally stops the queue.<br/>
-    /// For Failure handling, see <see cref="OnFailed(Action{QueuedTask, Exception}, bool?)"/>.
+    /// Sets the callback for when the task is cancelled and optionally stops the queue.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task is cancelled.</param>
     /// <param name="stopQueue">Whether to stop the queue on task cancellation. A value of <see langword="null"/> means no change.</param>
@@ -245,9 +226,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the task fails and optionally stops the queue.<br/>
-    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.<br/>
-    /// For Cancellation handling, see <see cref="OnCancelled(Action, bool?)"/>.
+    /// Sets the callback for when the task fails and optionally stops the queue; also invoked when max retry attempts are exhausted.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails.</param>
     /// <param name="stopQueue">Whether to stop the queue on task failure. A value of <see langword="null"/> means no change.</param>
@@ -279,9 +258,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets the callback for when the task fails or is cancelled, and optionally stops the queue.<br/>
-    /// This callback will also be called when the task fails due maximum retry attempts being exhausted.
-    /// This is a convenience method for handling both failure and cancellation with the same callback.
+    /// Sets the callback for when the task fails or is cancelled, and optionally stops the queue; also invoked when max retry attempts are exhausted.
     /// </summary>
     /// <param name="callback">The callback to invoke when the task fails or is cancelled.</param>
     /// <param name="stopQueue">Whether to stop the queue on task failure or cancellation. A value of <see langword="null"/> means no change.</param>
@@ -425,9 +402,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a timeout for the task.<br/>
-    /// When the timeout is reached, the task will be marked as failed.<br/>
-    /// Timeouts are based on processing time, meaning when you pause the queue, the timeout timer is also paused.
+    /// Sets a timeout for the task, based on processing time (paused when the queue is paused); the task fails when it elapses.
     /// </summary>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf WithTimeout(TimeSpan timeout)
@@ -515,8 +490,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets custom metadata for the task.<br/>
-    /// Retrieving the task later, for example with <see cref="OnCompleted(Action{QueuedTask})"/>, will allow you to access this metadata.
+    /// Sets custom metadata for the task.
     /// </summary>
     /// <param name="metadata">The metadata generic object to associate with the task.</param>
     /// <returns>The builder instance for chaining.</returns>
@@ -527,8 +501,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Sets a callback to invoke when max retry attempts are exhausted.<br/>
-    /// If <see cref="OnFailed(Action{QueuedTask, Exception}, bool?)"/> or <see cref="OnFailedOrCancelled(Action{QueuedTask, Exception?}, bool?)"/> callbacks are set, this callback will be invoked **before them** when max retries are exceeded, allowing you to handle max retry exhaustion separately from other types of failure if desired.
+    /// Sets a callback to invoke when max retry attempts are exhausted, invoked before <see cref="OnFailed(Action{QueuedTask, Exception}, bool?)"/> or <see cref="OnFailedOrCancelled(Action{QueuedTask, Exception?}, bool?)"/> if those are also set.
     /// </summary>
     /// <param name="callback">The callback to invoke when retries are exhausted.</param>
     /// <param name="stopQueue">Whether to stop the queue when max retries are exceeded. A value of <see langword="null"/> means no change.</param>
@@ -548,8 +521,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     // -- Terminal methods ----------------------------------
 
     /// <summary>
-    /// Builds and returns the configured task.<br/>
-    /// If no completion condition was set, it defaults to immediate completion as per <see cref="WithImmediateCompletion()"/>.
+    /// Builds and returns the configured task; defaults to immediate completion (<see cref="WithImmediateCompletion()"/>) if no completion condition was set.
     /// </summary>
     /// <returns>The QueuedTask.</returns>
     public QueuedTask Build()
@@ -604,8 +576,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     // -- Static utilities ----------------------------------
 
     /// <summary>
-    /// Retrieves metadata from a previous task in the queue by custom ID.<br/>
-    /// This method should be called within <see cref="WithAction(Action{QueuedTask})"/> or <see cref="WithCondition(Func{QueuedTask, bool})"/>.
+    /// Retrieves metadata from a previous task in the queue by custom ID, for use within <see cref="WithAction(Action{QueuedTask})"/> or <see cref="WithCondition(Func{QueuedTask, bool})"/>.
     /// </summary>
     /// <typeparam name="T">The type of metadata to retrieve.</typeparam>
     /// <param name="queue">The task queue containing the previous task.</param>
@@ -622,8 +593,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Retrieves a pointer from a previous task's metadata by custom ID.<br/>
-    /// This is a type-safe wrapper for retrieving pointers stored as <see cref="PointerMetadata{T}"/>.
+    /// Retrieves a pointer from a previous task's metadata by custom ID, as a type-safe wrapper for pointers stored as <see cref="PointerMetadata{T}"/>.
     /// </summary>
     /// <typeparam name="T">The unmanaged pointer type.</typeparam>
     /// <param name="queue">The task queue containing the previous task.</param>
@@ -668,8 +638,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Retrieves metadata from a task within a batch by their custom IDs.<br/>
-    /// This method should be called within <see cref="WithAction(Action{QueuedTask})"/> or <see cref="WithCondition(Func{QueuedTask, bool})"/>.
+    /// Retrieves metadata from a task within a batch by their custom IDs, for use within <see cref="WithAction(Action{QueuedTask})"/> or <see cref="WithCondition(Func{QueuedTask, bool})"/>.
     /// </summary>
     /// <typeparam name="T">The type of metadata to retrieve.</typeparam>
     /// <param name="queue">The task queue containing the batch and task.</param>
@@ -687,8 +656,7 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
     }
 
     /// <summary>
-    /// Retrieves a pointer from a task's metadata within a batch by their custom IDs.<br/>
-    /// This is a type-safe wrapper for retrieving pointers stored as <see cref="PointerMetadata{T}"/>.
+    /// Retrieves a pointer from a task's metadata within a batch by their custom IDs, as a type-safe wrapper for pointers stored as <see cref="PointerMetadata{T}"/>.
     /// </summary>
     /// <typeparam name="T">The unmanaged pointer type.</typeparam>
     /// <param name="queue">The task queue containing the batch and task.</param>
@@ -711,33 +679,25 @@ public class TaskBuilderBase<TSelf> where TSelf : TaskBuilderBase<TSelf>
 }
 
 /// <summary>
-/// Fluent builder for creating queued tasks with a clean API, also allowing to enqueue the task directly.<br/>
-/// See <see cref="QueuedTask"/> for more information on each property. <br/>
-/// Based on and made for creating tasks for the NoireTaskQueue module. For information on how to manage the task queue, see <see cref="NoireTaskQueue"/>.<br/>
-/// For a queue-bound variant where <see cref="TaskBuilder{TModule}.Enqueue"/> is directly available, use <see cref="TaskBuilder{TModule}"/>.
+/// Fluent builder for creating queued tasks, also allowing enqueueing directly. See <see cref="QueuedTask"/> for property details and <see cref="NoireTaskQueue"/> for managing the queue.
+/// Use <see cref="TaskBuilder{TModule}"/> for a queue-bound variant with a direct <see cref="TaskBuilder{TModule}.Enqueue"/>.
 /// </summary>
 public class TaskBuilder : TaskBuilderBase<TaskBuilder>
 {
     /// <summary>
-    /// Creates a new task builder.<br/>
-    /// Same as calling <see cref="Create(string?)"/>.<br/>
-    /// The <see cref="QueuedTask"/> will be created as blocking by default when <see cref="TaskBuilderBase{TSelf}.Build()"/> is called, or when <see cref="TaskBuilderBase{TSelf}.EnqueueTo(NoireTaskQueue)"/> is called.
+    /// Creates a new task builder, same as <see cref="Create(string?)"/>; the task is blocking by default.
     /// </summary>
     /// <param name="customId">Optional custom identifier for the task.</param>
     public TaskBuilder(string? customId = null) : base(customId) { }
 
     /// <summary>
-    /// Creates a new task builder which can be further configured.<br/>
-    /// Same as calling the constructor <see cref="TaskBuilder(string?)"/>.<br/>
-    /// The <see cref="QueuedTask"/> will be created as blocking by default when <see cref="TaskBuilderBase{TSelf}.Build()"/> is called, or when <see cref="TaskBuilderBase{TSelf}.EnqueueTo(NoireTaskQueue)"/> is called.
+    /// Creates a new task builder, same as the <see cref="TaskBuilder(string?)"/> constructor; the task is blocking by default.
     /// </summary>
     /// <returns>The TaskBuilder instance for chaining.</returns>
     public static TaskBuilder Create(string? customId = null) => new(customId);
 
     /// <summary>
-    /// Quickly creates and enqueues a delay-only task to the specified queue.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create().WithDelay(delay).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a delay-only task to the specified queue.
     /// </summary>
     /// <param name="delay">The delay duration.</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -751,9 +711,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a delay-only task to the specified queue.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create().WithDelay(TimeSpan.FromSeconds(seconds)).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a delay-only task to the specified queue.
     /// </summary>
     /// <param name="seconds">The delay in seconds.</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -765,9 +723,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a delay-only task to the specified queue.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create().WithDelay(TimeSpan.FromMilliseconds(milliseconds)).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a delay-only task to the specified queue.
     /// </summary>
     /// <param name="milliseconds">The delay in milliseconds.</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -779,9 +735,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a simple action-only task with immediate completion.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create(customId).WithAction(action).WithImmediateCompletion().EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a simple action-only task with immediate completion.
     /// </summary>
     /// <param name="action">The action to execute.</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -796,9 +750,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a simple action-only task with immediate completion.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create(customId).WithAction(action).WithImmediateCompletion().EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a simple action-only task with immediate completion.
     /// </summary>
     /// <param name="action">The action to execute (receives the task as parameter).</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -813,9 +765,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a condition-only task (no action, just waits for condition).<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create(customId).WithCondition(condition).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a condition-only task (no action, just waits for condition).
     /// </summary>
     /// <param name="condition">The condition to wait for.</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -829,9 +779,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues a condition-only task (no action, just waits for condition).<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create(customId).WithCondition(condition).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues a condition-only task (no action, just waits for condition).
     /// </summary>
     /// <param name="condition">The condition to wait for (receives the task as parameter).</param>
     /// <param name="queue">The queue to add the task to.</param>
@@ -845,9 +793,7 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
     }
 
     /// <summary>
-    /// Quickly creates and enqueues an event-waiting task.<br/>
-    /// This is a convenience method equivalent to:<br/>
-    /// <code>TaskBuilder.Create(customId).WaitForEvent&lt;TEvent&gt;(filter).EnqueueTo(queue)</code>
+    /// Quickly creates and enqueues an event-waiting task.
     /// </summary>
     /// <typeparam name="TEvent">The event type to wait for.</typeparam>
     /// <param name="queue">The queue to add the task to.</param>
@@ -863,9 +809,8 @@ public class TaskBuilder : TaskBuilderBase<TaskBuilder>
 }
 
 /// <summary>
-/// Queue-bound variant of <see cref="TaskBuilder"/> that carries a typed <typeparamref name="TModule"/> reference.<br/>
-/// All fluent methods return <see cref="TaskBuilder{TModule}"/>, so <see cref="Enqueue"/> is always reachable
-/// at the end of any chain without casting.
+/// Queue-bound variant of <see cref="TaskBuilder"/> carrying a typed <typeparamref name="TModule"/> reference.
+/// All fluent methods return <see cref="TaskBuilder{TModule}"/>, so <see cref="Enqueue"/> is reachable without casting.
 /// </summary>
 /// <typeparam name="TModule">The concrete <see cref="NoireTaskQueue"/> type this builder is bound to.</typeparam>
 public class TaskBuilder<TModule> : TaskBuilderBase<TaskBuilder<TModule>> where TModule : NoireTaskQueue
@@ -873,8 +818,7 @@ public class TaskBuilder<TModule> : TaskBuilderBase<TaskBuilder<TModule>> where 
     private readonly TModule taskQueue;
 
     /// <summary>
-    /// Creates a new queue-bound builder for <paramref name="taskQueue"/>.<br/>
-    /// The <see cref="QueuedTask"/> will be created as blocking by default.
+    /// Creates a new queue-bound builder for <paramref name="taskQueue"/>, with the task blocking by default.
     /// </summary>
     /// <param name="taskQueue">The queue this builder is bound to.</param>
     /// <param name="customId">Optional custom identifier for the task.</param>
@@ -890,7 +834,7 @@ public class TaskBuilder<TModule> : TaskBuilderBase<TaskBuilder<TModule>> where 
         => new(taskQueue, customId);
 
     /// <summary>
-    /// Will build the task and enqueue it to the associated <typeparamref name="TModule"/> instance provided in the constructor.<br/>
+    /// Builds the task and enqueues it to the associated <typeparamref name="TModule"/> instance provided in the constructor.
     /// </summary>
     public QueuedTask Enqueue()
     {

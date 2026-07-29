@@ -1,9 +1,8 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The named steps of the type scale <see cref="NoireTheme"/> owns.<br/>
-/// Text is asked for by role rather than by number, which is what lets a skin re-scale the whole interface from one
-/// place instead of thirty call sites each having picked their own 24.
+/// The named steps of the type scale <see cref="NoireTheme"/> owns. Asked for by role rather than by number, so a
+/// skin can re-scale the whole interface from one place.
 /// </summary>
 public enum TextSize
 {

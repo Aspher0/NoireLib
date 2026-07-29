@@ -79,8 +79,8 @@ public class NoireOverlayButton : NoireDrawable
     /// Whether the button is kept in front of every other window, for clicks as well as for drawing.
     /// </summary>
     /// <remarks>
-    /// Being drawn on top and receiving the mouse are two different orders in ImGui, and moving only the first is what
-    /// produces a button that is plainly visible above a window and completely dead under it. This moves both.
+    /// Being drawn on top and receiving the mouse are two different orders in ImGui; moving only the first would
+    /// leave a button plainly visible above a window and completely dead under it. This moves both.
     /// </remarks>
     public bool AlwaysOnTop { get; set; } = false;
 

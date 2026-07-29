@@ -13,8 +13,7 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
     private static readonly object InstanceLock = new();
 
     /// <summary>
-    /// Gets the singleton instance of this configuration.
-    /// The configuration is automatically loaded from disk on first access.
+    /// The singleton instance of this configuration, loaded from disk on first access.
     /// </summary>
     public static T Instance
     {
@@ -47,12 +46,11 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
         var rawInstance = NoireConfigManager.GetConfig<T>();
         var proxy = NoireConfigAutoSaveProxy.Create(rawInstance);
 
-        // Create returns the raw instance itself when the configuration has no [AutoSave] members or when building the
-        // proxy failed, and a distinct proxy otherwise. Only the distinct-proxy case needs the copy and the cache swap:
-        // when the proxy is the raw instance there is one object and nothing has diverged.
+        // Create returns the raw instance itself when there are no [AutoSave] members or the proxy failed to build;
+        // only a distinct proxy needs the copy and cache swap below.
         if (rawInstance != null && !ReferenceEquals(proxy, rawInstance))
         {
-            // The copy assigns through the wrapper's intercepted setters, so without this every member marked [AutoSave]
+            // The copy assigns through the wrapper's intercepted setters; without this, every [AutoSave] member
             // would write the file it was just read from, once per member.
             var wasCopying = IsInternalCopying;
             IsInternalCopying = true;
@@ -63,17 +61,14 @@ public abstract class NoireConfigBase<T> : NoireConfigBase where T : NoireConfig
             }
             finally
             {
-                // The copy reflects over the configuration's members and runs whatever a derived class does in a
-                // property setter, so it can throw. Left set, the suppression would outlive the copy and disable
-                // auto-save for every configuration on this thread for the rest of the session: settings would apply in
-                // memory, never reach disk, and report no error. Restored to its previous value rather than cleared, so
-                // that a copy running further up this call stack keeps the suppression it is relying on.
+                // The copy can throw, since it runs whatever a derived setter does. Left set, the suppression would
+                // outlive the copy and silently disable auto-save for the rest of the session. Restored rather than
+                // cleared, so a copy further up the call stack keeps the suppression it relies on.
                 IsInternalCopying = wasCopying;
             }
 
-            // Loading cached the raw instance in the manager, but consumers hold the proxy returned here. Swap the
-            // manager's entry for the proxy so a manager-level SaveAllCached writes the values consumers have been
-            // changing rather than the raw load-time snapshot.
+            // Loading cached the raw instance, but consumers hold the proxy. Swap the manager's entry for the proxy
+            // so SaveAllCached writes the values consumers have been changing, not the load-time snapshot.
             NoireConfigManager.ReplaceCachedInstance(typeof(T), proxy);
         }
 

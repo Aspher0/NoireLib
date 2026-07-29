@@ -7,9 +7,9 @@ namespace NoireLib.Actions;
 /// <summary>
 /// The game-watcher side of <see cref="ActionContext"/>: it lets an action wait on the same
 /// <see cref="GameCondition"/> vocabulary the watcher already exposes, instead of on a bare predicate.<br/>
-/// <see cref="GameConditions"/> holds the prebuilt conditions, and they combine with
-/// <see cref="GameCondition.And"/>, <see cref="GameCondition.Or"/> and <see cref="GameCondition.Not"/>, so
-/// "the dialogue is open and we are out of combat" is one value.<br/>
+/// <see cref="GameConditions"/> holds the prebuilt conditions, combinable with
+/// <see cref="GameCondition.And"/>, <see cref="GameCondition.Or"/> and <see cref="GameCondition.Not"/> into
+/// a single value.<br/>
 /// This is additive: the action layer works without it, and gains these waits because the watcher is present.
 /// </summary>
 public sealed partial class ActionContext
@@ -40,8 +40,7 @@ public sealed partial class ActionContext
     }
 
     /// <summary>
-    /// Waits until a game condition holds and fails the action when it does not, which is how a body confirms the
-    /// game accepted what it just did.
+    /// Waits until a game condition holds and fails the action when it does not.
     /// </summary>
     /// <param name="condition">The condition to wait for.</param>
     /// <param name="seconds">The most seconds to wait.</param>
@@ -55,8 +54,8 @@ public sealed partial class ActionContext
     }
 
     /// <summary>
-    /// Waits for the next event of a given type, for the cases where "it just happened" is the signal rather than
-    /// "it is true now". A dry run returns null at once.
+    /// Waits for the next event of a given type - edge-triggered ("it just happened"), not level-triggered.
+    /// A dry run returns null at once.
     /// </summary>
     /// <typeparam name="TEvent">The event type to wait for.</typeparam>
     /// <param name="watcher">The watcher whose events are awaited.</param>

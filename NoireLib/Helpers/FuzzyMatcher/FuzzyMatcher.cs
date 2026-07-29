@@ -44,8 +44,8 @@ public static class FuzzyMatcher
     /// <remarks>
     /// Matching greedily takes the first occurrence of each character, which is usually right and is sometimes badly
     /// wrong: "cl" against "Combat Log" would take the C and then the l of "Combat" rather than the L of "Log", and
-    /// highlight the wrong letters. Exploring the alternatives fixes that. The budget is what keeps a pathological
-    /// candidate (a long string of one repeated letter) from costing exponential time.
+    /// highlight the wrong letters. Exploring the alternatives fixes that. The budget keeps a pathological candidate
+    /// (a long string of one repeated letter) from costing exponential time.
     /// </remarks>
     public const int RecursionBudget = 10;
 
@@ -176,8 +176,7 @@ public static class FuzzyMatcher
     /// <remarks>
     /// The destination is the caller's so it can be reused across keystrokes rather than reallocated. It is cleared
     /// first.<br/>
-    /// An empty query keeps every item in its original order, which is what a filter box that has just been opened
-    /// should show.
+    /// An empty query keeps every item in its original order: the state a freshly opened filter box should show.
     /// </remarks>
     /// <typeparam name="T">The item type.</typeparam>
     /// <param name="destination">Receives the matches. Cleared before filling.</param>

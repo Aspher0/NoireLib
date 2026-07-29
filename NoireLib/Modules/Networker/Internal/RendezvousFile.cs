@@ -32,8 +32,8 @@ internal static class RendezvousFile
     private const int Capacity = 4096;
 
     /// <summary>
-    /// Publishes rendezvous data, bumping the generation of any previous publication.
-    /// Returns a holder that keeps the mapped file alive; dispose it when the hub stops.
+    /// Publishes rendezvous data, bumping the generation of any previous publication; returns a holder that
+    /// keeps the mapped file alive, to be disposed when the hub stops.
     /// </summary>
     public static IDisposable Publish(string mapName, string networkName, int port)
     {

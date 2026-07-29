@@ -149,7 +149,10 @@ For a list of modules, see the [Modules Section](#modules)
 
 ## Documented Helpers
 
+- [AddonHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/AddonHelper/README.md) - Reading and manipulating the game's own UI addons and their nodes, with no signature scanning
 - [EncryptionHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/EncryptionHelper/README.md) - Encoding, hashing, password hashing, and AES encryption for memory and files
+- [FuzzyMatcher](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/FuzzyMatcher/README.md) - The one subsequence scorer: match, score, rank a list, and highlight what matched
+- [Game data helpers](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/GameData/README.md) - Everything the game's own files and sheets say about the world: level (`.lgb`) files, map coordinates and markers, territories, aetherytes and aethernet shards, warps, chocobo taxis, residential housing, the loaded layout, quest progress
 - [ShareCodeHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/ShareCode/README.md) - One versioned, compressed, checksummed and kind-tagged share string for anything serializable
 
 ## 3D Rendering
@@ -159,11 +162,15 @@ For a list of modules, see the [Modules Section](#modules)
 ## Modules
 
 - [Changelog Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ChangelogManager/README.md)
+- [Command Router Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/CommandRouter/README.md)
 - [Event Bus Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/EventBus/README.md)
 - [File Watcher Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/FileWatcher/README.md)
+- [Game Watcher Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/GameWatcher/README.md)
 - [History Logger Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HistoryLogger/README.md)
 - [Hotkey Manager Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/HotkeyManager/README.md)
 - [Localizer Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/Localizer/README.md)
-- [Network Relay Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/NetworkRelay/README.md)
+- [Networker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/Networker/README.md)
+- [Observed Store Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/ObservedStore/README.md)
 - [Task Queue Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/TaskQueue/README.md)
+- [Tweak Manager Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/TweakManager/README.md)
 - [Update Tracker Module](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Modules/UpdateTracker/README.md)

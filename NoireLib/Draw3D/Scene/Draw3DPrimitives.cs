@@ -12,7 +12,7 @@ namespace NoireLib.Draw3D.Scene;
 /// </summary>
 public static class Draw3DPrimitives
 {
-    /// <summary>Spawns a unit box (owned mesh). Fluent-chainable via the returned node's transform setters.</summary>
+    /// <summary>Spawns a unit box (owned mesh); fluent-chainable via the returned node's transform setters.</summary>
     public static SceneNode AddBox(this Scene3D scene, Material material, Vector3 position = default, string? name = null, bool keepCpuData = false)
         => scene.Spawn(MeshBuilder.Box(), material, position, name, keepCpuData);
 
