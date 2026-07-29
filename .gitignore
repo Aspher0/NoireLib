@@ -3,22 +3,6 @@ obj/
 bin/
 *.user
 
-# Dev
-Private Testing/
-NoireUIDemoPlugin/
-docs/
-.scratch/
-.claude/
-CLAUDE.md
-CONTEXT.md
-AGENTS.md
-.agents/
-
-# Local-only solutions
-*.Private.sln
-*.Private.slnx
-*.Private.slnf
-*.Local.sln
-
 # Temporary
 Automation/
+NoireUIDemoPlugin/
