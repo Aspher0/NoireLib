@@ -75,28 +75,6 @@ public class Draw3DDepthCalibrationTests
         DepthCalibration.TrySolve(xs, ys, out _, out _, out _, out _).Should().BeFalse();
     }
 
-    // ---------------------------------------------------------------- attempt throttle (overflow-safety)
-
-    [Fact]
-    public void AttemptDue_NeverAttempted_IsDueRegardlessOfFrameId()
-    {
-        // The long.MinValue "never attempted" sentinel must always be due. Subtracting it directly
-        // (frameId - long.MinValue) overflows negative, which would wedge calibration off forever and
-        // leave every 3D shape drawing on top of all world geometry.
-        DepthCalibration.AttemptDue(0, long.MinValue, 30).Should().BeTrue();
-        DepthCalibration.AttemptDue(5000, long.MinValue, 30).Should().BeTrue();
-        DepthCalibration.AttemptDue(long.MaxValue, long.MinValue, 30).Should().BeTrue();
-    }
-
-    [Fact]
-    public void AttemptDue_ThrottlesWithinIntervalThenAllows()
-    {
-        DepthCalibration.AttemptDue(100, 90, 30).Should().BeFalse();  // 10 frames since last, throttled
-        DepthCalibration.AttemptDue(119, 90, 30).Should().BeFalse();  // 29 frames, still throttled
-        DepthCalibration.AttemptDue(120, 90, 30).Should().BeTrue();   // 30 frames, due
-        DepthCalibration.AttemptDue(500, 90, 30).Should().BeTrue();
-    }
-
     private static (float[] xs, float[] ys) Synthesize(Func<float, float> mapping)
     {
         var xs = new float[16];

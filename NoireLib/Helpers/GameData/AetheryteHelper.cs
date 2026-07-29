@@ -1,3 +1,4 @@
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using System;
 using System.Collections.Generic;
@@ -210,19 +211,47 @@ public static class AetheryteHelper
     /// framework thread, and only once the character's state is loaded (<see cref="CharacterHelper.IsStateReady"/>).
     /// </summary>
     /// <returns>The attuned aetheryte ids.</returns>
-    public static IReadOnlySet<uint> ReadUnlocked()
+    public static IReadOnlySet<uint> ReadUnlocked() => ReadUnlockedState().Unlocked;
+
+    /// <summary>
+    /// The attuned aetherytes together with whether the teleport list could actually be read.<br/>
+    /// The two are different answers and must not be conflated: an empty set with <c>Known</c> false means the list
+    /// was not there to be read, not that the character is attuned to nothing. Attunement gates every teleport and
+    /// every aethernet hop, so reading "could not ask" as "attuned to nothing" removes long-distance travel from the
+    /// planner entirely, which looks exactly like a character who cannot go anywhere.
+    /// </summary>
+    /// <returns>The attuned aetheryte ids, and whether the read produced a real answer.</returns>
+    public static (IReadOnlySet<uint> Unlocked, bool Known) ReadUnlockedState()
     {
         var unlocked = new HashSet<uint>();
         if (!CharacterHelper.IsStateReady)
-            return unlocked;
+            return (unlocked, false);
 
-        SafeExecutor.ExecuteSafely(() =>
+        var read = SafeExecutor.ExecuteSafely(() =>
         {
+            RefreshTeleportList();
             foreach (var entry in NoireService.AetheryteList)
                 unlocked.Add(entry.AetheryteId);
-        });
 
-        return unlocked;
+            return true;
+        }, false);
+
+        // A completed read that found nothing is still not an answer worth acting on: the client fills the list
+        // asynchronously, so an empty one means it has not filled yet far more often than it means a character who
+        // has attuned to no aetheryte at all, which is only true before the opening quests hand one over.
+        return (unlocked, read && unlocked.Count > 0);
+    }
+
+    /// <summary>
+    /// Asks the game to refill its teleport list, which is the source of both the attuned set and the fares. The
+    /// client does not fill it the instant a session starts, so a read taken before this one sees an empty list.
+    /// Framework thread only.
+    /// </summary>
+    private static unsafe void RefreshTeleportList()
+    {
+        var telepo = Telepo.Instance();
+        if (telepo != null)
+            telepo->UpdateAetheryteList();
     }
 
     /// <summary>
@@ -239,6 +268,7 @@ public static class AetheryteHelper
 
         SafeExecutor.ExecuteSafely(() =>
         {
+            RefreshTeleportList();
             foreach (var entry in NoireService.AetheryteList)
             {
                 var cost = checked((int)entry.GilCost);

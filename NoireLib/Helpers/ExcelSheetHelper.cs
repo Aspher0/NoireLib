@@ -54,7 +54,9 @@ public static class ExcelSheetHelper
     /// <typeparam name="T">The type of the Excel row.</typeparam>
     /// <param name="rowId">The unique identifier of the row to retrieve.</param>
     /// <param name="lang">An optional client language to use when retrieving the row. If not specified, the default language is used.</param>
-    /// <returns>An instance of type <typeparamref name="T"/> representing the requested row if found.</returns>
+    /// <returns>The requested row.</returns>
+    /// <exception cref="IndexOutOfRangeException">If the sheet is unavailable or holds no row with that id. Use
+    /// <see cref="TryGetRow{T}(uint, out T?, ClientLanguage?)"/> to test instead of throwing.</exception>
     public static T GetRow<T>(uint rowId, ClientLanguage? lang = null) where T : struct, IExcelRow<T>
     {
         var sheet = GetSheet<T>(lang);

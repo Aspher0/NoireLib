@@ -2,6 +2,7 @@ using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Materials;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -512,17 +513,9 @@ public sealed class ImDraw3D
         Params1 = new Vector4(style.DepthFade, 0f, 0f, 0f),
     };
 
+    /// <summary>The rotation aiming a +Y-built mesh (cone, cylinder) along a direction.</summary>
     private static Matrix4x4 RotationFromYTo(Vector3 dir)
-    {
-        var dot = Vector3.Dot(Vector3.UnitY, dir);
-        if (dot > 0.99999f)
-            return Matrix4x4.Identity;
-        if (dot < -0.99999f)
-            return Matrix4x4.CreateFromAxisAngle(Vector3.UnitX, MathF.PI);
-
-        var axis = Vector3.Normalize(Vector3.Cross(Vector3.UnitY, dir));
-        return Matrix4x4.CreateFromAxisAngle(axis, MathF.Acos(Math.Clamp(dot, -1f, 1f)));
-    }
+        => Matrix4x4.CreateFromQuaternion(TransformHelper.FromToRotation(Vector3.UnitY, dir));
 
     /// <summary>Releases the layer's pooled meshes (hub cleanup only).</summary>
     internal void DisposeResources()

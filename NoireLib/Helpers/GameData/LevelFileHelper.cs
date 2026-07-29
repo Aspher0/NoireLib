@@ -73,6 +73,27 @@ public static class LevelFileHelper
     }
 
     /// <summary>
+    /// Resolves the territory's own asset root: the directory its <c>level/</c> and <c>collision/</c> folders sit
+    /// in, as in <c>bg/ffxiv/fst_f1/fld/f1f1/</c>. This is what everything built from a territory's files is keyed
+    /// on, since several territories can share one.
+    /// </summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <returns>The asset root ending in a slash, or null when the territory names no level files.</returns>
+    public static string? ResolveLevelRoot(uint territoryId) => ResolveLevelRoot(TerritoryHelper.Bg(territoryId));
+
+    /// <inheritdoc cref="ResolveLevelRoot(uint)"/>
+    /// <param name="territoryBg">The TerritoryType.Bg value, e.g. "ffxiv/fst_f1/fld/f1f1/level/f1f1".</param>
+    /// <returns>The asset root ending in a slash, or null when the value has no level segment.</returns>
+    public static string? ResolveLevelRoot(string territoryBg)
+    {
+        if (string.IsNullOrEmpty(territoryBg))
+            return null;
+
+        var cut = territoryBg.IndexOf(LevelSegment, StringComparison.Ordinal);
+        return cut < 0 ? null : "bg/" + territoryBg[..cut] + "/";
+    }
+
+    /// <summary>
     /// Resolves the region root a territory's level files sit under: the first two segments of its <c>Bg</c> string
     /// (e.g. "ffxiv/wil_w1" for the Ul'dah region). Every territory a place owns is authored under one root, pairing
     /// a residential district with its own interiors without naming either.
@@ -127,14 +148,23 @@ public static class LevelFileHelper
             if (lgb == null)
                 return (IReadOnlyList<LevelObject>)[];
 
+            // Which territories each layer belongs to, in the file's own layer order. Read from the bytes, since
+            // Lumina resolves a layer's set list against the wrong base. A file whose layer count does not line up
+            // is left unstamped rather than mis-stamped: a wrong attribution would hide a real placement.
+            var territories = LayerSetHelper.ReadLayerTerritories(territoryBg, fileName);
+            if (territories.Count != lgb.Layers.Length)
+                territories = [];
+
             var list = new List<LevelObject>();
-            foreach (var layer in lgb.Layers)
+            for (var layerIndex = 0; layerIndex < lgb.Layers.Length; layerIndex++)
             {
+                var layer = lgb.Layers[layerIndex];
+                var layerTerritories = territories.Count == 0 ? null : territories[layerIndex];
                 foreach (var instance in layer.InstanceObjects)
                 {
-                    // The layer, not the object, carries the seasonal condition, so it is stamped onto every object
-                    // read out of that layer and travels with it.
-                    var mapped = Map(instance, layer.FestivalID, layer.FestivalPhaseID);
+                    // The layer, not the object, carries the seasonal condition and the layer sets, so both are
+                    // stamped onto every object read out of that layer and travel with it.
+                    var mapped = Map(instance, layer.FestivalID, layer.FestivalPhaseID, layerTerritories);
 
                     // Filtering here, rather than accumulating everything first, keeps the retained set small enough
                     // to parse the whole world without running out of memory.
@@ -243,7 +273,11 @@ public static class LevelFileHelper
         };
     }
 
-    private static LevelObject Map(LayerCommon.InstanceObject instance, ushort festivalId, ushort festivalPhase)
+    private static LevelObject Map(
+        LayerCommon.InstanceObject instance,
+        ushort festivalId,
+        ushort festivalPhase,
+        IReadOnlyList<uint>? layerTerritories)
     {
         var translation = instance.Transform.Translation;
         var position = new Vector3(translation.X, translation.Y, translation.Z);
@@ -263,24 +297,24 @@ public static class LevelFileHelper
 
             case LayerEntryType.PopRange:
                 return new LevelObject(LevelObjectKind.PopRange, instance.InstanceId, position,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase);
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
 
             case LayerEntryType.Aetheryte when instance.Object is LayerCommon.AetheryteInstanceObject aetheryte:
                 // The placed crystal carries its Aetheryte sheet row id, so a position is matched to a row by id
                 // alone, with no marker, map projection, or name matching.
                 return new LevelObject(LevelObjectKind.Aetheryte, instance.InstanceId, position,
                     BaseId: aetheryte.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase);
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
 
             case LayerEntryType.SharedGroup when instance.Object is LayerCommon.SharedGroupInstanceObject shared:
                 return new LevelObject(LevelObjectKind.SharedGroup, instance.InstanceId, position,
                     AssetPath: shared.AssetPath ?? string.Empty,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase);
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
 
             case LayerEntryType.EventNPC when instance.Object is LayerCommon.ENPCInstanceObject npc:
                 return new LevelObject(LevelObjectKind.EventNpc, instance.InstanceId, position,
                     BaseId: npc.ParentData.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase);
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
 
             case LayerEntryType.EventObject when instance.Object is LayerCommon.EventInstanceObject eventObject:
                 // The placed object carries its EObj sheet row id, linking it to the event handler it runs. An
@@ -288,10 +322,11 @@ public static class LevelFileHelper
                 // every instance, reached the same way as an NPC's warp handler.
                 return new LevelObject(LevelObjectKind.EventObject, instance.InstanceId, position,
                     BaseId: eventObject.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase);
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
 
             default:
-                return new LevelObject(LevelObjectKind.Other, instance.InstanceId, position);
+                return new LevelObject(LevelObjectKind.Other, instance.InstanceId, position,
+                    LayerTerritories: layerTerritories);
         }
     }
 }

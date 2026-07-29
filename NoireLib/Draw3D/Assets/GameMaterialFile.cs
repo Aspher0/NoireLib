@@ -1,7 +1,7 @@
 using Lumina.Data;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 namespace NoireLib.Draw3D.Assets;
 
@@ -46,7 +46,6 @@ public static class GameShaderNames
         "g_NormalScale", "g_AlphaThreshold", "g_Shininess", "g_TileScale", "g_TileIndex",
     ];
 
-    private static readonly uint[] CrcTable = BuildCrcTable();
     private static readonly Dictionary<uint, string> ByIdMap = BuildIdMap();
 
     /// <summary>Identifier of a shader name.</summary>
@@ -55,11 +54,14 @@ public static class GameShaderNames
     {
         ArgumentNullException.ThrowIfNull(name);
 
-        var crc = 0u;
-        foreach (var c in name)
-            crc = CrcTable[(crc ^ (byte)c) & 0xFF] ^ (crc >> 8);
+        // The names are ASCII, so each character is its own byte; truncating here keeps the hash allocation-free.
+        Span<byte> ascii = name.Length <= 256 ? stackalloc byte[name.Length] : new byte[name.Length];
+        for (var i = 0; i < name.Length; i++)
+            ascii[i] = (byte)name[i];
 
-        return crc;
+        // The identifiers use a zero initial value and no final inversion, which is not the common configuration:
+        // the usual all-ones initial value matches none of them.
+        return Crc32Helper.Compute(ascii, seed: 0u, finalXor: 0u);
     }
 
     /// <summary>The name behind an identifier, or null when it is not one of the known names.</summary>
@@ -73,23 +75,6 @@ public static class GameShaderNames
             map[IdOf(name)] = name;
 
         return map;
-    }
-
-    // The identifiers use the reflected polynomial with a zero initial value and no final inversion,
-    // which is not the common configuration: the usual all-ones initial value matches none of them.
-    private static uint[] BuildCrcTable()
-    {
-        var table = new uint[256];
-        for (var i = 0u; i < 256; i++)
-        {
-            var value = i;
-            for (var bit = 0; bit < 8; bit++)
-                value = (value & 1) != 0 ? 0xEDB88320u ^ (value >> 1) : value >> 1;
-
-            table[i] = value;
-        }
-
-        return table;
     }
 }
 
@@ -188,7 +173,7 @@ public sealed class GameMaterialFile : FileResource
     public override void LoadFile()
     {
         var data = Data;
-        var cursor = new Cursor(data);
+        var cursor = new ByteCursor(data);
 
         Version = cursor.U32();
         var fileSize = cursor.U16();
@@ -306,39 +291,6 @@ public sealed class GameMaterialFile : FileResource
     }
 
     private static string StringAt(byte[] data, int stringBase, int offset)
-    {
-        var start = stringBase + offset;
-        var end = start;
-        while (end < data.Length && data[end] != 0)
-            end++;
+        => BufferHelper.ReadNullTerminatedString(data, stringBase + offset);
 
-        return Encoding.UTF8.GetString(data, start, end - start);
-    }
-
-    /// <summary>Sequential little-endian reader over the material's bytes.</summary>
-    private struct Cursor(byte[] data)
-    {
-        private readonly byte[] data = data;
-
-        /// <summary>Current read position.</summary>
-        public int Position { get; set; }
-
-        public byte U8() => data[Position++];
-
-        public ushort U16()
-        {
-            var value = BitConverter.ToUInt16(data, Position);
-            Position += sizeof(ushort);
-            return value;
-        }
-
-        public uint U32()
-        {
-            var value = BitConverter.ToUInt32(data, Position);
-            Position += sizeof(uint);
-            return value;
-        }
-
-        public void Skip(int count) => Position += count;
-    }
 }

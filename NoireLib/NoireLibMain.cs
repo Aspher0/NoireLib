@@ -23,11 +23,6 @@ public class NoireLibMain
     private static readonly List<(string Key, Action Callback, int Priority)> OnDisposeCallbacks = new();
 
     /// <summary>
-    /// Initializes NoireLib services. Must be called in your plugin's constructor.
-    /// </summary>
-    /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
-    /// <param name="plugin">The instance of your plugin.</param>
-    /// <summary>
     /// NoireLib's own version, for a plugin that wants to show which build it is running against.
     /// </summary>
     /// <remarks>
@@ -36,6 +31,12 @@ public class NoireLibMain
     public static string Version { get; } =
         typeof(NoireLibMain).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
+    /// <summary>
+    /// Initializes NoireLib services. Must be called in your plugin's constructor.
+    /// </summary>
+    /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
+    /// <param name="plugin">The instance of your plugin.</param>
+    /// <returns>True when the services came up, false when initialization failed.</returns>
     public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
         var initialized = NoireService.Initialize(dalamudPluginInterface, plugin);

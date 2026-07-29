@@ -1,4 +1,4 @@
-using System;
+using NoireLib.Helpers;
 using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
@@ -114,7 +114,7 @@ public sealed partial class SceneNode
             if (forward.LengthSquared() < 1e-12f)
                 return this;
 
-            var worldRot = LookRotation(forward, up ?? Vector3.UnitY);
+            var worldRot = TransformHelper.LookRotation(forward, up ?? Vector3.UnitY);
             if (parent != null)
             {
                 var parentWorld = parent.ResolveWorld();
@@ -129,21 +129,4 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Builds a left-handed rotation whose +Z axis aligns to <paramref name="forward"/> with the given up hint.</summary>
-    private static Quaternion LookRotation(Vector3 forward, Vector3 up)
-    {
-        var f = Vector3.Normalize(forward);
-        var r = Vector3.Cross(up, f);
-        if (r.LengthSquared() < 1e-9f)
-            r = Vector3.Cross(MathF.Abs(f.Y) < 0.99f ? Vector3.UnitY : Vector3.UnitX, f);
-        r = Vector3.Normalize(r);
-        var u = Vector3.Cross(f, r);
-
-        var m = new Matrix4x4(
-            r.X, r.Y, r.Z, 0f,
-            u.X, u.Y, u.Z, 0f,
-            f.X, f.Y, f.Z, 0f,
-            0f, 0f, 0f, 1f);
-        return Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(m));
-    }
 }

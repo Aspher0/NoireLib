@@ -25,6 +25,29 @@ public sealed class GameDataHelperTests
     public void ResolveLevelDirectory_ReturnsNullWhenThereIsNoLevelSegment(string bg)
         => LevelFileHelper.ResolveLevelDirectory(bg).Should().BeNull();
 
+    /// <summary>
+    /// The asset root is the directory a territory's <c>level/</c> and <c>collision/</c> folders sit in, which is
+    /// what anything built from its files is keyed on, since several territories can share one.
+    /// </summary>
+    [Theory]
+    [InlineData("ffxiv/fst_f1/fld/f1f1/level/f1f1", "bg/ffxiv/fst_f1/fld/f1f1/")]
+    [InlineData("ex4/05_zon_z5/dun/z5d1/level/z5d1", "bg/ex4/05_zon_z5/dun/z5d1/")]
+    public void ResolveLevelRoot_TurnsABgStringIntoItsAssetRoot(string bg, string expected)
+        => LevelFileHelper.ResolveLevelRoot(bg).Should().Be(expected);
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("ffxiv/fst_f1/fld/f1f1")]
+    public void ResolveLevelRoot_ReturnsNullWhenThereIsNoLevelSegment(string bg)
+        => LevelFileHelper.ResolveLevelRoot(bg).Should().BeNull();
+
+    /// <summary>The two are the same path, one segment apart, and must never drift from each other.</summary>
+    [Theory]
+    [InlineData("ffxiv/fst_f1/fld/f1f1/level/f1f1")]
+    [InlineData("ffxiv/hou_ha1/hou/dyn_a1/level/dyn_a1")]
+    public void ResolveLevelRoot_IsTheLevelDirectoryWithoutItsLastSegment(string bg)
+        => LevelFileHelper.ResolveLevelDirectory(bg).Should().Be(LevelFileHelper.ResolveLevelRoot(bg) + "level/");
+
     [Theory]
     [InlineData("ffxiv/wil_w1/twn/w1t2/level/w1t2", "ffxiv/wil_w1")]
     [InlineData("ffxiv/hou_ha1/hou/dyn_a1/level/dyn_a1", "ffxiv/hou_ha1")]

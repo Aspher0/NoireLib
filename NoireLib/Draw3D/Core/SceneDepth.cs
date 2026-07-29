@@ -7,9 +7,11 @@ namespace NoireLib.Draw3D.Core;
 
 /// <summary>
 /// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the game's
-/// depth buffer is never written by Draw3D. Prefers borrowing the game's own pre-made SRV (QI-validated);
-/// otherwise creates one from the typeless texture family. Re-derives itself whenever the underlying texture
-/// changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on anything unknown.
+/// depth buffer is never written by Draw3D. Creates its own SRV over the typeless texture first, and only falls
+/// back to borrowing the game's pre-made one (QI-validated) when that fails, since the game's view can legally be
+/// a stencil view of the same resource and sampling stencil as depth inverts occlusion. Re-derives itself whenever
+/// the underlying texture changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on
+/// anything unknown.
 /// </summary>
 internal sealed unsafe class SceneDepth : IDisposable
 {

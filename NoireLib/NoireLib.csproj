@@ -56,6 +56,7 @@ Added: every NoireUI surface is now also reachable under the NoireUI root (Noire
         <None Include="Helpers\EncryptionHelper\README.md" />
         <None Include="Helpers\GameData\README.md" />
         <None Include="Helpers\FuzzyMatcher\README.md" />
+        <None Include="Helpers\Geometry\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
         <None Include="Modules\ObservedStore\README.md" />

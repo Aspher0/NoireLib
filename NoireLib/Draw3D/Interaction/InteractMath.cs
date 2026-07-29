@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 
@@ -7,153 +8,35 @@ namespace NoireLib.Draw3D.Interaction;
 /// Pure geometric primitives shared by the interaction layer and the gizmo: ray/plane/axis solvers,
 /// analytic handle hit-tests, screen-constant sizing and angle-on-plane. Every method is a plain function
 /// of its inputs (no renderer/ImGui state) so the drag math can be unit-tested headlessly.<br/>
-/// Conventions match the rest of Draw3D: row-vector matrices, world units, rays with a normalized direction.
+/// Conventions match the rest of Draw3D: row-vector matrices, world units, rays with a normalized direction.<br/>
+/// The solvers themselves live in <see cref="Geometry3DHelper"/>, which any plugin can reach; this stays as the
+/// name the interaction layer is documented under.
 /// </summary>
 public static class InteractMath
 {
-    /// <summary>Intersects a ray with an infinite plane; returns false when the ray is parallel to the plane.</summary>
-    /// <param name="origin">Ray origin.</param>
-    /// <param name="direction">Ray direction (need not be normalized; <paramref name="t"/> is in its units).</param>
-    /// <param name="planePoint">Any point on the plane.</param>
-    /// <param name="planeNormal">Plane normal (need not be normalized).</param>
-    /// <param name="t">Receives the ray parameter of the hit (may be negative; the plane can be behind the origin).</param>
-    /// <param name="hit">Receives the world-space hit point.</param>
+    /// <inheritdoc cref="Geometry3DHelper.RayPlane"/>
     public static bool RayPlane(Vector3 origin, Vector3 direction, Vector3 planePoint, Vector3 planeNormal, out float t, out Vector3 hit)
-    {
-        var denom = Vector3.Dot(direction, planeNormal);
-        if (MathF.Abs(denom) < 1e-9f)
-        {
-            t = 0f;
-            hit = origin;
-            return false;
-        }
+        => Geometry3DHelper.RayPlane(origin, direction, planePoint, planeNormal, out t, out hit);
 
-        t = Vector3.Dot(planePoint - origin, planeNormal) / denom;
-        hit = origin + direction * t;
-        return true;
-    }
-
-    /// <summary>
-    /// Finds the parameter along an axis line closest to a ray: the core of axis-constrained dragging
-    /// (project the cursor ray onto the handle's axis); returns false when the ray is (near) parallel to the axis,
-    /// in which case <paramref name="axisParam"/> falls back to the projection of the ray origin onto the axis.
-    /// </summary>
-    /// <param name="rayOrigin">Ray origin.</param>
-    /// <param name="rayDir">Ray direction, normalized.</param>
-    /// <param name="axisPoint">A point on the axis line.</param>
-    /// <param name="axisDir">Axis direction, normalized.</param>
-    /// <param name="axisParam">Receives the signed distance along <paramref name="axisDir"/> from <paramref name="axisPoint"/>.</param>
+    /// <inheritdoc cref="Geometry3DHelper.ClosestAxisParam"/>
     public static bool ClosestAxisParam(Vector3 rayOrigin, Vector3 rayDir, Vector3 axisPoint, Vector3 axisDir, out float axisParam)
-    {
-        var w0 = rayOrigin - axisPoint;
-        var b = Vector3.Dot(rayDir, axisDir);
-        var denom = 1f - b * b;
-        var e = Vector3.Dot(axisDir, w0);
-        if (denom < 1e-6f)
-        {
-            // Ray parallel to the axis: no unique closest point; project the origin onto the axis.
-            axisParam = e;
-            return false;
-        }
+        => Geometry3DHelper.ClosestAxisParam(rayOrigin, rayDir, axisPoint, axisDir, out axisParam);
 
-        var d = Vector3.Dot(rayDir, w0);
-        axisParam = (e - b * d) / denom;
-        return true;
-    }
-
-    /// <summary>
-    /// Shortest distance between a ray and a finite segment, plus the ray parameter of the closest approach,
-    /// used to hit-test axis/arrow handles (grab when the distance is under the handle's pick radius).
-    /// </summary>
-    /// <param name="rayOrigin">Ray origin.</param>
-    /// <param name="rayDir">Ray direction, normalized.</param>
-    /// <param name="a">Segment start.</param>
-    /// <param name="b">Segment end.</param>
-    /// <param name="rayT">Receives the (clamped >= 0) ray parameter at the closest approach.</param>
+    /// <inheritdoc cref="Geometry3DHelper.RaySegmentDistance"/>
     public static float RaySegmentDistance(Vector3 rayOrigin, Vector3 rayDir, Vector3 a, Vector3 b, out float rayT)
-    {
-        var u = b - a;
-        var len = u.Length();
-        if (len < 1e-9f)
-        {
-            rayT = MathF.Max(0f, Vector3.Dot(a - rayOrigin, rayDir));
-            return Vector3.Distance(a, rayOrigin + rayDir * rayT);
-        }
+        => Geometry3DHelper.RaySegmentDistance(rayOrigin, rayDir, a, b, out rayT);
 
-        var ud = u / len;
-        ClosestAxisParam(rayOrigin, rayDir, a, ud, out var s);
-        s = Math.Clamp(s, 0f, len);
-        var pOnSeg = a + ud * s;
-
-        rayT = MathF.Max(0f, Vector3.Dot(pOnSeg - rayOrigin, rayDir));
-        var pOnRay = rayOrigin + rayDir * rayT;
-        return Vector3.Distance(pOnSeg, pOnRay);
-    }
-
-    /// <summary>Ray/sphere intersection (nearest non-negative root), used for center/cube handles and bounds picks.</summary>
-    /// <param name="origin">Ray origin.</param>
-    /// <param name="direction">Ray direction, normalized.</param>
-    /// <param name="center">Sphere center.</param>
-    /// <param name="radius">Sphere radius.</param>
-    /// <param name="t">Receives the ray parameter of the nearest hit.</param>
+    /// <inheritdoc cref="Geometry3DHelper.RaySphere"/>
     public static bool RaySphere(Vector3 origin, Vector3 direction, Vector3 center, float radius, out float t)
-    {
-        t = 0f;
-        var oc = origin - center;
-        var b = Vector3.Dot(oc, direction);
-        var c = oc.LengthSquared() - radius * radius;
-        var disc = b * b - c;
-        if (disc < 0f)
-            return false;
+        => Geometry3DHelper.RaySphere(origin, direction, center, radius, out t);
 
-        var sq = MathF.Sqrt(disc);
-        t = -b - sq;
-        if (t < 0f)
-            t = -b + sq;
-        return t >= 0f;
-    }
-
-    /// <summary>
-    /// Ray hit-test against a flat ring lying on a plane (the rotation gizmo's rings): true when the ray meets the
-    /// plane at a radius within <paramref name="tolerance"/> of <paramref name="ringRadius"/>, in front of the origin.
-    /// </summary>
-    /// <param name="origin">Ray origin.</param>
-    /// <param name="direction">Ray direction, normalized.</param>
-    /// <param name="center">Ring center.</param>
-    /// <param name="axis">Ring plane normal (the rotation axis), normalized.</param>
-    /// <param name="ringRadius">Ring radius.</param>
-    /// <param name="tolerance">Half-width of the grabbable band around the ring, in world units.</param>
-    /// <param name="t">Receives the ray parameter of the plane hit.</param>
+    /// <inheritdoc cref="Geometry3DHelper.RayRing"/>
     public static bool RayRing(Vector3 origin, Vector3 direction, Vector3 center, Vector3 axis, float ringRadius, float tolerance, out float t)
-    {
-        if (!RayPlane(origin, direction, center, axis, out t, out var hit) || t < 0f)
-            return false;
+        => Geometry3DHelper.RayRing(origin, direction, center, axis, ringRadius, tolerance, out t);
 
-        var r = Vector3.Distance(hit, center);
-        return MathF.Abs(r - ringRadius) <= tolerance;
-    }
-
-    /// <summary>
-    /// Signed angle (radians) swept from <paramref name="from"/> to <paramref name="to"/> about <paramref name="axis"/>,
-    /// measuring both points relative to <paramref name="center"/> after projecting them into the axis plane - the core
-    /// of rotate-gizmo dragging; returns 0 when either projected vector collapses to the axis.
-    /// </summary>
+    /// <inheritdoc cref="Geometry3DHelper.SignedAngleOnPlane"/>
     public static float SignedAngleOnPlane(Vector3 center, Vector3 axis, Vector3 from, Vector3 to)
-    {
-        axis = SafeNormalize(axis, Vector3.UnitY);
-        var f = from - center;
-        var g = to - center;
-        f -= axis * Vector3.Dot(f, axis);
-        g -= axis * Vector3.Dot(g, axis);
-        if (f.LengthSquared() < 1e-12f || g.LengthSquared() < 1e-12f)
-            return 0f;
-
-        f = Vector3.Normalize(f);
-        g = Vector3.Normalize(g);
-        var cross = Vector3.Dot(Vector3.Cross(f, g), axis);
-        var dot = Math.Clamp(Vector3.Dot(f, g), -1f, 1f);
-        return MathF.Atan2(cross, dot);
-    }
+        => Geometry3DHelper.SignedAngleOnPlane(center, axis, from, to);
 
     /// <summary>
     /// Screen-constant sizing: the world distance at <paramref name="worldPoint"/> that projects to one screen pixel,
@@ -225,18 +108,15 @@ public static class InteractMath
         return worldPerPixel > 0f;
     }
 
-    /// <summary>Normalizes <paramref name="v"/>, falling back to <paramref name="fallback"/> for a (near) zero vector.</summary>
+    /// <inheritdoc cref="Geometry3DHelper.SafeNormalize"/>
     public static Vector3 SafeNormalize(Vector3 v, Vector3 fallback)
-    {
-        var len = v.Length();
-        return len > 1e-9f ? v / len : fallback;
-    }
+        => Geometry3DHelper.SafeNormalize(v, fallback);
 
-    /// <summary>Rounds <paramref name="value"/> to the nearest multiple of <paramref name="step"/> (no-op when step <= 0).</summary>
+    /// <inheritdoc cref="MathHelper.Snap"/>
     public static float Snap(float value, float step)
-        => step > 1e-9f ? MathF.Round(value / step) * step : value;
+        => MathHelper.Snap(value, step);
 
-    /// <summary>Per-component snap of a translation to a grid (components with step <= 0 pass through).</summary>
+    /// <inheritdoc cref="Geometry3DHelper.Snap"/>
     public static Vector3 Snap(Vector3 value, Vector3 step)
-        => new(Snap(value.X, step.X), Snap(value.Y, step.Y), Snap(value.Z, step.Z));
+        => Geometry3DHelper.Snap(value, step);
 }

@@ -11,7 +11,6 @@ namespace NoireLib.Core.Modules;
 /// <see cref="LogVerbose(ref NoireLogHandler)"/>) take a <see cref="NoireLogHandler"/> so an interpolated message
 /// is never built while logging is off. Warnings, errors and fatal messages always report and take a plain string.
 /// </summary>
-/// <typeparam name="TModule">The type of the module.</typeparam>
 public abstract partial class NoireModuleBase<TModule>
 {
     /// <summary>

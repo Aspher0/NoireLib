@@ -271,7 +271,7 @@ internal sealed class CooldownSource : GameWatcherSource
         };
     }
 
-    /// <summary>Reads the local GCD state (recast group 58).</summary>
+    /// <summary>Reads the local GCD state from <see cref="GcdRecastGroupIndex"/>.</summary>
     internal static unsafe bool ReadGcdReady(out float remaining)
     {
         remaining = 0;

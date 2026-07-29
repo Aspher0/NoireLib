@@ -68,7 +68,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 
     /// <summary>
     /// Latched at the start of teardown, before anything it protects is released, so no in-flight check or timer start
-    /// treats a disposed module as active. Latched here rather than read from <see cref="IsActive"/> because active
+    /// treats a disposed module as active. Latched here rather than read from
+    /// <see cref="NoireModuleBase{TModule}.IsActive"/> because active
     /// state clears only once teardown has finished.<br/>
     /// Also makes teardown idempotent.
     /// </summary>

@@ -272,6 +272,15 @@ public static class MathHelper
     }
 
     /// <summary>
+    /// Rounds a value to the nearest multiple of a grid step. A step of zero or less passes the value through.
+    /// </summary>
+    /// <param name="value">The value to snap.</param>
+    /// <param name="step">The grid step.</param>
+    /// <returns>The snapped value.</returns>
+    public static float Snap(float value, float step)
+        => step > 1e-9f ? MathF.Round(value / step) * step : value;
+
+    /// <summary>
     /// Moves a value towards a target by a maximum delta.
     /// </summary>
     public static float MoveTowards(float current, float target, float maxDelta)

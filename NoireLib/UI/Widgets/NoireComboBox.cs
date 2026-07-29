@@ -738,10 +738,6 @@ public class NoireComboBox<T>
 
 
     /// <summary>
-    /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/>
-    /// options. Mirrors how ImGui itself sizes a popup from an option count.
-    /// </summary>
-    /// <summary>
     /// Records the height the dropdown actually needs, taken from ImGui rather than worked out.
     /// </summary>
     /// <remarks>
@@ -789,6 +785,10 @@ public class NoireComboBox<T>
     /// <summary>The height the dropdown reported needing last time it was drawn.</summary>
     private float neededPopupHeight;
 
+    /// <summary>
+    /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/>
+    /// options. Mirrors how ImGui itself sizes a popup from an option count.
+    /// </summary>
     private float MeasureMaxPopupHeight()
     {
         var style = ImGui.GetStyle();

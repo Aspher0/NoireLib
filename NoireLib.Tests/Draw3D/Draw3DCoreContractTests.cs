@@ -4,6 +4,7 @@ using NoireLib.Draw3D.Assets;
 using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.IO;

@@ -20,7 +20,7 @@ public static class Draw3DWorld
     /// <param name="scene">The target scene.</param>
     /// <param name="center">World-space query centre.</param>
     /// <param name="radius">Half-size of the cubic query volume.</param>
-    /// <param name="material">Material to draw the collision with (e.g. a wireframe-friendly translucent <see cref="Material.Lit(Vector4, float)"/>).</param>
+    /// <param name="material">Material to draw the collision with (e.g. a wireframe-friendly translucent <see cref="Material.Lit(Vector4, bool)"/>).</param>
     /// <param name="includeAnalytic">Include box/cylinder/sphere/plane colliders (invisible walls / triggers), not just mesh models.</param>
     /// <param name="name">Optional node name.</param>
     /// <param name="keepCpuData">Retain CPU geometry for picking.</param>

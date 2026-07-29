@@ -1,4 +1,5 @@
 using Lumina.Data;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -22,11 +23,10 @@ public readonly record struct GameSgbPlacement(
     Vector3 Scale);
 
 /// <summary>
-/// A parsed scene definition (<c>.sgb</c>): the models it places, the scenes it nests, and its default stain.<br/>
+/// A parsed scene definition (<c>.sgb</c>): the models it places and the scenes it nests.<br/>
 /// Furniture is stored this way - the item the game spawns is the scene, and the model files under
-/// <c>bgparts/</c> are what the scene places. A placed item whose stain slot is empty renders
-/// <see cref="DefaultStain"/>; an item that states none falls back to
-/// <see cref="GameMaterial.UndyedStain"/> on dyeable surfaces.
+/// <c>bgparts/</c> are what the scene places. The stain a placed item renders when its slot is empty is read
+/// separately by <see cref="StainHelper.DefaultStainForScene"/>, which needs none of this parse.
 /// </summary>
 public sealed class GameSgbFile : FileResource
 {
@@ -41,7 +41,6 @@ public sealed class GameSgbFile : FileResource
     private const uint MagicSgb = 0x31424753;
     private const uint MagicScn = 0x314E4353;
     private const int BaseOffset = 0x14;
-    private const int StainPointerOffset = 0x40;
     private const uint ModelEntry = 1;
     private const uint SceneEntry = 6;
 
@@ -54,17 +53,12 @@ public sealed class GameSgbFile : FileResource
     /// <summary>The scenes this scene nests, with their local transforms; their own placements are local to them.</summary>
     public IReadOnlyList<GameSgbPlacement> Attachments => attachments;
 
-    /// <summary>The stain an empty stain slot renders (0 when the scene states none); dyeable furniture states one explicitly.</summary>
-    public ushort DefaultStain { get; private set; }
-
     /// <inheritdoc/>
     public override void LoadFile()
     {
         var data = Data;
         if (data.Length < 0x60 || BitConverter.ToUInt32(data, 0) != MagicSgb || BitConverter.ToUInt32(data, 0xC) != MagicScn)
             throw new InvalidOperationException("Not a scene definition: the SGB1/SCN1 header is missing.");
-
-        DefaultStain = ReadDefaultStain(data);
 
         var group = BaseOffset + BitConverter.ToInt32(data, BaseOffset);
         if (group < 0 || group + 0x50 > data.Length)
@@ -97,37 +91,9 @@ public sealed class GameSgbFile : FileResource
         }
     }
 
-    /// <summary>
-    /// The scene definition placed beside a background model, resolved from the model's path: furniture pairs
-    /// <c>.../bgparts/x.mdl</c> with <c>.../asset/x.sgb</c>.
-    /// </summary>
-    /// <param name="modelGamePath">The model's archive path, under <c>bgcommon/</c>.</param>
-    /// <returns>The sibling scene path, or null when the path does not follow the pairing.</returns>
+    /// <inheritdoc cref="GamePathHelper.SceneBesideModel"/>
     public static string? PathBesideModel(string modelGamePath)
-    {
-        if (string.IsNullOrWhiteSpace(modelGamePath)
-            || !modelGamePath.EndsWith(".mdl", StringComparison.Ordinal)
-            || !modelGamePath.Contains("/bgparts/", StringComparison.Ordinal))
-            return null;
-
-        return modelGamePath.Replace("/bgparts/", "/asset/", StringComparison.Ordinal)[..^4] + ".sgb";
-    }
-
-    private static ushort ReadDefaultStain(byte[] data)
-    {
-        var pointer = BitConverter.ToUInt32(data, StainPointerOffset);
-        if (pointer == 0)
-            return 0;
-
-        var at = BaseOffset + (long)pointer;
-        if (at + 2 > data.Length)
-            return 0;
-
-        // A value beyond the stain table means the pointer did not mean this here; render it as unstated
-        // rather than as an arbitrary color.
-        var value = BitConverter.ToUInt16(data, (int)at);
-        return value > 1000 ? (ushort)0 : value;
-    }
+        => GamePathHelper.SceneBesideModel(modelGamePath);
 
     private static GameSgbPlacement ReadPlacement(byte[] data, int entry, string extension)
     {
@@ -149,10 +115,6 @@ public sealed class GameSgbFile : FileResource
         if (at <= 0 || at >= data.Length)
             throw new InvalidOperationException($"Scene entry at 0x{entry:X} points a string outside the file.");
 
-        var end = at;
-        while (end < data.Length && data[end] != 0)
-            end++;
-
-        return Encoding.ASCII.GetString(data, at, end - at);
+        return BufferHelper.ReadNullTerminatedString(data, at, Encoding.ASCII);
     }
 }

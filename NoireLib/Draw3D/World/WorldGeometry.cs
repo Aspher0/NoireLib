@@ -1,5 +1,6 @@
 using NoireLib.Draw3D.Core;
 using NoireLib.Draw3D.Geometry;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -118,12 +119,12 @@ public static class WorldGeometry
             poly.Clear();
             poly.Add(l0); poly.Add(l1); poly.Add(l2);
 
-            ClipComponent(poly, scratch, 0, hw, keepGreater: false); Swap(ref poly, ref scratch);
-            ClipComponent(poly, scratch, 0, -hw, keepGreater: true); Swap(ref poly, ref scratch);
-            ClipComponent(poly, scratch, 1, hh, keepGreater: false); Swap(ref poly, ref scratch);
-            ClipComponent(poly, scratch, 1, -hh, keepGreater: true); Swap(ref poly, ref scratch);
-            ClipComponent(poly, scratch, 2, hd, keepGreater: false); Swap(ref poly, ref scratch);
-            ClipComponent(poly, scratch, 2, -hd, keepGreater: true); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 0, hw, keepGreater: false); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 0, -hw, keepGreater: true); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 1, hh, keepGreater: false); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 1, -hh, keepGreater: true); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 2, hd, keepGreater: false); Swap(ref poly, ref scratch);
+            Geometry3DHelper.ClipConvexPolygon(poly, scratch, 2, -hd, keepGreater: true); Swap(ref poly, ref scratch);
 
             if (poly.Count < 3 || outVerts.Count + poly.Count > 65000)
                 continue;
@@ -161,37 +162,4 @@ public static class WorldGeometry
         (a, b) = (b, a);
     }
 
-    /// <summary>Sutherland-Hodgman clip of a convex polygon against one axis half-space (component <= limit, or >= limit).</summary>
-    private static void ClipComponent(List<Vector3> input, List<Vector3> output, int axis, float limit, bool keepGreater)
-    {
-        output.Clear();
-        if (input.Count == 0)
-            return;
-
-        var prev = input[^1];
-        var prevVal = Comp(prev, axis);
-        var prevIn = keepGreater ? prevVal >= limit : prevVal <= limit;
-
-        for (var i = 0; i < input.Count; i++)
-        {
-            var cur = input[i];
-            var curVal = Comp(cur, axis);
-            var curIn = keepGreater ? curVal >= limit : curVal <= limit;
-
-            if (curIn != prevIn)
-            {
-                var denom = curVal - prevVal;
-                var f = MathF.Abs(denom) > 1e-9f ? (limit - prevVal) / denom : 0f;
-                output.Add(Vector3.Lerp(prev, cur, f));
-            }
-            if (curIn)
-                output.Add(cur);
-
-            prev = cur;
-            prevVal = curVal;
-            prevIn = curIn;
-        }
-    }
-
-    private static float Comp(Vector3 v, int axis) => axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
 }

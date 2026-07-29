@@ -105,4 +105,69 @@ public static class StainHelper
         ((packed >> 16) & 0xFF) / 255f,
         ((packed >> 8) & 0xFF) / 255f,
         (packed & 0xFF) / 255f);
+
+    /// <summary>Scene file magic, then the scene-layer magic that follows it.</summary>
+    private const uint SceneMagic = 0x31424753, SceneLayerMagic = 0x314E4353;
+
+    /// <summary>Pointers inside a scene are relative to this offset rather than to the file.</summary>
+    private const int ScenePointerBase = 0x14;
+
+    /// <summary>Offset of the pointer to the scene's default stain.</summary>
+    private const int SceneStainPointerOffset = 0x40;
+
+    /// <summary>
+    /// The stain a piece of furniture renders when nobody has dyed it, taken from the scene placed beside its model.
+    /// </summary>
+    /// <param name="modelGamePath">The furniture model's archive path, under <c>bgcommon/</c>.</param>
+    /// <returns>The stain id, zero when the scene states none, or null when the model has no readable scene beside it.</returns>
+    public static ushort? DefaultStainForModel(string modelGamePath)
+        => GamePathHelper.SceneBesideModel(modelGamePath) is { } scenePath ? DefaultStainForScene(scenePath) : null;
+
+    /// <summary>
+    /// The stain an undyed placement of a scene renders.
+    /// </summary>
+    /// <param name="scenePath">Archive path of the scene (<c>.sgb</c>).</param>
+    /// <returns>The stain id, zero when the scene states none, or null when no readable scene sits at the path.</returns>
+    public static ushort? DefaultStainForScene(string scenePath)
+    {
+        if (string.IsNullOrWhiteSpace(scenePath))
+            return null;
+
+        return SafeExecutor.ExecuteSafely<ushort?>(() =>
+        {
+            var file = NoireService.DataManager.GetFile(scenePath);
+            return file != null && TryReadSceneDefaultStain(file.Data, out var stain) ? stain : null;
+        }, null);
+    }
+
+    /// <summary>
+    /// Reads a scene's default stain out of its raw bytes. Only the two fields the stain needs are read; the scene's
+    /// placements are not parsed.
+    /// </summary>
+    /// <param name="data">The scene file's bytes.</param>
+    /// <param name="stain">The stain id, zero when the scene states none.</param>
+    /// <returns>False when the bytes are not a scene this layout can read.</returns>
+    internal static bool TryReadSceneDefaultStain(ReadOnlySpan<byte> data, out ushort stain)
+    {
+        stain = 0;
+
+        if (data.Length < 0x60
+            || BitConverter.ToUInt32(data) != SceneMagic
+            || BitConverter.ToUInt32(data[0xC..]) != SceneLayerMagic)
+            return false;
+
+        var pointer = BitConverter.ToUInt32(data[SceneStainPointerOffset..]);
+        if (pointer == 0)
+            return true;
+
+        var at = ScenePointerBase + (long)pointer;
+        if (at + 2 > data.Length)
+            return true;
+
+        // A value beyond the stain table means the pointer did not mean this here; report it as unstated rather than
+        // as an arbitrary color.
+        var value = BitConverter.ToUInt16(data[(int)at..]);
+        stain = value > 1000 ? (ushort)0 : value;
+        return true;
+    }
 }

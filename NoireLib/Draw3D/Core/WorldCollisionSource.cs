@@ -1,4 +1,5 @@
 using FFXIVClientStructs.FFXIV.Common.Component.BGCollision;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -131,7 +132,7 @@ internal static unsafe class WorldCollisionSource
 
         // Collider-level reject: skip the whole model when its world AABB misses the query box (huge terrain win).
         var wb = collider->WorldBoundingBox;
-        if (IsValidAabb(wb.Min, wb.Max) && !AabbOverlap(wb.Min, wb.Max, boxMin, boxMax))
+        if (IsValidAabb(wb.Min, wb.Max) && !Geometry3DHelper.AabbOverlap(wb.Min, wb.Max, boxMin, boxMax))
             return;
 
         var root = mesh->RootNode;
@@ -262,13 +263,8 @@ internal static unsafe class WorldCollisionSource
     {
         var triMin = Vector3.Min(v0, Vector3.Min(v1, v2));
         var triMax = Vector3.Max(v0, Vector3.Max(v1, v2));
-        return AabbOverlap(triMin, triMax, boxMin, boxMax);
+        return Geometry3DHelper.AabbOverlap(triMin, triMax, boxMin, boxMax);
     }
-
-    private static bool AabbOverlap(Vector3 aMin, Vector3 aMax, Vector3 bMin, Vector3 bMax)
-        => aMin.X <= bMax.X && aMax.X >= bMin.X
-        && aMin.Y <= bMax.Y && aMax.Y >= bMin.Y
-        && aMin.Z <= bMax.Z && aMax.Z >= bMin.Z;
 
     private static bool IsValidAabb(Vector3 min, Vector3 max)
         => max.X >= min.X && max.Y >= min.Y && max.Z >= min.Z

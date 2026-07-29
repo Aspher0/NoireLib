@@ -69,7 +69,7 @@ public readonly struct FrameContext
     }
 
     /// <summary>
-    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w <= 0). Same
+    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w &lt;= 0). Same
     /// math the GPU performs; used by the parity validator and available to consumers for labels/anchors.
     /// </summary>
     /// <param name="world">World-space position.</param>

@@ -467,11 +467,13 @@ public static unsafe class HousingHelper
             _ => (EstateType)byte.MaxValue,
         };
 
-        if (estateType == (EstateType)byte.MaxValue)
-            return HousingAddress.None;
+        return estateType == (EstateType)byte.MaxValue ? HousingAddress.None : ReadOwnedEstate(estateType);
+    }
 
-        // GetOwnedHouseId is static and reads the character's own housing data, so it does not need the housing
-        // manager to be live (which it is not when the character stands outside a housing area).
+    // GetOwnedHouseId is static and reads the character's own housing data, so it does not need the housing manager
+    // to be live (which it is not when the character stands outside a housing area).
+    private static HousingAddress ReadOwnedEstate(EstateType estateType)
+    {
         return SafeExecutor.ExecuteSafely(() =>
         {
             var house = HousingManager.GetOwnedHouseId(estateType, 0);
@@ -479,7 +481,139 @@ public static unsafe class HousingHelper
                 return HousingAddress.None;
 
             return new HousingAddress(true, house.WardIndex, house.PlotIndex, house.RoomNumber,
-                house.IsApartment, house.ApartmentDivision);
+                house.IsApartment, house.ApartmentDivision, house.TerritoryTypeId, house.IsWorkshop);
+        }, HousingAddress.None);
+    }
+
+    /// <summary>
+    /// The interior territories that belong to one residential district: its cottage, house and mansion interiors, its
+    /// private chambers, its company workshop, and its apartment and lobby. Membership comes from the level-file region
+    /// the district and its interiors share, so no territory is listed by hand.
+    /// </summary>
+    /// <param name="districtTerritoryId">The residential district.</param>
+    /// <returns>The district's interiors, empty when it is not a district or names no level files.</returns>
+    public static IReadOnlyList<HousingInteriorInfo> InteriorsOf(uint districtTerritoryId)
+    {
+        EnsureInteriorsByDistrict();
+        return interiorsByDistrict!.GetValueOrDefault(districtTerritoryId, []);
+    }
+
+    /// <summary>
+    /// Resolves an interior onto the one a district actually holds. Six interiors belong to no district at all: they
+    /// are the designs an estate can be renovated into, and a character standing in one is standing in that district's
+    /// interior of the same size under different decor. Anything already belonging to the district, and anything that
+    /// is not a housing interior, comes back unchanged.
+    /// </summary>
+    /// <param name="interiorTerritoryId">The interior the character is in.</param>
+    /// <param name="districtTerritoryId">The district the interior belongs to, from the indoor house.</param>
+    /// <returns>The district's own interior of that kind, or the input when it needs no resolving.</returns>
+    public static uint ResolveInterior(uint interiorTerritoryId, uint districtTerritoryId)
+    {
+        if (interiorTerritoryId == 0 || districtTerritoryId == 0)
+            return interiorTerritoryId;
+
+        var interiors = InteriorsOf(districtTerritoryId);
+        if (interiors.Count == 0 || KindOf(interiorTerritoryId) is not { } kind)
+            return interiorTerritoryId;
+
+        foreach (var interior in interiors)
+        {
+            if (interior.TerritoryId == interiorTerritoryId)
+                return interiorTerritoryId;
+        }
+
+        foreach (var interior in interiors)
+        {
+            if (interior.Kind == kind)
+                return interior.TerritoryId;
+        }
+
+        return interiorTerritoryId;
+    }
+
+    private static Dictionary<uint, List<HousingInteriorInfo>>? interiorsByDistrict;
+
+    private static void EnsureInteriorsByDistrict()
+    {
+        if (interiorsByDistrict != null)
+            return;
+
+        var byDistrict = new Dictionary<uint, List<HousingInteriorInfo>>();
+        SafeExecutor.ExecuteSafely(() =>
+        {
+            var regions = new Dictionary<string, List<uint>>();
+            foreach (var district in Districts)
+            {
+                var region = LevelFileHelper.ResolveRegionRoot(district);
+                if (region.Length == 0)
+                    continue;
+
+                if (!regions.TryGetValue(region, out var list))
+                {
+                    list = [];
+                    regions[region] = list;
+                }
+
+                list.Add(district);
+            }
+
+            foreach (var interior in ReadInteriors())
+            {
+                var region = LevelFileHelper.ResolveRegionRoot(interior.TerritoryId);
+                if (region.Length == 0 || !regions.TryGetValue(region, out var districtIds))
+                    continue;
+
+                foreach (var district in districtIds)
+                {
+                    if (!byDistrict.TryGetValue(district, out var list))
+                    {
+                        list = [];
+                        byDistrict[district] = list;
+                    }
+
+                    list.Add(interior);
+                }
+            }
+        });
+
+        interiorsByDistrict = byDistrict;
+    }
+
+    /// <summary>
+    /// The character's own private chambers, which live inside their Free Company's estate. Having a Free Company
+    /// estate does not mean having chambers in it: they are rented separately, so this is the only thing that says
+    /// whether there are any to walk into. Reads from anywhere in the world.
+    /// </summary>
+    /// <returns>The address, or <see cref="HousingAddress.None"/> when the character has no chambers.</returns>
+    public static HousingAddress ReadOwnedChambers() => ReadOwnedEstate(EstateType.PersonalChambers);
+
+    /// <summary>
+    /// The house the character is currently standing inside, from the game's own indoor state: which district, ward
+    /// and plot it is, and for an apartment which division and room. This is the only thing that says <b>which</b> of
+    /// the estates sharing an interior territory the character actually walked into, since every plot of a size opens
+    /// into one and the same territory.
+    /// </summary>
+    /// <returns>
+    /// The address, or <see cref="HousingAddress.None"/> when the character is not inside a house. A workshop reads
+    /// as owned with <see cref="HousingAddress.IsWorkshop"/> set.
+    /// </returns>
+    public static HousingAddress ReadCurrentIndoorHouse()
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (!CharacterHelper.IsStateReady)
+                return HousingAddress.None;
+
+            var manager = HousingManager.Instance();
+            if (manager == null || manager->IsOutside())
+                return HousingAddress.None;
+
+            var house = manager->GetCurrentIndoorHouseId();
+            if (!IsOwnedHouse(house))
+                return HousingAddress.None;
+
+            return new HousingAddress(true, house.WardIndex, house.PlotIndex, house.RoomNumber,
+                house.IsApartment, house.ApartmentDivision, house.TerritoryTypeId, house.IsWorkshop);
         }, HousingAddress.None);
     }
 

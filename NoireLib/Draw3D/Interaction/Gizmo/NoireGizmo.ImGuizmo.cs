@@ -196,7 +196,7 @@ public sealed partial class NoireGizmo
             // overlay it pixel-for-pixel and translate/rotate are untouched); its multiplicative scale result is then
             // converted back to an additive delta on the real object below (RebuildFromScaleProxy). ImGuizmo captures
             // its own drag origin, so feeding a proxy never lets the handles drift from the gesture.
-            DecomposeSafe(in world, out var curScale, out var curRot, out var curTrans);
+            TransformHelper.DecomposeSafe(in world, out var curScale, out var curRot, out var curTrans);
             if (!imguizmoUsing)
             {
                 pressScale = curScale;        // freeze the size at press; held for the whole drag (baseScale is the increment reference)
@@ -649,7 +649,7 @@ public sealed partial class NoireGizmo
     /// </summary>
     private void CaptureImGuizmoPress(in Matrix4x4 world)
     {
-        DecomposeSafe(in world, out _, out pressRot, out pressTrans);
+        TransformHelper.DecomposeSafe(in world, out _, out pressRot, out pressTrans);
         dragOrigin = pressTrans;
 
         if (Options.Space == GizmoSpace.Local)
@@ -674,7 +674,7 @@ public sealed partial class NoireGizmo
     /// </summary>
     private void UpdateImGuizmoFeedback(in Matrix4x4 current)
     {
-        DecomposeSafe(in current, out var scale, out var rot, out var trans);
+        TransformHelper.DecomposeSafe(in current, out var scale, out var rot, out var trans);
         feedbackTranslate = trans - pressTrans;
         feedbackAngleDeg = AngleBetweenDeg(pressRot, rot);
         feedbackScale = new Vector3(scale.X / baseScale.X, scale.Y / baseScale.Y, scale.Z / baseScale.Z);

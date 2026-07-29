@@ -36,7 +36,7 @@ public sealed class GameMaterial : IDisposable
 
     /// <summary>
     /// The color a dyeable surface renders when nothing states a stain (stain row 1, Snow White, the
-    /// table's own display color) - the fallback below <see cref="GameSgbFile.DefaultStain"/>, used only
+    /// table's own display color) - the fallback below <see cref="StainHelper.DefaultStainForModel"/>, used only
     /// when a scene states no default stain either (see docs/Draw3D Game Assets Status.md).
     /// </summary>
     public static readonly Vector3 UndyedStain = new(228f / 255f, 223f / 255f, 208f / 255f);
@@ -61,7 +61,7 @@ public sealed class GameMaterial : IDisposable
     /// <summary>
     /// The material's diffuse color constant, or null when it sets none; on dyeable furniture it holds an
     /// exact stain-table color that is not what actually renders (an undyed placement shows the scene's
-    /// default stain, <see cref="GameSgbFile.DefaultStain"/>, or <see cref="UndyedStain"/> when none is
+    /// default stain, <see cref="StainHelper.DefaultStainForModel"/>, or <see cref="UndyedStain"/> when none is
     /// stated), exposed here as parsed data (see docs/Draw3D Game Assets Status.md).
     /// </summary>
     public Vector3? DiffuseColor
@@ -84,7 +84,7 @@ public sealed class GameMaterial : IDisposable
     /// <param name="dye">
     /// Color applied to the dyeable area only, as a display color (matching a color picker and the game's dye
     /// table); null renders <see cref="UndyedStain"/>, the game's fallback for an empty stain slot, or pass the
-    /// scene's default stain (<see cref="GameSgbFile.DefaultStain"/>) to render an item exactly as an undyed
+    /// scene's default stain (<see cref="StainHelper.DefaultStainForModel"/>) to render an item exactly as an undyed
     /// placement shows it.
     /// </param>
     /// <param name="tint">Multiplied over the whole surface afterwards; white leaves it untouched.</param>
@@ -249,7 +249,7 @@ public static class GameMaterialLoader
         {
             var texture = file.TextureFor(sampler);
             if (texture is { Path.Length: > 0 })
-                return VariantPath(texture.Value);
+                return texture.Value.IsDx11 ? GamePathHelper.Dx11TexturePath(texture.Value.Path) : texture.Value.Path;
         }
 
         return null;
@@ -262,105 +262,13 @@ public static class GameMaterialLoader
         return path is null ? null : await TextureLoader.FromGamePathAsync(path, ct).ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Turns a material path taken from a model into a loadable archive path: background models store it
-    /// outright, character models store it relative (beginning with a slash), resolved against the model's
-    /// own folder plus a numbered variant directory.
-    /// </summary>
-    /// <param name="modelGamePath">Archive path of the model that referenced the material.</param>
-    /// <param name="materialPath">The path as the model stores it.</param>
-    /// <param name="variant">Variant directory to resolve a relative path against.</param>
-    /// <returns>An absolute archive path, or null when the inputs cannot form one.</returns>
+    /// <inheritdoc cref="GamePathHelper.ResolveMaterialPath"/>
     public static string? ResolvePath(string modelGamePath, string materialPath, int variant = 1)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(modelGamePath);
+        => GamePathHelper.ResolveMaterialPath(modelGamePath, materialPath, variant);
 
-        if (string.IsNullOrWhiteSpace(materialPath))
-            return null;
-
-        if (!materialPath.StartsWith('/'))
-            return materialPath;
-
-        // Character models keep their materials beside the model directory rather than under it, so the
-        // model's own folder is dropped before the variant folder is appended.
-        var modelFolder = modelGamePath.LastIndexOf('/');
-        if (modelFolder < 0)
-            return null;
-
-        var parent = modelGamePath[..modelFolder];
-        var parentFolder = parent.LastIndexOf('/');
-        if (parentFolder < 0)
-            return null;
-
-        return $"{parent[..parentFolder]}/material/v{variant:D4}{materialPath}";
-    }
-
-    /// <summary>
-    /// The archive path of a texture slot, accounting for the DirectX 11 variant marker: the file for
-    /// those slots sits beside the named one with a doubled dash prefixed to the file name.
-    /// </summary>
-    private static string VariantPath(GameMaterialTexture texture)
-    {
-        if (!texture.IsDx11)
-            return texture.Path;
-
-        var slash = texture.Path.LastIndexOf('/');
-        return slash < 0 ? $"--{texture.Path}" : $"{texture.Path[..(slash + 1)]}--{texture.Path[(slash + 1)..]}";
-    }
-
-    /// <summary>
-    /// Candidate archive paths for a relative material name whose file lives outside the model's own tree (an
-    /// equipment model referencing its wearer's skin material is the typical case), derived from the name
-    /// itself: a character material's filename encodes its owner, e.g. <c>mt_c0201b0001_a.mtrl</c> is character
-    /// <c>c0201</c> body <c>b0001</c>, living under the human body directory rather than the referencing
-    /// model's equipment folder; multiple candidates are returned since the human directories are split on
-    /// whether a variant folder exists, and the caller takes the first that loads.
-    /// </summary>
-    /// <param name="materialPath">The relative material name, beginning with a slash.</param>
-    /// <param name="variant">Variant directory for the kinds that use one.</param>
+    /// <inheritdoc cref="GamePathHelper.ResolveMaterialByOwnerName"/>
     public static IReadOnlyList<string> ResolveByOwnerName(string materialPath, int variant = 1)
-    {
-        // The grammar is /mt_c{character:4}{kind:1}{set:4}..., and anything else is not a character material.
-        if (materialPath is not ['/', 'm', 't', '_', 'c', ..] || materialPath.Length < 14)
-            return [];
-
-        var character = materialPath.Substring(5, 4);
-        var kind = materialPath[9];
-        var set = materialPath.Substring(10, 4);
-        foreach (var c in character)
-        {
-            if (!char.IsAsciiDigit(c))
-                return [];
-        }
-
-        foreach (var c in set)
-        {
-            if (!char.IsAsciiDigit(c))
-                return [];
-        }
-
-        var humanKind = kind switch
-        {
-            'b' => "body",
-            'f' => "face",
-            'h' => "hair",
-            't' => "tail",
-            'z' => "zear",
-            _ => null,
-        };
-
-        if (humanKind is not null)
-        {
-            var owner = $"chara/human/c{character}/obj/{humanKind}/{kind}{set}";
-            return [$"{owner}/material/v0001{materialPath}", $"{owner}/material{materialPath}"];
-        }
-
-        return kind switch
-        {
-            'e' => [$"chara/equipment/e{set}/material/v{variant:D4}{materialPath}"],
-            _ => [],
-        };
-    }
+        => GamePathHelper.ResolveMaterialByOwnerName(materialPath, variant);
 
     /// <summary>Loads every distinct material a model references, keyed by the path each was resolved from.</summary>
     /// <param name="modelGamePath">Archive path of the model.</param>

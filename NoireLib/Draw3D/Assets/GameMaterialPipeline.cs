@@ -1,4 +1,4 @@
-using System.IO;
+using NoireLib.Helpers;
 using System.Reflection;
 
 namespace NoireLib.Draw3D.Assets;
@@ -93,14 +93,5 @@ public static class GameMaterialPipeline
         => $"{typeof(GameMaterialPipeline).Namespace!.Replace(".Assets", ".Shaders")}.GameMaterial.hlsl";
 
     private static string? ReadSource()
-    {
-        var assembly = Assembly.GetExecutingAssembly();
-
-        using var stream = assembly.GetManifestResourceStream(ResourceName);
-        if (stream is null)
-            return null;
-
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
+        => FileHelper.ReadEmbeddedText(Assembly.GetExecutingAssembly(), ResourceName);
 }

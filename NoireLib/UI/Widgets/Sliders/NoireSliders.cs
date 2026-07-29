@@ -314,9 +314,6 @@ public static class NoireSliders
     /// <summary>
     /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
     /// </summary>
-    /// <summary>
-    /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
-    /// </summary>
     /// <remarks>
     /// The argument is passed explicitly rather than captured by a closure: Roslyn allocates a display class at
     /// method entry for a lambda that captures a parameter, even on frames where the branch does not run. See the

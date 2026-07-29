@@ -88,6 +88,11 @@ public enum LevelObjectKind
 /// For an <see cref="LevelObjectKind.ExitRange"/>, the PopRange the game returns the character to, which an
 /// intra-zone teleport pair uses to name each other's landing spot; zero when the object names none.
 /// </param>
+/// <param name="LayerTerritories">
+/// The TerritoryType rows the object's layer belongs to, from <see cref="LayerSetHelper.ReadLayerTerritories"/>.
+/// Null or empty when the layer is unconditional, which is most of them. Several territories share one level
+/// directory, so an object whose layer names only the others is not standing in this territory at all.
+/// </param>
 public readonly record struct LevelObject(
     LevelObjectKind Kind,
     uint InstanceId,
@@ -101,7 +106,14 @@ public readonly record struct LevelObject(
     ushort FestivalId = 0,
     ushort FestivalPhase = 0,
     LevelExitKind ExitKind = LevelExitKind.None,
-    uint ReturnInstanceId = 0);
+    uint ReturnInstanceId = 0,
+    IReadOnlyList<uint>? LayerTerritories = null)
+{
+    /// <summary>Whether the object's layer is part of a territory.</summary>
+    /// <param name="territoryId">The territory being read.</param>
+    /// <returns>True when it is, and for any object whose layer is unconditional.</returns>
+    public bool BelongsTo(uint territoryId) => LayerSetHelper.Belongs(LayerTerritories, territoryId);
+}
 
 /// <summary>
 /// What to keep from a level file: unfiltered, a whole-world pass would hold millions of scenery objects rather

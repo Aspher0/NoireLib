@@ -2,6 +2,7 @@ using FluentAssertions;
 using NoireLib.Draw3D;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 using Xunit;

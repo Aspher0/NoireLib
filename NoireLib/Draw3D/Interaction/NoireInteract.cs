@@ -5,7 +5,6 @@ using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Runtime.InteropServices;
 
 namespace NoireLib.Draw3D.Interaction;
 
@@ -89,17 +88,9 @@ public static class NoireInteract
     private static Vector2 depthProbeScreen;
     private static Vector3 depthProbeWorld;
     private static bool depthProbeValid;
-    private static long depthProbeFrame = long.MinValue;
+    private static long depthProbeFrame = FrameThrottle.Never;
 
     private const int VkLButton = 0x01, VkRButton = 0x02, VkMButton = 0x04;
-
-    private static readonly uint CurrentProcessId = (uint)Environment.ProcessId;
-
-    [DllImport("user32.dll")]
-    private static extern nint GetForegroundWindow();
-
-    [DllImport("user32.dll")]
-    private static extern uint GetWindowThreadProcessId(nint hWnd, out uint processId);
 
     /// <summary>
     /// When true, logs the click pipeline (raw button state, hover, capture, and every press/click/drag event) to the
@@ -411,12 +402,7 @@ public static class NoireInteract
         if (mouse.X < 0f || mouse.Y < 0f || mouse.X >= displaySize.X || mouse.Y >= displaySize.Y)
             return false;
 
-        var foreground = GetForegroundWindow();
-        if (foreground == 0)
-            return false;
-
-        GetWindowThreadProcessId(foreground, out var pid);
-        return pid == CurrentProcessId;
+        return WindowHelper.IsGameWindowFocused();
     }
 
     /// <summary>Determines the topmost grabbable target under the cursor: registered interactors first (by priority), then interactable nodes.</summary>
@@ -524,10 +510,12 @@ public static class NoireInteract
     private static bool TryGetDepthOccluder(out Vector3 world)
     {
         var fid = frame.FrameId;
-        var minElapsed = depthProbeFrame == long.MinValue || fid - depthProbeFrame >= DepthProbeMinFrames;
-        if (minElapsed && (depthProbeFrame == long.MinValue
+        // Not a plain throttle: at least the minimum frames AND (the cursor moved OR the maximum frames), so a
+        // still cursor still re-reads eventually and a moving one re-reads as soon as it is allowed to.
+        var minElapsed = FrameThrottle.HasElapsed(fid, depthProbeFrame, DepthProbeMinFrames);
+        if (minElapsed && (depthProbeFrame == FrameThrottle.Never
                            || Vector2.Distance(mousePos, depthProbeScreen) > DepthProbeMovePixels
-                           || fid - depthProbeFrame >= DepthProbeMaxFrames))
+                           || FrameThrottle.HasElapsed(fid, depthProbeFrame, DepthProbeMaxFrames)))
         {
             depthProbeFrame = fid;
             depthProbeScreen = mousePos;

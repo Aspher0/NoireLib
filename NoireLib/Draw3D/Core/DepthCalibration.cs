@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -25,7 +26,7 @@ internal sealed class DepthCalibration
     private float calibratedNear;
     private bool calibratedStandardZ;
     private bool calibratedFiniteFar;
-    private long lastAttemptFrame = long.MinValue;
+    private long lastAttemptFrame = FrameThrottle.Never;
     private int failStreak;
     private bool troubleLogged;
 
@@ -49,7 +50,7 @@ internal sealed class DepthCalibration
     {
         IsValid = false;
         Description = "uncalibrated";
-        lastAttemptFrame = long.MinValue;
+        lastAttemptFrame = FrameThrottle.Never;
         failStreak = 0;
     }
 
@@ -72,10 +73,8 @@ internal sealed class DepthCalibration
             return true;
 
         var interval = failStreak >= FailuresBeforeBackoff ? BackoffIntervalFrames : RetryIntervalFrames;
-        if (!AttemptDue(frameId, lastAttemptFrame, interval))
+        if (!FrameThrottle.TryPass(frameId, ref lastAttemptFrame, interval))
             return false;
-
-        lastAttemptFrame = frameId;
 
         if (!GameRenderSources.TryGetDepthTexture(out var info))
             return false;
@@ -149,16 +148,6 @@ internal sealed class DepthCalibration
         NoireLogger.LogInfo($"Draw3D depth calibrated: {Description} - camera NearPlane says {cam.NearPlane:F4}.", "Draw3D");
         return true;
     }
-
-    /// <summary>
-    /// True when a (re)calibration attempt is due this frame. Overflow-safe on purpose: the
-    /// <see cref="long.MinValue"/> "never attempted" sentinel must never reach the subtraction -
-    /// <c>frameId - long.MinValue</c> overflows to a large negative value that always compares as
-    /// "still throttled", which wedges calibration off forever. Symptom of the bug it guards against:
-    /// depth never becomes available, so every 3D shape sits on top of all world geometry. Exposed for tests.
-    /// </summary>
-    internal static bool AttemptDue(long frameId, long lastAttemptFrame, int interval)
-        => lastAttemptFrame == long.MinValue || frameId - lastAttemptFrame >= interval;
 
     /// <summary>
     /// The depth-buffer value mapping (<c>sample = A + B/clipW</c>) computed directly from the camera's own

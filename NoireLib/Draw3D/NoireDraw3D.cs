@@ -2759,7 +2759,7 @@ public static unsafe partial class NoireDraw3D
         return true;
     }
 
-    /// <summary>The decal footprint SDF from <c>GroundDecal.hlsl</c> (footprint space p = lp.xz*2, edge at |p| = 1): inside when sd <= 0.</summary>
+    /// <summary>The decal footprint SDF from <c>GroundDecal.hlsl</c> (footprint space p = lp.xz*2, edge at |p| = 1): inside when sd &lt;= 0.</summary>
     internal static bool InsideDecalShape(Material mat, Vector3 lp)
     {
         var p = new Vector2(lp.X, lp.Z) * 2f;
@@ -2791,22 +2791,9 @@ public static unsafe partial class NoireDraw3D
         return sd <= 0f;
     }
 
+    /// <summary>The <see cref="Geometry.BoundingSphere"/> shape of <see cref="Geometry3DHelper.RaySphere"/>.</summary>
     private static bool RaySphere(Vector3 origin, Vector3 direction, in Geometry.BoundingSphere sphere, out float t)
-    {
-        t = 0f;
-        var oc = origin - sphere.Center;
-        var b = Vector3.Dot(oc, direction);
-        var c = oc.LengthSquared() - sphere.Radius * sphere.Radius;
-        var disc = b * b - c;
-        if (disc < 0f)
-            return false;
-
-        var sq = MathF.Sqrt(disc);
-        t = -b - sq;
-        if (t < 0f)
-            t = -b + sq;
-        return t >= 0f;
-    }
+        => Geometry3DHelper.RaySphere(origin, direction, sphere.Center, sphere.Radius, out t);
 
     private static bool RayMesh(Vector3 origin, Vector3 direction, Geometry.Mesh mesh, in Matrix4x4 world, out float bestT, out int bestTriangle)
     {

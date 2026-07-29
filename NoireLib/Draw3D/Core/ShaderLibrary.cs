@@ -1,8 +1,7 @@
 using NoireLib.Draw3D.Materials;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
-using System.IO;
-using System.Text;
 using System.Text.RegularExpressions;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
@@ -59,19 +58,17 @@ internal sealed unsafe class ShaderLibrary : IDisposable
     /// <summary>Loads and include-resolves the embedded shader sources.</summary>
     public ShaderLibrary()
     {
+        const string Folder = ".Draw3D.Shaders.";
         var assembly = typeof(ShaderLibrary).Assembly;
-        foreach (var resource in assembly.GetManifestResourceNames())
+
+        foreach (var resource in FileHelper.FindEmbeddedResources(assembly, Folder))
         {
-            if (!resource.Contains(".Draw3D.Shaders.", StringComparison.OrdinalIgnoreCase))
+            var source = FileHelper.ReadEmbeddedText(assembly, resource);
+            if (source == null)
                 continue;
 
-            using var stream = assembly.GetManifestResourceStream(resource);
-            if (stream == null)
-                continue;
-
-            using var reader = new StreamReader(stream, Encoding.UTF8);
-            var fileName = resource[(resource.IndexOf(".Draw3D.Shaders.", StringComparison.OrdinalIgnoreCase) + ".Draw3D.Shaders.".Length)..];
-            embedded[fileName] = reader.ReadToEnd();
+            var fileName = resource[(resource.IndexOf(Folder, StringComparison.OrdinalIgnoreCase) + Folder.Length)..];
+            embedded[fileName] = source;
         }
     }
 
@@ -114,7 +111,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Gets the outline coverage-mask pipeline for a solid mesh silhouette (non-instanced, standard vertex layout), or null on compile failure.</summary>
     /// <summary>
     /// Gets the pipeline that writes a mesh into the GAME's G-buffer, so the game's own lighting pass lights
     /// it. Null on compile failure, which leaves the object on its normal path rather than failing the frame.
@@ -155,6 +151,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
+    /// <summary>Gets the outline coverage-mask pipeline for a solid mesh silhouette (non-instanced, standard vertex layout), or null on compile failure.</summary>
     public ShaderPipeline? GetOutlineMaskMesh(RenderDevice device)
     {
         const string key = "OutlineMaskMesh";

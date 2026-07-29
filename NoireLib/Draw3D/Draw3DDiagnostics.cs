@@ -16,7 +16,8 @@ namespace NoireLib.Draw3D;
 /// <see cref="PreferCapturedCamera"/> and <c>/noire3d cbprobe</c> belong to the camera-constant capture; see
 /// <see cref="Core.CameraConstantCapture"/> for the capture mechanism itself.<br/>
 /// Each of these samples from the render thread only: an off-thread read would be measured against a camera that
-/// has already moved. Terminal chat lines are marshalled to the framework thread (<see cref="Core.DiagnosticChat"/>);
+/// has already moved. Terminal chat lines go through <see cref="NoireLogger"/>, which prints directly when the
+/// caller is already on the framework thread and marshals otherwise, so a multi-line report keeps its line order;
 /// full findings always go to the plugin log.<br/>
 /// The visual showcase (the showcase scene, world-geometry preview, glTF import) lives in the separate
 /// <c>NoireDraw3DDemoPlugin</c>, built entirely on the public Draw3D API.
@@ -84,7 +85,7 @@ public sealed unsafe class Draw3DDiagnostics
     /// </summary>
     public bool PreferCapturedCamera { get; set; } = true;
 
-    /// <summary>Arms the projection parity validator for the next 10 rendered frames (results logged). Gate: max <= 1 px.</summary>
+    /// <summary>Arms the projection parity validator for the next 10 rendered frames (results logged). Gate: max &lt;= 1 px.</summary>
     public void RunValidate()
     {
         NoireDraw3D.EnsureInitialized();
@@ -257,7 +258,7 @@ public sealed unsafe class Draw3DDiagnostics
             var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames - max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max <= 1 px). " +
                          $"VP cross-check max element delta: {validateMaxMatrixDelta:E2}. Camera fallback active: {frame.UsedFallbackCamera}. " +
                          "Repeat across camera poses: orbit, side-on grazing, wall-collision camera, first-person, max zoom.";
-            DiagnosticChat.Print($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
+            NoireLogger.PrintToChat($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
     }
@@ -521,7 +522,7 @@ public sealed unsafe class Draw3DDiagnostics
 
         sb.AppendLine($"  Verdict: {verdict}");
 
-        DiagnosticChat.Print($"Draw3D camtrace: best-fit lag = {(best < 0 ? "n/a" : best.ToString())}, cap row {(camTraceCapDepthResidualN > 0 ? capDepthMean.ToString("E2") : "n/a")}, fallback {camTraceFallbackFrames}/{traced} (details in log).");
+        NoireLogger.PrintToChat($"Draw3D camtrace: best-fit lag = {(best < 0 ? "n/a" : best.ToString())}, cap row {(camTraceCapDepthResidualN > 0 ? capDepthMean.ToString("E2") : "n/a")}, fallback {camTraceFallbackFrames}/{traced} (details in log).");
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 
@@ -691,7 +692,7 @@ public sealed unsafe class Draw3DDiagnostics
 
     private static void Report(string message)
     {
-        DiagnosticChat.Print(message);
+        NoireLogger.PrintToChat(message);
         NoireLogger.LogInfo(message, "Draw3D");
     }
 }

@@ -1,8 +1,8 @@
 using Lumina.Data;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Text;
 
 namespace NoireLib.Draw3D.Assets;
 
@@ -309,17 +309,13 @@ public sealed class GameModelFile : FileResource
         var size = cursor.U32();
         stringBase = cursor.Position;
 
+        // Slicing to the table's own end bounds the terminator search, so a table without a final null cannot run on
+        // into the rest of the file.
+        var table = data.AsSpan(0, stringBase + (int)size);
         var strings = new string[count];
         var at = stringBase;
         for (var i = 0; i < count && at < stringBase + size; i++)
-        {
-            var end = at;
-            while (end < stringBase + size && data[end] != 0)
-                end++;
-
-            strings[i] = Encoding.UTF8.GetString(data, at, end - at);
-            at = end + 1;
-        }
+            strings[i] = BufferHelper.ReadNullTerminatedString(table, at, out at);
 
         cursor.Skip((int)size);
         return strings;
@@ -384,48 +380,10 @@ public sealed class GameModelFile : FileResource
     }
 
     private static string ReadStringAt(byte[] data, int stringBase, uint offset)
-    {
-        var start = stringBase + (int)offset;
-        var end = start;
-        while (end < data.Length && data[end] != 0)
-            end++;
-
-        return Encoding.UTF8.GetString(data, start, end - start);
-    }
+        => BufferHelper.ReadNullTerminatedString(data, stringBase + (int)offset);
 
     /// <summary>Reads a bounding-box corner, which the file stores as a four-component vector.</summary>
     private static Vector3 ReadVector4AsVector3(byte[] data, int at)
-        => at + 12 > data.Length
-            ? Vector3.Zero
-            : new Vector3(
-                BitConverter.ToSingle(data, at),
-                BitConverter.ToSingle(data, at + 4),
-                BitConverter.ToSingle(data, at + 8));
+        => at + 12 > data.Length ? Vector3.Zero : BufferHelper.ReadVector3(data, at);
 
-    /// <summary>Sequential little-endian reader over the model's bytes.</summary>
-    private struct ByteCursor(byte[] data)
-    {
-        private readonly byte[] data = data;
-
-        /// <summary>Current read position.</summary>
-        public int Position { get; private set; }
-
-        public byte U8() => data[Position++];
-
-        public ushort U16()
-        {
-            var value = BitConverter.ToUInt16(data, Position);
-            Position += sizeof(ushort);
-            return value;
-        }
-
-        public uint U32()
-        {
-            var value = BitConverter.ToUInt32(data, Position);
-            Position += sizeof(uint);
-            return value;
-        }
-
-        public void Skip(int count) => Position += count;
-    }
 }

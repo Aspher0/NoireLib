@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -208,6 +209,68 @@ public static class FileHelper
         {
             NoireLogger.LogError(ex, $"Failed to read bytes from file: {filePath}", "[FileHelper] ");
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Reads an embedded resource as text.
+    /// </summary>
+    /// <param name="assembly">The assembly carrying the resource.</param>
+    /// <param name="resourceName">Full manifest resource name, which is the default namespace followed by the file's path with separators as dots.</param>
+    /// <param name="encoding">Optional encoding to use. Defaults to UTF-8.</param>
+    /// <returns>The text, or null when the assembly carries no such resource or the read failed.</returns>
+    public static string? ReadEmbeddedText(Assembly assembly, string resourceName, Encoding? encoding = null)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        if (resourceName.IsNullOrWhitespace())
+            return null;
+
+        try
+        {
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream == null)
+                return null;
+
+            using var reader = new StreamReader(stream, encoding ?? Encoding.UTF8);
+            return reader.ReadToEnd();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to read embedded resource: {resourceName}", "[FileHelper] ");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Finds the embedded resources whose manifest name contains a fragment, for reading a whole folder of them
+    /// without hardcoding the default namespace.
+    /// </summary>
+    /// <param name="assembly">The assembly to search.</param>
+    /// <param name="nameFragment">Fragment to match, compared case-insensitively.</param>
+    /// <returns>The matching resource names, empty when there are none.</returns>
+    public static IReadOnlyList<string> FindEmbeddedResources(Assembly assembly, string nameFragment)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        if (nameFragment.IsNullOrWhitespace())
+            return [];
+
+        try
+        {
+            List<string> matches = [];
+            foreach (var name in assembly.GetManifestResourceNames())
+            {
+                if (name.Contains(nameFragment, StringComparison.OrdinalIgnoreCase))
+                    matches.Add(name);
+            }
+
+            return matches;
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, $"Failed to enumerate embedded resources for: {nameFragment}", "[FileHelper] ");
+            return [];
         }
     }
 

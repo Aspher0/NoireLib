@@ -155,7 +155,7 @@ internal static class UiValueText
     /// The glyph an icon is drawn as, in the icon font.
     /// </summary>
     /// <remarks>
-    /// <see cref="FontAwesomeIconExtensions.ToIconString"/> builds a one-character string from the enum value,
+    /// Dalamud's <c>ToIconString</c> builds a one-character string from the enum value,
     /// measured at 24 bytes a call; an icon button pays it twice, once to size itself and once to paint. The set is
     /// an enum, so this fills once.
     /// </remarks>

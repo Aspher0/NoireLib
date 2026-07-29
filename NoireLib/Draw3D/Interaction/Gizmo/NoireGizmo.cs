@@ -3,6 +3,7 @@ using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Im;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -255,7 +256,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     {
         if (TryGetWorld(out var w))
         {
-            DecomposeSafe(in w, out var s, out _, out _);
+            TransformHelper.DecomposeSafe(in w, out var s, out _, out _);
             baseScale = new Vector3(BaseReference(s.X), BaseReference(s.Y), BaseReference(s.Z));
         }
         else
@@ -358,7 +359,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         dragViewDir = basis.ViewDir;
         dragHandleLen = basis.HandleLen;
 
-        DecomposeSafe(in world, out pressScale, out pressRot, out pressTrans);
+        TransformHelper.DecomposeSafe(in world, out pressScale, out pressRot, out pressTrans);
         originScreen = context.Frame.TryWorldToScreen(dragOrigin, out var s) ? s : context.ScreenStart;
 
         if (groupNodes != null)
@@ -540,7 +541,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         var delta = GizmoMath.AxisTranslationDelta(axis, dragOrigin, ctx.PressRayOrigin, ctx.PressRayDirection, ctx.RayOrigin, ctx.RayDirection);
         var axisFrac = dragHandleLen > 1e-6f ? delta / dragHandleLen : 0f;
         var result = pressScale;
-        SetComponent(ref result, axisIndex, ScaleComponent(GetComponent(pressScale, axisIndex), GetComponent(baseScale, axisIndex), axisFrac));
+        result[axisIndex] = ScaleComponent(pressScale[axisIndex], baseScale[axisIndex], axisFrac);
         return result;
     }
 
@@ -590,7 +591,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         {
             var tip = origin + axisDir * arm;
             if (f.TryWorldToScreen(origin + axisDir * axisStart, out var a) && f.TryWorldToScreen(tip, out var t))
-                Consider(h, PixelPointToSegment(cursor, a, t), tip);
+                Consider(h, Geometry2DHelper.PointToSegmentDistance(cursor, a, t), tip);
         }
 
         void ConsiderPlane(Vector3 a, Vector3 bAxis, GizmoHandle h)
@@ -606,10 +607,10 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
                 return;
 
             var center = origin + (a + bAxis) * ((lo + hi) * 0.5f);
-            var px = PointInQuad(cursor, s0, s1, s2, s3)
+            var px = Geometry2DHelper.PointInConvexQuad(cursor, s0, s1, s2, s3)
                 ? 0f
-                : Min4(PixelPointToSegment(cursor, s0, s1), PixelPointToSegment(cursor, s1, s2),
-                       PixelPointToSegment(cursor, s2, s3), PixelPointToSegment(cursor, s3, s0));
+                : Min4(Geometry2DHelper.PointToSegmentDistance(cursor, s0, s1), Geometry2DHelper.PointToSegmentDistance(cursor, s1, s2),
+                       Geometry2DHelper.PointToSegmentDistance(cursor, s2, s3), Geometry2DHelper.PointToSegmentDistance(cursor, s3, s0));
             Consider(h, px, center);
         }
 
@@ -638,7 +639,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
                 if (prevValid)
                 {
-                    var d = PixelPointToSegment(cursor, prevS, s);
+                    var d = Geometry2DHelper.PointToSegmentDistance(cursor, prevS, s);
                     if (d < ringPixels)
                     {
                         ringPixels = d;
@@ -703,32 +704,6 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         bestPoint = bestWorld;
         return best;
     }
-
-    /// <summary>Pixel distance from a point to a finite screen-space segment.</summary>
-    private static float PixelPointToSegment(Vector2 p, Vector2 a, Vector2 b)
-    {
-        var ab = b - a;
-        var lenSq = ab.LengthSquared();
-        if (lenSq < 1e-6f)
-            return Vector2.Distance(p, a);
-
-        var t = Math.Clamp(Vector2.Dot(p - a, ab) / lenSq, 0f, 1f);
-        return Vector2.Distance(p, a + ab * t);
-    }
-
-    /// <summary>Whether a screen point lies inside a convex quad given in order (winding-agnostic).</summary>
-    private static bool PointInQuad(Vector2 p, Vector2 a, Vector2 b, Vector2 c, Vector2 d)
-    {
-        var s0 = Cross(a, b, p);
-        var s1 = Cross(b, c, p);
-        var s2 = Cross(c, d, p);
-        var s3 = Cross(d, a, p);
-        var hasNeg = s0 < 0f || s1 < 0f || s2 < 0f || s3 < 0f;
-        var hasPos = s0 > 0f || s1 > 0f || s2 > 0f || s3 > 0f;
-        return !(hasNeg && hasPos);
-    }
-
-    private static float Cross(Vector2 a, Vector2 b, Vector2 p) => (b.X - a.X) * (p.Y - a.Y) - (b.Y - a.Y) * (p.X - a.X);
 
     private static float Min4(float a, float b, float c, float d) => MathF.Min(MathF.Min(a, b), MathF.Min(c, d));
 
@@ -1132,7 +1107,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         {
             if (member is { Destroyed: false })
             {
-                DecomposeSafe(member.WorldMatrix, out _, out var rot, out _);
+                TransformHelper.DecomposeSafe(member.WorldMatrix, out _, out var rot, out _);
                 return rot;
             }
         }
@@ -1151,7 +1126,7 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
 
     private Basis ComputeBasis(in Matrix4x4 world, in FrameContext frame)
     {
-        DecomposeSafe(in world, out _, out var rot, out var trans);
+        TransformHelper.DecomposeSafe(in world, out _, out var rot, out var trans);
         var origin = trans;
 
         Vector3 ax, ay, az;
@@ -1177,29 +1152,9 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
         return new Basis(origin, ax, ay, az, sx, sy, sz, viewDir, handleLen);
     }
 
-    private static void DecomposeSafe(in Matrix4x4 world, out Vector3 scale, out Quaternion rot, out Vector3 trans)
-    {
-        if (Matrix4x4.Decompose(world, out scale, out rot, out trans))
-            return;
-
-        scale = Vector3.One;
-        rot = Quaternion.Identity;
-        trans = world.Translation;
-    }
 
     private static Vector3 AxisByIndex(Vector3 x, Vector3 y, Vector3 z, int index) => index switch { 0 => x, 1 => y, _ => z };
 
-    private static float GetComponent(Vector3 v, int index) => index switch { 0 => v.X, 1 => v.Y, _ => v.Z };
-
-    private static void SetComponent(ref Vector3 v, int index, float value)
-    {
-        switch (index)
-        {
-            case 0: v.X = value; break;
-            case 1: v.Y = value; break;
-            default: v.Z = value; break;
-        }
-    }
 
     /// <inheritdoc/>
     public void Dispose()

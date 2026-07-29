@@ -1495,7 +1495,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             sb.AppendLine($"  committed Z column (uploaded, informational): ({committedVp.M13:F5}, {committedVp.M23:F5}, {committedVp.M33:F5}, {committedVp.M43:F5})");
         }
 
-        DiagnosticChat.Print($"Draw3D cbprobe: {(lockedOn ? "LOCKED - " + Describe() : $"{familyCount} families, not locked")} (details in log).");
+        NoireLogger.PrintToChat($"Draw3D cbprobe: {(lockedOn ? "LOCKED - " + Describe() : $"{familyCount} families, not locked")} (details in log).");
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 

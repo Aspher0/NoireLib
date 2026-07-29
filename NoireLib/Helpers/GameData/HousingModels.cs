@@ -129,14 +129,30 @@ public readonly record struct HousingInteriorDoors(uint TerritoryId, HousingDoor
 /// <param name="Room">The apartment room number, already one-based.</param>
 /// <param name="IsApartment">Whether the address is an apartment room rather than a plot.</param>
 /// <param name="Division">The apartment's division: zero for the main division, non-zero for the subdivision.</param>
+/// <param name="District">
+/// The residential district the address is in, or zero when the read did not carry one. An owned address does not
+/// need it, since the estate's own teleport entry names the territory; the house the character is currently standing
+/// inside does, since an interior names no district of its own.
+/// </param>
+/// <param name="IsWorkshop">Whether the address is a company workshop rather than a residence.</param>
 public readonly record struct HousingAddress(
     bool Owned,
     int Ward,
     int Plot,
     int Room,
     bool IsApartment,
-    int Division)
+    int Division,
+    uint District = 0,
+    bool IsWorkshop = false)
 {
     /// <summary>An address for a kind of housing the character does not own.</summary>
     public static HousingAddress None => default;
+
+    /// <summary>Whether this address and another name the same plot of the same ward of the same district.</summary>
+    /// <param name="other">The address to compare against.</param>
+    /// <returns>True when both are owned and name the same plot.</returns>
+    public bool SamePlot(HousingAddress other)
+        => Owned && other.Owned && !IsApartment && !other.IsApartment
+           && Ward == other.Ward && Plot == other.Plot
+           && (District == 0 || other.District == 0 || District == other.District);
 }

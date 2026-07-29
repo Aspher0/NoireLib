@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -210,12 +211,5 @@ internal static class GameLightHarvest
 
     /// <summary>Reads one 16-byte row of a payload.</summary>
     private static Vector4 Row(byte[] payload, int index)
-    {
-        var offset = index * 16;
-        return new Vector4(
-            BitConverter.ToSingle(payload, offset),
-            BitConverter.ToSingle(payload, offset + 4),
-            BitConverter.ToSingle(payload, offset + 8),
-            BitConverter.ToSingle(payload, offset + 12));
-    }
+        => BufferHelper.ReadVector4(payload, index * 16);
 }

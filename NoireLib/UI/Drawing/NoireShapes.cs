@@ -257,26 +257,6 @@ public static partial class NoireShapes
     };
 
     /// <summary>
-    /// Recolors a run of vertices by where each one falls along a line.
-    /// </summary>
-    /// <summary>
-    /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
-    /// </summary>
-    /// <remarks>
-    /// Distance from a centre is the same measure for every arm, so a whole radiating shape is shaded in one pass
-    /// instead of once per arm: a sunburst of sixty rays in three layers called the per-arm version a hundred and
-    /// eighty times a frame, and the cost was almost entirely in being called rather than in the arithmetic.<br/>
-    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm sits
-    /// slightly further from the centre than its projection along the arm; that is the more correct answer for a
-    /// radial fade.
-    /// </remarks>
-    /// <param name="drawList">The list holding the vertices.</param>
-    /// <param name="start">The first vertex to shade.</param>
-    /// <param name="end">One past the last vertex to shade.</param>
-    /// <param name="centre">Where the shape radiates from.</param>
-    /// <param name="innerRadius">The distance at which the shape is left at full strength.</param>
-    /// <param name="outerRadius">The distance at which it has faded away entirely.</param>
-    /// <summary>
     /// Moves a reservation's write positions past vertices and indices written directly into the buffers.
     /// </summary>
     /// <remarks>
@@ -297,6 +277,23 @@ public static partial class NoireShapes
         native->IdxWritePtr += indexCount;
     }
 
+    /// <summary>
+    /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
+    /// </summary>
+    /// <remarks>
+    /// Distance from a centre is the same measure for every arm, so a whole radiating shape is shaded in one pass
+    /// instead of once per arm: a sunburst of sixty rays in three layers called the per-arm version a hundred and
+    /// eighty times a frame, and the cost was almost entirely in being called rather than in the arithmetic.<br/>
+    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm sits
+    /// slightly further from the centre than its projection along the arm; that is the more correct answer for a
+    /// radial fade.
+    /// </remarks>
+    /// <param name="drawList">The list holding the vertices.</param>
+    /// <param name="start">The first vertex to shade.</param>
+    /// <param name="end">One past the last vertex to shade.</param>
+    /// <param name="centre">Where the shape radiates from.</param>
+    /// <param name="innerRadius">The distance at which the shape is left at full strength.</param>
+    /// <param name="outerRadius">The distance at which it has faded away entirely.</param>
     private static void ShadeRadial(ImDrawListPtr drawList, int start, int end, Vector2 centre, float innerRadius, float outerRadius)
     {
         if (end <= start)
@@ -330,6 +327,9 @@ public static partial class NoireShapes
         }
     }
 
+    /// <summary>
+    /// Recolors a run of vertices by where each one falls along a line.
+    /// </summary>
     private static void Shade(ImDrawListPtr drawList, int start, int end, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         if (end <= start)

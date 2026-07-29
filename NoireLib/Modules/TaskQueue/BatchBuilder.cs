@@ -159,7 +159,7 @@ public class BatchBuilderBase<TSelf> where TSelf : BatchBuilderBase<TSelf>
     /// Sets the callback for when the batch fails.
     /// </summary>
     /// <param name="callback">The callback to invoke when the batch fails.</param>
-    /// <param name="stopQueue">Whether to stop the queue when the batch is cancelled. A value of <see langword="null"/> means no change.</param>
+    /// <param name="stopQueue">Whether to stop the queue when the batch fails. A value of <see langword="null"/> means no change.</param>
     /// <returns>The builder instance for chaining.</returns>
     public TSelf OnFailed(Action callback, bool? stopQueue = null)
     {

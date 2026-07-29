@@ -397,7 +397,8 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     }
 
     /// <summary>
-    /// Whether a source is currently running. Warns once per subscription when subscribing to a disabled source.
+    /// Whether a source is turned off by its configured override. A source that is not disabled is not necessarily
+    /// running: it still has to be started.
     /// </summary>
     internal bool IsSourceDisabled(SourceKind kind)
         => GetSourceOverride(kind) == SourceOverride.Disabled;

@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -119,7 +120,7 @@ internal sealed class MeshBvh
 
         var extent = cmax - cmin;
         var axis = extent.X >= extent.Y && extent.X >= extent.Z ? 0 : extent.Y >= extent.Z ? 1 : 2;
-        var split = 0.5f * (Axis(cmin, axis) + Axis(cmax, axis));
+        var split = 0.5f * (cmin[axis] + cmax[axis]);
 
         var mid = Partition(tri, centroid, lo, hi, axis, split);
         if (mid == lo || mid == hi)
@@ -131,8 +132,6 @@ internal sealed class MeshBvh
         return self;
     }
 
-    private static float Axis(in Vector3 v, int axis) => axis == 0 ? v.X : axis == 1 ? v.Y : v.Z;
-
     /// <summary>Hoare-style partition of <c>tri[lo,hi)</c> by centroid on <paramref name="axis"/> around <paramref name="split"/>.</summary>
     private static int Partition(int[] tri, Vector3[] centroid, int lo, int hi, int axis, float split)
     {
@@ -140,9 +139,9 @@ internal sealed class MeshBvh
         var j = hi - 1;
         while (i <= j)
         {
-            while (i <= j && Axis(centroid[tri[i]], axis) < split)
+            while (i <= j && centroid[tri[i]][axis] < split)
                 i++;
-            while (i <= j && Axis(centroid[tri[j]], axis) >= split)
+            while (i <= j && centroid[tri[j]][axis] >= split)
                 j--;
             if (i < j)
                 (tri[i], tri[j]) = (tri[j], tri[i]);
@@ -174,7 +173,7 @@ internal sealed class MeshBvh
         while (sp > 0)
         {
             var node = nodes[stack[--sp]];
-            if (!RayBox(origin, inv, node.Min, node.Max, t))
+            if (!Geometry3DHelper.RayBox(origin, inv, node.Min, node.Max, t))
                 continue;
 
             if (node.Left < 0)
@@ -182,7 +181,7 @@ internal sealed class MeshBvh
                 for (var k = 0; k < node.Count; k++)
                 {
                     var id = tri[node.Start + k];
-                    if (RayTriangle(origin, direction, v0[id], v1[id], v2[id], out var th) && th < t)
+                    if (Geometry3DHelper.RayTriangle(origin, direction, v0[id], v1[id], v2[id], out var th) && th < t)
                     {
                         t = th;
                         triangle = id;
@@ -203,50 +202,4 @@ internal sealed class MeshBvh
         return triangle >= 0;
     }
 
-    /// <summary>Slab ray-vs-AABB test; true when the box is hit before <paramref name="tMax"/>.</summary>
-    private static bool RayBox(in Vector3 origin, in Vector3 invDir, in Vector3 min, in Vector3 max, float tMax)
-    {
-        var t1 = (min.X - origin.X) * invDir.X;
-        var t2 = (max.X - origin.X) * invDir.X;
-        var tmin = MathF.Min(t1, t2);
-        var tmax = MathF.Max(t1, t2);
-
-        t1 = (min.Y - origin.Y) * invDir.Y;
-        t2 = (max.Y - origin.Y) * invDir.Y;
-        tmin = MathF.Max(tmin, MathF.Min(t1, t2));
-        tmax = MathF.Min(tmax, MathF.Max(t1, t2));
-
-        t1 = (min.Z - origin.Z) * invDir.Z;
-        t2 = (max.Z - origin.Z) * invDir.Z;
-        tmin = MathF.Max(tmin, MathF.Min(t1, t2));
-        tmax = MathF.Min(tmax, MathF.Max(t1, t2));
-
-        return tmax >= MathF.Max(tmin, 0f) && tmin <= tMax;
-    }
-
-    /// <summary>Möller-Trumbore, two-sided (matches the picker); returns the forward hit distance along <paramref name="dir"/>.</summary>
-    private static bool RayTriangle(Vector3 origin, Vector3 dir, Vector3 a, Vector3 b, Vector3 c, out float t)
-    {
-        t = 0f;
-        var e1 = b - a;
-        var e2 = c - a;
-        var p = Vector3.Cross(dir, e2);
-        var det = Vector3.Dot(e1, p);
-        if (MathF.Abs(det) < 1e-9f)
-            return false;
-
-        var invDet = 1f / det;
-        var s = origin - a;
-        var u = Vector3.Dot(s, p) * invDet;
-        if (u < 0f || u > 1f)
-            return false;
-
-        var q = Vector3.Cross(s, e1);
-        var vv = Vector3.Dot(dir, q) * invDet;
-        if (vv < 0f || u + vv > 1f)
-            return false;
-
-        t = Vector3.Dot(e2, q) * invDet;
-        return t >= 0f;
-    }
 }

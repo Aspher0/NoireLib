@@ -88,7 +88,7 @@ public static class ShareCodeHelper
         if (raw.Length > limits.MaxDecodedBytes)
             throw new InvalidOperationException($"The payload is {raw.Length} bytes, over the {limits.MaxDecodedBytes} byte share-code limit. Share less in one code.");
 
-        var crc = ShareCodeCrc32.Compute(kindBytes, raw);
+        var crc = Crc32Helper.Compute(kindBytes, raw);
         var compressed = Deflate(raw);
         var useCompression = compressed.Length < raw.Length;
         var payload = useCompression ? compressed : raw;
@@ -188,7 +188,7 @@ public static class ShareCodeHelper
             raw = payload;
         }
 
-        if (ShareCodeCrc32.Compute(Utf8.GetBytes(kind), raw) != expectedCrc)
+        if (Crc32Helper.Compute(Utf8.GetBytes(kind), raw) != expectedCrc)
             return ShareCodeResult<T>.Fail(ShareCodeError.ChecksumMismatch, "This code does not match its own checksum, so it was altered on the way here. Ask for it again.", kind);
 
         try

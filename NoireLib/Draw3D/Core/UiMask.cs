@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using TerraFX.Interop.DirectX;
 using TerraFX.Interop.Windows;
@@ -179,7 +180,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
 
     private ComPtr<ID3D11Texture2D> beforeStaging, afterStaging;
     private DXGI_FORMAT stagingFormat;
-    private long lastCheckFrame = long.MinValue;
+    private long lastCheckFrame = FrameThrottle.Never;
     private bool copyPending;
     private int consecutiveSuspicious;
     private bool disabledLogged;
@@ -199,12 +200,8 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         if (mask.BeforeTexture == null || mask.AfterTexture == null || mask.Width == 0 || mask.Height == 0)
             return;
 
-        // Overflow-safe throttle: never subtract the long.MinValue "never checked" sentinel - frameId - long.MinValue
-        // overflows negative and always reads as "throttled", which would wedge the self-check off forever.
-        if (lastCheckFrame != long.MinValue && frameId - lastCheckFrame < CheckIntervalFrames)
+        if (!FrameThrottle.TryPass(frameId, ref lastCheckFrame, CheckIntervalFrames))
             return;
-
-        lastCheckFrame = frameId;
 
         if (beforeStaging.Get() != null && stagingFormat != mask.Format)
         {

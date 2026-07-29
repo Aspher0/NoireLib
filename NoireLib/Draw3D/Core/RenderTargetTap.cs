@@ -320,7 +320,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         RefreshOmHookState();
     }
 
-    /// <summary>Arms a one-frame diagnostic capture after a short warm-up (so every swapchain buffer is learned first).</summary>
     /// <summary>
     /// Arms the shadow-pass probe for the next frame: every depth-only bind's target, and the VS constants at
     /// each one's first draw. The report lands in the log. See <see cref="ShadowProbe"/> for why this exists.
@@ -334,6 +333,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         shadowProbe.Arm();
     }
 
+    /// <summary>Arms a one-frame diagnostic capture after a short warm-up (so every swapchain buffer is learned first).</summary>
     public void ArmCapture()
     {
         if (omHook == null)
@@ -830,10 +830,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     /// <summary>
     /// The G-buffer's target resources from the last capture, in bind order.<br/>
-    /// Chosen as the multi-target bind with the most draws behind it: a G-buffer pass is where the world is
-    /// drawn, so it carries hundreds of draws, while the post-process binds that share the frame carry one
-    /// apiece. Counting draws rather than targets is what separates them - the frame's widest bind is an
-    /// eight-target post-process pass at quarter resolution, not the G-buffer.
+    /// Chosen from the multi-target binds that carry a depth-stencil, ranked on target count first, then
+    /// resolution, then draws. Draws alone picks the wrong bind: a post-process pass can carry more draws than a
+    /// sparsely populated geometry pass.
     /// </summary>
     public List<nint> GBufferTargets()
     {
@@ -1019,7 +1018,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         AppendMultiTargets(sb);
 
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
-        DiagnosticChat.Print($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame.");
+        NoireLogger.PrintToChat($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame.");
     }
 
     /// <inheritdoc/>

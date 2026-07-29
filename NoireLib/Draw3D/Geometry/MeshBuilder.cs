@@ -9,7 +9,7 @@ namespace NoireLib.Draw3D.Geometry;
 /// clockwise-front winding, outward normals, UVs in [0,1] - scale and orient via the scene node. Vertex order is
 /// deterministic per shape so tests can assert exact counts and windings.<br/>
 /// The <b>instance form</b> (<c>new MeshBuilder()</c>) is an appendable buffer: mix primitives and hand-built
-/// geometry into a single mesh with <see cref="AddBox(Vector3?, Vector3)"/> / <see cref="Add(Vertex3D[], ushort[])"/>
+/// geometry into a single mesh with <see cref="AddBox(Vector3?, Vector3)"/> / <see cref="Add(Vertex3D[], ushort[], Vector3)"/>
 /// etc., then read <see cref="ToMeshData"/> (or hand the builder straight to <c>scene.Spawn</c>).
 /// </summary>
 public class MeshBuilder

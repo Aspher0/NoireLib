@@ -19,7 +19,7 @@ public static class ChatHelper
     /// </summary>
     /// <param name="message">message to send</param>
     /// <exception cref="ArgumentException">If <paramref name="message"/> is empty, longer than 500 bytes in UTF-8, or contains invalid characters.</exception>
-    /// <exception cref="InvalidOperationException">If the signature for this function could not be found -or- The UiModule is currently unavailable</exception>
+    /// <exception cref="InvalidOperationException">If the UiModule is currently unavailable.</exception>
     public static unsafe void SendMessage(string message)
     {
         var utf8 = Utf8String.FromString(message);

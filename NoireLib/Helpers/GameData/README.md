@@ -7,6 +7,7 @@ You are reading the documentation for the `Helpers/GameData` helpers.
 - [Getting Started](#getting-started)
 - [The Helpers](#the-helpers)
 - [Shared Models](#shared-models)
+- [Archive Paths](#archive-paths)
 - [Level Files](#level-files)
 - [Coordinates](#coordinates)
 - [The Eorzean Clock](#the-eorzean-clock)
@@ -100,6 +101,7 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `ClassJobHelper` | Class and job identity, roles, `ClassJobCategory` membership, and the character's level in each. |
 | `IconHelper` | An icon id resolved to its game path or its texture, and the icon a sheet row names. |
 | `TextCommandHelper` | The client's own text commands, and the rewrite that makes one work in any language. |
+| `LayerSetHelper` | Which territory a level layer belongs to, when several territories share one level directory. |
 | `LayoutHelper` | Whether a placement is actually standing in the world right now. |
 | `QuestHelper` | Whether quests are complete or accepted, and how far each accepted one has got. |
 | `WorldHelper` | Worlds, data centres, where the character is against where they live, and which seasonal events are running. |
@@ -117,6 +119,31 @@ helper that produces them.
 
 **None of them references Lumina**, so anything built on top of these records is testable with hand-built fixtures
 and no game behind it.
+
+---
+
+## Archive Paths
+
+`GamePathHelper` answers "where would that file be" as pure string rules. Nothing here opens an archive, so a caller
+can resolve one file's reference to another before deciding whether to load it.
+
+```csharp
+// A model's material. Background models store it outright; character models store it relative,
+// beginning with a slash, and it resolves BESIDE the model's folder rather than under it.
+string? mtrl = GamePathHelper.ResolveMaterialPath(
+    "chara/equipment/e0001/model/c0101e0001_top.mdl", "/mt_c0101e0001_top_a.mtrl", variant: 1);
+// chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl
+
+// A character material's file name encodes its owner, so an equipment model naming its wearer's
+// skin resolves into the human directory. Several candidates come back; take the first that loads.
+IReadOnlyList<string> candidates = GamePathHelper.ResolveMaterialByOwnerName("/mt_c0201b0001_a.mtrl");
+
+// The DirectX 11 texture sits beside the named one with a doubled dash on the file name.
+string dx11 = GamePathHelper.Dx11TexturePath("chara/.../texture/v01_c0101e0001_top_d.tex");
+
+// Furniture pairs .../bgparts/x.mdl with .../asset/x.sgb.
+string? scene = GamePathHelper.SceneBesideModel("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl");
+```
 
 ---
 
@@ -170,6 +197,39 @@ var arrivals = LevelFileHelper.BuildPopRangeIndex(objectsByTerritory);
 if (arrivals.TryGetValue((destinationTerritory, warp.ArrivalInstanceId), out var landing))
     NoireLogger.LogInfo($"That warp lands at {landing}.");
 ```
+
+### Which territory a placement belongs to
+
+One level directory is shared by several `TerritoryType` rows, and reading it attributes every placement to all of
+them. That is how a story-scene NPC reads as a permanent fixture: the shuttle pilot offering "Enter the tiring
+room?" is in the Prima Vista Tiring Room's own level file, but belongs to the *second* row of that place, and is
+not standing in the one the character walks into.
+
+The files answer it. Each layer lists the **layer sets** it belongs to, and the level-base (`.lvb`) file beside the
+level files maps every layer set to a `TerritoryType` row:
+
+```csharp
+foreach (var set in LayerSetHelper.ReadLayerSets(territoryId))
+    NoireLogger.LogInfo($"Layer set {set.LayerSetId} belongs to territory {set.TerritoryId}.");
+```
+
+Every object read carries the answer, so nothing has to be looked up twice:
+
+```csharp
+foreach (var placed in LevelFileHelper.ReadPlacements(territoryId))
+{
+    if (!placed.BelongsTo(territoryId))
+        continue;   // it stands in another row of this place, not in this one
+}
+```
+
+`LevelObject.LayerTerritories` is empty for an unconditional layer, which is most of them, and for a layer set the
+level's own table does not describe. Both mean "nothing rules it out", so `BelongsTo` is true: a wrong exclusion
+removes a real placement with nothing to show it was ever there.
+
+Both structures are read from the file bytes. Lumina's `Layer.LayerSetReferences` resolves its list against the
+layer rather than against the list, so it reads into the instance-object table and returns numbers that are not
+layer sets at all.
 
 ---
 
@@ -435,6 +495,30 @@ if (address.Owned)
     NoireLogger.LogInfo(HousingHelper.FormatAddress(address, districtTerritoryId));
 ```
 
+**Which house is this?** Every plot of a size opens into one and the same interior territory, so the territory can
+never say which estate the character is standing in. The game's indoor state can, and it is the only thing that can:
+
+```csharp
+var inside = HousingHelper.ReadCurrentIndoorHouse();
+if (inside.Owned)
+    NoireLogger.LogInfo($"Plot {inside.Plot + 1}, ward {inside.Ward + 1} of district {inside.District}.");
+```
+
+It names the district, ward and plot, and for an apartment the division and room, so the way back out of a shared
+interior can be narrowed to the one door that is really this house's.
+
+**What the character owns** reads the same from anywhere in the world, with no district loaded:
+
+```csharp
+var company  = HousingHelper.ReadOwnedAddress(EstateKind.FreeCompanyEstate);
+var chambers = HousingHelper.ReadOwnedChambers();   // rented separately: a company estate does not imply chambers
+var room     = HousingHelper.ReadOwnedAddress(EstateKind.Apartment);
+```
+
+There is **no list of open apartment rooms or Free Company chambers anywhere in the client**, from inside the ward
+or out; the game states the character's own and nothing else. Anything offering a room to walk into is limited to
+those, and to the lobby, which anyone may enter.
+
 - **What an interior is** comes from `HousingIndoorTerritory`. It is the only thing that separates an apartment
   from the private chambers it shares a level file with, and the only thing that says which of a district's three
   estate territories is the small, medium, or large one.
@@ -450,6 +534,9 @@ if (address.Owned)
 - **An interior the sheets leave unnamed** is named from the kind of place it is plus the interior design it is
   decorated in, both read from the game's own strings, so "Territory 1375" reads as
   "Private House (Dark Minimalist Style)".
+- **An interior design belongs to no district**, so `InteriorsOf` lists what a district really holds and
+  `ResolveInterior` maps a design onto the district's interior of the same size. A character standing in a design is
+  standing in that room under different decor, and the district comes from the indoor house above.
 
 `ClassifyEstate` takes a Dalamud teleport-list entry (`IAetheryteEntry`) and `IsOwnedHouse` takes the game's own
 `HouseId`; both have a loose-field overload behind them for testing the rule without a game.
@@ -809,7 +896,9 @@ exception, and no `try` will catch it.
 
 ### An object is in the data but not in the world
 
-- That is the expected case, not a bug: a level file lists every placement the game could switch on. Ask
+- Check `LevelObject.BelongsTo` first. Several territories share one level directory, and an object whose layer
+  belongs only to the others is not in this territory at all, whatever the character has done.
+- Otherwise that is the expected case, not a bug: a level file lists every placement the game could switch on. Ask
   `LayoutHelper.IsInstancePlaced`, and treat its **null** as "cannot say" rather than as "no".
 
 ### A name reads in the wrong language

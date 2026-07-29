@@ -28,11 +28,8 @@ public sealed class WindowChromeStyle
     /// How opaque the whole window is, from 0 to 1.
     /// </summary>
     /// <remarks>
-    /// Applied through ImGui's own alpha, so it scales everything drawn inside the window rather than only the surface
-    /// behind it: fading the plate alone would leave the text and the border at full strength over a see-through
-    /// background, which reads as a rendering fault rather than as a translucent window.<br/>
-    /// Pushed by <see cref="NoireWindowChrome.PushWindowStyle(WindowChromeStyle)"/>, because the alpha has to be in
-    /// force before the window is begun.
+    /// Spent on the surface alone, when the chrome is painted. Fading the whole window through ImGui's alpha would
+    /// take the text and the controls with it, dimming the window rather than making it translucent.
     /// </remarks>
     public float Opacity { get; set; } = 1f;
 

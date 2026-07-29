@@ -1,3 +1,4 @@
+using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using Lumina.Excel.Sheets;
 using System.Collections.Generic;
 
@@ -150,6 +151,39 @@ public static class ChocoboTaxiHelper
         }
 
         return porters;
+    }
+
+    /// <summary>
+    /// The chocobo taxi stands the logged-in character has registered, read from the client's own unlock bitmask,
+    /// together with whether that bitmask could be read at all.<br/>
+    /// Unlike the teleport list, this is client state that exists in full for any loaded character, so an empty set
+    /// from a successful read is a real answer: a character who has registered no stand yet. Only a read that could
+    /// not happen reports <c>Known</c> false. Framework thread, and only once the character's state is loaded.
+    /// </summary>
+    /// <returns>The registered stand ids, and whether the read produced a real answer.</returns>
+    public static unsafe (IReadOnlySet<uint> Unlocked, bool Known) ReadUnlockedStands()
+    {
+        var unlocked = new HashSet<uint>();
+        if (!CharacterHelper.IsStateReady)
+            return (unlocked, false);
+
+        var known = SafeExecutor.ExecuteSafely(() =>
+        {
+            var state = UIState.Instance();
+            var sheet = ExcelSheetHelper.GetSheet<ChocoboTaxiStand>();
+            if (state == null || sheet == null)
+                return false;
+
+            foreach (var stand in sheet)
+            {
+                if (stand.RowId != 0 && state->IsChocoboTaxiStandUnlocked(stand.RowId))
+                    unlocked.Add(stand.RowId);
+            }
+
+            return true;
+        }, false);
+
+        return (unlocked, known);
     }
 
     /// <summary>Resolves a stand's name in the client's own language, or empty when it does not resolve.</summary>

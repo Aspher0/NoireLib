@@ -393,7 +393,8 @@ public class Draw3DGameModelTests
         // Both anchors were verified in game: an undyed placement of the second renders Blood Red, of the
         // first Snow White, with the stain slot empty in both cases. The value is stated in the file for
         // both - dyeable furniture names its default stain rather than relying on a fallback.
-        ((int)game.GetFile<GameSgbFile>(sgbPath)!.DefaultStain).Should().Be(expected);
+        StainHelper.TryReadSceneDefaultStain(game.GetFile(sgbPath)!.Data, out var stain).Should().BeTrue();
+        ((int)stain).Should().Be(expected);
     }
 
     [Fact]

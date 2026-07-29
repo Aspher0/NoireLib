@@ -1,3 +1,4 @@
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -54,27 +55,13 @@ public static class GameSceneLoader
     public static Task<GameScenePart[]> LoadAsync(string sgbPath, int lod = 0, bool importVertexColors = false, CancellationToken ct = default)
         => Task.Run(() => Load(sgbPath, lod, importVertexColors), ct);
 
-    /// <summary>The scene's default stain, or null when no readable scene sits at the path.</summary>
-    /// <param name="sgbPath">Archive path of the scene.</param>
+    /// <inheritdoc cref="StainHelper.DefaultStainForScene"/>
     public static ushort? DefaultStain(string sgbPath)
-    {
-        if (string.IsNullOrWhiteSpace(sgbPath))
-            return null;
+        => StainHelper.DefaultStainForScene(sgbPath);
 
-        try
-        {
-            return NoireService.DataManager.GetFile<GameSgbFile>(sgbPath)?.DefaultStain;
-        }
-        catch (InvalidOperationException)
-        {
-            return null; // a scene this layout cannot read states nothing
-        }
-    }
-
-    /// <summary>The default stain of the scene placed beside a background model, resolved from the model's path.</summary>
-    /// <param name="modelGamePath">The model's archive path, under <c>bgcommon/</c>.</param>
+    /// <inheritdoc cref="StainHelper.DefaultStainForModel"/>
     public static ushort? DefaultStainForModel(string modelGamePath)
-        => GameSgbFile.PathBesideModel(modelGamePath) is { } sgbPath ? DefaultStain(sgbPath) : null;
+        => StainHelper.DefaultStainForModel(modelGamePath);
 
     private static void Collect(
         GameSgbFile scene,

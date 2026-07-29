@@ -42,8 +42,9 @@ public enum WarpTriggerKind : byte
 /// The quests the warp's condition names, empty when it names none. A <c>WarpCondition</c> lists up to four.
 /// </param>
 /// <param name="QuestThreshold">
-/// How many of <see cref="RequiredQuests"/> must be complete, clamped into range. Equal to the count it is an "all
-/// of"; below the count it is a genuine M-of-N, expressing an unlock reachable by several storylines.
+/// How many of <see cref="RequiredQuests"/> must be complete. The condition states this as a mode rather than a
+/// number, so it is only ever one (any one of them opens the warp, an unlock reachable by several storylines) or the
+/// full count (all of them are needed).
 /// </param>
 /// <param name="LogicId">
 /// The warp's <c>WarpLogic</c> row, which names the family it belongs to. Nearly every warp in the game shares one
@@ -70,6 +71,10 @@ public readonly record struct WarpDefinition(
 /// </summary>
 public static class WarpHelper
 {
+    // The WarpCondition.CompleteParam value meaning every quest the condition names must be complete. Any other
+    // value means any one of them will do; see Build for the rows that establish it.
+    private const byte AllOfMode = 1;
+
     /// <summary>
     /// The Warp rows that name a destination territory, which is the set of handler ids an interactable has to
     /// reference to be a warp trigger. Hand it to <see cref="EventNpcHelper.ScanHandlers"/> to keep that scan small.
@@ -310,8 +315,15 @@ public static class WarpHelper
 
     // The fare and the unlock come from the warp's WarpCondition. Its Gil is what the ride costs, not something the
     // character must already be carrying, so it is a price rather than a condition; the actual unlocks are the quests
-    // and the class level. CompleteParam says how many of the condition's quests must be complete for the warp to
-    // open, and is clamped into range so a sheet value outside it never states an impossible condition.
+    // and the class level.
+    // CompleteParam is the MODE the condition combines its quests in, not how many of them are needed. Only four
+    // rows in the sheet name more than one quest, and they settle it: the two airship rows and the ferry row name the
+    // three city envoy quests with param 2, and a character only ever completes the envoy quest of the city they
+    // started in, so any reading that demands two of them locks every inter-city airship for everyone. The row that
+    // names two quests with param 1 gates the Gold Saucer passage from Ishgard behind both being in Ishgard at all
+    // and having unlocked the Saucer, which genuinely needs both. So param 1 is "all of these" and param 2 is "any
+    // one of these"; anything else is read as "any one", the looser reading, since a wrong strict answer silently
+    // removes a passage while a wrong loose one merely offers a trip the game then declines.
     private static WarpDefinition Build(uint triggerBaseId, WarpTriggerKind triggerKind, uint warpRowId, Warp warp)
     {
         var gil = 0;
@@ -339,7 +351,7 @@ public static class WarpHelper
             if (required.Count > 0)
             {
                 quests = required;
-                threshold = required.Count == 1 ? 1 : Math.Clamp((int)condition.CompleteParam, 1, required.Count);
+                threshold = condition.CompleteParam == AllOfMode ? required.Count : 1;
             }
         }
 
