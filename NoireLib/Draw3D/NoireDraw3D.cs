@@ -7,6 +7,7 @@ using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Im;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -529,7 +530,7 @@ public static unsafe partial class NoireDraw3D
     /// <param name="screenPx">Cursor position in framebuffer pixels (ImGui mouse space).</param>
     /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
     public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize)
-        => GameRenderSources.IsPointOverVisibleAddon(screenPx, displaySize);
+        => AddonHelper.HitTest(screenPx, displaySize).IsValid;
 
     /// <summary>
     /// The diagnostic form of <see cref="IsCursorOverGameUi(Vector2, Vector2)"/>: also reports the name of the game
@@ -539,7 +540,11 @@ public static unsafe partial class NoireDraw3D
     /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
     /// <param name="addonName">Receives the matching addon's name, or null.</param>
     public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize, out string? addonName)
-        => GameRenderSources.IsPointOverVisibleAddon(screenPx, displaySize, out addonName);
+    {
+        var addon = AddonHelper.HitTest(screenPx, displaySize);
+        addonName = addon.IsValid ? addon.Name : null;
+        return addon.IsValid;
+    }
 
     /// <summary>
     /// Reads the game depth buffer at a screen pixel and reconstructs the world-space point of the nearest rendered

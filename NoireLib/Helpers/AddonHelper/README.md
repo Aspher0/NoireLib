@@ -9,6 +9,7 @@ You are reading the documentation for the `AddonHelper` static helper.
 - [Finding Addons](#finding-addons)
 - [Working with Nodes](#working-with-nodes)
 - [Reading Text and Values](#reading-text-and-values)
+- [Screen Geometry and Hit-Testing](#screen-geometry-and-hit-testing)
 - [Sending Callbacks](#sending-callbacks)
 - [Node Events, Hover and Cursor](#node-events-hover-and-cursor)
 - [Lifecycle Listeners](#lifecycle-listeners)
@@ -29,6 +30,8 @@ addons (`AtkUnitBase`) and their nodes (`AtkResNode`). It covers:
 - **Finding addons** by name, by lifecycle args, or by event data (raw or ready-checked).
 - **Node traversal** by id or by a chain of ids (including descending into component nodes).
 - **Reading** text and `AtkValue` data, with readable formatting for logging.
+- **Screen geometry** - node and addon rects in framebuffer pixels, and a hit test answering "is this point over
+  native game UI".
 - **Sending callbacks** with automatic marshalling of managed values into `AtkValue`.
 - **Events** - node events, hover handlers, cursor-on-hover, and addon lifecycle listeners.
 - **Ready-waiting** - run an action (or `await`) as soon as an addon is loaded and ready.
@@ -40,8 +43,10 @@ It ships as a set of partial files:
 |------|----------------|
 | `AddonHelper.cs` | Pointer-level primitives (find, traverse, read, callback, events). |
 | `AddonHelper.Convenience.cs` | Fluent entry points, typed access, lifecycle listeners, ready-waiting. |
+| `AddonHelper.Geometry.cs` | Screen rects, native hide-UI state, addon enumeration, hit test. |
 | `NoireAddon.cs` | Null-safe fluent wrapper around an addon. |
 | `NoireAddonNode.cs` | Null-safe fluent wrapper around a node. |
+| `VisibleAddonEnumerator.cs` | Allocation-free walk over the visible addons. |
 | `AddonHelperExtensions.cs` | Bridges Dalamud addon types into the fluent wrappers. |
 
 ---
@@ -165,6 +170,61 @@ string many = AddonHelper.FormatValues(valuesPtr, count);  // e.g. "[[0]=42, [1]
 ```
 
 `TryReadValue` handles Null, Bool, Int/UInt, Int64/UInt64, Float, String/ManagedString, and Pointer types.
+
+---
+
+## Screen Geometry and Hit-Testing
+
+Rects are `Vector4` in framebuffer pixels (the ImGui mouse space Dalamud shares with the game), `xy` = min, `zw` = max.
+These are addon reads, so unlike the object table they are safe from the draw thread as well as the framework thread.
+
+```csharp
+// Node rects. ScreenRect applies the node's own scale, not the owning addon's Scale.
+Vector4 nodeRect = addon.GetNode(5u).ScreenRect;
+bool usable      = addon.GetNode(5u).TryGetScreenRect(out Vector4 rect);   // false when hidden or without area
+
+// A node keeps its own visible flag set while a hidden parent hides it on screen.
+bool onScreen = addon.GetNode(5u).IsEffectivelyVisible;
+
+// The addon's root rect, with the addon's Scale applied.
+Vector4 addonRect = addon.ScreenRect;
+```
+
+```csharp
+// The game's own hide-UI toggle.
+bool uiShown = AddonHelper.IsNativeUiVisible();
+
+// Every loaded, visible addon with usable bounds. Allocation-free, so it is safe per frame.
+foreach (NoireAddon visible in AddonHelper.VisibleAddons(ImGui.GetIO().DisplaySize))
+    NoireLogger.LogInfo($"{visible.Name} at {visible.ScreenRect}");
+
+// Which addon owns this point, or an invalid wrapper when the point is over no game UI.
+NoireAddon hit = AddonHelper.HitTest(ImGui.GetMousePos(), ImGui.GetIO().DisplaySize);
+if (hit.IsValid)
+    NoireLogger.LogInfo($"Cursor is over {hit.Name}");
+```
+
+`HitTest` matches only visible **collision nodes**, the regions the game itself hit-tests, so the transparent margins
+around HUD elements (the empty space beside action-bar slots, a window's padding) do not catch the point. Component
+nodes are recursed into, since a component's inner controls live in its own node list.
+
+Both `VisibleAddons` and `HitTest` skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info)
+by default, since each covers the whole viewport. Every knob is a named optional parameter:
+
+```csharp
+// Keep the fullscreen overlays.
+AddonHelper.HitTest(point, displaySize, fullScreenSkip: 0f);
+
+// Report an addon even while the native UI is hidden.
+AddonHelper.HitTest(point, displaySize, respectNativeUiToggle: false);
+
+// Drop a collision node with no visible content beside it on every addon, not just action bars.
+AddonHelper.HitTest(point, displaySize, phantomCollisions: AddonPhantomCollisionScope.All);
+```
+
+`AddonPhantomCollisionScope` defaults to `ActionBars`: an action bar keeps a hotbar-number badge's collision node live
+while its label and arrows are switched off, so that collision is a hit region for a control nobody can see.
+`None` keeps every visible collision node, `All` applies the gate everywhere.
 
 ---
 
@@ -302,6 +362,8 @@ implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 - Every wrapper member is safe on an invalid/not-ready target: getters return sensible defaults
   (`""`, `0`, `default`) and actions become no-ops returning `false`/`null`.
 - Pointer-level `Try*` methods follow the standard bool + `out` pattern and never dereference null.
+- The geometry surface fails soft: `HitTest` returns an invalid wrapper and `VisibleAddons` ends the walk when a torn
+  or mid-load addon faults, so a UI probe never takes a frame down.
 - Prefer the fluent wrappers to avoid `unsafe` blocks entirely; drop to pointers only when you need them.
 
 ---
@@ -319,12 +381,18 @@ implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 `WaitUntilReadyAsync`, `RegisterLifecycleListener`, `RegisterEvent`, `HasRegisteredEvents`,
 `UnregisterEvents`, `UnregisterAllEvents`.
 
-**`NoireAddon`** - `IsValid`, `IsReady`, `IsVisible`, `Name`, `X`, `Y`, `Scale`, `Width`, `Height`,
+**`AddonHelper` (geometry)** - `IsNativeUiVisible`, `VisibleAddons`, `HitTest`, `DefaultFullScreenSkip`.
+
+**`NoireAddon`** - `IsValid`, `IsReady`, `IsVisible`, `Name`, `X`, `Y`, `Scale`, `Width`, `Height`, `ScreenRect`,
 `RootNode`, `GetNode`, `ReadText`, `TryReadText`, `SendCallback`, `Show`, `Hide`, `Close`.
 
-**`NoireAddonNode`** - `IsValid`, `NodeId`, `IsTextNode`, `IsComponentNode`, `IsVisible`, `Width`, `Height`,
-`ScreenX`, `ScreenY`, `Text`, `TryReadText`, `TrySetText`, `SetVisible`, `Show`, `Hide`, `SetAlpha`,
-`AddEvent`, `AddClickEvent`, `AddHoverEvents`, `AddCursorOnHover`, `Addon`.
+**`NoireAddonNode`** - `IsValid`, `NodeId`, `IsTextNode`, `IsComponentNode`, `IsVisible`, `IsEffectivelyVisible`,
+`Width`, `Height`, `ScreenX`, `ScreenY`, `ScreenRect`, `TryGetScreenRect`, `Text`, `TryReadText`, `TrySetText`,
+`SetVisible`, `Show`, `Hide`, `SetAlpha`, `AddEvent`, `AddClickEvent`, `AddHoverEvents`, `AddCursorOnHover`, `Addon`.
+
+**`VisibleAddonEnumerator`** - `Current`, `GetEnumerator`, `MoveNext`.
+
+**`AddonPhantomCollisionScope`** (`NoireLib.Enums`) - `None`, `ActionBars`, `All`.
 
 ---
 
