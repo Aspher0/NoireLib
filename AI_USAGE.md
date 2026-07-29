@@ -1,7 +1,7 @@
 # Disclaimer / TLDR
 
 This library is a hobby/passion project that I make for fun in order to cut boilerplate and solve issues I usually have.
-Whichever way any part of it was made, the result is mine and for my own usage.
+Whichever way any part of it was made, the result is mine and for my own usage first.
 If AI can make it better and/or faster, then I will use it.
 
 NoireLib comes with no warranty, if you are unsure about any of this, then please do not use it.
