@@ -30,4 +30,4 @@ Most of the modules, helpers, and systems have been tested by hand in a private 
 best as I can. Exceptions are systems requiring another OS (Linux, macOS) or a second PC.
 AI periodically checks over the code looking for errors and inconsistencies.
 
-Aspher.
+- Aspher.
