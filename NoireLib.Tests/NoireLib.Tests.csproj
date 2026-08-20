@@ -7,6 +7,9 @@
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Use_DalamudPackager>false</Use_DalamudPackager>
+    <!-- The hook guard emits IL for detour signatures that carry pointer parameters, so the tests that
+         cover it declare pointer delegates. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Tests exercise the Windows-only NoireLib assembly and only ever run on Windows. -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
   </PropertyGroup>

@@ -1,3 +1,4 @@
+using Dalamud.Bindings.ImGui;
 using FluentAssertions;
 using NoireLib.UI;
 using System.Runtime.Versioning;
@@ -91,6 +92,35 @@ public sealed class NoireContentDrawTests : IClassFixture<UiHarness>
         var result = harness.Draw(() => content.Draw());
 
         result.AllocatedBytes.Should().Be(0L);
+    }
+
+    /// <summary>
+    /// A caller that wraps the whole <see cref="NoireContent.Draw"/> call - a confirm dialog's body, a toast's
+    /// message - relies on the reserved height matching however many lines the text actually wraps to. A modal that
+    /// under-reserved drew its separator and buttons through the middle of the second line instead of below it.
+    /// </summary>
+    [Fact]
+    public void Draw_WrappedText_ReservesTheHeightOfEveryWrappedLine()
+    {
+        const float wrapWidth = 50f;
+        var content = new NoireContent().AddText(
+            "This sentence is long enough that it has to wrap across several lines at a narrow width.");
+
+        var advance = 0f;
+        var singleLine = 0f;
+
+        harness.Draw(() =>
+        {
+            var startY = ImGui.GetCursorPosY();
+            NoireLayout.WrapText(wrapWidth, content, static c => c.Draw());
+            advance = ImGui.GetCursorPosY() - startY;
+            singleLine = ImGui.GetTextLineHeight();
+        });
+
+        // Unfixed, the cursor lands back after exactly one line's height no matter how the text actually wrapped,
+        // since the old measurement never looked at the wrap width at all. A real multi-line wrap at this width
+        // reserves several times that.
+        advance.Should().BeGreaterThan(singleLine * 3f);
     }
 
     [Fact]

@@ -1,13 +1,8 @@
-// NoireLib Draw3D - shading for materials loaded out of the game's archives.
+// NoireLib Draw3D: shading for materials loaded out of the game's archives.
 //
-// The colour map's alpha channel is a dyeable mask, not coverage. Where it is high the texture is
-// authored near-neutral so a colour can be applied to it; where it is low the texture already carries
-// its final colour and must be left alone. Tinting the whole surface darkens that fixed detail, which
-// on a piece of furniture is most of what you see, and blending on this alpha erases it outright.
-// So the surface is drawn opaque and the tint is confined to the masked area.
-//
-// Unlike the stylized Lit shader, this one is trying to match the game rather than to look good on its
-// own, so it works in linear light and spends a fixed light budget instead of summing terms freely.
+// The colour map's alpha channel is a dyeable mask, not coverage. Where it is high the texture is authored
+// near-neutral and takes a colour; where it is low it already carries its final colour. The surface is therefore
+// drawn opaque and the tint is confined to the masked area.
 //
 // Params0 : xyz = dye colour applied to the masked area, w = how strongly to apply it (0 = none).
 // Params2 : x = normal map strength (0 = geometric normal only), y = specular strength (0 = matte),
@@ -16,79 +11,12 @@
 // AuxTex0 = normal map, AuxTex1 = specular/mask map. A strength of 0 means the map was not bound.
 #include "Common.hlsli"
 
-// The game stores colour maps sRGB-encoded and this renderer uploads them as UNORM, so a sample returns
-// the encoded value rather than a linear one. Multiplying light into an encoded value brightens midtones,
-// which is why an asset lit here reads paler than the same asset in game. Lighting therefore happens in
-// linear space and the result is re-encoded on the way out, because the layer this shader writes into
-// holds encoded values too. At full light the pair is an exact round trip, so an unlit-looking surface
-// keeps the texture's own colours.
-float3 SrgbToLinear(float3 c)
-{
-    c = saturate(c);
-    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
-}
-
-float3 LinearToSrgb(float3 c)
-{
-    c = saturate(c);
-    return c <= 0.0031308 ? c * 12.92 : (1.055 * pow(c, 1.0 / 2.4)) - 0.055;
-}
-
-// The authored tangent frame, used whenever the mesh carries one (tangent w is its handedness and is 0
-// only when no frame was imported). This is what matches the game: its shading normal was measured about
-// ten degrees off ours on strong relief with the derivative frame below, and the map's X and Y only mean
-// what the author saw inside the frame they were painted for.
-float3 ApplyNormalMapAuthored(float3 geometricNormal, float4 worldTangent, float3 tangentNormal, float strength)
-{
-    float3 n = normalize(geometricNormal);
-    if (strength <= 0.0)
-        return n;
-
-    // Gram-Schmidt keeps the frame orthogonal after interpolation; a tangent that collapsed onto the
-    // normal leaves the surface normal standing rather than a normalize() of zero.
-    float3 t = worldTangent.xyz - (n * dot(n, worldTangent.xyz));
-    float lenSq = dot(t, t);
-    if (lenSq < 1e-8)
-        return n;
-
-    t *= rsqrt(lenSq);
-    float3 b = cross(n, t) * worldTangent.w;
-
-    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
-    return normalize((t * m.x) + (b * m.y) + (n * m.z));
-}
-
-// Tangent frame recovered from screen-space derivatives, the fallback for meshes that carry no authored
-// frame (primitives, imports without tangents). Close but not exact: it reconstructs the frame from how
-// the UVs happen to land on the screen, which is several degrees off the authored frame where relief is
-// strong. It costs nothing at rest: with a zero-strength normal map the geometric normal is returned
-// untouched.
-float3 ApplyNormalMap(float3 geometricNormal, float3 worldPos, float2 uv, float3 tangentNormal, float strength)
-{
-    float3 n = normalize(geometricNormal);
-    if (strength <= 0.0)
-        return n;
-
-    float3 dp1 = ddx(worldPos);
-    float3 dp2 = ddy(worldPos);
-    float2 duv1 = ddx(uv);
-    float2 duv2 = ddy(uv);
-
-    // Degenerate uv derivatives (a face with no uv variation across the quad) leave the frame undefined,
-    // so the geometric normal stands rather than a normalize() of zero.
-    float det = (duv1.x * duv2.y) - (duv2.x * duv1.y);
-    if (abs(det) < 1e-12)
-        return n;
-
-    float3 t = ((dp1 * duv2.y) - (dp2 * duv1.y)) / det;
-    t = normalize(t - (n * dot(n, t)));          // Gram-Schmidt against the interpolated normal
-    float3 b = cross(n, t);
-
-    // Strength scales the tangent-space tilt rather than blending toward flat, so it stays meaningful above
-    // 1 (an exaggerated surface) instead of clamping there.
-    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
-    return normalize((t * m.x) + (b * m.y) + (n * m.z));
-}
+// Colour maps are sRGB-encoded and uploaded as UNORM, so a sample returns the encoded value. Lighting runs in linear
+// space and the result is re-encoded, since the layer this writes into holds encoded values too; at full light the
+// pair is an exact round trip.
+//
+// Normal mapping prefers the authored tangent frame, matching the game, and falls back to the
+// screen-space derivative frame when the mesh carries none.
 
 struct VsIn
 {
@@ -121,45 +49,40 @@ PsIn vs(VsIn v)
     o.worldPos    = wp.xyz;
     o.clipZW      = o.svPos.zw;
 
-    // The handedness rides through untouched: it is a convention, not a direction, so the world transform
-    // has no business with it, and w == 0 is the "no authored frame" signal the pixel shader keys on.
+    // Handedness rides through untransformed: it is a convention, not a direction, and w == 0 is the
+    // "no authored frame" signal the pixel shader keys on.
     o.worldTangent = float4(mul(float4(v.tangent.xyz, 0.0), World).xyz, v.tangent.w);
     return o;
 }
 
 float4 ps(PsIn i) : SV_Target
 {
-    // Opaque surface: an occluded pixel has to be killed, because alpha carries no coverage here.
+    // Alpha carries no coverage here, so an occluded pixel must be discarded rather than blended away.
     float vis = DepthVisibility(DisplayUv(i.svPos), i.clipZW.y, Params1.x);
     if (vis < 0.5)
         discard;
 
     float4 texel = BaseTex.Sample(BaseSamp, i.uv);
 
-    // Alpha is read as data. The authored values are effectively two-valued, so this recovers the mask
-    // while still tolerating filtered edges between the two regions.
+    // The authored alpha is effectively two-valued, so this recovers the mask while tolerating filtered edges.
     float mask = saturate(texel.a) * saturate(Params0.w);
 
     float3 albedo = SrgbToLinear(texel.rgb) * SrgbToLinear(i.color.rgb);
 
-    // Two readings of how a dye meets the masked area. The comparison against known dyes in game has been
-    // made, and the game multiplies: three stains sampled in its own G-buffer land within 0.004 per channel
-    // under reference 0, using only the stain table's colours.
-    //   reference 0  - the dye multiplies the authored colour. This is what the game does.
-    //   reference > 0 - the authored colour is divided by that reference first, so an area authored at the
-    //                   reference lands on the dye exactly. An authoring tool, not a model of the game.
-    // Params0.rgb arrives in LINEAR light and is used as it comes, matching GameGBuffer.hlsl so the injected
-    // and ordinary paths cannot land on different colours. Which encoding a colour was in is knowable on the
-    // CPU and not here: a dye from the game's table is display-encoded, a material's diffuse constant is not,
-    // and both reach this as three floats in 0..1. Converting here assumed the first and darkened the second.
+    // Two readings of how a dye meets the masked area:
+    //   reference 0   the dye multiplies the authored colour, as the game does (three stains sampled
+    //                 from its own G-buffer land within 0.004 per channel).
+    //   reference > 0 the authored colour is divided by that reference first, so an area authored at the reference
+    //                 lands on the dye exactly. An authoring aid, not a model of the game.
+    // Params0.rgb arrives in LINEAR light and is used as it comes, matching GameGBuffer.hlsl so the injected and
+    // ordinary paths cannot land on different colours. Only the CPU knows which encoding a colour came in.
     float3 dyeMul = Params0.rgb;
     if (Params2.z > 0.0)
         dyeMul /= max(SrgbToLinear(Params2.zzz).r, 1e-4);
 
     albedo *= lerp(float3(1.0, 1.0, 1.0), dyeMul, mask);
 
-    // Normal map: red and green carry the tangent-space normal, so z is reconstructed rather than read.
-    // The blue channel is left alone here because its meaning varies by shader package.
+    // Red and green carry the tangent-space normal, so z is reconstructed; blue's meaning varies by shader package.
     float2 nxy = (AuxTex0.Sample(BaseSamp, i.uv).rg * 2.0) - 1.0;
     float3 tangentNormal = float3(nxy, sqrt(saturate(1.0 - dot(nxy, nxy))));
     float3 n = i.worldTangent.w != 0.0
@@ -169,32 +92,26 @@ float4 ps(PsIn i) : SV_Target
     float3 lightDir = normalize(LightDirIntensity.xyz);
     float  ndl = dot(n, lightDir) * 0.5 + 0.5;   // half-Lambert
 
-    // Ambient and directional may not sum past unity: with the default intensities a surface facing the
-    // light would otherwise be multiplied by 1.2 and read visibly brighter than the same asset in game.
-    // The divisor engages only when the total would exceed one, so turning both intensities down still
-    // dims the surface instead of being normalized away.
+    // Ambient and directional may not sum past unity, or a lit surface reads brighter than the same asset in game.
+    // The divisor engages only above one, so turning both intensities down still dims instead of normalizing away.
     float  ambient = Ambient.a;
     float  direct  = LightDirIntensity.w;
     float  budget  = max(ambient + direct, 1.0);
     float3 light   = ((Ambient.rgb * ambient) + (LightColor.rgb * direct * ndl * ndl)) / budget;
 
-    // Params2.w takes this renderer's lighting out of the picture entirely, leaving the surface at the
-    // colours the texture and dye give it. That is not the game's lighting, it is the absence of ours:
-    // its purpose is to remove one variable while judging the others, since a difference in colour and a
-    // difference in light are otherwise impossible to tell apart by eye.
+    // Params2.w removes this renderer's lighting entirely, leaving the surface at the colours the texture and dye
+    // give it. That is the absence of lighting, not the game's own.
     light = lerp(light, float3(1.0, 1.0, 1.0), saturate(Params2.w));
 
     float3 shaded = albedo * light;
 
-    // Specular map. The community shader reference names green as roughness and red as a specular mask,
-    // and marks the mask channels uncertain; the game leaves these surfaces matte, so this is off unless
-    // asked for. Sampled unconditionally because the strength is zero when the map is absent, which makes
-    // the term vanish without an unbound slot ever reaching the arithmetic.
+    // Green is roughness and red a specular mask, per the community shader reference, which marks the mask
+    // channels uncertain; the game leaves these surfaces matte, so the term is off unless asked for. Sampled
+    // unconditionally, since a zero strength makes it vanish without an unbound slot reaching the arithmetic.
     float4 spec = AuxTex1.Sample(BaseSamp, i.uv);
     float  roughness = saturate(spec.g);
 
-    // Roughness, not gloss: a higher value spreads the highlight wider and dims it, rather than tightening
-    // it. Reading this channel the other way round is what made the first attempt look lacquered.
+    // Roughness, not gloss: a higher value spreads the highlight wider and dims it rather than tightening it.
     float  gloss = lerp(96.0, 4.0, roughness);
     float  energy = (gloss + 8.0) / 104.0;
     float3 view = normalize(EyePosTime.xyz - i.worldPos);

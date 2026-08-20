@@ -7,15 +7,13 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A field that collects short strings as chips. Typing and pressing Enter adds one, pasting a comma-separated list
-/// adds all of them, backspace on an empty field takes the last one back for editing rather than destroying it, and
-/// anything refused says why instead of vanishing.
+/// A field that collects short strings as chips: Enter adds one, a separated run adds all of them, and backspace on
+/// an empty field takes the last chip back for editing.
 /// </summary>
 /// <remarks>
-/// The rules are all yours: what separates a pasted list, whether duplicates are allowed, how many tags fit, how long
-/// one may be, and a <see cref="Validate"/> callback for anything the field cannot know. Every refusal comes back as a
-/// <see cref="TagRejection"/> rather than as silence.<br/>
-/// Suggestions are matched with <see cref="FuzzyMatcher"/> and shown under the field while it has focus.
+/// Separators, duplicates, tag count and tag length are configurable, along with a <see cref="Validate"/> callback,
+/// and every refusal is reported as a <see cref="TagRejection"/>. Suggestions are matched with
+/// <see cref="FuzzyMatcher"/> and shown under the field while it has focus.
 /// </remarks>
 /// <example>
 /// <code>
@@ -32,6 +30,9 @@ namespace NoireLib.UI;
 [NoireFacadeFactory]
 public sealed class NoireTagInput
 {
+    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
+    private const string CallbackFault = "A tag chip hook threw.";
+
     private readonly List<string> tags = new();
     private readonly List<string> suggestionMatches = new();
 
@@ -103,10 +104,17 @@ public sealed class NoireTagInput
     /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
     /// </summary>
     /// <remarks>
-    /// The per-widget override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
-    /// this field unmarked while the rest of the interface keeps its mark.
+    /// A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves this field unmarked while
+    /// the rest of the interface keeps its mark.
     /// </remarks>
     public FocusStyle? FocusStyle { get; set; }
+
+    /// <summary>
+    /// Replaces each chip's painting, called once per visible chip, with layout, hit testing, removal and the
+    /// off-screen cull still handled by NoireUI.
+    /// </summary>
+    /// <remarks>A chip's size is measured from the tag and the theme before painting and the hook cannot change it.</remarks>
+    public Action<UiTagChipDraw>? ChipDraw { get; set; }
 
     /// <summary>Whether the reason a tag was refused is shown under the field.</summary>
     public bool ShowErrors { get; set; } = true;
@@ -200,8 +208,8 @@ public sealed class NoireTagInput
     /// Removes the tag at a position.
     /// </summary>
     /// <remarks>
-    /// The one that removes the right chip when <see cref="AllowDuplicates"/> is on: <see cref="Remove(string)"/>
-    /// takes the first tag that compares equal, which is not the one the user clicked.
+    /// With <see cref="AllowDuplicates"/> on, <see cref="Remove(string)"/> takes the first tag that compares equal
+    /// instead of the one at this position.
     /// </remarks>
     /// <param name="index">The position to remove.</param>
     /// <returns>True when there was a tag there.</returns>
@@ -235,8 +243,8 @@ public sealed class NoireTagInput
         return true;
     }
 
-    /// <summary>Replaces every tag, for restoring a persisted list.</summary>
-    /// <param name="values">The tags to hold. Anything the rules refuse is dropped.</param>
+    /// <summary>Replaces every tag.</summary>
+    /// <param name="values">The tags to hold, with anything the rules refuse dropped.</param>
     public void SetTags(IEnumerable<string>? values)
     {
         tags.Clear();
@@ -310,8 +318,11 @@ public sealed class NoireTagInput
     }
 
     /// <summary>
-    /// Decides whether a candidate can be added, and why not when it cannot.
+    /// Decides whether a candidate can be added.
     /// </summary>
+    /// <param name="candidate">The normalized tag to test.</param>
+    /// <param name="message">The reason for a refusal, empty when accepted.</param>
+    /// <returns>The refusal reason, or <see cref="TagRejection.None"/>.</returns>
     internal TagRejection Evaluate(string candidate, out string message)
     {
         message = string.Empty;
@@ -407,8 +418,7 @@ public sealed class NoireTagInput
         NoireUI.EnsureFrameServices();
         changedThisFrame = false;
 
-        // Not the content region: that reports the window's right edge, so a field inside a page that centres its
-        // content in a narrower column would lay its chips out past the end of it.
+        // Not the ImGui content region: it reports the window's right edge, past a narrower centred column.
         var width = Width ?? NoireLayout.ContentWidth();
         var shake = ShakeOnReject ? NoireAnim.Shake(Id, "reject") : 0f;
 
@@ -432,20 +442,16 @@ public sealed class NoireTagInput
         if (tags.Count == 0)
             return;
 
-        // Laid out with the row primitive rather than handed to Flow, because a chip needs its index: with duplicates
-        // allowed, two chips carrying the same text would otherwise share one ImGui id and only the first of them
-        // would ever receive a click.
+        // Each chip needs its index for its ImGui id: with duplicates allowed, two chips of the same text would
+        // otherwise share one id and only the first would receive a click.
         var removing = -1;
 
-        // Resolved once for the row rather than per chip: the theme answers the same padding and the same colours for
-        // every chip in a frame, and a field can hold a great many of them.
+        // The theme answers the same padding and colours for every chip in a frame, so they are resolved once.
         var theme = NoireTheme.Current;
         var padding = theme.ResolveFramePadding();
 
         for (var index = 0; index < tags.Count; index++)
         {
-            // Measured once and handed on: the measurement itself is cached, so a repeat lookup costs a dictionary
-            // hit rather than a walk over the glyphs.
             var size = MeasureChip(tags[index], padding);
 
             NoireLayout.FlowItem(size.X, index == 0, width: width);
@@ -456,14 +462,13 @@ public sealed class NoireTagInput
 
         ImGui.NewLine();
 
-        // Applied after the row, since removing a tag mid-loop shifts every chip after it onto the index of the one
-        // that is still being drawn.
+        // Applied after the row: removing mid-loop shifts later chips onto the index still being drawn.
         if (removing >= 0)
             RemoveAt(removing);
     }
 
     /// <summary>
-    /// How much room a chip takes: its label, plus the padding around it and the room the cross sits in.
+    /// The room a chip takes: its label, the padding around it and the space for the cross.
     /// </summary>
     /// <param name="tag">The tag the chip holds.</param>
     /// <param name="padding">The frame padding already resolved from the theme.</param>
@@ -474,10 +479,7 @@ public sealed class NoireTagInput
     /// <summary>
     /// Draws one chip, reporting whether its cross was clicked.
     /// </summary>
-    /// <remarks>
-    /// Keyed on the index rather than the text: two chips holding the same tag are two different chips, and an id
-    /// built from the text would make them one, so only the first would be clickable.
-    /// </remarks>
+    /// <remarks>Keyed on the index, since an id built from the text would merge two chips holding the same tag.</remarks>
     /// <param name="tag">The tag the chip holds.</param>
     /// <param name="index">The chip's position, used to build its id.</param>
     /// <param name="size">The chip's size, measured by the caller laying the row out.</param>
@@ -490,9 +492,8 @@ public sealed class NoireTagInput
         var clicked = ImGui.InvisibleButton(UiIds.For("###NoireTagChip_", Id, index), size);
         var hovered = ImGui.IsItemHovered();
 
-        // A chip scrolled out of the page still costs two rounded rects, a label and a cross, that ImGui then throws
-        // away against the clip rect. The layout still runs for every chip, since a wrapped row does not know where
-        // the next one lands until this one is placed, but the painting does not.
+        // Painting a chip outside the clip rect is wasted work, but the layout still has to run for it since a
+        // wrapped row cannot place the next chip otherwise.
         if (!ImGui.IsRectVisible(origin, origin + size))
         {
             ImGui.SetCursorScreenPos(origin);
@@ -503,33 +504,49 @@ public sealed class NoireTagInput
 
         var accent = theme.Resolve(ThemeColor.Accent);
 
-        NoireShapes.Rect(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.35f : 0.20f), CornerShape.Rounded, size.Y * 0.5f);
-        NoireShapes.RectOutline(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.85f : 0.45f), 1f, CornerShape.Rounded, size.Y * 0.5f);
-
-        // Both the label and the cross hang off the same line: the text's optical centre, not the chip's geometric
-        // one. Centring the label on the chip would sit it a couple of pixels low, since its line reserves room
-        // under the baseline that a tag rarely uses, and the cross would then sit above the letters.
+        // Label and cross share the text's optical centre; the chip's geometric centre sits the label low because
+        // the text line reserves room under the baseline.
         var middle = origin.Y + (size.Y * 0.5f);
 
-        ImGui.SetCursorScreenPos(new Vector2(origin.X + padding.X, middle - NoireText.CenterOffset()));
-
-        // Wrapping is disabled for the label, since the chip was measured assuming one line. A page that sets a wrap
-        // position for its prose would otherwise wrap the last chip on a row character by character, inside a pill
-        // drawn at the full width of the word.
-        ImGui.PushTextWrapPos(-1f);
-        NoireText.Draw(tag);
-        ImGui.PopTextWrapPos();
-
-        // A cross drawn rather than typed, so it needs no icon font and lines up with the chip whatever the text size.
+        // The cross is drawn rather than typed, so it needs no icon font and follows the text size.
         var cross = NoireUI.Scaled(3.5f);
-        var centre = new Vector2(origin.X + size.X - padding.X - cross, middle);
-        var colour = ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Text), hovered ? 0.95f : 0.55f);
+        var crossCentre = new Vector2(origin.X + size.X - padding.X - cross, middle);
 
-        Span<Vector2> down = [centre - new Vector2(cross, cross), centre + new Vector2(cross, cross)];
-        Span<Vector2> up = [centre + new Vector2(-cross, cross), centre + new Vector2(cross, -cross)];
+        if (ChipDraw != null)
+        {
+            using var draw = UiDraw.Begin();
 
-        NoireShapes.Stroke(down, colour, NoireUI.Scaled(1.4f), closed: false);
-        NoireShapes.Stroke(up, colour, NoireUI.Scaled(1.4f), closed: false);
+            if (!draw.List.IsNull)
+            {
+                var args = new UiTagChipDraw(
+                    draw.List, origin, origin + size, index, tag, hovered, accent,
+                    ColorHelper.ScaleAlpha(accent, hovered ? 0.35f : 0.20f),
+                    ColorHelper.ScaleAlpha(accent, hovered ? 0.85f : 0.45f),
+                    size.Y * 0.5f, padding, crossCentre, cross,
+                    ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Text), hovered ? 0.95f : 0.55f));
+                UiHook.Invoke(ChipDraw, args, nameof(NoireTagInput), CallbackFault);
+            }
+        }
+        else
+        {
+            NoireShapes.Rect(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.35f : 0.20f), CornerShape.Rounded, size.Y * 0.5f);
+            NoireShapes.RectOutline(origin, origin + size, ColorHelper.ScaleAlpha(accent, hovered ? 0.85f : 0.45f), 1f, CornerShape.Rounded, size.Y * 0.5f);
+
+            ImGui.SetCursorScreenPos(new Vector2(origin.X + padding.X, middle - NoireText.CenterOffset()));
+
+            // The chip was measured as a single line, so a page-level wrap position must not reach the label.
+            ImGui.PushTextWrapPos(-1f);
+            NoireText.Draw(tag);
+            ImGui.PopTextWrapPos();
+
+            var colour = ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.Text), hovered ? 0.95f : 0.55f);
+
+            Span<Vector2> down = [crossCentre - new Vector2(cross, cross), crossCentre + new Vector2(cross, cross)];
+            Span<Vector2> up = [crossCentre + new Vector2(-cross, cross), crossCentre + new Vector2(cross, -cross)];
+
+            NoireShapes.Stroke(down, colour, NoireUI.Scaled(1.4f), closed: false);
+            NoireShapes.Stroke(up, colour, NoireUI.Scaled(1.4f), closed: false);
+        }
 
         ImGui.SetCursorScreenPos(origin);
         ImGui.Dummy(size);
@@ -555,8 +572,7 @@ public sealed class NoireTagInput
 
         NoireFocus.OnLast(FocusStyle);
 
-        // Checked before committing: a separator typed or pasted mid-run splits one paste into the whole list
-        // rather than leaving it a single tag holding commas.
+        // Checked before committing, so a pasted run splits into several tags instead of one tag holding separators.
         if (!committed && input.Length > 0 && ContainsSeparator(input))
         {
             AddRange(input);
@@ -570,8 +586,7 @@ public sealed class NoireTagInput
             return;
         }
 
-        // Backspace on an empty field takes the last tag back rather than deleting it outright. Deleting is what the
-        // chip's own cross is for; this is for fixing a typo in something already committed.
+        // Backspace on an empty field takes the last tag back for editing; the chip's cross is what deletes.
         if (active && input.Length == 0 && tags.Count > 0 && ImGui.IsKeyPressed(ImGuiKey.Backspace, false))
             PopLastForEditing();
     }
@@ -595,8 +610,7 @@ public sealed class NoireTagInput
             NoireAnim.Trigger(Id, "reject");
         }
 
-        // Committing should not cost the field its focus, or adding several tags in a row means clicking back into it
-        // between each one.
+        // Focus is kept so several tags can be added in a row without clicking back into the field.
         focusInput = true;
     }
 
@@ -631,7 +645,7 @@ public sealed class NoireTagInput
 
         Span<int> matched = stackalloc int[FuzzyMatcher.MaxQueryLength];
 
-        // A suggestion is one row of a list and never wraps, for the same reason a chip's label does not.
+        // A suggestion is one row of a fixed height, so it must not wrap either.
         ImGui.PushTextWrapPos(-1f);
 
         foreach (var suggestion in suggestionMatches)

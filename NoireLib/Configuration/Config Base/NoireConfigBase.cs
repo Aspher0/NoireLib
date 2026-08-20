@@ -1,12 +1,16 @@
-using Castle.DynamicProxy;
+﻿using Castle.DynamicProxy;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NoireLib.Configuration.Migrations;
 using NoireLib.Helpers;
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
+using System.Threading.Tasks;
 
 namespace NoireLib.Configuration;
 
@@ -17,16 +21,15 @@ namespace NoireLib.Configuration;
 public abstract class NoireConfigBase : INoireConfig
 {
     /// <summary>
-    /// Suppresses auto-save while the member copy that transfers a loaded configuration onto its auto-save wrapper is
-    /// running on the calling thread. Thread-static, not process-wide, so a save raised on another thread by an
-    /// unrelated consumer still persists, and copies of two different configuration types can overlap.
+    /// Suppresses auto-save on the calling thread only, while the member copy that transfers a loaded configuration
+    /// onto its auto-save wrapper runs.
     /// </summary>
     [ThreadStatic]
     internal static bool IsInternalCopying;
 
     /// <summary>
-    /// Backing field for <see cref="IsDegraded"/>. Protected, not private, so the auto-save wrapper's reflected
-    /// member copy can see it.
+    /// Backing field for <see cref="IsDegraded"/>, protected so the auto-save wrapper's reflected member copy can
+    /// see it.
     /// </summary>
     protected bool degradedLoad;
 
@@ -36,16 +39,73 @@ public abstract class NoireConfigBase : INoireConfig
     protected string? degradedBackupPath;
 
     /// <summary>
-    /// Whether the degraded-state explanation has already been logged. Deliberately private, unlike
-    /// <see cref="degradedLoad"/>: it must not carry across the member copy, so the copy's own first refusal still
-    /// logs in full.
+    /// Whether the degraded-state explanation has already been logged, kept private so it does not carry across the
+    /// member copy.
     /// </summary>
     private bool degradedSaveRefusalLogged;
 
     /// <summary>
-    /// Serializer settings for configuration files. <see cref="Newtonsoft.Json.TypeNameHandling"/> and
-    /// <see cref="Newtonsoft.Json.PreserveReferencesHandling"/> are pinned rather than inherited from the
-    /// process-global <see cref="JsonConvert.DefaultSettings"/>, which other code in the process can reassign.
+    /// Guards the queued payload below, and is never held while a file is being touched.
+    /// </summary>
+    private readonly object stateGate = new();
+
+    /// <summary>
+    /// Guards taking the queued payload and writing it, so the newest payload is always the last one on disk and
+    /// two writes of the same configuration never overlap.
+    /// </summary>
+    private readonly object writeGate = new();
+
+    /// <summary>The JSON a queued save will write, already serialized on the thread that asked for it.</summary>
+    private string? pendingJson;
+
+    /// <summary>The path the queued payload belongs to.</summary>
+    private string? pendingPath;
+
+    /// <summary>When the queued payload becomes due, as <see cref="Environment.TickCount64"/>.</summary>
+    private long pendingDueAt;
+
+    /// <summary>When the oldest unwritten change arrived, which caps how long a run of changes can defer the write.</summary>
+    private long pendingSince;
+
+    /// <summary>The background loop draining the queued payload, or null when none is running.</summary>
+    private Task? flushTask;
+
+    /// <summary>
+    /// The configurations holding a payload that is not on disk yet.
+    /// </summary>
+    private static readonly ConcurrentDictionary<NoireConfigBase, byte> PendingWriters = new(ReferenceComparer.Instance);
+
+    /// <summary>
+    /// The configuration types whose serializer has already been warmed, keyed by the exact type that is serialized.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, byte> WarmedSerializerTypes = new();
+
+    /// <summary>
+    /// How long <see cref="RequestSave"/> waits for further changes before it writes.
+    /// </summary>
+    public static TimeSpan SaveDebounceInterval { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// The longest a change may stay unwritten while further changes keep arriving.
+    /// </summary>
+    public static TimeSpan MaxSaveDelay { get; set; } = TimeSpan.FromSeconds(2);
+
+    /// <summary>The longest the background writer sleeps in one go while waiting for a window to close.</summary>
+    private const int FlushPollMilliseconds = 250;
+
+    /// <summary>Compares configurations by identity, since a derived type may define its own equality.</summary>
+    private sealed class ReferenceComparer : IEqualityComparer<NoireConfigBase>
+    {
+        public static readonly ReferenceComparer Instance = new();
+
+        public bool Equals(NoireConfigBase? x, NoireConfigBase? y) => ReferenceEquals(x, y);
+
+        public int GetHashCode(NoireConfigBase obj) => RuntimeHelpers.GetHashCode(obj);
+    }
+
+    /// <summary>
+    /// Serializer settings for configuration files, pinned rather than inherited from the process-global
+    /// <see cref="JsonConvert.DefaultSettings"/> that other code can reassign.
     /// </summary>
     protected static readonly JsonSerializerSettings JsonSettings = new()
     {
@@ -61,10 +121,8 @@ public abstract class NoireConfigBase : INoireConfig
     };
 
     /// <summary>
-    /// Serializer for reading and writing configuration files, built via
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from
-    /// <see cref="JsonSettings"/> alone rather than merging in the process-global
-    /// <see cref="JsonConvert.DefaultSettings"/>.
+    /// Serializer for reading and writing configuration files, resolving settings from <see cref="JsonSettings"/>
+    /// alone rather than merging in the process-global <see cref="JsonConvert.DefaultSettings"/>.
     /// </summary>
     private static readonly JsonSerializer ConfigSerializer = CreateConfigSerializer();
 
@@ -110,9 +168,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// The configuration schema version. Override with the current schema version as the property initializer;
-    /// always reports the target schema, not the file's, and <see cref="Load"/> migrates the file up to it when
-    /// they differ.
+    /// The schema version this build targets, overridden as a property initializer and never reporting the file's
+    /// version, which <see cref="Load"/> migrates up to it.
     /// </summary>
     public abstract int Version { get; set; }
 
@@ -129,10 +186,8 @@ public abstract class NoireConfigBase : INoireConfig
     public virtual bool LoadFromDiskOnInitialization => true;
 
     /// <summary>
-    /// Whether this instance holds values a failed migration left partially defaulted, set by <see cref="Load"/>
-    /// when the file's version is older than <see cref="Version"/> and migration fails.<br/>
-    /// While true, <see cref="Save"/> refuses to write and returns false; <see cref="DegradedBackupPath"/> points to
-    /// the pre-migration backup. Cleared by <see cref="ClearDegradedState"/> or a successful <see cref="ForceSave"/>.
+    /// Whether a failed migration left this instance partially defaulted, which makes <see cref="Save"/> refuse to
+    /// write until <see cref="ClearDegradedState"/> or a successful <see cref="ForceSave"/> clears it.
     /// </summary>
     /// <seealso cref="ForceSave"/>
     /// <seealso cref="ClearDegradedState"/>
@@ -141,34 +196,38 @@ public abstract class NoireConfigBase : INoireConfig
 
     /// <summary>
     /// The path to the pre-migration backup that caused <see cref="IsDegraded"/>, or null when not degraded or no
-    /// backup could be written. A recovery flow restores from this file.
+    /// backup could be written.
     /// </summary>
     [JsonIgnore]
     public string? DegradedBackupPath => degradedBackupPath;
 
     /// <summary>
-    /// Whether the current degraded state's full explanation has already been logged; later refusals log at verbose
-    /// level instead. Reset whenever the degraded state is decided anew, by <see cref="Load"/>,
-    /// <see cref="ForceSave"/> or <see cref="ClearDegradedState"/>.
+    /// Whether the current degraded state's full explanation has already been logged, reset whenever
+    /// <see cref="Load"/>, <see cref="ForceSave"/> or <see cref="ClearDegradedState"/> decides that state anew.
     /// </summary>
     internal bool HasLoggedDegradedSaveRefusal => degradedSaveRefusalLogged;
 
     /// <summary>
-    /// The schema version this configuration type declares, read from a fresh instance rather than
-    /// <see cref="Version"/>, which callers can reassign. Resolved from the instance rather than
-    /// <see cref="object.GetType"/>, since a type with <see cref="AutoSaveAttribute"/> members reports its
-    /// generated subclass instead.
+    /// The schema version this configuration type declares, read from a fresh instance of the unproxied type, since
+    /// a type with <see cref="AutoSaveAttribute"/> members reports its generated subclass from
+    /// <see cref="object.GetType"/>.
     /// </summary>
-    /// <returns>The version a new instance of this configuration type reports, or the value <see cref="Version"/>
-    /// currently holds when no fresh instance can be constructed.</returns>
+    /// <returns>The version a new instance reports, or the current <see cref="Version"/> when no fresh instance can
+    /// be constructed.</returns>
     protected virtual int GetDefaultVersion()
     {
+        var configType = ProxyUtil.GetUnproxiedType(this);
+
+        if (DefaultVersions.TryGetValue(configType, out var cached))
+            return cached;
+
         try
         {
-            var configType = ProxyUtil.GetUnproxiedType(this);
-
             if (Activator.CreateInstance(configType) is NoireConfigBase configInstance)
+            {
+                DefaultVersions[configType] = configInstance.Version;
                 return configInstance.Version;
+            }
         }
         catch (Exception ex)
         {
@@ -177,6 +236,12 @@ public abstract class NoireConfigBase : INoireConfig
 
         return Version;
     }
+
+    /// <summary>
+    /// The version a fresh instance of each configuration type reports, cached because constructing that instance
+    /// costs hundreds of milliseconds the first time a type is built inside a plugin's load context.
+    /// </summary>
+    private static readonly ConcurrentDictionary<Type, int> DefaultVersions = new();
 
     /// <summary>
     /// The full path to the configuration file, resolved from <see cref="GetConfigFileName"/> against the plugin's
@@ -199,12 +264,12 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Saves the current configuration to a JSON file. Refuses to write and returns false while
-    /// <see cref="IsDegraded"/> is true; use <see cref="ForceSave"/> to write anyway or
-    /// <see cref="ClearDegradedState"/> once the values are repaired.
+    /// Saves the current configuration to its JSON file, blocking until the write has landed, and refusing while
+    /// <see cref="IsDegraded"/> is true.
     /// </summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
+    /// <seealso cref="RequestSave"/>
     public virtual bool Save()
     {
         if (degradedLoad)
@@ -224,28 +289,14 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
-            // Read from a fresh instance rather than the property, so a version assigned over the property cannot
-            // mislabel the file and send a later load down a migration path that does not match its contents.
-            var defaultVersion = GetDefaultVersion();
-            Version = defaultVersion;
+            var currentJson = SerializeForSave();
 
-            var currentJson = SerializeConfigToJson();
-
-            if (FileHelper.FileExists(filePath))
+            lock (writeGate)
             {
-                var existingJson = FileHelper.ReadTextFromFile(filePath);
-                if (existingJson != null && existingJson.Equals(currentJson, StringComparison.Ordinal))
-                {
-                    NoireLogger.LogVerbose<NoireConfigBase>($"Configuration unchanged, skipping save: {filePath}");
-                    return true;
-                }
+                // Dropping the queued payload stops it landing afterwards with older values.
+                DiscardPendingPayload();
+                return WriteSerializedConfig(filePath, currentJson);
             }
-
-            var success = FileHelper.WriteJsonToFile(filePath, this, JsonSettings);
-            if (success)
-                NoireLogger.LogVerbose<NoireConfigBase>($"Configuration saved successfully to: {filePath}");
-
-            return success;
         }
         catch (Exception ex)
         {
@@ -255,9 +306,292 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Reports a save that <see cref="Save"/> refused because the instance is <see cref="IsDegraded"/>. The first
-    /// refusal per degraded state logs the full explanation and backup location at error level; later refusals log
-    /// at verbose level.
+    /// Captures the configuration on the calling thread and writes it shortly afterwards on a background thread, so
+    /// a change made after this returns belongs to the next write.
+    /// </summary>
+    /// <seealso cref="FlushPendingSave"/>
+#if DEBUG
+    /// <summary>Serialize duration in milliseconds above which a save is logged as slow.</summary>
+    private const double SlowSerializeMs = 20;
+#endif
+
+    public virtual void RequestSave()
+    {
+        if (degradedLoad)
+        {
+            LogDegradedSaveRefusal();
+            return;
+        }
+
+        var filePath = GetConfigFilePath();
+        if (string.IsNullOrEmpty(filePath))
+        {
+            if (!NoireService.IsInitialized())
+                NoireLogger.LogWarning<NoireConfigBase>("Cannot save configuration: NoireLib is not initialized.");
+
+            return;
+        }
+
+        string currentJson;
+
+#if DEBUG
+        var serializeStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+
+        try
+        {
+            currentJson = SerializeForSave();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError<NoireConfigBase>(ex, $"Failed to serialize configuration for: {filePath}");
+            return;
+        }
+
+#if DEBUG
+        var serializeMs = System.Diagnostics.Stopwatch.GetElapsedTime(serializeStartedAt).TotalMilliseconds;
+        if (serializeMs > SlowSerializeMs)
+            NoireLogger.LogWarning<NoireConfigBase>($"Serializing {GetType().Name} took {serializeMs:F0}ms.");
+#endif
+
+        var now = Environment.TickCount64;
+
+        lock (stateGate)
+        {
+            if (pendingJson == null)
+                pendingSince = now;
+
+            pendingJson = currentJson;
+            pendingPath = filePath;
+
+            var due = now + (long)SaveDebounceInterval.TotalMilliseconds;
+            var deadline = pendingSince + (long)MaxSaveDelay.TotalMilliseconds;
+            pendingDueAt = due < deadline ? due : deadline;
+
+            PendingWriters[this] = 0;
+
+            flushTask ??= Task.Run(RunFlushLoop);
+        }
+    }
+
+    /// <summary>
+    /// Writes anything <see cref="RequestSave"/> has queued for this configuration and waits for a write already
+    /// running to finish.
+    /// </summary>
+    /// <returns>True when nothing was pending or the pending payload was written; otherwise, false.</returns>
+    public bool FlushPendingSave() => WritePendingPayload();
+
+    /// <summary>Whether this configuration is holding changes that are not on disk yet.</summary>
+    [JsonIgnore]
+    public bool HasPendingSave
+    {
+        get
+        {
+            lock (stateGate)
+                return pendingJson != null;
+        }
+    }
+
+    /// <summary>
+    /// Writes every configuration holding queued changes.
+    /// </summary>
+    /// <returns>True when every pending payload reached disk; otherwise, false.</returns>
+    public static bool FlushAllPendingSaves()
+    {
+        var allSuccess = true;
+
+        // A configuration can queue a payload while the pass that would have caught it is already walking; the pass
+        // count is bounded, so continuous setting changes cannot pin this loop.
+        for (var pass = 0; pass < 4 && !PendingWriters.IsEmpty; pass++)
+        {
+            foreach (var config in PendingWriters.Keys)
+            {
+                try
+                {
+                    if (!config.FlushPendingSave())
+                        allSuccess = false;
+                }
+                catch (Exception ex)
+                {
+                    allSuccess = false;
+
+                    NoireLogger.LogError<NoireConfigBase>(ex,
+                        $"Failed to flush the pending save of {config.GetType().Name}. The remaining pending saves are " +
+                        $"still being flushed.");
+                }
+            }
+        }
+
+        return allSuccess;
+    }
+
+    /// <summary>
+    /// Stamps the instance with the schema this build declares and serializes it on the calling thread.
+    /// </summary>
+    /// <returns>The JSON a save writes.</returns>
+    private string SerializeForSave()
+    {
+#if DEBUG
+        var versionStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+#endif
+
+        // Read from a fresh instance rather than the property: a version assigned over the property would mislabel
+        // the file and send a later load down a migration path that does not match its contents.
+        Version = GetDefaultVersion();
+
+#if DEBUG
+        var versionMs = System.Diagnostics.Stopwatch.GetElapsedTime(versionStartedAt).TotalMilliseconds;
+        var jsonStartedAt = System.Diagnostics.Stopwatch.GetTimestamp();
+        var json = SerializeConfigToJson();
+        var jsonMs = System.Diagnostics.Stopwatch.GetElapsedTime(jsonStartedAt).TotalMilliseconds;
+
+        if (versionMs + jsonMs > SlowSerializeMs)
+            NoireLogger.LogWarning<NoireConfigBase>(
+                $"{GetType().Name} save split: default version {versionMs:F0}ms, json {jsonMs:F0}ms.");
+
+        return json;
+#else
+        return SerializeConfigToJson();
+#endif
+    }
+
+    /// <summary>
+    /// Writes serialized configuration JSON to disk, skipping the write when the file already holds those bytes.
+    /// </summary>
+    /// <param name="filePath">The configuration file to write.</param>
+    /// <param name="json">The JSON to write.</param>
+    /// <returns>True if the file holds the given JSON on return; otherwise, false.</returns>
+    private static bool WriteSerializedConfig(string filePath, string json)
+    {
+        if (FileHelper.FileExists(filePath))
+        {
+            var existingJson = FileHelper.ReadTextFromFile(filePath);
+            if (existingJson != null && existingJson.Equals(json, StringComparison.Ordinal))
+            {
+                NoireLogger.LogVerbose<NoireConfigBase>($"Configuration unchanged, skipping save: {filePath}");
+                return true;
+            }
+        }
+
+        // Written atomically, so a crash mid-write leaves the previous file intact.
+        var success = FileHelper.ReplaceFileAtomically(filePath, Encoding.UTF8.GetBytes(json));
+        if (success)
+            NoireLogger.LogVerbose<NoireConfigBase>($"Configuration saved successfully to: {filePath}");
+
+        return success;
+    }
+
+    /// <summary>
+    /// Waits out the debounce window and writes the queued payload, then exits once nothing is left queued.
+    /// </summary>
+    private async Task RunFlushLoop()
+    {
+        while (true)
+        {
+            long remaining;
+
+            lock (stateGate)
+            {
+                if (pendingJson == null)
+                {
+                    // Cleared under the same lock a request takes, so a request arriving now either sees a live loop
+                    // and leaves it to run, or sees none and starts a fresh one.
+                    flushTask = null;
+                    PendingWriters.TryRemove(this, out _);
+                    return;
+                }
+
+                remaining = pendingDueAt - Environment.TickCount64;
+            }
+
+            if (remaining > 0)
+            {
+                // Sliced rather than waited out in one go, so a flush clearing the payload ends this loop promptly
+                // however long the configured window is.
+                await Task.Delay((int)Math.Min(remaining, FlushPollMilliseconds)).ConfigureAwait(false);
+                continue;
+            }
+
+            WritePendingPayload();
+        }
+    }
+
+    /// <summary>
+    /// Takes the queued payload and writes it, blocking while another write of this configuration is running.
+    /// </summary>
+    /// <returns>True when nothing was queued or the queued payload was written; otherwise, false.</returns>
+    private bool WritePendingPayload()
+    {
+        // The payload is taken inside this lock rather than before it: otherwise a slower writer could overwrite the
+        // file with values older than the ones a faster one already put there.
+        lock (writeGate)
+        {
+            string? json;
+            string? path;
+
+            lock (stateGate)
+            {
+                json = pendingJson;
+                path = pendingPath;
+                pendingJson = null;
+                pendingPath = null;
+            }
+
+            if (json == null || path == null)
+                return true;
+
+            try
+            {
+                return WriteSerializedConfig(path, json);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError<NoireConfigBase>(ex, $"Failed to save configuration to: {path}");
+                return false;
+            }
+        }
+    }
+
+    /// <summary>Drops the queued payload without writing it.</summary>
+    private void DiscardPendingPayload()
+    {
+        lock (stateGate)
+        {
+            pendingJson = null;
+            pendingPath = null;
+        }
+    }
+
+    /// <summary>
+    /// Serializes the instance once and discards the result, building the Newtonsoft contract and accessors for this
+    /// type here rather than on the first changed setting.
+    /// </summary>
+    private void WarmSerializer()
+    {
+        var type = GetType();
+
+        if (!WarmedSerializerTypes.TryAdd(type, 0))
+            return;
+
+        try
+        {
+            SerializeConfigToJson();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogVerbose<NoireConfigBase>($"Could not warm the serializer for {type.Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Warms the serializer of a configuration the caller still holds exclusively.
+    /// </summary>
+    /// <param name="config">The configuration to warm.</param>
+    internal static void WarmSerializerFor(NoireConfigBase config) => config.WarmSerializer();
+
+    /// <summary>
+    /// Reports a save refused because the instance is <see cref="IsDegraded"/>, logging the first refusal per
+    /// degraded state at error level and later ones at verbose level.
     /// </summary>
     private void LogDegradedSaveRefusal()
     {
@@ -275,8 +609,6 @@ public abstract class NoireConfigBase : INoireConfig
             ? $" The file as it was before the migration is backed up at: {degradedBackupPath}."
             : string.Empty;
 
-        // The versions involved are not repeated here: Load logs them at the point it fails to migrate, which is the
-        // only way this state is entered.
         NoireLogger.LogError<NoireConfigBase>(
             $"Refusing to save configuration {GetType().Name}: it was loaded from a file that could not be migrated to " +
             $"the current schema, so this instance holds partially defaulted values and saving would overwrite the file " +
@@ -285,12 +617,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Saves even when <see cref="IsDegraded"/> is true, overwriting the file with the values this instance
-    /// currently holds; destructive, since a failed migration leaves those values at their defaults. Prefer
-    /// repairing the instance and calling <see cref="ClearDegradedState"/>, or restoring
-    /// <see cref="DegradedBackupPath"/>.<br/>
-    /// A successful write clears the degraded state; a failed write leaves it in place. Equivalent to
-    /// <see cref="Save"/> when the instance is not degraded.
+    /// Saves even when <see cref="IsDegraded"/> is true, overwriting the file with values a failed migration may
+    /// have left at their defaults, and clearing the degraded state only if the write lands.
     /// </summary>
     /// <returns>True if the save operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
@@ -307,7 +635,7 @@ public abstract class NoireConfigBase : INoireConfig
                 $"the partially defaulted values held in memory.");
         }
 
-        // Clear before delegating rather than passing a flag through, so that a derived Save() override still runs and
+        // Cleared before delegating rather than passing a flag through, so a derived Save() override still runs and
         // still sees a consistent state.
         degradedLoad = false;
         degradedBackupPath = null;
@@ -322,9 +650,8 @@ public abstract class NoireConfigBase : INoireConfig
         }
         finally
         {
-            // Only a write that actually landed retires the protection. Restored from a finally because Save is
-            // virtual and can throw rather than report false; an exception leaving the state cleared would retire
-            // the protection without anything having been written.
+            // Restored from a finally because the virtual Save can throw rather than report false, which would
+            // otherwise retire the degraded protection with nothing written.
             if (!success && wasDegraded)
             {
                 degradedLoad = true;
@@ -334,10 +661,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Clears the degraded state described on <see cref="IsDegraded"/> without writing to disk, so
-    /// <see cref="Save"/> is allowed again. Does not verify the repaired values are actually safe to persist; the
-    /// next <see cref="Save"/> writes them as-is.<br/>
-    /// <see cref="DegradedBackupPath"/> is cleared with it; read it first if still needed.
+    /// Clears <see cref="IsDegraded"/> and <see cref="DegradedBackupPath"/> without writing to disk or verifying the
+    /// values, allowing <see cref="Save"/> again.
     /// </summary>
     /// <seealso cref="IsDegraded"/>
     /// <seealso cref="ForceSave"/>
@@ -349,9 +674,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Loads the configuration from a JSON file and populates this instance, migrating automatically when the
-    /// file's version is older than <see cref="Version"/>. The file is backed up before migration runs; a failed
-    /// migration marks the instance <see cref="IsDegraded"/> instead of writing to disk.
+    /// Loads the configuration file into this instance, backing the file up and migrating it when its version is
+    /// older than <see cref="Version"/>, and marking the instance <see cref="IsDegraded"/> if that migration fails.
     /// </summary>
     /// <returns>True if the load operation was successful; otherwise, false.</returns>
     /// <seealso cref="IsDegraded"/>
@@ -372,6 +696,12 @@ public abstract class NoireConfigBase : INoireConfig
 
         try
         {
+            // Both costs are paid here rather than on the first changed setting, while nothing else holds this
+            // instance; the default version is as expensive as the serializer, since it builds the type through
+            // the proxy machinery.
+            WarmSerializer();
+            _ = GetDefaultVersion();
+
             if (!Exists())
             {
                 NoireLogger.LogDebug<NoireConfigBase>($"Configuration file not found: {filePath}. Using default values.");
@@ -394,7 +724,7 @@ public abstract class NoireConfigBase : INoireConfig
             {
                 NoireLogger.LogInfo<NoireConfigBase>($"Configuration version mismatch: file={fileVersion}, target={targetVersion}. Attempting migration.");
 
-                // A failed backup does not stop the load; the degraded latch below is what keeps the file safe.
+                // A failed backup does not stop the load; the degraded latch below keeps the file safe.
                 backupPath = CreateMigrationBackup(filePath, fileVersion);
 
                 var migratedJson = MigrationExecutor.ExecuteMigrations(GetType(), json, fileVersion, targetVersion);
@@ -428,17 +758,17 @@ public abstract class NoireConfigBase : INoireConfig
 
             CopyPropertiesFrom(loadedConfig);
 
-            // Restored to the target: the copy above brought the file's version across, and leaving it would make
-            // the next Load compare the file to its own stale version, silently skipping a migration it still needs.
+            // The copy above brought the file's version across; leaving it would make the next Load compare the file
+            // to its own stale version and silently skip a migration it still needs.
             Version = targetVersion;
 
-            // Deserializing un-migrated JSON mostly succeeds silently: unknown members are ignored and absent ones
-            // default. Assigned rather than left alone, so a later successful load clears a stale latch.
+            // Deserializing un-migrated JSON mostly succeeds silently, so the latch is what marks it; assigned
+            // unconditionally so a later successful load clears a stale one.
             var migrationFailed = fileVersion < targetVersion && !migrationSuccess;
             degradedLoad = migrationFailed;
             degradedBackupPath = migrationFailed ? backupPath : null;
 
-            // Reset here so a fresh degraded state logs its own explanation rather than reusing an earlier one.
+            // Reset so a fresh degraded state logs its own explanation rather than reusing an earlier one.
             degradedSaveRefusalLogged = false;
 
             if (fileVersion < targetVersion && migrationSuccess)
@@ -474,12 +804,11 @@ public abstract class NoireConfigBase : INoireConfig
     /// <returns>The full path to the backup, or null if no backup could be written.</returns>
     private static string? CreateMigrationBackup(string filePath, int fileVersion)
     {
-        // Named for the version, not the moment, so retries do not add duplicate backups. The ".bak" suffix keeps
+        // Named for the version, not the moment, so retries do not add duplicate backups; the ".bak" suffix keeps
         // the backup from being picked up as a configuration file.
         var backupPath = $"{filePath}.v{fileVersion}.bak";
 
-        // An existing backup from this version is kept rather than overwritten, so a later degraded write cannot
-        // replace the last good copy.
+        // An existing backup from this version is kept, so a later degraded write cannot replace the last good copy.
         if (FileHelper.FileExists(backupPath))
         {
             NoireLogger.LogDebug<NoireConfigBase>($"A pre-migration backup already exists, keeping it: {backupPath}");
@@ -497,10 +826,10 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Extracts the version number from a JSON string.
+    /// Extracts the schema version from configuration JSON.
     /// </summary>
-    /// <param name="json">The JSON string.</param>
-    /// <returns>The version number, or 0 if not found.</returns>
+    /// <param name="json">The configuration JSON.</param>
+    /// <returns>The version number, or 0 when absent or unparseable.</returns>
     private static int GetVersionFromJson(string json)
     {
         try
@@ -585,9 +914,8 @@ public abstract class NoireConfigBase : INoireConfig
     }
 
     /// <summary>
-    /// Whether this instance is at its defaults because no configuration file exists yet, rather than because
-    /// loading one failed. <see cref="Load"/> returns false for both cases; this tells them apart, unlike
-    /// <see cref="Exists"/> alone, which also reports false before NoireLib is initialized.
+    /// Whether this instance is at its defaults because no configuration file exists yet rather than because a load
+    /// failed, which <see cref="Load"/> and <see cref="Exists"/> alone cannot distinguish.
     /// </summary>
     internal bool IsUnwrittenDefault => !string.IsNullOrEmpty(GetConfigFilePath()) && !Exists();
 }

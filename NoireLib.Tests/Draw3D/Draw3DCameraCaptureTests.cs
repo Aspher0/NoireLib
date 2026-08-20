@@ -122,4 +122,63 @@ public class Draw3DCameraCaptureTests
         // No commit yet.
         CameraConstantCapture.IsCommitFresh(commitIndex: -1, presentIndex: 0, presentTimePath: false).Should().BeFalse();
     }
+
+    // ---------------------------------------------------------------- extrapolated commit (miss frames)
+
+    [Fact]
+    public void ExtrapolateCamera_ConstantTranslation_PredictsTheNextStepExactly()
+    {
+        // A camera panning at constant velocity: the prediction one present ahead is the true next matrix,
+        // because view-projection is linear in the eye translation for a fixed orientation.
+        var prev = MakeViewProj(new Vector3(0f, 5f, 0f), new Vector3(0f, 5f, 10f));
+        var last = MakeViewProj(new Vector3(1f, 5f, 0f), new Vector3(1f, 5f, 10f));
+        var truth = MakeViewProj(new Vector3(2f, 5f, 0f), new Vector3(2f, 5f, 10f));
+
+        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 1);
+
+        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: false)
+            .Should().BeLessThan(1e-5f);
+    }
+
+    [Fact]
+    public void ExtrapolateCamera_ScalesTheStepToTheGaps()
+    {
+        // Two presents to bridge from a one-present velocity sample: twice the step.
+        var prev = MakeViewProj(new Vector3(0f, 5f, 0f), new Vector3(0f, 5f, 10f));
+        var last = MakeViewProj(new Vector3(1f, 5f, 0f), new Vector3(1f, 5f, 10f));
+        var truth = MakeViewProj(new Vector3(3f, 5f, 0f), new Vector3(3f, 5f, 10f));
+
+        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 2);
+
+        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: false)
+            .Should().BeLessThan(1e-5f);
+
+        // And a two-present velocity sample bridging one present: half the step.
+        var half = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 2, gap: 1);
+        var truthHalf = MakeViewProj(new Vector3(1.5f, 5f, 0f), new Vector3(1.5f, 5f, 10f));
+        CameraConstantCapture.MatrixError(in half, in truthHalf, skipZColumn: false)
+            .Should().BeLessThan(1e-5f);
+    }
+
+    [Fact]
+    public void ExtrapolateCamera_FrameSizedRotation_StaysInsideTheValidationGate()
+    {
+        // Rotation extrapolates only to first order, so the prediction is approximate; what matters is that a
+        // frame-sized turn predicts well inside the commit validation gate while a camera cut lands far outside,
+        // so the gate keeps cuts on the struct fallback.
+        var eye = new Vector3(100f, 20f, -50f);
+        var prev = MakeViewProj(eye, eye + Direction(0.00f));
+        var last = MakeViewProj(eye, eye + Direction(0.02f));
+        var truth = MakeViewProj(eye, eye + Direction(0.04f));
+
+        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 1);
+        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: true)
+            .Should().BeLessThan(0.05f, "a frame of turn must validate, or the prediction never engages");
+
+        var cut = MakeViewProj(new Vector3(-300f, 8f, 400f), new Vector3(-300f, 8f, 410f));
+        CameraConstantCapture.MatrixError(in pred, in cut, skipZColumn: true)
+            .Should().BeGreaterThan(0.05f, "a camera cut must fail validation so the prediction is never used across one");
+    }
+
+    private static Vector3 Direction(float yaw) => new(MathF.Sin(yaw), 0f, MathF.Cos(yaw));
 }

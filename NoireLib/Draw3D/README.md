@@ -1,13 +1,13 @@
 ﻿# NoireDraw3D
 
-A real D3D11 world renderer for Dalamud plugins. It draws real 3D geometry into the game's frame - glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under your plugin windows. By default it composites **under the game's native UI** so HUD and nameplates read on top (this uses a render-thread hook on the present composition); set `NativeUi.Layering = OverEverything` to composite over everything with no hook at all. There is no ImGui and no 2D-projected fallback anywhere in it: when it cannot render correctly, it renders nothing and tells you why.
+A D3D11 world renderer for Dalamud plugins. It draws 3D geometry into the game's frame: glowless and color-exact (the world's post-processing has already run), hardware-clipped at the screen edges, and always under plugin windows. It composites **under the game's native UI** by default, through a render-thread hook on the present composition, so HUD and nameplates read on top; `NativeUi.Layering = OverEverything` composites over everything with no hook. There is no ImGui and no 2D-projected fallback: when it cannot render correctly it renders nothing and logs why.
 
-## Quick start - markers in three lines
+## Quick start: markers in three lines
 
-The immediate layer redraws every frame; anything you stop requesting vanishes. Call it from any per-frame callback:
+The immediate layer redraws every frame, and anything no longer requested vanishes. Call it from any per-frame callback:
 
 ```csharp
-// e.g. inside your plugin's UiBuilder.Draw handler:
+// e.g. inside the plugin's UiBuilder.Draw handler:
 NoireDraw3D.Im.DrawDonut(player.Position, innerRadius: 3f, outerRadius: 5f, new Vector4(1f, 0.6f, 0.1f, 0.9f));
 NoireDraw3D.Im.DrawSector(boss.Position, boss.Rotation, MathF.PI / 4f, 0f, 20f, new Vector4(1f, 0.2f, 0.2f, 0.8f));
 NoireDraw3D.Im.DrawLine(a, b, width: 0.1f, new Vector4(0.3f, 0.8f, 1f, 1f));
@@ -25,13 +25,13 @@ NoireDraw3D.Im.DrawCircle(pos, 4f, color, new ImShapeStyle
 });
 ```
 
-> **Zero-latency rule:** `Im` calls made inside `Scene3D.OnPrepareFrame` or an `ISceneFeature` render *this* frame; calls made elsewhere render at most one frame late. For markers you will never notice.
+> **Zero-latency rule:** `Im` calls made inside `Scene3D.OnPrepareFrame` or an `ISceneFeature` render *this* frame; calls made elsewhere render at most one frame late.
 
-> **What you may do there:** those two callbacks run on the **render thread**, and on the default under-UI path they run *mid-frame, from inside one of the game's own D3D calls*. Touch the scene graph, `Im`, and your own state - nothing else. Reading game state, printing to chat, or calling a Dalamud game service from there re-enters the game underneath itself; do that work on the framework thread and leave the result somewhere the callback can read.
+> **What those callbacks may do:** they run on the **render thread**, and on the default under-UI path they run *mid-frame, from inside one of the game's own D3D calls*. Only the scene graph, `Im`, and plugin state may be touched there. Reading game state, printing to chat, or calling a Dalamud game service re-enters the game underneath itself; do that work on the framework thread and leave the result somewhere the callback can read.
 
-## Retained scenes - the "FF14 Blender"
+## Retained scenes, the "FF14 Blender"
 
-For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node, build mesh, attach, track for disposal" into one call - the node **owns** the mesh, so there is nothing to track:
+For long-lived content, build nodes once and mutate them. `scene.Spawn` (and the `Add*` primitive shortcuts) collapse "create node, build mesh, attach, track for disposal" into one call, and the node **owns** the mesh:
 
 ```csharp
 var scene = NoireDraw3D.MainScene;
@@ -50,13 +50,13 @@ donut.Visible = someCondition;
 donut.Destroy();
 ```
 
-**The scene is an ownership scope.** `Scene3D` is `IDisposable`: `scene.Dispose()` destroys every node (freeing owned meshes), disposes everything handed to `scene.Own(...)` (a shared mesh, a texture, an imported model, an editor) and removes the scene from the renderer - no parallel bookkeeping lists. Create extra scenes with `NoireDraw3D.CreateScene("name")`; `MainScene` is permanent. The manual model is intact for the power case - `scene.Spawn(sharedMesh, material, ...)` references a mesh you own (one mesh, many nodes - the instancing path).
+**The scene is an ownership scope.** `Scene3D` is `IDisposable`: `scene.Dispose()` destroys every node (freeing owned meshes), disposes everything handed to `scene.Own(...)` (a shared mesh, a texture, an imported model, an editor) and removes the scene from the renderer. Create extra scenes with `NoireDraw3D.CreateScene("name")`; `MainScene` is permanent. The manual model remains: `scene.Spawn(sharedMesh, material, ...)` references a caller-owned mesh, which is the instancing path of one mesh to many nodes.
 
-`MeshBuilder` ships the full shape catalog - `Quad`, `Box`, `Disc`, `Ring`, `Sector`, `Sphere`, `Cylinder`, `Cone`, `Torus`, `Arrow`, `ExtrudePath` - all unit-sized, +Y up, ready to scale via the node; there is also an appendable `new MeshBuilder()` instance form to mix primitives and raw geometry into one mesh, and raw-vertex `scene.Spawn(vertices, indices, ...)` for anything not in the catalog. Identical mesh+material combinations are automatically instanced into single draw calls.
+`MeshBuilder` ships the full shape catalog (`Quad`, `Box`, `Disc`, `Ring`, `Sector`, `Sphere`, `Cylinder`, `Cone`, `Torus`, `Arrow`, `ExtrudePath`), all unit-sized, +Y up, ready to scale via the node. There is also an appendable `new MeshBuilder()` instance form to mix primitives and raw geometry into one mesh, and raw-vertex `scene.Spawn(vertices, indices, ...)` for anything not in the catalog. Identical mesh+material combinations are automatically instanced into single draw calls.
 
 ### Materials
 
-Immutable records - share them freely, derive variants with `with`:
+Immutable records, shared freely, with variants derived through `with`:
 
 ```csharp
 var decal     = Material.Decal(DecalShape.Ring, new Vector4(1f, 0.5f, 0f, 0.9f),
@@ -64,30 +64,30 @@ var decal     = Material.Decal(DecalShape.Ring, new Vector4(1f, 0.5f, 0f, 0.9f),
 var glass     = Material.Unlit(new Vector4(0.4f, 0.8f, 1f, 0.35f), depthFade: 0.4f); // soft seam where it meets walls
 var solid     = Material.Lit(new Vector4(1f, 1f, 1f, 1f));                            // opaque, z-tested against other meshes
 var textured  = Material.UnlitTextured(myTexture) with { Cull = CullMode.None };
-var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // your HLSL via RegisterPipeline
+var custom    = Material.Custom("myPipeline", new Vector4(0f, 1f, 1f, 1f));           // custom HLSL via RegisterPipeline
 ```
 
-> A ground decal paints its shape onto the world surface, hugging terrain, stairs and walls (reconstructed from the game depth). **Characters** you list with `ExcludeObjects(pred)` are cut out along their **exact game-stencil silhouette** (legs, feet and tail included) with no volume, no collision: the decal simply is not painted on them. The `ExcludeObjects` cylinders are only a coarse gate picking *which* characters (the stencil is the cut), so the radius is safe to widen (`radiusScale`) and never holes the ground. A character you *don't* list is painted over. The stencil value that marks characters is `NoireDraw3D.CharacterStencilValue` (default `0x08`, discoverable via `/noire3d stencil`; set 0 to disable). Non-character targets (furniture, terrain) share the world's stencil value, so this excludes characters only.
+> A ground decal paints its shape onto the world surface, hugging terrain, stairs and walls (reconstructed from the game depth). **Characters** listed with `ExcludeObjects(pred)` are cut out along their **exact game-stencil silhouette** (legs, feet and tail included), with no volume and no collision: the decal is simply not painted on them. The `ExcludeObjects` cylinders are only a coarse gate picking *which* characters, the stencil being the cut, so the radius is safe to widen (`radiusScale`) and never holes the ground. An unlisted character is painted over. The stencil value marking characters is `NoireDraw3D.CharacterStencilValue` (default `0x08`, discoverable via `/noire3d stencil`; set 0 to disable). Non-character targets (furniture, terrain) share the world's stencil value, so this excludes characters only.
 
-- `Surface` **locks the decal to a surface by constraining how its box may be oriented** (the projection itself is a single rule - the shape lives in the box's footprint and sweeps along the box's local Y; the box's orientation decides which surface it lands on). The mode just forbids rotating the box out of its plane, keeping heading (yaw), scale and position:
-  - `DecalSurface.Ground` (default): the box is kept **horizontal**, projecting straight down onto the floor/terrain; rotating it toward vertical has no effect. The classic ground decal.
+- `Surface` **locks the decal to a surface by constraining how its box may be oriented**. The projection itself is a single rule: the shape lives in the box's footprint and sweeps along the box's local Y, and the box's orientation decides which surface it lands on. The mode forbids rotating the box out of its plane, keeping heading (yaw), scale and position:
+  - `DecalSurface.Ground` (default): the box is kept **horizontal**, projecting straight down onto the floor/terrain; rotating it toward vertical has no effect.
   - `DecalSurface.Wall`: the box is kept **vertical**, projecting horizontally into the wall it faces (aim it with yaw); rotating it toward flat has no effect. Size the box so it reaches the wall.
-  - `DecalSurface.Both`: **free**, rotate the box however you like and its orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
-- `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `CollisionHeightMap` on (the default), `TopSurfaceThreshold` above 0, and the covering object to have collision. It is the *only* consumer of those two - they do nothing to any other decal.
-- `OutlineWidth` is the rim thickness, held **constant in world space regardless of the decal's scale** - scale the box up or down and the rim stays put, so decals of different sizes share one edge weight. `0` is a flat fill. (Immediate-mode `Im.DrawCircle(...)` etc. keep a rim proportional to the radius you pass - there is no separate scale transform to hold it against.)
-- `outlineColor:` gives the border **its own colour**, independent of the fill (`Material.Decal(shape, fill, outlineColor: rim)`, or `OutlineColor` via `with`). Leave it unset (alpha 0, the default) and the rim stays the decal's own colour, differing from the fill only in opacity - the classic look. The immediate layer has the same switch as `ImShapeStyle.OutlineColor`.
-- `additive: true` on `Material.Decal(...)` (or `Blend = BlendMode.Additive`) blends the decal additively, so **stacked coloured decals sum their light toward white** - overlap a red, a green and a blue one and the shared area reads white. A decal is never opaque; only additive and premultiplied blends apply.
+  - `DecalSurface.Both`: **free**, the box's orientation decides the surface (upright = ground, tipped 90° = wall, in between = a hybrid).
+- `Projection = DecalProjection.HighestOnly` paints only the **topmost** surface within the decal box per column (a tabletop, not the floor beneath it). Needs `CollisionHeightMap` on (the default), `TopSurfaceThreshold` above 0, and the covering object to have collision. It is the *only* consumer of those two; they do nothing to any other decal.
+- `OutlineWidth` is the rim thickness, held **constant in world space regardless of the decal's scale**, so decals of different sizes share one edge weight. `0` is a flat fill. (Immediate-mode `Im.DrawCircle(...)` and friends keep a rim proportional to the radius passed in, having no separate scale transform to hold it against.)
+- `outlineColor:` gives the border **its own colour**, independent of the fill (`Material.Decal(shape, fill, outlineColor: rim)`, or `OutlineColor` via `with`). Left unset (alpha 0, the default) the rim stays the decal's own colour, differing from the fill only in opacity. The immediate layer has the same switch as `ImShapeStyle.OutlineColor`.
+- `additive: true` on `Material.Decal(...)` (or `Blend = BlendMode.Additive`) blends the decal additively, so **stacked coloured decals sum their light toward white**: a red, a green and a blue one overlapping read white in the shared area. A decal is never opaque; only additive and premultiplied blends apply.
 - `DepthFade` feathers the edge where translucent shapes intersect world geometry.
 - `Depth = DepthMode.Ignore` draws through walls; `WhenDepthUnavailable` decides what happens on frames where the game's depth buffer can't be read.
 - `UnorderedBatching = true` lets hundreds of identical translucent markers collapse into one instanced draw.
 
-> **Seeing the shape.** Call `node.ShowDecalShape()` to trace what the decal actually paints - the same circle / ring / pie / rect its SDF evaluates - as a closed 3D line lying on the decal's own plane, and `node.HideDecalShape()` to turn it back off. It follows `Shape`, `ShapeParams` and the `Surface` constraint live, so it tracks the decal through any edit. It is a per-frame overlay driven for you (no plumbing); default color is the decal's own, or pass one: `node.ShowDecalShape(new Vector4(1f, 1f, 0f, 1f))`.
+> **Seeing the shape.** `node.ShowDecalShape()` traces what the decal paints (the same circle, ring, pie or rect its SDF evaluates) as a closed 3D line lying on the decal's own plane; `node.HideDecalShape()` turns it back off. It follows `Shape`, `ShapeParams` and the `Surface` constraint live. It is a per-frame overlay needing no plumbing; the default color is the decal's own, or pass one: `node.ShowDecalShape(new Vector4(1f, 1f, 0f, 1f))`.
 >
-> It traces the shape, not the projection box, on purpose: that box's footprint is the SDF's *bounding square* and its sweep runs well above and below the surface, so for anything but a full-footprint circle it is much larger than the paint and centred where the paint is not (a pie's box is centred on its apex and spans twice its radius). It reads as stray lines crossing the view rather than as the decal.
+> It traces the shape rather than the projection box because that box's footprint is the SDF's *bounding square* and its sweep runs well above and below the surface, so for anything but a full-footprint circle it is much larger than the paint and centred where the paint is not (a pie's box is centred on its apex and spans twice its radius).
 >
-> `ShowDecalShape()` is per-node. For **every** decal at once - including the immediate layer's grounded shapes, which have no node to opt in with - use `NoireDraw3D.Diagnostics.DecalShapeOutlines` (or `/noire3d decalshapes`).
+> `ShowDecalShape()` is per-node. For **every** decal at once, including the immediate layer's grounded shapes, which have no node to opt in with, use `NoireDraw3D.Diagnostics.DecalShapeOutlines` (or `/noire3d decalshapes`).
 
-> **Seeing the volume.** `node.ShowDecalVolume()` / `node.HideDecalVolume()` draws the decal's **projection box** - the oriented volume the SDF is evaluated in, as its twelve edges. Where the shape outline answers *what does this decal paint*, the box answers *how far does its projection reach*: only what falls inside it can be painted at all, so a decal stopping short of a wall or a step explains itself, and the vertical sweep becomes something you can size by eye. The master switch is `NoireDraw3D.Diagnostics.DecalVolumeOutlines` (or `/noire3d decalvolumes`), which reaches immediate-mode shapes too. The two overlays are independent and compose - turn both on to see the painted shape sitting inside the volume that produced it.
+> **Seeing the volume.** `node.ShowDecalVolume()` / `node.HideDecalVolume()` draws the decal's **projection box**, the oriented volume the SDF is evaluated in, as its twelve edges. Only what falls inside it can be painted, so a decal stopping short of a wall or a step explains itself. The master switch is `NoireDraw3D.Diagnostics.DecalVolumeOutlines` (or `/noire3d decalvolumes`), which reaches immediate-mode shapes too. The two overlays are independent and compose.
 
 ## Importing models (glTF)
 
@@ -99,11 +99,11 @@ model.Root.LocalPosition = spawnPosition;
 model.Dispose();                            // detaches and releases its meshes/textures
 ```
 
-In Blender, *File > Export > glTF 2.0* just works (base color + texture; PBR maps/skins/animations are skipped and logged). The import logs one summary line - primitive count, textured vs. flat materials, decode failures - so a wrong-looking model is self-diagnosing. **FBX:** convert once with `FBX2glTF` or Blender - NoireLib will never ship the FBX SDK.
+In Blender, *File > Export > glTF 2.0* works as-is. **PBR materials are shaded**: a material with authored metallic, a metallic-roughness or normal texture, an emissive factor or an alpha-mask cutoff draws through the `GltfPbrPipeline` custom shader (metallic-roughness in linear light, normal-mapped with authored tangents or a derivative frame, emissive, cutout; the `KHR_materials_unlit` extension maps to the Unlit domain). Plain base-color materials stay on the standard lit shader, which instances. Still dropped, and logged per file: emissive *textures* (the factor applies), separate occlusion maps, texture transforms, the specular-glossiness workflow (approximated), transmission/clearcoat, skins, animations. The import logs one summary line: primitive count, textured vs. flat vs. PBR materials, decode failures. **FBX:** convert once with `FBX2glTF` or Blender; NoireLib will never ship the FBX SDK.
 
-> **Vertex colors are off by default.** FFXIV-derived character exports carry a per-vertex `COLOR_0` channel the game uses as shader *data* (wetness / wind / blend masks), not albedo - importing it as a tint paints the model in psychedelic colors. Pass `importVertexColors: true` (on `LoadAsync` / `scene.LoadModel`) only for assets that genuinely author vertex colors.
+> **Vertex colors are off by default.** FFXIV-derived character exports carry a per-vertex `COLOR_0` channel the game uses as shader *data* (wetness, wind and blend masks) rather than albedo, and importing it as a tint paints the model in psychedelic colors. Pass `importVertexColors: true` (on `LoadAsync` / `scene.LoadModel`) only for assets that genuinely author vertex colors.
 
-**Level of detail (opt-in).** Pass `generateLods: true` when loading a model to build a chain of progressively coarser meshes (a quadric-error decimation, logged in the summary line); the renderer then draws the level that fits the object's size on screen, so a heavy model shrinking into the distance stops paying for triangles it no longer resolves. It is **off by default** - a full-detail model renders cheaply, so LOD is there for scenes with *many* heavy models at once, not for a single one. Culling, picking and bounds always use the full-resolution mesh.
+**Level of detail (opt-in).** Pass `generateLods: true` when loading a model to build a chain of progressively coarser meshes (a quadric-error decimation, logged in the summary line); the renderer then draws the level that fits the object's size on screen. It is **off by default**, and pays off for scenes with *many* heavy models at once rather than a single one. Culling, picking and bounds always use the full-resolution mesh.
 
 ## Performance
 
@@ -120,13 +120,18 @@ NoireDraw3D.Performance.MaxDrawDistance = 0f;   // 0 = unlimited; else skip obje
 NoireDraw3D.Performance.MinScreenPixels = 0f;   // 0 = off; else skip objects smaller than this on screen
 
 NoireDraw3D.Performance.Supersample = 1f;       // 1 = off; 2 = 2x2 SSAA (fixes distance shimmer, 4x the layer fill)
+
+NoireDraw3D.Performance.BatchedObjectConstants = true;  // default on: single draws ride the instanced route, so the
+                                                        // object CB re-uploads only when material params change
 ```
 
-LOD and the culls all default off. The culls pay off with many far or tiny objects (`MinScreenPixels = 1` is a near-free win there; outlined/selected objects are exempt so a highlight never vanishes). Applies to the main game view only, never a render-to-texture pass.
+LOD and the culls all default off. The culls pay off with many far or tiny objects (`MinScreenPixels = 1` is near-free there; outlined and selected objects are exempt so a highlight never vanishes). Applies to the main game view only, never a render-to-texture pass.
 
-> **Anti-aliasing.** The 3D layer has no MSAA of its own (the game world does), so a *dense* mesh - a detailed glTF model - shimmers along its edges at a distance where the anti-aliased world does not. `Performance.Supersample = 2` renders the layer at 2x and box-downsamples it at composite, at the cost of 4x the layer's fill and VRAM. Model LOD is the lighter alternative: thinning distant geometry also removes the aliasing, trading detail for fill instead.
+> **Anti-aliasing.** The 3D layer has no MSAA of its own (the game world does), so a *dense* mesh such as a detailed glTF model shimmers along its edges at a distance where the anti-aliased world does not. `Performance.Supersample = 2` renders the layer at 2x and box-downsamples it at composite, at the cost of 4x the layer's fill and VRAM. Model LOD is the lighter alternative: thinning distant geometry also removes the aliasing, trading detail for fill instead.
 
-> **Picking is BVH-accelerated.** Hover/click hit-testing against a `keepCpuData` mesh uses a bounding-volume hierarchy built once per mesh, so hovering a dense imported model (hundreds of thousands of triangles) costs an O(log n) ray query per frame, not a scan of every triangle.
+> **Picking is BVH-accelerated.** Hover and click hit-testing against a `keepCpuData` mesh uses a bounding-volume hierarchy built once per mesh, so hovering a dense imported model (hundreds of thousands of triangles) costs an O(log n) ray query per frame rather than a scan of every triangle. The most recent pick's cost is measured (`Draw3DStats.LastPickMicros`, nodes, refined, in `/noire3d stats`).
+
+> **Many unique objects.** `BatchedObjectConstants` (default on) routes standard single draws through the instanced pipeline: world and tint travel in the per-instance vertex stream and the object constant buffer re-uploads only when material parameters change, so a scene of hundreds of distinct models stops paying one CB upload per draw. `Draw3DStats.ObjectCbUpdates` shows the effect; `/noire3d batchcb` flips it in game. Decals and custom pipelines keep the classic path.
 
 ## Textures
 
@@ -137,7 +142,7 @@ var raw  = TextureLoader.FromRgba(pixels, width, height);
 var live = ExternalTexture.FromSharedHandle(handle, ntHandle: true); // another process renders it (browser, etc.)
 ```
 
-Every returned `GpuTexture` is yours to dispose. External shared-handle textures make "a live browser screen on a quad in the world" an ordinary textured material.
+Every returned `GpuTexture` is the caller's to dispose. External shared-handle textures make a live browser screen on a quad in the world an ordinary textured material.
 
 ## Render-to-texture
 
@@ -146,62 +151,73 @@ var view = NoireDraw3D.CreateRenderView(scene, new Camera3D(camPos, lookAt), 512
 material = Material.UnlitTextured(view.Texture!); // minimap portals, mirrors, thumbnails
 ```
 
-> A render view re-renders **this scene** from a second camera - it shows your 3D objects, not the game world. There is no way to re-photograph the game world from a different angle (the world only exists as pixels already composited for the game camera). The closest is rendering the collision proxy below into the view.
+> A render view re-renders **this scene** from a second camera, showing the scene's own 3D objects rather than the game world. The game world cannot be re-photographed from a different angle, since it only exists as pixels already composited for the game camera. The closest is rendering the collision proxy below into the view.
 
 ## World-projected decals (real collision)
 
-The screen-space `Material.Decal` projects onto whatever is in the depth buffer. When you want a decal that clips to the **actual world surface** - draping over terrain slopes, climbing onto walls and furniture, never "cut" by an actor standing in front - project it onto the game's real collision geometry instead. Everything here is **framework-thread only** (it reads the live collision scene) and fails soft (no surface returns `null`):
+The screen-space `Material.Decal` projects onto whatever is in the depth buffer. A decal that must clip to the **actual world surface** (draping over terrain slopes, climbing onto walls and furniture, never cut by an actor standing in front) projects onto the game's real collision geometry instead. Everything here is **framework-thread only**, since it reads the live collision scene, and fails soft (no surface returns `null`):
 
 ```csharp
-// A decal that conforms to the real ground/walls/furniture under `pos`, facing up:
+// A decal that conforms to the real ground, walls and furniture under `pos`, facing up:
 scene.SpawnWorldDecal(pos, Vector3.UnitY, width: 6f, height: 6f, Material.UnlitTextured(tex), depth: 3f);
 
-// The raw collision near a point, as a mesh (debug/preview, or feed your own logic):
+// The raw collision near a point, as a mesh (debug preview, or input to caller logic):
 scene.SpawnWorldGeometry(pos, radius: 20f, Material.Lit(new Vector4(0.4f, 0.8f, 1f, 0.4f)) with { Cull = CullMode.None });
 
-// Or go lower: get the geometry / projected footprint yourself.
+// Or take the geometry and projected footprint directly.
 var geo   = WorldGeometry.Collect(pos, radius: 20f);                       // terrain + models + furniture + dynamic objects
 var decal = WorldGeometry.ProjectDecal(pos, Vector3.UnitY, 6f, 6f);        // clipped, UV-mapped MeshData
 ```
 
-The source is the same collision world a navmesh tool walks (streamed terrain, placed background models, housing furniture, and any dynamic object that registers a collider). `includeAnalytic: true` also pulls in box/cylinder/sphere/plane colliders (invisible walls, trigger volumes). `/noire3d worldgeo` toggles a live preview of it around you.
+The source is the same collision world a navmesh tool walks (streamed terrain, placed background models, housing furniture, and any dynamic object that registers a collider). `includeAnalytic: true` also pulls in box/cylinder/sphere/plane colliders (invisible walls, trigger volumes). `/noire3d worldgeo` toggles a live preview of it around the player.
 
 ## Lighting an object with the game's own lights
 
-A node drawn the normal way is lit by this renderer's ambient and directional light, so a house lamp switched off changes nothing on it. `DrawGameLit` instead draws the node into the **game's own G-buffer**, inside the game's geometry pass, and the game's deferred lighting pass then lights it - every lamp, the sun, the ambient term, shadow-map lookups, tonemapping and exposure, all identical to the wall beside it rather than approximated:
+A node drawn the normal way is lit by this renderer's ambient and directional light, so a house lamp switched off changes nothing on it. `DrawGameLit` instead draws the node into the **game's own G-buffer**, inside the game's geometry pass, and the game's deferred lighting pass then lights it: every lamp, the sun, the ambient term, shadow-map lookups, tonemapping and exposure, all identical to the wall beside it.
 
 ```csharp
 // Once per frame, for as long as the node should be game-lit. Nothing is retained between frames.
 NoireDraw3D.DrawGameLit(node);
 ```
 
-Submitting is all you do: the node's own draw is suppressed for that frame, so it is never rendered twice, and it draws normally again on the first frame you stop submitting. **Do not hide it with `Visible = false` to get that** - hiding also removes a node from picking and hover, and an injected object is still standing in the world and still clickable.
+Submission is all that is required: the node's own draw is suppressed for that frame, so it is never rendered twice, and it draws normally again on the first frame submission stops. **Do not hide it with `Visible = false` instead**, since hiding also removes a node from picking and hover, and an injected object is still standing in the world and still clickable.
 
 Submit it from `Scene3D.OnPrepareFrame` rather than from a UI callback, or the object vanishes whenever that window is closed.
 
 **What it costs.** Everything that lives in this renderer's own pass is unavailable: outlines and rims, transparency and fade, ground decals, and drawing above everything. Deferred geometry is opaque. An object that needs any of those stays on the normal path.
 
-**Shadow casting** is a second, separate injection: with `NoireDraw3D.GameLit.CastShadows` on, every game-lit mesh is also drawn depth-only into the game's own shadow passes, with each light's view-projection read out of the constants the game's own shadow draws consume. It reaches every map the game re-renders that frame - the sun's cascades and lights near anything moving - while a map the game rendered once and cached picks the object up on its next refresh.
+**Shadow casting** is a second, separate injection: with `NoireDraw3D.GameLit.CastShadows` on, every game-lit mesh is also drawn depth-only into the game's own shadow passes, with each light's view-projection read out of the constants the game's own shadow draws consume. It reaches every map the game re-renders that frame (the sun's cascades and lights near anything moving), while a map the game rendered once and cached picks the object up on its next refresh.
 
 **This is the only part of Draw3D that draws inside the game's frame rather than into its own target**, so it does nothing until a caller opts in, and it lapses again a few frames after the last submission.
 
-`NoireDraw3D.GameLit` holds what gets written into each channel of the game's buffer. Every default is a value measured off the game's own geometry, so an object that looks right needs none of it:
+`NoireDraw3D.GameLit` holds what gets written into each channel of the game's buffer. Every default is a value measured off the game's own geometry:
 
 | Property | What it is |
 |---|---|
-| `Misc` | rtv3's four channels, written verbatim. Red is the half-float ceiling on world geometry - the only value written anywhere near that magnitude. |
+| `Misc` | rtv3's four channels, written verbatim. Red is the half-float ceiling on world geometry, the only value written anywhere near that magnitude. |
 | `ShadingModelId` | rtv0's alpha: which of the game's shading models runs over these pixels. `128` is furniture and architecture, `32` is characters. |
 | `MaterialParams`, `MaterialOverride` | rtv1's scalars, and how much they replace the specular map a material samples. Red is reflection strength, green moves and scales the highlight, blue darkens the surface. |
 | `MaterialCeiling` | The top of rtv1's range selects a mode rather than a value (red at `0.999` turns the reflection green), and a specular map reaches `1.0` in places, so the channels are held below this. |
-| `Stencil` | The mark stamped into the stencil plane. **The game's deferred light volumes test this**, so geometry carrying no mark receives no light at all. Defaults to `Draw3DGameLit.LitStencilMark`; leave it alone unless you know why. |
-| `AlbedoOverride` | Forces a flat albedo. Black is the test that separates a wrong G-buffer from a downstream pass that never reads it. |
+| `Stencil` | The mark stamped into the stencil plane. **The game's deferred light volumes test this**, so geometry carrying no mark receives no light at all. Defaults to `Draw3DGameLit.LitStencilMark`. |
+| `AlbedoOverride` | Forces a flat albedo. Black separates a wrong G-buffer from a downstream pass that never reads it. |
 | `WriteColor`, `WriteDepth` | Turn off each half of what the injection puts into the game's frame. Not independent in practice: with depth off, the world simply draws over the object and the colour write does not survive the rest of the pass. |
 
 ## Picking
 
 ```csharp
-NoireDraw3D.PickInputGate = () => !myUiWantsTheMouse; // you decide when the mouse is free
+NoireDraw3D.PickInputGate = () => !myUiWantsTheMouse; // the caller decides when the mouse is free
 var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact triangles for meshes built with keepCpuData
+```
+
+To hit-test something the renderer does not own (the game's collision, a navmesh, caller-owned geometry), take
+the ray instead. It is the same ray `Pick` uses, through last frame's camera, so it hits what is drawn where it
+is drawn; reconstructing it from the game's own matrices is where the errors come from.
+
+```csharp
+if (NoireDraw3D.TryScreenToRay(mousePos, out var origin, out var direction))
+{
+    var hit = GameCollisionHelper.Raycast(origin, direction);
+}
 ```
 
 ## Layer controls
@@ -209,30 +225,30 @@ var hits = NoireDraw3D.Pick(mousePos);                // nearest first; exact tr
 | Property | What it does |
 |---|---|
 | `NoireDraw3D.Enabled` | Master switch (also re-arms the renderer after a fault). |
-| `NoireDraw3D.LayerOpacity` | 0-1 fade of the whole 3D layer. |
+| `NoireDraw3D.LayerOpacity` | 0 to 1 fade of the whole 3D layer. |
 | `NoireDraw3D.NativeUi.Layering` | **Default `UnderGameUi`.** Where the layer lands in the game's frame. `UnderGameUi` composites via a render-thread hook on the present composition, before the game draws its UI, so the UI is always on top. `OverEverything` composites over the backbuffer at present time, which is the only mode that can decide *per element* what the layer covers. Falls back to `OverEverything` on any frame the injection can't run. |
 | `NoireDraw3D.NativeUi.KeepUiOnTop` | **Default true. Only applies under `OverEverything`.** Masks the layer per-pixel so the HUD, addons and nameplates read on top. Letter-exact and rectangle-free: the mask is the *difference* between the present buffer photographed before and after the game drew its UI into it. Rides the same render-thread hook, so a frame with no injection point has no "before" and composites unmasked. |
 | `NoireDraw3D.NativeUi.Nameplates` | **Default `DepthAware`. Honoured under both layering modes.** Whether the game's own nameplates are occluded by 3D objects in front of them. Under the game UI it stamps depth for the game's plate pass to test; over everything it gates where the `KeepUiOnTop` mask applies. `Covered` requires `OverEverything`. Fail-soft. |
 | `NoireDraw3D.NativeUi.NameplateDim` | **Default 0. Only applies under `OverEverything`** with `KeepUiOnTop` on, and only to a plate `Nameplates` decided is covered. How much a covered plate still shows through: 0 = fully covered, toward 1 = faintly readable. |
-| `NoireDraw3D.KeepDrawingWhenUiHidden` | Keep **the 3D layer** rendering in cutscenes/GPose/UI-hide. Affects only the layer - your windows are yours (see below). |
-| `NoireDraw3D.IsGameUiHidden` | Whether the game UI is hidden (user toggle / cutscene / GPose), read from the game rather than Dalamud - so it stays truthful whatever the overrides are doing. |
+| `NoireDraw3D.KeepDrawingWhenUiHidden` | Keep **the 3D layer** rendering in cutscenes, GPose and UI-hide. Affects only the layer; plugin windows are unaffected (see below). |
+| `NoireDraw3D.IsGameUiHidden` | Whether the game UI is hidden (user toggle, cutscene, GPose), read from the game rather than Dalamud, so it stays truthful whatever the overrides are doing. |
 | `NoireDraw3D.Lighting` | Ambient + directional half-Lambert parameters for `Lit` materials. |
 | `NoireDraw3D.OnFault` | Raised when the self-disable ladder trips (a pipeline, feature, or the renderer disabled itself). |
 
 > **The two layering modes keep the UI readable by opposite means, and both are letter-exact.**
 >
 > - **`UnderGameUi`** composites *before* the game draws its UI, so the game paints its HUD over the layer by itself. Nothing to configure, nothing to mask, no cost. The trade is that the UI always wins: the layer can never cover any of it.
-> - **`OverEverything`** composites *after*, so the UI is already there and decidable. `KeepUiOnTop` masks the layer back off the UI, and because the UI now exists, a nameplate can be `Covered` outright or dimmed rather than merely occluded or not.
+> - **`OverEverything`** composites *after*, so the UI is already there and decidable. `KeepUiOnTop` masks the layer back off the UI, and since the UI now exists, a nameplate can be `Covered` outright or dimmed rather than merely occluded or not.
 >
-> **Where `OverEverything`'s mask comes from.** Not the backbuffer's alpha channel - FFXIV writes no UI coverage there. Instead Draw3D photographs the game's present buffer at the pre-UI injection point and again at present time, and **differences the two**: wherever the image changed, the UI painted. Same texture both times, so the snapshots always agree on format and resolution, and antialiased glyph edges come out as partial coverage for free.
+> **Where `OverEverything`'s mask comes from.** Not the backbuffer's alpha channel, since FFXIV writes no UI coverage there. Draw3D photographs the game's present buffer at the pre-UI injection point and again at present time, and **differences the two**: wherever the image changed, the UI painted. The same texture is used both times, so the snapshots always agree on format and resolution, and antialiased glyph edges come out as partial coverage.
 >
-> Two consequences: the mask rides the same render-thread hook the under-UI path uses, so a frame whose injection point cannot fire has no "before" photo and composites unmasked. And a UI pixel that blends to exactly the colour beneath it reads as no-UI - correct, since it is invisible either way.
+> Two consequences: the mask rides the same render-thread hook the under-UI path uses, so a frame whose injection point cannot fire has no "before" photo and composites unmasked. And a UI pixel that blends to exactly the colour beneath it reads as no-UI, which is correct, since it is invisible either way.
 >
-> `/noire3d uimask` reports whether the difference is finding the UI at all, and the sampled grid it is looking at. If protection ever looks inert, that command answers it in one line rather than leaving you guessing.
+> `/noire3d uimask` reports whether the difference is finding the UI at all, and the sampled grid it is looking at.
 
-> **UI-hide, and your windows.** The 3D layer renders inside `UiBuilder.Draw`, and Dalamud's four `Disable*UiHide` flags are the only way to keep that callback firing. NoireDraw3D therefore **holds them for the layer's lifetime** and decides for itself whether to draw, so `KeepDrawingWhenUiHidden` means only what it says.
+> **UI-hide, and plugin windows.** The 3D layer renders inside `UiBuilder.Draw`, and Dalamud's four `Disable*UiHide` flags are the only way to keep that callback firing. NoireDraw3D therefore **holds them for the layer's lifetime** and decides for itself whether to draw, so `KeepDrawingWhenUiHidden` means only what it says.
 >
-> The consequence is that **Dalamud will not auto-hide your windows** - that call is yours now, and it is one line:
+> The consequence is that **Dalamud will not auto-hide the plugin's own windows**. That call belongs to the plugin, and it is one line:
 >
 > ```csharp
 > public override bool DrawConditions() => !NoireDraw3D.IsGameUiHidden;
@@ -261,37 +277,38 @@ A custom pipeline gets more inputs than the standard shaders use:
 
 A disposed texture in any slot skips the draw rather than binding a stale pointer.
 
-## Diagnostics - `/noire3d`
+## Diagnostics: `/noire3d`
 
 | Command | Purpose |
 |---|---|
 | `/noire3d validate` | Projection parity vs the game's own WorldToScreen over 10 frames (gate: <= 1 px). |
 | `/noire3d probe` | Forces a fresh depth calibration, then reads real depth-buffer values back and compares them to the calibrated prediction (gate: >= 90 % within 1e-3). |
-| `/noire3d stats` | Frame/draw/skip counters + GPU timings - "why is nothing drawing" is always answerable. |
-| `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead - the same line `ShowDecalShape()` draws. |
-| `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering - retained decals and immediate-layer grounded shapes alike, including `ImDraw3D` shapes, which have no node to call `ShowDecalShape()` on. Implied by `wire`. |
-| `/noire3d camtrace [frames]` | Camera-phase "swim" trace: pixel-anchored residuals for the struct-camera history and the captured GPU camera (the `cap` row), plus the inject-vs-fallback split and the capture state (run it while panning/zooming hard). |
-| `/noire3d cbprobe [frames]` | Camera-constant discovery report: every constant buffer observed on the upload paths, its update mechanism and VS slot, and the candidate camera windows with match errors. The answer to "is the capture locked, and on what". |
-| `/noire3d gpucam` | A/B toggle between the captured GPU camera constants (default, swim-free) and the struct snapshot. Turning it off deliberately reintroduces the old load-scaled swim for comparison. |
-| `/noire3d heightmap` | Toggles `CollisionHeightMap` - the top-down collision height-map. Only `DecalProjection.HighestOnly` reads it, so with no `HighestOnly` decal on screen there is nothing to see. It does **not** cut characters out of decals (that is `ExcludeObjects` + `CharacterStencilValue`). |
-| `/noire3d decalvolumes` | Draws every decal's **projection box** - the volume its SDF is evaluated in - retained and immediate alike. `SceneNode.ShowDecalVolume()` is the per-node version. Independent of `decalshapes`; turn both on to see the shape inside its volume. |
-| `/noire3d topsurface` | Reports every link in the `DecalProjection.HighestOnly` chain - how many decals asked for it, the master switch, the threshold, the cached collision, and whether the height-map actually drew - then names the missing one. The answer to "I set HighestOnly and nothing changed". |
+| `/noire3d stats` | Frame, draw and skip counters plus GPU timings. |
+| `/noire3d wire` | Wireframe toggle. Ground decals carry no mesh to wireframe (their shape lives in the pixel shader), so they trace the outline of what they paint instead, the same line `ShowDecalShape()` draws. |
+| `/noire3d decalshapes` | Traces what **every** decal paints as an outline, over normal rendering: retained decals and immediate-layer grounded shapes alike, including `ImDraw3D` shapes, which have no node to call `ShowDecalShape()` on. Implied by `wire`. |
+| `/noire3d camtrace [frames]` | Camera-phase swim trace: pixel-anchored residuals for the struct-camera history and the captured GPU camera (the `cap` row), plus the inject-vs-fallback split and the capture state. Run it while panning or zooming hard. |
+| `/noire3d cbprobe [frames]` | Camera-constant discovery report: every constant buffer observed on the upload paths, its update mechanism and VS slot, and the candidate camera windows with match errors. |
+| `/noire3d gpucam` | A/B toggle between the captured GPU camera constants (default, swim-free) and the struct snapshot. Turning it off reintroduces load-scaled swim for comparison. |
+| `/noire3d batchcb` | A/B toggle for `Performance.BatchedObjectConstants` (singles ride the instanced route; the object CB re-uploads only on material-param changes). |
+| `/noire3d heightmap` | Toggles `CollisionHeightMap`, the top-down collision height-map. Only `DecalProjection.HighestOnly` reads it, so with no `HighestOnly` decal on screen there is nothing to see. It does **not** cut characters out of decals; that is `ExcludeObjects` plus `CharacterStencilValue`. |
+| `/noire3d decalvolumes` | Draws every decal's **projection box**, the volume its SDF is evaluated in, retained and immediate alike. `SceneNode.ShowDecalVolume()` is the per-node version. Independent of `decalshapes`. |
+| `/noire3d topsurface` | Reports every link in the `DecalProjection.HighestOnly` chain (how many decals asked for it, the master switch, the threshold, the cached collision, and whether the height-map drew) then names the missing one. |
 | `/noire3d reset` | Resets counters and re-arms the renderer. |
 | `/noire3d ontop` | Toggles `NativeUi.Layering` (under the game UI vs over everything). |
 | `/noire3d platedepth` | Toggles `NativeUi.Nameplates` (depth-aware vs always-visible nameplates). |
-| `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. The answer to "is keeping the UI on top actually doing anything". |
-| `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Separates the two ways nameplate layering looks broken on screen but is not the same bug: factor 1 on a covered plate means the mask never found its pixels; factor 0 on a plate that should read on top means the occlusion test decided wrongly. |
+| `/noire3d uimask` | Reports the over-everything UI mask: whether the render-thread hook is landing its pre-UI snapshot, the health verdict, and the per-sample difference grid. |
+| `/noire3d plates` | Per-nameplate policy factors from last frame, with the distances that decided them. Factor 1 on a covered plate means the mask never found its pixels; factor 0 on a plate that should read on top means the occlusion test decided wrongly. |
 | `/noire3d rtlog` | Captures one frame's render-target bind sequence to the log, with every bind's pixel format (injection-point diagnostics). |
-| `/noire3d framedump [sweep [count]\|<from> [count]]` | Writes out what render-target binds actually produced, as images, to find the first pass where a pixel is already wrong. `sweep` (the default) spreads them across the whole frame - start there, since the frame's length moves with what is on screen and a bind index from an earlier run may not name the same pass next time. Narrow with an explicit span afterwards, using indices from the bind table that run prints. Each dump stalls the frame. |
+| `/noire3d framedump [sweep [count]\|<from> [count]]` | Writes out what render-target binds produced, as images, to find the first pass where a pixel is already wrong. `sweep` (the default) spreads them across the whole frame, which is the place to start, since the frame's length moves with what is on screen and a bind index from an earlier run may not name the same pass next time. Narrow with an explicit span afterwards, using indices from the bind table that run prints. Each dump stalls the frame. |
 
 Commands are global across plugins; everything is also available programmatically via `NoireDraw3D.Diagnostics`.
 
-The **visual showcase** - the showcase gallery scene, the world-geometry collision preview, glTF import, and the gizmo-backend toggle - lives in the standalone **`NoireDraw3DDemoPlugin`** (in this repo's solution), an ImGui front-end built entirely on this public API. It also exposes a scenes/decals playground (including the wall/ground/both surface filter), a full per-object inspector, and a live editor for every global knob, one page per area.
+The **visual showcase** (the showcase gallery scene, the world-geometry collision preview, glTF import, and the gizmo-backend toggle) lives in the standalone **`NoireDraw3DDemoPlugin`** in this repo's solution, an ImGui front-end built entirely on this public API. It also exposes a scenes and decals playground (including the wall/ground/both surface filter), a full per-object inspector, and a live editor for every global knob, one page per area.
 
 ## Rules of the road
 
-- **Ownership:** whoever creates a `Mesh`/`GpuTexture` disposes it. Scenes and nodes only reference assets; disposing an asset in use is safe (draws skip it, counted, never a crash).
+- **Ownership:** whoever creates a `Mesh` or `GpuTexture` disposes it. Scenes and nodes only reference assets; disposing an asset in use is safe (draws skip it, counted, never a crash).
 - **Threading:** scene mutation and asset creation are safe from any thread. `Im` calls belong in draw-cycle callbacks.
-- **Camera:** the layer projects with the **exact camera constants the GPU rasterized the frame with**, self-discovered from the game's own constant-buffer uploads (never a fixed offset), so world-anchored content stays pixel-locked to the world during violent camera motion at any frame-rate and any load. Falls back to a struct snapshot automatically; `/noire3d gpucam` A/Bs the two and `/noire3d cbprobe` reports the discovery.
-- **Depth:** world occlusion is **self-calibrating** - the depth buffer's value convention is derived analytically from the game's own projection, never assumed, so a patch that changes the projection is handled automatically instead of producing inverted visuals. `/noire3d probe` cross-checks the calibration against the game's collision surfaces.
-- **Failure:** everything fails soft, loudly once - a broken shader, unreadable depth buffer, or missing camera degrades the narrowest feature and never takes your plugin down.
+- **Camera:** the layer projects with the **exact camera constants the GPU rasterized the frame with**, self-discovered from the game's own constant-buffer uploads rather than a fixed offset, so world-anchored content stays pixel-locked during violent camera motion at any frame-rate and any load. Falls back to a struct snapshot automatically; `/noire3d gpucam` A/Bs the two and `/noire3d cbprobe` reports the discovery.
+- **Depth:** world occlusion is **self-calibrating**. The depth buffer's value convention is derived analytically from the game's own projection rather than assumed, so a patch that changes the projection is handled automatically instead of producing inverted visuals. `/noire3d probe` cross-checks the calibration against the game's collision surfaces.
+- **Failure:** everything fails soft, loudly once. A broken shader, unreadable depth buffer, or missing camera degrades the narrowest feature and never takes the host plugin down.

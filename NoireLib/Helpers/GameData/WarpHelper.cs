@@ -6,8 +6,7 @@ using Lumina.Excel.Sheets;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// What kind of placed interactable triggers a warp. Both kinds reach their warp through the same event handler, so
-/// they read identically out of the sheets, but they are interacted with differently and are worth telling apart.
+/// What kind of placed interactable triggers a warp.
 /// </summary>
 public enum WarpTriggerKind : byte
 {
@@ -15,42 +14,73 @@ public enum WarpTriggerKind : byte
     EventNpc,
 
     /// <summary>
-    /// An event object the character touches, such as the "exit to somewhere" object that leaves an instance. These
-    /// are targetable objects rather than people, and they are how most solo duties and story zones are left.
+    /// An event object the character touches, such as the "exit to somewhere" object that leaves an instance.
     /// </summary>
     EventObject,
 }
 
 /// <summary>
-/// One warp read out of the <c>Warp</c> sheet and the interactable that triggers it: where it goes, what it costs,
-/// and what has to be true for it to open.
+/// One named argument a <c>WarpLogic</c> row hands to the warp's script.
+/// The argument column is an untyped row reference, so what it identifies has to be read from the name; the prefixes
+/// the game uses are listed on <see cref="WarpHelper.NamesContentGate(WarpLogicInfo)"/>.
+/// </summary>
+/// <param name="Function">The constant's name, as in <c>QST_LUCKMA401</c> or <c>QST_SEQ_FINISH</c>.</param>
+/// <param name="Argument">The value, which is a row id for a quest or item and a plain number for a sequence.</param>
+public readonly record struct WarpLogicParam(string Function, uint Argument);
+
+/// <summary>
+/// A <c>WarpLogic</c> row: the script that runs a warp, the confirmation it shows, and the named arguments it is
+/// given.
+/// The row names a compiled Lua script at <c>game_script/warp/&lt;ScriptName&gt;.luab</c> and its parameters are that
+/// script's own gating constants, which for three warps are the only gate <c>WarpCondition</c> does not carry.
+/// </summary>
+/// <param name="RowId">The WarpLogic row id.</param>
+/// <param name="ScriptName">
+/// The row's <c>WarpName</c>, which is the stem of its script file, empty for the two generic rows that name no
+/// script of their own.
+/// </param>
+/// <param name="Question">The confirmation prompt, localised, or empty when the row shows none.</param>
+/// <param name="ResponseYes">The affirmative answer's text, localised.</param>
+/// <param name="ResponseNo">The negative answer's text, localised.</param>
+/// <param name="CanSkipCutscene">Whether the row lets its cutscene be skipped.</param>
+/// <param name="Params">The named arguments, in the row's own slot order, with the empty slots dropped.</param>
+public readonly record struct WarpLogicInfo(
+    uint RowId,
+    string ScriptName,
+    string Question,
+    string ResponseYes,
+    string ResponseNo,
+    bool CanSkipCutscene,
+    IReadOnlyList<WarpLogicParam> Params);
+
+/// <summary>
+/// One warp read out of the <c>Warp</c> sheet and the interactable that triggers it.
 /// </summary>
 /// <param name="TriggerBaseId">The ENpcBase or EObj row id of the interactable that triggers this warp.</param>
 /// <param name="TriggerKind">Whether the trigger is an event NPC or an event object.</param>
 /// <param name="WarpRowId">The Warp sheet row id, unique per warp.</param>
-/// <param name="DestTerritoryId">The territory the warp lands in. The same territory for an in-place lift, another for a ferry.</param>
+/// <param name="DestTerritoryId">The territory the warp lands in, which is the departure territory for an in-place lift.</param>
 /// <param name="ArrivalInstanceId">
 /// The destination PopRange instance id, resolved to a position against the destination territory's own level file
 /// through <see cref="LevelFileHelper.BuildPopRangeIndex"/>.
 /// </param>
 /// <param name="GilCost">
-/// The warp's gil fare from its <c>WarpCondition</c>, or zero when it is free. This is what the ride costs, not a sum
+/// The warp's gil fare from its <c>WarpCondition</c>, or zero when it is free, which is a price paid and not a sum
 /// the character must already be carrying.
 /// </param>
 /// <param name="ClassLevel">The class or job level the warp's condition requires, or zero when it needs none.</param>
-/// <param name="RequiredQuests">
-/// The quests the warp's condition names, empty when it names none. A <c>WarpCondition</c> lists up to four.
-/// </param>
+/// <param name="RequiredQuests">The up to four quests the warp's condition names, empty when it names none.</param>
 /// <param name="QuestThreshold">
-/// How many of <see cref="RequiredQuests"/> must be complete. The condition states this as a mode rather than a
-/// number, so it is only ever one (any one of them opens the warp, an unlock reachable by several storylines) or the
-/// full count (all of them are needed).
+/// How many of <see cref="RequiredQuests"/> must be complete, which the condition states as a mode and so is only
+/// ever one or the full count.
 /// </param>
 /// <param name="LogicId">
-/// The warp's <c>WarpLogic</c> row, which names the family it belongs to. Nearly every warp in the game shares one
-/// generic family; the handful that do not are the inn warps, the two housing doors, the rental-chocobo desks, the
-/// wedding desk, and the story portal networks. Zero when the warp names no logic row. Resolve it with
-/// <see cref="WarpHelper.LogicName"/>.
+/// The warp's <c>WarpLogic</c> row id, zero when it names none, read with <see cref="WarpHelper.ReadLogic"/>.
+/// </param>
+/// <param name="LogicParams">
+/// The logic row's named arguments, empty for the generic rows. These can be the warp's only gate: three warps carry
+/// quest arguments here while their <c>WarpCondition</c> names no quest at all. See
+/// <see cref="WarpHelper.NamesContentGate(WarpLogicInfo)"/>.
 /// </param>
 public readonly record struct WarpDefinition(
     uint TriggerBaseId,
@@ -62,22 +92,23 @@ public readonly record struct WarpDefinition(
     int ClassLevel,
     IReadOnlyList<uint> RequiredQuests,
     int QuestThreshold,
-    uint LogicId = 0);
+    uint LogicId = 0,
+    IReadOnlyList<WarpLogicParam>? LogicParams = null);
 
 /// <summary>
-/// Finds the warps the game's own data describes: an interactable that teleports the character to a set landing spot.
-/// Warps are found by the event handler they run rather than by name, so scanning picks up every one of them in every
-/// client language and takes nothing that merely looks like one. Every read is guarded; a missing sheet yields empty.
+/// Finds the interactables the game's data describes as warping the character to a set landing spot.
+/// Warps are matched by the event handler they run rather than by name, so the scan is language independent.
+/// Every read is guarded and a missing sheet yields empty.
 /// </summary>
 public static class WarpHelper
 {
-    // The WarpCondition.CompleteParam value meaning every quest the condition names must be complete. Any other
-    // value means any one of them will do; see Build for the rows that establish it.
+    // The WarpCondition.CompleteParam value meaning every quest the condition names must be complete; any other
+    // value means any one of them will do.
     private const byte AllOfMode = 1;
 
     /// <summary>
     /// The Warp rows that name a destination territory, which is the set of handler ids an interactable has to
-    /// reference to be a warp trigger. Hand it to <see cref="EventNpcHelper.ScanHandlers"/> to keep that scan small.
+    /// reference to be a warp trigger, and the filter <see cref="EventNpcHelper.ScanHandlers"/> takes.
     /// </summary>
     /// <returns>The Warp row ids.</returns>
     public static IReadOnlySet<uint> ReadWarpIds()
@@ -100,8 +131,8 @@ public static class WarpHelper
     }
 
     /// <summary>
-    /// The warps triggered by talking to an event NPC, keyed by the ENpcBase row that triggers them. One NPC can
-    /// carry several, which is a lift attendant's menu of rides.
+    /// The warps triggered by talking to an event NPC, keyed by the ENpcBase row that triggers them, where one NPC
+    /// can carry several.
     /// </summary>
     /// <param name="scan">
     /// A pre-built <see cref="EventNpcHandlerScan"/> to read from, so one sheet pass can serve several consumers.
@@ -136,12 +167,9 @@ public static class WarpHelper
     }
 
     /// <summary>
-    /// The warps triggered by touching an event object, keyed by the EObj row that triggers them. These are the "exit
-    /// to somewhere" objects: the targetable things, not people, that leave a solo duty, a story zone, a guild hall,
-    /// or a private area, and they are how most instances are left on foot.<br/>
-    /// An object either runs a warp itself or runs an array handler that holds the warp it triggers. The second form
-    /// is how a large share of doors and teleporters are wired, so reading only the direct form misses them entirely
-    /// even though their destination is right there in the data.
+    /// The warps triggered by touching an event object, keyed by the EObj row that triggers them.
+    /// An object either runs a warp itself or runs an array handler holding it, and a large share of doors and
+    /// teleporters use the second form; both are covered here, as are the <c>WKSWarp</c> rows.
     /// </summary>
     /// <returns>The warp definitions keyed by triggering EObj row id.</returns>
     public static IReadOnlyDictionary<uint, IReadOnlyList<WarpDefinition>> ScanEventObjectWarps()
@@ -179,14 +207,56 @@ public static class WarpHelper
                 }
             }
 
+            // Neither of the two forms above reaches the WKSWarp rows.
+            foreach (var (objectId, definitions) in ScanCosmicWarps())
+            {
+                foreach (var definition in definitions)
+                    Append(warps, objectId, definition);
+            }
+
             return (IReadOnlyDictionary<uint, IReadOnlyList<WarpDefinition>>)warps;
         }, empty) ?? empty;
     }
 
     /// <summary>
-    /// The array event handlers that hold a warp, keyed by handler id. An array handler is a small list of other
-    /// handler ids an interactable runs; when one of them is a Warp row, interacting with the object warps the
-    /// character exactly as a direct warp handler would.
+    /// The warps wired through the <c>WKSWarp</c> table rather than through an event object's own handler, which is
+    /// how Cosmic Exploration's elevators are built and is already folded into <see cref="ScanEventObjectWarps"/>.
+    /// The two columns are unnamed in the schema and read positionally, the first being the EObj row and the second
+    /// the Warp row.
+    /// </summary>
+    /// <returns>The warp definitions keyed by triggering EObj row id.</returns>
+    public static IReadOnlyDictionary<uint, IReadOnlyList<WarpDefinition>> ScanCosmicWarps()
+    {
+        var empty = (IReadOnlyDictionary<uint, IReadOnlyList<WarpDefinition>>)new Dictionary<uint, IReadOnlyList<WarpDefinition>>();
+
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            var sheet = ExcelSheetHelper.GetSheet<WKSWarp>();
+            var warpSheet = ExcelSheetHelper.GetSheet<Warp>();
+            if (sheet == null || warpSheet == null)
+                return empty;
+
+            var warps = new Dictionary<uint, IReadOnlyList<WarpDefinition>>();
+            foreach (var row in sheet)
+            {
+                var objectId = row.Unknown0;
+                var warpId = row.Unknown1;
+                if (objectId == 0 || warpId == 0)
+                    continue;
+
+                if (!warpSheet.TryGetRow(warpId, out var warp) || warp.TerritoryType.RowId == 0)
+                    continue;
+
+                Append(warps, objectId, Build(objectId, WarpTriggerKind.EventObject, warpId, warp));
+            }
+
+            return (IReadOnlyDictionary<uint, IReadOnlyList<WarpDefinition>>)warps;
+        }, empty) ?? empty;
+    }
+
+    /// <summary>
+    /// The array event handlers that hold a warp, keyed by handler id, an array handler being a list of other handler
+    /// ids an interactable runs.
     /// </summary>
     /// <returns>The Warp row ids each array handler holds.</returns>
     public static IReadOnlyDictionary<uint, IReadOnlyList<uint>> ScanArrayHandlerWarps()
@@ -248,15 +318,13 @@ public static class WarpHelper
     }
 
     /// <summary>
-    /// Resolves a <c>WarpLogic</c> row's own name, which is the internal family a warp belongs to rather than
-    /// anything shown to a player: <c>WarpInnLimsaLominsa</c>, <c>WarpHousingEnterHouse</c>,
-    /// <c>WarpRentalChocobo</c>, <c>WarpSEElpis</c>, and so on. It is not localised and never changes with the
-    /// client language, so it is safe to use as a classifier.<br/>
-    /// The overwhelming majority of warps share one generic family whose name is empty, so an empty result means
-    /// "an ordinary warp" rather than a failed lookup.
+    /// Resolves a <c>WarpLogic</c> row's script name, such as <c>WarpInnLimsaLominsa</c>, which is not localised and
+    /// so is safe to use as a classifier.
+    /// Most warps share the generic rows whose name is empty, so an empty result means an ordinary warp rather than a
+    /// failed lookup.
     /// </summary>
     /// <param name="logicId">The WarpLogic row id, from <see cref="WarpDefinition.LogicId"/>.</param>
-    /// <returns>The family name, or empty when the row is generic or does not resolve.</returns>
+    /// <returns>The script name, or empty when the row is generic or does not resolve.</returns>
     public static string LogicName(uint logicId)
     {
         return SafeExecutor.ExecuteSafely(() =>
@@ -269,10 +337,95 @@ public static class WarpHelper
     }
 
     /// <summary>
-    /// Resolves a warp's display text in the client's own language, from ids rather than from text frozen when the
-    /// data was read. An event object is named by the object itself ("exit to the Rising Stones"), which reads better
-    /// than the confirmation the warp asks; an NPC warp has no object name, so it takes the warp's own name and falls
-    /// back to its confirmation question.
+    /// Reads a <c>WarpLogic</c> row whole: the script it names, the confirmation it shows, and the arguments it
+    /// hands that script.
+    /// </summary>
+    /// <param name="logicId">The WarpLogic row id, from <see cref="WarpDefinition.LogicId"/>.</param>
+    /// <returns>The row, or null when it does not resolve.</returns>
+    public static WarpLogicInfo? ReadLogic(uint logicId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (logicId == 0 || !ExcelSheetHelper.TryGetRow<WarpLogic>(logicId, out var row) || row is not { } logic)
+                return (WarpLogicInfo?)null;
+
+            return new WarpLogicInfo(
+                logicId,
+                logic.WarpName.ExtractText() ?? string.Empty,
+                logic.Question.ExtractText() ?? string.Empty,
+                logic.ResponseYes.ExtractText() ?? string.Empty,
+                logic.ResponseNo.ExtractText() ?? string.Empty,
+                logic.CanSkipCutscene,
+                ReadParams(logic));
+        }, null);
+    }
+
+    /// <summary>
+    /// Whether a warp's logic arguments gate it on content the character may not have.
+    /// Decided from the argument name, since the column is an untyped row reference: <c>QST_</c> and <c>QUEST_</c>
+    /// name a quest and <c>ITEM_</c> an item, while <c>QST_SEQ_</c> is a sequence number and <c>HOWTO_</c> a tutorial
+    /// popup, neither of which gates anything.
+    /// This reports that a gate exists, not whether it is passed, since how the script combines its arguments is not
+    /// in the sheets.
+    /// </summary>
+    /// <param name="logic">The logic row, from <see cref="ReadLogic"/>.</param>
+    /// <returns>True when any argument names a quest or an item.</returns>
+    public static bool NamesContentGate(WarpLogicInfo logic)
+    {
+        foreach (var param in logic.Params)
+        {
+            if (IsContentGate(param.Function))
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <inheritdoc cref="NamesContentGate(WarpLogicInfo)"/>
+    /// <param name="definition">The warp, whose <see cref="WarpDefinition.LogicParams"/> are read.</param>
+    /// <returns>True when any argument names a quest or an item.</returns>
+    public static bool NamesContentGate(WarpDefinition definition)
+    {
+        var params_ = definition.LogicParams;
+        if (params_ == null)
+            return false;
+
+        for (var i = 0; i < params_.Count; i++)
+        {
+            if (IsContentGate(params_[i].Function))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsContentGate(string function)
+        => !function.StartsWith("QST_SEQ_", StringComparison.Ordinal)
+           && (function.StartsWith("QST_", StringComparison.Ordinal)
+               || function.StartsWith("QUEST_", StringComparison.Ordinal)
+               || function.StartsWith("ITEM_", StringComparison.Ordinal));
+
+    private static IReadOnlyList<WarpLogicParam> ReadParams(WarpLogic logic)
+    {
+        List<WarpLogicParam>? read = null;
+
+        foreach (var param in logic.WarpParams)
+        {
+            var function = param.Function.ExtractText();
+            if (string.IsNullOrEmpty(function))
+                continue;
+
+            read ??= [];
+            read.Add(new WarpLogicParam(function, param.Argument.RowId));
+        }
+
+        return read ?? [];
+    }
+
+    /// <summary>
+    /// Resolves a warp's display text in the client's current language from ids rather than from frozen text.
+    /// An event object is labelled by the object name; an NPC warp takes the warp name, then its confirmation
+    /// question, then the NPC name, since some rows carry neither text of their own.
     /// </summary>
     /// <param name="definition">The warp to label.</param>
     /// <returns>The label, or empty when nothing resolves.</returns>
@@ -309,21 +462,22 @@ public static class WarpHelper
                     return question;
             }
 
+            if (triggerKind == WarpTriggerKind.EventNpc
+                && triggerBaseId != 0
+                && ExcelSheetHelper.TryGetRow<ENpcResident>(triggerBaseId, out var npcRow)
+                && npcRow is { } npc)
+            {
+                var npcName = npc.Singular.ExtractText();
+                if (!string.IsNullOrWhiteSpace(npcName))
+                    return npcName;
+            }
+
             return string.Empty;
         }, string.Empty) ?? string.Empty;
     }
 
-    // The fare and the unlock come from the warp's WarpCondition. Its Gil is what the ride costs, not something the
-    // character must already be carrying, so it is a price rather than a condition; the actual unlocks are the quests
-    // and the class level.
-    // CompleteParam is the MODE the condition combines its quests in, not how many of them are needed. Only four
-    // rows in the sheet name more than one quest, and they settle it: the two airship rows and the ferry row name the
-    // three city envoy quests with param 2, and a character only ever completes the envoy quest of the city they
-    // started in, so any reading that demands two of them locks every inter-city airship for everyone. The row that
-    // names two quests with param 1 gates the Gold Saucer passage from Ishgard behind both being in Ishgard at all
-    // and having unlocked the Saucer, which genuinely needs both. So param 1 is "all of these" and param 2 is "any
-    // one of these"; anything else is read as "any one", the looser reading, since a wrong strict answer silently
-    // removes a passage while a wrong loose one merely offers a trip the game then declines.
+    // CompleteParam is the mode the condition combines its quests in, not how many are needed: 1 means all of them,
+    // and anything else is read as any one of them, the looser reading that cannot silently remove a passage.
     private static WarpDefinition Build(uint triggerBaseId, WarpTriggerKind triggerKind, uint warpRowId, Warp warp)
     {
         var gil = 0;
@@ -355,8 +509,11 @@ public static class WarpHelper
             }
         }
 
+        // Read here rather than left to the caller: for three warps these arguments are the only gate there is.
+        var logicParams = warp.WarpLogic.ValueNullable is { } logic ? ReadParams(logic) : [];
+
         return new WarpDefinition(triggerBaseId, triggerKind, warpRowId, warp.TerritoryType.RowId,
-            warp.PopRange.RowId, gil, classLevel, quests, threshold, warp.WarpLogic.RowId);
+            warp.PopRange.RowId, gil, classLevel, quests, threshold, warp.WarpLogic.RowId, logicParams);
     }
 
     private static void Append(Dictionary<uint, IReadOnlyList<WarpDefinition>> index, uint key, WarpDefinition value)

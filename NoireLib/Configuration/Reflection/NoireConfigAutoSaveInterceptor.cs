@@ -7,13 +7,18 @@ using System.Reflection;
 namespace NoireLib.Configuration;
 
 /// <summary>
-/// A Castle DynamicProxy interceptor that automatically saves configuration
+/// A Castle DynamicProxy interceptor that requests a configuration save after any virtual member marked with
+/// <see cref="AutoSaveAttribute"/> runs.
 /// </summary>
 internal class NoireConfigAutoSaveInterceptor : IInterceptor
 {
     private readonly HashSet<string> autoSavePropertySetters;
     private readonly HashSet<string> autoSaveMethods;
 
+    /// <summary>
+    /// Collects the interceptable members marked with <see cref="AutoSaveAttribute"/> and warns about the rest.
+    /// </summary>
+    /// <param name="targetType">The configuration type being proxied.</param>
     public NoireConfigAutoSaveInterceptor(Type targetType)
     {
         autoSavePropertySetters = targetType
@@ -35,30 +40,32 @@ internal class NoireConfigAutoSaveInterceptor : IInterceptor
     }
 
     /// <summary>
-    /// Intercepts method/property calls to trigger auto-save if marked with [AutoSave].
+    /// Runs the intercepted call, then queues a save when the member is marked with <see cref="AutoSaveAttribute"/>.
     /// </summary>
-    /// <param name="invocation"></param>
+    /// <param name="invocation">The intercepted invocation.</param>
     public void Intercept(IInvocation invocation)
     {
         invocation.Proceed();
 
         var methodName = invocation.Method.Name;
 
-        // The member copy that transfers a loaded configuration onto this wrapper assigns through these same
-        // setters with values just read from disk, so writing them back here is redundant. Thread-scoped, so a
-        // genuine change on another thread while a copy runs still persists.
+        // Loading a configuration assigns through these same setters with values just read from disk, so writing
+        // them back is redundant. The flag is thread-scoped, so a real change on another thread still persists.
         if (NoireConfigBase.IsInternalCopying)
             return;
 
+        // Queued rather than written here: this runs inline inside the assignment, normally on the framework
+        // thread, where a synchronous write would block on the disk.
         if ((autoSavePropertySetters.Contains(methodName) || autoSaveMethods.Contains(methodName))
             && invocation.InvocationTarget is NoireConfigBase config)
-            config.Save();
+            config.RequestSave();
     }
 
     /// <summary>
-    /// Will log warnings for any members marked with [AutoSave] that are not virtual.
+    /// Logs a warning for every member marked with <see cref="AutoSaveAttribute"/> that is not virtual and so cannot
+    /// be intercepted.
     /// </summary>
-    /// <param name="targetType"></param>
+    /// <param name="targetType">The configuration type being proxied.</param>
     private static void ValidateVirtualMembers(Type targetType)
     {
         var nonVirtualProperties = targetType

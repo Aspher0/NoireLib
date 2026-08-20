@@ -17,21 +17,19 @@ public readonly record struct TerritoryEntry(uint TerritoryId, string LevelPath,
 public readonly record struct ZoneCrossingGate(uint QuestId, byte Step);
 
 /// <summary>
-/// Answers what the game's own sheets say about a territory: its name, the level files it is built from, whether it
-/// is a real place at all, whether it is queued for rather than walked into, and which crossings out of it are locked
-/// behind a quest. Every read is guarded; a missing sheet yields an empty result.
+/// Reads what the game's sheets say about a territory: its name, the level files it is built from, whether it is a
+/// real place, whether it is queued for rather than walked into, and which crossings out of it a quest gates. Every
+/// read is guarded, and a missing sheet yields an empty result.
 /// </summary>
 public static class TerritoryHelper
 {
     private static IReadOnlySet<uint>? flightUnlocked;
+    private static IReadOnlySet<uint>? teleportBarred;
     private static IReadOnlyList<(uint TerritoryId, uint CompFlgSet)>? aetherCurrentZones;
 
     /// <summary>
-    /// Resolves a territory id to its place name in the client's own language, falling back to the bare id when the
-    /// sheet carries no name. The fallback is the number alone rather than a worded one, so it reads the same
-    /// whatever language the client runs in.<br/>
-    /// A housing interior the sheet leaves unnamed is named from the housing sheets instead, since the interior
-    /// designs an estate can be renovated into belong to no district and so carry no place name of their own.
+    /// Resolves a territory id to its place name in the client's language, falling back to the housing sheets for an
+    /// unnamed interior design and then to the bare row id.
     /// </summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The display name, or the id fallback.</returns>
@@ -50,8 +48,8 @@ public static class TerritoryHelper
     }
 
     /// <summary>
-    /// The place name the TerritoryType sheet itself carries, with no housing fallback. Use it when the fallback
-    /// would be circular, and <see cref="Name"/> everywhere else.
+    /// The place name the TerritoryType sheet itself carries, with no housing fallback, for callers where
+    /// <see cref="Name"/>'s fallback would be circular.
     /// </summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The name, or empty when the sheet carries none.</returns>
@@ -70,9 +68,9 @@ public static class TerritoryHelper
         }, string.Empty) ?? string.Empty;
     }
 
-    /// <summary>Resolves a PlaceName row id to its display name, or empty when it does not resolve.</summary>
+    /// <summary>Resolves a PlaceName row id to its display name.</summary>
     /// <param name="placeNameRowId">The PlaceName row id.</param>
-    /// <returns>The name, or empty.</returns>
+    /// <returns>The name, or empty when the row does not resolve.</returns>
     public static string PlaceName(uint placeNameRowId)
     {
         return SafeExecutor.ExecuteSafely(() =>
@@ -103,11 +101,58 @@ public static class TerritoryHelper
     }
 
     /// <summary>
+    /// The aetheryte the territory is bound to, which for a residential district is the city crystal that offers its
+    /// wards and elsewhere is the crystal a map teleport lands on.
+    /// </summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <returns>The Aetheryte row id, or zero when the territory names none.</returns>
+    public static uint AetheryteOf(uint territoryId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (territoryId != 0 && ExcelSheetHelper.TryGetRow<TerritoryType>(territoryId, out var row) && row is { } territory)
+                return territory.Aetheryte.RowId;
+
+            return 0u;
+        }, 0u);
+    }
+
+    /// <summary>
+    /// The quests the territory's own event handler names, which for a residential district is the unlock quest its
+    /// aetheryte ward travel and ward changes are gated on.
+    /// </summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <returns>The Quest row ids, or empty when the handler names none.</returns>
+    public static IReadOnlyList<uint> ReadHandlerQuests(uint territoryId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (territoryId == 0 || !ExcelSheetHelper.TryGetRow<TerritoryType>(territoryId, out var row)
+                || row is not { } territory)
+                return (IReadOnlyList<uint>)[];
+
+            if (!ExcelSheetHelper.TryGetRow<ArrayEventHandler>(territory.ArrayEventHandler.RowId, out var handlerRow)
+                || handlerRow is not { } handler)
+                return [];
+
+            // The handler mixes quests with other event kinds, so an id only counts when the Quest sheet has it.
+            var quests = new List<uint>();
+            foreach (var entry in handler.Data)
+            {
+                if (entry.RowId != 0 && ExcelSheetHelper.TryGetRow<Quest>(entry.RowId, out var quest) && quest != null)
+                    quests.Add(entry.RowId);
+            }
+
+            return (IReadOnlyList<uint>)quests;
+        }, []) ?? [];
+    }
+
+    /// <summary>
     /// The territory's <c>Bg</c> string, which is the path its level files sit under and the thing
     /// <see cref="LevelFileHelper"/> reads them by.
     /// </summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
-    /// <returns>The Bg string, or empty.</returns>
+    /// <returns>The Bg string, or empty when the row does not resolve.</returns>
     public static string Bg(uint territoryId)
     {
         return SafeExecutor.ExecuteSafely(() =>
@@ -145,10 +190,8 @@ public static class TerritoryHelper
     }
 
     /// <summary>
-    /// Reads the territories the game actually describes, being those with either a place name or a level file. The
-    /// TerritoryType sheet carries a long tail of pure placeholder rows that have neither, and other sheets still
-    /// point at them, so without this a row naming one of them names a nameless zone. The test is the sheet's own
-    /// emptiness rather than a list, so a row that gains content later is picked up on its own.
+    /// Reads the territories that describe a real place, being those with either a place name or a level file. The
+    /// sheet carries a long tail of placeholder rows with neither that other sheets still point at.
     /// </summary>
     /// <returns>The territory row ids that describe a real place.</returns>
     public static IReadOnlySet<uint> ReadReal()
@@ -156,9 +199,7 @@ public static class TerritoryHelper
 
     /// <summary>
     /// Reads the territories entered from the duty finder rather than walked into, being those with a
-    /// <c>ContentFinderCondition</c>. That is the game's own statement that a place is queued for, and it covers
-    /// every dungeon, trial, raid, and quest battle while correctly leaving out the many instanced rooms a character
-    /// simply walks into through a door.
+    /// <c>ContentFinderCondition</c>, which leaves out the instanced rooms a character walks into through a door.
     /// </summary>
     /// <returns>The territory row ids that are queueable duties.</returns>
     public static IReadOnlySet<uint> ReadQueueableDuties()
@@ -171,6 +212,15 @@ public static class TerritoryHelper
     /// <returns>The territory row ids that allow mounts.</returns>
     public static IReadOnlySet<uint> ReadMountable()
         => flightUnlocked ??= ReadWhere(static territory => territory.Mount);
+
+    /// <summary>
+    /// Reads the territories whose intended use bars casting Teleport, which the game states as
+    /// <c>TerritoryIntendedUse.EnableTeleport</c>. The Diadem's rows bar it; the Cosmic Exploration planets allow it.
+    /// Cached, since the sheet cannot change while the client runs.
+    /// </summary>
+    /// <returns>The territory row ids Teleport cannot be cast from.</returns>
+    public static IReadOnlySet<uint> ReadTeleportBarred()
+        => teleportBarred ??= ReadWhere(static territory => territory.TerritoryIntendedUse.ValueNullable is { } use && !use.EnableTeleport);
 
     /// <summary>
     /// Reads the mountable territories that have aether currents, paired with the completion flag set that says
@@ -203,9 +253,8 @@ public static class TerritoryHelper
     }
 
     /// <summary>
-    /// Reads the quest conditions the <c>ZoneSharedGroup</c> sheet puts on zone crossings, keyed by the level-file
-    /// instance id of the gated object. Every requirement row on a shared group is a condition on the crossing, not
-    /// just the first: a barrier can sit behind several quests at once.
+    /// Reads the quest conditions the <c>ZoneSharedGroup</c> sheet puts on zone crossings. Every requirement row on a
+    /// shared group is a condition, not just the first, since a barrier can sit behind several quests at once.
     /// </summary>
     /// <returns>The gates keyed by the gated level object's instance id; a crossing can carry several.</returns>
     public static IReadOnlyDictionary<uint, IReadOnlyList<ZoneCrossingGate>> ReadZoneCrossingGates()
@@ -234,7 +283,7 @@ public static class TerritoryHelper
                         if (questId == 0)
                             continue;
 
-                        // A missing sequence column means the quest simply has to be complete. 255 marks that case.
+                        // A missing sequence column means the quest has to be complete, marked as 255.
                         var step = i < row.RequirementQuestSequence.Count ? (byte)row.RequirementQuestSequence[i] : (byte)255;
                         gates.Add(new ZoneCrossingGate(questId, step));
                     }
@@ -249,26 +298,19 @@ public static class TerritoryHelper
     }
 
     /// <summary>
-    /// Picks the one territory per place worth reading, and names the rest as its variants. Many TerritoryType rows
-    /// share a place's level files: the open-world zone plus its duty, quest-battle, and PvP versions (Central Shroud
-    /// alone has nineteen).<br/>
-    /// Sharing a level file is <b>not</b> enough to call two rows the same place: a residential district's apartment
-    /// and its private chambers are built from the same file but are different destinations. A row is a variant only
-    /// when it also shares the same place name, compared as the PlaceName row id rather than text.
+    /// Picks the one territory per place worth reading and names the rest as its variants. A row is a variant only
+    /// when it shares both the level path and the PlaceName row id, since an apartment and its private chambers are
+    /// built from the same file but are different destinations.
     /// </summary>
-    /// <param name="preferred">
-    /// Territories that must win their group when present, whatever their row id. A residential district is the case
-    /// that needs this: the instanced district the character actually stands in shares its path with an unused legacy
-    /// row of a lower id.
-    /// </param>
-    /// <returns>The variant map: each non-canonical territory pointing at the canonical one; canonical rows are omitted.</returns>
+    /// <param name="preferred">Territories that must win their group when present, whatever their row id.</param>
+    /// <returns>Each non-canonical territory pointing at the canonical one, with canonical rows omitted.</returns>
     public static IReadOnlyDictionary<uint, uint> BuildAliases(IReadOnlySet<uint>? preferred = null)
         => BuildAliases(ReadAll(), preferred);
 
     /// <inheritdoc cref="BuildAliases(IReadOnlySet{uint})"/>
     /// <param name="territories">The territories to group, typically from <see cref="ReadAll"/>.</param>
-    /// <param name="preferred">The territories that must win their group when present.</param>
-    /// <returns>The variant map: each non-canonical territory pointing at the canonical one.</returns>
+    /// <param name="preferred">Territories that must win their group when present, whatever their row id.</param>
+    /// <returns>Each non-canonical territory pointing at the canonical one, with canonical rows omitted.</returns>
     public static IReadOnlyDictionary<uint, uint> BuildAliases(
         IEnumerable<TerritoryEntry> territories,
         IReadOnlySet<uint>? preferred = null)
@@ -296,8 +338,7 @@ public static class TerritoryHelper
                 continue;
             }
 
-            // A preferred territory wins its group outright; otherwise the lowest row id wins, which is always the
-            // base zone because the variants are added by later patches and take later ids.
+            // Failing a preferred entry, the lowest row id wins: variants are added by later patches and take later ids.
             var candidateIsPreferred = preferred != null && preferred.Contains(territoryId);
             var existingIsPreferred = preferred != null && preferred.Contains(existing);
             if (candidateIsPreferred && !existingIsPreferred)
@@ -321,12 +362,15 @@ public static class TerritoryHelper
     }
 
     /// <summary>Resolves a territory onto its canonical one, returning it unchanged when it is its own.</summary>
-    /// <param name="aliases">The alias map from <see cref="BuildAliases"/>.</param>
+    /// <param name="aliases">The alias map from <see cref="BuildAliases(IReadOnlySet{uint})"/>.</param>
     /// <param name="territoryId">The territory to resolve.</param>
     /// <returns>The canonical territory id.</returns>
     public static uint ResolveAlias(IReadOnlyDictionary<uint, uint>? aliases, uint territoryId)
         => aliases != null && aliases.TryGetValue(territoryId, out var canonical) ? canonical : territoryId;
 
+    /// <summary>Collects the row ids of every non-zero TerritoryType row the predicate accepts.</summary>
+    /// <param name="predicate">The test each row is put to.</param>
+    /// <returns>The matching territory row ids, or an empty set when the sheet cannot be read.</returns>
     private static IReadOnlySet<uint> ReadWhere(System.Func<TerritoryType, bool> predicate)
     {
         return SafeExecutor.ExecuteSafely(() =>

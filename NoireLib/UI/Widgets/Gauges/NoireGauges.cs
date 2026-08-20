@@ -9,19 +9,10 @@ namespace NoireLib.UI;
 /// Small readouts that show a number as a shape: rings, bars, pips and countdowns. Immediate and stateless.
 /// </summary>
 /// <remarks>
-/// Every gauge takes a fraction from 0 to 1 and draws at the cursor, reserving exactly the space it used. Nothing is
-/// registered, nothing is remembered, and drawing one twice draws two. Colours left <see langword="null"/> resolve
-/// through <see cref="NoireTheme"/>, and every size is a logical pixel value at 100%. See <see cref="NoireUI.Scale"/>.
+/// Every gauge takes a fraction from 0 to 1 and draws at the cursor, reserving exactly the space it used. Colours
+/// left <see langword="null"/> resolve through <see cref="NoireTheme"/>, and every size is a logical pixel value at
+/// 100% (see <see cref="NoireUI.Scale"/>).
 /// </remarks>
-/// <example>
-/// <code>
-/// NoireGauges.Bar(hp / (float)maxHp, new BarStyle
-/// {
-///     Label = $"{hp} / {maxHp}",
-///     Thresholds = [new GaugeThreshold(0.25f, theme.Resolve(ThemeColor.Danger))],
-/// });
-/// </code>
-/// </example>
 [NoireFacade]
 public static partial class NoireGauges
 {
@@ -29,10 +20,13 @@ public static partial class NoireGauges
     private static readonly BarStyle DefaultBarStyle = new();
     private static readonly PipStyle DefaultPipStyle = new();
 
+    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
+    private const string CallbackFault = "A gauge hook threw.";
+
     #region Ring
 
     /// <summary>
-    /// Draws a ring filled clockwise from the top, the shape a cooldown or a percentage reads best as.
+    /// Draws a ring filled clockwise from the top.
     /// </summary>
     /// <param name="value">The fraction filled, from 0 to 1. Values outside that range are clamped.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
@@ -45,10 +39,6 @@ public static partial class NoireGauges
     /// <summary>
     /// Draws a ring with its label already worked out.
     /// </summary>
-    /// <remarks>
-    /// The label is passed rather than read off the style, so a countdown can set the time left without copying the
-    /// style per frame.
-    /// </remarks>
     /// <param name="value">The fraction filled, from 0 to 1.</param>
     /// <param name="style">How to draw it.</param>
     /// <param name="label">The text in the middle, or <see langword="null"/> for none.</param>
@@ -65,6 +55,20 @@ public static partial class NoireGauges
         var fraction = Math.Clamp(value, 0f, 1f);
         var sweep = style.SweepTurns * (style.Clockwise ? 1f : -1f);
         var fill = ResolveFillColor(fraction, style.Thresholds, style.Color);
+
+        if (style.CustomDraw != null)
+        {
+            if (!draw.List.IsNull)
+            {
+                var args = new UiRingDraw(
+                    draw.List, centre, inner, outer, style.StartTurns, sweep, fraction,
+                    style.ResolveTrackColor(), fill, label, style.LabelSize, style.LabelColor ?? fill);
+                UiHook.Invoke(style.CustomDraw, args, nameof(Ring), CallbackFault);
+            }
+
+            ImGui.Dummy(new Vector2(size, size));
+            return;
+        }
 
         NoireShapes.Wedge(centre, inner, outer, style.StartTurns, style.StartTurns + sweep, style.ResolveTrackColor());
 
@@ -98,10 +102,6 @@ public static partial class NoireGauges
     /// <summary>
     /// Draws a bar with its label already worked out.
     /// </summary>
-    /// <remarks>
-    /// The label is passed rather than read off the style, so a countdown can set the time left without copying the
-    /// style per frame.
-    /// </remarks>
     /// <param name="value">The fraction filled, from 0 to 1.</param>
     /// <param name="style">How to draw it.</param>
     /// <param name="label">The text over the bar, or <see langword="null"/> for none.</param>
@@ -121,14 +121,29 @@ public static partial class NoireGauges
         var fraction = Math.Clamp(value, 0f, 1f);
         var fill = ResolveFillColor(fraction, style.Thresholds, style.Color);
 
+        if (style.CustomDraw != null)
+        {
+            if (!draw.List.IsNull)
+            {
+                var args = new UiBarDraw(
+                    draw.List, origin, max, fraction, rounding, style.ResolveTrackColor(), fill, style.ColorTo,
+                    style.Marks, style.ResolveMarkColor(), label, style.LabelSize, style.LabelAlign,
+                    style.LabelColor ?? NoireTheme.Current.Resolve(ThemeColor.Text));
+                UiHook.Invoke(style.CustomDraw, args, nameof(Bar), CallbackFault);
+            }
+
+            ImGui.Dummy(new Vector2(width, height));
+            return;
+        }
+
         NoireShapes.Rect(origin, max, style.ResolveTrackColor(), CornerShape.Rounded, rounding);
 
         if (fraction > 0f)
         {
             var fillMax = new Vector2(origin.X + (width * fraction), max.Y);
 
-            // Clipped to the track's rounded shape rather than rounded itself: a short bar would otherwise float as
-            // a lozenge inside the track, and a full one would show a seam at the right end.
+            // Clipped to the track's rounded shape rather than rounded itself, so a short fill does not float as a
+            // lozenge inside the track and a full one shows no seam at the right end.
             // Taken from the window's own list: resolving it the way a shape does would read back the redirect this
             // call establishes and no-op.
             using var inner = UiDraw.BeginWindow();
@@ -156,11 +171,15 @@ public static partial class NoireGauges
         ImGui.Dummy(new Vector2(width, height));
 
         if (!string.IsNullOrEmpty(label))
-            DrawBarLabel(style, label, origin, width, height);
+        {
+            DrawBarLabel(
+                label, style.LabelSize, style.LabelAlign,
+                style.LabelColor ?? NoireTheme.Current.Resolve(ThemeColor.Text), origin, width, height);
+        }
     }
 
     /// <summary>
-    /// Draws the hairlines at the fractions the bar was told always matter.
+    /// Draws a hairline at each of the bar's mark fractions.
     /// </summary>
     /// <param name="style">The bar style.</param>
     /// <param name="origin">The top left of the bar.</param>
@@ -183,26 +202,28 @@ public static partial class NoireGauges
     /// <summary>
     /// Draws the label over a bar, aligned along it.
     /// </summary>
-    /// <param name="style">The bar style.</param>
     /// <param name="text">The text to draw.</param>
+    /// <param name="size">The step of the type scale to draw it at.</param>
+    /// <param name="align">Where the label sits along the bar, from 0 (left) to 1 (right).</param>
+    /// <param name="color">The colour to draw it in.</param>
     /// <param name="origin">The top left of the bar.</param>
     /// <param name="width">The bar width in real pixels.</param>
     /// <param name="height">The bar height in real pixels.</param>
-    private static void DrawBarLabel(BarStyle style, string text, Vector2 origin, float width, float height)
+    internal static void DrawBarLabel(
+        string text, TextSize size, float align, Vector4 color, Vector2 origin, float width, float height)
     {
-        var measured = NoireText.CalcSize(text, style.LabelSize);
-        var x = origin.X + ((width - measured.X) * Math.Clamp(style.LabelAlign, 0f, 1f));
+        var measured = NoireText.CalcSize(text, size);
+        var x = origin.X + ((width - measured.X) * Math.Clamp(align, 0f, 1f));
         var y = origin.Y + ((height - measured.Y) * 0.5f);
 
-        DrawTextAt(text, style.LabelSize, style.LabelColor ?? NoireTheme.Current.Resolve(ThemeColor.Text),
-            new Vector2(x, y));
+        DrawTextAt(text, size, color, new Vector2(x, y));
     }
 
     #endregion
 
     #region Pips
 
-    /// <summary>Draws a row of pips, the readout for a count small enough to be seen rather than read.</summary>
+    /// <summary>Draws a row of pips.</summary>
     /// <param name="filled">How many pips are filled. Clamped to the total.</param>
     /// <param name="total">How many pips there are.</param>
     /// <param name="style">How to draw them, or <see langword="null"/> for the default pips.</param>
@@ -223,11 +244,26 @@ public static partial class NoireGauges
         var on = Math.Clamp(filled, 0, total);
         var color = style.ResolveColor();
         var empty = style.ResolveEmptyColor();
+        var list = draw.List;
 
         for (var i = 0; i < total; i++)
         {
             var min = new Vector2(origin.X + (i * (size + spacing)), origin.Y);
             var max = min + new Vector2(size);
+
+            if (style.CustomDraw != null)
+            {
+                if (!list.IsNull)
+                {
+                    var isOn = i < on;
+                    var args = new UiPipDraw(
+                        list, min, max, i, total, isOn, isOn ? color : empty,
+                        !isOn && style.OutlineEmpty, style.Shape, rounding);
+                    UiHook.Invoke(style.CustomDraw, args, nameof(Pips), CallbackFault);
+                }
+
+                continue;
+            }
 
             if (i < on)
                 NoireShapes.Rect(min, max, color, style.Shape, rounding);
@@ -270,12 +306,8 @@ public static partial class NoireGauges
     }
 
     /// <summary>
-    /// Writes the time left on a countdown, never as a negative.
+    /// Writes the time left on a countdown, reading <c>0s</c> rather than counting past zero.
     /// </summary>
-    /// <remarks>
-    /// Reads <c>0s</c> rather than counting past zero into negative. Cached for the second, since a countdown redraws
-    /// roughly sixty times per shown value.
-    /// </remarks>
     /// <param name="remaining">How much time is left.</param>
     /// <returns>The time left, in shorthand.</returns>
     private static string Remaining(TimeSpan remaining)
@@ -302,13 +334,10 @@ public static partial class NoireGauges
     /// <summary>
     /// Works out what colour a gauge fills with at a given value.
     /// </summary>
-    /// <remarks>
-    /// The lowest threshold the value has fallen to or below wins. With no thresholds the base colour is used, and
-    /// with no base colour the theme's accent is.
-    /// </remarks>
+    /// <remarks>The lowest threshold the value has fallen to or below wins.</remarks>
     /// <param name="value">The fraction being drawn, from 0 to 1.</param>
     /// <param name="thresholds">The thresholds to consider, or <see langword="null"/> for none.</param>
-    /// <param name="baseColor">The colour to use when no threshold applies.</param>
+    /// <param name="baseColor">The colour to use when no threshold applies, or <see langword="null"/> for the theme accent.</param>
     /// <returns>The colour to fill with.</returns>
     public static Vector4 ResolveFillColor(
         float value,
@@ -338,13 +367,13 @@ public static partial class NoireGauges
     }
 
     /// <summary>
-    /// Draws a label centred on a point, used for the text in the middle of a ring.
+    /// Draws a label centred on a point.
     /// </summary>
     /// <param name="text">The text to draw.</param>
     /// <param name="size">The step of the type scale to draw it at.</param>
     /// <param name="color">The colour to draw it in.</param>
     /// <param name="centre">The point to centre it on, in screen pixels.</param>
-    private static void DrawCentredLabel(string text, TextSize size, Vector4 color, Vector2 centre)
+    internal static void DrawCentredLabel(string text, TextSize size, Vector4 color, Vector2 centre)
     {
         var measured = NoireText.CalcSize(text, size);
         DrawTextAt(text, size, color, centre - (measured * 0.5f));

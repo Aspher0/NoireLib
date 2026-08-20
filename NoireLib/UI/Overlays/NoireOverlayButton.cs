@@ -1,18 +1,15 @@
 ﻿using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
-/// A standalone button overlayed on the game screen, drawn every frame independently from any window.<br/>
-/// It can be anchored anywhere on screen (nine anchors, absolute coordinates or screen ratio, see <see cref="UiPosition"/>),
-/// react to left/right/middle clicks and mouse wheel, change the mouse cursor on hover (see <see cref="HoverCursor"/>),
-/// show a regular and/or a custom tooltip, be conditionally displayed through <see cref="VisibleCondition"/>,
-/// keep being drawn in normally-hidden game states (see <see cref="DrawConditions"/>), and optionally be repositioned by dragging.<br/>
-/// The button registers itself on creation and is drawn by NoireLib until it is disposed, unless <see cref="NoireDrawable.AutoDraw"/> is turned off
-/// to handle the drawing manually. It is disposed automatically when NoireLib is disposed, or earlier through <see cref="NoireDrawable.Dispose"/>.
+/// A standalone button overlayed on the game screen, positioned through <see cref="UiPosition"/> and drawn every frame
+/// independently from any window.
+/// It registers itself on creation and is drawn until disposed, unless <see cref="NoireDrawable.AutoDraw"/> is turned off.
 /// </summary>
 [NoireFacadeFactory]
 public class NoireOverlayButton : NoireDrawable
@@ -29,6 +26,9 @@ public class NoireOverlayButton : NoireDrawable
         ImGuiWindowFlags.NoNav |
         ImGuiWindowFlags.NoBackground;
 
+    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
+    private const string CallbackFault = "An overlay button hook threw.";
+
     private bool isDragging;
     private Vector2 dragGrabOffset;
     private bool visibleConditionFaultLogged;
@@ -37,17 +37,14 @@ public class NoireOverlayButton : NoireDrawable
     private OverlayDrawConditions drawConditions = OverlayDrawConditions.None;
 
     /// <summary>
-    /// Initializes a new overlay button and registers it for drawing.<br/>
-    /// The button is automatically disposed when NoireLib is disposed (through <see cref="NoireLibMain.RegisterOnDispose(string, Action, int)"/>);
-    /// call <see cref="NoireDrawable.Dispose"/> to remove it earlier.
+    /// Initializes a new overlay button and registers it for drawing.
     /// </summary>
     /// <param name="id">An optional unique identifier. When <see langword="null"/>, a random one is generated.</param>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public NoireOverlayButton(string? id = null)
         : base(id, "OverlayButton")
     {
-        // An overlay exists precisely so that nothing has to draw it, so it opts itself in rather than waiting for the
-        // NoireUI.AutoDraw master default. Set it to null to follow that default instead, or to false to draw it yourself.
+        // Opted in explicitly rather than left to the NoireUI.AutoDraw master default; null restores that default.
         AutoDraw = true;
         Register();
     }
@@ -65,8 +62,8 @@ public class NoireOverlayButton : NoireDrawable
     public bool Visible { get; set; } = true;
 
     /// <summary>
-    /// An optional condition evaluated on every draw. When it returns <see langword="false"/>, the button is not drawn.<br/>
-    /// Combined with <see cref="Visible"/>: both must allow the button to appear.
+    /// An optional condition evaluated on every draw, which must return <see langword="true"/> alongside
+    /// <see cref="Visible"/> for the button to be drawn.
     /// </summary>
     public Func<bool>? VisibleCondition { get; set; } = null;
 
@@ -78,17 +75,14 @@ public class NoireOverlayButton : NoireDrawable
     /// <summary>
     /// Whether the button is kept in front of every other window, for clicks as well as for drawing.
     /// </summary>
-    /// <remarks>
-    /// Being drawn on top and receiving the mouse are two different orders in ImGui; moving only the first would
-    /// leave a button plainly visible above a window and completely dead under it. This moves both.
-    /// </remarks>
+    /// <remarks>Moves the button in both ImGui orders, draw and input, so it stays clickable as well as visible.</remarks>
     public bool AlwaysOnTop { get; set; } = false;
 
     /// <summary>
-    /// In which normally-hidden game states the button keeps being drawn (cutscenes, group pose, hidden game UI, or always).<br/>
-    /// Defaults to <see cref="OverlayDrawConditions.None"/>: the button hides in those states, like regular plugin UI.<br/>
-    /// This applies to this button alone: keeping it visible leaves the rest of the plugin's UI, and every other overlay button, hiding as
-    /// they would have. See <see cref="OverlayDrawConditions"/> for the one case where that does not hold.
+    /// In which normally-hidden game states this button keeps being drawn, defaulting to
+    /// <see cref="OverlayDrawConditions.None"/>.
+    /// The setting applies to this button alone; see <see cref="OverlayDrawConditions"/> for the one case where that
+    /// does not hold.
     /// </summary>
     public OverlayDrawConditions DrawConditions
     {
@@ -106,24 +100,21 @@ public class NoireOverlayButton : NoireDrawable
     }
 
     /// <summary>
-    /// The mouse cursor shown while the button is hovered. When <see langword="null"/>, the cursor is left unchanged.<br/>
-    /// Requires <c>UiBuilder.OverrideGameCursor</c> (enabled by default in Dalamud) for the cursor to be visible over the game.
+    /// The mouse cursor shown while the button is hovered, or <see langword="null"/> to leave the cursor unchanged.
+    /// Requires <c>UiBuilder.OverrideGameCursor</c> for the cursor to be visible over the game.
     /// </summary>
     public ImGuiMouseCursor? HoverCursor { get; set; } = null;
 
     /// <summary>
-    /// Whether the button can be repositioned by dragging it with the left mouse button.<br/>
-    /// After a drag, <see cref="Position"/> is replaced by an absolute position and <see cref="OnDragEnd"/> is invoked.
+    /// Whether the button can be repositioned by dragging it with the left mouse button, which replaces
+    /// <see cref="Position"/> with an absolute position and invokes <see cref="OnDragEnd"/>.
     /// </summary>
     public bool Draggable { get; set; } = false;
 
     /// <summary>
-    /// Whether the position the user dragged the button to is remembered across reloads, through
-    /// <see cref="NoireUiState"/>.<br/>
-    /// Off by default. Turning it on restores the saved position on the next draw and saves it again after every drag,
-    /// so the usual <see cref="OnDragEnd"/> plus your own configuration is no longer needed for the common case.<br/>
-    /// Requires a stable <see cref="NoireDrawable.Id"/>: a button created without one gets a new id every session, so
-    /// nothing keyed on it could be restored, and its position is not persisted (logged once).
+    /// Whether the position the user dragged the button to is remembered across reloads through
+    /// <see cref="NoireUiState"/>, restored on the next draw and saved again after every drag.
+    /// Requires a stable <see cref="NoireDrawable.Id"/>: a button created without one is not persisted (logged once).
     /// </summary>
     public bool PersistPosition
     {
@@ -135,7 +126,7 @@ public class NoireOverlayButton : NoireDrawable
 
             persistPosition = value;
 
-            // Turning it on asks for the saved position, whenever that happens relative to the first draw.
+            // Turning it on re-arms the restore, whenever that happens relative to the first draw.
             if (value)
                 positionRestored = false;
         }
@@ -166,15 +157,15 @@ public class NoireOverlayButton : NoireDrawable
     public Vector2? ImageSize { get; set; } = null;
 
     /// <summary>
-    /// A fully custom content renderer, replacing the default icon/image/text content.<br/>
-    /// The action is invoked with the cursor at the top left corner of the button and can draw anything using ImGui.<br/>
-    /// Consider setting an explicit <see cref="Size"/> when using custom content.
+    /// A custom content renderer replacing the default icon, image and text, invoked with the cursor at the top left
+    /// corner of the button.
+    /// Not called while <see cref="OverlayButtonStyle.CustomDraw"/> is set, which replaces the whole painting.
     /// </summary>
     public Action<NoireOverlayButton>? CustomContent { get; set; } = null;
 
     /// <summary>
-    /// An explicit button size, at 100%. When <see langword="null"/>, the size is computed from the content and <see cref="OverlayButtonStyle.Padding"/>.<br/>
-    /// See <see cref="NoireUI.Scale"/>.
+    /// An explicit button size at 100% scale, or <see langword="null"/> to compute it from the content and
+    /// <see cref="OverlayButtonStyle.Padding"/>.
     /// </summary>
     public Vector2? Size { get; set; } = null;
 
@@ -218,8 +209,8 @@ public class NoireOverlayButton : NoireDrawable
     public string? Tooltip { get; set; } = null;
 
     /// <summary>
-    /// A custom tooltip shown when the button is hovered, drawn with <see cref="NoireTooltip"/>.<br/>
-    /// Can be combined with <see cref="Tooltip"/>: both are shown at the same time.
+    /// A custom tooltip shown when the button is hovered, drawn with <see cref="NoireTooltip"/> and shown alongside
+    /// <see cref="Tooltip"/> when both are set.
     /// </summary>
     public NoireContent? CustomTooltip { get; set; } = null;
 
@@ -293,7 +284,7 @@ public class NoireOverlayButton : NoireDrawable
         }
         else if (!Position.TryResolve(size, viewport.Pos, viewport.Size, out windowPos))
         {
-            // The button is pinned to a game window that is not on screen, so there is nowhere to honestly put it.
+            // The button is pinned to a game window that is not on screen, so there is nowhere to put it.
             return;
         }
 
@@ -338,16 +329,23 @@ public class NoireOverlayButton : NoireDrawable
 
         var dragJustEnded = HandleDragging(active);
 
-        DrawBackground(rectMin, rectMax, hovered, active);
-
-        if (CustomContent != null)
+        if (Style.CustomDraw is { } customDraw)
         {
-            ImGui.SetCursorPos(Vector2.Zero);
-            InvokeSafely(CustomContent, "custom content");
+            InvokeCustomDraw(customDraw, rectMin, rectMax, hovered, active);
         }
         else
         {
-            DrawDefaultContent(size);
+            DrawBackground(rectMin, rectMax, hovered, active);
+
+            if (CustomContent != null)
+            {
+                ImGui.SetCursorPos(Vector2.Zero);
+                InvokeSafely(CustomContent, "custom content");
+            }
+            else
+            {
+                DrawDefaultContent(size);
+            }
         }
 
         if (Enabled && !isDragging && !dragJustEnded)
@@ -402,43 +400,86 @@ public class NoireOverlayButton : NoireDrawable
         if (drawList.IsNull)
             return;
 
+        var rounding = Style.ResolveRounding();
+        drawList.AddRectFilled(rectMin, rectMax, ColorHelper.Vector4ToUint(ResolveBackground(hovered, active)), rounding);
+
+        var borderSize = Style.ScaledBorderSize;
+        if (borderSize > 0f)
+            drawList.AddRect(rectMin, rectMax, ColorHelper.Vector4ToUint(ResolveBorderColor()), rounding, ImDrawFlags.None, borderSize);
+    }
+
+    /// <summary>
+    /// The fill for the current state, routed through <see cref="ImGui.GetColorU32(Vector4)"/> and unpacked so the
+    /// pushed style alpha is already folded in.
+    /// </summary>
+    private Vector4 ResolveBackground(bool hovered, bool active)
+    {
         var interactive = Enabled;
 
-        uint backgroundColor;
         if (Style.Background.HasValue)
         {
-            // When a custom background is set, hovered/active variants fall back to a brightened/darkened version of it.
+            // Unset hovered and active variants fall back to a brightened or darkened custom background.
             var color = active && interactive
                 ? Style.BackgroundActive ?? Style.Background.Value * new Vector4(0.9f, 0.9f, 0.9f, 1f)
                 : hovered && interactive
                     ? Style.BackgroundHovered ?? Style.Background.Value * new Vector4(1.1f, 1.1f, 1.1f, 1f)
                     : Style.Background.Value;
-            backgroundColor = ImGui.GetColorU32(color);
-        }
-        else
-        {
-            var colorIndex = active && interactive
-                ? ImGuiCol.ButtonActive
-                : hovered && interactive
-                    ? ImGuiCol.ButtonHovered
-                    : ImGuiCol.Button;
-            backgroundColor = ImGui.GetColorU32(colorIndex);
+
+            return ImGui.ColorConvertU32ToFloat4(ImGui.GetColorU32(color));
         }
 
-        var rounding = Style.ResolveRounding();
-        drawList.AddRectFilled(rectMin, rectMax, backgroundColor, rounding);
+        var colorIndex = active && interactive
+            ? ImGuiCol.ButtonActive
+            : hovered && interactive
+                ? ImGuiCol.ButtonHovered
+                : ImGuiCol.Button;
 
-        var borderSize = Style.ScaledBorderSize;
-        if (borderSize > 0f)
-        {
-            var borderColor = Style.BorderColor.HasValue
-                ? ImGui.GetColorU32(Style.BorderColor.Value)
-                : ImGui.GetColorU32(ImGuiCol.Border);
-            drawList.AddRect(rectMin, rectMax, borderColor, rounding, ImDrawFlags.None, borderSize);
-        }
+        return ImGui.ColorConvertU32ToFloat4(ImGui.GetColorU32(colorIndex));
     }
 
-    private void DrawDefaultContent(Vector2 size)
+    /// <summary>The border colour, resolved the same way as <see cref="ResolveBackground"/>.</summary>
+    private Vector4 ResolveBorderColor()
+        => ImGui.ColorConvertU32ToFloat4(Style.BorderColor.HasValue
+            ? ImGui.GetColorU32(Style.BorderColor.Value)
+            : ImGui.GetColorU32(ImGuiCol.Border));
+
+    /// <summary>
+    /// Hands the painting to a custom-draw hook, with the state and every colour resolved.
+    /// </summary>
+    /// <param name="customDraw">The hook that paints the button.</param>
+    /// <param name="rectMin">The top left corner of the hitbox.</param>
+    /// <param name="rectMax">The bottom right corner of the hitbox.</param>
+    /// <param name="hovered">Whether the hitbox is hovered.</param>
+    /// <param name="active">Whether the hitbox is held.</param>
+    private void InvokeCustomDraw(Action<UiOverlayButtonDraw> customDraw, Vector2 rectMin, Vector2 rectMax, bool hovered, bool active)
+    {
+        using var draw = UiDraw.Begin();
+
+        if (draw.List.IsNull)
+            return;
+
+        var args = new UiOverlayButtonDraw(
+            draw.List,
+            this,
+            rectMin,
+            rectMax,
+            hovered,
+            active,
+            Enabled,
+            isDragging,
+            ResolveBackground(hovered, active),
+            ResolveBorderColor(),
+            Style.ScaledBorderSize,
+            Style.ResolveRounding());
+
+        UiHook.Invoke(customDraw, args, nameof(NoireOverlayButton), CallbackFault);
+    }
+
+    /// <summary>
+    /// Draws the icon, image and text parts centred inside the button.
+    /// </summary>
+    /// <param name="size">The size the button is drawn at.</param>
+    internal void DrawDefaultContent(Vector2 size)
     {
         var (iconSize, imageSize, textSize) = MeasureContentParts();
         var partCount = (iconSize.HasValue ? 1 : 0) + (imageSize.HasValue ? 1 : 0) + (textSize.HasValue ? 1 : 0);
@@ -481,18 +522,15 @@ public class NoireOverlayButton : NoireDrawable
     /// <summary>
     /// The size the button is drawn at: the explicit <see cref="Size"/> scaled, or one measured from the content.
     /// </summary>
-    /// <remarks>
-    /// The measured size needs no scaling of its own. It is built from text metrics and a resolved padding, both of
-    /// which are already real pixels.
-    /// </remarks>
+    /// <remarks>The measured size needs no scaling, being built from text metrics and a resolved padding that are already real pixels.</remarks>
     private Vector2 ResolveSize()
         => Size.HasValue ? NoireUI.Scaled(Size.Value) : MeasureAutoSize();
 
     /// <summary>
-    /// Measures the icon, image and text parts of the default content.<br/>
-    /// Text and icon sizes are scaled by <see cref="OverlayButtonStyle.FontScale"/> only when measured outside the button window,
-    /// since <c>ImGui.CalcTextSize</c> already accounts for the window font scale inside of it.
+    /// Measures the icon, image and text parts of the default content.
     /// </summary>
+    /// <param name="externalFontScale">The font scale to apply, which must stay 1 inside the button window because <c>ImGui.CalcTextSize</c> already accounts for the window font scale there.</param>
+    /// <returns>The measured size of each present part.</returns>
     private (Vector2? IconSize, Vector2? ImageSize, Vector2? TextSize) MeasureContentParts(float externalFontScale = 1f)
     {
         Vector2? iconSize = null;
@@ -538,8 +576,8 @@ public class NoireOverlayButton : NoireDrawable
     /// <summary>
     /// Handles the drag-to-reposition behavior.
     /// </summary>
-    /// <param name="active">Whether the button hitbox is currently active (held).</param>
-    /// <returns>True if a drag ended this frame, in which case click callbacks are suppressed.</returns>
+    /// <param name="active">Whether the button hitbox is currently held.</param>
+    /// <returns>True when a drag ended this frame, in which case click callbacks are suppressed.</returns>
     private bool HandleDragging(bool active)
     {
         if (!Draggable)
@@ -574,9 +612,9 @@ public class NoireOverlayButton : NoireDrawable
     }
 
     /// <summary>
-    /// Determines whether the button must be hidden this frame because of the current game state (cutscene, gpose or hidden game UI)
-    /// and its <see cref="DrawConditions"/>. Mirrors Dalamud's own per-plugin hide logic, but applied to this single button.
+    /// Reads the live game state and decides whether the button must be hidden this frame.
     /// </summary>
+    /// <returns>True when the button must be hidden this frame.</returns>
     private bool ShouldHideForGameState()
     {
         if (!NoireService.IsInitialized())
@@ -590,13 +628,13 @@ public class NoireOverlayButton : NoireDrawable
     }
 
     /// <summary>
-    /// Pure decision helper: whether a button with the given <paramref name="conditions"/> should be hidden in the given game state.
+    /// Decides whether a button with the given <paramref name="conditions"/> is hidden in the given game state.
     /// </summary>
     /// <param name="conditions">The button draw conditions.</param>
-    /// <param name="cutsceneActive">Whether a cutscene is currently playing.</param>
-    /// <param name="gposing">Whether group pose is currently active.</param>
-    /// <param name="gameUiHidden">Whether the user has hidden the game UI.</param>
-    /// <returns>True if the button must be hidden this frame, otherwise false.</returns>
+    /// <param name="cutsceneActive">Whether a cutscene is playing.</param>
+    /// <param name="gposing">Whether group pose is active.</param>
+    /// <param name="gameUiHidden">Whether the game UI is hidden.</param>
+    /// <returns>True when the button must be hidden.</returns>
     internal static bool ShouldHideForGameState(OverlayDrawConditions conditions, bool cutsceneActive, bool gposing, bool gameUiHidden)
     {
         if (cutsceneActive && (conditions & OverlayDrawConditions.DrawInCutscenes) == 0)
@@ -612,8 +650,8 @@ public class NoireOverlayButton : NoireDrawable
     }
 
     /// <summary>
-    /// Applies the saved dragged position, once, the first time the button draws after <see cref="PersistPosition"/> is
-    /// turned on. Nothing saved means the position set in code stands.
+    /// Applies the saved dragged position once, on the first draw after <see cref="PersistPosition"/> is turned on,
+    /// leaving the position set in code standing when nothing is saved.
     /// </summary>
     private void RestorePersistedPosition()
     {
@@ -630,8 +668,7 @@ public class NoireOverlayButton : NoireDrawable
     }
 
     /// <summary>
-    /// Remembers where the button was dragged to. Only the absolute position is stored, because a drag is the only
-    /// thing that produces one; an anchored or ratio position set in code is the plugin's decision, not the user's.
+    /// Stores the absolute position the button was dragged to, which a drag is the only thing to produce.
     /// </summary>
     private void SavePersistedPosition()
     {

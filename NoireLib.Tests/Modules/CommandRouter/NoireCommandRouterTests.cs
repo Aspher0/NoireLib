@@ -525,4 +525,265 @@ public class NoireCommandRouterTests
     }
 
     #endregion
+
+    #region Root aliases
+
+    [Fact]
+    public void Alias_ShouldDispatchIntoTheRootCommandTree()
+    {
+        var router = CreateRouter();
+        var handlerRuns = 0;
+
+        router.Map("/test").AddAlias("/t").AddSubCommand("run", sub => sub.Handle(() => handlerRuns++));
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/t", "run");
+
+        handlerRuns.Should().Be(1, "an alias dispatches into the same registration as its root command");
+        router.GetHistory().Should().Contain(entry => entry.Command == "/t" && entry.WasSuccessful,
+            "history records the command exactly as the user typed it, alias included");
+    }
+
+    [Fact]
+    public void Alias_ShouldBeNormalized_LikeARootCommand()
+    {
+        var router = CreateRouter();
+        var handlerRuns = 0;
+
+        router.Map("/test").AddAlias("T").AddSubCommand("run", sub => sub.Handle(() => handlerRuns++));
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/t", "run");
+
+        handlerRuns.Should().Be(1, "an alias gains a leading slash and loses its casing, exactly like Map does for a root");
+        router.IsCommandRegistered("/t").Should().BeTrue();
+    }
+
+    [Fact]
+    public void Alias_ShouldBeIgnored_WhenItCollidesWithAnExistingCommand()
+    {
+        var router = CreateRouter();
+        var otherRuns = 0;
+
+        router.Map("/other").AddSubCommand("run", sub => sub.Handle(() => otherRuns++));
+        router.Map("/test").AddAlias("/other");
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/other", "run");
+
+        otherRuns.Should().Be(1, "a colliding alias must not steal an existing command's name");
+    }
+
+    [Fact]
+    public void Unmap_ShouldRemoveTheAliases_WithTheirRootCommand()
+    {
+        var router = CreateRouter();
+
+        router.Map("/test").AddAlias("/t").AddSubCommand("run", sub => sub.Handle(() => { }));
+        router.IsActive = true;
+
+        router.Unmap("/test").Should().BeTrue();
+
+        router.IsCommandRegistered("/t").Should().BeFalse("an alias cannot outlive the root command it points to");
+        router.GetRegisteredCommands().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Map_ShouldReclaimAnAliasName_ForTheNewRootCommand()
+    {
+        var router = CreateRouter();
+        var newRootRuns = 0;
+
+        router.Map("/test").AddAlias("/t");
+        router.Map("/t").AddSubCommand("run", sub => sub.Handle(() => newRootRuns++));
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/t", "run");
+
+        newRootRuns.Should().Be(1, "mapping a root command over an alias name gives the name to the new root");
+        router.GetRegisteredCommands().Should().BeEquivalentTo("/test", "/t");
+    }
+
+    #endregion
+
+    #region Fallback handler
+
+    [Fact]
+    public void Fallback_ShouldReceiveEveryToken_WhenTheFirstMatchesNoSubCommand()
+    {
+        var router = CreateRouter();
+        string[]? capturedTokens = null;
+
+        router.Map("/test")
+            .AddSubCommand("run", sub => sub.Handle(() => { }))
+            .HandleFallback(args => capturedTokens = args.RawTokens);
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/test", "hum extra");
+
+        capturedTokens.Should().Equal(new[] { "hum", "extra" }, "the fallback receives the full tokenized invocation");
+        router.GetHistory().Should().Contain(entry => entry.SubCommandName == null && entry.WasSuccessful,
+            "a fallback execution is recorded like a default-handler execution");
+    }
+
+    [Fact]
+    public void Fallback_ShouldClaimUnmatchedTokens_WhileTheDefaultHandlerKeepsTheBareCommand()
+    {
+        var router = CreateRouter();
+        var defaultRuns = 0;
+        var fallbackRuns = 0;
+
+        router.Map("/test")
+            .Handle(() => defaultRuns++)
+            .HandleFallback(_ => fallbackRuns++);
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/test", "");
+        router.OnCommandDispatched("/test", "anything");
+
+        defaultRuns.Should().Be(1, "the bare command stays with the default handler");
+        fallbackRuns.Should().Be(1, "unmatched tokens go to the fallback, not the default handler");
+    }
+
+    [Fact]
+    public void Fallback_ShouldNotRun_WhenASubCommandMatches()
+    {
+        var router = CreateRouter();
+        var subRuns = 0;
+        var fallbackRuns = 0;
+
+        router.Map("/test")
+            .AddSubCommand("run", sub => sub.Handle(() => subRuns++))
+            .HandleFallback(_ => fallbackRuns++);
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/test", "run");
+
+        subRuns.Should().Be(1);
+        fallbackRuns.Should().Be(0, "a matched subcommand owns its invocation");
+    }
+
+    [Fact]
+    public void Fallback_ShouldRecordAFailure_WhenItThrows()
+    {
+        var router = CreateRouter();
+
+        router.Map("/test").HandleFallback(_ => throw new InvalidOperationException("boom"));
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/test", "anything");
+
+        router.GetHistory().Should().Contain(entry => !entry.WasSuccessful,
+            "a throwing fallback is caught by the dispatch boundary and recorded as a failure");
+    }
+
+    [Fact]
+    public void Fallback_ShouldStillDispatch_WhenConfiguredThroughAddFallbackCommand()
+    {
+        var router = CreateRouter();
+        string? capturedToken = null;
+
+        router.Map("/test").AddFallbackCommand("emote", fallback => fallback
+            .WithHelp("Plays the emote if found.")
+            .Handle(args => capturedToken = args.RawTokens[0]));
+        router.IsActive = true;
+
+        router.OnCommandDispatched("/test", "hum");
+
+        capturedToken.Should().Be("hum", "the documented fallback wires the same dispatch as the plain handler");
+    }
+
+    #endregion
+
+    #region Dalamud help message
+
+    [Fact]
+    public void DalamudHelp_ShouldListSubCommandsTheFallbackAndTheHelpLine_ByDefault()
+    {
+        var registration = BuildDocumentedRegistration();
+
+        var message = registration.BuildDalamudHelpMessage(includeBuiltInHelp: true);
+
+        message.Should().Contain("stop - Stops.", "the generated listing includes the subcommand tree");
+        message.Should().Contain("<emote> - Plays the emote if found.",
+            "a documented fallback is listed like a subcommand");
+        message.Should().Contain("help - Shows a help message");
+    }
+
+    [Fact]
+    public void DalamudHelp_ShouldShowOnlyTheHelpText_WhenDetailedHelpIsOff()
+    {
+        var registration = BuildDocumentedRegistration();
+        registration.DetailedDalamudHelp = false;
+
+        var message = registration.BuildDalamudHelpMessage(includeBuiltInHelp: true);
+
+        message.Should().Be("Main help.",
+            "a command that opted out of detailed Dalamud help lists nothing but its own help text");
+    }
+
+    [Fact]
+    public void DalamudHelp_ShouldOmitTheBuiltInHelpLine_WhenAutoHelpIsOff()
+    {
+        var registration = BuildDocumentedRegistration();
+
+        var message = registration.BuildDalamudHelpMessage(includeBuiltInHelp: false);
+
+        message.Should().NotContain("help - Shows a help message",
+            "the built-in help line is only advertised while the token actually dispatches");
+        message.Should().Contain("stop - Stops.", "subcommands still dispatch with auto-help off");
+    }
+
+    [Fact]
+    public void DalamudHelp_ShouldPlaceTheFallback_ByItsDisplayOrder()
+    {
+        var registration = BuildDocumentedRegistration(fallbackDisplayOrder: 0);
+
+        var message = registration.BuildDalamudHelpMessage(includeBuiltInHelp: true);
+
+        message.IndexOf("<emote>", StringComparison.Ordinal).Should().BeLessThan(
+            message.IndexOf("stop -", StringComparison.Ordinal),
+            "a fallback tying a subcommand's display order is listed first");
+    }
+
+    [Fact]
+    public void DalamudHelpSeparator_ShouldMarkOnlyTheLastVisibleEntry()
+    {
+        var router = CreateRouter();
+
+        router.Map("/aaa").WithDisplayOrder(0);
+        router.Map("/bbb").WithDisplayOrder(1).AddAlias("/ccc");
+
+        router.IsLastDalamudHelpEntry("/aaa", 0).Should().BeFalse("later entries exist");
+        router.IsLastDalamudHelpEntry("/bbb", 1).Should().BeFalse("the alias ties the display order but sorts after by name");
+        router.IsLastDalamudHelpEntry("/ccc", 1).Should().BeTrue("nothing sorts after the alias");
+    }
+
+    [Fact]
+    public void DalamudHelpSeparator_ShouldIgnoreHiddenEntries()
+    {
+        var router = CreateRouter();
+
+        router.Map("/aaa").WithDisplayOrder(0);
+        router.Map("/bbb").WithDisplayOrder(1).ShowInDalamudHelp(false);
+
+        router.IsLastDalamudHelpEntry("/aaa", 0).Should().BeTrue("a hidden entry cannot be the last visible one");
+    }
+
+    private static RootCommandRegistration BuildDocumentedRegistration(int fallbackDisplayOrder = int.MaxValue)
+    {
+        var registration = new RootCommandRegistration("/test")
+        {
+            HelpText = "Main help.",
+            FallbackDefinition = new FallbackCommandDefinition("emote", "Plays the emote if found.", fallbackDisplayOrder, showInHelp: true),
+        };
+
+        var stop = new SubCommandBuilder("stop");
+        stop.WithHelp("Stops.").Handle(() => { });
+        registration.SubCommands.Add(stop.Build());
+
+        return registration;
+    }
+
+    #endregion
 }

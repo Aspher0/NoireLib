@@ -12,9 +12,9 @@ using AddonNodeEventDelegate = IAddonEventManager.AddonEventDelegate;
 using AddonNodeEventType = AddonEventType;
 
 /// <summary>
-/// A lightweight wrapper around an addon node that makes node operations chainable and usable without unsafe code.<br/>
-/// Every member is safe to call on an invalid node: getters return sensible defaults and actions become no-ops returning false/null.<br/>
-/// Get an instance via <see cref="NoireAddon.GetNode(uint)"/>, <see cref="NoireAddon.GetNode(int[])"/>, or <see cref="NoireAddon.RootNode"/>.
+/// A wrapper around an addon node exposing node operations without unsafe code. Every member is safe to call on an
+/// invalid node: getters return defaults and actions become no-ops returning false or null. Instances come from
+/// <see cref="NoireAddon.GetNode(uint)"/>, <see cref="NoireAddon.GetNode(int[])"/> and <see cref="NoireAddon.RootNode"/>.
 /// </summary>
 public readonly unsafe struct NoireAddonNode
 {
@@ -116,35 +116,46 @@ public readonly unsafe struct NoireAddonNode
     public float ScreenY => IsValid ? Pointer->ScreenY : 0f;
 
     /// <summary>
-    /// Whether the node and every one of its ancestors is visible.<br/>
-    /// A node keeps its own visibility flag set while a hidden parent hides it on screen, so this is the test an
-    /// on-screen visibility question needs.
+    /// Whether the node and every one of its ancestors is visible. A node keeps its own visibility flag set while a
+    /// hidden parent hides it on screen, so <see cref="IsVisible"/> alone does not answer this.
     /// </summary>
     public bool IsEffectivelyVisible
         => IsValid && Pointer->IsVisible() && AddonHelper.AreAncestorsVisible(Pointer);
 
     /// <summary>
-    /// The node's screen rect in framebuffer pixels (xy = min, zw = max), or zero if invalid.<br/>
-    /// The node's own scale is applied; the owning addon's <see cref="NoireAddon.Scale"/> is not.
+    /// The node's screen rect in framebuffer pixels (xy = min, zw = max), or zero if invalid. Both the node's own
+    /// scale and the owning addon's <see cref="NoireAddon.Scale"/> are applied, so the rect matches the region the
+    /// game hit-tests at any HUD scale; <see cref="GetScreenRect"/> opts out of the addon scale.
     /// </summary>
-    public Vector4 ScreenRect
-    {
-        get
-        {
-            if (!IsValid)
-                return default;
+    public Vector4 ScreenRect => GetScreenRect(true);
 
-            var node = Pointer;
-            return new Vector4(node->ScreenX, node->ScreenY, node->ScreenX + (node->Width * node->ScaleX), node->ScreenY + (node->Height * node->ScaleY));
-        }
+    /// <summary>
+    /// The node's screen rect in framebuffer pixels (xy = min, zw = max), or zero if invalid.
+    /// </summary>
+    /// <param name="includeAddonScale">Whether to apply the owning addon's <see cref="NoireAddon.Scale"/> on top of the node's own scale; false measures in the addon's local units instead.</param>
+    /// <returns>The rect in framebuffer pixels.</returns>
+    public Vector4 GetScreenRect(bool includeAddonScale = true)
+    {
+        if (!IsValid)
+            return default;
+
+        var node = Pointer;
+        var scale = includeAddonScale ? AddonScale : 1f;
+
+        return new Vector4(
+            node->ScreenX,
+            node->ScreenY,
+            node->ScreenX + (node->Width * node->ScaleX * scale),
+            node->ScreenY + (node->Height * node->ScaleY * scale));
     }
 
     /// <summary>
     /// Tries to read the node's screen rect, requiring the node to exist, be visible, and have area.
     /// </summary>
     /// <param name="rect">The rect in framebuffer pixels (xy = min, zw = max).</param>
+    /// <param name="includeAddonScale">Whether to apply the owning addon's <see cref="NoireAddon.Scale"/>; see <see cref="GetScreenRect"/>.</param>
     /// <returns>True if the rect is usable; otherwise, false.</returns>
-    public bool TryGetScreenRect(out Vector4 rect)
+    public bool TryGetScreenRect(out Vector4 rect, bool includeAddonScale = true)
     {
         rect = default;
 
@@ -152,14 +163,28 @@ public readonly unsafe struct NoireAddonNode
             return false;
 
         var node = Pointer;
-        var width = node->Width * node->ScaleX;
-        var height = node->Height * node->ScaleY;
+        var scale = includeAddonScale ? AddonScale : 1f;
+        var width = node->Width * node->ScaleX * scale;
+        var height = node->Height * node->ScaleY * scale;
 
         if (width <= 0 || height <= 0)
             return false;
 
         rect = new Vector4(node->ScreenX, node->ScreenY, node->ScreenX + width, node->ScreenY + height);
         return true;
+    }
+
+    /// <summary>The owning addon's scale, or 1 when there is no readable addon to scale against.</summary>
+    private float AddonScale
+    {
+        get
+        {
+            if (addonAddress == nint.Zero)
+                return 1f;
+
+            var scale = ((AtkUnitBase*)addonAddress)->Scale;
+            return scale > 0f ? scale : 1f;
+        }
     }
 
     /// <summary>
@@ -269,15 +294,11 @@ public readonly unsafe struct NoireAddonNode
     public IDisposable? AddCursorOnHover(AddonCursorType cursor, bool resetCursorOnMouseOut = true)
         => AddonHelper.AddCursorOnHover((AtkUnitBase*)addonAddress, Pointer, cursor, resetCursorOnMouseOut);
 
-    /// <summary>
-    /// Allows using the node wrapper directly in boolean contexts, evaluating to <see cref="IsValid"/>.
-    /// </summary>
+    /// <summary>Converts the wrapper to its <see cref="IsValid"/> value, so it reads directly in a boolean context.</summary>
     /// <param name="node">The node wrapper to evaluate.</param>
     public static implicit operator bool(NoireAddonNode node) => node.IsValid;
 
-    /// <summary>
-    /// Returns a readable representation of the node wrapper for logging.
-    /// </summary>
+    /// <summary>Formats the wrapper for logging.</summary>
     /// <returns>The node id and address, or "Invalid" when the wrapper is invalid.</returns>
     public override string ToString()
         => IsValid ? $"Node {NodeId} (0x{nodeAddress:X})" : "Invalid";

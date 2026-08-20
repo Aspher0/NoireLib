@@ -7,32 +7,31 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Draws custom tooltips that are independent from the regular ImGui tooltip system.<br/>
-/// A custom tooltip is rendered as its own window on the topmost display layer, so it can be shown
-/// <b>at the same time</b> as a regular <c>ImGui.SetTooltip()</c>, and can contain any mix of text, icons and images (see <see cref="NoireContent"/>).<br/>
-/// The background transparency is fully customizable, from 0% to 100%. See <see cref="TooltipStyle"/>.
+/// Draws tooltips as their own windows on the topmost layer, independent of the ImGui tooltip system. One can be
+/// shown alongside a regular <c>ImGui.SetTooltip()</c> and holds any <see cref="NoireContent"/>, styled through
+/// <see cref="TooltipStyle"/>.
 /// </summary>
 [NoireFacade]
 public static class NoireTooltip
 {
     private static readonly TooltipStyle DefaultStyle = new();
 
+    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
+    private const string CallbackFault = "A tooltip hook threw.";
+
     /// <summary>
     /// The size each tooltip measured, by window id, so a reappearing tooltip is placed on its first frame.
     /// </summary>
     /// <remarks>
-    /// Keyed by reference: every id, named or numbered, is composed through <see cref="UiIds"/> and arrives as the
-    /// same instance every frame, so this avoids hashing the id's characters on a key that never changes. If
-    /// <see cref="UiIds"/> ever rebuilds an id, the entry under the old instance is pruned like any stale one, at
-    /// the cost of the tooltip being re-measured once.
+    /// Keyed by reference: ids come from <see cref="UiIds"/> and arrive as the same instance every frame, so a
+    /// rebuilt id is pruned as stale and its tooltip re-measured once.
     /// </remarks>
     private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new(StringInstanceComparer.Instance);
 
     /// <summary>
-    /// Where a tooltip is parked for the frame or two it takes to measure it, before its real position can be
-    /// worked out. Far outside any viewport, since ImGui leaves an explicitly positioned window there rather than
-    /// clamping it back into view. Zero alpha would not work instead: ImGui refuses to process a window whose style
-    /// alpha is zero when it begins, so it would never be measured at all.
+    /// Where a tooltip is parked while it is measured, far outside any viewport since ImGui does not clamp an
+    /// explicitly positioned window back into view. A zero style alpha cannot be used instead, as ImGui skips such a
+    /// window entirely and it would never be measured.
     /// </summary>
     private static readonly Vector2 MeasuringPosition = new(-10000f, -10000f);
 
@@ -51,17 +50,14 @@ public static class NoireTooltip
         ImGuiWindowFlags.NoNav;
 
     /// <summary>
-    /// Shows a custom tooltip for the current frame if the last drawn ImGui item is hovered.<br/>
-    /// Call this right after drawing the item, like you would call <c>ImGui.SetTooltip()</c>.
+    /// Shows a tooltip for the current frame when the last drawn ImGui item is hovered.
     /// </summary>
-    /// <param name="content">The content of the tooltip. A plain <see cref="string"/> is implicitly converted.</param>
+    /// <param name="content">The tooltip's content; a plain <see cref="string"/> converts implicitly.</param>
     /// <param name="style">Optional visual and placement options.</param>
     /// <param name="hoveredFlags">Optional hover detection flags passed to <c>ImGui.IsItemHovered()</c>.</param>
     /// <param name="id">
-    /// Optional stable id. Only needed when tooltips are shown in a varying order: an id left <see langword="null"/> is
-    /// assigned from the order tooltips are shown in each frame, and a tooltip is placed and clamped against the size
-    /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
-    /// until it is measured again.
+    /// Optional stable id, needed only when tooltips are shown in a varying order: a null id is assigned from the
+    /// order of the frame, and an id landing on a differently sized tooltip misplaces it until it is re-measured.
     /// </param>
     public static void ShowOnItemHover(NoireContent content, TooltipStyle? style = null, ImGuiHoveredFlags hoveredFlags = ImGuiHoveredFlags.None, string? id = null)
     {
@@ -70,16 +66,13 @@ public static class NoireTooltip
     }
 
     /// <summary>
-    /// Shows a custom tooltip for the current frame, unconditionally.<br/>
-    /// Call this every frame the tooltip should stay visible.
+    /// Shows a tooltip for the current frame, unconditionally, and must be called every frame it stays visible.
     /// </summary>
-    /// <param name="content">The content of the tooltip. A plain <see cref="string"/> is implicitly converted.</param>
+    /// <param name="content">The tooltip's content; a plain <see cref="string"/> converts implicitly.</param>
     /// <param name="style">Optional visual and placement options.</param>
     /// <param name="id">
-    /// Optional stable id. Only needed when tooltips are shown in a varying order: an id left <see langword="null"/> is
-    /// assigned from the order tooltips are shown in each frame, and a tooltip is placed and clamped against the size
-    /// remembered under its id, so an id landing on a differently sized tooltip from one frame to the next misplaces it
-    /// until it is measured again.
+    /// Optional stable id, needed only when tooltips are shown in a varying order: a null id is assigned from the
+    /// order of the frame, and an id landing on a differently sized tooltip misplaces it until it is re-measured.
     /// </param>
     public static void Show(NoireContent content, TooltipStyle? style = null, string? id = null)
     {
@@ -89,9 +82,8 @@ public static class NoireTooltip
         style ??= DefaultStyle;
         var windowId = id != null ? UiIds.For("###NoireTooltip_", id) : NoireUI.NextTooltipId();
 
-        // Opened around the call rather than inside the window, deliberately. The tooltip's own window flags reroute
-        // border and background style fields and reposition the window, so nothing here may sit between the style
-        // pushes and the Begin that reads them.
+        // The tooltip window flags reroute the border and background style fields and reposition the window, so
+        // nothing may sit between the style pushes and the Begin that reads them.
         using var draw = UiDraw.Begin();
 
         try
@@ -108,40 +100,45 @@ public static class NoireTooltip
     {
         var (anchorPosition, pivot) = ResolveAnchor(style);
 
-        // Placing a tooltip means resolving it against its own size, and an auto-resizing ImGui window only learns its
-        // size by being drawn once. Until that has happened there is nowhere sensible to put this one, so it is parked
-        // off screen for the frame or two that measuring takes. Showing it anyway would put it somewhere wrong first and
-        // visibly move it into place after.
+        // An auto-resizing window only learns its size by being drawn once, so an unmeasured tooltip is parked off
+        // screen instead of appearing in the wrong place and visibly moving.
         var measured = SizeCache.TryGetValue(windowId, out var cached);
         ImGui.SetNextWindowPos(measured ? ResolveTopLeft(anchorPosition, pivot, cached.Size, style) : MeasuringPosition, ImGuiCond.Always);
 
-        if (style.BackgroundOpacity.HasValue)
+        // ImGui queues the background and border at Begin, so replacing them means carrying NoBackground and
+        // skipping the chrome pushes below.
+        var custom = style.CustomDraw;
+
+        if (custom == null && style.BackgroundOpacity.HasValue)
             ImGui.SetNextWindowBgAlpha(Math.Clamp(style.BackgroundOpacity.Value, 0f, 1f));
 
-        using var backgroundColor = UiPush.Color(ImGuiCol.PopupBg, style.BackgroundColor ?? Vector4.One, style.BackgroundColor.HasValue);
-        using var borderColor = UiPush.Color(ImGuiCol.Border, style.BorderColor ?? Vector4.One, style.BorderColor.HasValue);
+        using var backgroundColor = UiPush.Color(ImGuiCol.PopupBg, style.BackgroundColor ?? Vector4.One, custom == null && style.BackgroundColor.HasValue);
+        using var borderColor = UiPush.Color(ImGuiCol.Border, style.BorderColor ?? Vector4.One, custom == null && style.BorderColor.HasValue);
         using var textColor = UiPush.Color(ImGuiCol.Text, style.TextColor ?? Vector4.One, style.TextColor.HasValue);
 
-        // A tooltip's border thickness comes from PopupBorderSize, not from WindowBorderSize: ImGui picks the style
-        // field by flag, and this window carries the tooltip flag. Pushing the window field leaves a styled border
-        // never appearing, whatever the style asked for.
-        // Rounding is picked by flag as well, but there the tooltip flag is not part of the popup branch, so that
-        // one genuinely is the window field.
-        using var borderSize = UiPush.Style(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, style.BorderSize.HasValue);
-        using var rounding = UiPush.Style(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, style.Rounding.HasValue);
+        // ImGui picks the style field by window flag: a tooltip's border thickness comes from PopupBorderSize, while
+        // its rounding comes from WindowRounding because the tooltip flag is not in the popup branch there.
+        using var borderSize = UiPush.Style(ImGuiStyleVar.PopupBorderSize, style.ScaledBorderSize ?? 0f, custom == null && style.BorderSize.HasValue);
+        using var rounding = UiPush.Style(ImGuiStyleVar.WindowRounding, style.ScaledRounding ?? 0f, custom == null && style.Rounding.HasValue);
         using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, style.ScaledPadding ?? Vector2.Zero, style.Padding.HasValue);
 
-        if (ImGui.Begin(windowId, TooltipWindowFlags))
+        var flags = custom != null ? TooltipWindowFlags | ImGuiWindowFlags.NoBackground : TooltipWindowFlags;
+
+        if (ImGui.Begin(windowId, flags))
         {
-            // A tooltip shares the top draw layer with any always-on-top element it might overlap; within a layer,
-            // the last window to ask is the one in front. Asked here, after the thing being annotated has drawn, so
-            // the tooltip stays above it rather than behind.
+            // Within the top draw layer the last window to ask is the one in front, so this is asked after the
+            // annotated item has drawn.
             UiWindowOrder.KeepInFront();
+
+            // Painted before the content so the chrome sits behind it, and skipped while the window is parked, where
+            // its geometry means nothing.
+            if (custom != null && measured)
+                InvokeCustomDraw(custom, style);
 
             content.Draw();
 
-            // The size an appearing window reports is derived from a content size it has not measured yet, so it is
-            // recorded only from the second frame on, once it describes the content actually inside.
+            // An appearing window reports a size derived from content it has not measured, so the size is only
+            // recorded from the second frame on.
             if (!ImGui.IsWindowAppearing())
                 SizeCache[windowId] = (ImGui.GetWindowSize(), ImGui.GetFrameCount());
         }
@@ -149,6 +146,39 @@ public static class NoireTooltip
         ImGui.End();
 
         PruneSizeCache();
+    }
+
+    /// <summary>
+    /// Hands the chrome to a custom-draw hook, with every value resolved the way the skipped pushes would have.
+    /// </summary>
+    /// <param name="customDraw">The hook to run.</param>
+    /// <param name="style">The style being drawn with.</param>
+    private static void InvokeCustomDraw(Action<UiTooltipDraw> customDraw, TooltipStyle style)
+    {
+        using var draw = UiDraw.BeginWindow();
+
+        if (draw.List.IsNull)
+            return;
+
+        var min = ImGui.GetWindowPos();
+        var imStyle = ImGui.GetStyle();
+
+        var background = style.BackgroundColor ?? imStyle.Colors[(int)ImGuiCol.PopupBg];
+
+        if (style.BackgroundOpacity.HasValue)
+            background = ColorHelper.WithAlpha(background, Math.Clamp(style.BackgroundOpacity.Value, 0f, 1f));
+
+        var args = new UiTooltipDraw(
+            draw.List,
+            min,
+            min + ImGui.GetWindowSize(),
+            background,
+            style.BorderColor ?? imStyle.Colors[(int)ImGuiCol.Border],
+            style.ScaledBorderSize ?? imStyle.PopupBorderSize,
+            style.ScaledRounding ?? imStyle.WindowRounding,
+            style.ScaledPadding ?? imStyle.WindowPadding);
+
+        UiHook.Invoke(customDraw, args, nameof(NoireTooltip), CallbackFault);
     }
 
     /// <summary>
@@ -161,8 +191,7 @@ public static class NoireTooltip
         if (style.Placement == TooltipPlacement.Mouse)
             return (ImGui.GetMousePos() + style.ScaledMouseOffset, Vector2.Zero);
 
-        // Item-relative placements use the rect of the last drawn ImGui item,
-        // so they must be resolved before beginning the tooltip window.
+        // Item-relative placements read the last drawn item's rect, so they must be resolved before Begin.
         var itemMin = ImGui.GetItemRectMin();
         var itemMax = ImGui.GetItemRectMax();
         var itemCenter = (itemMin + itemMax) / 2f;
@@ -184,10 +213,8 @@ public static class NoireTooltip
     /// when the style asks for it.
     /// </summary>
     /// <remarks>
-    /// The pivot is applied here rather than handed to <c>ImGui.SetNextWindowPos</c>, which takes one: ImGui defers
-    /// a non-zero pivot until it knows the window size, and an auto-resizing window does not know its size on the
-    /// frame it appears, so the tooltip would spawn at the raw anchor and visibly settle into place next frame.
-    /// Resolving it against the size the tooltip had last time places it correctly on the first frame instead.
+    /// The pivot is applied here rather than passed to <c>ImGui.SetNextWindowPos</c>, which defers a non-zero pivot
+    /// until the window size is known and would place an auto-resizing tooltip at the raw anchor on its first frame.
     /// </remarks>
     /// <param name="anchorPosition">The anchor position in screen coordinates.</param>
     /// <param name="pivot">The normalized point of the tooltip pinned to the anchor.</param>
@@ -211,14 +238,12 @@ public static class NoireTooltip
 
 
     /// <summary>
-    /// Drops remembered sizes of tooltips that have not been drawn for a while, once enough have piled up to be
-    /// worth bounding. A remembered size places a tooltip on the frame it reappears, so one is worth keeping long
-    /// after the tooltip was last shown; evicting one only costs a couple of invisible frames to measure again.
+    /// Drops remembered sizes of tooltips that have not been drawn for a while, once the cache is large enough to be
+    /// worth bounding.
     /// </summary>
     /// <remarks>
-    /// The keys to drop are gathered before any of them is dropped, because a dictionary cannot be written through
-    /// while it is being read. The buffer they are gathered into is borrowed rather than allocated: this runs on every
-    /// frame a tooltip draws, and it starts running exactly when the cache is at its largest.
+    /// Keys are gathered into a pooled buffer before any is removed, since the dictionary cannot be written to while
+    /// it is enumerated and this runs on every frame a tooltip draws.
     /// </remarks>
     private static void PruneSizeCache()
     {

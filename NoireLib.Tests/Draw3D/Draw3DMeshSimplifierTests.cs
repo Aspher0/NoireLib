@@ -174,7 +174,7 @@ public class Draw3DMeshSimplifierTests
     // ---------------------------------------------------------------- LOD level selection
 
     private static Draw3DPerformance.Snapshot Snapshot(bool lod = true, float bias = 1f, float[]? radii = null)
-        => new(lod, bias, 0f, 0f, radii ?? new[] { 160f, 60f, 22f });
+        => new(lod, bias, 0f, 0f, radii ?? new[] { 160f, 60f, 22f }, BatchedObjectConstants: false);
 
     [Theory]
     [InlineData(300f, 0)] // above the first boundary: full detail

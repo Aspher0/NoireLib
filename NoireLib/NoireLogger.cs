@@ -1,5 +1,6 @@
-using Dalamud.Game.Text;
+﻿using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Utility;
 using NoireLib.Core.Modules;
 using NoireLib.Helpers;
@@ -117,6 +118,73 @@ public static class NoireLogger
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
     public static void LogError(Exception? ex, string message, string? prefix = null)
         => WriteLog(LogLevel.Error, GetLogString(message, prefix), ex);
+
+    #endregion
+
+    #region Log once
+
+    /// <summary>
+    /// The keys that have already reported.
+    /// </summary>
+    private static readonly HashSet<string> ReportedOnce = [];
+
+    /// <summary>
+    /// Writes an error the first time a key reports, and does nothing on every later call carrying that key.
+    /// </summary>
+    /// <param name="key">The deduplication key naming the kind of failure.</param>
+    /// <param name="ex">The exception.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <returns>True when this call was the one that logged.</returns>
+    public static bool LogErrorOnce(string key, Exception? ex, string message, string? prefix = null)
+    {
+        if (!TakeOnceSlot(key))
+            return false;
+
+        LogError(ex, message, prefix);
+        return true;
+    }
+
+    /// <inheritdoc cref="LogErrorOnce(string, Exception?, string, string?)"/>
+    public static bool LogErrorOnce(string key, string message, string? prefix = null)
+        => LogErrorOnce(key, null, message, prefix);
+
+    /// <summary>
+    /// Writes a warning the first time a key reports, and does nothing on every later call carrying that key.
+    /// </summary>
+    /// <param name="key">The deduplication key naming the kind of failure.</param>
+    /// <param name="message">The message to display.</param>
+    /// <param name="prefix">The optional prefix to prepend to the message.</param>
+    /// <returns>True when this call was the one that logged.</returns>
+    public static bool LogWarningOnce(string key, string message, string? prefix = null)
+    {
+        if (!TakeOnceSlot(key))
+            return false;
+
+        LogWarning(message, prefix);
+        return true;
+    }
+
+    /// <summary>
+    /// Lets a key report once more.
+    /// </summary>
+    /// <param name="key">The key to clear. Null clears every key.</param>
+    public static void ResetLogOnce(string? key = null)
+    {
+        lock (ReportedOnce)
+        {
+            if (key == null)
+                ReportedOnce.Clear();
+            else
+                ReportedOnce.Remove(key);
+        }
+    }
+
+    private static bool TakeOnceSlot(string key)
+    {
+        lock (ReportedOnce)
+            return ReportedOnce.Add(key ?? string.Empty);
+    }
 
     #endregion
 
@@ -322,6 +390,35 @@ public static class NoireLogger
             return this;
         }
 
+        /// <summary>
+        /// Adds text the player can click, running whatever the payload was registered with.
+        /// </summary>
+        /// <param name="text">The clickable text to add.</param>
+        /// <param name="link">The payload from <see cref="Helpers.ChatLinkHelper.Register"/>. A null one adds the text unclickable.</param>
+        /// <param name="foregroundColor">The optional foreground RGB color to apply.</param>
+        /// <param name="glowColor">The optional glow RGB color to apply.</param>
+        /// <returns>The current chat message builder.</returns>
+        /// <remarks>A link carries no styling of its own, so colouring or bracketing the text is the caller's job.</remarks>
+        public ChatMessageBuilder AddLink(string text, DalamudLinkPayload? link, Vector3? foregroundColor = null, Vector3? glowColor = null)
+        {
+            if (!string.IsNullOrEmpty(text))
+                segments.Add(new ChatMessageSegment(text, foregroundColor, glowColor, link));
+
+            return this;
+        }
+
+        /// <summary>
+        /// Adds text the player can click, registering what the click does at the same time.
+        /// </summary>
+        /// <param name="text">The text to add.</param>
+        /// <param name="key">The link identifier, as taken by <see cref="Helpers.ChatLinkHelper.Register"/>.</param>
+        /// <param name="onClick">The action run on the framework thread when the text is clicked.</param>
+        /// <param name="foregroundColor">The optional foreground RGB color to apply.</param>
+        /// <param name="glowColor">The optional glow RGB color to apply.</param>
+        /// <returns>The current chat message builder.</returns>
+        public ChatMessageBuilder AddLink(string text, string key, Action onClick, Vector3? foregroundColor = null, Vector3? glowColor = null)
+            => AddLink(text, Helpers.ChatLinkHelper.Register(key, onClick), foregroundColor, glowColor);
+
         internal SeString Build(string? leadingText = null)
         {
             var builder = new SeStringBuilder();
@@ -330,7 +427,7 @@ public static class NoireLogger
                 builder.AddText(leadingText);
 
             foreach (var segment in segments)
-                AppendStyledText(builder, segment.Text, segment.ForegroundColor, segment.GlowColor);
+                AppendStyledText(builder, segment.Text, segment.ForegroundColor, segment.GlowColor, segment.Link);
 
             return builder.Build();
         }
@@ -357,8 +454,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <param name="messageBuilder">The message builder containing the message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
@@ -370,8 +466,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with the caller instance prefix as an echo message.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -385,8 +480,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <param name="message">The message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
@@ -398,8 +492,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat as an echo message with the caller instance prefix.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -413,8 +506,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -430,8 +522,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message with the caller instance prefix.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -449,8 +540,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
@@ -463,8 +553,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -479,8 +568,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="messageBuilder">The message builder containing the message to display.</param>
@@ -493,8 +581,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a built chat message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -509,8 +596,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat with specified chat type.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -527,8 +613,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat with specified chat type and the caller instance prefix.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <remarks>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
@@ -547,8 +632,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type and RGB color formatting as Vector3 values.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="message">The message to display.</param>
@@ -563,8 +647,7 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a message to the in-game chat with specified chat type, caller instance prefix, and RGB color formatting.<br/>
-    /// Safe to call from any thread. A call off the framework thread delivers on the next tick rather than
-    /// immediately. Does nothing before NoireLib is initialized.
+    /// Safe to call from any thread.
     /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
@@ -624,26 +707,20 @@ public static class NoireLogger
     /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntry(XivChatEntry entry)
     {
-        // Before initialization there is no chat log to print to, and NoireService.ChatGui is still null. Dropping
-        // the message keeps chat output to the same contract the log writes already keep: a call outside a running
-        // plugin is a no-op rather than a throw.
+        // NoireService.ChatGui is null before initialization.
         if (!NoireService.IsInitialized())
             return;
 
         try
         {
-            // Chat entries go into a queue filled here and drained on the framework thread; the queue is not
-            // synchronized, so filling it from another thread races the drain and corrupts it rather than merely
-            // reordering it. A caller already on that thread hands the entry over directly, which keeps every
-            // existing caller synchronous, allocation-free, and preserves the order of a report printed as several
-            // consecutive lines.
+            // The chat queue is unsynchronized and drained on the framework thread, so filling it from another
+            // thread corrupts it. On-thread callers hand over directly, keeping consecutive lines in order.
             if (NoireService.Framework.IsInFrameworkUpdateThread)
             {
                 PrintChatEntryToChatLog(entry);
                 return;
             }
 
-            // The entry is complete before the hop, so only the hand-over is deferred, never the formatting.
             _ = AsyncHelper.RunOnFrameworkThreadAsync(() => PrintChatEntryToChatLog(entry));
         }
         catch (Exception ex)
@@ -659,9 +736,7 @@ public static class NoireLogger
     /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntryToChatLog(XivChatEntry entry)
     {
-        // Swallowed inside the action rather than around it: this also runs marshalled, where an escaping exception
-        // would fault a task nobody is holding. A message that cannot be delivered is reported to the log rather
-        // than raised at a caller that has long since moved on.
+        // Caught here rather than at the call site: when marshalled, an escaping exception faults a task nobody awaits.
         try
         {
             NoireService.ChatGui.Print(entry);
@@ -677,12 +752,12 @@ public static class NoireLogger
     #region Helper Methods
 
     /// <summary>
-    /// The prefix used when a failed chat print is reported to the log, so that the report is attributable once it is
-    /// no longer next to the code that asked for the message.
+    /// The prefix used when a failed chat print is reported to the log.
     /// </summary>
     private const string ChatPrintLogPrefix = $"[{nameof(NoireLogger)}] ";
 
-    private readonly record struct ChatMessageSegment(string Text, Vector3? ForegroundColor, Vector3? GlowColor);
+    private readonly record struct ChatMessageSegment(string Text, Vector3? ForegroundColor, Vector3? GlowColor,
+        DalamudLinkPayload? Link = null);
 
     private readonly record struct ChatStyle(Vector3? ForegroundColor, Vector3? GlowColor);
 
@@ -691,7 +766,7 @@ public static class NoireLogger
     private readonly record struct ChatTag(string Name, bool IsClosing, Vector3? ForegroundColor, Vector3? GlowColor);
 
     /// <summary>
-    /// Enum representing the different log levels.
+    /// The supported log levels.
     /// </summary>
     private enum LogLevel
     {
@@ -704,11 +779,11 @@ public static class NoireLogger
     }
 
     /// <summary>
-    /// Central method to write logs based on the log level.
+    /// Writes a message to the plugin log at the given level.
     /// </summary>
     /// <param name="level">The log level.</param>
     /// <param name="message">The formatted message to log.</param>
-    /// <param name="exception">Optional exception to include in the log.</param>
+    /// <param name="exception">The optional exception to include in the log.</param>
     private static void WriteLog(LogLevel level, string message, Exception? exception = null)
     {
         try
@@ -717,12 +792,12 @@ public static class NoireLogger
         }
         catch (Exception)
         {
-            // Catching for unit tests, since PluginLog is not initialized in a test environment
+            // PluginLog is not initialized outside a running plugin.
         }
     }
 
     /// <summary>
-    /// Internal method to perform the actual logging.
+    /// Dispatches the message to the matching plugin log method.
     /// </summary>
     private static void WriteLogInternal(LogLevel level, string message, Exception? exception)
     {
@@ -737,7 +812,7 @@ public static class NoireLogger
                     NoireService.PluginLog.Fatal(exception, message);
                     break;
                 default:
-                    // Other log levels don't support exceptions in the same way
+                    // Only Error and Fatal take an exception overload.
                     break;
             }
         }
@@ -864,7 +939,7 @@ public static class NoireLogger
     {
         var builder = new SeStringBuilder();
 
-        // Never add a player payload for the sender: incorrect data, such as a made-up name or world ID, can cause issues.
+        // No player payload for the sender: a made-up name or world id breaks the game's context menu.
         AppendStyledText(builder, senderName, foregroundColor, glowColor);
 
         return builder.Build();
@@ -877,10 +952,16 @@ public static class NoireLogger
     /// <param name="text">The text to append.</param>
     /// <param name="foregroundColor">The optional foreground RGB color of the text.</param>
     /// <param name="glowColor">The optional glow RGB color of the text.</param>
-    private static void AppendStyledText(SeStringBuilder builder, string text, Vector3? foregroundColor = null, Vector3? glowColor = null)
+    /// <param name="link">The optional payload that makes the text clickable.</param>
+    private static void AppendStyledText(SeStringBuilder builder, string text, Vector3? foregroundColor = null,
+        Vector3? glowColor = null, DalamudLinkPayload? link = null)
     {
         if (string.IsNullOrEmpty(text))
             return;
+
+        // Outside the colours, so the whole run is clickable rather than only the part after the last colour.
+        if (link != null)
+            builder.Add(link);
 
         if (foregroundColor.HasValue)
             builder.Add(new ColorPayload(foregroundColor.Value).AsRaw());
@@ -895,6 +976,9 @@ public static class NoireLogger
 
         if (foregroundColor.HasValue)
             builder.Add(new ColorEndPayload().AsRaw());
+
+        if (link != null)
+            builder.Add(RawPayload.LinkTerminator);
     }
 
     /// <summary>

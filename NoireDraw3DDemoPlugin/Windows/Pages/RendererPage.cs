@@ -32,6 +32,13 @@ internal sealed class RendererPage
                 "Keep this window open while the game UI is hidden. Independent of the layer.");
         }
 
+        Ui.Section("Performance");
+        using (Ui.Form("renderer.performance"))
+        {
+            Ui.Toggle("Batched object constants", static () => NoireDraw3D.Performance.BatchedObjectConstants, static v => NoireDraw3D.Performance.BatchedObjectConstants = v,
+                "A/B experiment: single draws ride the instanced route, so the object constant buffer re-uploads only when material params change. Compare fps and the Diagnostics page's objectCb counter in a heavy scene.");
+        }
+
         Ui.Section("Debug draw");
         using (Ui.Form("renderer.debug"))
         {

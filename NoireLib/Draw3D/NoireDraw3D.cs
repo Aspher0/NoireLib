@@ -20,11 +20,10 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// The Draw3D hub: a real D3D11 world renderer that draws after the game's frame is complete -
-/// glowless, color-exact, hardware-clipped, under every plugin window, with zero hooks and zero ImGui.
-/// Lazy-initialized on first access (NoireLib must be initialized first); disposal is wired through
-/// <see cref="NoireLibMain.RegisterOnDispose"/> automatically. Draw retained content via <see cref="MainScene"/>,
-/// per-frame markers via <see cref="Im"/>.
+/// The Draw3D hub: a D3D11 world renderer that draws after the game's frame is complete, colour-exact and
+/// hardware-clipped, under every plugin window, using no hooks and no ImGui. Lazy-initialized on first access,
+/// which requires NoireLib to be initialized, and disposed through <see cref="NoireLibMain.RegisterOnDispose"/>.
+/// Retained content goes on <see cref="MainScene"/>, per-frame markers on <see cref="Im"/>.
 /// </summary>
 public static unsafe partial class NoireDraw3D
 {
@@ -73,17 +72,17 @@ public static unsafe partial class NoireDraw3D
     private static SceneDepth? sceneDepth;
     private static SceneStencil? sceneStencil; // the game depth-stencil's STENCIL plane (marks characters) for silhouette-exact decal exclusion
 
-    // A cached mesh of the real collision world near the player, rebuilt on the framework thread when they leave the
-    // cached region. Rendered top-down into worldHeightRt so a DecalProjection.HighestOnly decal can find its column's
-    // topmost surface - see GroundDecal.hlsl. Also what Scene3D.SpawnWorldGeometry hands out. Swapped atomically.
+    // A cached mesh of the collision world near the player, rebuilt on the framework thread once they leave the
+    // cached region and swapped atomically. Rendered top-down into worldHeightRt so a DecalProjection.HighestOnly
+    // decal can find its column's topmost surface (GroundDecal.hlsl), and handed out by Scene3D.SpawnWorldGeometry.
     private sealed class WorldCollisionCache { public NoireLib.Draw3D.Geometry.Mesh Mesh = null!; public Vector3 Center; }
     private static volatile WorldCollisionCache? worldCollision;
     private static Vector3 worldCollisionBuiltAt;
     private static bool worldCollisionEverBuilt;
     private static volatile bool lastFrameNeededHeightMap; // gates the framework-thread collision rebuild to frames with a HighestOnly decal
 
-    // Last frame's top-surface chain state, snapshotted for /noire3d topsurface: each link (decal request, master
-    // switch, threshold, cached collision, drawn map) fails soft, and the report names whichever is missing.
+    // Last frame's top-surface chain state, for /noire3d topsurface: every link (decal request, master switch,
+    // threshold, cached collision, drawn map) fails soft, so the report names whichever one is missing.
     private static volatile int lastTopSurfaceDecals;
     private static volatile bool lastHeightMapRendered;
     private static float lastHeightCeiling;
@@ -100,8 +99,8 @@ public static unsafe partial class NoireDraw3D
     private static ComPtr<ID3D11RenderTargetView> backbufferRtv;
     private static nint backbufferPtr;
 
-    // Pre-UI injection: an RTV over the game's present-composition buffer, and the "did we inject this
-    // frame" flag that tells the present-time path to skip its own swapchain composite (fallback otherwise).
+    // Pre-UI injection: an RTV over the game's present-composition buffer, plus the flag saying the frame was
+    // injected, which tells the present-time path to skip its own swapchain composite.
     private static ComPtr<ID3D11RenderTargetView> presentRtv;
     private static nint presentRtvPtr;
     private static uint presentRtvWidth, presentRtvHeight;
@@ -110,8 +109,8 @@ public static unsafe partial class NoireDraw3D
     private static volatile bool injectedSinceLastPresent;
 
     // Nameplate occlusion: a writable DSV over the game's scene depth, stamped before the game's plate pass so plates
-    // behind 3D objects are hidden by the game's own depth test (needs the under-UI injection; the one place Draw3D
-    // writes into the game's own depth buffer instead of treating it as read-only).
+    // behind 3D objects fail the game's own depth test. Requires the under-UI injection, and is the one place Draw3D
+    // writes into the game's depth buffer rather than treating it as read-only.
     private static GameDepthTarget? gameDepthTarget;
     private static NameplateOcclusion nameplateOcclusion = NameplateOcclusion.DepthAware;
 
@@ -128,11 +127,9 @@ public static unsafe partial class NoireDraw3D
     private static readonly List<Scene3D> Scenes = new();
     private static readonly List<RenderView> Views = new();
 
-    // Reusable snapshots of the two registries above, for the frame body. It must iterate them outside their lock,
-    // because the user code it invokes is free to create or drop a scene or a view mid-loop, but a fresh snapshot
-    // array every frame would allocate every steady-state frame, which this path must not do. Refilled under the
-    // lock at the top of each frame and read only from the render thread, which is the sole caller and never
-    // re-enters itself.
+    // Reusable snapshots of the two registries above. The frame body iterates them outside the lock because the
+    // callbacks it invokes may create or drop a scene or a view mid-loop, and a fresh array each frame would
+    // allocate on the steady-state path. Refilled under the lock per frame, read only from the render thread.
     private static readonly List<Scene3D> SceneScratch = new();
     private static readonly List<RenderView> ViewScratch = new();
     private static readonly Vector4[] ProtectRects = new Vector4[128];
@@ -148,10 +145,10 @@ public static unsafe partial class NoireDraw3D
     private static GameRenderSources.CameraData lastCameraData;
     private static Vector4 lastDepthMap; // last frame's analytic depth map, kept raw so DescribeDepthSource can format it on demand
 
-    // A short ring of the camera each of the most recent presented frames projected its overlay with, newest reachable
-    // via TryGetCameraHistory(0). Entirely inert: nothing in the render path reads it. It exists only for the
-    // camera-phase trace (/noire3d camtrace), which sweeps it to find the frame-lag between the CPU camera snapshot the
-    // overlay uses and the GPU-rasterized pixels already in the present buffer - the residual "swim" source.
+    // A short ring of the camera each recent presented frame projected its overlay with, newest reachable via
+    // TryGetCameraHistory(0). Nothing in the render path reads it; it serves only the camera-phase trace
+    // (/noire3d camtrace), which sweeps it for the frame lag between the CPU camera snapshot and the presented
+    // pixels, the residual source of overlay swim.
     private const int CameraHistoryLength = 8;
     private static readonly GameRenderSources.CameraData[] cameraHistory = new GameRenderSources.CameraData[CameraHistoryLength];
     private static int cameraHistoryCursor; // index the NEXT push lands at; newest entry is (cursor - 1)
@@ -163,11 +160,10 @@ public static unsafe partial class NoireDraw3D
     private static volatile bool frameworkCameraValid;
     private static bool frameworkHooked;
 
-    // The injected layer must be projected with the same camera the game rasterized the world in the present buffer
-    // with, or it drifts relative to world geometry under camera motion. Two sources provide that camera, best first:
-    // the camera-constant capture (CameraConstantCapture - the exact uploaded GPU bytes, committed at the main scene
-    // pass; immune to the sim-vs-render skew that made every struct-timed read swim under load), then the render-thread
-    // struct snapshot taken at the main pass (RenderTargetTap.TryGetWorldCamera). See TryGetInjectCamera.
+    // The injected layer must be projected with the camera the game rasterized the present buffer with, or it drifts
+    // against world geometry under camera motion. TryGetInjectCamera takes two sources, best first: the exact GPU
+    // camera constants committed at the main scene pass (CameraConstantCapture), which carry no sim-versus-render
+    // skew, then the render-thread struct snapshot at the same pass (RenderTargetTap.TryGetWorldCamera).
 
     private static bool keepDrawingWhenUiHidden = true;
     private static bool forcedAutoHide, forcedUserHide, forcedCutsceneHide, forcedGposeHide;
@@ -177,22 +173,22 @@ public static unsafe partial class NoireDraw3D
     internal static bool Wireframe;
 
     /// <summary>
-    /// Traces every decal's painted shape as an outline, on top of normal rendering, for the retained scene and the
-    /// immediate layer alike. Unlike the per-node <see cref="Scene.SceneNode.ShowDecalShape"/>, this is the only way
-    /// to outline an immediate-mode shape; implied by <see cref="Wireframe"/>.
+    /// Traces every decal's painted shape as an outline over normal rendering, for the retained scene and the
+    /// immediate layer alike, and is the only way to outline an immediate-mode shape. Implied by
+    /// <see cref="Wireframe"/>.
     /// </summary>
     internal static bool DecalShapeOutlines;
 
     /// <summary>
-    /// Draws every decal's projection box (the volume its SDF is evaluated in) as a wireframe, on top of normal
-    /// rendering, for the retained scene and the immediate layer alike. Complements <see cref="DecalShapeOutlines"/>
-    /// and the per-node <see cref="Scene.SceneNode.ShowDecalVolume"/>; independent of <see cref="Wireframe"/>.
+    /// Draws every decal's projection box, the volume its SDF is evaluated in, as a wireframe over normal
+    /// rendering, independently of <see cref="Wireframe"/>.
     /// </summary>
     internal static bool DecalVolumeOutlines;
 
     // ---------------------------------------------------------------- public surface
 
-    /// <summary>The main retained scene. First access initializes the renderer.<br/>Throws <see cref="InvalidOperationException"/> when NoireLib is not initialized.</summary>
+    /// <summary>Gets the main retained scene, initializing the renderer on first access.</summary>
+    /// <exception cref="InvalidOperationException">NoireLib is not initialized.</exception>
     public static Scene3D MainScene
     {
         get
@@ -202,7 +198,7 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>The immediate-mode drawing layer. First access initializes the renderer.</summary>
+    /// <summary>Gets the immediate-mode drawing layer, initializing the renderer on first access.</summary>
     public static ImDraw3D Im
     {
         get
@@ -212,7 +208,7 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>Master switch. Setting it back to true after a renderer fault re-arms the renderer.</summary>
+    /// <summary>Gets or sets the master switch, setting it back to true re-arming the renderer after a fault.</summary>
     public static bool Enabled
     {
         get => enabled;
@@ -229,44 +225,40 @@ public static unsafe partial class NoireDraw3D
 
     private static bool enabled = true;
 
-    /// <summary>0-1 opacity applied to the whole 3D layer at composite time (linear under premultiplication - true layer transparency).</summary>
+    /// <summary>Gets or sets the 0-1 opacity applied to the whole 3D layer at composite time.</summary>
     public static float LayerOpacity { get; set; } = 1f;
 
     /// <summary>
-    /// Renders the cached collision world top-down into a height-map (the highest collision Y per XZ column) on frames
-    /// that have ground decals. Default true; its only consumer is <see cref="DecalProjection.HighestOnly"/>, which
-    /// falls back to <see cref="DecalProjection.AllSurfaces"/> when this is off. Unrelated to character exclusion,
-    /// which is <see cref="Scene.SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
-    /// plus <see cref="CharacterStencilValue"/>.
+    /// Gets or sets whether the cached collision world is rendered top-down into a height-map of the highest
+    /// collision Y per XZ column, which only <see cref="DecalProjection.HighestOnly"/> reads and which falls back
+    /// to <see cref="DecalProjection.AllSurfaces"/> when off.
     /// </summary>
     public static bool CollisionHeightMap { get; set; } = true;
 
     /// <summary>
-    /// The game depth-stencil value that marks characters, used to occlude ground decals along an excluded character's
-    /// exact silhouette (see <see cref="Scene.SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>).
-    /// Discovered via <c>/noire3d stencil</c>; default <c>0x08</c>. Set to 0 to disable stencil exclusion (decals paint over characters).
-    /// <b>End-of-frame value only</b>: the stencil plane is rewritten across the frame, and this is what a decal sees
-    /// at the end, not what the geometry pass writes. Reusing it mid-frame is wrong: see <see cref="Draw3DGameLit.Stencil"/>,
-    /// where <c>0x08</c> carries no lit mark and leaves the object black.
+    /// Gets or sets the game depth-stencil value that marks characters, which occludes ground decals along an
+    /// excluded character's silhouette and disables stencil exclusion when set to 0. This is the end-of-frame
+    /// value the decal pass sees, not what the geometry pass writes, so it does not apply mid-frame (see
+    /// <see cref="Draw3DGameLit.Stencil"/>).
     /// </summary>
     public static uint CharacterStencilValue { get; set; } = 0x08;
 
     /// <summary>
-    /// The elevation band (world units) used by <see cref="DecalProjection.HighestOnly"/>: a surface more than this far
-    /// below its column's highest collision surface is skipped. Larger tolerates coarser collision; smaller is tighter
-    /// but can nibble genuine ground where collision sits slightly off the visual floor. Default 0.1 m; only read by
-    /// <c>HighestOnly</c> decals, and setting it to 0 disables that projection entirely.
+    /// Gets or sets the elevation band in world units below a column's highest collision surface that
+    /// <see cref="DecalProjection.HighestOnly"/> still paints, 0 disabling that projection entirely.
     /// </summary>
     public static float TopSurfaceThreshold { get; set; } = 0.1f;
 
-    /// <summary>Applies the layering state (used by <see cref="NativeUi"/>.<c>Layering</c>).</summary>
+    /// <summary>Applies the layering state, behind <see cref="NativeUi"/>.<c>Layering</c>.</summary>
+    /// <param name="value">The layering to apply.</param>
     internal static void SetLayering(Draw3DLayering value)
     {
         layering = value;
         ApplyInjectionState();
     }
 
-    /// <summary>Applies the keep-UI-on-top state (used by <see cref="NativeUi"/>.<c>KeepUiOnTop</c>).</summary>
+    /// <summary>Applies the keep-UI-on-top state, behind <see cref="NativeUi"/>.<c>KeepUiOnTop</c>.</summary>
+    /// <param name="value">Whether the native UI stays on top.</param>
     internal static void SetKeepUiOnTop(bool value)
     {
         keepUiOnTop = value;
@@ -274,14 +266,14 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Whether the render-thread hook needs to fire this frame's injection point at all: to composite the layer
-    /// under the native UI, or - over everything - to take the pre-UI snapshot the UI mask differences against.
+    /// Gets a value indicating whether the render-thread hook needs the injection point this frame, either to
+    /// composite under the native UI or to take the pre-UI snapshot the UI mask differences against.
     /// </summary>
     private static bool NeedsInjectionPoint => layering == Draw3DLayering.UnderGameUi || keepUiOnTop;
 
     /// <summary>
-    /// Arms or disarms the render-thread hook to match <see cref="NeedsInjectionPoint"/>. Retried from the frame
-    /// loop when the device is not ready yet (very first frames).
+    /// Arms or disarms the render-thread hook to match <see cref="NeedsInjectionPoint"/>, retried from the frame
+    /// loop while no device exists yet.
     /// </summary>
     private static void ApplyInjectionState()
     {
@@ -289,7 +281,7 @@ public static unsafe partial class NoireDraw3D
         {
             var tap = EnsureRenderTargetTap();
             if (tap == null)
-                return; // no device yet - retried from the frame loop
+                return; // No device yet; retried from the frame loop.
 
             tap.Injector = InjectComposite;
             tap.SetInjection(true);
@@ -301,9 +293,8 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Keeps the 3D layer rendering when the game's UI is hidden (cutscenes, GPose, user UI-hide). Default true.
-    /// Affects only the 3D layer, not the host plugin's own windows; gate those on <see cref="IsGameUiHidden"/> if desired:
-    /// <code>public override bool DrawConditions() =&gt; !NoireDraw3D.IsGameUiHidden;</code>
+    /// Gets or sets whether the 3D layer keeps rendering while the game's UI is hidden by a cutscene, GPose or the
+    /// user's UI-hide, which affects the layer only and not the host plugin's own windows.
     /// </summary>
     public static bool KeepDrawingWhenUiHidden
     {
@@ -316,9 +307,8 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Whether the game's UI is hidden right now, for any of the reasons <see cref="KeepDrawingWhenUiHidden"/> overrides:
-    /// the player's UI-hide toggle, a cutscene, or GPose. Reads the game's own state directly, so it stays truthful
-    /// even while Dalamud's per-plugin hide overrides are held.
+    /// Gets a value indicating whether the game's UI is hidden by the player's UI-hide toggle, a cutscene or
+    /// GPose, read from the game's own state so it stays truthful while Dalamud's per-plugin overrides are held.
     /// </summary>
     public static bool IsGameUiHidden
         => NoireService.GameGui.GameUiHidden
@@ -326,9 +316,8 @@ public static unsafe partial class NoireDraw3D
            || NoireService.Condition.Any(ConditionFlag.WatchingCutscene, ConditionFlag.WatchingCutscene78, ConditionFlag.OccupiedInCutSceneEvent);
 
     /// <summary>
-    /// Registers the <c>/noire3d</c> diagnostics command (validate, probe, camtrace, stencil, wireframe, stats and
-    /// more; anything unrecognized prints the stats). Opt-in: call once to expose it; a no-op if already registered.
-    /// The same toolkit is available programmatically via <see cref="Diagnostics"/> without registering a command.
+    /// Registers the <c>/noire3d</c> diagnostics command, a no-op once registered, exposing the same toolkit
+    /// <see cref="Diagnostics"/> offers programmatically.
     /// </summary>
     public static void EnableDiagnosticsCommand()
     {
@@ -338,24 +327,22 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Global input knobs (gestures, obstacle-occlusion, deselect, multi-select modifiers, debug). The everyday path
-    /// never touches this: hover, click and select live on the scene, node, or editor. Use this only to tune gestures
-    /// or register a custom interactor.
+    /// Gets the global input settings: gestures, obstacle-occlusion, deselect, multi-select modifiers and debug.
     /// </summary>
     public static Draw3DInteraction Interaction { get; } = new();
 
     /// <summary>
-    /// Consumer-supplied input arbitration for <see cref="Pick"/>: return false when the mouse is already
-    /// claimed by UI. Draw3D reads no input itself; NoireUI or the host plugin wires this.
+    /// Gets or sets the input gate for <see cref="Pick"/>, which returns false when UI already claims the mouse.
     /// </summary>
     public static Func<bool>? PickInputGate { get; set; }
 
     /// <summary>
-    /// Convenience for <see cref="Im.ImShapeStyle.ExcludeVolumes"/>: nearby game objects as exclusion cylinders.
-    /// Reads the object table; call on the framework/draw thread, not from <see cref="Scene.Scene3D.OnPrepareFrame"/>.
+    /// Collects nearby game objects as <see cref="Im.ImShapeStyle.ExcludeVolumes"/> cylinders, reading the object
+    /// table, so it belongs on the framework or draw thread and not in <see cref="Scene.Scene3D.OnPrepareFrame"/>.
     /// </summary>
-    /// <param name="filter">Which objects to include; null uses the default character/monster/NPC set.</param>
-    /// <param name="radiusScale">Multiplier on each object's hitbox radius (default 1).</param>
+    /// <param name="filter">Which objects to include, or null for the default character, monster and NPC set.</param>
+    /// <param name="radiusScale">The multiplier on each object's hitbox radius.</param>
+    /// <returns>The exclusion volumes.</returns>
     public static IReadOnlyList<ExcludeVolume> GetActorExclusions(Func<IGameObject, bool>? filter = null, float radiusScale = 1f)
     {
         var list = new List<ExcludeVolume>();
@@ -363,24 +350,23 @@ public static unsafe partial class NoireDraw3D
         return list;
     }
 
-    /// <summary>Lighting parameters for <see cref="Materials.MaterialDomain.Lit"/> materials.</summary>
+    /// <summary>Gets the lighting parameters for <see cref="Materials.MaterialDomain.Lit"/> materials.</summary>
     public static Draw3DLighting Lighting { get; } = new();
 
-    /// <summary>Performance knobs: automatic model level-of-detail, and optional distance / screen-size culling.</summary>
+    /// <summary>Gets the performance settings: automatic model level-of-detail, and distance and screen-size culling.</summary>
     public static Draw3DPerformance Performance { get; } = new();
 
-    /// <summary>What <see cref="DrawGameLit(Scene.SceneNode)"/> writes into the game's G-buffer. The defaults are the measured ones.</summary>
+    /// <summary>Gets what <see cref="DrawGameLit(Scene.SceneNode)"/> writes into the game's G-buffer.</summary>
     public static Draw3DGameLit GameLit { get; } = new();
 
     /// <summary>
-    /// Reads every channel of the game's G-buffer at one point on screen: the shading normal and shading-model
-    /// id, the material scalars, the albedo, the misc target and the geometric normal, in bind order.
-    /// Needs the G-buffer's identity, from a <c>/noire3d rtlog</c> capture; returns false until one has run, and on a frame with no world pass.
+    /// Reads every channel of the game's G-buffer at one screen point, which requires a <c>/noire3d rtlog</c>
+    /// capture to have identified the targets and fails on a frame with no world pass.
     /// </summary>
     /// <param name="screenPosition">Where to sample, in display pixels.</param>
-    /// <param name="samples">Receives one RGBA value per target, in bind order. Cleared first.</param>
-    /// <param name="patch">Square patch averaged around the point, which steadies the reading on a textured surface.</param>
-    /// <returns>Whether every target was read.</returns>
+    /// <param name="samples">Receives one RGBA value per target, in bind order, cleared first.</param>
+    /// <param name="patch">The square patch averaged around the point.</param>
+    /// <returns>True when every target was read.</returns>
     public static bool TrySampleGameGBuffer(Vector2 screenPosition, List<Vector4> samples, int patch = 4)
     {
         samples.Clear();
@@ -392,28 +378,27 @@ public static unsafe partial class NoireDraw3D
             && GBufferProbe.TrySampleAt(renderDevice, targets, (int)screenPosition.X, (int)screenPosition.Y, patch, samples);
     }
 
-    /// <summary>A snapshot of the renderer's counters (see <see cref="Draw3DStats"/>).</summary>
+    /// <summary>Gets a snapshot of the renderer's counters.</summary>
     public static Draw3DStats Stats => BuildStats();
 
     /// <summary>
-    /// Whether the layer has a usable frame: the game's camera was readable on the last one, so world points can be
-    /// projected and picked. False before the first frame and whenever there is no camera to read (a loading screen,
-    /// the title screen); <see cref="Pick"/> returns nothing while this is false.
+    /// Gets a value indicating whether the game's camera was readable on the last frame, so world points can be
+    /// projected and picked. <see cref="Pick"/> returns nothing while this is false.
     /// </summary>
     public static bool HasValidFrame => lastFrameValid;
 
-    /// <summary>Programmatic access to the diagnostics toolkit (validate/probe/camtrace/stats/wireframe) - command-independent.</summary>
+    /// <summary>Gets the diagnostics toolkit, independently of the <c>/noire3d</c> command.</summary>
     public static Draw3DDiagnostics Diagnostics { get; } = new();
 
     /// <summary>Raised whenever the self-disable ladder trips (a pipeline, feature, depth, pass, or the renderer was disabled).</summary>
     public static event Action<Draw3DFault>? OnFault;
 
     /// <summary>
-    /// Creates an extra retained scene, rendered after <see cref="MainScene"/>. The returned scene is a self-contained
-    /// ownership unit (<see cref="Scene3D.Dispose"/> frees its nodes, owned meshes and editors, and removes it from the
-    /// renderer). Create as many as you like.
+    /// Creates an extra retained scene, rendered after <see cref="MainScene"/>, whose
+    /// <see cref="Scene3D.Dispose"/> frees its nodes, owned meshes and editors and unregisters it.
     /// </summary>
-    /// <param name="name">Optional scene name.</param>
+    /// <param name="name">The scene name, or null for none.</param>
+    /// <returns>The new scene.</returns>
     public static Scene3D CreateScene(string? name = null)
     {
         EnsureInitialized();
@@ -439,7 +424,7 @@ public static unsafe partial class NoireDraw3D
             return Scenes.Remove(scene);
     }
 
-    /// <summary>Clears every scene's selection. The interaction layer's "deselect" is global to the pointer even though selections are per-scene.</summary>
+    /// <summary>Clears every scene's selection, since a deselect gesture is global while selections are per-scene.</summary>
     internal static void ClearAllSelections()
     {
         lock (Scenes)
@@ -450,13 +435,13 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Creates a render-to-texture view of a scene (rendered before the main pass each frame).
-    /// Dispose the view to stop it and release its target.
+    /// Creates a render-to-texture view of a scene, rendered before the main pass each frame until disposed.
     /// </summary>
     /// <param name="scene">The scene to render.</param>
     /// <param name="camera">The virtual camera.</param>
-    /// <param name="width">Output width in pixels.</param>
-    /// <param name="height">Output height in pixels.</param>
+    /// <param name="width">The output width in pixels.</param>
+    /// <param name="height">The output height in pixels.</param>
+    /// <returns>The new view.</returns>
     public static RenderView CreateRenderView(Scene3D scene, Camera3D camera, int width, int height)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -468,12 +453,13 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Registers a custom shader pipeline usable via <see cref="Materials.Material.CustomPipeline"/>.<br/>
-    /// The HLSL may <c>#include "Common.hlsli"</c> and must expose <c>vs</c>/<c>ps</c> entry points over the
-    /// standard vertex layout. Compile errors disable only this pipeline (logged with full compiler output).
+    /// Registers a custom shader pipeline for <see cref="Materials.Material.CustomPipeline"/>. The HLSL may
+    /// <c>#include "Common.hlsli"</c> and must expose <c>vs</c> and <c>ps</c> entry points over the standard
+    /// vertex layout; a compile error disables this pipeline alone and is logged with the compiler output.
     /// </summary>
-    /// <param name="name">Pipeline name referenced by materials.</param>
-    /// <param name="hlslSource">Full HLSL source.</param>
+    /// <param name="name">The pipeline name materials reference.</param>
+    /// <param name="hlslSource">The full HLSL source.</param>
+    /// <returns>True when the pipeline compiled and registered.</returns>
     public static bool RegisterPipeline(string name, string hlslSource)
     {
         EnsureInitialized();
@@ -481,11 +467,26 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Picks scene nodes under a screen position using last frame's camera: bounding-sphere hits, refined
-    /// to exact triangles for meshes created with <c>keepCpuData</c>. Nearest first. Returns an empty array
-    /// when <see cref="PickInputGate"/> says input is claimed or no frame has rendered yet.
+    /// Builds the world-space ray through a screen position from last frame's camera, the same ray
+    /// <see cref="Pick"/> uses.
     /// </summary>
-    /// <param name="screenPx">Screen position in pixels.</param>
+    /// <param name="screenPx">The screen position in pixels.</param>
+    /// <param name="origin">Receives the ray's start, at the camera.</param>
+    /// <param name="direction">Receives its normalised direction.</param>
+    /// <returns>True when a frame has rendered and the position unprojects.</returns>
+    public static bool TryScreenToRay(Vector2 screenPx, out Vector3 origin, out Vector3 direction)
+    {
+        origin = default;
+        direction = default;
+        return lastFrameValid && lastFrame.TryScreenToRay(screenPx, out origin, out direction);
+    }
+
+    /// <summary>
+    /// Picks scene nodes under a screen position using last frame's camera, by bounding sphere and refined to
+    /// exact triangles for meshes created with <c>keepCpuData</c>.
+    /// </summary>
+    /// <param name="screenPx">The screen position in pixels.</param>
+    /// <returns>The hits nearest first, empty when <see cref="PickInputGate"/> claims input or no frame has rendered.</returns>
     public static PickHit[] Pick(Vector2 screenPx)
     {
         if (!lastFrameValid || (PickInputGate != null && !PickInputGate()))
@@ -495,15 +496,20 @@ public static unsafe partial class NoireDraw3D
         if (!frame.TryScreenToRay(screenPx, out var origin, out var direction))
             return Array.Empty<PickHit>();
 
-        // The visible game surface under the cursor (terrain / wall), so ground decals pick against their real rendered
-        // footprint on that surface - a projected shape, not the fat volume box. Null when aiming at open sky.
+        // The visible game surface under the cursor, so ground decals pick against their projected footprint rather
+        // than their volume box. Null when aiming at open sky.
         Vector3? groundSurface = null;
         if (NoireService.IsInitialized() && NoireService.GameGui.ScreenToWorld(screenPx, out var gw))
             groundSurface = gw;
 
-        var hits = new List<PickHit>();
+        var t0 = Stopwatch.GetTimestamp();
+        var nodes = 0;
+        var refined = 0;
+        PickHit[] result;
         lock (Scene3D.GraphLock)
         {
+            var hits = pickScratch;
+            hits.Clear();
             lock (Scenes)
             {
                 foreach (var scene in Scenes)
@@ -512,33 +518,45 @@ public static unsafe partial class NoireDraw3D
                         continue;
 
                     foreach (var root in scene.Roots)
-                        PickNode(root, origin, direction, groundSurface, hits);
+                        PickNode(root, origin, direction, groundSurface, hits, ref nodes, ref refined);
                 }
             }
+
+            hits.Sort(static (a, b) => a.Distance.CompareTo(b.Distance));
+            result = hits.Count == 0 ? Array.Empty<PickHit>() : hits.ToArray();
         }
 
-        hits.Sort(static (a, b) => a.Distance.CompareTo(b.Distance));
-        return hits.ToArray();
+        // Last-pick cost, reported by /noire3d stats.
+        if (renderStats is { } s)
+        {
+            s.PickMicros = (int)((Stopwatch.GetTimestamp() - t0) * 1_000_000 / Stopwatch.Frequency);
+            s.PickNodes = nodes;
+            s.PickRefined = refined;
+        }
+
+        return result;
     }
 
+    /// <summary>Reused pick-hit buffer; only touched under <see cref="Scene3D.GraphLock"/>.</summary>
+    private static readonly List<PickHit> pickScratch = new(16);
+
     /// <summary>
-    /// Whether a screen point lies over visible native game UI (a HUD window, inventory, friend list, and so on).
-    /// Reads game state directly rather than <c>WantCaptureMouse</c> (native addons are not ImGui); near-fullscreen
-    /// transparent overlay roots (nameplates, fly-text) are skipped. Returns false before the first frame or on any
-    /// read fault. Call on the draw/framework thread.
+    /// Reports whether a screen point lies over visible native game UI, skipping near-fullscreen transparent
+    /// overlay roots such as nameplates and fly-text. Draw or framework thread.
     /// </summary>
-    /// <param name="screenPx">Cursor position in framebuffer pixels (ImGui mouse space).</param>
+    /// <param name="screenPx">The cursor position in framebuffer pixels.</param>
     /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
+    /// <returns>True when native UI is under the point, false before the first frame or on a read fault.</returns>
     public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize)
         => AddonHelper.HitTest(screenPx, displaySize).IsValid;
 
     /// <summary>
-    /// The diagnostic form of <see cref="IsCursorOverGameUi(Vector2, Vector2)"/>: also reports the name of the game
-    /// addon whose collision node is under the cursor (null when none), for interaction diagnostics.
+    /// Reports whether a screen point lies over visible native game UI, naming the addon it belongs to.
     /// </summary>
-    /// <param name="screenPx">Cursor position in framebuffer pixels (ImGui mouse space).</param>
+    /// <param name="screenPx">The cursor position in framebuffer pixels.</param>
     /// <param name="displaySize">The ImGui display size, for the near-fullscreen overlay skip.</param>
-    /// <param name="addonName">Receives the matching addon's name, or null.</param>
+    /// <param name="addonName">Receives the matching addon's name, or null when there is none.</param>
+    /// <returns>True when native UI is under the point.</returns>
     public static bool IsCursorOverGameUi(Vector2 screenPx, Vector2 displaySize, out string? addonName)
     {
         var addon = AddonHelper.HitTest(screenPx, displaySize);
@@ -547,14 +565,13 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Reads the game depth buffer at a screen pixel and reconstructs the world-space point of the nearest rendered
-    /// surface there, including surfaces with no collision (fences, furniture, decorations). Returns false when depth
-    /// is unreadable this frame (depth-off / fallback camera), the pixel is open sky, or on any fault. The depth
-    /// resource is copied whole, so callers must throttle. Call on the render/draw thread (the same thread
-    /// <c>UiBuilder.Draw</c> runs on).
+    /// Reconstructs the world-space point of the nearest rendered surface at a screen pixel from the game depth
+    /// buffer, including surfaces that carry no collision. The depth resource is copied whole, so callers must
+    /// throttle, and this runs on the render or draw thread.
     /// </summary>
-    /// <param name="screenPx">Screen position in framebuffer pixels.</param>
+    /// <param name="screenPx">The screen position in framebuffer pixels.</param>
     /// <param name="world">Receives the world-space surface point under the cursor.</param>
+    /// <returns>True when a surface was found, false on a fallback camera, open sky, or a read fault.</returns>
     public static bool TryReadDepthWorld(Vector2 screenPx, out Vector3 world)
     {
         world = default;
@@ -568,9 +585,8 @@ public static unsafe partial class NoireDraw3D
         if (!GameRenderSources.TryGetDepthTexture(out var info))
             return false;
 
-        // Cached, non-blocking readback: one reused staging texture, sampled a cycle late. A per-call staging copy plus
-        // a blocking map here (this runs while hovering with obstacle occlusion on) churned GPU memory and stalled the
-        // pipeline, which froze and eventually crashed the device.
+        // Cached, non-blocking readback: one reused staging texture, sampled a cycle late. A per-call staging copy
+        // and a blocking map here run every hover frame with obstacle occlusion on, and stall the device.
         depthProbe ??= new DepthProbe();
         if (!depthProbe.TrySample(renderDevice, in info, screenPx, frame.ViewportSize, out var sample) || float.IsNaN(sample))
             return false;
@@ -579,8 +595,8 @@ public static unsafe partial class NoireDraw3D
         if (vp.X <= 0f || vp.Y <= 0f)
             return false;
 
-        // Depth-buffer value is the surface's NDC z; unproject (ndc.xy, ndc.z) straight through InvViewProj. The far /
-        // sky / unwritten value drives clip.w toward zero (infinite-far reversed-Z), which this rejects as "no surface".
+        // The depth value is the surface's NDC z, unprojected straight through InvViewProj. A far, sky or unwritten
+        // value drives clip.w toward zero under infinite-far reversed-Z, which is rejected as no surface.
         var ndc = new Vector4(screenPx.X / vp.X * 2f - 1f, 1f - screenPx.Y / vp.Y * 2f, sample, 1f);
         var c = Vector4.Transform(ndc, frame.InvViewProj);
         if (!float.IsFinite(c.W) || MathF.Abs(c.W) < 1e-6f)
@@ -591,9 +607,11 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// <c>/noire3d stencil</c> diagnostic (render thread). Samples the game depth-stencil on a screen grid and logs the
-    /// distinct stencil values in view with their grid-hit counts. Throttled to ~2/s; whole-texture readback, debug-only.
+    /// Samples the game depth-stencil on a screen grid and logs the distinct stencil values in view with their
+    /// hit counts, for <c>/noire3d stencil</c>. Whole-texture readback, throttled to twice a second, render thread.
     /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="backBuffer">The back-buffer description, for the grid extent.</param>
     private static void ProbeStencilGrid(RenderDevice device, in GameRenderSources.BackBufferInfo backBuffer)
     {
         var now = DateTime.UtcNow;
@@ -636,7 +654,8 @@ public static unsafe partial class NoireDraw3D
 
     // ---------------------------------------------------------------- internals: lifecycle
 
-    /// <summary>Lazily initializes the hub (event wiring; GPU objects wait for the game's first Present).</summary>
+    /// <summary>Lazily initializes the hub, wiring events and leaving GPU objects until the game's first Present.</summary>
+    /// <exception cref="InvalidOperationException">NoireLib is not initialized.</exception>
     internal static void EnsureInitialized()
     {
         if (initialized)
@@ -674,12 +693,14 @@ public static unsafe partial class NoireDraw3D
 
             initialized = true;
             UpdateFrameworkHook(); // start the sim-thread camera sampler for the present-time path
-            RefreshUiHideOverrides(); // default KeepDrawingWhenUiHidden is true - the layer survives UI-hide
+            RefreshUiHideOverrides(); // default KeepDrawingWhenUiHidden is true, so the layer survives UI-hide
             NoireLogger.LogInfo("NoireDraw3D initialized (device objects deferred to first Present).", "Draw3D");
         }
     }
 
-    /// <summary>Acquires the render device on demand - any thread (devices are free-threaded). Used by mesh/texture creation.</summary>
+    /// <summary>Acquires the render device on demand, from any thread since D3D11 devices are free-threaded.</summary>
+    /// <returns>The render device.</returns>
+    /// <exception cref="InvalidOperationException">The game's D3D11 device is not available yet.</exception>
     internal static RenderDevice RequireDevice()
     {
         EnsureInitialized();
@@ -697,12 +718,13 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>Defers a GPU release to the render thread (start of the next frame) so in-flight frames never bind freed objects.</summary>
+    /// <summary>Defers a GPU release to the start of the next frame so in-flight frames never bind freed objects.</summary>
+    /// <param name="release">The release to run.</param>
     internal static void EnqueueRelease(Action release)
     {
         if (disposed)
         {
-            // Renderer gone - nothing is in flight; release immediately.
+            // The renderer is gone, so nothing is in flight; release immediately.
             try { release(); }
             catch (Exception ex) { NoireLogger.LogError(ex, "Draw3D deferred release failed.", "Draw3D"); }
             return;
@@ -711,13 +733,18 @@ public static unsafe partial class NoireDraw3D
         ReleaseQueue.Enqueue(release);
     }
 
+    /// <summary>Removes a render view from the per-frame list.</summary>
+    /// <param name="view">The view to remove.</param>
     internal static void UnregisterView(RenderView view)
     {
         lock (Views)
             Views.Remove(view);
     }
 
-    /// <summary>Raises <see cref="OnFault"/> (self-disable ladder notifications).</summary>
+    /// <summary>Raises <see cref="OnFault"/>, swallowing anything a handler throws.</summary>
+    /// <param name="kind">What was disabled.</param>
+    /// <param name="ex">The exception behind the fault, if any.</param>
+    /// <param name="message">The fault message.</param>
     internal static void RaiseFault(Draw3DFaultKind kind, Exception? ex, string message)
     {
         try
@@ -742,7 +769,7 @@ public static unsafe partial class NoireDraw3D
 
             disposed = true;
 
-            // 1. No new frames.
+            // No new frames first: everything below frees what a frame in progress would bind.
             NoireService.PluginInterface.UiBuilder.Draw -= OnDraw;
             NoireService.PluginInterface.UiBuilder.ResizeBuffers -= OnResizeBuffers;
             SetFrameworkHook(false);
@@ -755,8 +782,8 @@ public static unsafe partial class NoireDraw3D
                 commandRegistered = false;
             }
 
-            // 2. Scenes and views (releases references to user assets). DisposeContentsInternal frees each scene's
-            // owned meshes / textures / models / editors as well as its nodes - the ownership-scope teardown.
+            // DisposeContentsInternal frees each scene's owned meshes, textures, models and editors along with
+            // its nodes, releasing the references those hold to consumer assets.
             lock (Scenes)
             {
                 foreach (var scene in Scenes)
@@ -777,10 +804,10 @@ public static unsafe partial class NoireDraw3D
 
             im?.DisposeResources();
 
-            // 3. Drain deferred releases (they may have queued above).
+            // Drain the deferred releases the disposals above just queued.
             DrainReleaseQueue();
 
-            // 4. Passes, caches, targets, stats.
+            // Passes, caches, targets and stats last: the releases above reference them.
             scenePass?.Dispose();
             scenePass = null;
             compositor?.Dispose();
@@ -832,7 +859,7 @@ public static unsafe partial class NoireDraw3D
             backbufferPtr = 0;
             DrainReleaseQueue();
 
-            // 5. Device last; debug builds report anything we leaked.
+            // The device last, once nothing holding a reference to it is left alive.
 #if DEBUG
             renderDevice?.ReportLiveObjects();
 #endif
@@ -890,7 +917,8 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>Escalates from a per-frame skip to disabling the renderer after repeated failures. Shared by both render entries.</summary>
+    /// <summary>Escalates from a per-frame skip to disabling the renderer after three consecutive failures.</summary>
+    /// <param name="ex">The exception the frame failed with.</param>
     private static void HandlePassFailure(Exception ex)
     {
         passFailStreak++;
@@ -909,16 +937,16 @@ public static unsafe partial class NoireDraw3D
         }
     }
 
-    /// <summary>What <see cref="RenderMainScene"/> produced this frame: whether there is layer content to composite,
-    /// and how many nameplate/HUD policy rects were collected (for the present-time UI-mask composite).</summary>
+    /// <summary>What <see cref="RenderMainScene"/> produced this frame.</summary>
+    /// <param name="HasContent">Whether there is layer content to composite.</param>
+    /// <param name="RectCount">How many nameplate and HUD policy rects were collected.</param>
     private readonly record struct SceneRenderResult(bool HasContent, int RectCount);
 
     /// <summary>
-    /// The present-time frame entry (Dalamud's Draw callback, end of frame). Always advances the render-target
-    /// tap's frame boundary. A no-op when the pre-UI injection already rendered and composited this frame's scene
-    /// under the native UI; otherwise renders the scene and composites it over the backbuffer - the classic
-    /// over-everything / UI-masked path, and the fallback for any frame the injection could not run.
+    /// Runs the end-of-frame entry from Dalamud's Draw callback, always advancing the render-target tap's frame
+    /// boundary, then renders and composites over the backbuffer unless the pre-UI injection already did so.
     /// </summary>
+    /// <param name="stats">The counters to record into.</param>
     private static void PresentTimeFrame(RenderStats stats)
     {
         RenderDevice device;
@@ -938,22 +966,21 @@ public static unsafe partial class NoireDraw3D
             return;
         }
 
-        // Arm the default-on injection on the first frame that has a device (the property default couldn't install
-        // the render-thread hook before the device existed). One-shot: user toggles go through the setter instead.
+        // Arm the default-on injection on the first frame that has a device, since the render-thread hook cannot be
+        // installed before then. One-shot: later toggles go through the setter instead.
         if (NeedsInjectionPoint && !injectionInitialized)
         {
             injectionInitialized = true;
             ApplyInjectionState();
         }
 
-        // Frame boundary for the render-target tap: commits the present buffer learned this frame for next
-        // frame's injection and resets its per-frame counters. Must run every present - this is why the layer
-        // has to keep drawing while the UI is hidden (see KeepDrawingWhenUiHidden), or injection would stall.
+        // Frame boundary for the render-target tap: commits the present buffer learned this frame for next frame's
+        // injection and resets its per-frame counters. It must run every present or injection stalls, which is why
+        // the layer keeps drawing while the UI is hidden (see KeepDrawingWhenUiHidden).
         renderTargetTap?.OnPresent((nint)backBuffer.Texture);
 
-        // Age the injection out when nothing is being submitted, so a session that used it once does not carry
-        // a per-draw managed callback for the rest of its life. A few frames of slack keeps a caller that
-        // submits slightly late from thrashing the hooks on and off.
+        // Age the injection out when nothing is submitted, so one use does not leave a per-draw managed callback
+        // installed for the session. The few frames of slack keep a late submitter from thrashing the hooks.
         if (renderTargetTap is { GBufferInjectionEnabled: true } gbufTap && ++gbufferIdleFrames > GBufferIdleFramesBeforeOff)
         {
             gbufTap.GBufferInjectionEnabled = false;
@@ -968,26 +995,24 @@ public static unsafe partial class NoireDraw3D
             shadowInject?.Clear();
         }
 
-        // The render-thread injection already rendered + composited this frame's scene under the native UI,
-        // with the same camera the world was drawn with (zero latency). Compositing again here would just paint
-        // the layer over the UI. The flag is set on the render thread by InjectComposite earlier this same
-        // frame; reset it for the next one and stop.
+        // InjectComposite already rendered and composited this frame under the native UI, with the camera the world
+        // was drawn with. Compositing again here would paint the layer over the UI, so reset the flag and stop.
         if (injectedSinceLastPresent)
         {
             injectedSinceLastPresent = false;
             return;
         }
 
-        // Classic / fallback path: render + composite over the backbuffer at present time. The backbuffer holds
-        // this frame's world, so the frame's committed GPU camera constants are the right projection here too
-        // (the boundary above already advanced, hence the present-time freshness rule inside TryGetCommitted).
+        // Fallback path: render and composite over the backbuffer at present time. The backbuffer holds this frame's
+        // world, so the frame's committed GPU camera constants are the right projection here as well, subject to the
+        // present-time freshness rule inside TryGetCommitted since the boundary above already advanced.
         Matrix4x4? presentGpuVp = null;
         if (cameraCapture != null && cameraCapture.TryGetCommitted(presentTimePath: true, out var presentCaptured))
             presentGpuVp = presentCaptured;
 
         var ctx = device.Context;
         if (renderTargetTap != null)
-            renderTargetTap.SuppressSelf = true; // our own binds must not pollute an armed rtlog capture
+            renderTargetTap.SuppressSelf = true; // Draw3D's own binds must not pollute an armed rtlog capture.
         stateGuard!.Capture(ctx);
         try
         {
@@ -1009,31 +1034,32 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The shared render body for both the present-time path and the pre-UI injection: snapshots the camera, builds
-    /// the frame, fires per-frame user code and diagnostics, then renders the render-to-texture views and the main
-    /// scene into the offscreen premultiplied target. The caller owns the StateGuard capture, the composite to
-    /// whichever target, and <see cref="RenderStats.EndGpuTiming"/>.<br/>
-    /// <paramref name="cameraOverride"/> is the injection path's world-pass camera snapshot (see
-    /// <see cref="TryGetInjectCamera"/>); null falls back to the sim-thread snapshot, then a live read.
-    /// <paramref name="gpuViewProj"/> is the frame's committed GPU camera constants when available, preferred over
-    /// the struct camera's composed matrix.<br/>
-    /// Returns <see cref="SceneRenderResult.HasContent"/> = false on empty/skipped frames; the caller must not composite then.
+    /// Renders the frame body shared by the present-time path and the pre-UI injection: snapshots the camera,
+    /// builds the frame, fires per-frame callbacks and diagnostics, then renders the render-to-texture views and
+    /// the main scene into the offscreen premultiplied target. The caller owns the StateGuard capture, the
+    /// composite, and <see cref="RenderStats.EndGpuTiming"/>.
     /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="ctx">The immediate context.</param>
+    /// <param name="backBuffer">The back-buffer description, for the frame's viewport size.</param>
+    /// <param name="stats">The counters to record into.</param>
+    /// <param name="cameraOverride">The injection path's world-pass camera, or null for the sim-thread snapshot then a live read.</param>
+    /// <param name="gpuViewProj">The frame's committed GPU camera constants, preferred over the struct camera's composed matrix.</param>
+    /// <returns>The result, whose <see cref="SceneRenderResult.HasContent"/> is false on an empty or skipped frame.</returns>
     private static SceneRenderResult RenderMainScene(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, RenderStats stats, GameRenderSources.CameraData? cameraOverride, Matrix4x4? gpuViewProj)
     {
-        // KeepDrawingWhenUiHidden is decided here, not by Dalamud's hide flags (see RefreshUiHideOverrides): those stay
-        // held so the callback keeps firing, leaving the host's windows free to make their own choice. Both render
-        // paths funnel through here and skip their composite on empty content. Runs after the render-target tap's
-        // frame boundary in PresentTimeFrame, which must fire every present regardless.
+        // KeepDrawingWhenUiHidden is honoured here rather than through Dalamud's hide flags, which stay held so the
+        // draw callback keeps firing and the host's own windows keep their own choice (see RefreshUiHideOverrides).
+        // This runs after the render-target tap's frame boundary, which must fire every present regardless.
         if (!keepDrawingWhenUiHidden && IsGameUiHidden)
         {
             stats.FramesSkippedUiHidden++;
             return default;
         }
 
-        // Camera snapshot, taken once at a stable point and consumed immutably for the rest of the frame. The injection path passes the delayed render camera
-        // that matches the world already in the present buffer; the present-time path uses the sim-thread snapshot
-        // (it matches the shown backbuffer better than a live read at present time), falling back to a live read.
+        // One camera snapshot, consumed immutably for the rest of the frame. The injection path passes the render
+        // camera matching the world already in the present buffer; the present-time path takes the sim-thread
+        // snapshot, which matches the shown backbuffer more closely than a live read, then falls back to one.
         GameRenderSources.CameraData cam;
         if (cameraOverride.HasValue)
         {
@@ -1057,9 +1083,9 @@ public static unsafe partial class NoireDraw3D
             camView = cam.View;
             camProj = cam.Proj;
 
-            // The captured GPU constants are the bytes the world pixels were rasterized from - projecting with them
-            // makes the overlay-vs-world camera error exactly zero at any load (jitter included). The struct-composed
-            // product is the fallback, and the A/B lever ('/noire3d gpucam') for verifying the difference in-game.
+            // The captured GPU constants are the bytes the world pixels were rasterized from, so projecting with
+            // them leaves zero overlay-versus-world camera error under any load. The struct-composed product is
+            // the fallback, and /noire3d gpucam switches between the two.
             usedGpuCamera = gpuViewProj.HasValue && Diagnostics.PreferCapturedCamera;
             viewProj = usedGpuCamera ? gpuViewProj!.Value : camView * camProj;
         }
@@ -1074,13 +1100,11 @@ public static unsafe partial class NoireDraw3D
             return default;
         }
 
-        // The game's exposed camera matrices reproduce screen X/Y/W exactly, but their device-Z does
-        // NOT match the GPU's reversed-Z depth buffer (measured with /noire3d probe: clip.z/clip.w is near
-        // 0 everywhere, while the real buffer holds near/w). Writing that Z straight into the private depth
-        // buffer would invert object ordering, so a clean reversed-Z infinite-far Z column is rebuilt instead
-        // (clip.z = near gives deviceZ = near/w), leaving the X/Y/W columns untouched so screen position and
-        // the clip-w the world-occlusion compare relies on are unchanged. InvViewProj is taken AFTER this so
-        // the depth-to-world round trip (decal reconstruction, screen-to-ray picking) stays exact.
+        // The game's exposed camera matrices reproduce screen X, Y and W exactly, but their device-Z does not match
+        // the GPU's reversed-Z depth buffer: clip.z/clip.w is near 0 everywhere while the buffer holds near/w, so
+        // writing that Z into the private depth buffer inverts object ordering. A clean reversed-Z infinite-far Z
+        // column is rebuilt instead, leaving X, Y and W untouched. InvViewProj is taken after the rebuild so the
+        // depth-to-world round trip stays exact.
         var near = cam.NearPlane > 1e-6f ? cam.NearPlane : 0.1f;
         viewProj.M13 = 0f;
         viewProj.M23 = 0f;
@@ -1093,12 +1117,10 @@ public static unsafe partial class NoireDraw3D
             return default;
         }
 
-        // Depth (per-frame; failure = depth-off mode, everything still renders). The buffer's value
-        // convention is computed analytically from the camera's own near/far + reversed/standard flags
-        // (sample = A + B/clipW) rather than fitted from collision raycasts: the raycast surface and the
-        // rendered depth texel are frequently different surfaces, which would bias any such fit. /noire3d
-        // probe confirms the analytic map matches the buffer exactly. The wholesale-VP fallback camera
-        // exposes no near/flags, so it runs depth-off by design.
+        // Depth is per-frame, and a failure means depth-off mode rather than a skipped frame. The buffer's value
+        // convention is computed analytically from the camera's near, far and reversed-Z flags (sample = A + B/clipW)
+        // rather than fitted from collision raycasts, whose surface is often not the one the depth texel holds. The
+        // wholesale-VP fallback camera exposes no near plane or flags, so it runs depth-off.
         sceneDepth ??= new SceneDepth();
         var depthSrvOk = sceneDepth.Update(device);
 
@@ -1131,7 +1153,7 @@ public static unsafe partial class NoireDraw3D
             stats.GpuCameraFrames++;
         RecordCameraHistory(in cam); // inert ring for the camera-phase trace's lag sweep (see cameraHistory)
 
-        // Prepare phase: render-thread user code runs FIRST so its mutations and Im calls land this frame.
+        // Render-thread consumer callbacks run first so their mutations and Im calls land this frame.
         var scenes = SceneScratch;
         lock (Scenes)
         {
@@ -1142,8 +1164,8 @@ public static unsafe partial class NoireDraw3D
         foreach (var scene in scenes)
             scene.FirePrepare(in frame);
 
-        // Render-thread overlay (native gizmo handles): same zero-latency point as FirePrepare, so its Im calls land
-        // this frame with the live camera. Guarded - a throwing subscriber must never fault the render.
+        // Render-thread overlay, at the same point as FirePrepare so its Im calls land this frame with the live
+        // camera. Guarded, since a throwing subscriber must never fault the render.
         var overlay = OnRenderOverlay;
         if (overlay != null)
         {
@@ -1157,18 +1179,16 @@ public static unsafe partial class NoireDraw3D
             }
         }
 
-        // Decal outlines. Wireframe needs them because a decal has no geometry to rasterize - its box only bounds the
-        // volume the SDF runs in, and the shape lives in the pixel shader, so wire-rasterizing it paints fragments where
-        // the box's triangle edges cross the paint, not the shape. DecalShapeOutlines asks for the same trace on its own,
-        // over normally rendered decals. Either way the trace runs here, before the immediate layer is consumed.
+        // Wireframe needs the shape trace because a decal has no geometry to rasterize: its box bounds the volume the
+        // SDF runs in and the shape lives in the pixel shader, so wire-rasterizing the box paints where the box edges
+        // cross the paint, not the shape. The trace must run before the immediate layer is consumed.
         if (Wireframe || DecalShapeOutlines)
         {
             foreach (var scene in scenes)
                 scene.TraceDecalShapes(im!);
         }
 
-        // The projection boxes are a separate answer to a separate question ("how far does this reach"), so they have
-        // their own switch and compose with the shape trace above rather than replacing it.
+        // The projection boxes compose with the shape trace above rather than replacing it.
         if (DecalVolumeOutlines)
         {
             foreach (var scene in scenes)
@@ -1180,7 +1200,6 @@ public static unsafe partial class NoireDraw3D
         Diagnostics.OnCameraTrace(device, in frame, in cam, cameraOverride.HasValue, injectUsedWorldSnapshot, injectUsedMainPass, usedGpuCamera, in capVpForTrace, gpuViewProj.HasValue); // "swim" investigation (armed by /noire3d camtrace)
         Diagnostics.OnFrameRendered(device, in frame, sceneDepth); // probe runs even on empty frames
 
-        // Anything to do at all?
         var views = ViewScratch;
         lock (Views)
         {
@@ -1198,10 +1217,9 @@ public static unsafe partial class NoireDraw3D
         if (!anyScene && !anyView && !im!.HasPending)
         {
             stats.FramesSkippedEmpty++;
-            return default; // nothing to draw - caller composites nothing, so a cleared scene leaves no residue
+            return default; // Nothing to draw, so the caller composites nothing and a cleared scene leaves no residue.
         }
 
-        // GPU objects (lazy, amortized).
         stateCache ??= new StateCache();
         shaderLibrary ??= new ShaderLibrary();
         scenePass ??= new ScenePass();
@@ -1209,10 +1227,9 @@ public static unsafe partial class NoireDraw3D
         sceneRt ??= new RenderTarget();
         privateDepth ??= new DepthTarget();
 
-        // Supersampling: render the scene layer at a multiple of the display resolution and box-downsample at composite
-        // (the composite samples linearly, so an exact 2x is a perfect 2x2 box). Fail-soft - fall back to 1x if the
-        // larger target cannot be allocated. The composite still targets the present buffer at 1x, so only sceneRt (and
-        // the private depth / outline targets, which follow its size) grow. RTT views are unaffected (their own size).
+        // Supersampling renders the layer at a multiple of the display resolution and box-downsamples at composite,
+        // falling back to 1x when the larger target cannot be allocated. The composite still targets the present
+        // buffer at 1x, so only sceneRt and the targets sized from it grow; render-to-texture views keep their size.
         var supersample = Performance.SupersampleFactor;
         var renderW = supersample > 1f ? (uint)MathF.Round(backBuffer.Width * supersample) : backBuffer.Width;
         var renderH = supersample > 1f ? (uint)MathF.Round(backBuffer.Height * supersample) : backBuffer.Height;
@@ -1233,12 +1250,11 @@ public static unsafe partial class NoireDraw3D
         stats.UsedGpuCamera = usedGpuCamera;
         lastDepthMap = depthMap; // the description is composed on read (DescribeDepthSource); a steady-state frame must not spend time formatting strings
 
-        // Nameplate policy rects (fail-soft: any error means none this frame). These are invisible - they only gate
-        // WHERE the per-pixel UI mask applies (composite shader), so plates can be covered by nearer 3D content
-        // without ever cutting a visible rectangle. Only the over-everything path has a mask for them to gate; under
-        // the game UI, nameplate layering is the depth stamp instead and no rect is ever needed.
-        // Layout: [0..plateCount) = nameplates (visibility factors decided after collection),
-        //         [plateCount..rectCount) = HUD addon rects (factor 1: HUD wins inside plate regions).
+        // Nameplate policy rects gate where the composite shader's per-pixel UI mask applies, so plates can be covered
+        // by nearer 3D content without a visible rectangle ever being cut. Only the over-everything path has a mask
+        // for them to gate; under the game UI the depth stamp does the layering and no rect is needed.
+        // Layout: [0..plateCount) nameplates, whose visibility factors are decided after collection, then
+        //         [plateCount..rectCount) HUD addon rects at factor 1, so the HUD wins inside plate regions.
         var plateCount = 0;
         if (UiMaskActive && nameplateOcclusion != NameplateOcclusion.AlwaysVisible)
             plateCount = GameRenderSources.CollectNamePlateRects(ProtectRects, PlateDistances, 64, frame.ViewportSize, PlateRawDistance);
@@ -1277,10 +1293,10 @@ public static unsafe partial class NoireDraw3D
         foreach (var scene in scenes)
             scenePass.AddScene(scene, stats, hasDepth);
 
-        // Collision height-map: the cached collision world rendered top-down, giving the highest surface per XZ column.
-        // Only DecalProjection.HighestOnly reads it (to tell a tabletop from the floor under it), so it runs only on frames
-        // that actually have such a decal. Needs the game depth too, since decals reconstruct their surface from it.
-        // Fail-soft: no cache or no target leaves the SRV null, and HighestOnly degrades to AllSurfaces.
+        // The collision height-map is the cached collision world rendered top-down, giving the highest surface per XZ
+        // column. Only DecalProjection.HighestOnly reads it, so it runs only on frames carrying such a decal, and it
+        // needs the game depth since decals reconstruct their surface from it. No cache or no target leaves the SRV
+        // null and degrades HighestOnly to AllSurfaces.
         ID3D11ShaderResourceView* worldHeightSrv = null;
         var worldHeightRegion = Vector4.Zero;
         var topSurfaceDecals = scenePass.CountTopSurfaceDecals();
@@ -1297,8 +1313,8 @@ public static unsafe partial class NoireDraw3D
                 var minZ = wc.Center.Z - WorldCollisionRadius;
                 var size = 2f * WorldCollisionRadius;
                 var heightMatrix = BuildHeightMapMatrix(minX, minZ, size);
-                // Cap the height-map at the tallest decal box top (+ the elevation band) so a covered room's roof/upper
-                // floor above every decal never masks the ground; each decal bounds the search to its own box in-shader.
+                // Cap the height-map at the tallest decal box top plus the elevation band, so a roof or upper floor
+                // above every decal cannot mask the ground; each decal bounds the search to its own box in-shader.
                 var heightCeiling = scenePass.MaxTopSurfaceDecalBoxTopY() + TopSurfaceThreshold;
                 lastHeightCeiling = heightCeiling;
                 // Bind the map only when it was actually drawn: the target is cleared on the drawing path alone, so
@@ -1316,14 +1332,13 @@ public static unsafe partial class NoireDraw3D
         scenePass.Execute(device, ctx, in frame, sceneRt!, privateDepth!, hasDepth ? sceneDepth.Srv : null,
             worldHeightSrv, sceneStencilSrv, CharacterStencilValue, TopSurfaceThreshold, worldHeightRegion, depthMap, shaderLibrary!, stateCache!, stats, Wireframe, Lighting);
 
-        // Optional selection-outline pass: only when something is outlined, so the default path is untouched. Draws
-        // the outlined silhouettes into a coverage mask, then dilates it into a real screen-space rim on the layer.
-        // Fail-soft: a mask/shader/target hiccup skips the outline this frame, never the scene.
+        // The selection-outline pass runs only when something is outlined, and a mask, shader or target failure skips
+        // the outline for the frame rather than the scene.
         RenderOutlinePass(device, ctx, in frame, hasDepth ? sceneDepth.Srv : null, depthMap, stats);
 
         stats.MarkSceneDone(ctx);
 
-        // Nameplate visibility factors: 1 = letters on top, dim = covered by your content.
+        // Nameplate visibility factors: 1 leaves the letters on top, the dim factor marks a plate the layer covers.
         var behindFactor = Math.Clamp(nameplateDimFactor, 0f, 1f);
         if (plateCount > 0)
         {
@@ -1345,23 +1360,26 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Whether the over-everything UI mask is configured to run: the layering mode that composites after the game's
-    /// UI, with masking asked for. Says nothing about whether a snapshot actually landed this frame.
+    /// Gets a value indicating whether the over-everything UI mask is configured to run, which says nothing about
+    /// whether a snapshot landed this frame.
     /// </summary>
     private static bool UiMaskActive => layering == Draw3DLayering.OverEverything && keepUiOnTop;
 
-    /// <summary>One-line UI-mask state for stats/probe.</summary>
+    /// <summary>Gets the one-line UI-mask state for the stats and probe reports.</summary>
     private static string UiMaskDescription
         => !UiMaskActive ? (layering == Draw3DLayering.UnderGameUi ? "n/a (game draws its UI over the layer)" : "off")
             : uiDiffMaskHealth?.Description ?? "pending";
 
     /// <summary>
-    /// Present-time composite of the offscreen layer over the backbuffer (<see cref="Draw3DLayering.OverEverything"/>),
-    /// and the fallback whenever the pre-UI injection could not run this frame. The game has already drawn its UI by
-    /// this point, so the layer would cover it; with <see cref="NativeUiConfig.KeepUiOnTop"/> the composite masks
-    /// itself per-pixel by the difference between the present buffer before and after the UI was drawn into it.
-    /// Assumes <see cref="RenderMainScene"/> just rendered content into <see cref="sceneRt"/>.
+    /// Composites the offscreen layer over the backbuffer at present time, after <see cref="RenderMainScene"/> has
+    /// rendered content into <see cref="sceneRt"/>. The game has drawn its UI by this point, so under
+    /// <see cref="NativeUiConfig.KeepUiOnTop"/> the composite masks itself per-pixel by the difference between the
+    /// present buffer before and after the UI landed in it.
     /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="ctx">The immediate context.</param>
+    /// <param name="backBuffer">The back-buffer description.</param>
+    /// <param name="rectCount">How many policy rects the frame collected.</param>
     private static void CompositeOverBackbuffer(RenderDevice device, ID3D11DeviceContext* ctx, in GameRenderSources.BackBufferInfo backBuffer, int rectCount)
     {
         var composite = shaderLibrary!.GetComposite(device);
@@ -1369,8 +1387,8 @@ public static unsafe partial class NoireDraw3D
             return;
 
         // The "after" half of the mask: the same present buffer the injection point photographed pre-UI, now carrying
-        // the game's UI. Health check self-disables the mask if the two snapshots stop being comparable at all -
-        // fail-visible (the layer covers the UI) beats fail-invisible (the layer disappears).
+        // the game's UI. The health check disables the mask once the two snapshots stop being comparable, which
+        // leaves the layer covering the UI rather than disappearing.
         ID3D11ShaderResourceView* beforeSrv = null;
         ID3D11ShaderResourceView* afterSrv = null;
         if (UiMaskActive && uiDiffMask is { } mask && renderTargetTap?.PresentBuffer is { } present && present != 0)
@@ -1393,11 +1411,16 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The selection-outline post-process: renders the outlined items' silhouettes into a coverage mask, then dilates
-    /// that mask into a real screen-space rim blended onto the scene layer. Only runs when the scene pass collected an
-    /// outlined item, so the ordinary path pays nothing. Every step is guarded - a null pipeline / target skips the
-    /// outline this frame without disturbing the scene.
+    /// Renders the outlined items' silhouettes into a coverage mask and dilates it into a screen-space rim blended
+    /// onto the scene layer, running only when the scene pass collected an outlined item. A missing pipeline or
+    /// target skips the outline for the frame without disturbing the scene.
     /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="ctx">The immediate context.</param>
+    /// <param name="frame">The frame being rendered.</param>
+    /// <param name="sceneDepthSrv">The game scene depth, or null when depth is off.</param>
+    /// <param name="depthMap">The analytic depth map for that buffer.</param>
+    /// <param name="stats">The counters to record into.</param>
     private static void RenderOutlinePass(RenderDevice device, ID3D11DeviceContext* ctx, in FrameContext frame, ID3D11ShaderResourceView* sceneDepthSrv, Vector4 depthMap, RenderStats stats)
     {
         var pass = scenePass;
@@ -1410,16 +1433,16 @@ public static unsafe partial class NoireDraw3D
 
         var outline = shaders.GetOutline(device);
         if (outline == null || shaders.GetOutlineMaskMesh(device) == null)
-            return; // outline shaders self-disabled - no rim this frame
+            return; // The outline shaders self-disabled, so there is no rim this frame.
 
         outlineMaskRt ??= new RenderTarget();
         outlineVisRt ??= new RenderTarget();
         if (!outlineMaskRt.EnsureSize(device, scene.Width, scene.Height) || !outlineVisRt.EnsureSize(device, scene.Width, scene.Height))
             return;
 
-        // The mask holds each object's FULL silhouette (ignoring occlusion) plus a per-pixel worldVisible flag from the
-        // game depth; the composite outlines the whole shape and then hides the segments whose silhouette is behind a
-        // wall/character. Decals GE-test the private depth (this frame's scene) so nearer 3D objects remove them.
+        // The mask holds each object's full silhouette, ignoring occlusion, plus a per-pixel worldVisible flag from
+        // the game depth, so the composite outlines the whole shape and then hides the segments standing behind
+        // world geometry. Decals GE-test this frame's private depth, so nearer 3D objects remove them.
         var privateDepthValid = privateDepth != null && pass.LastPrivateDepthWritten;
         pass.RenderOutlineMask(device, ctx, in frame, outlineMaskRt, outlineVisRt, privateDepth!, privateDepthValid, sceneDepthSrv, depthMap, shaders, cache, stats);
         comp.BlitOutline(device, ctx, outline, cache, outlineMaskRt.Srv, outlineVisRt.Srv, scene.Rtv, scene.Width, scene.Height, pass.MaxOutlineWidthPixels);
@@ -1450,13 +1473,12 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Render-thread injection callback (from <see cref="RenderTargetTap"/>): renders this frame's scene and
-    /// composites it onto the game's present-composition buffer, after the world image lands there and before
-    /// the native UI is drawn, so HUD and nameplates read on top. Projects with the world-pass camera snapshot
-    /// (<see cref="TryGetInjectCamera"/>) so the layer holds still under camera motion at any frame-rate, and
-    /// saves and restores every pipeline slot it touches. Returns true when it rendered; on failure the flag
-    /// stays clear and the present-time path renders instead.
+    /// Renders this frame's scene from the render thread and composites it onto the game's present-composition
+    /// buffer, after the world image lands there and before the native UI is drawn, projecting with the world-pass
+    /// camera from <see cref="TryGetInjectCamera"/> and restoring every pipeline slot it touches.
     /// </summary>
+    /// <param name="presentBufferResource">The game's present-composition buffer.</param>
+    /// <returns>True when the frame was rendered here, false to leave it to the present-time path.</returns>
     private static bool InjectComposite(nint presentBufferResource)
     {
         if (disposed || !NeedsInjectionPoint || !enabled || !deviceObjectsReady)
@@ -1482,18 +1504,17 @@ public static unsafe partial class NoireDraw3D
             return false;
 
         // Project with the exact camera the world in the present buffer was rasterized with: the captured GPU
-        // constants when committed this frame, else the tap's world-pass struct snapshot (see TryGetInjectCamera).
-        // This locks the layer to the world at any frame-rate; there is no delay/timing estimation.
+        // constants when committed this frame, else the tap's world-pass struct snapshot. This locks the layer to
+        // the world at any frame rate, with no timing estimation involved.
         if (!TryGetInjectCamera(out var injectCam, out var injectGpuVp))
-            return false; // no camera available - let the present-time path handle this frame
+            return false; // No camera available, so the present-time path handles this frame.
 
         var ctx = device.Context;
         guard.Capture(ctx);
         try
         {
-            // Render this frame's scene into the offscreen target with the world-pass camera (the exact camera the
-            // world in the present buffer used), then blit. Nothing to mask against: the real native UI has not been
-            // drawn yet and paints itself over the layer a moment later, at its own pixel granularity.
+            // Render into the offscreen target with the world-pass camera, then blit. There is nothing to mask
+            // against: the native UI has not been drawn yet and paints over the layer at its own pixel granularity.
             var result = RenderMainScene(device, ctx, in backBuffer, stats, injectCam, injectGpuVp);
             if (result.HasContent)
             {
@@ -1501,17 +1522,17 @@ public static unsafe partial class NoireDraw3D
                 if (composite != null && sceneRt!.Srv != null)
                     compositor!.Blit(device, ctx, composite, stateCache!, sceneRt.Srv, null, null, presentRtv.Get(), presentRtvWidth, presentRtvHeight, LayerOpacity, ProtectRects, ProtectFactors, 0);
 
-                // Stamp our opaque depth into the game buffer so the coming nameplate pass is occluded by 3D objects
-                // standing in front of characters. The other modes skip it: Covered cannot be honoured here (the
-                // game draws the plates after us), so it reads as AlwaysVisible instead, per NameplateOcclusion.Covered.
+                // Stamp the layer's opaque depth into the game buffer so the coming nameplate pass is occluded by 3D
+                // objects standing in front of characters. Covered cannot be honoured here, since the game draws the
+                // plates afterwards, so it behaves as AlwaysVisible.
                 if (nameplateOcclusion == NameplateOcclusion.DepthAware)
                     ProjectOpaqueDepthToGameBuffer(device, ctx);
 
                 stats.EndGpuTiming(ctx);
             }
 
-            // The core ran this frame via injection (even on an empty frame, which simply skips the blit above
-            // so a cleared scene leaves nothing stamped). Tell the present-time path to stand down for this frame.
+            // The frame ran here, including an empty one, which skips the blit above so a cleared scene leaves
+            // nothing stamped. Tell the present-time path to stand down.
             injectedSinceLastPresent = true;
             passFailStreak = 0;
             passFaultLogged = false;
@@ -1535,15 +1556,13 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Draws a node into the game's G-buffer for this frame so the game's own lighting pass lights it. Call once
-    /// per frame for as long as the node should be game-lit; nothing is retained, and the node draws normally again
-    /// the first frame it is not submitted. The node's own draw is suppressed automatically that frame - do
-    /// <b>not</b> hide it with <see cref="Scene.SceneNode.Visible"/> instead, since that also removes it from
-    /// picking and hover. A game-lit node is opaque: no outline, fade, or ground decal, and it cannot draw above
-    /// everything; picking, hover and click are unaffected.
+    /// Draws a node into the game's G-buffer for this frame so the game's lighting pass lights it, retaining
+    /// nothing, so it must be called every frame the node should be game-lit. The node's own draw is suppressed
+    /// for that frame, which <see cref="Scene.SceneNode.Visible"/> must not be used for since hiding also removes
+    /// picking and hover. A game-lit node renders opaque, with no outline, fade, ground decal or draw-above.
     /// </summary>
-    /// <param name="node">The node to inject. Ignored when it has no mesh.</param>
-    /// <returns>Whether the node was queued.</returns>
+    /// <param name="node">The node to inject, ignored when it has no mesh.</param>
+    /// <returns>True when the node was queued.</returns>
     public static bool DrawGameLit(Scene.SceneNode node)
     {
         if (node?.Renderer?.Mesh is not { } mesh)
@@ -1627,11 +1646,9 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Last frame's shadow-cast counters: groups entered with work, groups drawn into, groups skipped (constants
-    /// matched neither measured layout), drawn groups that were the near-field map, and meshes drawn at the last
-    /// group. All zero while casting is off. Entered high with drawn zero means the game's constant layout moved;
-    /// near-field zero while drawn is high means the cast is only reaching per-light maps (shadows appear late
-    /// rather than not at all).
+    /// Gets last frame's shadow-cast counters: groups entered with work, groups drawn into, groups skipped because
+    /// their constants matched no known layout, drawn groups that were the near-field map, and meshes drawn at the
+    /// last group. All zero while casting is off.
     /// </summary>
     public static (int Entered, int Drawn, int Skipped, int NearField, int Meshes) ShadowCastStats
         => shadowInject is { } inject
@@ -1639,10 +1656,10 @@ public static unsafe partial class NoireDraw3D
             : default;
 
     /// <summary>
-    /// Draws the queued meshes into the shadow map slice whose draw group just ended. Runs on the render
-    /// thread; the light's own constants are read there, so unlike the G-buffer pass no captured camera is
-    /// involved.
+    /// Draws the queued meshes into the shadow map slice whose draw group just ended, on the render thread,
+    /// reading the light's own constants rather than any captured camera.
     /// </summary>
+    /// <param name="context">The device context the game's shadow pass is recording into.</param>
     private static void RunShadowInjection(nint context)
     {
         if (shadowInject is not { HasWork: true } inject || renderDevice is null || shaderLibrary is null)
@@ -1674,12 +1691,11 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The camera to project the injected layer with. <paramref name="gpuViewProj"/> receives the frame's committed
-    /// GPU camera constants when available - the exact uploaded bytes the world pixels were rasterized from.
-    /// <paramref name="cam"/> is the render-thread world-pass struct snapshot (camera parameters, and the projection
-    /// fallback when no capture is fresh), falling back to a live read only on a frame with no world pass.
-    /// False only when no camera is available at all.
+    /// Resolves the camera to project the injected layer with.
     /// </summary>
+    /// <param name="cam">Receives the render-thread world-pass struct snapshot, or a live read on a frame with no world pass.</param>
+    /// <param name="gpuViewProj">Receives the frame's committed GPU camera constants when there are any.</param>
+    /// <returns>True unless no camera is available at all.</returns>
     private static bool TryGetInjectCamera(out GameRenderSources.CameraData cam, out Matrix4x4? gpuViewProj)
     {
         gpuViewProj = null;
@@ -1698,20 +1714,22 @@ public static unsafe partial class NoireDraw3D
         return GameRenderSources.TryGetCamera(out cam);
     }
 
-    // camtrace diagnostic: whether the last inject frame projected with the render-thread world-pass snapshot (true) or
-    // fell back to a live camera read (false). Only meaningful on inject frames; read by Draw3DDiagnostics.OnCameraTrace.
+    // Whether the last inject frame projected with the render-thread world-pass snapshot rather than a live camera
+    // read. Meaningful only on inject frames, and read by Draw3DDiagnostics.OnCameraTrace.
     private static bool injectUsedWorldSnapshot;
 
-    // camtrace diagnostic: whether that world snapshot came from the main scene pass (the source that keeps the
-    // overlay stable under camera motion) vs the first-depth fallback. 0 main-pass frames in a trace means the
-    // RTM.DepthStencil fingerprint is not matching in-game.
+    // Whether that world snapshot came from the main scene pass, the source that keeps the overlay stable under
+    // camera motion, rather than the first-depth fallback. A trace with no main-pass frames means the
+    // RTM.DepthStencil fingerprint is not matching in game.
     private static bool injectUsedMainPass;
 
     /// <summary>
-    /// Writes this frame's opaque 3D depth into the game's scene depth buffer (render thread, inside the inject
-    /// StateGuard) so the coming nameplate pass occludes against 3D objects in front of characters. Fail-soft:
-    /// a no-op when the depth buffer is unavailable or can't back a DSV. Reuses the items ScenePass just drew.
+    /// Writes this frame's opaque 3D depth into the game's scene depth buffer so the coming nameplate pass occludes
+    /// against 3D objects in front of characters, reusing the items ScenePass just drew. A no-op when the depth
+    /// buffer is unavailable or cannot back a DSV. Render thread, inside the inject StateGuard.
     /// </summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="ctx">The immediate context.</param>
     private static void ProjectOpaqueDepthToGameBuffer(RenderDevice device, ID3D11DeviceContext* ctx)
     {
         if (scenePass == null || shaderLibrary == null || stateCache == null || renderStats == null)
@@ -1725,7 +1743,10 @@ public static unsafe partial class NoireDraw3D
         scenePass.ProjectOpaqueDepth(device, ctx, in lastFrame, dsv, gameDepthTarget.Width, gameDepthTarget.Height, shaderLibrary, stateCache, renderStats);
     }
 
-    /// <summary>Creates and caches an RTV over the game's present-composition buffer (recreated when its pointer changes).</summary>
+    /// <summary>Creates and caches an RTV over the game's present-composition buffer, recreated when its pointer changes.</summary>
+    /// <param name="device">The render device.</param>
+    /// <param name="resource">The present-composition buffer.</param>
+    /// <returns>True when the RTV is ready.</returns>
     private static bool EnsurePresentRtv(RenderDevice device, nint resource)
     {
         if (resource == presentRtvPtr && presentRtv.Get() != null)
@@ -1757,8 +1778,8 @@ public static unsafe partial class NoireDraw3D
 
     private static void OnResizeBuffers()
     {
-        // Hard DXGI obligation: release every backbuffer-derived reference synchronously - a lazily
-        // released reference would fail the *game's own* ResizeBuffers.
+        // Every backbuffer-derived reference must be released synchronously: a lazily released one fails the game's
+        // own ResizeBuffers call.
         backbufferRtv.Dispose();
         backbufferRtv = default;
         presentRtv.Dispose();
@@ -1766,7 +1787,7 @@ public static unsafe partial class NoireDraw3D
         presentRtvPtr = 0;
         backbufferPtr = 0;
 
-        // Our own targets carry no such constraint; recreate on the next frame anyway.
+        // Draw3D's own targets carry no such constraint, and are recreated on the next frame.
         sceneRt?.Release();
         outlineMaskRt?.Release();
         outlineVisRt?.Release();
@@ -1781,7 +1802,7 @@ public static unsafe partial class NoireDraw3D
 
     private static Vector3 UnprojectEye(in Matrix4x4 invViewProj)
     {
-        // Fallback-camera eye approximation: the near-plane center (reversed-Z near = 1).
+        // Fallback-camera eye approximation: the near-plane centre, which is 1 under reversed Z.
         var p = Vector4.Transform(new Vector4(0f, 0f, 1f, 1f), invViewProj);
         return Math.Abs(p.W) > 1e-9f ? new Vector3(p.X, p.Y, p.Z) / p.W : Vector3.Zero;
     }
@@ -1789,10 +1810,14 @@ public static unsafe partial class NoireDraw3D
     // ---------------------------------------------------------------- internals: camera sampler, UI-hide, command
 
     /// <summary>
-    /// Builds the affine world-to-clip map for the top-down collision height-map: world XZ maps linearly to the R32F target
-    /// (no perspective, Y ignored) so a world point at (X,Z) is sampled at UV = (X-minX, Z-minZ)/size - matching the
-    /// <c>WorldHeightRegion</c> the decal shader uses. Row-vector convention (clip = wp * M); transposed on upload.
+    /// Builds the affine world-to-clip map for the top-down collision height-map, mapping world XZ linearly onto the
+    /// R32F target so a world point samples at UV = (X-minX, Z-minZ)/size, matching the <c>WorldHeightRegion</c> the
+    /// decal shader uses. Row-vector convention, transposed on upload.
     /// </summary>
+    /// <param name="minX">The region's minimum world X.</param>
+    /// <param name="minZ">The region's minimum world Z.</param>
+    /// <param name="size">The region's side length in world units.</param>
+    /// <returns>The world-to-clip matrix.</returns>
     private static Matrix4x4 BuildHeightMapMatrix(float minX, float minZ, float size)
     {
         var s = 2f / size;
@@ -1804,10 +1829,8 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Reports every link in the <see cref="DecalProjection.HighestOnly"/> chain (<c>/noire3d topsurface</c>): the
-    /// feature fails soft at each step (no decal asking for it, the master switch off, a zero threshold, no cached
-    /// collision, or a height-map that could not be drawn all degrade silently to
-    /// <see cref="DecalProjection.AllSurfaces"/>), so this names whichever link is missing.
+    /// Reports every link in the <see cref="DecalProjection.HighestOnly"/> chain for <c>/noire3d topsurface</c>,
+    /// naming whichever one degraded the projection to <see cref="DecalProjection.AllSurfaces"/>.
     /// </summary>
     private static void PrintTopSurfaceReport()
     {
@@ -1862,11 +1885,10 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Framework-thread only: rebuilds the cached collision-world mesh near the player when they leave the cached region
-    /// (the collision scene is safe to read only here). Fail-soft - a fault leaves the last cache in place, and a
-    /// <see cref="DecalProjection.HighestOnly"/> decal degrades to <see cref="DecalProjection.AllSurfaces"/> until it
-    /// recovers. Skipped entirely unless the last frame actually needed the height-map, so a scene without a
-    /// <c>HighestOnly</c> decal never pays for the collision read.
+    /// Rebuilds the cached collision-world mesh once the player leaves the cached region, skipped entirely unless
+    /// the last frame needed the height-map. A fault leaves the last cache in place and degrades
+    /// <see cref="DecalProjection.HighestOnly"/> to <see cref="DecalProjection.AllSurfaces"/>. Framework thread
+    /// only, since that is where the collision scene is safe to read.
     /// </summary>
     private static void UpdateWorldCollision()
     {
@@ -1911,11 +1933,9 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Holds Dalamud's four UI-hide overrides for the layer's whole lifetime, and restores (only the ones it forced) on
-    /// disposal. Deliberately <b>not</b> tied to <see cref="KeepDrawingWhenUiHidden"/>: these flags are the only way to
-    /// keep <c>UiBuilder.Draw</c> firing at all, for both the 3D layer and the host's windows, so tying them to the switch
-    /// would make the switch silently decide the host's window visibility too. <see cref="RenderMainScene"/> makes the
-    /// drawing decision instead, leaving the host to decide its own windows via <see cref="IsGameUiHidden"/>.
+    /// Holds Dalamud's four UI-hide overrides for the layer's lifetime and restores the ones it forced on disposal.
+    /// They are not tied to <see cref="KeepDrawingWhenUiHidden"/>, since they are what keeps <c>UiBuilder.Draw</c>
+    /// firing for the host's windows as well; <see cref="RenderMainScene"/> makes the layer's drawing decision.
     /// </summary>
     private static void RefreshUiHideOverrides()
     {
@@ -1966,9 +1986,10 @@ public static unsafe partial class NoireDraw3D
     private static int writeLogBaselineSize;
 
     /// <summary>
-    /// Handles <c>/noire3d lights [mark|baseline|diff|candidates|writes ...]</c>: reports the game's constant-buffer
-    /// uploads to find the values driving its lighting. Workflow: <c>mark</c>, change the light, then <c>diff</c>.
+    /// Handles <c>/noire3d lights [mark|baseline|diff|candidates|writes ...]</c>, reporting the game's
+    /// constant-buffer uploads to locate the values driving its lighting.
     /// </summary>
+    /// <param name="rest">The arguments after <c>lights</c>.</param>
     private static void HandleLightsCommand(string rest)
     {
         if (cameraCapture is not { Installed: true } capture)
@@ -2013,7 +2034,7 @@ public static unsafe partial class NoireDraw3D
             }
         }
 
-        // Every tracked buffer, not just the camera's size class - the lighting is not in it.
+        // Every tracked buffer, not only the camera's size class, which the lighting is not in.
         if (mode == "mark")
         {
             markedConstants = capture.SnapshotConstants();
@@ -2251,11 +2272,11 @@ public static unsafe partial class NoireDraw3D
 
     private static void RegisterCommand()
     {
-        // Commands are global and NoireLib is statically linked per plugin - registration is best-effort;
-        // the Diagnostics facade keeps the toolkit reachable regardless of who won the name.
+        // Commands are global while NoireLib is linked into each plugin, so registration is best-effort and the
+        // Diagnostics facade keeps the toolkit reachable whichever plugin won the name.
         commandRegistered = NoireService.CommandManager.AddHandler(CommandName, new CommandInfo(HandleCommand)
         {
-            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump [sweep [count]|<from> [count]] | gbuffer | ontop | platedepth | uimask | plates",
+            HelpMessage = "Draw3D diagnostics: validate | probe | camtrace [frames] | cbprobe [frames] | lights [mark|baseline|diff|candidates|writes [size|base|diff|list]|off] | gpucam | batchcb | stats | wire | decalshapes | decalvolumes | stencil | heightmap | topsurface | reset | rtlog | framedump [sweep [count]|<from> [count]] | gbuffer | ontop | platedepth | uimask | plates",
         });
 
         if (!commandRegistered)
@@ -2305,6 +2326,12 @@ public static unsafe partial class NoireDraw3D
                 Print(Diagnostics.PreferCapturedCamera
                     ? $"Draw3D: GPU camera capture ON - the layer projects with the exact uploaded camera constants when available. State: {cameraCapture?.Describe() ?? "not installed"}."
                     : "Draw3D: GPU camera capture OFF (A/B) - the layer projects with the struct snapshot; expect the old load-dependent swim under fast camera motion.");
+                break;
+            case "batchcb":
+                Performance.BatchedObjectConstants = !Performance.BatchedObjectConstants;
+                Print(Performance.BatchedObjectConstants
+                    ? "Draw3D: batched object constants ON (A/B) - standard single draws ride the instanced route and the object CB re-uploads only on material-param changes. Compare fps and 'objectCb updates' in /noire3d stats against OFF in the same scene."
+                    : "Draw3D: batched object constants OFF - every single draw uploads the object CB (the classic path).");
                 break;
             case "stencil":
                 stencilDebug = !stencilDebug;
@@ -2420,7 +2447,8 @@ public static unsafe partial class NoireDraw3D
         NoireLogger.LogInfo(message, "Draw3D");
     }
 
-    /// <summary>Lazily installs the render-target tap (opt-in hook) on first use. Null when the device isn't ready.</summary>
+    /// <summary>Lazily installs the render-target tap on first use.</summary>
+    /// <returns>The tap, or null when the device is not ready or the install failed.</returns>
     private static RenderTargetTap? EnsureRenderTargetTap()
     {
         if (renderTargetTap != null)
@@ -2434,8 +2462,8 @@ public static unsafe partial class NoireDraw3D
             {
                 renderTargetTap = tap;
 
-                // The camera-constant capture rides the tap's frame phase. Fail-soft: without it the layer
-                // projects with the struct snapshot instead.
+                // The camera-constant capture rides the tap's frame phase; without it the layer projects with the
+                // struct snapshot instead.
                 var capture = new CameraConstantCapture();
                 if (capture.Install(device, tap))
                 {
@@ -2458,6 +2486,10 @@ public static unsafe partial class NoireDraw3D
 
     // ---------------------------------------------------------------- internals: stats, picking
 
+    /// <summary>Gets the cumulative rendered and empty-skipped frame counts, which the camera trace compares.</summary>
+    internal static (long Rendered, long SkippedEmpty) FrameCounters
+        => renderStats is { } s ? (s.FramesRendered, s.FramesSkippedEmpty) : (0L, 0L);
+
     private static Draw3DStats BuildStats()
     {
         var s = renderStats;
@@ -2468,9 +2500,10 @@ public static unsafe partial class NoireDraw3D
                 FramesRendered = 0, FramesSkippedDisabled = 0, FramesSkippedInitPending = 0, FramesSkippedNoDevice = 0,
                 FramesSkippedNoCamera = 0, FramesSkippedZeroSize = 0, FramesSkippedEmpty = 0, FramesSkippedUiHidden = 0, DepthOffFrames = 0,
                 DisposedAssetDraws = 0, ImCommandsDropped = 0, DrawCalls = 0, Instances = 0, Triangles = 0, Batches = 0,
-                CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
+                ObjectCbUpdates = 0, CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
                 DepthSource = "none", SceneGpuMs = 0, CompositeGpuMs = 0,
                 CameraCapture = "not installed", GpuCameraFrames = 0, UsedGpuCamera = false,
+                LastPickMicros = 0, LastPickNodes = 0, LastPickRefined = 0,
             };
         }
 
@@ -2491,6 +2524,7 @@ public static unsafe partial class NoireDraw3D
             Instances = s.Instances,
             Triangles = s.Triangles,
             Batches = s.Batches,
+            ObjectCbUpdates = s.ObjectCbUpdates,
             CulledItems = s.CulledItems,
             VisibleItems = s.VisibleItems,
             ProtectRects = s.ProtectRects,
@@ -2502,16 +2536,21 @@ public static unsafe partial class NoireDraw3D
             CameraCapture = cameraCapture?.Describe() ?? "not installed",
             GpuCameraFrames = s.GpuCameraFrames,
             UsedGpuCamera = s.UsedGpuCamera,
+            LastPickMicros = s.PickMicros,
+            LastPickNodes = s.PickNodes,
+            LastPickRefined = s.PickRefined,
         };
     }
 
-    /// <summary>One-line camera-constant capture state, for the camtrace report and <see cref="Draw3DStats"/>.</summary>
+    /// <summary>Describes the camera-constant capture state in one line.</summary>
+    /// <returns>The state description.</returns>
     internal static string DescribeCameraCapture() => cameraCapture?.Describe() ?? "not installed";
 
     /// <summary>
-    /// Human-readable state of the over-everything UI mask: whether it is configured, whether the render-thread
-    /// snapshot is landing, and what fraction of the sampled grid the native UI actually changed.
+    /// Describes the over-everything UI mask: whether it is configured, whether the render-thread snapshot is
+    /// landing, and what fraction of the sampled grid the native UI changed.
     /// </summary>
+    /// <returns>The report text.</returns>
     internal static string UiMaskReport()
     {
         if (layering == Draw3DLayering.UnderGameUi)
@@ -2537,11 +2576,11 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Per-nameplate report for the over-everything path: the policy factor each plate was given last frame, and the
-    /// distances that decided it. This separates the two ways nameplate layering can look broken, which are otherwise
-    /// identical on screen: a factor of 1 on a plate the layer still covers means the UI mask never found the plate's
-    /// pixels, whereas a factor of 0 on a plate that should read on top means the occlusion test decided wrongly.
+    /// Reports the policy factor each nameplate was given last frame on the over-everything path, with the distances
+    /// that decided it. A factor of 1 on a covered plate means the UI mask missed its pixels, while a factor of 0 on
+    /// a plate that should read on top means the occlusion test decided wrongly.
     /// </summary>
+    /// <returns>The report text.</returns>
     internal static string PlateReport()
     {
         if (layering != Draw3DLayering.OverEverything)
@@ -2576,39 +2615,42 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// Full description of the frame's depth source: the buffer in use, the analytic mapping applied to it, and the
-    /// UI-mask health. Composed here, on read, from the raw values the frame recorded: only <c>/noire3d stats</c> ever
-    /// asks for it, so a rendered frame must not pay for formatting it.
+    /// Describes the frame's depth source, the analytic mapping applied to it and the UI-mask health, composed on
+    /// read so a rendered frame never pays for the formatting.
     /// </summary>
     /// <param name="hasDepth">Whether the frame being described had a usable depth source.</param>
+    /// <returns>The description.</returns>
     private static string DescribeDepthSource(bool hasDepth)
         => $"{sceneDepth?.Description ?? "none"}; map: {DepthMapDescription(in lastDepthMap, hasDepth)}; uiMask: {UiMaskDescription}";
 
-    /// <summary>One-line description of the active analytic depth mapping for stats/probe.</summary>
+    /// <summary>Describes the active analytic depth mapping in one line.</summary>
+    /// <param name="map">The analytic depth map the frame recorded.</param>
+    /// <param name="hasDepth">Whether that frame had a usable depth source.</param>
+    /// <returns>The description.</returns>
     internal static string DepthMapDescription(in Vector4 map, bool hasDepth)
         => !hasDepth
             ? "depth-off"
             : $"z={map.X:E2}{(map.Y >= 0 ? "+" : "")}{map.Y:F5}/w ({(map.Y > 0 ? "reversed" : "standard")}-Z, analytic)";
 
+    /// <summary>Gets the last frame's context.</summary>
     internal static FrameContext LastFrame => lastFrame;
 
+    /// <summary>Gets a value indicating whether the last frame's context is usable.</summary>
     internal static bool LastFrameValid => lastFrameValid;
 
     /// <summary>
-    /// Render-thread overlay hook, fired each rendered frame right after the scene prepare phase with the current
-    /// frame, so <see cref="Im"/> calls made from it land this frame (zero-latency) instead of a frame late like
-    /// <c>UiBuilder.Draw</c>. <see cref="NoireLib.Draw3D.Interaction.NoireInteract"/> subscribes once to draw the native
-    /// gizmo handles here so their screen-constant sizing tracks the live camera during zoom. Interaction (hit-testing,
-    /// drag solving) still runs on the UI thread; only the drawing moves here.<br/>
-    /// Fires <b>mid-frame, from inside one of the game's own D3D calls</b> on the default under-UI path - stricter than
-    /// "not the framework thread". Subscribers must emit geometry and read only their own state: no game state, no
-    /// chat, no Dalamud game service.
+    /// Fires each rendered frame right after the scene prepare phase, so <see cref="Im"/> calls made from it land
+    /// this frame rather than a frame late. On the under-UI path it fires mid-frame from inside one of the game's
+    /// own D3D calls, so a subscriber may emit geometry and read its own state only: no game state, no chat, no
+    /// Dalamud game service.
     /// </summary>
     internal static event Action<FrameContext>? OnRenderOverlay;
 
+    /// <summary>Gets the camera data the last frame was projected with.</summary>
     internal static GameRenderSources.CameraData LastCameraData => lastCameraData;
 
-    /// <summary>Records the camera this frame's overlay was projected with, for the camera-phase trace's lag sweep. Inert to rendering.</summary>
+    /// <summary>Records the camera this frame's overlay was projected with, read only by the camera-phase trace.</summary>
+    /// <param name="cam">The camera to record.</param>
     private static void RecordCameraHistory(in GameRenderSources.CameraData cam)
     {
         cameraHistory[cameraHistoryCursor] = cam;
@@ -2618,10 +2660,11 @@ public static unsafe partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The camera <paramref name="framesBack"/> presented frames ago (0 = the camera the current frame's overlay was
-    /// projected with, 1 = the previous frame's, ...). False when the ring has not yet recorded that many frames.
-    /// Used only by the camera-phase trace to test whether the pixels in the present buffer match an earlier snapshot.
+    /// Reads the camera a given number of presented frames back, 0 being the current frame's.
     /// </summary>
+    /// <param name="framesBack">How many frames back to read.</param>
+    /// <param name="cam">Receives that frame's camera.</param>
+    /// <returns>True when the ring has recorded that many frames.</returns>
     internal static bool TryGetCameraHistory(int framesBack, out GameRenderSources.CameraData cam)
     {
         cam = default;
@@ -2635,21 +2678,22 @@ public static unsafe partial class NoireDraw3D
         return true;
     }
 
-    /// <summary>The number of frame-lags the camera-phase trace can sweep (bounded by the history ring).</summary>
+    /// <summary>Gets the number of frame lags the camera-phase trace can sweep, bounded by the history ring.</summary>
     internal static int CameraHistoryDepth => CameraHistoryLength;
 
-    private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, Vector3? groundSurface, List<PickHit> hits)
+    private static void PickNode(SceneNode node, Vector3 origin, Vector3 direction, Vector3? groundSurface, List<PickHit> hits, ref int nodes, ref int refined)
     {
         if (!node.Visible || node.Destroyed)
             return;
 
+        nodes++;
         var renderer = node.Renderer;
         if (renderer != null && !renderer.Mesh.IsDisposed)
         {
             if (renderer.Material.Domain == MaterialDomain.GroundDecal)
             {
-                // A decal is a projected footprint, not a solid - pick its actual shape on the ground surface, so
-                // hovering the hole of a ring or outside a sector's arc correctly misses (not the whole volume box).
+                // A decal is a projected footprint rather than a solid, so picking tests its shape on the ground
+                // surface and the hole of a ring or the outside of a sector's arc correctly misses.
                 if (TryPickDecal(node, renderer, origin, direction, groundSurface, out var dt))
                     hits.Add(new PickHit(node, dt, null));
             }
@@ -2662,6 +2706,7 @@ public static unsafe partial class NoireDraw3D
                     var mesh = renderer.Mesh;
                     if (mesh.CpuVertices != null && (mesh.CpuIndices16 != null || mesh.CpuIndices32 != null))
                     {
+                        refined++;
                         if (RayMesh(origin, direction, mesh, world, out var t, out var tri))
                             hits.Add(new PickHit(node, t, tri));
                     }
@@ -2674,14 +2719,20 @@ public static unsafe partial class NoireDraw3D
         }
 
         foreach (var child in node.Children)
-            PickNode(child, origin, direction, groundSurface, hits);
+            PickNode(child, origin, direction, groundSurface, hits, ref nodes, ref refined);
     }
 
     /// <summary>
-    /// Picks a ground-decal node by its rendered footprint (matches <c>GroundDecal.hlsl</c>): find the world surface
-    /// point under the cursor (the real ground, else the ray meeting the decal's local ground plane), bring it into the
-    /// unit-box local space, and reject it unless it is inside both the volume and the shape SDF (ring / sector / ...).
+    /// Picks a ground-decal node by the footprint <c>GroundDecal.hlsl</c> renders, testing the world surface point
+    /// under the cursor against the decal's volume and shape SDF in unit-box local space.
     /// </summary>
+    /// <param name="node">The decal node.</param>
+    /// <param name="renderer">Its renderer, for the material.</param>
+    /// <param name="origin">The pick ray's start.</param>
+    /// <param name="direction">The pick ray's direction.</param>
+    /// <param name="groundSurface">The game's reported ground under the cursor, or null when aiming at open sky.</param>
+    /// <param name="t">Receives the ray parameter of the hit.</param>
+    /// <returns>True when the cursor is on the painted footprint.</returns>
     private static bool TryPickDecal(SceneNode node, MeshRenderer renderer, Vector3 origin, Vector3 direction, Vector3? groundSurface, out float t)
     {
         t = 0f;
@@ -2690,12 +2741,11 @@ public static unsafe partial class NoireDraw3D
         if (!Matrix4x4.Invert(world, out var invWorld))
             return false;
 
-        // A ground decal is a flat footprint projected vertically, so two candidate surface points can put the cursor
-        // "on" it, and a hit on EITHER counts (whichever is nearer along the ray wins):
-        //   1. The decal's own plane (ray intersect node local +Y plane). View/zoom/angle independent and exact on
-        //      flat ground, since it never depends on the game's raycast landing.
-        //   2. The game's reported ground under the cursor (ScreenToWorld). Catches slope-projected decals where the
-        //      terrain sits off the node plane, at the cost of the game's raycast reliability.
+        // Two candidate surface points can put the cursor on a vertically projected footprint, and a hit on either
+        // counts, the nearer along the ray winning:
+        //   The decal's own plane, exact on flat ground since it never depends on the game's raycast landing.
+        //   The game's reported ground under the cursor, which catches slope-projected decals whose terrain sits off
+        //   the node plane, at the cost of that raycast's reliability.
         var hit = false;
         t = float.MaxValue;
 
@@ -2717,14 +2767,21 @@ public static unsafe partial class NoireDraw3D
         return hit;
     }
 
-    /// <summary>Transforms a world surface point into the decal's local frame and tests it against the footprint volume + shape, returning the ray parameter of the point.</summary>
+    /// <summary>Tests a world surface point against the decal's footprint volume and shape in its local frame.</summary>
+    /// <param name="material">The decal material carrying the shape.</param>
+    /// <param name="invWorld">The inverse of the decal's world matrix.</param>
+    /// <param name="origin">The pick ray's start.</param>
+    /// <param name="direction">The pick ray's direction.</param>
+    /// <param name="worldHit">The world surface point to test.</param>
+    /// <param name="t">Receives the ray parameter of that point.</param>
+    /// <returns>True when the point is on the painted footprint.</returns>
     private static bool TryDecalFootprint(Material material, in Matrix4x4 invWorld, Vector3 origin, Vector3 direction, Vector3 worldHit, out float t)
     {
         t = 0f;
 
         var lp = Vector3.Transform(worldHit, invWorld);
-        // XZ is the real footprint gate; the vertical band is generous (the volume height) so uneven ground / a
-        // collision surface reported off the rendered ground doesn't reject a spot the decal visibly covers.
+        // XZ is the real footprint gate; the vertical band spans the whole volume height so uneven ground, or a
+        // collision surface reported off the rendered one, does not reject a spot the decal visibly covers.
         if (MathF.Abs(lp.X) > 0.5f || MathF.Abs(lp.Z) > 0.5f || MathF.Abs(lp.Y) > 0.5f)
             return false;
         if (!InsideDecalShape(material, lp))
@@ -2735,7 +2792,12 @@ public static unsafe partial class NoireDraw3D
         return t >= 0f;
     }
 
-    /// <summary>Intersects the ray with the decal's local ground plane (its origin, local +Y as normal).</summary>
+    /// <summary>Intersects the ray with the decal's local ground plane, its origin with local +Y as the normal.</summary>
+    /// <param name="origin">The ray's start.</param>
+    /// <param name="direction">The ray's direction.</param>
+    /// <param name="world">The decal's world matrix.</param>
+    /// <param name="worldHit">Receives the intersection point.</param>
+    /// <returns>True when the ray meets the plane ahead of its start.</returns>
     private static bool TryRayLocalGroundPlane(Vector3 origin, Vector3 direction, in Matrix4x4 world, out Vector3 worldHit)
     {
         worldHit = default;
@@ -2759,7 +2821,10 @@ public static unsafe partial class NoireDraw3D
         return true;
     }
 
-    /// <summary>The decal footprint SDF from <c>GroundDecal.hlsl</c> (footprint space p = lp.xz*2, edge at |p| = 1): inside when sd &lt;= 0.</summary>
+    /// <summary>Evaluates the decal footprint SDF from <c>GroundDecal.hlsl</c>, in footprint space p = lp.xz*2 with the edge at |p| = 1.</summary>
+    /// <param name="mat">The material carrying the shape and its parameters.</param>
+    /// <param name="lp">The point in the decal's unit-box local space.</param>
+    /// <returns>True when the point is inside the shape.</returns>
     internal static bool InsideDecalShape(Material mat, Vector3 lp)
     {
         var p = new Vector2(lp.X, lp.Z) * 2f;
@@ -2783,7 +2848,7 @@ public static unsafe partial class NoireDraw3D
                     sd = MathF.Max(MathF.Max(r - 1f, sp.Y - r), (an - sp.X) * r); // x = half angle, y = inner ratio
                     break;
                 }
-            default:                                             // Rect / Texture - the footprint square
+            default:                                             // Rect and Texture: the footprint square
                 sd = MathF.Max(MathF.Abs(p.X), MathF.Abs(p.Y)) - 1f;
                 break;
         }
@@ -2791,7 +2856,12 @@ public static unsafe partial class NoireDraw3D
         return sd <= 0f;
     }
 
-    /// <summary>The <see cref="Geometry.BoundingSphere"/> shape of <see cref="Geometry3DHelper.RaySphere"/>.</summary>
+    /// <summary>Intersects a ray with a <see cref="Geometry.BoundingSphere"/>.</summary>
+    /// <param name="origin">The ray's start.</param>
+    /// <param name="direction">The ray's direction.</param>
+    /// <param name="sphere">The sphere to test.</param>
+    /// <param name="t">Receives the ray parameter of the nearest hit.</param>
+    /// <returns>True when the ray hits the sphere.</returns>
     private static bool RaySphere(Vector3 origin, Vector3 direction, in Geometry.BoundingSphere sphere, out float t)
         => Geometry3DHelper.RaySphere(origin, direction, sphere.Center, sphere.Radius, out t);
 
@@ -2803,7 +2873,7 @@ public static unsafe partial class NoireDraw3D
         if (!Matrix4x4.Invert(world, out var invWorld))
             return false;
 
-        // Transform the ray into model space (direction normalized - t comes back in model units, rescaled below).
+        // Transform the ray into model space with a normalized direction, so t comes back in model units.
         var localOrigin = Vector3.Transform(origin, invWorld);
         var localDir = Vector3.TransformNormal(direction, invWorld);
         var dirScale = localDir.Length();
@@ -2811,8 +2881,8 @@ public static unsafe partial class NoireDraw3D
             return false;
         localDir /= dirScale;
 
-        // BVH-accelerated: O(log triangles) per pick instead of a per-triangle scan every hover frame (the mesh builds
-        // the tree once, lazily, from its retained CPU geometry).
+        // The mesh builds its BVH once, lazily, from the retained CPU geometry, so a hover frame costs a tree walk
+        // rather than a per-triangle scan.
         if (!mesh.RayCastLocal(localOrigin, localDir, out var localT, out bestTriangle))
             return false;
 

@@ -10,11 +10,9 @@ using System.Text;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A reusable block of rich inline content, built from segments (text, icons, images, keycaps, arbitrary widgets).<br/>
+/// A reusable block of rich inline content built from segments (text, icons, images, keycaps, arbitrary widgets).
 /// Segments flow on the same line, vertically centered against each other, until <see cref="AddNewLine"/> or
-/// <see cref="AddSeparator"/> starts a new one.<br/>
-/// It is not tied to any one surface: a custom tooltip (<see cref="NoireTooltip"/>) renders one, and so can any
-/// window, label or cell of your own through the public <see cref="Draw"/>.
+/// <see cref="AddSeparator"/> starts a new one. It is tied to no surface: <see cref="Draw"/> renders it anywhere.
 /// </summary>
 [NoireFacadeFactory]
 public sealed class NoireContent
@@ -35,11 +33,12 @@ public sealed class NoireContent
     /// What one measurement depended on, so a segment measured under the same conditions reuses its answer.
     /// </summary>
     /// <remarks>
-    /// The same facts <see cref="UiTextMeasureCache"/> keys on, read once per draw instead of once per segment: the
-    /// shared cache still answers correctly, but answering costs the reads and a string hash per ask, and a tooltip
-    /// asks for every segment on every frame it is open. Holding the answer on the segment brings a warm draw down to
-    /// four compares.
+    /// The same facts <see cref="UiTextMeasureCache"/> keys on, read once per draw rather than hashed per segment ask.
     /// </remarks>
+    /// <param name="Font">Handle of the font in hand.</param>
+    /// <param name="SizePx">Font size in pixels.</param>
+    /// <param name="Scale">UI scale the measurement was taken at.</param>
+    /// <param name="Generation">Font cache generation.</param>
     private readonly record struct MeasureStamp(nint Font, float SizePx, float Scale, int Generation);
 
     private sealed class Segment
@@ -56,8 +55,7 @@ public sealed class NoireContent
         public Action? Custom;
 
         /// <summary>
-        /// The text encoded once, for the segments whose text never changes. ImGui takes UTF-8, so a managed string
-        /// handed over per frame is re-encoded per frame; this pays that cost when the segment is added instead.
+        /// The text encoded once at add time, for a segment whose text never changes, so no per-frame re-encode.
         /// </summary>
         public byte[]? Utf8;
 
@@ -71,15 +69,12 @@ public sealed class NoireContent
     private readonly List<Segment> segments = new();
 
     /// <summary>
-    /// The runs of same-line segments, one entry per line, derived from where the break segments sit.
+    /// The runs of same-line segments, one entry per line, derived from where the break segments sit. Content is
+    /// add-only, so this is rebuilt when a segment has been added rather than per draw.
     /// </summary>
-    /// <remarks>
-    /// Content is add-only, so the grouping is a property of the segment list rather than of any frame; it is
-    /// rebuilt only when a segment has been added, not per draw.
-    /// </remarks>
     private readonly List<(int Start, int Count, bool SeparatorAfter)> lines = new();
 
-    /// <summary>How many segments <see cref="lines"/> was built from, which is a version because content is add-only.</summary>
+    /// <summary>How many segments <see cref="lines"/> was built from, which serves as a version because content is add-only.</summary>
     private int linesBuiltFrom = -1;
 
     /// <summary>The longest line, so the height pass can borrow one buffer sized for any of them.</summary>
@@ -88,14 +83,10 @@ public sealed class NoireContent
     /// <summary>Whether any text segment resolves through a provider, so a draw without one skips the resolve pass.</summary>
     private bool hasProviders;
 
-    /// <summary>
-    /// Gets whether this content has no segments.
-    /// </summary>
+    /// <summary>Whether this content has no segments.</summary>
     public bool IsEmpty => segments.Count == 0;
 
-    /// <summary>
-    /// Adds a text segment.
-    /// </summary>
+    /// <summary>Adds a text segment.</summary>
     /// <param name="text">The text to display.</param>
     /// <param name="color">An optional text color. When <see langword="null"/>, the current text color is used.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
@@ -116,8 +107,7 @@ public sealed class NoireContent
     }
 
     /// <summary>
-    /// Adds a text segment whose text is evaluated on every draw, for a value that changes over time.<br/>
-    /// The provider runs once per draw. Keep it cheap, and note that a formatted string allocates each frame.
+    /// Adds a text segment whose text is resolved once per draw, for a value that changes over time.
     /// </summary>
     /// <param name="textProvider">Produces the text to display, called on every draw.</param>
     /// <param name="color">An optional text color. When <see langword="null"/>, the current text color is used.</param>
@@ -131,9 +121,7 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Adds a FontAwesome icon segment.
-    /// </summary>
+    /// <summary>Adds a FontAwesome icon segment.</summary>
     /// <param name="icon">The icon to display.</param>
     /// <param name="color">An optional icon color. When <see langword="null"/>, the current text color is used.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
@@ -144,8 +132,7 @@ public sealed class NoireContent
     }
 
     /// <summary>
-    /// Adds a keycap segment: the label drawn in a small bordered tile, for spelling out a shortcut inline.<br/>
-    /// The tile borrows the current theme's frame and border colors, so it sits naturally in whatever surface renders it.
+    /// Adds a keycap segment: the label drawn in a small bordered tile, in the current theme's frame and border colors.
     /// </summary>
     /// <param name="key">The key label, for example "Ctrl" or "F1".</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
@@ -164,13 +151,10 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Adds an image segment.
-    /// </summary>
+    /// <summary>Adds an image segment.</summary>
     /// <param name="image">The image source to display.</param>
-    /// <param name="size">The display size in real pixels, not scaled: it shares a space with the native texture size it
-    /// falls back to. When <see langword="null"/>, the native size of the texture is used, falling back to a
-    /// text-line-sized square while loading. See <see cref="NoireUI.Scale"/>.</param>
+    /// <param name="size">Display size in real, unscaled pixels; when <see langword="null"/>, the texture's native
+    /// size, falling back to a text-line-sized square while loading. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddImage(UiImageSource image, Vector2? size = null)
     {
@@ -181,37 +165,29 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Adds an image segment from an image file on disk.
-    /// </summary>
+    /// <summary>Adds an image segment from an image file on disk.</summary>
     /// <param name="filePath">The path of the image file.</param>
-    /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
+    /// <param name="size">Display size in pixels, or <see langword="null"/> for the texture's native size.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddImage(string filePath, Vector2? size = null)
         => AddImage(UiImageSource.FromFile(filePath), size);
 
-    /// <summary>
-    /// Adds an image segment from a game icon id.
-    /// </summary>
+    /// <summary>Adds an image segment from a game icon id.</summary>
     /// <param name="gameIconId">The id of the game icon.</param>
-    /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
+    /// <param name="size">Display size in pixels, or <see langword="null"/> for the texture's native size.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddImage(uint gameIconId, Vector2? size = null)
         => AddImage(UiImageSource.FromGameIcon(gameIconId), size);
 
-    /// <summary>
-    /// Adds an image segment from an existing texture wrap. The wrap stays owned by the caller.
-    /// </summary>
+    /// <summary>Adds an image segment from an existing texture wrap, which stays owned by the caller.</summary>
     /// <param name="textureWrap">The texture wrap to display.</param>
-    /// <param name="size">The display size in pixels. When <see langword="null"/>, the native size of the texture is used.</param>
+    /// <param name="size">Display size in pixels, or <see langword="null"/> for the texture's native size.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddImage(IDalamudTextureWrap textureWrap, Vector2? size = null)
         => AddImage(UiImageSource.FromWrap(textureWrap), size);
 
-    /// <summary>
-    /// Adds a horizontal spacing segment on the current line.
-    /// </summary>
-    /// <param name="width">The width of the spacing, at 100%. See <see cref="NoireUI.Scale"/>.</param>
+    /// <summary>Adds a horizontal spacing segment on the current line.</summary>
+    /// <param name="width">Spacing width at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddSpacing(float width)
     {
@@ -219,9 +195,7 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Ends the current line: the next segments will be placed on a new line.
-    /// </summary>
+    /// <summary>Ends the current line, so the next segments start a new one.</summary>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddNewLine()
     {
@@ -229,9 +203,7 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Adds a horizontal separator line. Also ends the current line.
-    /// </summary>
+    /// <summary>Adds a horizontal separator line, ending the current line.</summary>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
     public NoireContent AddSeparator()
     {
@@ -240,8 +212,8 @@ public sealed class NoireContent
     }
 
     /// <summary>
-    /// Adds a custom segment: the action is invoked in place and can draw anything using ImGui.<br/>
-    /// Custom segments are drawn in the natural flow of the line, without vertical centering.
+    /// Adds a custom segment, drawn in the natural flow of the line without vertical centering. Its drawn bounds are
+    /// measured, so it may be arbitrarily tall and whatever follows the line starts below it.
     /// </summary>
     /// <param name="draw">The action drawing the segment.</param>
     /// <returns>This <see cref="NoireContent"/> instance, for chaining.</returns>
@@ -254,17 +226,13 @@ public sealed class NoireContent
         return this;
     }
 
-    /// <summary>
-    /// Creates a <see cref="NoireContent"/> containing a single text segment.
-    /// </summary>
+    /// <summary>Creates a <see cref="NoireContent"/> containing a single text segment.</summary>
     /// <param name="text">The text of the content.</param>
+    /// <returns>The new content.</returns>
     public static implicit operator NoireContent(string text)
         => new NoireContent().AddText(text);
 
-    /// <summary>
-    /// Draws the content at the current cursor, line by line with vertical centering.<br/>
-    /// Call this from your own ImGui code to render the content anywhere; a custom tooltip renders it for you.
-    /// </summary>
+    /// <summary>Draws the content at the current cursor, line by line with vertical centering.</summary>
     public void Draw()
     {
         if (segments.Count == 0)
@@ -273,9 +241,7 @@ public sealed class NoireContent
         if (linesBuiltFrom != segments.Count)
             RebuildLines();
 
-        // Dynamic text is resolved once per draw, so the provider runs a single time and the measure and draw passes
-        // agree. Static text carries its own copy from the moment it was added, so with no provider there is nothing
-        // to resolve.
+        // Resolved once per draw so the measure and draw passes see the same text.
         if (hasProviders)
         {
             foreach (var segment in segments)
@@ -285,7 +251,6 @@ public sealed class NoireContent
             }
         }
 
-        // Everything a measurement depends on, read once for the whole draw rather than once per segment ask.
         var stamp = new MeasureStamp(
             UiTextMeasureCache.CurrentFont(),
             ImGui.GetFontSize(),
@@ -295,9 +260,8 @@ public sealed class NoireContent
         var keyCapPadding = NoireUI.Scaled(new Vector2(5f, 2f));
         var lineHeight = ImGui.GetTextLineHeight();
 
-        // The heights of one line's segments, measured once and read back when each segment is centered. Borrowed
-        // rather than allocated because this runs on every frame a tooltip is open; a buffer of floats is returned to
-        // the pool uncleared, so the round trip is cheap.
+        // One line's segment heights, measured once and read back while centering. Pooled because this runs on every
+        // frame a surface holding the content is visible.
         using var heights = PooledBuffer<float>.Rent(longestLine);
         var lineHeights = heights.Span;
 
@@ -314,12 +278,10 @@ public sealed class NoireContent
         }
     }
 
-    /// <summary>
-    /// Rebuilds the line runs from the break segments. Runs when a segment has been added, never per frame.
-    /// </summary>
+    /// <summary>Rebuilds the line runs from the break segments.</summary>
     /// <remarks>
-    /// Every break closes the run before it, including an empty one: two consecutive breaks are a blank line, which
-    /// <see cref="DrawLine"/> gives its height. The final run is closed by the end of the list rather than by a break.
+    /// Every break closes the run before it, including an empty one, so two consecutive breaks are a blank line. The
+    /// final run is closed by the end of the list rather than by a break.
     /// </remarks>
     private void RebuildLines()
     {
@@ -349,35 +311,31 @@ public sealed class NoireContent
         linesBuiltFrom = segments.Count;
     }
 
-    /// <summary>
-    /// Puts the gap between two lines in front of the second one rather than after the first.
-    /// </summary>
+    /// <summary>Puts the gap between two lines in front of the second one rather than after the first.</summary>
     /// <remarks>
-    /// Trailing spacing after the last line is not free here: the line advance is a <c>SetCursorPosY</c> rather than
-    /// a real item, and ImGui grows a window's content height to any cursor position set inside it without the
-    /// compensation it applies to items. Spacing after the final line would be a permanent extra strip of padding
-    /// along the bottom of every tooltip.
+    /// The line advance is a <c>SetCursorPosY</c> rather than a real item, and ImGui grows a window's content height
+    /// to any cursor position set inside it, so spacing after the final line would be permanent bottom padding.
     /// </remarks>
-    /// <param name="isFirstLine">Whether the line about to be drawn is the first, which needs no gap in front of it.</param>
+    /// <param name="isFirstLine">Whether the line about to be drawn is the first.</param>
     private static void SpaceBeforeLine(bool isFirstLine)
     {
         if (!isFirstLine)
             ImGui.SetCursorPosY(ImGui.GetCursorPosY() + ImGui.GetStyle().ItemSpacing.Y);
     }
 
-    /// <summary>
-    /// Draws one run of same-line segments, vertically centered against the tallest of them.
-    /// </summary>
-    /// <remarks>
-    /// The heights are taken in one pass and read back in the second, rather than measured again for each segment's
-    /// centering. A segment as tall as the line is drawn without touching the cursor's vertical position at all: the
-    /// single-segment line, the shape almost every tooltip is, costs no centering work.
-    /// </remarks>
+    /// <summary>Draws one run of same-line segments, vertically centered against the tallest of them.</summary>
+    /// <param name="start">Index of the run's first segment.</param>
+    /// <param name="count">Segments in the run.</param>
+    /// <param name="isFirstLine">Whether this is the content's first line.</param>
+    /// <param name="stamp">The conditions measurements are taken under this draw.</param>
+    /// <param name="keyCapPadding">Scaled padding inside a keycap tile.</param>
+    /// <param name="lineHeight">Height of one text line.</param>
+    /// <param name="lineHeights">Scratch buffer holding each segment's measured height.</param>
     private void DrawLine(int start, int count, bool isFirstLine, in MeasureStamp stamp, Vector2 keyCapPadding, float lineHeight, Span<float> lineHeights)
     {
         if (count == 0)
         {
-            // An empty line (e.g. two consecutive new lines) still takes vertical space, except at the very end of the content.
+            // An empty line still takes vertical space, except at the very end of the content.
             if (!isFirstLine)
                 ImGui.Dummy(new Vector2(0f, lineHeight));
             return;
@@ -393,43 +351,49 @@ public sealed class NoireContent
         }
 
         var startY = ImGui.GetCursorPosY();
+        var drawnMaxHeight = maxHeight;
 
         for (var index = 0; index < count; index++)
         {
             if (index > 0)
                 ImGui.SameLine(0f, 0f);
 
-            // The tallest segment sits where the cursor already is; only the shorter ones are moved down to centre.
-            // After a SameLine the cursor is back at the previous segment's offset, so a segment following a moved
-            // one has to be placed even when its own offset is zero.
+            // After a SameLine the cursor sits at the previous segment's offset, so a segment following a moved one
+            // has to be placed even when its own offset is zero.
             var offset = (maxHeight - lineHeights[index]) / 2f;
 
             if (offset > 0f || index > 0)
                 ImGui.SetCursorPosY(startY + offset);
 
-            DrawSegment(segments[start + index], keyCapPadding);
+            var segment = segments[start + index];
+            DrawSegment(segment, keyCapPadding);
+
+            // A custom segment's real size is known only once it ran, so folding it in here keeps the next line
+            // below what was actually drawn even on the first frame, when the measure pass had no cached size.
+            if (segment.Kind == SegmentKind.Custom)
+                drawnMaxHeight = MathF.Max(drawnMaxHeight, segment.MeasuredSize.Y);
         }
 
-        // Realign the cursor under the tallest segment of the line so the next line starts below it. The gap between
-        // lines is added in front of the next one by SpaceBeforeLine, never here.
-        ImGui.SetCursorPosY(startY + maxHeight);
+        // Under the tallest segment of the line; the gap to the next line is added by SpaceBeforeLine, never here.
+        ImGui.SetCursorPosY(startY + drawnMaxHeight);
     }
 
-    /// <summary>
-    /// The height a segment takes on its line, from its cached measurement when the conditions have not moved.
-    /// </summary>
+    /// <summary>The height a segment takes on its line, cached against the conditions it was measured under.</summary>
     /// <remarks>
-    /// Measured against the font in hand rather than through <c>CalcSize</c>, which would resolve and push one of its
-    /// own: a segment is drawn in whatever the caller pushed, and a height taken in a different font puts the line's
-    /// baseline in the wrong place. The answer is held on the segment against everything it depended on, so a warm
-    /// frame compares a stamp instead of hashing text into the shared measure cache.
+    /// Measured against the font in hand rather than through <c>CalcSize</c>, which resolves and pushes one of its
+    /// own: a segment draws in whatever the caller pushed, and a height taken in another font misplaces the baseline.
     /// </remarks>
+    /// <param name="segment">The segment to measure.</param>
+    /// <param name="stamp">The conditions measurements are taken under this draw.</param>
+    /// <param name="keyCapPadding">Scaled padding inside a keycap tile.</param>
+    /// <param name="lineHeight">Height of one text line.</param>
+    /// <returns>The segment's height in pixels.</returns>
     private static float MeasureHeight(Segment segment, in MeasureStamp stamp, Vector2 keyCapPadding, float lineHeight)
     {
         switch (segment.Kind)
         {
             case SegmentKind.Text:
-                return MeasureText(segment, stamp).Y;
+                return MeasureTextHeight(segment, stamp);
 
             case SegmentKind.Icon:
                 if (segment.Stamp != stamp)
@@ -448,6 +412,11 @@ public sealed class NoireContent
             case SegmentKind.KeyCap:
                 return MeasureText(segment, stamp).Y + (keyCapPadding.Y * 2f);
 
+            case SegmentKind.Custom:
+                // Knowable only after the action ran, so the previous draw's size stands in and DrawLine's
+                // realignment covers the first frame with the real drawn size.
+                return segment.MeasuredSize.Y > 0f ? segment.MeasuredSize.Y : lineHeight;
+
             default:
                 return lineHeight;
         }
@@ -456,10 +425,13 @@ public sealed class NoireContent
     /// <summary>
     /// The measured size of a text-bearing segment, refreshed when the stamp moved or a provider changed the text.
     /// </summary>
+    /// <param name="segment">The segment to measure.</param>
+    /// <param name="stamp">The conditions measurements are taken under this draw.</param>
+    /// <returns>The measured text size.</returns>
     private static Vector2 MeasureText(Segment segment, in MeasureStamp stamp)
     {
         // Provider text can change without anything in the stamp moving, so it goes through the shared cache, which
-        // is keyed on the text itself. Static text short-circuits on the stamp alone.
+        // is keyed on the text itself.
         if (segment.TextProvider != null)
             return NoireText.CalcSizeInCurrentFont(segment.RuntimeText ?? string.Empty);
 
@@ -472,6 +444,33 @@ public sealed class NoireContent
         return segment.MeasuredSize;
     }
 
+    /// <summary>
+    /// The height a text segment takes on its line, accounting for an ambient text wrap position such as the one
+    /// <see cref="NoireLayout.WrapText(float, Action)"/> pushes around a whole <see cref="Draw"/> call.
+    /// </summary>
+    /// <remarks>
+    /// Under an active wrap, <c>TextUnformatted</c> reflows the segment onto several lines and advances the cursor
+    /// past all of them, so reserving the cached single-line height would let the next item overlap them. The
+    /// remeasure runs only when the natural width actually exceeds the wrap position.
+    /// </remarks>
+    /// <param name="segment">The text segment to measure.</param>
+    /// <param name="stamp">The conditions measurements are taken under this draw.</param>
+    /// <returns>The height the segment occupies in pixels.</returns>
+    private static float MeasureTextHeight(Segment segment, in MeasureStamp stamp)
+    {
+        var natural = MeasureText(segment, stamp);
+        var wrapWidth = NoireLayout.ActiveWrapWidth();
+
+        if (wrapWidth is not { } width || natural.X <= width)
+            return natural.Y;
+
+        return ImGui.CalcTextSize(segment.RuntimeText ?? string.Empty, false, width).Y;
+    }
+
+    /// <summary>The display size of an image segment, falling back to the native texture size then a text line.</summary>
+    /// <param name="segment">The image segment.</param>
+    /// <param name="lineHeight">Height of one text line.</param>
+    /// <returns>The size to draw the image at.</returns>
     private static Vector2 ResolveImageSize(Segment segment, float lineHeight)
     {
         if (segment.ImageSize.HasValue)
@@ -484,6 +483,9 @@ public sealed class NoireContent
         return new Vector2(lineHeight, lineHeight);
     }
 
+    /// <summary>Draws one segment at the current cursor.</summary>
+    /// <param name="segment">The segment to draw.</param>
+    /// <param name="keyCapPadding">Scaled padding inside a keycap tile.</param>
     private static void DrawSegment(Segment segment, Vector2 keyCapPadding)
     {
         switch (segment.Kind)
@@ -491,8 +493,7 @@ public sealed class NoireContent
             case SegmentKind.Text:
                 using (UiPush.Color(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
                 {
-                    // The pre-encoded bytes when the text is static, so ImGui is not handed a managed string to
-                    // re-encode on every frame the segment is drawn.
+                    // Pre-encoded bytes when the text is static, so ImGui re-encodes nothing per frame.
                     if (segment.Utf8 != null && segment.TextProvider == null)
                         ImGui.TextUnformatted(segment.Utf8.AsSpan());
                     else
@@ -525,14 +526,19 @@ public sealed class NoireContent
                 break;
 
             case SegmentKind.Custom:
+                // Grouped so the drawn bounds are known: the size feeds this line's realignment and the next frame's
+                // height measurement.
+                ImGui.BeginGroup();
                 segment.Custom?.Invoke();
+                ImGui.EndGroup();
+                segment.MeasuredSize = ImGui.GetItemRectSize();
                 break;
         }
     }
 
-    /// <summary>
-    /// Draws one keycap tile around its label, using the size the height pass already measured.
-    /// </summary>
+    /// <summary>Draws one keycap tile around its label, using the size the height pass already measured.</summary>
+    /// <param name="segment">The keycap segment.</param>
+    /// <param name="padding">Scaled padding between the label and the tile edge.</param>
     private static void DrawKeyCap(Segment segment, Vector2 padding)
     {
         var position = ImGui.GetCursorScreenPos();

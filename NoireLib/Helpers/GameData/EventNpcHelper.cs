@@ -6,8 +6,7 @@ namespace NoireLib.Helpers;
 
 /// <summary>
 /// One pass over the <c>ENpcBase</c> sheet, indexed both ways: which event handlers an NPC runs, and which NPCs run
-/// a given handler. Scanning by handler rather than by name picks only NPCs that actually run it, not every NPC
-/// sharing a name.
+/// a given handler.
 /// </summary>
 /// <param name="HandlersByNpc">The handler ids each ENpcBase row references.</param>
 /// <param name="NpcsByHandler">The ENpcBase rows that reference each handler id, in ascending row order.</param>
@@ -22,16 +21,15 @@ public sealed record EventNpcHandlerScan(
 }
 
 /// <summary>
-/// Finds event NPCs by what they do and where they stand: the sheet scan answers which NPC runs an event, and the
-/// level-object lookups answer where that NPC is placed.
+/// Finds which event NPC runs a given handler, and where that NPC is placed.
 /// </summary>
 public static class EventNpcHelper
 {
     /// <summary>
-    /// Scans every <c>ENpcBase</c> row once and indexes the event handlers it references.<br/>
-    /// The sheet holds tens of thousands of references, so pass <paramref name="handlerIds"/> to filter during the
-    /// scan when only a known set is wanted. <see cref="WarpHelper.ScanEventNpcWarps"/> and
-    /// <see cref="ChocoboTaxiHelper.ScanPorters"/> both accept a scan, so one pass can serve both.
+    /// Scans every <c>ENpcBase</c> row once and indexes the event handlers it references, filtering during the scan
+    /// when <paramref name="handlerIds"/> is given. <see cref="WarpHelper.ScanEventNpcWarps"/> and
+    /// <see cref="ChocoboTaxiHelper.ScanPorters(IReadOnlySet{uint}, EventNpcHandlerScan)"/> both accept a scan, so one
+    /// pass serves both.
     /// </summary>
     /// <param name="handlerIds">The handler ids to keep, or null to index every reference the sheet holds.</param>
     /// <returns>The scan, or <see cref="EventNpcHandlerScan.Empty"/> when the sheet could not be read.</returns>
@@ -65,9 +63,23 @@ public static class EventNpcHelper
         }, EventNpcHandlerScan.Empty) ?? EventNpcHandlerScan.Empty;
     }
 
+    /// <summary>Resolves an event NPC's display name from its ENpcResident row, in the client's own language.</summary>
+    /// <param name="npcBaseId">The ENpcBase row id, which is also its resident row.</param>
+    /// <returns>The name, or empty when it does not resolve.</returns>
+    public static string Name(uint npcBaseId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (npcBaseId != 0 && ExcelSheetHelper.TryGetRow<ENpcResident>(npcBaseId, out var row) && row is { } npc)
+                return npc.Singular.ExtractText() ?? string.Empty;
+
+            return string.Empty;
+        }, string.Empty) ?? string.Empty;
+    }
+
     /// <summary>
-    /// Finds the world position of each wanted base id among a set of level objects, keeping the first placement of
-    /// each. Use it when the objects all come from one territory.
+    /// Finds the world position of each wanted base id among one territory's level objects, keeping the first
+    /// placement of each.
     /// </summary>
     /// <param name="objects">Level objects, of which the event-NPC ones are read.</param>
     /// <param name="baseIds">The ENpcBase row ids to locate.</param>
@@ -89,9 +101,8 @@ public static class EventNpcHelper
     }
 
     /// <summary>
-    /// Finds where each wanted base id stands across several territories, keeping the placement in the lowest-numbered
-    /// territory rather than whichever the enumeration reached first, so the same game files always give the same
-    /// answer.
+    /// Finds where each wanted base id stands across several territories, keeping the placement in the
+    /// lowest-numbered territory so the result does not depend on enumeration order.
     /// </summary>
     /// <param name="objectsByTerritory">Each territory's placed level objects.</param>
     /// <param name="baseIds">The ENpcBase row ids to locate.</param>

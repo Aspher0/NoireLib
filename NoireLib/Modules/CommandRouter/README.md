@@ -20,9 +20,10 @@ You are reading the documentation for the `NoireCommandRouter` module.
 
 ## Overview
 
-The `NoireCommandRouter` is a module that turns slash commands into a structured tree instead of a raw string you
-parse yourself. It provides:
-- **Fluent command mapping** with nested subcommands and aliases
+The `NoireCommandRouter` turns slash commands into a structured tree instead of a raw string to parse by hand. It
+provides:
+- **Fluent command mapping** with nested subcommands and aliases on both root commands and subcommands
+- **Fallback handling** for commands whose first argument is free-form input rather than a fixed keyword
 - **Typed arguments** converted and validated before your handler runs
 - **Auto-generated help** for the command and every level beneath it
 - **Async handlers** whose real outcome is reported once they settle
@@ -45,8 +46,8 @@ var commandRouter = NoireLibMain.AddModule<NoireCommandRouter>();
 
 ### 2. Map Your First Command
 
-`Map` returns a builder for the root command. A leading `/` is added if you leave it out, and the command is
-lower-cased so the spelling Dalamud shows does not depend on how you typed it here:
+`Map` returns a builder for the root command. A leading `/` is added when missing, and the command is lower-cased, so
+the spelling Dalamud shows is independent of how it was written here:
 
 ```csharp
 var commandRouter = NoireLibMain.GetModule<NoireCommandRouter>();
@@ -60,7 +61,7 @@ commandRouter?.Map("/myplugin")
         .Handle(() => configWindow.IsOpen = true));
 ```
 
-That gives you `/myplugin`, `/myplugin config`, `/myplugin settings`, and `/myplugin help`.
+That gives `/myplugin`, `/myplugin config`, `/myplugin settings`, and `/myplugin help`.
 
 The command is registered with Dalamud as soon as it is mapped if the module is active, and re-registered whenever
 the module is activated. Mapping a command that is already mapped replaces the previous mapping.
@@ -71,7 +72,7 @@ the module is activated. Mapping a command that is already mapped replaces the p
 
 ### Module Parameters
 
-You can configure the most important options of the module with the module's constructor:
+The main options are set through the module's constructor:
 
 ```csharp
 var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Commands"); // Optional
@@ -86,10 +87,12 @@ var commandRouter = NoireLibMain.AddModule(new NoireCommandRouter(
 ));
 ```
 
-Additionnaly, you can modify the following properties after having created the module:
+The following properties can also be modified after the module is created:
 
 - `EnableAutoHelp`: If true, the root command with no subcommand and no default handler, or any `help` token, prints a
   generated help listing. Default: `true`.
+- `SeparateDalamudHelpEntries`: If true, each command's Dalamud help message ends with a blank line separating it
+  from the next entry in the listing; the last entry (by display order, then name) gets none. Default: `true`.
 - `MaxHistorySize`: The maximum number of `CommandHistoryEntry` records to retain, oldest discarded first. A value of
   0 disables history recording entirely. Negative values are rejected. Default: `50`.
 - `EventBus`: Optional EventBus instance for publishing command events. Default: `null`.
@@ -98,12 +101,11 @@ Additionnaly, you can modify the following properties after having created the m
 - `EnableLogging`: Whether this module logs its actions. Warnings and errors are logged regardless. Default: `true`.
 - `ModuleId`: The optional identifier used to tell several instances apart. Default: `null`.
 
-You can also use the provided methods to modify the module configuration after creation (see
-[Property Configuration](#property-configuration)).
+The setter methods below cover the same options (see [Property Configuration](#property-configuration)).
 
 ### Property Configuration
 
-You can also configure the module after creation:
+Configuring the module after creation:
 
 ```csharp
 var commandRouter = NoireLibMain.GetModule<NoireCommandRouter>();
@@ -121,7 +123,7 @@ commandRouter?.SetEventBus(eventBus);
 commandRouter?.SetActive(true);
 ```
 
-You can also chain these methods for convenience:
+These methods chain:
 ```csharp
 var commandRouter = NoireLibMain.GetModule<NoireCommandRouter>();
 
@@ -138,21 +140,70 @@ commandRouter?
 
 ### Root Handlers
 
-A root command can be handled in two ways:
+A root command is handled in one of three ways:
 
 ```csharp
 var commandRouter = NoireLibMain.GetModule<NoireCommandRouter>();
 
-// Handle: runs when the command is typed with no recognized subcommand
+// Handle: runs when the command is typed bare, with no arguments at all
 commandRouter?.Map("/myplugin")
     .Handle(() => mainWindow.IsOpen = true);
+
+// HandleFallback: runs when the first token matches no subcommand, receiving every token of the invocation.
+// Subcommands, typed arguments, and the built-in "help" token keep working around it.
+commandRouter?.Map("/myplugin")
+    .Handle(() => mainWindow.IsOpen = true)
+    .AddSubCommand("config", sub => sub.Handle(() => configWindow.IsOpen = true))
+    .HandleFallback(args => PlayEmote(args.RawTokens[0]));
 
 // HandleRaw: receives the command and the raw argument string, bypassing subcommand dispatch entirely
 commandRouter?.Map("/myecho")
     .HandleRaw((command, rawArgs) => NoireLogger.PrintToChat($"{command} said: {rawArgs}"));
 ```
 
-Without a default handler, the bare command prints the generated help listing instead (when `EnableAutoHelp` is on).
+Precedence for an invocation: the raw handler, when set, takes everything. Otherwise a bare command goes to the
+default handler (or prints the generated help without one, when `EnableAutoHelp` is on); a first token matching a
+subcommand dispatches into the tree; and an unmatched first token goes to the fallback handler, then to the default
+handler, and is an "Unknown subcommand" error when neither is set.
+
+`HandleFallback` suits commands whose first argument is free-form user input (an emote name, a search query), while
+fixed keywords stay real subcommands with help, aliases, and conditions.
+
+`AddFallbackCommand` configures the fallback like a subcommand and documents it: the free-form argument is listed as
+`<emote_name> - Plays the emote if found.` among the subcommand lines, in both the in-chat listing and Dalamud's
+help. Its display order slots it among those lines; a tie lists the fallback first, and without one it is listed
+last:
+
+```csharp
+commandRouter?.Map("/myplugin")
+    .AddFallbackCommand("emote_name", fallback => fallback
+        .WithHelp("Plays the emote if found.")
+        .WithDisplayOrder(0)            // Listed before the subcommands; without it, listed after them
+        .Handle(args => PlayEmote(args.RawTokens[0])))
+    .AddSubCommand("config", sub => sub.Handle(() => configWindow.IsOpen = true));
+```
+
+`ShowInHelp(false)` on the fallback hides the line while keeping it dispatchable, like it does for subcommands.
+
+### Root Aliases
+
+A root command can be reached through alias slash commands:
+
+```csharp
+commandRouter?.Map("/myplugin")
+    .AddAlias("/mp")
+    .WithHelp("Opens the main window.")
+    .Handle(() => mainWindow.IsOpen = true)
+    .AddSubCommand("config", sub => sub.Handle(() => configWindow.IsOpen = true));
+```
+
+That registers `/mp` as its own Dalamud command, listed as "Alias of /myplugin.", and everything works through it:
+`/mp config`, `/mp help`, arguments, conditions. History records the command the user actually typed, so `/mp` shows
+up as `/mp`. Like `Map`, an alias gains a leading `/` if missing and is lower-cased.
+
+Aliases share their root command's `WithDisplayOrder` and `ShowInDalamudHelp` settings, and are unregistered with it
+on `Unmap`, deactivation, and disposal. An alias colliding with an existing command or alias is logged and ignored;
+mapping a new root command over an existing alias's name takes the name for the root.
 
 ### Nesting
 
@@ -205,6 +256,7 @@ and events reflect what actually happened.
 commandRouter?.Map("/myplugin")
     .WithDisplayOrder(10)               // Order in Dalamud's help listing
     .ShowInDalamudHelp(true)            // Whether Dalamud lists this command at all
+    .ShowDetailedDalamudHelp(false)     // Dalamud lists only the help text; "/myplugin help" stays fully detailed
     .AddSubCommand("debug", sub => sub
         .ShowInHelp(false)              // Hidden from the generated listing, still callable
         .Handle(() => DumpState()))
@@ -289,8 +341,8 @@ With `WithUnorderedOptionalArguments`, `/myplugin run true 7` and `/myplugin run
 
 ## Availability Conditions
 
-A condition is a predicate you own, asked on every invocation. While it returns false, the command tells the user it
-is not available right now and the handler does not run.
+A condition is a caller-supplied predicate, asked on every invocation. While it returns false, the command reports
+that it is unavailable and the handler does not run.
 
 Conditions can be set on a root command and on any subcommand, with the same rule at both levels: **the condition
 gates everything inside the scope it is declared on.**
@@ -311,29 +363,38 @@ commandRouter?.Map("/myplugin")
 - A false **subcommand** condition blocks that subcommand, everything nested beneath it, and its own help. The rest
   of the command is unaffected.
 
-A blocked command is recorded in the history as an unsuccessful entry. No `CommandFailedEvent` is published, since
-being unavailable is not a failure; that event stays reserved for a handler that threw.
+A blocked command is recorded in the history as an unsuccessful entry. No `CommandFailedEvent` is published; that
+event is reserved for a handler that threw.
 
-A condition does not hide anything. A blocked command still appears in Dalamud's help listing, and a blocked
-subcommand still appears in the generated listing. Use `ShowInDalamudHelp(false)` or `ShowInHelp(false)` to hide
-them.
+A condition hides nothing. A blocked command still appears in Dalamud's help listing, and a blocked subcommand still
+appears in the generated listing. `ShowInDalamudHelp(false)` and `ShowInHelp(false)` hide them.
 
 ---
 
 ## Help Output
 
-With `EnableAutoHelp` on (the default), help is generated from what you declared. There is nothing to write.
+With `EnableAutoHelp` on (the default), help is generated from the declarations.
 
 - `/myplugin help` lists the root command and its subcommands.
 - `/myplugin profile help` lists that scope instead.
 - `/myplugin` with no default handler prints the root listing.
 - A subcommand with children but no handler prints its listing when typed alone.
 
-The listing shows each command with its aliases in parentheses, its arguments as `<required>` and `[optional]`, its
-help text, and any argument descriptions, preceded by a legend. Dalamud's own `/xlhelp` listing is generated from the
-same declarations.
+The listing shows each command with its aliases as `(aliases: a|b)`, its arguments as `<required>` and `[optional]`,
+its help text, and any argument descriptions, preceded by a legend. A root command's aliases appear the same way next
+to it in the header. Dalamud's `/xlhelp` listing is generated from the same declarations.
 
-Turning auto-help off makes `help` an ordinary token, so you can map a `help` subcommand of your own:
+A command with a raw handler bypasses subcommand dispatch entirely, so neither subcommands nor the `help` token can
+run for it; its Dalamud listing therefore shows only its own help text. Turning `EnableAutoHelp` off likewise removes
+the advertised built-in `help` line from Dalamud's listing, since the token no longer dispatches. Toggling it
+refreshes every live registration.
+
+Two more presentation controls. `ShowDetailedDalamudHelp(false)` keeps a command's Dalamud entry to its own help
+text while the in-chat `/command help` stays fully detailed. With `SeparateDalamudHelpEntries` on (the default), each
+command's Dalamud entry ends with a blank line separating it from the next, except the last; distinct display orders
+make that last entry unambiguous.
+
+Turning auto-help off makes `help` an ordinary token, leaving room for a custom `help` subcommand:
 
 ```csharp
 commandRouter?.SetAutoHelp(false);
@@ -444,7 +505,7 @@ the command is already registered.
 
 ### Several Routers
 
-Give each instance its own module ID to run more than one:
+Several routers coexist when each instance has its own module ID:
 
 ```csharp
 var pluginCommands = NoireLibMain.AddModule<NoireCommandRouter>("PluginCommands");
@@ -474,9 +535,8 @@ var commands = NoireLibMain.GetModule<NoireCommandRouter>("PluginCommands");
 
 ### A subcommand is not matched
 - Names and aliases match case-insensitively, but they must match in full.
-- Confirm the subcommand is declared in the scope you are typing it in, since nesting is literal.
-- If the token is `help` and you meant your own subcommand, turn `EnableAutoHelp` off; auto-help claims that token
-  first.
+- Confirm the subcommand is declared in the scope it is typed in, since nesting is literal.
+- For a custom `help` subcommand, turn `EnableAutoHelp` off; auto-help claims that token first.
 
 ### An argument is not parsed
 - Check the declared type; a value that fails to convert is reported to the user and the handler does not run.
@@ -491,7 +551,7 @@ var commands = NoireLibMain.GetModule<NoireCommandRouter>("PluginCommands");
 ### EventBus events not firing
 - Ensure an `EventBus` is provided to the CommandRouter (either in constructor or via `SetEventBus`).
 - Check that the EventBus is active and has subscribers.
-- Remember that a blocked or unknown command publishes nothing; only a handler that ran or threw does.
+- A blocked or unknown command publishes nothing; only a handler that ran or threw does.
 - Enable EventBus logging with `enableLogging: true` for debugging.
 
 ---

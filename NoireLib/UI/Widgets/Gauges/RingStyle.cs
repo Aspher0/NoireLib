@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 
@@ -8,7 +9,7 @@ namespace NoireLib.UI;
 /// </summary>
 /// <remarks>
 /// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% and
-/// are scaled where they are used. See <see cref="NoireUI.Scale"/>.
+/// are scaled by <see cref="NoireUI.Scale"/> where they are used.
 /// </remarks>
 public sealed class RingStyle
 {
@@ -24,9 +25,7 @@ public sealed class RingStyle
     /// <summary>The colour of the unfilled part. When <see langword="null"/>, the theme's sunken surface.</summary>
     public Vector4? TrackColor { get; set; }
 
-    /// <summary>
-    /// Colours that take over as the value falls. See <see cref="GaugeThreshold"/>.
-    /// </summary>
+    /// <summary>The <see cref="GaugeThreshold"/> colours that take over as the value falls.</summary>
     public IReadOnlyList<GaugeThreshold>? Thresholds { get; set; }
 
     /// <summary>Where the fill starts, in turns clockwise from twelve o'clock. Defaults to the top.</summary>
@@ -46,6 +45,12 @@ public sealed class RingStyle
 
     /// <summary>The colour of the label. When <see langword="null"/>, the colour of the fill.</summary>
     public Vector4? LabelColor { get; set; }
+
+    /// <summary>
+    /// Replaces the ring's own painting entirely, while NoireUI keeps doing the sizing and the space reservation.
+    /// </summary>
+    /// <remarks>The label is not drawn when this is set; the hook calls the parts on <see cref="UiRingDraw"/> itself.</remarks>
+    public Action<UiRingDraw>? CustomDraw { get; set; }
 
     /// <summary>The outer diameter in pixels, at the user's scale.</summary>
     internal float ScaledSize => NoireUI.Scaled(Size);

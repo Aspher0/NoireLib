@@ -60,6 +60,7 @@ public sealed class ScenesPage : IDisposable
     // World-geometry / glTF import controls.
     private string modelPath = string.Empty;
     private bool modelVertexColors;
+    private bool modelGenerateLods;
     private float worldRadius = 20f;
     private bool worldAnalytic = true;
     private string spawnStatus = string.Empty;
@@ -397,6 +398,8 @@ public sealed class ScenesPage : IDisposable
                 "An absolute path. Surrounding quotes are stripped, so Explorer's \"Copy as path\" pastes straight in.");
             Ui.Toggle("Import vertex colors", () => modelVertexColors, v => modelVertexColors = v,
                 "Off by default: FFXIV-derived exports store shader masks in this channel rather than color.");
+            Ui.Toggle("Generate LODs", () => modelGenerateLods, v => modelGenerateLods = v,
+                "Builds coarser levels for large primitives at import, drawn as they shrink on screen. The lever for many copies of a heavy model.");
         }
 
         Ui.Gap();
@@ -492,7 +495,7 @@ public sealed class ScenesPage : IDisposable
         var scene = demo.Scene;
         var at = PlayerPos() + new Vector3(0f, 1f, 4f);
         spawnStatus = $"Loading '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).";
-        scene.LoadModelAsync(path, at, Path.GetFileNameWithoutExtension(path), keepCpuData: true, importVertexColors: modelVertexColors)
+        scene.LoadModelAsync(path, at, Path.GetFileNameWithoutExtension(path), keepCpuData: true, importVertexColors: modelVertexColors, generateLods: modelGenerateLods)
             .ContinueWith(task =>
             {
                 if (task.IsFaulted)

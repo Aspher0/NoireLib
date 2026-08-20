@@ -9,16 +9,18 @@ using System.Numerics;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Hooks the action-effect packet handler and dispatches fully parsed <see cref="ActionEffectEvent"/>s
-/// (damage/heal/crit/direct-hit/block/parry, per target), maintains rolling statistics and an opt-in bounded
-/// history. The hook is created lazily on first activation and disabled (not disposed) on deactivation.
+/// Hooks the action-effect packet handler, dispatches a parsed <see cref="ActionEffectEvent"/> per packet, and
+/// keeps rolling statistics plus an opt-in bounded history. The hook is created on first activation and
+/// disabled, not disposed, on deactivation.
 /// </summary>
 internal sealed class ActionEffectSource : GameWatcherSource
 {
     private readonly LinkedList<ActionEffectEntry> history = new();
     private readonly object historyLock = new();
-    private HookWrapper<ActionEffectHandler.Delegates.Receive>? receiveHook;
+    private NoireHook<ActionEffectHandler.Delegates.Receive>? receiveHook;
 
+    /// <summary>Creates the source for a watcher.</summary>
+    /// <param name="owner">The watcher this source reports to.</param>
     public ActionEffectSource(NoireGameWatcher owner) : base(owner, SourceKind.ActionEffect) { }
 
     /// <inheritdoc/>
@@ -31,7 +33,7 @@ internal sealed class ActionEffectSource : GameWatcherSource
     protected override unsafe void OnActivate()
     {
         Statistics.Reset();
-        receiveHook ??= new HookWrapper<ActionEffectHandler.Delegates.Receive>(OnReceiveDetour, name: "NoireGameWatcher.ActionEffect.Receive");
+        receiveHook ??= new NoireHook<ActionEffectHandler.Delegates.Receive>(OnReceiveDetour, name: "NoireGameWatcher.ActionEffect.Receive");
         receiveHook.Enable();
     }
 
@@ -134,6 +136,8 @@ internal sealed class ActionEffectSource : GameWatcherSource
     private static unsafe List<ParsedActionEffect> ParseTargetEffects(ActionEffectHandler.TargetEffects* allEffects, uint targetIndex)
     {
         var parsed = new List<ParsedActionEffect>();
+
+        // The packet carries eight packed 64-bit effect slots per target, contiguously.
         var effectsPtr = (ulong*)allEffects;
 
         for (var effectSlot = 0; effectSlot < 8; effectSlot++)

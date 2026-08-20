@@ -691,33 +691,39 @@ internal static class GameDataFixture
 {
     private static GameData? cached;
     private static bool attempted;
+    private static readonly object gate = new();
 
     /// <summary>Returns the local game archives, or null when no installation can be located.</summary>
     public static GameData? TryOpen()
     {
-        if (attempted)
-            return cached;
-
-        attempted = true;
-
-        foreach (var root in CandidateRoots())
+        // Test classes run in parallel and construction takes seconds, so the whole attempt is serialized:
+        // a caller arriving mid-construction must wait for the answer rather than read null and skip.
+        lock (gate)
         {
-            var sqpack = Path.Combine(root, "game", "sqpack");
-            if (!Directory.Exists(sqpack))
-                continue;
-
-            try
-            {
-                cached = new GameData(sqpack);
+            if (attempted)
                 return cached;
-            }
-            catch
-            {
-                // An unreadable installation is treated as absent; these tests are a gate, not a hard requirement.
-            }
-        }
 
-        return null;
+            attempted = true;
+
+            foreach (var root in CandidateRoots())
+            {
+                var sqpack = Path.Combine(root, "game", "sqpack");
+                if (!Directory.Exists(sqpack))
+                    continue;
+
+                try
+                {
+                    cached = new GameData(sqpack);
+                    return cached;
+                }
+                catch
+                {
+                    // An unreadable installation is treated as absent; these tests are a gate, not a hard requirement.
+                }
+            }
+
+            return null;
+        }
     }
 
     private static IEnumerable<string> CandidateRoots()

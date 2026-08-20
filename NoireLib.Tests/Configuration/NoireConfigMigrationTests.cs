@@ -162,7 +162,7 @@ public class NoireConfigMigrationTests : IDisposable
     public abstract class AutoSaveProbeConfig<T> : NoireConfigBase<T> where T : AutoSaveProbeConfig<T>, new()
     {
         /// <summary>
-        /// How many times auto-save has reached <see cref="Save"/> on this configuration type.
+        /// How many times auto-save has reached <see cref="RequestSave"/> on this configuration type.
         /// </summary>
         public static int SaveCount;
 
@@ -184,10 +184,10 @@ public class NoireConfigMigrationTests : IDisposable
         public virtual string Tripwire { get; set; } = "tripwire-default";
 
         /// <inheritdoc/>
-        public override bool Save()
+        public override void RequestSave()
         {
+            // Counted here rather than in Save, because auto-save queues the write rather than performing it.
             Interlocked.Increment(ref SaveCount);
-            return true;
         }
 
         /// <summary>
@@ -1440,6 +1440,9 @@ public class NoireConfigProxyCacheTests : IDisposable
 
     public void Dispose()
     {
+        // Drained before the directory goes, so a queued write cannot fire at a path that no longer exists.
+        NoireConfigBase.FlushAllPendingSaves();
+
         NoireConfigManager.ClearMigrations();
         ProxyCacheProbeConfig.ResetProbeState();
 
@@ -1511,6 +1514,9 @@ public class NoireConfigProxyCacheTests : IDisposable
         var config = ProxyCacheProbeConfig.Instance;
         config.Value = "set-by-plugin";
 
+        // Auto-save queues the write rather than performing it inline, so the file is read after the queue is drained.
+        config.FlushPendingSave().Should().BeTrue();
+
         File.ReadAllText(file).Should().Contain("set-by-plugin", "assigning a member marked [AutoSave] persists it through the wrapper");
 
         NoireConfigManager.SaveAllCached();
@@ -1519,5 +1525,213 @@ public class NoireConfigProxyCacheTests : IDisposable
         // that instance here and wrote its default value back over the file, losing the plugin's change.
         File.ReadAllText(file).Should().Contain("set-by-plugin",
             "SaveAllCached must write the values consumers changed, not the raw load-time snapshot");
+    }
+}
+
+/// <summary>
+/// The generic singleton base resolves through the manager cache, and <see cref="NoireConfigManager.GetConfig{T}"/>
+/// returns any cached instance without touching the file, so a reload that does not evict the manager entry first
+/// hands back the in-memory values and never reads the disk. These tests pin the eviction on both members that
+/// promise a fresh read. They join the cache-walk collection because they cache real configurations a walk would
+/// reach.
+/// </summary>
+[Collection(ConfigCacheWalkCollection.Name)]
+public class NoireConfigSingletonReloadTests : IDisposable
+{
+    private readonly string tempDirectory;
+
+    public NoireConfigSingletonReloadTests()
+    {
+        tempDirectory = Path.Combine(Path.GetTempPath(), "NoireLibConfigSingletonReloadTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        ReloadProbeConfig.ResetProbeState();
+    }
+
+    public void Dispose()
+    {
+        // Drained before the directory goes, so a queued write cannot fire at a path that no longer exists.
+        NoireConfigBase.FlushAllPendingSaves();
+
+        ReloadProbeConfig.ResetProbeState();
+
+        try
+        {
+            if (Directory.Exists(tempDirectory))
+                Directory.Delete(tempDirectory, true);
+        }
+        catch (IOException)
+        {
+            // A leftover temporary directory must not fail a test run.
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// Public, and nested in a public class, for the same reason as
+    /// <see cref="NoireConfigProxyCacheTests.ProxyCacheProbeConfig"/>: the auto-save proxy is a generated subclass
+    /// in another assembly and cannot wrap a type it cannot see.
+    /// </summary>
+    public class ReloadProbeConfig : NoireConfigBase<ReloadProbeConfig>
+    {
+        public static string? PathOverride;
+
+        public override int Version { get; set; } = 1;
+
+        public override string GetConfigFileName() => "reload-probe.json";
+
+        protected override string? GetConfigFilePath() => PathOverride;
+
+        [AutoSave]
+        public virtual string Value { get; set; } = "value-default";
+
+        public static void ResetProbeState()
+        {
+            ClearCache();
+            NoireConfigManager.UnloadConfig<ReloadProbeConfig>();
+            PathOverride = null;
+        }
+    }
+
+    [Fact]
+    public void Reload_ReadsTheFileAgain_WhenAnInstanceIsAlreadyCached()
+    {
+        var file = Path.Combine(tempDirectory, "reload-probe.json");
+        ReloadProbeConfig.PathOverride = file;
+
+        ReloadProbeConfig.Instance.Value = "set-before-edit";
+
+        // Auto-save queues the write rather than performing it inline, so the file is read after the queue is drained.
+        ReloadProbeConfig.Instance.FlushPendingSave().Should().BeTrue();
+
+        File.ReadAllText(file).Should().Contain("set-before-edit", "the [AutoSave] assignment persists through the wrapper");
+
+        File.WriteAllText(file, File.ReadAllText(file).Replace("set-before-edit", "edited-on-disk"));
+
+        ReloadProbeConfig.Reload();
+
+        ReloadProbeConfig.Instance.Value.Should().Be("edited-on-disk",
+            "Reload promises a fresh read of the file, not the in-memory values handed back through a warm cache");
+    }
+
+    [Fact]
+    public void ClearCache_MakesTheNextInstanceAccessReadTheFile()
+    {
+        var file = Path.Combine(tempDirectory, "reload-probe.json");
+        ReloadProbeConfig.PathOverride = file;
+
+        ReloadProbeConfig.Instance.Value = "set-before-edit";
+        ReloadProbeConfig.Instance.FlushPendingSave().Should().BeTrue();
+
+        File.WriteAllText(file, File.ReadAllText(file).Replace("set-before-edit", "edited-on-disk"));
+
+        ReloadProbeConfig.ClearCache();
+
+        ReloadProbeConfig.Instance.Value.Should().Be("edited-on-disk",
+            "ClearCache documents that the next Instance access reloads from disk");
+    }
+
+    [Fact]
+    public void Reload_KeepsTheManagerCacheAndTheSingletonOnTheSameInstance()
+    {
+        ReloadProbeConfig.PathOverride = Path.Combine(tempDirectory, "reload-probe.json");
+
+        ReloadProbeConfig.Instance.Value = "set-before-reload";
+        ReloadProbeConfig.Reload();
+
+        NoireConfigManager.GetConfig<ReloadProbeConfig>().Should().BeSameAs(ReloadProbeConfig.Instance,
+            "after a reload every path must hand out the same instance or writes split across two objects");
+    }
+}
+
+/// <summary>
+/// Save writes through the atomic replace path: the serialized string lands in a sibling temporary file which then
+/// replaces the target, so an interrupted write leaves the previous contents intact rather than a truncated file.
+/// These tests pin the observable half of that contract: a write lands with no temporary left beside it, and a
+/// write that fails reports false, cleans up its temporary and leaves the previous file untouched.
+/// </summary>
+public class NoireConfigAtomicSaveTests : IDisposable
+{
+    private readonly string tempDirectory;
+
+    public NoireConfigAtomicSaveTests()
+    {
+        tempDirectory = Path.Combine(Path.GetTempPath(), "NoireLibConfigAtomicSaveTests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDirectory);
+        AtomicSaveProbeConfig.PathOverride = null;
+    }
+
+    public void Dispose()
+    {
+        AtomicSaveProbeConfig.PathOverride = null;
+
+        try
+        {
+            if (Directory.Exists(tempDirectory))
+            {
+                foreach (var leftover in Directory.GetFiles(tempDirectory))
+                    File.SetAttributes(leftover, FileAttributes.Normal);
+
+                Directory.Delete(tempDirectory, true);
+            }
+        }
+        catch (IOException)
+        {
+            // A leftover temporary directory must not fail a test run.
+        }
+
+        GC.SuppressFinalize(this);
+    }
+
+    public class AtomicSaveProbeConfig : NoireConfigBase
+    {
+        public static string? PathOverride;
+
+        public override int Version { get; set; } = 1;
+
+        public override string GetConfigFileName() => "atomic-save-probe.json";
+
+        protected override string? GetConfigFilePath() => PathOverride;
+
+        public string Value { get; set; } = "value-default";
+    }
+
+    [Fact]
+    public void Save_WritesTheFile_AndLeavesNoTemporaryBeside()
+    {
+        var file = Path.Combine(tempDirectory, "atomic-save-probe.json");
+        AtomicSaveProbeConfig.PathOverride = file;
+
+        var config = new AtomicSaveProbeConfig { Value = "written-value" };
+
+        config.Save().Should().BeTrue();
+
+        File.ReadAllText(file).Should().Contain("written-value");
+        File.Exists(file + ".tmp").Should().BeFalse("the temporary is renamed onto the target, not left beside it");
+    }
+
+    [Fact]
+    public void Save_WhenTheTargetCannotBeReplaced_ReportsFalseAndLeavesThePreviousContents()
+    {
+        var file = Path.Combine(tempDirectory, "atomic-save-probe.json");
+        AtomicSaveProbeConfig.PathOverride = file;
+
+        var config = new AtomicSaveProbeConfig { Value = "first-value" };
+        config.Save().Should().BeTrue();
+
+        File.SetAttributes(file, FileAttributes.ReadOnly);
+
+        try
+        {
+            config.Value = "second-value";
+
+            config.Save().Should().BeFalse("the replace cannot land on a read-only target");
+            File.ReadAllText(file).Should().Contain("first-value", "a failed write must leave the previous contents intact");
+            File.Exists(file + ".tmp").Should().BeFalse("a failed replace cleans up its temporary");
+        }
+        finally
+        {
+            File.SetAttributes(file, FileAttributes.Normal);
+        }
     }
 }

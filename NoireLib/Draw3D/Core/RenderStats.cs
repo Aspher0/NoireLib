@@ -5,8 +5,8 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Core;
 
 /// <summary>
-/// Frame counters plus a 4-deep GPU timestamp-query ring (resolved oldest-first, never stalling).
-/// "Why is nothing drawing" must always be answerable without a debugger - every skip path increments a named counter.
+/// Frame counters plus a 4-deep GPU timestamp-query ring, resolved oldest-first and never stalling. Every frame
+/// the renderer skips increments one of the named counters.
 /// </summary>
 internal sealed unsafe class RenderStats : IDisposable
 {
@@ -35,9 +35,15 @@ internal sealed unsafe class RenderStats : IDisposable
     public int CulledItems;
     public int VisibleItems;
     public int ProtectRects;
+    public int ObjectCbUpdates;
     public bool DepthAvailable;
     public bool UsedFallbackCamera;
     public bool UsedGpuCamera;
+
+    // Last-pick values, written by Pick on the UI thread and not frame-reset, so they survive until the next pick.
+    public int PickMicros;
+    public int PickNodes;
+    public int PickRefined;
 
     /// <summary>Last resolved GPU time for the scene pass, in milliseconds.</summary>
     public float SceneGpuMs { get; private set; }
@@ -63,6 +69,7 @@ internal sealed unsafe class RenderStats : IDisposable
         CulledItems = 0;
         VisibleItems = 0;
         ProtectRects = 0;
+        ObjectCbUpdates = 0;
     }
 
     /// <summary>Begins GPU timing for this frame (resolves the oldest completed ring slot first).</summary>
@@ -82,7 +89,7 @@ internal sealed unsafe class RenderStats : IDisposable
             }
         }
 
-        // Resolve the oldest slot if its data is ready (query results arrive frames later - never block).
+        // Query results arrive several frames later, so the oldest slot is resolved without ever blocking on it.
         var readIndex = (writeIndex + 1) % RingDepth;
         if (inFlight[readIndex])
             TryResolve(ctx, readIndex);
@@ -119,7 +126,7 @@ internal sealed unsafe class RenderStats : IDisposable
 
         D3D11_QUERY_DATA_TIMESTAMP_DISJOINT disjointData;
         if (ctx->GetData((ID3D11Asynchronous*)disjoint[index].Get(), &disjointData, (uint)sizeof(D3D11_QUERY_DATA_TIMESTAMP_DISJOINT), DoNotFlush) != 0)
-            return; // not ready yet
+            return;
 
         ulong start, scene, end;
         if (ctx->GetData((ID3D11Asynchronous*)tsStart[index].Get(), &start, sizeof(ulong), DoNotFlush) != 0

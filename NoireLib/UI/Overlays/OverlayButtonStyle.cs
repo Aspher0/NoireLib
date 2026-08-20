@@ -1,12 +1,13 @@
 ﻿using Dalamud.Bindings.ImGui;
+using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
-/// Visual options for a <see cref="NoireOverlayButton"/>.<br/>
-/// Every <see langword="null"/> value falls back to the corresponding current ImGui style value.<br/>
-/// Every pixel value here is written at 100% and scaled when it is drawn. See <see cref="NoireUI.Scale"/>.
+/// Visual options for a <see cref="NoireOverlayButton"/>. Every <see langword="null"/> value falls back to the
+/// corresponding current ImGui style value. Pixel values are written at 100% and scaled at draw time
+/// (see <see cref="NoireUI.Scale"/>).
 /// </summary>
 public sealed class OverlayButtonStyle
 {
@@ -56,7 +57,7 @@ public sealed class OverlayButtonStyle
     public float? Rounding { get; set; } = null;
 
     /// <summary>
-    /// The inner padding between the content and the edges of the button, used when no explicit size is set.<br/>
+    /// The inner padding between the content and the edges of the button, used when no explicit size is set.
     /// When <see langword="null"/>, the current ImGui frame padding is used.
     /// </summary>
     public Vector2? Padding { get; set; } = null;
@@ -81,15 +82,30 @@ public sealed class OverlayButtonStyle
     /// </summary>
     public float FontScale { get; set; } = 1f;
 
-    // What the button actually draws from. Each logical value above is scaled here and nowhere else.
+    /// <summary>
+    /// Replaces the button's own painting entirely (background, border and content), while NoireUI keeps the sizing,
+    /// the hit testing, the dragging, the clicks and the tooltip.
+    /// </summary>
+    /// <remarks>When set, <see cref="NoireOverlayButton.CustomContent"/> is not called.</remarks>
+    public Action<UiOverlayButtonDraw>? CustomDraw { get; set; }
 
+    /// <summary>Creates an independent copy.</summary>
+    /// <returns>The copy.</returns>
+    public OverlayButtonStyle Clone() => (OverlayButtonStyle)MemberwiseClone();
+
+    /// <summary><see cref="BorderSize"/> in real pixels.</summary>
     internal float ScaledBorderSize => NoireUI.Scaled(BorderSize);
 
+    /// <summary><see cref="ContentSpacing"/> in real pixels.</summary>
     internal float ScaledContentSpacing => NoireUI.Scaled(ContentSpacing);
 
+    /// <summary>The corner rounding to draw with, in real pixels.</summary>
+    /// <returns>The scaled <see cref="Rounding"/>, or the current ImGui frame rounding.</returns>
     internal float ResolveRounding()
         => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : ImGui.GetStyle().FrameRounding;
 
+    /// <summary>The inner padding to draw with, in real pixels.</summary>
+    /// <returns>The scaled <see cref="Padding"/>, or the current ImGui frame padding.</returns>
     internal Vector2 ResolvePadding()
         => Padding.HasValue ? NoireUI.Scaled(Padding.Value) : ImGui.GetStyle().FramePadding;
 }

@@ -1,4 +1,4 @@
-using Dalamud.Plugin;
+﻿using Dalamud.Plugin;
 using Dalamud.Utility;
 using NoireLib.Configuration;
 using NoireLib.Core.Modules;
@@ -13,29 +13,26 @@ using NoireDatabase = NoireLib.Database.NoireDatabase;
 namespace NoireLib;
 
 /// <summary>
-/// The main class of NoireLib, used to initialize the library and manage its modules.
+/// Entry point of NoireLib: initializes the library, manages its modules and disposes it.
 /// </summary>
 public class NoireLibMain
 {
     /// <summary>
-    /// List of registered callbacks to be invoked on disposal.
+    /// The callbacks registered to run on disposal, with their key and priority.
     /// </summary>
     private static readonly List<(string Key, Action Callback, int Priority)> OnDisposeCallbacks = new();
 
     /// <summary>
-    /// NoireLib's own version, for a plugin that wants to show which build it is running against.
+    /// NoireLib's own version, read from the assembly.
     /// </summary>
-    /// <remarks>
-    /// Read from the assembly rather than kept as a literal, so it cannot drift from the package that shipped it.
-    /// </remarks>
     public static string Version { get; } =
         typeof(NoireLibMain).Assembly.GetName().Version?.ToString(3) ?? "unknown";
 
     /// <summary>
-    /// Initializes NoireLib services. Must be called in your plugin's constructor.
+    /// Initializes NoireLib services, to be called from the host plugin's constructor.
     /// </summary>
-    /// <param name="dalamudPluginInterface">The Dalamud plugin interface instance from your plugin.</param>
-    /// <param name="plugin">The instance of your plugin.</param>
+    /// <param name="dalamudPluginInterface">The host plugin's Dalamud plugin interface.</param>
+    /// <param name="plugin">The host plugin instance.</param>
     /// <returns>True when the services came up, false when initialization failed.</returns>
     public static bool Initialize(IDalamudPluginInterface dalamudPluginInterface, IDalamudPlugin plugin)
     {
@@ -59,13 +56,13 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
-    /// Multiple modules of the same type can be added, and they can be differentiated by their <paramref name="moduleId"/> or their zero-based index.<br/>
-    /// If no instance is provided, a new instance of the module will be created and activated. Logging will also be enabled. If this is not what you are looking for, specify an instance instead.<br/>
+    /// Creates a module instance, active and with logging enabled, and adds it for retrieval through
+    /// <see cref="GetModule{T}(string?, int)"/>.
+    /// Several modules of the same type can be added, told apart by <paramref name="moduleId"/> or by zero-based index.
     /// </summary>
     /// <typeparam name="T">The type of the module to add.</typeparam>
-    /// <param name="moduleId">Optional module ID for the module instance, in case you want to create multiple instances of the same module and be able to retrieve a specific one later.</param>
-    /// <returns>The instance of the module added.</returns>
+    /// <param name="moduleId">An optional id identifying this instance among others of the same type.</param>
+    /// <returns>The added module instance.</returns>
     public static T AddModule<T>(string? moduleId = null) where T : class, INoireModule, new()
     {
         var moduleType = typeof(T);
@@ -94,12 +91,12 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Adds a NoireLib module to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
-    /// Multiple modules of the same type can be added, and they can be differentiated by their <see cref="NoireModuleBase{TModule}.ModuleId"/> or their zero-based index.
+    /// Adds an existing module instance for retrieval through <see cref="GetModule{T}(string?, int)"/>, told apart
+    /// from others of the same type by its <see cref="NoireModuleBase{TModule}.ModuleId"/> or its zero-based index.
     /// </summary>
     /// <typeparam name="T">The type of the module to add.</typeparam>
-    /// <param name="instance">The instance of the module to add.</param>
-    /// <returns>The instance of the module added.</returns>
+    /// <param name="instance">The module instance to add.</param>
+    /// <returns>The added module instance.</returns>
     /// <exception cref="ArgumentNullException">Thrown if the module instance is null.</exception>
     public static T AddModule<T>(T instance) where T : class, INoireModule
     {
@@ -118,12 +115,10 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Adds multiple NoireLib modules to be used in your project. Can be retrieved later with <see cref="GetModule{T}(string?, int)"/>.<br/>
-    /// Multiple modules of the same type can be added, and they can be differentiated by their module ID or their index.<br/>
-    /// See <see cref="AddModule{T}(string?)"/> to add a module with an optional custom ID.
+    /// Adds several existing module instances, skipping nulls.
     /// </summary>
-    /// <param name="modules">The instances of the modules to add.</param>
-    /// <returns>An array of the instances of the modules added.</returns>
+    /// <param name="modules">The module instances to add.</param>
+    /// <returns>The added module instances.</returns>
     public static INoireModule[] AddModules(params INoireModule[] modules)
     {
         var addedModules = new List<INoireModule>();
@@ -147,11 +142,11 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Removes a module from your project.
+    /// Disposes and removes an added module, found by type and optional id.
     /// </summary>
     /// <typeparam name="T">The type of the module to remove.</typeparam>
-    /// <param name="moduleId">The optional ID of the module to remove.</param>
-    /// <returns>True if successfully removed, otherwise false if module not found or if module failed to dispose.</returns>
+    /// <param name="moduleId">The optional id of the module to remove.</param>
+    /// <returns>True when removed, false when no module matched or disposal threw.</returns>
     public static bool RemoveModule<T>(string? moduleId = null) where T : class, INoireModule
     {
         var moduleToRemove = NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId));
@@ -177,11 +172,12 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Removes a module from your project by its instance.
+    /// Disposes and removes an added module by its instance.
     /// </summary>
     /// <typeparam name="T">The type of the module to remove.</typeparam>
-    /// <param name="instance">The instance of the module to remove.</param>
-    /// <returns>True if successfully removed, otherwise false if module not found or if module failed to dispose.</returns>
+    /// <param name="instance">The module instance to remove.</param>
+    /// <returns>True when removed, false when no module matched or disposal threw.</returns>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="instance"/> is null.</exception>
     public static bool RemoveModule<T>(T instance) where T : class, INoireModule
     {
         if (instance == null)
@@ -209,9 +205,9 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Removes all modules from your project, disposing them first.
+    /// Disposes and removes every added module.
     /// </summary>
-    /// <returns>True if all modules were successfully disposed, otherwise false if at least one module failed to dispose.</returns>
+    /// <returns>True when every module disposed, false when at least one threw.</returns>
     public static bool ClearAllModules()
     {
         bool allDisposed = true;
@@ -234,22 +230,21 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Checks if a module has been added to your project.<br/>
-    /// See <see cref="AddModule{T}(string?)"/>, <see cref="AddModule{T}(T)"/> or <see cref="AddModules"/>.
+    /// Whether a module of the given type, and optional id, has been added.
     /// </summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
-    /// <param name="moduleId">The optional ID of the module to check.</param>
-    /// <returns>True if the module is added, otherwise false.</returns>
+    /// <param name="moduleId">The optional id of the module to check.</param>
+    /// <returns>True when a matching module is added.</returns>
     public static bool IsModuleAdded<T>(string? moduleId = null) where T : class, INoireModule
         => !NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId)).IsDefault();
 
     /// <summary>
-    /// Checks if a module has been added to your project and currently active.<br/>
-    /// See <see cref="INoireModule.IsActive"/>.
+    /// Whether a module of the given type, and optional id, has been added and is
+    /// <see cref="INoireModule.IsActive"/>.
     /// </summary>
     /// <typeparam name="T">The type of the module to check.</typeparam>
-    /// <param name="moduleId">The optional ID of the module to check.</param>
-    /// <returns>True if the module is added and active, otherwise false.</returns>
+    /// <param name="moduleId">The optional id of the module to check.</param>
+    /// <returns>True when a matching module is added and active.</returns>
     public static bool IsModuleActive<T>(string? moduleId = null) where T : class, INoireModule
     {
         var added = NoireService.ActiveModules.FirstOrDefault(m => m.Type == typeof(T) && (moduleId.IsNullOrEmpty() || m.Module.ModuleId == moduleId));
@@ -257,18 +252,14 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Tries to retrieve an instance of an added module by its type, module ID and/or index.<br/>
+    /// Retrieves an added module by its type, optional id and index.
     /// </summary>
     /// <typeparam name="T">The type of the module to retrieve.</typeparam>
-    /// <param name="moduleId">The ID of the module to retrieve. If <see langword="null"/>, will return the first matching element.</param>
+    /// <param name="moduleId">The id of the module to retrieve, or <see langword="null"/> to match on type alone.</param>
     /// <param name="index">
-    /// The zero-based index of the instance to retrieve in the list.<br/>
-    /// If <paramref name="moduleId"/> is provided, the index will be applied only to the instances with the specified ID.
+    /// The zero-based index among the matching instances, clamped into range rather than rejected.
     /// </param>
-    /// <returns>
-    /// The n-th (<paramref name="index"/>) instance of the module if added and found, otherwise null if the module couldn't be found or if the module wasn't added to your project.<br/>
-    /// If the index is out of range, the closest valid instance will be returned (e.g. index 0 if negative, last instance if too high).
-    /// </returns>
+    /// <returns>The matching instance, or null when nothing matches.</returns>
     public static T? GetModule<T>(string? moduleId = null, int index = 0) where T : class, INoireModule
     {
         var instances = NoireService.ActiveModules.Where(m => m.Type == typeof(T)).ToArray();
@@ -296,14 +287,13 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Registers a callback to be invoked when the service is disposed.<br/>
-    /// Throws if <paramref name="key"/> is null, blank or if callback is null.<br/>
+    /// Registers a callback to be invoked when NoireLib is disposed.
     /// </summary>
-    /// <param name="key">A unique key to identify the callback. Cannot be null, blank or already registered.</param>
-    /// <param name="callback">The action to execute during disposal. Cannot be null.</param>
-    /// <param name="priority">The priority of the callback. Lower priority callbacks are executed first.</param>
+    /// <param name="key">A key unique among the registered callbacks.</param>
+    /// <param name="callback">The action to execute during disposal.</param>
+    /// <param name="priority">The invocation order, lowest first.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank, or when <paramref name="callback"/> is null.</exception>
-    /// <returns>True if the callback was successfully registered, otherwise false if a callback with the same key is already registered.</returns>
+    /// <returns>True when registered, false when the key is already taken.</returns>
     public static bool RegisterOnDispose(string key, Action callback, int priority = 0)
     {
         if (key.IsNullOrWhitespace())
@@ -323,11 +313,10 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Unregisters a previously registered disposal callback by its key.<br/>
-    /// Throws if <paramref name="key"/> is null or blank.
+    /// Unregisters a disposal callback by its key.
     /// </summary>
-    /// <param name="key">The key of the callback to unregister. Cannot be null or blank.</param>
-    /// <returns>True if a callback was found and unregistered, otherwise false.</returns>
+    /// <param name="key">The key of the callback to unregister.</param>
+    /// <returns>True when a callback was found and unregistered.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>
     public static bool UnregisterOnDispose(string key)
     {
@@ -342,11 +331,10 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Determines whether a callback is registered to be invoked on dispose for the specified key.<br/>
-    /// Throws if <paramref name="key"/> is null or blank.
+    /// Whether a disposal callback is registered under the given key.
     /// </summary>
-    /// <param name="key">The key to check for a registered dispose callback. Cannot be null or blank.</param>
-    /// <returns>True if a dispose callback is registered for the specified key; otherwise, false.</returns>
+    /// <param name="key">The key to check.</param>
+    /// <returns>True when a callback is registered under that key.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="key"/> is null or blank.</exception>
     public static bool IsRegisteredOnDispose(string key)
     {
@@ -357,7 +345,7 @@ public class NoireLibMain
     }
 
     /// <summary>
-    /// Disposes NoireLib services and all active modules. Should be called in your plugin's DisposeInternal method.
+    /// Disposes NoireLib services and every active module, to be called from the host plugin's own disposal.
     /// </summary>
     public static void Dispose()
     {
@@ -366,9 +354,40 @@ public class NoireLibMain
         if (!allModulesDisposed)
             NoireLogger.LogWarning("Some modules failed to dispose properly during NoireLib disposal. Please report this to the devs.");
 
+        // Each callback is isolated so one that throws cannot strand the callbacks after it or the teardown below.
         var orderedCallbacks = OnDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
-        foreach (var (_, callback, _) in orderedCallbacks)
-            callback.Invoke();
+        foreach (var (key, callback, _) in orderedCallbacks)
+        {
+            try
+            {
+                callback.Invoke();
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, $"Disposal callback '{key}' threw during NoireLib disposal. The remaining callbacks are still being invoked.");
+            }
+        }
+
+        // Ahead of the service teardown: dropping a link needs the chat service that registered it.
+        try
+        {
+            NoireLib.Helpers.ChatLinkHelper.Clear();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Failed to drop the registered chat links during NoireLib disposal.");
+        }
+
+        // Last, so a setting changed by a module teardown or a disposal callback is written rather than left
+        // sitting in the [AutoSave] debounce window.
+        try
+        {
+            NoireConfigManager.FlushPendingSaves();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Failed to flush pending configuration saves during NoireLib disposal.");
+        }
 
         NoireService.Dispose();
     }

@@ -1,9 +1,10 @@
+using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
-/// How a row of pips is drawn: the count that is small enough to read at a glance rather than measure.
+/// Styling for a row of pips.
 /// </summary>
 /// <remarks>
 /// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% and
@@ -29,16 +30,23 @@ public sealed class PipStyle
     /// <summary>Whether empty pips are drawn as outlines rather than filled. Off by default.</summary>
     public bool OutlineEmpty { get; set; }
 
+    /// <summary>
+    /// Replaces each pip's painting, called once per pip, with layout and space reservation still handled by NoireUI.
+    /// </summary>
+    public Action<UiPipDraw>? CustomDraw { get; set; }
+
     /// <summary>The size of one pip in pixels, at the user's scale.</summary>
     internal float ScaledSize => NoireUI.Scaled(Size);
 
     /// <summary>The gap between pips in pixels, at the user's scale.</summary>
     internal float ScaledSpacing => NoireUI.Scaled(Spacing);
 
-    /// <summary>The colour of a filled pip.</summary>
+    /// <summary>Resolves the colour of a filled pip.</summary>
+    /// <returns>The explicit colour, or the theme accent.</returns>
     internal Vector4 ResolveColor() => Color ?? NoireTheme.Current.Resolve(ThemeColor.Accent);
 
-    /// <summary>The colour of an empty pip.</summary>
+    /// <summary>Resolves the colour of an empty pip.</summary>
+    /// <returns>The explicit colour, or the theme sunken surface.</returns>
     internal Vector4 ResolveEmptyColor()
         => EmptyColor ?? NoireTheme.Current.Resolve(ThemeColor.SurfaceSunken);
 

@@ -45,12 +45,21 @@ public sealed class DurationStyle
     /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
     /// </summary>
     /// <remarks>
-    /// The per-field override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
-    /// this one field unmarked while the rest of the interface keeps its mark.
+    /// A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves this one field unmarked
+    /// while the rest of the interface keeps its mark.
     /// </remarks>
     public FocusStyle? Focus { get; set; }
 
-    /// <summary>Copies the style, for tweaking one call site without touching the shared object.</summary>
+    /// <summary>
+    /// Replaces the reset dot's own painting, while its hit testing, layout and tooltip stay NoireUI's.
+    /// </summary>
+    /// <remarks>
+    /// The dot is the one mark the field paints itself: the input is ImGui's own and cannot be repainted, and the
+    /// focus mark has its own hook on <see cref="FocusStyle"/>.
+    /// </remarks>
+    public Action<UiResetDotDraw>? ResetDotDraw { get; set; }
+
+    /// <summary>Creates a copy of this style.</summary>
     /// <returns>A copy.</returns>
     public DurationStyle Clone() => new()
     {
@@ -63,5 +72,6 @@ public sealed class DurationStyle
         Width = Width,
         ShowPreview = ShowPreview,
         Focus = Focus,
+        ResetDotDraw = ResetDotDraw,
     };
 }

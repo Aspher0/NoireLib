@@ -8,60 +8,40 @@ using System.Numerics;
 namespace NoireLib.Models;
 
 /// <summary>
-/// A model representing any game object (NPC, retainer, minion, mount, event object, etc.).<br/>
-/// Serves as the base class for more specific models such as <see cref="PlayerModel"/>.<br/>
-/// Allows easy access to object-related information such as name, kind, base ID, entity ID, and last known position.
+/// A serializable description of any game object, and the base class for more specific models such as
+/// <see cref="PlayerModel"/>.
 /// </summary>
 [Serializable]
 public class ObjectModel
 {
-    /// <summary>
-    /// A unique identifier for this ObjectModel instance.
-    /// </summary>
+    /// <summary>A unique identifier for this instance.</summary>
     public Guid UniqueId { get; set; } = Guid.NewGuid();
 
-    /// <summary>
-    /// The name of the object. May be empty for unnamed objects.
-    /// </summary>
+    /// <summary>The name of the object, empty for unnamed objects.</summary>
     public virtual string Name { get; set; } = string.Empty;
 
-    /// <summary>
-    /// The kind of the object (Pc, BattleNpc, EventNpc, EventObj, Companion, etc.).
-    /// </summary>
+    /// <summary>The kind of the object.</summary>
     public ObjectKind ObjectKind { get; set; }
 
-    /// <summary>
-    /// The base ID of the object (its game data row ID).<br/>
-    /// Stable across spawns of the same object type.
-    /// </summary>
+    /// <summary>The object's game data row id, stable across spawns.</summary>
     public uint? BaseId { get; set; } = null;
 
-    /// <summary>
-    /// The entity ID of the object.<br/>
-    /// Not stable across spawns; may be invalid after the object despawns.
-    /// </summary>
+    /// <summary>The object's entity id, which changes on respawn and goes invalid on despawn.</summary>
     public uint? EntityId { get; set; } = null;
 
-    /// <summary>
-    /// The full game object ID of the object.<br/>
-    /// Not stable across spawns; may be invalid after the object despawns.
-    /// </summary>
+    /// <summary>The object's full game object id, which changes on respawn and goes invalid on despawn.</summary>
     public ulong? GameObjectId { get; set; } = null;
 
-    /// <summary>
-    /// The last known position of the object, updated whenever the model is refreshed from a game object.
-    /// </summary>
+    /// <summary>The position recorded the last time the model was refreshed from a game object.</summary>
     public Vector3? LastKnownPosition { get; set; } = null;
 
-    /// <summary>
-    /// Constructs a new ObjectModel with the specified values.
-    /// </summary>
+    /// <summary>Creates a model from explicit values and schedules an object table refresh.</summary>
     /// <param name="name">The name of the object.</param>
     /// <param name="objectKind">The kind of the object.</param>
-    /// <param name="baseId">The base ID of the object (optional).</param>
-    /// <param name="entityId">The entity ID of the object (optional).</param>
-    /// <param name="gameObjectId">The full game object ID of the object (optional).</param>
-    /// <param name="lastKnownPosition">The last known position of the object (optional).</param>
+    /// <param name="baseId">The object's game data row id.</param>
+    /// <param name="entityId">The object's entity id.</param>
+    /// <param name="gameObjectId">The object's full game object id.</param>
+    /// <param name="lastKnownPosition">The object's last known position.</param>
     public ObjectModel(string name, ObjectKind objectKind, uint? baseId = null, uint? entityId = null, ulong? gameObjectId = null, Vector3? lastKnownPosition = null)
     {
         Name = name;
@@ -74,16 +54,14 @@ public class ObjectModel
         NoireService.Framework.RunOnFrameworkThread(TryUpdateFromObjectTable);
     }
 
-    /// <summary>
-    /// Constructs a new ObjectModel with the specified values.
-    /// </summary>
-    /// <param name="uniqueId">A unique identifier for this ObjectModel instance.</param>
+    /// <summary>Creates a model from explicit values, keeping an existing identifier.</summary>
+    /// <param name="uniqueId">The identifier to keep for this instance.</param>
     /// <param name="name">The name of the object.</param>
     /// <param name="objectKind">The kind of the object.</param>
-    /// <param name="baseId">The base ID of the object (optional).</param>
-    /// <param name="entityId">The entity ID of the object (optional).</param>
-    /// <param name="gameObjectId">The full game object ID of the object (optional).</param>
-    /// <param name="lastKnownPosition">The last known position of the object (optional).</param>
+    /// <param name="baseId">The object's game data row id.</param>
+    /// <param name="entityId">The object's entity id.</param>
+    /// <param name="gameObjectId">The object's full game object id.</param>
+    /// <param name="lastKnownPosition">The object's last known position.</param>
     [JsonConstructor]
     public ObjectModel(Guid uniqueId, string name, ObjectKind objectKind, uint? baseId = null, uint? entityId = null, ulong? gameObjectId = null, Vector3? lastKnownPosition = null)
         : this(name, objectKind, baseId, entityId, gameObjectId, lastKnownPosition)
@@ -91,10 +69,8 @@ public class ObjectModel
         UniqueId = uniqueId;
     }
 
-    /// <summary>
-    /// Constructs a new ObjectModel from an IGameObject instance.
-    /// </summary>
-    /// <param name="gameObject">The IGameObject instance to extract data from.</param>
+    /// <summary>Creates a model from a live game object.</summary>
+    /// <param name="gameObject">The object to copy from.</param>
     public ObjectModel(IGameObject gameObject)
     {
         Name = gameObject.Name.TextValue;
@@ -106,10 +82,10 @@ public class ObjectModel
     }
 
     /// <summary>
-    /// Minimal constructor for derived classes. Does not schedule an object table refresh:<br/>
-    /// derived constructors should do so themselves once all their fields are set.
+    /// Creates a model for a derived class without scheduling an object table refresh, which the derived
+    /// constructor must do once its own fields are set.
     /// </summary>
-    /// <param name="uniqueId">A unique identifier for this instance, or null to generate a new one.</param>
+    /// <param name="uniqueId">The identifier to keep, or null to generate one.</param>
     /// <param name="name">The name of the object.</param>
     /// <param name="objectKind">The kind of the object.</param>
     protected ObjectModel(Guid? uniqueId, string name, ObjectKind objectKind)
@@ -121,10 +97,8 @@ public class ObjectModel
         ObjectKind = objectKind;
     }
 
-    /// <summary>
-    /// Updates the ObjectModel's data from the given IGameObject instance.
-    /// </summary>
-    /// <param name="gameObject">The IGameObject instance to extract data from.</param>
+    /// <summary>Overwrites this model's fields from a live game object.</summary>
+    /// <param name="gameObject">The object to copy from.</param>
     public virtual void UpdateFromObject(IGameObject gameObject)
     {
         Name = gameObject.Name.TextValue;
@@ -135,10 +109,8 @@ public class ObjectModel
         LastKnownPosition = gameObject.Position;
     }
 
-    /// <summary>
-    /// Tries to update the ObjectModel's data by searching the Object Table for a matching object.
-    /// </summary>
-    /// <returns>True if a matching object was found and the model was updated; otherwise, false.</returns>
+    /// <summary>Refreshes this model from the matching object in the object table. Framework thread only.</summary>
+    /// <returns>True when a matching object was found and the model was updated.</returns>
     public bool TryUpdateFromObjectTable()
     {
         var matchingObject = FindObjectOnMap();
@@ -153,22 +125,22 @@ public class ObjectModel
     }
 
     /// <summary>
-    /// Tries to find the object on the current map.<br/>
-    /// Matches by GameObjectId first, then EntityId, then by ObjectKind, BaseId and Name.
+    /// Finds this object in the current object table, matching on <see cref="GameObjectId"/> first, then
+    /// <see cref="EntityId"/>, then on kind, base id and name. Framework thread only.
     /// </summary>
-    /// <returns>The matching IGameObject instance, or null if not found.</returns>
+    /// <returns>The matching object, or null when none is present.</returns>
     public virtual IGameObject? FindObjectOnMap()
     {
         var objectTable = NoireService.ObjectTable;
 
         if (GameObjectId.HasValue)
         {
-            var byGameObjectId = objectTable.FirstOrDefault(o => o != null && o.GameObjectId == GameObjectId.Value);
+            var byGameObjectId = objectTable.SearchById(GameObjectId.Value);
             if (byGameObjectId != null)
                 return byGameObjectId;
         }
 
-        if (EntityId.HasValue && EntityId.Value != 0 && EntityId.Value != 0xE0000000)
+        if (EntityId.HasValue && EntityId.Value != 0 && EntityId.Value != Helpers.GameObjectHelper.NoTargetId)
         {
             var byEntityId = objectTable.FirstOrDefault(o => o != null && o.EntityId == EntityId.Value);
             if (byEntityId != null)
@@ -182,17 +154,13 @@ public class ObjectModel
             (string.IsNullOrEmpty(Name) || o.Name.TextValue == Name));
     }
 
-    /// <summary>
-    /// Checks whether the object represented by this ObjectModel is currently present in the Object Table.
-    /// </summary>
-    /// <returns>True if the object was found on the current map; otherwise, false.</returns>
+    /// <summary>Whether this object is currently present in the object table. Framework thread only.</summary>
+    /// <returns>True when the object was found.</returns>
     public bool IsOnMap() => FindObjectOnMap() != null;
 
-    /// <summary>
-    /// Gets the distance between the specified object and the object represented by this ObjectModel.
-    /// </summary>
-    /// <param name="_object">The object to measure the distance from.</param>
-    /// <returns>The distance between the two objects, or null if this object was not found on the map.</returns>
+    /// <summary>Measures the distance from another object to this one. Framework thread only.</summary>
+    /// <param name="_object">The object to measure from.</param>
+    /// <returns>The distance, or null when this object is not present.</returns>
     public float? DistanceFromObject(IGameObject _object)
     {
         var objectPosition = _object.Position;
@@ -203,10 +171,8 @@ public class ObjectModel
         return Vector3.Distance(objectPosition, thisObjectPosition);
     }
 
-    /// <summary>
-    /// Gets the distance between the local player and the object represented by this ObjectModel.
-    /// </summary>
-    /// <returns>The distance between the local player and the object, or null if either was not found.</returns>
+    /// <summary>Measures the distance from the local player to this object. Framework thread only.</summary>
+    /// <returns>The distance, or null when either is not present.</returns>
     public float? DistanceFromLocalPlayer()
     {
         var localPlayer = NoireService.ObjectTable.LocalPlayer;
@@ -215,21 +181,17 @@ public class ObjectModel
         return DistanceFromObject(localPlayer);
     }
 
-    /// <summary>
-    /// Checks whether the object represented by this ObjectModel is currently interactable by the local player (i.e., is within a reach of 4 yalms).
-    /// </summary>
-    /// <returns>True if the object is in reach to be interacted with; otherwise false.</returns>
+    /// <summary>Whether this object is within the local player's 4 yalm interaction reach. Framework thread only.</summary>
+    /// <returns>True when the object is in reach.</returns>
     public bool IsInteractable()
     {
         var distance = DistanceFromLocalPlayer();
         return distance.HasValue && distance.Value <= 4.0f;
     }
 
-    /// <summary>
-    /// Checks if this ObjectModel is equal to another ObjectModel based on Name, ObjectKind, BaseId, EntityId, and GameObjectId.
-    /// </summary>
-    /// <param name="other">The other ObjectModel to compare with.</param>
-    /// <returns>True if the models are equal; otherwise, false.</returns>
+    /// <summary>Compares this model with another on name, kind, base id, entity id and game object id.</summary>
+    /// <param name="other">The model to compare with.</param>
+    /// <returns>True when every compared field matches.</returns>
     public bool Equals(ObjectModel? other)
     {
         if (other == null)
@@ -241,11 +203,9 @@ public class ObjectModel
                GameObjectId == other.GameObjectId;
     }
 
-    /// <summary>
-    /// Checks if this ObjectModel is equal to an IGameObject based on Name, ObjectKind, BaseId, EntityId, and GameObjectId.
-    /// </summary>
-    /// <param name="gameObject">The IGameObject to compare with.</param>
-    /// <returns>True if the object is equal to this model; otherwise, false.</returns>
+    /// <summary>Compares this model with a live game object on name, kind, base id, entity id and game object id.</summary>
+    /// <param name="gameObject">The object to compare with.</param>
+    /// <returns>True when every compared field matches.</returns>
     public bool Equals(IGameObject? gameObject)
     {
         if (gameObject == null)
@@ -257,10 +217,8 @@ public class ObjectModel
                GameObjectId == gameObject.GameObjectId;
     }
 
-    /// <summary>
-    /// Clones this ObjectModel instance.
-    /// </summary>
-    /// <returns>The cloned ObjectModel.</returns>
+    /// <summary>Copies this model, keeping its identifier.</summary>
+    /// <returns>The copy.</returns>
     public virtual ObjectModel Clone()
     {
         return new ObjectModel(UniqueId, Name, ObjectKind, BaseId, EntityId, GameObjectId, LastKnownPosition);

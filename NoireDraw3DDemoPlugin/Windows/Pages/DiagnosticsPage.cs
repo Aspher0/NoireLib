@@ -149,10 +149,14 @@ public sealed class DiagnosticsPage : IDisposable
             Ui.Counter("Instances", s.Instances);
             Ui.Counter("Batches", s.Batches);
             Ui.Counter("Triangles", s.Triangles);
+            Ui.Counter("ObjectCb updates", s.ObjectCbUpdates,
+                "Constant-buffer uploads in the scene pass. Near the draw count = per-draw uploads; the batched-constants toggle on the Renderer page collapses it to the number of distinct material params.");
             Ui.Value("Visible / culled", $"{s.VisibleItems} / {s.CulledItems}",
                 "Zero visible with content spawned means it is all off screen or invisible.");
             Ui.Value("Scene GPU", $"{s.SceneGpuMs:F3} ms");
             Ui.Value("Composite GPU", $"{s.CompositeGpuMs:F3} ms", "Includes the UI mask.");
+            Ui.Value("Last pick", $"{s.LastPickMicros} us, {s.LastPickNodes} nodes, {s.LastPickRefined} refined",
+                "Cost of the most recent hit test (hover picks every frame). High while hovering a dense scene = the pick side is the lag.");
             Ui.Counter("Plate rects", s.ProtectRects);
         }
 

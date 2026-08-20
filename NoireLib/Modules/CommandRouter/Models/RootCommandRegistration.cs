@@ -7,8 +7,8 @@ using System.Text;
 namespace NoireLib.CommandRouter;
 
 /// <summary>
-/// Represents the internal registration state for a single root slash command,
-/// including its subcommands, help text, handlers, and the Dalamud <see cref="CommandInfo"/> reference.
+/// The registration state for a single root slash command: its subcommands, help text, handlers and Dalamud
+/// <see cref="CommandInfo"/> reference.
 /// </summary>
 public sealed class RootCommandRegistration
 {
@@ -28,6 +28,12 @@ public sealed class RootCommandRegistration
     public bool ShowInHelp { get; internal set; } = true;
 
     /// <summary>
+    /// Whether the generated Dalamud help message includes the subcommand tree and the built-in "help" line, which
+    /// does not affect in-chat auto-help.
+    /// </summary>
+    public bool DetailedDalamudHelp { get; internal set; } = true;
+
+    /// <summary>
     /// The display order used by Dalamud when listing this root command in help.
     /// </summary>
     public int DisplayOrder { get; internal set; }
@@ -37,6 +43,18 @@ public sealed class RootCommandRegistration
     /// whole command, including its subcommands and generated help.
     /// </summary>
     public Func<bool>? Condition { get; internal set; }
+
+    /// <summary>
+    /// The alias slash commands mapped to this root command, each registered with Dalamud as its own command and
+    /// dispatching to this same registration.
+    /// </summary>
+    internal List<string> Aliases { get; } = [];
+
+    /// <summary>
+    /// The live Dalamud <see cref="CommandInfo"/> for each registered alias, keyed by alias command string; an alias
+    /// missing here is not currently registered with Dalamud.
+    /// </summary>
+    internal Dictionary<string, CommandInfo> AliasCommandInfos { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// The registered subcommands for this root command.
@@ -49,8 +67,18 @@ public sealed class RootCommandRegistration
     internal Action? DefaultHandler { get; set; }
 
     /// <summary>
-    /// An optional raw handler that receives the full command and raw argument string directly,
-    /// bypassing subcommand dispatch entirely.
+    /// An optional handler invoked with every token of the invocation when the first argument token matches no
+    /// subcommand, taking precedence over <see cref="DefaultHandler"/> for that case.
+    /// </summary>
+    internal Action<ParsedCommandArguments>? FallbackHandler { get; set; }
+
+    /// <summary>
+    /// How the fallback is presented in help listings, or null when the fallback is undocumented and listed nowhere.
+    /// </summary>
+    internal FallbackCommandDefinition? FallbackDefinition { get; set; }
+
+    /// <summary>
+    /// An optional handler that receives the full command and raw argument string, bypassing subcommand dispatch.
     /// </summary>
     internal Action<string, string>? RawHandler { get; set; }
 
@@ -69,33 +97,40 @@ public sealed class RootCommandRegistration
     }
 
     /// <summary>
-    /// Applies the current registration metadata to the active Dalamud command info, if one exists.
-    /// </summary>
-    internal void RefreshDalamudCommandInfo()
-    {
-        if (DalamudCommandInfo == null)
-            return;
-
-        DalamudCommandInfo.HelpMessage = BuildDalamudHelpMessage();
-        DalamudCommandInfo.ShowInHelp = ShowInHelp;
-        DalamudCommandInfo.DisplayOrder = DisplayOrder;
-    }
-
-    /// <summary>
     /// Builds the generated help text shown by Dalamud for the root command.
     /// </summary>
+    /// <param name="includeBuiltInHelp">Whether the router's auto-help is enabled, which decides if the built-in
+    /// "help" line is advertised.</param>
     /// <returns>The generated help text.</returns>
-    internal string BuildDalamudHelpMessage()
+    internal string BuildDalamudHelpMessage(bool includeBuiltInHelp)
     {
         var lines = new List<string>();
         lines.Add(string.IsNullOrWhiteSpace(HelpText) ? "No information." : HelpText);
 
-        var visibleSubCommands = GetVisibleSubCommands(SubCommands);
+        // A raw handler bypasses subcommand dispatch and the built-in "help" token, so listing either would
+        // advertise paths that can never run.
+        if (RawHandler == null && DetailedDalamudHelp)
+        {
+            // The fallback line slots among the subcommand lines by display order, a tie listing it first.
+            var fallbackEmitted = FallbackDefinition is not { ShowInHelp: true };
 
-        if (visibleSubCommands.Count > 0)
-            AppendHelpLines(lines, visibleSubCommands, 1);
+            foreach (var subCommand in GetVisibleSubCommands(SubCommands))
+            {
+                if (!fallbackEmitted && FallbackDefinition!.DisplayOrder <= subCommand.DisplayOrder)
+                {
+                    lines.Add(BuildFallbackHelpLabel());
+                    fallbackEmitted = true;
+                }
 
-        lines.Add(BuildBuiltInHelpLabel(Command, SubCommands));
+                AppendHelpLines(lines, [subCommand], 1);
+            }
+
+            if (!fallbackEmitted)
+                lines.Add(BuildFallbackHelpLabel());
+
+            if (includeBuiltInHelp)
+                lines.Add(BuildBuiltInHelpLabel(Command, SubCommands));
+        }
 
         return string.Join(Environment.NewLine, lines);
     }
@@ -119,7 +154,7 @@ public sealed class RootCommandRegistration
         builder.Append(subCommand.Name);
 
         if (subCommand.Aliases.Count > 0)
-            builder.Append($" ({string.Join(", ", subCommand.Aliases)})");
+            builder.Append($" (aliases: {string.Join("|", subCommand.Aliases)})");
 
         foreach (var argument in subCommand.Arguments)
             builder.Append(argument.IsRequired ? $" <{argument.Name}>" : $" [{argument.Name}]");
@@ -138,6 +173,18 @@ public sealed class RootCommandRegistration
 
     private static string BuildTreePrefix(int depth)
         => $"{new string(' ', Math.Max(0, depth - 1) * 2)}└ ";
+
+    private string BuildFallbackHelpLabel()
+    {
+        var builder = new StringBuilder();
+        builder.Append(BuildTreePrefix(1));
+        builder.Append($"<{FallbackDefinition!.Name}>");
+
+        if (!string.IsNullOrWhiteSpace(FallbackDefinition.HelpText))
+            builder.Append($" - {FallbackDefinition.HelpText}");
+
+        return builder.ToString();
+    }
 
     private static string BuildBuiltInHelpLabel(string rootCommand, IReadOnlyList<SubCommandDefinition> subCommands)
     {

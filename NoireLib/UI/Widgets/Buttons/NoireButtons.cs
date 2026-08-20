@@ -13,33 +13,19 @@ namespace NoireLib.UI;
 /// reports on it, a split button, an animated toggle and a segmented control. All are immediate, take colors from
 /// <see cref="NoireTheme.Current"/>, and expose a style object plus a custom-draw hook.
 /// </summary>
-/// <example>
-/// <code>
-/// if (NoireButtons.Button("Save", ButtonTone.Accent))
-///     Save();
-///
-/// if (NoireButtons.HoldToConfirm("Hold to delete everything"))
-///     DeleteEverything();
-///
-/// NoireButtons.Toggle("Enabled", ref config.Enabled);
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireButtons
 {
     /// <summary>
-    /// The smallest a button is allowed to be, at 100%. Guards the degenerate cases: a fill-minus size larger than the
-    /// space left, or a segmented control with more segments than pixels.
+    /// The smallest a button is allowed to be, at 100%, which keeps a fill-minus size or an over-divided segmented
+    /// control from collapsing.
     /// </summary>
     private const float MinimumSize = 4f;
 
     /// <summary>
     /// The style a segmented control's segments are drawn from, reused across segments and across frames.
     /// </summary>
-    /// <remarks>
-    /// Thread-static because drawing can happen on more than one thread. Overwritten from the caller's style before
-    /// each segment is drawn, so nothing carries over between segments or frames.
-    /// </remarks>
+    /// <remarks>Thread-static, and overwritten from the caller's style before each segment is drawn.</remarks>
     [ThreadStatic]
     private static ButtonStyle? segmentScratch;
 
@@ -103,9 +89,8 @@ public static class NoireButtons
     /// Draws a button that only fires once it has been held down for long enough, filling as it goes.
     /// </summary>
     /// <remarks>
-    /// The fill runs off wall-clock time, not frames. Not affected by <see cref="NoireUI.ReducedMotion"/>, since the
-    /// delay is a safety mechanism rather than decoration. Releasing early drains the fill quickly rather than
-    /// snapping it to empty.
+    /// The fill runs off wall-clock time, not frames, and ignores <see cref="NoireUI.ReducedMotion"/>. Releasing
+    /// early drains the fill quickly rather than snapping it to empty.
     /// </remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="holdSeconds">How long the button must be held. Defaults to <see cref="DefaultHoldSeconds"/>.</param>
@@ -159,12 +144,12 @@ public static class NoireButtons
     #region Asynchronous
 
     /// <summary>
-    /// Draws a button that runs a task, disabling itself and showing a spinner until the task finishes. Clicking twice
-    /// cannot start the work twice, and a failed task is reported through <see cref="UiDiagnostics"/>.
+    /// Draws a button that runs a task, disabling itself and showing a spinner until the task finishes, and reporting
+    /// a failed task through <see cref="UiDiagnostics"/>.
     /// </summary>
     /// <remarks>
-    /// The running task is tracked against the button's id while the button keeps being drawn. Closing the window
-    /// mid-task does not cancel it: the task runs to completion and the button goes idle the next time it appears.
+    /// The running task is tracked against the button's id. Closing the window mid-task does not cancel it: the task
+    /// runs to completion and the button goes idle the next time it appears.
     /// </remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="action">The work to start. Invoked on the draw thread, so it should return quickly and do its work
@@ -196,7 +181,7 @@ public static class NoireButtons
                 NoireUI.Diagnostics.ReportFault(VisibleLabel(label), "The button's task failed.", failure);
 
             if (onCompleted != null)
-                Invoke(onCompleted, failure, nameof(Async));
+                UiHook.Invoke(onCompleted, failure, nameof(Async), CallbackFault);
 
             running = null;
         }
@@ -245,8 +230,7 @@ public static class NoireButtons
 
     /// <summary>Draws a button with a caret beside it that opens a menu of variant actions.</summary>
     /// <param name="label">The main button's label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="menuBody">The menu contents, drawn inside the popup. Not called while the menu is closed, so there
-    /// is no open flag to track and no end call to forget.</param>
+    /// <param name="menuBody">The menu contents, drawn inside the popup and not called while the menu is closed.</param>
     /// <param name="style">The button's look. When <see langword="null"/>, a neutral themed button is drawn.</param>
     /// <param name="size">The size of the main button, measured from the label when zero. The caret is added beside it.</param>
     /// <returns>True on the frame the main button was clicked. Opening the menu does not count as a click.</returns>
@@ -363,7 +347,7 @@ public static class NoireButtons
             if (style.CustomDraw != null)
             {
                 var args = new UiToggleDraw(drawList, min, max, value, travel, hovered, trackColor, knobCenter, knobRadius, knobColor);
-                Invoke(style.CustomDraw, args, nameof(Toggle));
+                UiHook.Invoke(style.CustomDraw, args, nameof(Toggle), CallbackFault);
             }
             else
             {
@@ -392,8 +376,7 @@ public static class NoireButtons
     #region Segmented
 
     /// <summary>
-    /// Draws a row of joined options where exactly one is selected, for a choice of three or four that is clearer laid
-    /// out than hidden in a dropdown.
+    /// Draws a row of joined options where exactly one is selected.
     /// </summary>
     /// <param name="id">A unique id for the control.</param>
     /// <param name="selected">The index of the selected option, read and written.</param>
@@ -448,8 +431,8 @@ public static class NoireButtons
 
             var isSelected = index == selected;
 
-            // Copied into a scratch style instead of cloned, avoiding a per-segment allocation each frame; safe
-            // because Paint reads everything it needs off the style before returning control.
+            // Copied into a scratch style rather than cloned, avoiding a per-segment allocation each frame; Paint
+            // reads everything it needs off the style before returning.
             var segment = SegmentScratch;
             segment.CopyFrom(style);
             segment.Color = isSelected ? accent : theme.Resolve(ThemeColor.SurfaceSunken);
@@ -568,7 +551,7 @@ public static class NoireButtons
         if (style.CustomDraw != null)
         {
             var args = new UiButtonDraw(drawList, min, max, VisibleLabel(label), hovered, held, fill, textColor, rounding, progress);
-            Invoke(style.CustomDraw, args, nameof(Button));
+            UiHook.Invoke(style.CustomDraw, args, nameof(Button), CallbackFault);
             return;
         }
 
@@ -737,44 +720,8 @@ public static class NoireButtons
     /// </summary>
     private static string VisibleLabel(string label) => UiLabel.Visible(label);
 
-    /// <summary>
-    /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
-    /// </summary>
-    private static void Invoke(Action callback, string source)
-    {
-        try
-        {
-            callback();
-        }
-        catch (Exception ex)
-        {
-            NoireUI.Diagnostics.ReportFault(source, "A button callback threw.", ex);
-        }
-    }
-
-    /// <summary>
-    /// Runs a consumer callback that takes an argument, reporting anything it throws rather than letting it escape
-    /// into the frame.
-    /// </summary>
-    /// <remarks>
-    /// The argument is passed explicitly rather than captured by a closure: Roslyn allocates a display class at
-    /// method entry for a lambda that captures a parameter, even on frames where the branch does not run.
-    /// </remarks>
-    /// <typeparam name="TArg">The argument type.</typeparam>
-    /// <param name="callback">The callback to run.</param>
-    /// <param name="argument">Passed to <paramref name="callback"/>.</param>
-    /// <param name="source">What to blame in the fault report.</param>
-    private static void Invoke<TArg>(Action<TArg> callback, TArg argument, string source)
-    {
-        try
-        {
-            callback(argument);
-        }
-        catch (Exception ex)
-        {
-            NoireUI.Diagnostics.ReportFault(source, "A button callback threw.", ex);
-        }
-    }
+    /// <summary>The fault message reported when a consumer callback or draw hook throws.</summary>
+    private const string CallbackFault = "A button callback threw.";
 
     private static Task StartTask(Func<Task> action, string label)
     {

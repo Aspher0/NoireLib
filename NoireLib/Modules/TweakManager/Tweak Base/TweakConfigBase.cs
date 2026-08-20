@@ -10,23 +10,19 @@ using System.Text;
 namespace NoireLib.TweakManager;
 
 /// <summary>
-/// Base class for tweak-specific configurations. Extends <see cref="NoireConfigBase"/> to inherit versioning and
-/// migration support via <see cref="ConfigMigrationAttribute"/>, but seals all file-based operations: only the
-/// <see cref="NoireTweakManager"/> controls persistence, and tweaks and consumers cannot save or load config
-/// files directly. Use <see cref="ToJson"/> for a read-only JSON snapshot.
+/// Base class for tweak-specific configurations. It inherits the versioning and <see cref="ConfigMigrationAttribute"/>
+/// migration support of <see cref="NoireConfigBase"/> but seals every file-based operation, since only
+/// <see cref="NoireTweakManager"/> persists a tweak configuration; <see cref="ToJson"/> gives a read-only snapshot.
 /// </summary>
 [Serializable]
 public abstract class TweakConfigBase : NoireConfigBase
 {
     /// <summary>
-    /// Reads and writes the JSON a tweak configuration is stored as. It is built with
+    /// Reads and writes the JSON a tweak configuration is stored as. Built with
     /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
-    /// <see cref="NoireConfigBase.JsonSettings"/> alone. The <see cref="JsonConvert"/> overloads and
-    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> instead merge in
-    /// <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into this process can
-    /// assign, and only overlay the properties the given settings object actually sets. Anything the settings leave
-    /// unmentioned, such as the converters, the contract resolver or the null handling, would then be decided by
-    /// unrelated code and the stored format would drift with it.
+    /// <see cref="NoireConfigBase.JsonSettings"/> alone; the <see cref="JsonConvert"/> overloads and
+    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> would merge in the process-global
+    /// <see cref="JsonConvert.DefaultSettings"/> and let unrelated code decide the stored format.
     /// </summary>
     private static readonly JsonSerializer TweakConfigSerializer = CreateTweakConfigSerializer();
 
@@ -34,34 +30,25 @@ public abstract class TweakConfigBase : NoireConfigBase
     {
         var serializer = JsonSerializer.Create(JsonSettings);
 
-        // A stored tweak configuration is exactly one JSON document, so anything after it means the stored value is
-        // corrupt. JsonConvert.DeserializeObject turns this on for its callers implicitly; setting it explicitly keeps
-        // that rejection in place now that the read below goes through a serializer instance instead.
+        // A stored tweak configuration is exactly one JSON document, so anything after it means the value is corrupt.
+        // A serializer instance does not enable this rejection on its own, unlike JsonConvert.DeserializeObject.
         serializer.CheckAdditionalContent = true;
         return serializer;
     }
 
-    /// <summary>
-    /// The owning tweak instance for this configuration, if any; populated automatically by <see cref="TweakBase{TConfig}"/> when the tweak is created.
-    /// </summary>
+    /// <summary>The owning tweak instance, set by <see cref="TweakBase{TConfig}"/> when the tweak is created.</summary>
     [JsonIgnore]
     public TweakBase? Parent { get; internal set; }
 
     /// <inheritdoc/>
     public sealed override string GetConfigFileName() => string.Empty;
 
-    /// <summary>
-    /// Tweak configs are not loaded from disk on initialization; the <see cref="NoireTweakManager"/> manages all persistence.
-    /// </summary>
+    /// <summary>Always false, since <see cref="NoireTweakManager"/> owns all persistence for a tweak configuration.</summary>
     [JsonIgnore]
     public sealed override bool LoadFromDiskOnInitialization => false;
 
-    /// <summary>
-    /// Signals that this tweak configuration has changed and requests the owning tweak to persist the change,
-    /// calling <see cref="TweakBase.MarkConfigDirty"/> on the attached <see cref="TweakBase"/> parent, which in
-    /// turn asks the manager to save.
-    /// </summary>
-    /// <returns><see langword="true"/> when the parent tweak was notified; otherwise, this method throws when no parent is attached.</returns>
+    /// <summary>Marks this configuration dirty on the owning tweak, which asks the manager to persist it.</summary>
+    /// <returns><see langword="true"/> once the parent tweak has been notified.</returns>
     /// <exception cref="InvalidOperationException">Thrown when no parent tweak is attached to receive the save request.</exception>
     public sealed override bool Save()
     {
@@ -72,52 +59,43 @@ public abstract class TweakConfigBase : NoireConfigBase
         return true;
     }
 
-    /// <summary>
-    /// Loading is managed exclusively by <see cref="NoireTweakManager"/>; calling this method directly throws <see cref="InvalidOperationException"/>.
-    /// </summary>
+    /// <summary>Redirects the debounced save path onto <see cref="Save"/>, since a tweak configuration is not file-backed.</summary>
+    public sealed override void RequestSave() => Save();
+
+    /// <summary>Always throws, since <see cref="NoireTweakManager"/> owns loading.</summary>
     /// <returns>This method never returns normally.</returns>
     /// <exception cref="InvalidOperationException">Always thrown.</exception>
     public sealed override bool Load()
         => throw new InvalidOperationException(
             "Tweak configs cannot be loaded directly. The TweakManager handles config loading.");
 
-    /// <summary>
-    /// Deletion is managed exclusively by <see cref="NoireTweakManager"/>; calling this method directly throws <see cref="InvalidOperationException"/>.
-    /// </summary>
+    /// <summary>Always throws, since <see cref="NoireTweakManager"/> owns deletion.</summary>
     /// <returns>This method never returns normally.</returns>
     /// <exception cref="InvalidOperationException">Always thrown.</exception>
     public sealed override bool Delete()
         => throw new InvalidOperationException(
             "Tweak configs cannot be deleted directly. The TweakManager handles config management.");
 
-    /// <summary>
-    /// Tweak configs are not file-backed; always returns <see langword="false"/>.
-    /// </summary>
-    /// <returns><see langword="false"/> always.</returns>
+    /// <summary>Always returns false, since a tweak configuration is not file-backed.</summary>
+    /// <returns><see langword="false"/>.</returns>
     public sealed override bool Exists() => false;
 
-    /// <summary>
-    /// Returns a read-only JSON snapshot of this configuration, for display, export, or custom persistence logic.
-    /// </summary>
-    /// <returns>A JSON string representing the current configuration state.</returns>
+    /// <summary>Serializes this configuration to a read-only JSON snapshot.</summary>
+    /// <returns>The JSON representation of the current configuration state.</returns>
     public string ToJson()
     {
         return SerializeTweakConfigToJson();
     }
 
-    /// <summary>
-    /// Serializes this configuration to a JSON string for internal storage by the manager.
-    /// </summary>
-    /// <returns>A JSON string representing the current configuration.</returns>
+    /// <summary>Serializes this configuration to the JSON the manager stores.</summary>
+    /// <returns>The JSON representation of the current configuration.</returns>
     internal string SerializeToJson()
     {
         return SerializeTweakConfigToJson();
     }
 
-    /// <summary>
-    /// Serializes this instance to the JSON a tweak configuration is stored as.
-    /// </summary>
-    /// <returns>The JSON representation of this instance, serialized as its concrete type.</returns>
+    /// <summary>Serializes this instance as its concrete type to the JSON a tweak configuration is stored as.</summary>
+    /// <returns>The JSON representation of this instance.</returns>
     private string SerializeTweakConfigToJson()
     {
         var builder = new StringBuilder(256);
@@ -131,9 +109,7 @@ public abstract class TweakConfigBase : NoireConfigBase
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Deserializes stored tweak configuration JSON into a new instance of the given type.
-    /// </summary>
+    /// <summary>Deserializes stored tweak configuration JSON into a new instance of the given type.</summary>
     /// <typeparam name="T">The concrete tweak configuration type to materialize.</typeparam>
     /// <param name="json">The stored JSON.</param>
     /// <returns>The deserialized instance, or null when the JSON holds a bare null.</returns>
@@ -146,14 +122,11 @@ public abstract class TweakConfigBase : NoireConfigBase
         return TweakConfigSerializer.Deserialize<T>(jsonReader);
     }
 
-    /// <summary>
-    /// Deserializes a tweak config from JSON, executing any necessary migrations
-    /// if the stored version is older than the target version.
-    /// </summary>
-    /// <typeparam name="T">The tweak config type to deserialize.</typeparam>
-    /// <param name="json">The JSON string to deserialize from. If <see langword="null"/> or empty, a default instance is returned.</param>
-    /// <param name="storedVersion">The version of the stored JSON data.</param>
-    /// <returns>A deserialized and optionally migrated config instance, or a new default instance if deserialization fails.</returns>
+    /// <summary>Deserializes a tweak configuration from JSON, running any migrations the stored version needs first.</summary>
+    /// <typeparam name="T">The tweak configuration type to deserialize.</typeparam>
+    /// <param name="json">The stored JSON, or null or empty for a default instance.</param>
+    /// <param name="storedVersion">The version the stored JSON was written at.</param>
+    /// <returns>The deserialized and migrated instance, or a new default instance when deserialization fails.</returns>
     internal static T DeserializeFromJson<T>(string? json, int storedVersion) where T : TweakConfigBase, new()
     {
         if (string.IsNullOrEmpty(json))
@@ -180,11 +153,9 @@ public abstract class TweakConfigBase : NoireConfigBase
         }
     }
 
-    /// <summary>
-    /// Extracts the version number from a JSON string.
-    /// </summary>
-    /// <param name="json">The JSON string to extract the version from.</param>
-    /// <returns>The version number if found; otherwise, 0.</returns>
+    /// <summary>Extracts the stored version number from a configuration JSON string.</summary>
+    /// <param name="json">The stored JSON.</param>
+    /// <returns>The version number, or 0 when absent or unreadable.</returns>
     internal static int ExtractVersionFromJson(string json)
     {
         try

@@ -1,6 +1,7 @@
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -15,9 +16,9 @@ namespace NoireLib.Helpers.ObjectExtensions;
 public static class ObjectExtensions
 {
     /// <summary>
-    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>, built via <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>
-    /// rather than <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> so it never picks up
-    /// <see cref="JsonConvert.DefaultSettings"/>, a mutable process-global other code could set.
+    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>, built through
+    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it never picks up the mutable process-global
+    /// <see cref="JsonConvert.DefaultSettings"/>.
     /// </summary>
     private static readonly JsonSerializer CloneSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {
@@ -30,7 +31,7 @@ public static class ObjectExtensions
     /// <typeparam name="T">Type of the value.</typeparam>
     /// <param name="value">Value to check.</param>
     /// <returns>True if <paramref name="value"/> is null or equals default(T); otherwise false.</returns>
-    public static bool IsDefault<T>(this T value)
+    public static bool IsDefault<T>([NotNullWhen(false)] this T value)
     {
         if (value is null) return true;
         return EqualityComparer<T>.Default.Equals(value, default);
@@ -118,11 +119,11 @@ public static class ObjectExtensions
     }
 
     /// <summary>
-    /// Creates a shallow clone of the object using JSON serialization.
+    /// Clones the object through a JSON round trip, which copies only what the serializer sees.
     /// </summary>
     /// <typeparam name="T">Type of the object.</typeparam>
     /// <param name="value">Object to clone.</param>
-    /// <returns>A cloned copy of the object.</returns>
+    /// <returns>The clone, or null when <paramref name="value"/> is null.</returns>
     public static T? Clone<T>(this T value) where T : class
     {
         if (value is null) return null;

@@ -3,17 +3,12 @@ using FFXIVClientStructs.FFXIV.Client.LayoutEngine;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Answers whether a placed object is actually standing in the world right now, from the game's resolved layout
-/// rather than the level file.<br/>
-/// A level file lists everything that could exist; layer sets toggle per quest, instance, phase and season, so it
-/// never says what is actually placed for this character. The resolved layout (the active <c>LayoutWorld</c>,
-/// keyed by the level file's own instance id) is ground truth, and is read directly rather than through its own
-/// lookup call, since a struct read cannot fault the way a call into game code can.
+/// Answers whether a placed object is standing in the world right now, from the resolved layout rather than the level
+/// file. The active <c>LayoutWorld</c> is read as a struct, keyed by the level file's own instance id.
 /// </summary>
 public static unsafe class LayoutHelper
 {
-    // The layout reports this once fully built; below it, instance maps are incomplete, so a miss reads as
-    // "not placed" when it is really "not placed yet".
+    // The layout reports this state once fully built; below it the instance maps are still incomplete.
     private const int LoadedLayout = 7;
 
     /// <summary>Whether an object a level file places is standing in the loaded layout right now.</summary>
@@ -45,8 +40,7 @@ public static unsafe class LayoutHelper
     /// <returns>
     /// True when the layout holds it and reports it active, false when the layout holds it and reports it inactive,
     /// and null when the question cannot be answered: no character, no layout, a layout still being built, a type the
-    /// layout does not index, or an instance id it holds no entry for. Only a false is the game stating absence;
-    /// treat null as "ask something else", never as "not there".
+    /// layout does not index, or an instance id it holds no entry for. Only false states absence.
     /// </returns>
     public static bool? IsInstancePlaced(InstanceType type, uint instanceId)
     {
@@ -60,11 +54,7 @@ public static unsafe class LayoutHelper
         if (!layout->InstancesByType.TryGetValuePointer(type, out var byId) || byId == null || byId->Value == null)
             return null;
 
-        // A key the layout does not hold is UNANSWERABLE, not absent. The layout indexes the instances it actually
-        // built, so a miss means "this map has nothing to say about that placement", which is a different claim from
-        // the game having decided the object is not there. Reading a miss as "not placed" made every warp trigger the
-        // layout had not indexed read as missing, which hid genuinely usable warps in the one territory the gate is
-        // allowed to answer for: the one the character is standing in.
+        // The layout only indexes the instances it actually built, so a missing key is unanswerable, not absent.
         if (!byId->Value->TryGetValuePointer(instanceId, out var instance) || instance == null || instance->Value == null)
             return null;
 
@@ -72,8 +62,8 @@ public static unsafe class LayoutHelper
     }
 
     /// <summary>
-    /// The raw outcome of a placement lookup, for working out why an answer came back the way it did. Use it when
-    /// diagnosing a placement gate; <see cref="IsInstancePlaced(InstanceType, uint)"/> is the answer to act on.
+    /// The raw outcome of a placement lookup, which <see cref="IsInstancePlaced(InstanceType, uint)"/> folds into a
+    /// single answer.
     /// </summary>
     public enum LayoutLookup
     {
@@ -94,9 +84,8 @@ public static unsafe class LayoutHelper
     }
 
     /// <summary>
-    /// Reports which case a placement lookup actually hit, rather than folding all of them into one answer. Two very
-    /// different situations both read as "cannot say" through <see cref="IsInstancePlaced(InstanceType, uint)"/>, and
-    /// telling them apart is the whole question when a placement gate is hiding something it should not.
+    /// Reports which case a placement lookup hit, separating the situations that both read as null through
+    /// <see cref="IsInstancePlaced(InstanceType, uint)"/>.
     /// </summary>
     /// <param name="type">The instance type.</param>
     /// <param name="instanceId">The level file's instance id for the placement.</param>
@@ -129,6 +118,21 @@ public static unsafe class LayoutHelper
         var layout = ActiveLayout();
         return layout == null ? 0 : layout->TerritoryTypeId;
     }
+
+    /// <summary>
+    /// The layer-set key the loaded layout is filtering layers by, which decides which edition of a level stands.
+    /// Zero is a real key meaning the base configuration, so an unreadable layout is reported as null.
+    /// </summary>
+    /// <returns>The key, or null when there is no character or no fully built layout.</returns>
+    public static uint? LoadedLayerSet()
+    {
+        if (!CharacterHelper.IsStateReady)
+            return null;
+
+        var layout = ActiveLayout();
+        return layout == null ? null : layout->LayerFilterKey;
+    }
+
 
     private static LayoutManager* ActiveLayout()
     {

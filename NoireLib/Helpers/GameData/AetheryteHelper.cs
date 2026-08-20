@@ -20,10 +20,8 @@ namespace NoireLib.Helpers;
 /// <param name="RequiredQuest">The quest that attunes it, or zero when none is needed.</param>
 /// <param name="AetherstreamX">The aetherstream X coordinate: a fare-region coordinate, not a world position.</param>
 /// <param name="AetherstreamY">The aetherstream Y coordinate: a fare-region coordinate, not a world position.</param>
-/// <param name="ArrivalOnly">
-/// True for a point that can only be arrived at, never departed from: a hidden aetheryte such as an airship landing,
-/// which has no crystal to be positioned from at all.
-/// </param>
+/// <param name="ArrivalOnly">True for a hidden aetheryte such as an airship landing, which can be arrived at but never departed from and has no crystal.</param>
+/// <param name="Ward">The one-based residential ward the point stands in, or zero when it stands in no particular ward; only an owned estate's teleport target carries it.</param>
 public readonly record struct AetheryteEntry(
     uint Id,
     bool IsCityAetheryte,
@@ -34,7 +32,8 @@ public readonly record struct AetheryteEntry(
     uint RequiredQuest,
     int AetherstreamX,
     int AetherstreamY,
-    bool ArrivalOnly = false);
+    bool ArrivalOnly = false,
+    int Ward = 0);
 
 /// <summary>
 /// One residential aethernet shard, which unlike a city shard has no Aetheryte row of its own and exists only as a
@@ -42,34 +41,26 @@ public readonly record struct AetheryteEntry(
 /// </summary>
 /// <param name="TerritoryId">The residential district the crystal stands in.</param>
 /// <param name="Position">The crystal's world position.</param>
-/// <param name="PlaceNameId">
-/// The PlaceName row of the ward the crystal serves, kept as a row id rather than as the text it resolves to, so it
-/// reads in whatever language the client runs in and never has to be matched as a string.
-/// </param>
-/// <param name="Order">The crystal's index within its district's level file, which is a stable per-district key.</param>
+/// <param name="PlaceNameId">The PlaceName row id of the ward the crystal serves.</param>
+/// <param name="Order">The crystal's index within its district's level file, a stable per-district key.</param>
 public readonly record struct ResidentialShard(uint TerritoryId, Vector3 Position, uint PlaceNameId, int Order);
 
 /// <summary>
-/// Reads the aetheryte network out of the game's data: the identity of every crystal from the sheet, its world
-/// position from the level files, the residential shards that exist only as placements, and what the logged-in
-/// character has attuned to.
+/// Reads the aetheryte network from the game's data: crystal identity from the sheet, world positions from the level
+/// files, the residential shards that exist only as placements, and what the logged-in character has attuned to.
 /// </summary>
 public static class AetheryteHelper
 {
     /// <summary>
-    /// The shared-group asset family a residential aethernet crystal belongs to. Most districts place the Eorzean
-    /// crystal (<c>sgbg_w_aet_001_06a.sgb</c>), but Shirogane places the Far Eastern model
-    /// (<c>sgbg_w_aet_005_01j.sgb</c>), so a crystal is matched by this shared prefix rather than one exact path.
+    /// The shared-group asset family a residential aethernet crystal belongs to. Shirogane places the Far Eastern
+    /// model where other districts place the Eorzean one, so crystals match on this prefix rather than an exact path.
     /// </summary>
     public const string ResidentialCrystalAssetPrefix = "bgcommon/world/aet/shared/for_bg/sgbg_w_aet_";
 
     /// <summary>
-    /// Reads every aetheryte and aethernet shard the sheet describes, without positions.<br/>
-    /// The generic estate-hall rows (a Free Company and a private one per district) are left out: they are neither a
-    /// teleport aetheryte nor a shard, carry no resolvable position, and would otherwise appear as a nameless pair at
-    /// the origin in every district. A character's own estate is read from the teleport list instead. The sheet's
-    /// placeholder row is left out on the same principle, by the one thing that distinguishes it: a real aetheryte
-    /// always resolves to a name, and it resolves to none through either of its name columns.
+    /// Reads every aetheryte and aethernet shard the sheet describes, without positions. The generic estate-hall rows
+    /// are skipped, since a character's own estate comes from the teleport list instead, as is the sheet's placeholder
+    /// row, which resolves to no name through either name column.
     /// </summary>
     /// <returns>The aetheryte and shard identity rows.</returns>
     public static IReadOnlyList<AetheryteEntry> ReadAll()
@@ -121,10 +112,8 @@ public static class AetheryteHelper
     }
 
     /// <summary>
-    /// Fills the entries with the world positions of the crystals placed in the level files. Every placed crystal
-    /// carries its own Aetheryte row id, so a row is positioned by matching that id directly, with no map marker, map
-    /// projection, or name matching; a row whose crystal was not in the objects given keeps the position it arrived
-    /// with.
+    /// Fills the entries with the world positions of the crystals placed in the level files, matching on the Aetheryte
+    /// row id each placed crystal carries. A row whose crystal is absent keeps the position it arrived with.
     /// </summary>
     /// <param name="entries">The identity rows, typically from <see cref="ReadAll"/>.</param>
     /// <param name="levelObjects">Level objects to read the crystals out of; anything else in the list is ignored.</param>
@@ -163,9 +152,9 @@ public static class AetheryteHelper
 
     /// <summary>
     /// Whether an Aetheryte row is an estate hall, being a Free Company or private-estate teleport target rather than
-    /// a real teleport aetheryte or an aethernet shard. An estate hall is flagged not-an-aetheryte and belongs to no
-    /// aethernet group. This is how an owned estate is recognised in the teleport list, whose entry for one carries no
-    /// ward, plot, or housing flag at all. Language-independent, since it reads flags and never a name.
+    /// a teleport aetheryte or an aethernet shard. An estate hall is flagged not-an-aetheryte and belongs to no
+    /// aethernet group, which is also how an owned estate is recognised in the teleport list, whose entry for one
+    /// carries no ward, plot, or housing flag.
     /// </summary>
     /// <param name="row">The Aetheryte sheet row.</param>
     /// <returns>True when the row is an estate hall.</returns>
@@ -176,18 +165,15 @@ public static class AetheryteHelper
     /// <returns>True when the row is an estate hall; false when the id resolves to nothing.</returns>
     public static bool IsEstateHall(uint aetheryteId) => ReadEstateHall(aetheryteId).IsEstateHall;
 
-    /// <summary>
-    /// The estate-hall rule over the two flags alone, for a caller holding them without the row and for testing the
-    /// rule with no game behind it. Prefer <see cref="IsEstateHall(Aetheryte)"/>.
-    /// </summary>
+    /// <summary>Applies the estate-hall rule to the two flags alone, for a caller holding them without the row.</summary>
     /// <param name="isAetheryte">The row's IsAetheryte flag.</param>
     /// <param name="aethernetGroup">The row's aethernet group.</param>
     /// <returns>True when the flags describe an estate hall.</returns>
     public static bool IsEstateHall(bool isAetheryte, byte aethernetGroup) => !isAetheryte && aethernetGroup == 0;
 
     /// <summary>
-    /// Reads whether an aetheryte is an estate hall, its PlaceName row id, and its place name in one sheet lookup.
-    /// The row id is what tells a Free Company estate from a private one in every client language; the name labels it.
+    /// Reads whether an aetheryte is an estate hall, its PlaceName row id, and its place name in one sheet lookup. The
+    /// row id separates a Free Company estate from a private one in every client language.
     /// </summary>
     /// <param name="aetheryteId">The Aetheryte row id.</param>
     /// <returns>Whether it is an estate hall, its PlaceName row id, and that name's text.</returns>
@@ -207,25 +193,25 @@ public static class AetheryteHelper
     }
 
     /// <summary>
-    /// The aetherytes the logged-in character has attuned to, read from the game's own teleport list. Call it on the
-    /// framework thread, and only once the character's state is loaded (<see cref="CharacterHelper.IsStateReady"/>).
+    /// Reads the aetherytes the logged-in character has attuned to from the game's teleport list. Framework thread
+    /// only, and only once <see cref="CharacterHelper.IsStateReady"/>.
     /// </summary>
     /// <returns>The attuned aetheryte ids.</returns>
     public static IReadOnlySet<uint> ReadUnlocked() => ReadUnlockedState().Unlocked;
 
     /// <summary>
-    /// The attuned aetherytes together with whether the teleport list could actually be read.<br/>
-    /// The two are different answers and must not be conflated: an empty set with <c>Known</c> false means the list
-    /// was not there to be read, not that the character is attuned to nothing. Attunement gates every teleport and
-    /// every aethernet hop, so reading "could not ask" as "attuned to nothing" removes long-distance travel from the
-    /// planner entirely, which looks exactly like a character who cannot go anywhere.
+    /// Reads the attuned aetherytes together with whether the teleport list could be read at all. An empty set with
+    /// <c>Known</c> false means the list was not there to read, never that the character is attuned to nothing.
     /// </summary>
     /// <returns>The attuned aetheryte ids, and whether the read produced a real answer.</returns>
     public static (IReadOnlySet<uint> Unlocked, bool Known) ReadUnlockedState()
     {
         var unlocked = new HashSet<uint>();
+
+        // With no character there is nothing to attune, so the empty set is a real answer; mid-login the same empty
+        // set is only a read that could not happen.
         if (!CharacterHelper.IsStateReady)
-            return (unlocked, false);
+            return (unlocked, CharacterHelper.IsLoggedOut);
 
         var read = SafeExecutor.ExecuteSafely(() =>
         {
@@ -236,28 +222,53 @@ public static class AetheryteHelper
             return true;
         }, false);
 
-        // A completed read that found nothing is still not an answer worth acting on: the client fills the list
-        // asynchronously, so an empty one means it has not filled yet far more often than it means a character who
-        // has attuned to no aetheryte at all, which is only true before the opening quests hand one over.
-        return (unlocked, read && unlocked.Count > 0);
+        // The client fills the list asynchronously, so an empty result usually means it has not filled yet rather than
+        // a character attuned to nothing. The list is game memory that outlives a character switch, so a non-empty one
+        // still reads as the previous character's attunements until the new character's refresh runs.
+        return (unlocked, IsCurrentAnswer(read, unlocked.Count, teleportListOwner, CharacterHelper.LocalContentId));
     }
 
     /// <summary>
-    /// Asks the game to refill its teleport list, which is the source of both the attuned set and the fares. The
-    /// client does not fill it the instant a session starts, so a read taken before this one sees an empty list.
-    /// Framework thread only.
+    /// Decides whether a teleport-list read answers for the character standing there now: it succeeded, found at least
+    /// one attunement, and the list was last refreshed by that same character.
     /// </summary>
-    private static unsafe void RefreshTeleportList()
+    /// <param name="read">Whether the list was read at all.</param>
+    /// <param name="attunedCount">How many attunements the read found.</param>
+    /// <param name="listOwner">The character the list was last refreshed for, zero when it never was.</param>
+    /// <param name="character">The character logged in now, zero when none is.</param>
+    /// <returns>True when the read is the current character's answer.</returns>
+    internal static bool IsCurrentAnswer(bool read, int attunedCount, ulong listOwner, ulong character)
+        => read && attunedCount > 0 && listOwner != 0 && listOwner == character;
+
+    // The character the teleport list was last refreshed for. The list outlives a character switch, so a read is only
+    // an answer when the refresh that filled it was asked by the character standing there now.
+    private static ulong teleportListOwner;
+
+    /// <summary>
+    /// Asks the game to refill its teleport list, the source of the attuned set, the fares, and the character's own
+    /// estates. Framework thread only, and gated on the player object being in the world rather than on the character
+    /// state alone: the game builds each fare from where the character stands, so calling it while that object is
+    /// absent access-violates inside game code, past any try/catch.
+    /// </summary>
+    /// <returns>True when the game was asked, false when it was not safe to ask.</returns>
+    public static unsafe bool RefreshTeleportList()
     {
+        if (!CharacterHelper.IsPlayerLoaded)
+            return false;
+
         var telepo = Telepo.Instance();
-        if (telepo != null)
-            telepo->UpdateAetheryteList();
+        if (telepo == null)
+            return false;
+
+        telepo->UpdateAetheryteList();
+        teleportListOwner = CharacterHelper.LocalContentId;
+        return true;
     }
 
     /// <summary>
-    /// The gil fare to each attuned aetheryte, read from the game's own teleport list, so it already reflects a
-    /// discount the character may have. An aetheryte listed more than once keeps its cheapest entry. Framework thread, and
-    /// only once the character's state is loaded.
+    /// Reads the gil fare to each attuned aetheryte from the game's teleport list, so any discount the character has
+    /// is already applied. An aetheryte listed more than once keeps its cheapest entry. Framework thread only, and
+    /// only once <see cref="CharacterHelper.IsStateReady"/>.
     /// </summary>
     /// <returns>The fare per aetheryte id.</returns>
     public static IReadOnlyDictionary<uint, int> ReadTeleportFares()
@@ -289,17 +300,12 @@ public static class AetheryteHelper
            && assetPath.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Reads a residential district's aethernet shards, labelled with the ward each one serves.<br/>
-    /// A district's level file places no Aetheryte-type objects at all, so its crystals are shared-group placements
-    /// and are recognised by their asset path. Each is then labelled by the nearest map marker, which a district
-    /// spanning a main map and a subdivision needs projected through each map's own offset;
-    /// <see cref="MapCoordinateHelper.ProjectMarkers"/> takes care of that.
+    /// Reads a residential district's aethernet shards, labelled with the ward each one serves. A district's level
+    /// file places no Aetheryte-type objects, so its crystals are shared-group placements recognised by asset path and
+    /// labelled from the nearest map marker.
     /// </summary>
     /// <param name="districtTerritoryId">The residential district's TerritoryType row id.</param>
-    /// <param name="objects">
-    /// The district's placed level objects, or null to read them here. Pass them when they are already in hand, since
-    /// reading a level file is the expensive part.
-    /// </param>
+    /// <param name="objects">The district's placed level objects, or null to read the level file here.</param>
     /// <returns>The district's shards, in the order its level file places them.</returns>
     public static IReadOnlyList<ResidentialShard> ReadResidentialShards(
         uint districtTerritoryId,
@@ -325,8 +331,7 @@ public static class AetheryteHelper
         return shards;
     }
 
-    // An aetheryte's display name: its aethernet name when it has one, else its place name. Empty when neither
-    // resolves. An empty name marks the sheet's placeholder row.
+    // An aetheryte's aethernet name when it has one, else its place name. An empty result marks the placeholder row.
     private static string ResolveName(Aetheryte row)
     {
         var name = row.AethernetName.ValueNullable?.Name.ExtractText();

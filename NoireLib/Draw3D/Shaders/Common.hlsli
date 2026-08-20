@@ -1,4 +1,4 @@
-﻿// NoireLib Draw3D - shared shader header: the constant buffer layouts every Draw3D shader binds.
+﻿// Constant buffer layouts every Draw3D shader binds.
 // All matrices in cbuffers are pre-transposed on the CPU; consume with mul(v, M) only.
 
 // ---- b0: per frame -------------------------------------------------------
@@ -28,18 +28,17 @@ cbuffer ObjectCB : register(b1)
                                 //     box world scale so the rim is a constant world thickness), w = heightFade (decal Y feather)
     float4   Params2;           // x = ground-decal projection mode (0 = all surfaces, 1 = highest only)
                                 // y = decal box top world Y (the height-map's vertical search bound)
-                                // z = outline reference footprint scale (0 = rim stays a constant world thickness under any
-                                //     box scale; immediate shapes pass their built footprint scale to keep the old proportional rim)
-    float4   OutlineColor;      // ground-decal rim colour, straight alpha. Alpha 0 = unset: the rim uses BaseColor, which is
-                                // the classic look where rim and fill differ only in opacity.
+                                // z = outline reference footprint scale (0 = constant world thickness under any box scale;
+                                //     immediate shapes pass their built footprint scale for a proportional rim)
+    float4   OutlineColor;      // ground-decal rim colour, straight alpha; alpha 0 means unset and the rim uses BaseColor
     float4   Params3;           // spare per-shader slot (G-buffer injection: dye colour in rgb, dye strength in w)
 }
 
 // ---- b2: per-decal excluded-actor gate + stencil key (ground-decal ExcludeObjects) --
-// The actors THIS decal skips painting on, uploaded per decal draw. Each is a vertical cylinder used ONLY as a coarse
-// gate to pick which characters to exclude - the exact cut is the game stencil silhouette, so the radius may be generous
-// without ever holing the ground. xy = world XZ centre, z = radius, w unused. ActorCount = 0 = exclude nothing.
-// CharacterStencil = the game stencil value that marks characters (discovered via /noire3d stencil).
+// The actors this decal skips painting on, uploaded per decal draw. Each is a vertical cylinder used only as a coarse
+// gate; the exact cut is the game stencil silhouette, so a generous radius never holes the ground.
+// xy = world XZ centre, z = radius, w unused. ActorCount 0 excludes nothing.
+// CharacterStencil = the game stencil value that marks characters.
 #define MAX_DECAL_ACTORS 64
 cbuffer ActorCB : register(b2)
 {
@@ -58,9 +57,9 @@ Texture2D       AuxTex1      : register(t5); // custom pipelines only: third mat
 SamplerState    PointClamp   : register(s0);
 SamplerState    BaseSamp     : register(s1);
 
-// The game stencil value under a display uv (0 when the stencil plane is unbound/unavailable, which excludes nothing).
-// Integer .Load (stencil is a UINT plane, unfilterable): the display uv maps to the depth-stencil's rendered region via
-// DepthUv.xy (actual/allocated) times the texture's allocated size.
+// The game stencil value under a display uv, 0 when the stencil plane is unbound and so excludes nothing.
+// Loaded as an integer because the stencil plane is UINT and unfilterable; DepthUv.xy maps the display uv onto the
+// depth-stencil's rendered region within its allocated size.
 uint SceneStencilValue(float2 displayUv)
 {
     uint sw, sh;
@@ -69,8 +68,8 @@ uint SceneStencilValue(float2 displayUv)
     return SceneStencil.Load(int3(texel, 0)).g;
 }
 
-// Highest collision-world Y at a world position's XZ column (WorldHeight sampled through WorldHeightRegion).
-// Returns -1e30 when the height-map is unavailable or the point is outside the sampled region (treat as "no ground").
+// Highest collision-world Y at a world position's XZ column.
+// Returns -1e30 for no ground: the height-map is unavailable, or the point is outside the sampled region.
 float WorldGroundHeight(float3 wp)
 {
     if (WorldHeightRegion.w < 0.5)
@@ -81,12 +80,12 @@ float WorldGroundHeight(float3 wp)
     return WorldHeight.SampleLevel(PointClamp, uv, 0).r;
 }
 
-// ---- depth helpers (THE ONLY place depth convention lives) ----------------
-// All comparisons happen in clip-w space (w after v·ViewProj - the perspective view depth, world
-// units). The game buffer's value convention is NOT assumed: DepthCal (a, b) is fitted at runtime
-// from raycast ground truth (sample = a + b/w covers reversed/standard, finite/infinite alike).
+// ---- depth helpers (the only place the depth convention lives) ------------
+// All comparisons happen in clip-w space, the perspective view depth in world units. The game buffer's value
+// convention is not assumed: DepthCal (a, b) is fitted at runtime from raycast ground truth, and sample = a + b/w
+// covers reversed and standard, finite and infinite alike.
 
-// clip-w of the world surface under a display uv; 1e30 = sky / unwritten / calibration off.
+// clip-w of the world surface under a display uv; 1e30 = sky, unwritten, or calibration off.
 float SceneSurfaceW(float2 displayUv)
 {
     if (DepthCal.z < 0.5)
@@ -97,12 +96,12 @@ float SceneSurfaceW(float2 displayUv)
     return (denom * DepthCal.y > 1e-12) ? DepthCal.y / denom : 1e30;
 }
 
-// 1 = fully visible, 0 = occluded by world. pixelW = the fragment's clip w. fadeWorld <= 0 -> hard test.
+// 1 = fully visible, 0 = occluded by world. pixelW is the fragment's clip w; fadeWorld <= 0 makes the test hard.
 float DepthVisibility(float2 displayUv, float pixelW, float fadeWorld)
 {
     float sceneW = SceneSurfaceW(displayUv);
     if (fadeWorld <= 0.0)
-        return pixelW <= sceneW ? 1.0 : 0.0;              // nearer (smaller view depth) wins
+        return pixelW <= sceneW ? 1.0 : 0.0;              // the smaller view depth wins
     return saturate((sceneW - pixelW) / fadeWorld + 1.0);
 }
 
@@ -113,9 +112,9 @@ float3 WorldFromDepth(float2 displayUv, float sceneDeviceZ)
     return world.xyz / world.w;
 }
 
-// World position of the scene surface under a display uv (decal reconstruction).
-// The game's depth value is converted to OUR projection's device z through the calibrated w,
-// so InvViewProj round-trips exactly. valid = false for sky/unwritten pixels.
+// World position of the scene surface under a display uv, for decal reconstruction.
+// The game's depth value is converted to this projection's device z through the calibrated w, so InvViewProj
+// round-trips exactly. valid is false for sky and unwritten pixels.
 float3 SceneWorldPos(float2 displayUv, out bool valid)
 {
     float w = SceneSurfaceW(displayUv);
@@ -129,3 +128,71 @@ float2 DisplayUv(float4 svPos) { return svPos.xy * Viewport.zw; }
 
 // anti-aliased SDF coverage (sd <= 0 inside)
 float SdfCoverage(float sd) { float aa = fwidth(sd); return saturate(0.5 - sd / max(aa, 1e-6)); }
+
+// ---- texture-space shading helpers (game materials, glTF PBR) ----------------
+// Textures authored sRGB are uploaded UNORM, so a sample returns the encoded value; shaders that light in linear
+// space decode on the way in and re-encode on the way out, since the layer holds encoded values.
+float3 SrgbToLinear(float3 c)
+{
+    c = saturate(c);
+    return c <= 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+}
+
+float3 LinearToSrgb(float3 c)
+{
+    c = saturate(c);
+    return c <= 0.0031308 ? c * 12.92 : (1.055 * pow(c, 1.0 / 2.4)) - 0.055;
+}
+
+// The authored tangent frame, used whenever the mesh carries one; tangent w is its handedness and is 0 only when no
+// frame was imported. A normal map's X and Y only mean anything inside the frame they were painted for, so this wins
+// over the derivative fallback below.
+float3 ApplyNormalMapAuthored(float3 geometricNormal, float4 worldTangent, float3 tangentNormal, float strength)
+{
+    float3 n = normalize(geometricNormal);
+    if (strength <= 0.0)
+        return n;
+
+    // Gram-Schmidt keeps the frame orthogonal after interpolation; a tangent that collapsed onto the normal leaves
+    // the surface normal standing rather than a normalize() of zero.
+    float3 t = worldTangent.xyz - (n * dot(n, worldTangent.xyz));
+    float lenSq = dot(t, t);
+    if (lenSq < 1e-8)
+        return n;
+
+    t *= rsqrt(lenSq);
+    float3 b = cross(n, t) * worldTangent.w;
+
+    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
+    return normalize((t * m.x) + (b * m.y) + (n * m.z));
+}
+
+// Tangent frame recovered from screen-space derivatives, the fallback for meshes carrying no authored frame. It
+// reconstructs the frame from how the UVs land on screen, which runs several degrees off the authored frame where
+// relief is strong.
+float3 ApplyNormalMap(float3 geometricNormal, float3 worldPos, float2 uv, float3 tangentNormal, float strength)
+{
+    float3 n = normalize(geometricNormal);
+    if (strength <= 0.0)
+        return n;
+
+    float3 dp1 = ddx(worldPos);
+    float3 dp2 = ddy(worldPos);
+    float2 duv1 = ddx(uv);
+    float2 duv2 = ddy(uv);
+
+    // A face with no uv variation across the quad leaves the frame undefined, so the geometric normal stands
+    // rather than a normalize() of zero.
+    float det = (duv1.x * duv2.y) - (duv2.x * duv1.y);
+    if (abs(det) < 1e-12)
+        return n;
+
+    float3 t = ((dp1 * duv2.y) - (dp2 * duv1.y)) / det;
+    t = normalize(t - (n * dot(n, t)));          // Gram-Schmidt against the interpolated normal
+    float3 b = cross(n, t);
+
+    // Strength scales the tangent-space tilt rather than blending toward flat, so values above 1 exaggerate the
+    // surface instead of clamping.
+    float3 m = normalize(float3(tangentNormal.xy * strength, max(tangentNormal.z, 1e-4)));
+    return normalize((t * m.x) + (b * m.y) + (n * m.z));
+}

@@ -28,6 +28,31 @@ public static partial class EncryptionHelper
         Sha512,
     }
 
+    #region Short tags
+
+    /// <summary>
+    /// A short lowercase hex tag derived from a value, for naming a file, a cache entry or a temporary identifier
+    /// after its content. Truncated this far it is not a security primitive.
+    /// </summary>
+    /// <param name="data">The value to tag, with strings encoded as UTF-8 and other objects serialized to JSON.</param>
+    /// <param name="hexCharacters">How many hex characters to keep.</param>
+    /// <param name="algorithm">The hashing algorithm to use.</param>
+    /// <returns>The tag, lowercase, and never longer than the full hash.</returns>
+    public static string ShortTag(object? data, int hexCharacters = 8, HashAlgorithmType algorithm = HashAlgorithmType.Sha1)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(hexCharacters);
+
+        var hash = HashBytes(data, algorithm);
+        var wanted = Math.Min(hexCharacters, hash.Length * 2);
+
+        // ToHexString takes a byte count and a byte is two hex characters, so an odd request rounds up then trims.
+        var bytes = Math.Min(hash.Length, (wanted + 1) / 2);
+
+        return Convert.ToHexString(hash, 0, bytes).ToLowerInvariant()[..wanted];
+    }
+
+    #endregion
+
     #region Generic hashing
 
     /// <summary>
@@ -193,6 +218,10 @@ public static partial class EncryptionHelper
     /// <summary>
     /// Computes the hash of the given bytes using the specified algorithm.
     /// </summary>
+    /// <param name="data">The bytes to hash.</param>
+    /// <param name="algorithm">The hashing algorithm to use.</param>
+    /// <returns>The raw hash bytes.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="algorithm"/> is not a known value.</exception>
     private static byte[] ComputeHash(byte[] data, HashAlgorithmType algorithm)
     {
         return algorithm switch
@@ -207,8 +236,11 @@ public static partial class EncryptionHelper
     }
 
     /// <summary>
-    /// Creates a disposable <see cref="HashAlgorithm"/> instance for the specified algorithm, used for streaming.
+    /// Creates a disposable <see cref="HashAlgorithm"/> instance, for hashing a stream.
     /// </summary>
+    /// <param name="algorithm">The hashing algorithm to create.</param>
+    /// <returns>The algorithm instance, which the caller disposes.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="algorithm"/> is not a known value.</exception>
     private static HashAlgorithm CreateHashAlgorithm(HashAlgorithmType algorithm)
     {
         return algorithm switch

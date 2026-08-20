@@ -19,6 +19,7 @@ You are reading the documentation for the `Helpers/GameData` helpers.
 - [Housing](#housing)
 - [Shops](#shops)
 - [Duties](#duties)
+- [Walk-in Content](#walk-in-content)
 - [Classes and Jobs](#classes-and-jobs)
 - [Icons](#icons)
 - [Text Commands](#text-commands)
@@ -43,6 +44,7 @@ The game data helpers are static helpers in the `NoireLib.Helpers` namespace tha
 - **Residential housing**: districts, interiors, plots, apartments, doors, naming, the character's own address
 - **Shops**: what every vendor sells, what it charges, and which NPC stands behind it
 - **Duties**: what the duty finder lists, what it requires, and what the character has unlocked or cleared
+- **Walk-in content**: the current Diadem season, the Cosmic Exploration planets, and the services that open them
 - **Classes and jobs**: names, roles, category membership, and the character's level in each
 - **Icons and text commands**: an icon id resolved to a drawable texture, a command resolved into the client's language
 - **Worlds and live state**: worlds and data centres, whether a placement is actually standing there, quest progress,
@@ -90,7 +92,7 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `MapCoordinateHelper` | Converts between world positions, map-marker pixels and in-game map coordinates; reads map rows and markers. |
 | `EorzeaTimeHelper` | The Eorzean clock, day and night, and the eight-hour windows the weather is decided in. |
 | `WeatherHelper` | What the weather is and what it will be, forecast from the moment alone. |
-| `TerritoryHelper` | Territory names, level paths, the real/duty/mountable sets, zone-crossing quest gates, and the canonical-territory rule. |
+| `TerritoryHelper` | Territory names, level paths, the real/duty/mountable sets, zone-crossing quest gates, aetheryte bindings, handler quests, and the canonical-territory rule. |
 | `AetheryteHelper` | Aetheryte and shard identity, their world positions, residential aethernet crystals, and what the character has attuned. |
 | `EventNpcHelper` | Which NPCs run which event handlers, and where each of them stands. |
 | `WarpHelper` | The interactables that teleport the character, what they cost, and what unlocks them. |
@@ -98,6 +100,8 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `HousingHelper` | Residential districts, interiors and their kinds, plot and apartment positions, interior doors, interior naming, and the character's own address. |
 | `ShopHelper` | What every shop sells and charges, indexed both ways, plus the menus that hide shops from a handler scan. |
 | `DutyHelper` | What the duty finder says about a duty, and what the character has unlocked or cleared. |
+| `DiademHelper` | The current Diadem season and what entering it requires. |
+| `CosmicHelper` | The Cosmic Exploration planets, their aethernet, their bound warps, and the travel services. |
 | `ClassJobHelper` | Class and job identity, roles, `ClassJobCategory` membership, and the character's level in each. |
 | `IconHelper` | An icon id resolved to its game path or its texture, and the icon a sheet row names. |
 | `TextCommandHelper` | The client's own text commands, and the rewrite that makes one work in any language. |
@@ -112,10 +116,11 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 
 `LevelObject` (with `LevelObjectKind` and `LevelObjectFilter`) is the flattened placed object every file read
 produces and most of the other helpers consume. `MapProjection` / `MapMarkerEntry` / `ProjectedMapMarker`,
-`TerritoryEntry`, `AetheryteEntry`, `ResidentialShard`, `WarpDefinition`, `ChocoboTaxiStandInfo` /
-`ChocoboTaxiRide`, `EventNpcHandlerScan`, `QuestProgress`, `ShopCost` / `ShopOffer` / `ShopInfo` / `ShopCatalog`,
-`DutyInfo`, `ClassJobInfo`, `TextCommandInfo`, `WorldInfo` and the `Housing*` records are each documented on the
-helper that produces them.
+`TerritoryEntry`, `AetheryteEntry`, `ResidentialShard`, `WarpDefinition` / `WarpLogicInfo` / `WarpLogicParam`,
+`ChocoboTaxiStandInfo` / `ChocoboTaxiRide`,
+`EventNpcHandlerScan`, `QuestProgress`, `ShopCost` / `ShopOffer` / `ShopInfo` / `ShopCatalog`,
+`DutyInfo`, `DiademEntry`, `CosmicPlanet` / `CosmicShardInfo` / `CosmicTravelTalks`, `ClassJobInfo`,
+`TextCommandInfo`, `WorldInfo` and the `Housing*` records are each documented on the helper that produces them.
 
 **None of them references Lumina**, so anything built on top of these records is testable with hand-built fixtures
 and no game behind it.
@@ -124,8 +129,8 @@ and no game behind it.
 
 ## Archive Paths
 
-`GamePathHelper` answers "where would that file be" as pure string rules. Nothing here opens an archive, so a caller
-can resolve one file's reference to another before deciding whether to load it.
+`GamePathHelper` answers "where would that file be" as pure string rules. Nothing here opens an archive, so one file's reference to another
+resolves before anything decides whether to load it.
 
 ```csharp
 // A model's material. Background models store it outright; character models store it relative,
@@ -153,7 +158,7 @@ string? scene = GamePathHelper.SceneBesideModel("bgcommon/hou/indoor/general/068
 // Everything interactable a territory places, across planmap, planevent, planner and planlive.
 var objects = LevelFileHelper.ReadPlacements(territoryId);
 
-// Or one file, keeping only what you asked for.
+// Or one file, keeping only the requested kinds.
 var crystals = LevelFileHelper.ReadObjects(territoryId, LevelFileHelper.Files.PlanMap, new LevelObjectFilter
 {
     Kinds = new HashSet<LevelObjectKind> { LevelObjectKind.Aetheryte },
@@ -179,7 +184,7 @@ whole-world pass that keeps everything exhausts the heap. `LevelObjectFilter` dr
 added to the list:
 
 - `Kinds` restricts what is kept at all.
-- `EventNpcBaseIds` / `EventObjectBaseIds` keep only the interactables you already know you want.
+- `EventNpcBaseIds` / `EventObjectBaseIds` keep only the named interactables.
 - `IncludeUnmappedKinds` (or `LevelObjectFilter.Everything`) keeps the rest, which is most of a file.
 
 The default drops `LevelObjectKind.Other`.
@@ -201,12 +206,10 @@ if (arrivals.TryGetValue((destinationTerritory, warp.ArrivalInstanceId), out var
 ### Which territory a placement belongs to
 
 One level directory is shared by several `TerritoryType` rows, and reading it attributes every placement to all of
-them. That is how a story-scene NPC reads as a permanent fixture: the shuttle pilot offering "Enter the tiring
-room?" is in the Prima Vista Tiring Room's own level file, but belongs to the *second* row of that place, and is
-not standing in the one the character walks into.
+them, so a story-scene NPC reads as a permanent fixture of every row.
 
-The files answer it. Each layer lists the **layer sets** it belongs to, and the level-base (`.lvb`) file beside the
-level files maps every layer set to a `TerritoryType` row:
+Each layer lists the **layer sets** it belongs to, and the level-base (`.lvb`) file beside the level files maps
+every layer set to a `TerritoryType` row:
 
 ```csharp
 foreach (var set in LayerSetHelper.ReadLayerSets(territoryId))
@@ -237,8 +240,8 @@ layer sets at all.
 
 A spot on a map has three names, and all three are the same point through one map's size factor and offset:
 
-- a **world** position, which is what a game object carries;
-- a **marker** pixel in the 0-2048 space a map image is authored in, which is what the `MapMarker` sheet stores;
+- a **world** position, the one a game object carries;
+- a **marker** pixel in the 0-2048 space a map image is authored in, the one the `MapMarker` sheet stores;
 - a **map coordinate**, which is the "X: 12.3, Y: 9.8" a flag or a chat link is written with.
 
 **None of them carries a height.** A real altitude only ever comes from a placed object's own transform.
@@ -320,8 +323,8 @@ var afterFog = WeatherHelper.FindNextTransition(territoryId,
     (previous, current) => previous == 6 && current == 1);
 ```
 
-**A predicate over the current window alone cannot express a transition**, and a great many timed nodes and fish
-are stated as one ("clear skies, after fog"); `FindNextTransition` takes both.
+**A predicate over the current window alone cannot express a transition** ("clear skies, after fog");
+`FindNextTransition` takes both windows.
 
 ### Running without a game
 
@@ -342,12 +345,16 @@ var forecast = WeatherHelper.Forecast(rates, territoryId, windows: 100);
 ```csharp
 TerritoryHelper.Name(territoryId);          // display name, falling back to a housing interior's name
 TerritoryHelper.SheetPlaceName(territoryId);// the sheet's own PlaceName only, with no fallback
-TerritoryHelper.PlaceNameId(territoryId);   // the row id, which is what you store
+TerritoryHelper.PlaceNameId(territoryId);   // the row id, the form to store
 TerritoryHelper.Bg(territoryId);            // the level path, e.g. ffxiv/fst_f1/fld/f1f1/level/f1f1
+
+TerritoryHelper.AetheryteOf(territoryId);   // the aetheryte the territory is bound to (a district's city crystal)
+TerritoryHelper.ReadHandlerQuests(territoryId); // the quests the territory's own event handler names (a district's unlock)
 
 TerritoryHelper.ReadReal();                 // territories that are a real place, not a placeholder row
 TerritoryHelper.ReadQueueableDuties();      // territories reachable through the Duty Finder
 TerritoryHelper.ReadMountable();            // territories that allow a mount (cached)
+TerritoryHelper.ReadTeleportBarred();       // territories Teleport cannot be cast from (cached)
 TerritoryHelper.ReadAetherCurrentZones();   // (territory, CompFlgSet) pairs for flight unlocks (cached)
 TerritoryHelper.ReadZoneCrossingGates();    // the quest gates that close a zone boundary
 ```
@@ -408,8 +415,8 @@ foreach (var shard in shards)
     NoireLogger.LogInfo($"{TerritoryHelper.PlaceName(shard.PlaceNameId)} at {shard.Position}");
 ```
 
-Pass the district's already-read `LevelObject` list as the optional second argument when you have one, so the
-district is not read twice.
+Pass an already-read `LevelObject` list for the district as the optional second argument, so the district is not
+read twice.
 
 ---
 
@@ -439,20 +446,65 @@ A `WarpDefinition` carries what it costs (`GilCost`), what it needs (`ClassLevel
 **`QuestThreshold` equal to the quest count is an "all of"; below it, it is a genuine M-of-N**: this expresses an
 unlock reachable by several storylines.
 
-`LogicId` is the warp's `WarpLogic` family, named by `WarpHelper.LogicName`. It is an internal name, never shown
-to a player and never localised, so it is safe to use as a classifier:
+### The logic row is a script, and sometimes the only gate
+
+`LogicId` is the warp's `WarpLogic` row. `WarpHelper.LogicName` gives its name, which is internal, never shown to
+a player and never localised, so it is safe as a classifier:
 
 ```csharp
 if (WarpHelper.LogicName(warp.LogicId).StartsWith("WarpInn"))
     NoireLogger.LogInfo("That one is an inn warp.");
 ```
 
-Nearly every warp in the game belongs to one generic family whose name is empty, so an empty result means "an
-ordinary warp" rather than a failed lookup. The families that are named are the inn warps, the two housing doors,
-the rental-chocobo desks, the wedding desk, and the story portal networks.
+543 of the game's 577 warps use the two generic rows, whose name is empty, so an empty result means "an ordinary
+warp" rather than a failed lookup. The 15 named rows are the six inn warps, the two housing doors, the
+rental-chocobo desks, the wedding desk, the Elpis and Ultima Thule portal networks, and a system row that only
+changes the music.
 
-`ScanArrayHandlerWarps` exposes the indirection on its own for a caller that needs it: some event objects do not
-name a warp directly but run an array handler that does.
+**The name is a file.** It is the stem of a compiled Lua script at `game_script/warp/<name>.luab`, and the row's
+parameters are that script's own gating constants: 15 of the 16 parameter names in the game appear verbatim in the
+constant table of the very script their row names. Read the row whole with `ReadLogic`:
+
+```csharp
+if (WarpHelper.ReadLogic(warp.LogicId) is { } logic)
+{
+    foreach (var (function, argument) in logic.Params)
+        NoireLogger.LogInfo($"{logic.ScriptName} takes {function} = {argument}");
+}
+```
+
+**Four rows carry parameters, and for three warps they are the only gate there is.** Warps 131176 (the wedding
+desk), 131316 (the Crystarium inn) and 131576 (the Tuliyollal inn) name no quest on their `WarpCondition` at all,
+so a reader that only looks at `RequiredQuests` calls them free passage. `NamesContentGate` is the question to
+ask:
+
+```csharp
+if (WarpHelper.NamesContentGate(warp))
+    NoireLogger.LogInfo("This warp is gated by something the condition does not state.");
+```
+
+It reads the argument's name, since the column is an untyped row reference. `QST_` and `QUEST_` name a quest,
+`ITEM_` an item, `QST_SEQ_` is a sequence number rather than a gate of its own, and `HOWTO_` is a tutorial popup
+that gates nothing (the rental-chocobo desks carry one, and their real gate is the 80 gil and level 10 on their
+condition).
+
+**It says a gate exists, not whether it is passed.** How the script combines its arguments is not in the sheets:
+the Crystarium inn names four Shadowbringers quests plus `QST_SEQ_11` and `QST_SEQ_FINISH`, and which pairs with
+which is in the bytecode. A caller that must not plan through a locked warp should read true as "cannot say"; one
+that must not lose a passage should read it as open, which is the same looser-side choice `QuestThreshold` makes.
+
+### Three wirings, not two
+
+An event object reaches its warp three different ways, and `ScanEventObjectWarps` covers all of them:
+
+1. **Directly**, when the object's own handler id is a `Warp` row.
+2. **Through an array handler**, a small list of handler ids of which one is a warp. This is how a large share of
+   doors and teleporters are built, so reading only the direct form misses them even though the destination is
+   right there. `ScanArrayHandlerWarps` exposes that indirection on its own for a caller that needs it.
+3. **Through the `WKSWarp` table**, where nothing joins the object to the warp except that table. Four rows, every
+   one an EObj named `elevator` paired with a Warp row, and they are the Oizys floors in Cosmic Exploration.
+   `ScanCosmicWarps` exposes those on their own. **Its columns are unnamed in the schema and are read
+   positionally**, so a schema update that names them needs this read revisited; a test pins the pairing.
 
 ---
 
@@ -653,6 +705,42 @@ answers false rather than reading an unrelated row id as though it were an insta
 
 ---
 
+## Walk-in Content
+
+Some content is entered by talking to an NPC rather than through the duty finder. The NPC runs a `CustomTalk`
+service, whose name is its script identifier and never localised, so the service is found by name and the NPC by
+`EventNpcHelper.ScanHandlers` like any other handler.
+
+`DiademHelper` answers for the Diadem, whose seasons are the Diadem-typed `PublicContent` rows; the highest is the
+one Aurvael currently opens:
+
+```csharp
+var entry = DiademHelper.ReadCurrentEntry();
+entry!.TerritoryId;                  // the current season's territory
+entry.JobCategoryId;                 // Disciple of the Land...
+entry.JobLevel;                      // ...at this level
+
+DiademHelper.ReadEntranceTalkIds();  // Aurvael's service, for the NPC scan
+```
+
+`CosmicHelper` answers for Cosmic Exploration, whose facts live in the `WKS` sheet family:
+
+```csharp
+CosmicHelper.ReadPlanets();          // every planet, in release order, from WKSTerritoryInfo
+CosmicHelper.ReadAethernetShards();  // each WKSAetheryte with its name and placed objects
+CosmicHelper.ScanWarpObjects();      // the Warp row each WKSWarp-bound object triggers
+CosmicHelper.ReadTravelTalks();      // the boarding and leave services, for the NPC scan
+```
+
+A shard's planet is not in any sheet: it comes from where its object is placed, so `ReadAethernetShards` carries
+no territory. The `WKSWarp` objects run a `CustomTalk` rather than the warp itself (the Oizys rooftop elevators),
+which is why `WarpHelper.ScanEventObjectWarps` cannot see them and this mapping exists.
+
+`EventNpcHelper.Name(npcBaseId)` resolves an NPC's display name from its resident row, for labelling whatever the
+scans found.
+
+---
+
 ## Classes and Jobs
 
 `ClassJobHelper` covers identity, roles and levels:
@@ -660,8 +748,8 @@ answers false rather than reading an unrelated row id as though it were an insta
 ```csharp
 var job = ClassJobHelper.Read(19);
 
-job!.Abbreviation;     // "PLD" - localised, so this is a label, never a key
-job.NameEnglish;       // "Paladin" - the same on every client, so this is what to match on
+job!.Abbreviation;     // "PLD", localised, so this is a label, never a key
+job.NameEnglish;       // "Paladin", the same on every client, so match on this
 job.Role;              // ClassJobRole.Tank
 job.ParentId;          // the class it advances from, or its own id when it advances from nothing
 ```
@@ -677,7 +765,7 @@ job.IsHandOrLand;      // has an index among the crafters and gatherers
 
 A crafter's `JobIndex` is zero because it is outside the *battle job* numbering, not because it is not a job.
 
-Disciplines come from the sheet, so they are picked from a list rather than by a row id you have to go and find:
+Disciplines come from the sheet, so they are picked from a list rather than by a hand-found row id:
 
 ```csharp
 ClassJobHelper.ReadDisciplines();          // (categoryId, "Disciple of the Land"), discovered from the sheet
@@ -691,7 +779,7 @@ ClassJobHelper.InRole(ClassJobRole.Healer);     // every healer
 ```
 
 Levels come from the loaded character and are stored **per class**, so asking for a job answers the level of the
-class it grew out of - which is the same number the game itself shows:
+class it grew out of, which is the same number the game itself shows:
 
 ```csharp
 ClassJobHelper.CurrentId();          // what the character is playing
@@ -726,7 +814,7 @@ than assembled here, so the high resolution and language variants fall back exac
 ```csharp
 IconHelper.Path(iconId);                    // the game path, or null when there is no such icon
 IconHelper.Exists(iconId);
-IconHelper.Get(iconId);                     // the shared texture - hold this, not a wrap
+IconHelper.Get(iconId);                     // the shared texture; hold this, not a wrap
 IconHelper.Wrap(iconId);                    // ready to hand to a draw call; do not dispose it
 ```
 
@@ -755,12 +843,12 @@ hand works for exactly one audience.
 var command = TextCommandHelper.Localize("/dance");
 ```
 
-`Find` matches every spelling the client accepts - full, abbreviated, and both aliases - and takes a whole line as
+`Find` matches every spelling the client accepts (full, abbreviated, and both aliases) and takes a whole line as
 typed, so the leading slash and any arguments are optional:
 
 ```csharp
 TextCommandHelper.Find("/dance motion");     // the same row as "dance"
-TextCommandHelper.Normalize("  /DANCE x ");  // "dance" - the pure rule, testable without a game
+TextCommandHelper.Normalize("  /DANCE x ");  // "dance", the pure rule, testable without a game
 TextCommandHelper.ReadAll();                 // every command the client knows
 ```
 
@@ -794,6 +882,7 @@ Everything above reads static content. These read the client:
 
 ```csharp
 LayoutHelper.LoadedTerritory();              // the territory the client has loaded, or 0
+LayoutHelper.LoadedLayerSet();               // the layer-set key it is filtering layers by, or null
 LayoutHelper.IsInstancePlaced(levelObject);  // true / false / null when it cannot be answered
 
 QuestHelper.IsComplete(questId);
@@ -811,17 +900,43 @@ ClassJobHelper.CurrentId();                  // what they are playing
 ClassJobHelper.AllLevels();                  // and their level in everything
 ```
 
-`LayoutHelper.IsInstancePlaced` returns **null** rather than false when the answer is unknown - a different
-territory is loaded, or the layout is not ready - so "not there" is never confused with "cannot say".
+`LayoutHelper.IsInstancePlaced` returns **null** rather than false when the answer is unknown (a different
+territory is loaded, or the layout is not ready), so "not there" is never confused with "cannot say".
+
+`LayoutHelper.LoadedLayerSet` is null for the same reason, and for one more: **zero is a real key**, meaning the
+base configuration, so it cannot double as "no answer". A level file's layers each list the layer sets they
+belong to and nothing in the files says which set is active; only the loaded layout does. The key selects the
+zone's *edition*: a region or censorship variant, a patch revision, and in a handful of raid tiers which
+encounter the tier lays out. It does **not** select a duty's phase: a duty's phase layers share one set id, and
+what moves between them is per-instance, which `IsInstancePlaced` answers.
 
 ### Reading character data safely
 
-Anything that touches the logged-in character - the teleport list, the housing address, the quest journal, the
-loaded layout - is gated on `CharacterHelper.IsStateReady`, and so should any code you write beside it.
+Anything that touches the logged-in character (the teleport list, the housing address, the quest journal, the
+loaded layout) is gated on `CharacterHelper.IsStateReady`, and so should any code written beside it.
 
 **Being logged in is not that point.** The login event fires while the client is still assembling the character,
 and reading through it goes through pointers the game has not filled in yet: that is an access violation, not an
 exception, and no `try` will catch it.
+
+**And the character state reporting loaded is not that point either, for a call into game code.** The player object
+is filled in a moment after `IsStateReady` turns true and destroyed a moment before it turns false, so there is a
+window at each end where the state says ready and a game function that reaches for the player walks a null.
+`Telepo.UpdateAetheryteList` is one such function: it prices every entry from where the character is standing, and
+calling it in that window takes the client down from inside `UpdateAetheryteList` itself.
+
+| Gate on | For |
+|---|---|
+| `CharacterHelper.IsStateReady` | reading a struct or a field the character owns |
+| `CharacterHelper.IsPlayerLoaded` | **calling a game function** that may reach for the player object |
+
+`AetheryteHelper.RefreshTeleportList()` carries the second gate and returns whether the game was actually asked, so
+a caller can tell "the list is empty" from "it was not safe to ask" and try again when the player is really there.
+
+**The teleport list also outlives a character switch.** It is game memory, not per-character state: right after
+logging into another character it still holds the previous one's attunements. `RefreshTeleportList` records which
+character asked, and `ReadUnlockedState` reports `Known` only when the list was refreshed by the character standing
+there now, so the previous character's attunements are never passed off as the current one's.
 
 ---
 
@@ -879,7 +994,7 @@ exception, and no `try` will catch it.
 - Check the territory has a level path at all. `TerritoryHelper.Bg` is empty for placeholder rows, and
   `LevelFileHelper.ResolveLevelDirectory` returns null for them.
 - Check the filter. `LevelObjectFilter` defaults to dropping `LevelObjectKind.Other`, which is most of a file; use
-  `LevelObjectFilter.Everything` when you really want all of it.
+  `LevelObjectFilter.Everything` to keep all of it.
 - Check `/xllog`: every guarded read logs what it caught rather than failing silently.
 
 ### A whole-world read is slow or exhausts memory

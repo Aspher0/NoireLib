@@ -289,6 +289,21 @@ public sealed class GameDataHelperTests
     public void IsResidentialCrystal_MatchesTheCrystalAssetFamily(string path, bool expected)
         => AetheryteHelper.IsResidentialCrystal(path).Should().Be(expected);
 
+    /// <summary>
+    /// The teleport list is game memory that outlives a character switch, so a read only answers for the character
+    /// standing there now when the refresh that filled it was theirs. Right after switching, the previous
+    /// character's non-empty list must read as no answer at all, never as the new character's attunements.
+    /// </summary>
+    [Theory]
+    [InlineData(true, 5, 100UL, 100UL, true)]
+    [InlineData(true, 5, 100UL, 200UL, false)]
+    [InlineData(true, 5, 0UL, 200UL, false)]
+    [InlineData(true, 0, 100UL, 100UL, false)]
+    [InlineData(false, 5, 100UL, 100UL, false)]
+    public void IsCurrentAnswer_OnlyForTheCharacterWhoRefreshedTheList(
+        bool read, int attunedCount, ulong listOwner, ulong character, bool expected)
+        => AetheryteHelper.IsCurrentAnswer(read, attunedCount, listOwner, character).Should().Be(expected);
+
     [Fact]
     public void ApplyLevelPositions_PlacesEachRowFromTheCrystalCarryingItsId()
     {

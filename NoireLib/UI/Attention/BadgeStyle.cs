@@ -4,8 +4,7 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// How a badge looks: its colour, its size, where it sits on the thing it marks, and what it does with a count too
-/// large to read.
+/// How a badge looks: its colour, its size, where it sits on the element it marks, and how it caps a large count.
 /// </summary>
 /// <remarks>
 /// Every measurement is a logical pixel at 100%, like the rest of NoireUI. See <see cref="NoireUI.Scale"/>.
@@ -17,17 +16,12 @@ public sealed class BadgeStyle
     /// from the anchor. Defaults to 1.
     /// </summary>
     /// <remarks>
-    /// The one knob for "make it bigger": everything below is a logical pixel value that can also be set on its
-    /// own, but moving them one at a time means keeping five numbers in proportion by hand. Multiplies with
-    /// <see cref="NoireUI.Scale"/> rather than replacing it, so a badge scaled here still follows the user's
-    /// interface scale.<br/>
-    /// The text is drawn with a font built at the size this works out to, so each distinct value in use is a
-    /// distinct font size: a few are free, a value that varies per badge across dozens of them is not.
+    /// Multiplies with <see cref="NoireUI.Scale"/> rather than replacing it. Each distinct value in use costs a
+    /// distinct font size, so a value that varies per badge across dozens of them is expensive.
     /// </remarks>
     public float Scale { get; set; } = 1f;
 
     /// <summary>The badge colour. When <see langword="null"/>, the theme's danger colour.</summary>
-    /// <remarks>Danger rather than accent because a badge exists to be looked at before anything else on the element.</remarks>
     public Vector4? Color { get; set; }
 
     /// <summary>The colour of the number on it. When <see langword="null"/>, the theme's text colour.</summary>
@@ -77,11 +71,17 @@ public sealed class BadgeStyle
     /// <summary>How long one pulse takes, in seconds. Defaults to 1.5.</summary>
     public float PulsePeriod { get; set; } = 1.5f;
 
-    /// <summary>Renders a count the way it will be shown, applying <see cref="MaxCount"/>.</summary>
+    /// <summary>
+    /// Replaces the badge's own painting entirely, for the count and the dot both, while NoireUI keeps the placement
+    /// and the measurement.
+    /// </summary>
     /// <remarks>
-    /// The text is remembered against the count and the cap, because a badge is redrawn on every frame the thing it
-    /// marks is on screen while the count behind it moves only when something arrives.
+    /// The count is not drawn when this is set; the parts are on <see cref="UiBadgeDraw"/>, and
+    /// <see cref="NoireBadge.CountSize"/> still answers for the space.
     /// </remarks>
+    public Action<UiBadgeDraw>? CustomDraw { get; set; }
+
+    /// <summary>Renders a count the way it will be shown, applying <see cref="MaxCount"/>.</summary>
     /// <param name="count">The count to render.</param>
     /// <returns>The text on the badge.</returns>
     public string FormatCount(int count) => UiValueText.Count(count, MaxCount);
@@ -101,11 +101,11 @@ public sealed class BadgeStyle
     /// <returns>The value in real pixels.</returns>
     internal float Sized(float logical) => NoireUI.Scaled(logical * Scale);
 
-    /// <summary>Creates a copy, for a variation on a shared style.</summary>
+    /// <summary>Creates a copy of this style.</summary>
     /// <returns>A new style with the same values.</returns>
     public BadgeStyle Clone() => (BadgeStyle)MemberwiseClone();
 
-    /// <summary>Creates a style in a given colour, which is the usual reason to make one.</summary>
+    /// <summary>Creates a style in a given colour.</summary>
     /// <param name="color">The badge colour.</param>
     /// <returns>A new style.</returns>
     public static BadgeStyle Colored(Vector4 color) => new() { Color = color };

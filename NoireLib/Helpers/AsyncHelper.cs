@@ -20,7 +20,7 @@ public static class AsyncHelper
     /// Runs an asynchronous action on a background thread with exception logging.
     /// </summary>
     /// <param name="action">The asynchronous action to execute on a background thread.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>A <see cref="Task"/> representing the background operation.</returns>
     public static Task RunInBackgroundAsync(Func<Task> action, string? operationName = null)
     {
@@ -43,7 +43,7 @@ public static class AsyncHelper
     /// Runs a synchronous action on a background thread with exception logging.
     /// </summary>
     /// <param name="action">The action to execute on a background thread.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>A <see cref="Task"/> representing the background operation.</returns>
     public static Task RunInBackgroundAsync(Action action, string? operationName = null)
     {
@@ -68,7 +68,7 @@ public static class AsyncHelper
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="func">The asynchronous function to execute on a background thread.</param>
     /// <param name="defaultValue">The default value to return if an exception occurs.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>The result of the function, or <paramref name="defaultValue"/> if an exception occurs.</returns>
     public static Task<T?> RunInBackgroundAsync<T>(Func<Task<T>> func, T? defaultValue = default, string? operationName = null)
     {
@@ -94,7 +94,7 @@ public static class AsyncHelper
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="func">The function to execute on a background thread.</param>
     /// <param name="defaultValue">The default value to return if an exception occurs.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>The result of the function, or <paramref name="defaultValue"/> if an exception occurs.</returns>
     public static Task<T?> RunInBackgroundAsync<T>(Func<T> func, T? defaultValue = default, string? operationName = null)
     {
@@ -119,8 +119,7 @@ public static class AsyncHelper
     #region Framework Thread Execution
 
     /// <summary>
-    /// Executes a synchronous action on the framework thread.
-    /// If already on the framework thread, the action executes immediately.
+    /// Executes a synchronous action on the framework thread, inline when the caller is already on it.
     /// </summary>
     /// <param name="action">The action to execute on the framework thread.</param>
     /// <returns>A <see cref="Task"/> that completes when the action has finished executing on the framework thread.</returns>
@@ -147,8 +146,46 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Executes a synchronous function on the framework thread and returns its result.
-    /// If already on the framework thread, the function executes immediately.
+    /// Runs an action on the framework thread without waiting, inline when the caller is already on that thread.
+    /// </summary>
+    /// <param name="action">The action to run; null is ignored.</param>
+    public static void RunOnFramework(Action? action)
+    {
+        if (action == null)
+            return;
+
+        if (NoireService.Framework.IsInFrameworkUpdateThread)
+        {
+            action();
+            return;
+        }
+
+        NoireService.Framework.RunOnFrameworkThread(action);
+    }
+
+    /// <summary>
+    /// Runs an action on the framework thread with one captured argument and without waiting, inline when the
+    /// caller is already on that thread.
+    /// </summary>
+    /// <typeparam name="T">The argument type.</typeparam>
+    /// <param name="action">The action to run; null is ignored.</param>
+    /// <param name="argument">The argument to pass.</param>
+    public static void RunOnFramework<T>(Action<T>? action, T argument)
+    {
+        if (action == null)
+            return;
+
+        if (NoireService.Framework.IsInFrameworkUpdateThread)
+        {
+            action(argument);
+            return;
+        }
+
+        NoireService.Framework.RunOnFrameworkThread(() => action(argument));
+    }
+
+    /// <summary>
+    /// Executes a synchronous function on the framework thread, inline when the caller is already on it.
     /// </summary>
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="func">The function to execute on the framework thread.</param>
@@ -175,8 +212,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Starts an asynchronous action on the framework thread and awaits its completion.
-    /// The async work begins on the framework thread; continuations may run on a thread pool thread.
+    /// Starts an asynchronous action on the framework thread and awaits its completion, with continuations free to
+    /// run on a thread pool thread.
     /// </summary>
     /// <param name="asyncAction">The asynchronous action to start on the framework thread.</param>
     /// <returns>A <see cref="Task"/> that completes when the asynchronous action has finished.</returns>
@@ -210,8 +247,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Starts an asynchronous function on the framework thread and returns its result.
-    /// The async work begins on the framework thread; continuations may run on a thread pool thread.
+    /// Starts an asynchronous function on the framework thread and returns its result, with continuations free to
+    /// run on a thread pool thread.
     /// </summary>
     /// <typeparam name="T">The return type of the asynchronous function.</typeparam>
     /// <param name="asyncFunc">The asynchronous function to start on the framework thread.</param>
@@ -300,8 +337,8 @@ public static class AsyncHelper
     #region Timeout Wrappers
 
     /// <summary>
-    /// Executes an asynchronous function with a timeout. If the operation does not complete within the
-    /// specified duration, a <see cref="TimeoutException"/> is thrown.
+    /// Executes an asynchronous function with a timeout, throwing <see cref="TimeoutException"/> if it does not
+    /// complete in time.
     /// </summary>
     /// <typeparam name="T">The return type of the operation.</typeparam>
     /// <param name="operation">The asynchronous operation to execute.</param>
@@ -330,8 +367,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Executes an asynchronous action with a timeout. If the operation does not complete within the
-    /// specified duration, a <see cref="TimeoutException"/> is thrown.
+    /// Executes an asynchronous action with a timeout, throwing <see cref="TimeoutException"/> if it does not
+    /// complete in time.
     /// </summary>
     /// <param name="operation">The asynchronous operation to execute.</param>
     /// <param name="timeout">The maximum time allowed for the operation to complete.</param>
@@ -462,8 +499,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Retries an asynchronous function with exponential backoff between attempts.
-    /// The delay doubles after each failed attempt starting from <paramref name="initialDelay"/>.
+    /// Retries an asynchronous function, doubling the delay after each failed attempt starting from
+    /// <paramref name="initialDelay"/>.
     /// </summary>
     /// <typeparam name="T">The return type of the function.</typeparam>
     /// <param name="operation">The asynchronous operation to execute.</param>
@@ -516,8 +553,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Retries an asynchronous action with exponential backoff between attempts.
-    /// The delay doubles after each failed attempt starting from <paramref name="initialDelay"/>.
+    /// Retries an asynchronous action, doubling the delay after each failed attempt starting from
+    /// <paramref name="initialDelay"/>.
     /// </summary>
     /// <param name="operation">The asynchronous operation to execute.</param>
     /// <param name="maxRetries">The maximum number of retry attempts. Must be greater than zero.</param>
@@ -547,8 +584,8 @@ public static class AsyncHelper
     #region Batch Execution
 
     /// <summary>
-    /// Processes a collection of items asynchronously with controlled concurrency, returning results for each item.
-    /// Results are returned in the same order as the input items.
+    /// Processes a collection of items asynchronously with controlled concurrency, returning one result per item in
+    /// input order.
     /// </summary>
     /// <typeparam name="TItem">The type of the input items.</typeparam>
     /// <typeparam name="TResult">The type of the results.</typeparam>
@@ -617,8 +654,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Processes a collection of items asynchronously with controlled concurrency and collects exceptions
-    /// rather than failing on the first error. All items are attempted even if some fail.
+    /// Processes a collection of items asynchronously with controlled concurrency, attempting every item and
+    /// collecting exceptions rather than failing on the first error.
     /// </summary>
     /// <typeparam name="TItem">The type of the input items.</typeparam>
     /// <param name="items">The items to process.</param>
@@ -675,9 +712,8 @@ public static class AsyncHelper
     #region Cancellation Helpers
 
     /// <summary>
-    /// Creates a linked <see cref="CancellationTokenSource"/> that cancels when either the provided token is
-    /// cancelled or the specified timeout elapses.
-    /// The caller is responsible for disposing the returned token source.
+    /// Creates a caller-disposed <see cref="CancellationTokenSource"/> that cancels when either the provided token
+    /// is cancelled or the timeout elapses.
     /// </summary>
     /// <param name="token">The cancellation token to link with.</param>
     /// <param name="timeout">The timeout after which cancellation is requested automatically.</param>
@@ -694,8 +730,7 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Creates a <see cref="CancellationTokenSource"/> that automatically cancels after the specified timeout.
-    /// The caller is responsible for disposing the returned token source.
+    /// Creates a caller-disposed <see cref="CancellationTokenSource"/> that cancels after the specified timeout.
     /// </summary>
     /// <param name="timeout">The timeout after which cancellation is requested automatically.</param>
     /// <returns>A new <see cref="CancellationTokenSource"/> with the specified timeout.</returns>
@@ -709,8 +744,8 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Creates a linked <see cref="CancellationTokenSource"/> that cancels when any of the provided tokens is cancelled.
-    /// The caller is responsible for disposing the returned token source.
+    /// Creates a caller-disposed <see cref="CancellationTokenSource"/> that cancels when any of the provided tokens
+    /// is cancelled.
     /// </summary>
     /// <param name="tokens">The cancellation tokens to link together.</param>
     /// <returns>A new <see cref="CancellationTokenSource"/> linked to all provided tokens.</returns>
@@ -791,7 +826,6 @@ public static class AsyncHelper
 
     /// <summary>
     /// Waits asynchronously until a condition becomes true, polling at a specified interval on a background thread.
-    /// Use this for conditions that do not require framework-thread evaluation.
     /// </summary>
     /// <param name="condition">The condition predicate to evaluate at each polling interval.</param>
     /// <param name="pollInterval">The interval between condition checks.</param>
@@ -874,7 +908,7 @@ public static class AsyncHelper
     /// <typeparam name="T">The type of the computed result.</typeparam>
     /// <param name="backgroundWork">The async function to run on a background thread.</param>
     /// <param name="frameworkApply">The action to run on the framework thread with the computed result.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>A <see cref="Task"/> that completes when the framework action has finished.</returns>
     public static async Task RunBackgroundThenFrameworkAsync<T>(
         Func<Task<T>> backgroundWork,
@@ -902,7 +936,7 @@ public static class AsyncHelper
     /// <typeparam name="T">The type of the computed result.</typeparam>
     /// <param name="backgroundWork">The function to run on a background thread.</param>
     /// <param name="frameworkApply">The action to run on the framework thread with the computed result.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>A <see cref="Task"/> that completes when the framework action has finished.</returns>
     public static Task RunBackgroundThenFrameworkAsync<T>(
         Func<T> backgroundWork,
@@ -918,14 +952,14 @@ public static class AsyncHelper
     }
 
     /// <summary>
-    /// Runs asynchronous work on a background thread, then applies the result on the framework thread.
-    /// Exceptions are caught and logged instead of thrown.
+    /// Runs asynchronous work on a background thread, then applies the result on the framework thread, catching
+    /// exceptions instead of throwing them.
     /// </summary>
     /// <typeparam name="T">The type of the computed result.</typeparam>
     /// <param name="backgroundWork">The async function to run on a background thread.</param>
     /// <param name="frameworkApply">The action to run on the framework thread with the computed result.</param>
     /// <param name="onException">An optional callback invoked when an exception occurs.</param>
-    /// <param name="operationName">An optional name for the operation, used in log messages for diagnostics.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
     /// <returns>A <see cref="Task"/> that completes when the operation finishes, regardless of exceptions.</returns>
     public static async Task RunBackgroundThenFrameworkSafeAsync<T>(
         Func<Task<T>> backgroundWork,
@@ -941,6 +975,31 @@ public static class AsyncHelper
         {
             onException?.Invoke(ex);
         }
+    }
+
+    /// <summary>
+    /// Runs synchronous work on a background thread, then applies the result on the framework thread, catching
+    /// exceptions instead of throwing them.
+    /// </summary>
+    /// <typeparam name="T">The type of the computed result.</typeparam>
+    /// <param name="backgroundWork">The function to run on a background thread.</param>
+    /// <param name="frameworkApply">The action to run on the framework thread with the computed result.</param>
+    /// <param name="onException">An optional callback invoked when an exception occurs.</param>
+    /// <param name="operationName">Optional operation name used in log messages.</param>
+    /// <returns>A <see cref="Task"/> that completes when the operation finishes, regardless of exceptions.</returns>
+    public static Task RunBackgroundThenFrameworkSafeAsync<T>(
+        Func<T> backgroundWork,
+        Action<T> frameworkApply,
+        Action<Exception>? onException = null,
+        string? operationName = null)
+    {
+        ArgumentNullException.ThrowIfNull(backgroundWork);
+
+        return RunBackgroundThenFrameworkSafeAsync(
+            () => Task.FromResult(backgroundWork()),
+            frameworkApply,
+            onException,
+            operationName);
     }
 
     #endregion

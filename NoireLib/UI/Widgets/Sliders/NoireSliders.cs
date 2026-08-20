@@ -8,8 +8,6 @@ namespace NoireLib.UI;
 /// Sliders drawn by the library rather than by ImGui, so they can be restyled to the last pixel.
 /// </summary>
 /// <remarks>
-/// The drawing goes through the same style-plus-custom-draw shape as the buttons and toggles: the widget keeps the
-/// arithmetic, the hook paints.<br/>
 /// The label column matches <see cref="NoireInputs"/>, so a slider between two number fields lines up with them.
 /// </remarks>
 /// <example>
@@ -21,9 +19,7 @@ namespace NoireLib.UI;
 [NoireFacade]
 public static class NoireSliders
 {
-    /// <summary>
-    /// Draws a slider over a range of whole numbers.
-    /// </summary>
+    /// <summary>Draws a slider over a range of whole numbers.</summary>
     /// <param name="label">The row's label. Anything after "###" is the stable id, as in ImGui.</param>
     /// <param name="value">The value, written back as it is dragged.</param>
     /// <param name="min">The low end of the range.</param>
@@ -36,7 +32,7 @@ public static class NoireSliders
         float asFloat = value;
 
         // Rounded on the way back rather than snapped inside the drag, so the handle sits exactly on the value the
-        // caller now holds instead of a whole pixel away from it.
+        // caller now holds.
         var changed = Draw(label, ref asFloat, min, max, resolved, resolved.ValueFormat ?? "0", whole: true);
 
         if (changed)
@@ -45,9 +41,7 @@ public static class NoireSliders
         return changed;
     }
 
-    /// <summary>
-    /// Draws a slider over a range of real numbers.
-    /// </summary>
+    /// <summary>Draws a slider over a range of real numbers.</summary>
     /// <param name="label">The row's label. Anything after "###" is the stable id, as in ImGui.</param>
     /// <param name="value">The value, written back as it is dragged.</param>
     /// <param name="min">The low end of the range.</param>
@@ -60,9 +54,15 @@ public static class NoireSliders
         return Draw(label, ref value, min, max, resolved, resolved.ValueFormat ?? "0.##", whole: false);
     }
 
-    /// <summary>
-    /// The whole of a slider: the label, the hit box, the drag, and the painting.
-    /// </summary>
+    /// <summary>Draws the whole of a slider: the label, the hit box, the drag, and the painting.</summary>
+    /// <param name="label">The row's label, with anything after "###" as the stable id.</param>
+    /// <param name="value">The value, written back as it is dragged.</param>
+    /// <param name="min">The low end of the range.</param>
+    /// <param name="max">The high end of the range.</param>
+    /// <param name="style">The slider's look.</param>
+    /// <param name="format">Numeric format for the value column.</param>
+    /// <param name="whole">Whether the value is rounded to a whole number.</param>
+    /// <returns>True on the frames the value changes.</returns>
     private static bool Draw(string label, ref float value, float min, float max, SliderStyle style, string format, bool whole)
     {
         using var draw = UiDraw.Begin();
@@ -86,7 +86,7 @@ public static class NoireSliders
         var valueWidth = style.ShowValue ? NoireUI.Scaled(style.ValueWidth) + NoireUI.Scaled(8f) : 0f;
         var grab = NoireUI.Scaled(style.GrabSize);
 
-        // The track stops half a handle short of each end, so the handle's own edges land on the ends of the track
+        // The track stops half a handle short of each end, so the handle's edges land on the ends of the track
         // rather than hanging past them at 0 and 100 percent.
         var width = MathF.Max(grab + NoireUI.Scaled(8f), rowWidth - column - valueWidth);
         var origin = ImGui.GetCursorScreenPos();
@@ -120,7 +120,7 @@ public static class NoireSliders
         var args = new UiSliderDraw(origin, origin + size, trackMin, trackMax, grabCenter, fraction, value, hovered, held, style);
 
         if (style.CustomDraw != null)
-            Invoke(style.CustomDraw, args, nameof(NoireSliders));
+            UiHook.Invoke(style.CustomDraw, args, nameof(NoireSliders), CallbackFault);
         else
             Paint(args);
 
@@ -130,15 +130,14 @@ public static class NoireSliders
         if (style.ShowValue)
             DrawValue(value, format, style, origin, width, height);
 
-        // Put back where a row expects to be left, so whatever comes next starts on its own line at the margin.
+        // Back to the row margin, so whatever comes next starts on its own line.
         ImGui.SetCursorPosX(rowStart);
 
         return changed;
     }
 
-    /// <summary>
-    /// The shipped drawing: a track, the filled part of it, and a handle.
-    /// </summary>
+    /// <summary>Paints the default slider: a track, the filled part of it, and a handle.</summary>
+    /// <param name="args">The slider's resolved geometry, state and style.</param>
     private static void Paint(UiSliderDraw args)
     {
         var theme = NoireTheme.Current;
@@ -169,16 +168,14 @@ public static class NoireSliders
         PaintGrab(args, theme);
     }
 
-    /// <summary>
-    /// Draws the handle in whichever shape the style asks for.
-    /// </summary>
+    /// <summary>Draws the handle in whichever shape the style asks for.</summary>
+    /// <param name="args">The slider's resolved geometry, state and style.</param>
+    /// <param name="theme">The theme supplying fallback colors and hover/active variants.</param>
     private static void PaintGrab(UiSliderDraw args, NoireTheme theme)
     {
         var style = args.Style;
         var size = NoireUI.Scaled(style.GrabSize);
 
-        // Lifted a little while it is being used, reading as the handle being picked up rather than a colour change
-        // nobody notices mid-drag.
         if (args.Held)
             size *= 1.12f;
 
@@ -196,8 +193,7 @@ public static class NoireSliders
 
         if (style.Grab == SliderGrab.Diamond)
         {
-            // The halo follows the diamond rather than its bounding box: growing the rectangle instead leaves a lit
-            // square sitting behind the handle.
+            // The halo follows the diamond path; growing its bounding box would leave a lit square behind the handle.
             if (style.GlowColor is { } diamondGlow)
             {
                 Span<Vector2> path = stackalloc Vector2[4];
@@ -207,8 +203,7 @@ public static class NoireSliders
                     NoireShapes.GlowPath(path[..count], diamondGlow, NoireUI.Scaled(style.GlowSpread));
             }
 
-            // Painted white inside a gradient scope when it ramps, since the scope recolours whatever the body
-            // emitted.
+            // Painted white inside a gradient scope, which recolors whatever the body emitted.
             if (style.GrabColorTo is { } to)
                 NoireShapes.Gradient(min, max, GradientAxis.Vertical, color, to, (centre, half), static s => NoireShapes.Diamond(s.centre, s.half, Vector4.One));
             else
@@ -239,9 +234,13 @@ public static class NoireSliders
             NoireShapes.Rect(min, max, color, shape, corner);
     }
 
-    /// <summary>
-    /// Writes the value at the end of the row, in a column reserved whatever it reads.
-    /// </summary>
+    /// <summary>Writes the value at the end of the row, in a fixed-width column.</summary>
+    /// <param name="value">The value to write.</param>
+    /// <param name="format">Numeric format for the value.</param>
+    /// <param name="style">The slider's look.</param>
+    /// <param name="origin">Top-left of the slider's hit box, in screen pixels.</param>
+    /// <param name="width">Width of the track area, in pixels.</param>
+    /// <param name="height">Row height, in pixels.</param>
     private static void DrawValue(float value, string format, SliderStyle style, Vector2 origin, float width, float height)
     {
         var theme = NoireTheme.Current;
@@ -251,8 +250,7 @@ public static class NoireSliders
         var column = NoireUI.Scaled(style.ValueWidth);
         var measured = NoireText.CalcSize(text);
 
-        // Right-aligned inside its column, so the digits line up down a stack of sliders instead of wandering with the
-        // width of the number.
+        // Right-aligned inside its column, so digits line up down a stack of sliders.
         var at = new Vector2(
             origin.X + width + NoireUI.Scaled(8f) + column - measured.X,
             origin.Y + (height * 0.5f) - NoireText.CenterOffset());
@@ -265,15 +263,10 @@ public static class NoireSliders
         ImGui.PopTextWrapPos();
     }
 
-    /// <summary>
-    /// What value a pointer position on the track means.
-    /// </summary>
+    /// <summary>What value a pointer position on the track means.</summary>
     /// <remarks>
-    /// Taken from where the pointer is rather than from how far it has moved: a drag driven by mouse delta
-    /// accumulates a drift away from the cursor over a long gesture, and a click on the track then jumps by that
-    /// drift rather than to where it was aimed. Reading the position outright makes a click and a drag the same
-    /// operation and leaves nothing to accumulate.<br/>
-    /// Clamped rather than refused past the ends, because dragging off the end of a track means "as far as it goes".
+    /// Taken from the absolute pointer position rather than from mouse delta, which accumulates drift away from the
+    /// cursor over a long gesture. Positions past either end clamp to it.
     /// </remarks>
     /// <param name="pointerX">Where the pointer is, in screen pixels.</param>
     /// <param name="trackX">Where the track starts, in screen pixels.</param>
@@ -297,10 +290,7 @@ public static class NoireSliders
     }
 
     /// <summary>How far along its range a value sits.</summary>
-    /// <remarks>
-    /// A range of no width answers zero rather than dividing by it: a slider whose two ends are the same number is not
-    /// an error worth throwing over, it is a slider with nowhere to go.
-    /// </remarks>
+    /// <remarks>A range of no width answers zero rather than dividing by it.</remarks>
     /// <param name="value">The value.</param>
     /// <param name="min">The low end of the range.</param>
     /// <param name="max">The high end of the range.</param>
@@ -311,29 +301,8 @@ public static class NoireSliders
         return range > float.Epsilon ? Math.Clamp((value - min) / range, 0f, 1f) : 0f;
     }
 
-    /// <summary>
-    /// Runs a consumer callback, reporting anything it throws rather than letting it escape into the frame.
-    /// </summary>
-    /// <remarks>
-    /// The argument is passed explicitly rather than captured by a closure: Roslyn allocates a display class at
-    /// method entry for a lambda that captures a parameter, even on frames where the branch does not run. See the
-    /// same fix on <see cref="NoireButtons"/>.
-    /// </remarks>
-    /// <typeparam name="TArg">The argument type.</typeparam>
-    /// <param name="callback">The callback to run.</param>
-    /// <param name="argument">Passed to <paramref name="callback"/>.</param>
-    /// <param name="source">What to blame in the fault report.</param>
-    private static void Invoke<TArg>(Action<TArg> callback, TArg argument, string source)
-    {
-        try
-        {
-            callback(argument);
-        }
-        catch (Exception ex)
-        {
-            NoireUI.Diagnostics.ReportFault(source, "A slider callback threw.", ex);
-        }
-    }
+    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
+    private const string CallbackFault = "A slider callback threw.";
 
     private static readonly SliderStyle DefaultStyle = new();
 }

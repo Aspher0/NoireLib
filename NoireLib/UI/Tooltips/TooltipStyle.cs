@@ -1,82 +1,71 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
-/// Visual and placement options for a custom tooltip drawn with <see cref="NoireTooltip"/>.<br/>
-/// Every pixel value here is written at 100% and scaled when it is drawn. See <see cref="NoireUI.Scale"/>.
+/// Visual and placement options for a custom tooltip drawn with <see cref="NoireTooltip"/>. Every pixel value here is
+/// written at 100% and scaled by <see cref="NoireUI.Scale"/> when it is drawn.
 /// </summary>
 public sealed class TooltipStyle
 {
-    /// <summary>
-    /// The background color of the tooltip. When <see langword="null"/>, the current ImGui popup background color is used.
-    /// </summary>
+    /// <summary>The background colour of the tooltip, or <see langword="null"/> for the current ImGui popup background.</summary>
     public Vector4? BackgroundColor { get; set; } = null;
 
     /// <summary>
-    /// The background opacity of the tooltip, from 0 (fully transparent) to 1 (fully opaque).<br/>
-    /// When <see langword="null"/>, the alpha of <see cref="BackgroundColor"/> (or of the current style) is used.
+    /// The background opacity of the tooltip, from 0 to 1. When <see langword="null"/>, the alpha of
+    /// <see cref="BackgroundColor"/> or of the current style is used.
     /// </summary>
     public float? BackgroundOpacity { get; set; } = null;
 
-    /// <summary>
-    /// The default text color inside the tooltip. When <see langword="null"/>, the current ImGui text color is used.
-    /// </summary>
+    /// <summary>The default text colour inside the tooltip, or <see langword="null"/> for the current ImGui text colour.</summary>
     public Vector4? TextColor { get; set; } = null;
 
-    /// <summary>
-    /// The border color of the tooltip. When <see langword="null"/>, the current ImGui border color is used.
-    /// </summary>
+    /// <summary>The border colour of the tooltip, or <see langword="null"/> for the current ImGui border colour.</summary>
     public Vector4? BorderColor { get; set; } = null;
 
-    /// <summary>
-    /// The border thickness of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window border size is used.
-    /// </summary>
+    /// <summary>The border thickness of the tooltip at 100%, or <see langword="null"/> for the current ImGui window border size.</summary>
     public float? BorderSize { get; set; } = null;
 
-    /// <summary>
-    /// The corner rounding of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window rounding is used.
-    /// </summary>
+    /// <summary>The corner rounding of the tooltip at 100%, or <see langword="null"/> for the current ImGui window rounding.</summary>
     public float? Rounding { get; set; } = null;
 
-    /// <summary>
-    /// The inner padding of the tooltip, at 100%. When <see langword="null"/>, the current ImGui window padding is used.
-    /// </summary>
+    /// <summary>The inner padding of the tooltip at 100%, or <see langword="null"/> for the current ImGui window padding.</summary>
     public Vector2? Padding { get; set; } = null;
 
-    /// <summary>
-    /// Where the tooltip is placed. See <see cref="TooltipPlacement"/>.
-    /// </summary>
+    /// <summary>Where the tooltip is placed.</summary>
     public TooltipPlacement Placement { get; set; } = TooltipPlacement.Mouse;
 
-    /// <summary>
-    /// The offset from the mouse cursor at 100%, when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.<br/>
-    /// See <see cref="ItemOffset"/> for the item-relative placements.
-    /// </summary>
+    /// <summary>The offset from the mouse cursor at 100%, used when <see cref="Placement"/> is <see cref="TooltipPlacement.Mouse"/>.</summary>
     public Vector2 MouseOffset { get; set; } = new(16f, 16f);
 
     /// <summary>
-    /// The gap at 100% between the tooltip and the item, when using an item-relative <see cref="Placement"/>
-    /// (every placement except <see cref="TooltipPlacement.Mouse"/>).<br/>
-    /// This pushes the tooltip away from the item along the placement axis, so it grows the same way whichever side the
-    /// tooltip is on. See <see cref="ItemOffset"/> to shift it freely instead.
+    /// The gap at 100% between the tooltip and the item under any item-relative <see cref="Placement"/>, applied along
+    /// the placement axis so it reads the same whichever side the tooltip lands on.
     /// </summary>
     public float ItemGap { get; set; } = 6f;
 
     /// <summary>
-    /// An additional offset at 100% applied when using an item-relative <see cref="Placement"/>
-    /// (every placement except <see cref="TooltipPlacement.Mouse"/>), on top of <see cref="ItemGap"/>.<br/>
-    /// Where <see cref="ItemGap"/> only moves the tooltip along the placement axis, this shifts it on both axes: use it to
-    /// nudge a tooltip placed above an item to the right, for example. Defaults to no offset.
+    /// An additional offset at 100% applied on both axes under any item-relative <see cref="Placement"/>, on top of
+    /// <see cref="ItemGap"/>.
     /// </summary>
     public Vector2 ItemOffset { get; set; } = Vector2.Zero;
 
-    /// <summary>
-    /// Whether the tooltip should be kept fully inside the viewport. Defaults to <see langword="true"/>.
-    /// </summary>
+    /// <summary>Whether the tooltip is kept fully inside the viewport.</summary>
     public bool ClampToViewport { get; set; } = true;
 
-    // What the tooltip actually draws from. Each logical value above is scaled here and nowhere else.
+    /// <summary>
+    /// Replaces the tooltip's background and border with custom painting, while NoireUI keeps placement, measuring and
+    /// the content. The window is begun with no chrome of its own and the hook paints from its draw list, before the
+    /// content.
+    /// </summary>
+    public Action<UiTooltipDraw>? CustomDraw { get; set; }
+
+    /// <summary>Creates an independent copy.</summary>
+    /// <returns>The copy.</returns>
+    public TooltipStyle Clone() => (TooltipStyle)MemberwiseClone();
+
+    // The values the tooltip draws from. Each logical value above is scaled here and nowhere else.
 
     internal Vector2 ScaledMouseOffset => NoireUI.Scaled(MouseOffset);
 

@@ -187,7 +187,7 @@ public class NoireConfigGenerator : IIncrementalGenerator
             sb.AppendLine($"/// Gets or sets the {property.Name} property on the configuration instance.");
 
             if (property.HasAutoSave)
-                sb.AppendLine("/// Automatically saves the configuration on set.");
+                sb.AppendLine("/// Automatically saves the configuration shortly after the set, off the calling thread.");
 
             sb.AppendLine("/// </summary>");
             sb.AppendLine($"public static {property.TypeName} {property.Name}");
@@ -197,8 +197,10 @@ public class NoireConfigGenerator : IIncrementalGenerator
             sb.AppendLine("{");
             sb.AppendLine("Instance." + property.Name + " = value;");
 
+            // Queued rather than written inline: a setting is normally assigned on the framework thread, and the
+            // write is disk work of unbounded duration.
             if (property.HasAutoSave)
-                sb.AppendLine("Save();");
+                sb.AppendLine("RequestSave();");
 
             sb.AppendLine("}");
             sb.AppendLine("}");
@@ -232,7 +234,7 @@ public class NoireConfigGenerator : IIncrementalGenerator
             {
                 // Auto saves and returns value
                 sb.AppendLine($"var result = {(method.IsStatic ? classInfo.InstanceClassName : "Instance")}.{method.Name}({argList});");
-                sb.AppendLine("Save();");
+                sb.AppendLine("RequestSave();");
                 sb.AppendLine("return result;");
             }
             else if (hasReturnValue)
@@ -245,7 +247,7 @@ public class NoireConfigGenerator : IIncrementalGenerator
                 // No return, no auto save
                 sb.AppendLine($"{(method.IsStatic ? classInfo.InstanceClassName : "Instance")}.{method.Name}({argList});");
                 if (method.HasAutoSave)
-                    sb.AppendLine("Save();");
+                    sb.AppendLine("RequestSave();");
             }
 
             sb.AppendLine("}");
@@ -254,9 +256,19 @@ public class NoireConfigGenerator : IIncrementalGenerator
 
         // Generate utility methods
         sb.AppendLine("/// <summary>");
-        sb.AppendLine("/// Saves the configuration to disk.");
+        sb.AppendLine("/// Saves the configuration to disk, blocking until the write has landed.");
         sb.AppendLine("/// </summary>");
         sb.AppendLine("public static bool Save() => Instance.Save();");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Marks the configuration changed and writes it shortly afterwards, off the calling thread.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static void RequestSave() => Instance.RequestSave();");
+        sb.AppendLine();
+        sb.AppendLine("/// <summary>");
+        sb.AppendLine("/// Writes anything a queued save is still holding and waits for a write already running.");
+        sb.AppendLine("/// </summary>");
+        sb.AppendLine("public static bool FlushPendingSave() => Instance.FlushPendingSave();");
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// Reloads the configuration from disk.");

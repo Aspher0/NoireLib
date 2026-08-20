@@ -15,17 +15,12 @@ public static class NoireConfigManager
     private static readonly ConcurrentDictionary<Type, INoireConfig> ConfigCache = new();
 
     /// <summary>
-    /// Gets or creates a configuration instance of the specified type, loaded from disk if a file exists. The
-    /// instance is cached and shared by later callers, except when a load fails against a file that exists but
-    /// could not be read or parsed: that instance is returned but not cached, so the next call retries instead of
-    /// being handed defaults forever.<br/>
-    /// A first run with no file yet is cached normally, since the defaults are the real configuration until
-    /// something saves them. A configuration loaded into a degraded state (see
-    /// <see cref="NoireConfigBase.IsDegraded"/>) is cached as well, since its load succeeded and its saves are
-    /// refused on purpose.
+    /// Gets or creates a configuration instance of the specified type, loaded from disk when a file exists and
+    /// cached for later callers. An instance whose load failed against an existing file is returned uncached, so
+    /// the next call retries rather than handing out defaults forever.
     /// </summary>
-    /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
-    /// <returns>The configuration instance, or null if creation/loading failed.</returns>
+    /// <typeparam name="T">The configuration type.</typeparam>
+    /// <returns>The configuration instance, or null when creation or loading threw.</returns>
     /// <seealso cref="ReloadConfig{T}"/>
     public static T? GetConfig<T>() where T : NoireConfigBase, new()
     {
@@ -41,8 +36,8 @@ public static class NoireConfigManager
         {
             config = new T();
 
-            // The second operand reaches a virtual member a derived configuration may override. A successful load
-            // already cached the instance from inside Load; this only decides what happens to a failure.
+            // A successful load already cached the instance from inside Load; this only decides what happens to a
+            // failure, and the second operand reaches a virtual member a derived configuration may override.
             cacheable = config.Load() || config.IsUnwrittenDefault;
         }
         catch (Exception ex)
@@ -69,8 +64,8 @@ public static class NoireConfigManager
     /// Gets or creates a configuration instance of the specified type without caching, returning a fresh instance
     /// every time.
     /// </summary>
-    /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
-    /// <returns>The configuration instance, or null if creation/loading failed.</returns>
+    /// <typeparam name="T">The configuration type.</typeparam>
+    /// <returns>The configuration instance, or null when creation or loading threw.</returns>
     public static T? LoadConfigFresh<T>() where T : NoireConfigBase, new()
     {
         try
@@ -86,12 +81,10 @@ public static class NoireConfigManager
         }
     }
 
-    /// <summary>
-    /// Saves a configuration instance to disk and updates the cache.
-    /// </summary>
-    /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
+    /// <summary>Saves a configuration instance to disk and updates the cache.</summary>
+    /// <typeparam name="T">The configuration type.</typeparam>
     /// <param name="config">The configuration instance to save.</param>
-    /// <returns>True if the save operation was successful; otherwise, false.</returns>
+    /// <returns>True when the save succeeded.</returns>
     public static bool SaveConfig<T>(T config) where T : NoireConfigBase
     {
         if (config == null)
@@ -110,12 +103,10 @@ public static class NoireConfigManager
         return success;
     }
 
-    /// <summary>
-    /// Updates a configuration using an action and saves it automatically.
-    /// </summary>
-    /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
+    /// <summary>Applies an action to a configuration and saves it.</summary>
+    /// <typeparam name="T">The configuration type.</typeparam>
     /// <param name="updateAction">The action to perform on the configuration before saving.</param>
-    /// <returns>True if the update and save were successful; otherwise, false.</returns>
+    /// <returns>True when the update and save both succeeded.</returns>
     public static bool UpdateConfig<T>(Action<T> updateAction) where T : NoireConfigBase, new()
     {
         var config = GetConfig<T>();
@@ -134,32 +125,26 @@ public static class NoireConfigManager
         }
     }
 
-    /// <summary>
-    /// Reloads a configuration from disk and updates the cache.
-    /// </summary>
-    /// <typeparam name="T">The configuration type that inherits from NoireConfigBase.</typeparam>
-    /// <returns>The reloaded configuration instance, or null if the reload failed.</returns>
+    /// <summary>Drops the cached instance and loads the configuration from disk again.</summary>
+    /// <typeparam name="T">The configuration type.</typeparam>
+    /// <returns>The reloaded configuration instance, or null when the reload failed.</returns>
     public static T? ReloadConfig<T>() where T : NoireConfigBase, new()
     {
         ConfigCache.Remove(typeof(T), out _);
         return GetConfig<T>();
     }
 
-    /// <summary>
-    /// Removes a configuration from the cache without deleting the file.
-    /// </summary>
+    /// <summary>Removes a configuration from the cache without deleting its file.</summary>
     /// <typeparam name="T">The configuration type to remove from cache.</typeparam>
-    /// <returns>True if the configuration was removed from cache; otherwise, false.</returns>
+    /// <returns>True when an entry was removed.</returns>
     public static bool UnloadConfig<T>() where T : NoireConfigBase
     {
         return ConfigCache.Remove(typeof(T), out _);
     }
 
-    /// <summary>
-    /// Deletes a configuration file from disk and removes it from cache.
-    /// </summary>
+    /// <summary>Deletes a configuration file from disk and removes it from the cache.</summary>
     /// <typeparam name="T">The configuration type to delete.</typeparam>
-    /// <returns>True if the deletion was successful; otherwise, false.</returns>
+    /// <returns>True when the deletion succeeded.</returns>
     public static bool DeleteConfig<T>() where T : NoireConfigBase, new()
     {
         var config = GetConfig<T>();
@@ -176,29 +161,23 @@ public static class NoireConfigManager
         return success;
     }
 
-    /// <summary>
-    /// Checks if a configuration file exists on disk.
-    /// </summary>
+    /// <summary>Checks whether a configuration file exists on disk.</summary>
     /// <typeparam name="T">The configuration type to check.</typeparam>
-    /// <returns>True if the configuration file exists; otherwise, false.</returns>
+    /// <returns>True when the file exists.</returns>
     public static bool ConfigExists<T>() where T : NoireConfigBase, new()
     {
         var config = new T();
         return config.Exists();
     }
 
-    /// <summary>
-    /// Clears all cached configurations without deleting the files.
-    /// </summary>
+    /// <summary>Clears all cached configurations without deleting their files.</summary>
     public static void ClearCache()
     {
         ConfigCache.Clear();
         NoireLogger.LogDebug("Configuration cache cleared.", "[NoireConfigManager] ");
     }
 
-    /// <summary>
-    /// Gets the number of configurations currently cached.
-    /// </summary>
+    /// <summary>Gets the number of configurations currently cached.</summary>
     /// <returns>The number of cached configurations.</returns>
     public static int GetCachedConfigCount()
     {
@@ -206,14 +185,10 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Saves all cached configurations to disk. Each is saved inside its own boundary, so a configuration that
-    /// throws or fails to write does not stop the others.<br/>
-    /// A configuration that refuses because it is <see cref="NoireConfigBase.IsDegraded"/> is not reported as a
-    /// fault here, since it already explains itself where it is decided, but it still counts against the return
-    /// value.
+    /// Saves all cached configurations to disk, each inside its own boundary so one that throws or fails to write
+    /// does not stop the others.
     /// </summary>
-    /// <returns>True if every cached configuration is on disk, whether it was written now or was already up to date;
-    /// false if any of them is not, whether it failed to write or refused to.</returns>
+    /// <returns>True when every cached configuration is on disk, whether written now or already up to date.</returns>
     /// <seealso cref="NoireConfigBase.IsDegraded"/>
     public static bool SaveAllCached()
     {
@@ -228,8 +203,8 @@ public static class NoireConfigManager
 
                 allSuccess = false;
 
-                // A degraded configuration reports false on every save attempt, which for [AutoSave] members can be
-                // often; not logged here since it already explains itself where it is decided.
+                // A degraded configuration reports false on every save attempt and already logs why where that is
+                // decided, so logging it again here would flood on [AutoSave] members.
                 if (config is NoireConfigBase { IsDegraded: true })
                     continue;
 
@@ -250,6 +225,18 @@ public static class NoireConfigManager
         return allSuccess;
     }
 
+    /// <summary>
+    /// Writes every configuration holding changes queued by <see cref="NoireConfigBase.RequestSave"/> and waits for
+    /// any write already running, so on return the disk matches memory. Called during NoireLib disposal.
+    /// </summary>
+    /// <returns>True when every pending payload reached disk.</returns>
+    /// <seealso cref="NoireConfigBase.RequestSave"/>
+    public static bool FlushPendingSaves() => NoireConfigBase.FlushAllPendingSaves();
+
+    /// <summary>Caches a configuration instance for a type when no entry exists yet.</summary>
+    /// <param name="configType">The configuration type to key on.</param>
+    /// <param name="config">The instance to cache.</param>
+    /// <returns>True when the entry was added.</returns>
     internal static bool AddConfigToCache(Type configType, INoireConfig config)
     {
 #if DEBUG
@@ -259,12 +246,9 @@ public static class NoireConfigManager
     }
 
     /// <summary>
-    /// Replaces the cached instance for a type, but only when one is already cached. A configuration with
-    /// <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and handed to consumers as an
-    /// auto-save proxy; swapping the cache entry for the proxy keeps <see cref="SaveAllCached"/> writing the values
-    /// consumers are changing rather than the raw load-time snapshot.<br/>
-    /// Only an existing entry is swapped: a failed load is deliberately left uncached by <see cref="GetConfig{T}"/>
-    /// so the next call retries, and adding one here would defeat that.
+    /// Replaces the cached instance for a type, only when one is already cached, so that
+    /// <see cref="SaveAllCached"/> writes the auto-save proxy consumers hold rather than the raw load-time
+    /// instance. Adding a missing entry here would defeat the uncached retry <see cref="GetConfig{T}"/> relies on.
     /// </summary>
     /// <param name="configType">The configuration type whose cached instance is being replaced.</param>
     /// <param name="config">The instance to cache in its place.</param>
@@ -277,18 +261,14 @@ public static class NoireConfigManager
         }
     }
 
-    /// <summary>
-    /// Gets the configuration directory path for the current plugin.
-    /// </summary>
-    /// <returns>The full path to the plugin's configuration directory, or null if NoireLib is not initialized.</returns>
+    /// <summary>Gets the configuration directory path for the current plugin.</summary>
+    /// <returns>The full path, or null when NoireLib is not initialized.</returns>
     public static string? GetConfigDirectoryPath()
     {
         return FileHelper.GetPluginConfigDirectory();
     }
 
-    /// <summary>
-    /// Registers a migration for a configuration type, for organizing migrations outside the configuration class.
-    /// </summary>
+    /// <summary>Registers a migration for a configuration type, declared outside the configuration class.</summary>
     /// <typeparam name="T">The configuration type.</typeparam>
     /// <param name="migration">The migration to register.</param>
     public static void RegisterMigration<T>(IConfigMigration migration) where T : NoireConfigBase
@@ -296,17 +276,18 @@ public static class NoireConfigManager
         MigrationExecutor.RegisterMigration(typeof(T), migration);
     }
 
-    /// <summary>
-    /// Clears all runtime-registered migrations.
-    /// </summary>
+    /// <summary>Clears all runtime-registered migrations.</summary>
     public static void ClearMigrations()
     {
         MigrationExecutor.ClearRuntimeMigrations();
     }
 
+    /// <summary>
+    /// Loads every configuration type in the plugin assembly whose
+    /// <see cref="NoireConfigBase.LoadFromDiskOnInitialization"/> is true.
+    /// </summary>
     internal static void LoadMarkedConfigsFromDisk()
     {
-        // Get all configurations that have LoadFromDiskOnInitialization set to true
         var configTypes = NoireService.PluginInstance?.GetType().Assembly.GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract && typeof(NoireConfigBase).IsAssignableFrom(t))
             .Where(t =>

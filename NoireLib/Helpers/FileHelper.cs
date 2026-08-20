@@ -1,4 +1,4 @@
-using Dalamud.Utility;
+﻿using Dalamud.Utility;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -243,8 +243,7 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Finds the embedded resources whose manifest name contains a fragment, for reading a whole folder of them
-    /// without hardcoding the default namespace.
+    /// Finds the embedded resources whose manifest name contains a fragment.
     /// </summary>
     /// <param name="assembly">The assembly to search.</param>
     /// <param name="nameFragment">Fragment to match, compared case-insensitively.</param>
@@ -275,10 +274,10 @@ public static class FileHelper
     }
 
     /// <summary>
-    /// Writes raw bytes to a file so that the file is only ever seen whole.<br/>
-    /// The bytes go to a temporary file beside the target and that file is then moved over it, so a failure
-    /// part way through leaves the previous contents intact rather than a half written file. Use this for
-    /// anything a later run has to read back and trust, such as a cache or an index.
+    /// Writes raw bytes through a temporary sibling that is then moved over the target, so a failure part way
+    /// through leaves the previous contents intact.
+    /// Concurrent writers each get their own temporary, but the final move is still a race the loser reports
+    /// as false; serialise the calls if every concurrent write must be accepted.
     /// </summary>
     /// <param name="filePath">The path to the file.</param>
     /// <param name="bytes">The bytes to write.</param>
@@ -288,7 +287,7 @@ public static class FileHelper
         if (filePath.IsNullOrWhitespace() || bytes == null)
             return false;
 
-        var temporary = filePath + ".tmp";
+        var temporary = TemporaryWritePathFor(filePath);
 
         try
         {
@@ -312,12 +311,23 @@ public static class FileHelper
             }
             catch
             {
-                // The temporary is beside the target and named for it, so leaving it behind is harmless.
+                // A leftover temporary is inert: nothing ever reads a .tmp.
             }
 
             return false;
         }
     }
+
+    /// <summary>
+    /// Builds the temporary path a <see cref="ReplaceFileAtomically"/> call writes into: the target path, a fresh
+    /// identifier and a <c>.tmp</c> suffix.
+    /// Unique per call so two concurrent writes cannot interleave inside one temporary, and beside the target so the
+    /// move that follows stays on one volume and therefore stays atomic.
+    /// </summary>
+    /// <param name="filePath">The file being written.</param>
+    /// <returns>A path beside <paramref name="filePath"/> that no other call will pick.</returns>
+    internal static string TemporaryWritePathFor(string filePath)
+        => $"{filePath}.{Guid.NewGuid():N}.tmp";
 
     /// <summary>
     /// Deletes a file if it exists.
@@ -638,16 +648,16 @@ public static class FileHelper
     /// Builds the serializer that backs every JSON file operation here.
     /// </summary>
     /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>A serializer that honours <paramref name="settings"/> without leaving the file format open to the process.</returns>
+    /// <returns>A serializer honouring <paramref name="settings"/>, with type-name handling forced off.</returns>
     private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? settings)
     {
-        // Resolves every setting from the object given here, rather than merging in the mutable JsonConvert.DefaultSettings global.
+        // Create ignores the mutable JsonConvert.DefaultSettings global, unlike the JsonConvert entry points.
         var serializer = JsonSerializer.Create(settings);
 
-        // Always off regardless of what the caller's settings ask for: a file names data, never a type to construct.
+        // Forced regardless of the caller's settings: a file names data, never a type to construct.
         serializer.TypeNameHandling = TypeNameHandling.None;
 
-        // Content after the JSON document means the file is corrupt, and is rejected rather than silently ignored.
+        // Content trailing the JSON document means a corrupt file, and is rejected rather than ignored.
         serializer.CheckAdditionalContent = true;
 
         return serializer;
@@ -705,6 +715,18 @@ public static class FileHelper
     /// <see cref="TypeNameHandling.None"/>, whatever the settings ask for; every other setting is honoured.</param>
     /// <returns>True if the operation was successful; otherwise, false.</returns>
     public static bool WriteJsonToFile<T>(string filePath, T obj, JsonSerializerSettings? settings = null)
+        => WriteJsonToFile(filePath, obj, false, settings);
+
+    /// <summary>
+    /// Serializes an object to JSON and writes it to a file.
+    /// </summary>
+    /// <typeparam name="T">The type to serialize.</typeparam>
+    /// <param name="filePath">The path to the file.</param>
+    /// <param name="obj">The object to serialize.</param>
+    /// <param name="atomic">Whether to write through a temporary sibling that replaces the target only once it is fully on disk.</param>
+    /// <param name="settings">Optional JSON serializer settings.</param>
+    /// <returns>True if the operation was successful; otherwise, false.</returns>
+    public static bool WriteJsonToFile<T>(string filePath, T obj, bool atomic, JsonSerializerSettings? settings = null)
     {
         if (filePath.IsNullOrWhitespace() || obj == null)
             return false;
@@ -716,7 +738,12 @@ public static class FileHelper
                 return false;
 
             var json = SerializeToJson(obj, settings);
-            File.WriteAllText(filePath, json);
+
+            if (atomic)
+                AtomicFile.WriteAllText(filePath, json);
+            else
+                File.WriteAllText(filePath, json);
+
             return true;
         }
         catch (Exception ex)
@@ -1084,7 +1111,7 @@ public static class FileHelper
         if (destinationDirectory.IsNullOrWhitespace())
             destinationDirectory = Path.GetDirectoryName(file.FilePath);
 
-        if (destinationDirectory.IsNullOrWhitespace()) // Just in case Path.GetDirectoryName() returns null
+        if (destinationDirectory.IsNullOrWhitespace())
             return null;
 
         if (!EnsureDirectoryExists(destinationDirectory))
@@ -1166,7 +1193,7 @@ public static class FileHelper
         if (destinationDirectory.IsNullOrWhitespace())
             destinationDirectory = Path.GetDirectoryName(sourceDirectory.DirectoryPath);
 
-        if (destinationDirectory.IsNullOrWhitespace()) // Just in case Path.GetDirectoryName() returns null
+        if (destinationDirectory.IsNullOrWhitespace())
             return null;
 
         if (!EnsureDirectoryExists(destinationDirectory))
