@@ -8,7 +8,7 @@ namespace NoireLib.Helpers;
 /// Limits the rate at which an action can be executed.<br/>
 /// Prefer <see cref="ThrottleHelper"/> unless you need this directly; if you use it, remember to call <see cref="Dispose"/>.
 /// </summary>
-public class Throttler : TimingHelperBase
+public class Throttler : TimeTimingHelperBase
 {
     private long _lastExecutionMs = 0;
 

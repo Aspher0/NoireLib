@@ -6,16 +6,17 @@ using System.Threading.Tasks;
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Delays action execution until a specified time has passed without new calls.<br/>
-/// Prefer <see cref="DebounceHelper"/> unless you need this directly; if you use it, remember to call <see cref="Dispose"/>.
+/// Delays action execution until a number of game frames has passed without new calls.<br/>
+/// Prefer <see cref="FrameDebounceHelper"/> unless you need this directly; if you use it, remember to call
+/// <see cref="Dispose"/>. The frame twin of <see cref="Debouncer"/>.
 /// </summary>
-public class Debouncer : TimeTimingHelperBase
+public class FrameDebouncer : FrameTimingHelperBase
 {
     /// <summary>
-    /// Creates a new debouncer with the specified delay.
+    /// Creates a new frame debouncer with the specified delay.
     /// </summary>
-    /// <param name="delay">The delay to wait before executing the action.</param>
-    public Debouncer(TimeSpan delay) : base(delay) { }
+    /// <param name="frames">The number of game frames to wait before executing the action.</param>
+    public FrameDebouncer(long frames) : base(frames) { }
 
     /// <summary>
     /// Debounces the specified action. If called multiple times, only the last call will execute after the delay period.
@@ -28,33 +29,8 @@ public class Debouncer : TimeTimingHelperBase
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
-        CancellationTokenSource currentCts;
-
-        await _lock.WaitAsync();
-        try
-        {
-            currentCts = CreateNewScheduledExecution();
-        }
-        finally
-        {
-            _lock.Release();
-        }
-
-        if (!await TryWaitAsync(currentCts))
+        if (!await WaitOutAsync().ConfigureAwait(false))
             return;
-
-        await _lock.WaitAsync();
-        try
-        {
-            if (!IsCurrentExecution(currentCts))
-                return;
-
-            ClearScheduledExecution();
-        }
-        finally
-        {
-            _lock.Release();
-        }
 
         action();
     }
@@ -70,33 +46,8 @@ public class Debouncer : TimeTimingHelperBase
         if (action == null)
             throw new ArgumentNullException(nameof(action));
 
-        CancellationTokenSource currentCts;
-
-        await _lock.WaitAsync();
-        try
-        {
-            currentCts = CreateNewScheduledExecution();
-        }
-        finally
-        {
-            _lock.Release();
-        }
-
-        if (!await TryWaitAsync(currentCts))
+        if (!await WaitOutAsync().ConfigureAwait(false))
             return;
-
-        await _lock.WaitAsync();
-        try
-        {
-            if (!IsCurrentExecution(currentCts))
-                return;
-
-            ClearScheduledExecution();
-        }
-        finally
-        {
-            _lock.Release();
-        }
 
         await action();
     }
@@ -107,15 +58,15 @@ public class Debouncer : TimeTimingHelperBase
     /// <returns>True if an action is currently waiting to be executed, false otherwise.</returns>
     public bool IsPending()
     {
-        return GetRemainingTime() > 0;
+        return GetRemainingFrames() > 0;
     }
 
     /// <summary>
-    /// Gets the remaining time in milliseconds before the debounced action will execute.
+    /// Gets how many game frames are left before the debounced action will execute.
     /// </summary>
-    /// <param name="allowNegative">If true, allows negative values when the scheduled time has passed; otherwise returns 0.</param>
-    /// <returns>The remaining time in milliseconds, or 0 if no action is pending (when allowNegative is false).</returns>
-    public double GetRemainingTime(bool allowNegative = false)
+    /// <param name="allowNegative">If true, allows negative values when the scheduled frame has passed; otherwise returns 0.</param>
+    /// <returns>The remaining frames, or 0 if no action is pending (when allowNegative is false).</returns>
+    public double GetRemainingFrames(bool allowNegative = false)
     {
         ThrowIfDisposed();
 
@@ -167,5 +118,42 @@ public class Debouncer : TimeTimingHelperBase
         {
             _lock.Release();
         }
+    }
+
+    /// <summary>
+    /// Schedules this call, waits the interval out, and reports whether it is still the call that should run.
+    /// </summary>
+    /// <returns>True when no later call superseded this one.</returns>
+    private async Task<bool> WaitOutAsync()
+    {
+        CancellationTokenSource currentCts;
+
+        await _lock.WaitAsync();
+        try
+        {
+            currentCts = CreateNewScheduledExecution();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+
+        if (!await TryWaitAsync(currentCts))
+            return false;
+
+        await _lock.WaitAsync();
+        try
+        {
+            if (!IsCurrentExecution(currentCts))
+                return false;
+
+            ClearScheduledExecution();
+        }
+        finally
+        {
+            _lock.Release();
+        }
+
+        return true;
     }
 }

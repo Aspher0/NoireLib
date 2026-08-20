@@ -26,7 +26,7 @@ internal sealed class DepthCalibration
     private float calibratedNear;
     private bool calibratedStandardZ;
     private bool calibratedFiniteFar;
-    private long lastAttemptFrame = FrameThrottle.Never;
+    private long lastAttemptFrame = FrameThrottler.Never;
     private int failStreak;
     private bool troubleLogged;
 
@@ -50,7 +50,7 @@ internal sealed class DepthCalibration
     {
         IsValid = false;
         Description = "uncalibrated";
-        lastAttemptFrame = FrameThrottle.Never;
+        lastAttemptFrame = FrameThrottler.Never;
         failStreak = 0;
     }
 
@@ -73,7 +73,7 @@ internal sealed class DepthCalibration
             return true;
 
         var interval = failStreak >= FailuresBeforeBackoff ? BackoffIntervalFrames : RetryIntervalFrames;
-        if (!FrameThrottle.TryPass(frameId, ref lastAttemptFrame, interval))
+        if (!FrameThrottler.TryPass(frameId, ref lastAttemptFrame, interval))
             return false;
 
         if (!GameRenderSources.TryGetDepthTexture(out var info))

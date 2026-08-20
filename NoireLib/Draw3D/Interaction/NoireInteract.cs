@@ -88,7 +88,7 @@ public static class NoireInteract
     private static Vector2 depthProbeScreen;
     private static Vector3 depthProbeWorld;
     private static bool depthProbeValid;
-    private static long depthProbeFrame = FrameThrottle.Never;
+    private static long depthProbeFrame = FrameThrottler.Never;
 
     private const int VkLButton = 0x01, VkRButton = 0x02, VkMButton = 0x04;
 
@@ -512,10 +512,10 @@ public static class NoireInteract
         var fid = frame.FrameId;
         // Not a plain throttle: at least the minimum frames AND (the cursor moved OR the maximum frames), so a
         // still cursor still re-reads eventually and a moving one re-reads as soon as it is allowed to.
-        var minElapsed = FrameThrottle.HasElapsed(fid, depthProbeFrame, DepthProbeMinFrames);
-        if (minElapsed && (depthProbeFrame == FrameThrottle.Never
+        var minElapsed = FrameThrottler.HasElapsed(fid, depthProbeFrame, DepthProbeMinFrames);
+        if (minElapsed && (depthProbeFrame == FrameThrottler.Never
                            || Vector2.Distance(mousePos, depthProbeScreen) > DepthProbeMovePixels
-                           || FrameThrottle.HasElapsed(fid, depthProbeFrame, DepthProbeMaxFrames)))
+                           || FrameThrottler.HasElapsed(fid, depthProbeFrame, DepthProbeMaxFrames)))
         {
             depthProbeFrame = fid;
             depthProbeScreen = mousePos;

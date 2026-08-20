@@ -180,7 +180,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
 
     private ComPtr<ID3D11Texture2D> beforeStaging, afterStaging;
     private DXGI_FORMAT stagingFormat;
-    private long lastCheckFrame = FrameThrottle.Never;
+    private long lastCheckFrame = FrameThrottler.Never;
     private bool copyPending;
     private int consecutiveSuspicious;
     private bool disabledLogged;
@@ -200,7 +200,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         if (mask.BeforeTexture == null || mask.AfterTexture == null || mask.Width == 0 || mask.Height == 0)
             return;
 
-        if (!FrameThrottle.TryPass(frameId, ref lastCheckFrame, CheckIntervalFrames))
+        if (!FrameThrottler.TryPass(frameId, ref lastCheckFrame, CheckIntervalFrames))
             return;
 
         if (beforeStaging.Get() != null && stagingFormat != mask.Format)

@@ -5,15 +5,12 @@ using System.Threading.Tasks;
 namespace NoireLib.Internal.Helpers;
 
 /// <summary>
-/// Base class for timing-related helpers that provides common functionality for delay management and thread safety.
+/// The shared substrate of the timing helpers: one lock, one scheduled execution, and the disposal rules. The unit
+/// the interval is counted in is the derived class's business, so a tick here is a millisecond for
+/// <see cref="TimeTimingHelperBase"/> and a game frame for <see cref="FrameTimingHelperBase"/>.
 /// </summary>
 public abstract class TimingHelperBase : IDisposable
 {
-    /// <summary>
-    /// The TimeSpan delay associated with the timing helper.
-    /// </summary>
-    protected TimeSpan _delay;
-
     /// <summary>
     /// A semaphore used for thread-safe operations.
     /// </summary>
@@ -30,64 +27,26 @@ public abstract class TimingHelperBase : IDisposable
     protected CancellationTokenSource? _cts;
 
     /// <summary>
-    /// The scheduled execution time in milliseconds since epoch.
+    /// The tick the scheduled execution is due at, in this helper's own unit. Zero when nothing is scheduled.
     /// </summary>
-    protected long _scheduledExecutionMs = 0;
+    protected long _scheduledExecution = 0;
 
     /// <summary>
-    /// Initializes a new instance of the <see cref="TimingHelperBase"/> class.
+    /// The current tick, in this helper's own unit.
     /// </summary>
-    /// <param name="delay">The delay as a <see cref="TimeSpan"/>.</param>
-    /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    protected TimingHelperBase(TimeSpan delay)
-    {
-        if (delay <= TimeSpan.Zero)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
-
-        _delay = delay;
-    }
+    protected abstract long CurrentTick { get; }
 
     /// <summary>
-    /// Gets the current delay.
+    /// The configured interval, in this helper's own unit.
     /// </summary>
-    /// <returns>The current delay as a <see cref="TimeSpan"/>.</returns>
-    public TimeSpan GetDelay()
-    {
-        ThrowIfDisposed();
-
-        _lock.Wait();
-        try
-        {
-            return _delay;
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
+    protected abstract long IntervalTicks { get; }
 
     /// <summary>
-    /// Sets a new delay. This does not affect any currently running operation.
+    /// Waits out one interval, resolving false when the wait was cancelled.
     /// </summary>
-    /// <param name="delay">The new delay as a <see cref="TimeSpan"/>.</param>
-    /// <exception cref="ArgumentException">Thrown when delay is less than or equal to zero.</exception>
-    public void SetDelay(TimeSpan delay)
-    {
-        ThrowIfDisposed();
-
-        if (delay <= TimeSpan.Zero)
-            throw new ArgumentException("Delay must be greater than zero.", nameof(delay));
-
-        _lock.Wait();
-        try
-        {
-            _delay = delay;
-        }
-        finally
-        {
-            _lock.Release();
-        }
-    }
+    /// <param name="cts">The CancellationTokenSource to use for cancellation.</param>
+    /// <returns>True if the wait completed without cancellation, false if cancelled.</returns>
+    protected abstract Task<bool> TryWaitAsync(CancellationTokenSource cts);
 
     /// <summary>
     /// Throws an <see cref="ObjectDisposedException"/> if this instance has been disposed.
@@ -108,7 +67,7 @@ public abstract class TimingHelperBase : IDisposable
         _cts?.Dispose();
 
         _cts = new CancellationTokenSource();
-        _scheduledExecutionMs = Environment.TickCount64 + (long)_delay.TotalMilliseconds;
+        _scheduledExecution = CurrentTick + IntervalTicks;
         return _cts;
     }
 
@@ -120,55 +79,38 @@ public abstract class TimingHelperBase : IDisposable
         _cts?.Cancel();
         _cts?.Dispose();
         _cts = null;
-        _scheduledExecutionMs = 0;
+        _scheduledExecution = 0;
     }
 
     /// <summary>
-    /// Clears the scheduled execution time. Must be called within a lock.
+    /// Clears the scheduled execution tick. Must be called within a lock.
     /// </summary>
     protected void ClearScheduledExecution()
     {
-        _scheduledExecutionMs = 0;
+        _scheduledExecution = 0;
     }
 
     /// <summary>
     /// Checks if the given CancellationTokenSource is still valid (matches current and not cancelled). Must be called within a lock.
     /// </summary>
+    /// <param name="cts">The CancellationTokenSource to check.</param>
+    /// <returns>True when it is still the scheduled execution.</returns>
     protected bool IsCurrentExecution(CancellationTokenSource cts)
     {
         return cts == _cts && !cts.IsCancellationRequested;
     }
 
     /// <summary>
-    /// Awaits a delay with cancellation support and handles the OperationCanceledException.
+    /// Gets how much of the interval is left before the scheduled execution, in this helper's own unit.
     /// </summary>
-    /// <param name="cts">The CancellationTokenSource to use for cancellation.</param>
-    /// <returns>True if the delay completed without cancellation, false if cancelled.</returns>
-    protected async Task<bool> TryDelayAsync(CancellationTokenSource cts)
+    /// <param name="allowNegative">If true, allows negative values when the scheduled tick has passed; otherwise returns 0.</param>
+    /// <returns>The remaining amount.</returns>
+    protected double GetRemainingCore(bool allowNegative = false)
     {
-        try
-        {
-            await Task.Delay((int)_delay.TotalMilliseconds, cts.Token);
-            return true;
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Gets the remaining time in milliseconds before scheduled execution.
-    /// </summary>
-    /// <param name="allowNegative">If true, allows negative values when the scheduled time has passed; otherwise returns 0.</param>
-    /// <returns>The remaining time in milliseconds.</returns>
-    protected double GetRemainingTimeCore(bool allowNegative = false)
-    {
-        if (_cts == null || _cts.IsCancellationRequested || _scheduledExecutionMs == 0)
+        if (_cts == null || _cts.IsCancellationRequested || _scheduledExecution == 0)
             return 0;
 
-        var now = Environment.TickCount64;
-        var remaining = _scheduledExecutionMs - now;
+        var remaining = _scheduledExecution - CurrentTick;
         return allowNegative ? remaining : Math.Max(0, remaining);
     }
 
