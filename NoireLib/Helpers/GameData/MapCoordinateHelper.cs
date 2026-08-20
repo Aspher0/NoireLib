@@ -4,49 +4,6 @@ using Lumina.Excel.Sheets;
 
 namespace NoireLib.Helpers;
 
-/// <summary>One of a territory's maps, carrying the projection its markers and coordinates are expressed in.</summary>
-/// <param name="MapId">The Map row id.</param>
-/// <param name="MapMarkerRange">The map's marker range, which is the key into the MapMarker subrow sheet.</param>
-/// <param name="SizeFactor">The map's SizeFactor, the zoom the projection is drawn at.</param>
-/// <param name="OffsetX">The map's OffsetX.</param>
-/// <param name="OffsetY">The map's OffsetY, which offsets the world Z axis.</param>
-public readonly record struct MapProjection(uint MapId, uint MapMarkerRange, float SizeFactor, float OffsetX, float OffsetY);
-
-/// <summary>
-/// One map marker as the sheet states it: what it points at, where on the map it sits, and the icon it draws with.
-/// </summary>
-/// <param name="DataType">What <see cref="DataKey"/> means; see <see cref="MapMarkerDataType"/>.</param>
-/// <param name="DataKey">The row the marker keys, interpreted per <see cref="DataType"/>.</param>
-/// <param name="MapX">The marker's map X pixel, in the 0-2048 space the projection is expressed in.</param>
-/// <param name="MapY">The marker's map Y pixel, which projects onto the world Z axis.</param>
-/// <param name="Icon">The marker icon id.</param>
-public readonly record struct MapMarkerEntry(int DataType, uint DataKey, float MapX, float MapY, uint Icon);
-
-/// <summary>One map marker projected into world space, so it can be matched against a placed object's position.</summary>
-/// <param name="Marker">The marker itself.</param>
-/// <param name="World">The marker's world position. Only X and Z are meaningful; a marker carries no height.</param>
-/// <param name="MapId">The map the marker was projected through, since a territory can span several.</param>
-public readonly record struct ProjectedMapMarker(MapMarkerEntry Marker, Vector3 World, uint MapId);
-
-/// <summary>The <see cref="MapMarkerEntry.DataType"/> values that say how to read a marker's data key.</summary>
-public static class MapMarkerDataType
-{
-    /// <summary>The marker is decorative and keys nothing.</summary>
-    public const int None = 0;
-
-    /// <summary>The marker points at a map, and its data key is a Map row.</summary>
-    public const int Map = 1;
-
-    /// <summary>The marker points at an instance entrance, and its data key is an InstanceContent row.</summary>
-    public const int InstanceEntrance = 2;
-
-    /// <summary>The marker is a city aetheryte, and its data key is an Aetheryte row.</summary>
-    public const int Aetheryte = 3;
-
-    /// <summary>The marker is an aethernet shard, and its data key is a PlaceName row.</summary>
-    public const int AethernetShard = 4;
-}
-
 /// <summary>
 /// Converts between the game's three ways of naming a spot on a map, and reads the sheet rows the conversion needs.
 /// <br/>

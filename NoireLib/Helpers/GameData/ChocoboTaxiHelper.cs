@@ -4,25 +4,6 @@ using System.Collections.Generic;
 
 namespace NoireLib.Helpers;
 
-/// <summary>One chocobo taxi ride: a directed hop between two stands with a fixed fare and a fixed duration.</summary>
-/// <param name="FromStandId">The departure stand's ChocoboTaxiStand row id.</param>
-/// <param name="ToStandId">The arrival stand's ChocoboTaxiStand row id.</param>
-/// <param name="Fare">The ride's fare in gil.</param>
-/// <param name="TimeSeconds">The ride's fixed duration in seconds, converted from the sheet's minutes.</param>
-/// <param name="DestinationName">The arrival stand's name in the client's own language, or empty when it did not resolve.</param>
-public readonly record struct ChocoboTaxiRide(
-    uint FromStandId,
-    uint ToStandId,
-    uint Fare,
-    int TimeSeconds,
-    string DestinationName);
-
-/// <summary>One chocobo taxi stand and the rides that leave it.</summary>
-/// <param name="StandId">The ChocoboTaxiStand row id.</param>
-/// <param name="Name">The stand's name in the client's own language.</param>
-/// <param name="Rides">The rides leaving this stand.</param>
-public readonly record struct ChocoboTaxiStandInfo(uint StandId, string Name, IReadOnlyList<ChocoboTaxiRide> Rides);
-
 /// <summary>
 /// Reads the chocobo porter network out of the game's sheets: the stands, each ride's fare and duration, and the
 /// NPC running each stand. A stand's position comes from that porter's placement via

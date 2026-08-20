@@ -133,7 +133,6 @@ public static unsafe class LayoutHelper
         return layout == null ? null : layout->LayerFilterKey;
     }
 
-
     private static LayoutManager* ActiveLayout()
     {
         var world = LayoutWorld.Instance();

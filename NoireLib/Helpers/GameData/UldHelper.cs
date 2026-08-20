@@ -1,4 +1,3 @@
-using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using Lumina.Data.Files;
 using System.Collections.Concurrent;
@@ -6,19 +5,6 @@ using System.Collections.Generic;
 using System.Numerics;
 
 namespace NoireLib.Helpers;
-
-/// <summary>Where one part of a ULD part list sits on its texture.</summary>
-/// <param name="TexturePath">The game path of the texture the part is cut from.</param>
-/// <param name="Position">The part's top left corner, in texture pixels.</param>
-/// <param name="Size">The part's size, in texture pixels.</param>
-public readonly record struct UldPart(string TexturePath, Vector2 Position, Vector2 Size);
-
-/// <summary>A ULD part resolved to its loaded texture and the UVs that cut it out.</summary>
-/// <param name="Texture">The shared texture the part lives on, which must not be disposed.</param>
-/// <param name="Uv0">The part's top left corner, normalised.</param>
-/// <param name="Uv1">The part's bottom right corner, normalised.</param>
-/// <param name="Size">The part's size, in texture pixels.</param>
-public readonly record struct UldPartTexture(IDalamudTextureWrap Texture, Vector2 Uv0, Vector2 Uv1, Vector2 Size);
 
 /// <summary>
 /// Reads part lists out of the game's ULD files and resolves their parts to textures and UVs.

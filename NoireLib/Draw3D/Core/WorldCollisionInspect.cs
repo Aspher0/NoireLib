@@ -48,7 +48,7 @@ internal static unsafe class WorldCollisionInspect
     /// <param name="scenes">Receives how many scenes were walked.</param>
     /// <returns>How many were described.</returns>
     public static int Collect(
-        Vector3 boxMin, Vector3 boxMax, List<NoireCollider> into, int limit, out int scenes)
+        Vector3 boxMin, Vector3 boxMax, List<ColliderInfo> into, int limit, out int scenes)
     {
         scenes = 0;
         if (into == null || limit <= 0)
@@ -113,7 +113,7 @@ internal static unsafe class WorldCollisionInspect
     /// <param name="hit">Receives what was struck.</param>
     /// <returns>True when something was struck.</returns>
     public static bool Raycast(
-        Vector3 origin, Vector3 direction, float maxDistance, bool includeAnalytic, out NoireCollisionHit hit)
+        Vector3 origin, Vector3 direction, float maxDistance, bool includeAnalytic, out CollisionHit hit)
     {
         hit = default;
 
@@ -155,7 +155,7 @@ internal static unsafe class WorldCollisionInspect
                         if (!TryDescribe(collider, boxMin, boxMax, out var described))
                             continue;
 
-                        if (described.Kind != NoireColliderKind.Mesh && !includeAnalytic)
+                        if (described.Kind != ColliderKind.Mesh && !includeAnalytic)
                             continue;
 
                         triangles.Clear();
@@ -175,7 +175,7 @@ internal static unsafe class WorldCollisionInspect
                             var normal = Vector3.Cross(
                                 triangles[i + 1] - triangles[i], triangles[i + 2] - triangles[i]);
 
-                            hit = new NoireCollisionHit
+                            hit = new CollisionHit
                             {
                                 Found = true,
                                 Point = origin + (direction * distance),
@@ -226,7 +226,7 @@ internal static unsafe class WorldCollisionInspect
         }
     }
 
-    private static bool TryDescribe(Collider* collider, Vector3 boxMin, Vector3 boxMax, out NoireCollider described)
+    private static bool TryDescribe(Collider* collider, Vector3 boxMin, Vector3 boxMax, out ColliderInfo described)
     {
         described = default;
 
@@ -281,10 +281,10 @@ internal static unsafe class WorldCollisionInspect
         if (!Overlaps(min, max, boxMin, boxMax))
             return false;
 
-        described = new NoireCollider
+        described = new ColliderInfo
         {
             Handle = (nint)collider,
-            Kind = (NoireColliderKind)(int)type,
+            Kind = (ColliderKind)(int)type,
             LayoutObjectId = collider->LayoutObjectId,
             LayerMask = collider->LayerMask,
             MaterialValue = collider->ObjectMaterialValue,

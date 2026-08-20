@@ -305,12 +305,12 @@ public abstract class NoireConfigBase : INoireConfig
         }
     }
 
+#if DEBUG
     /// <summary>
     /// Captures the configuration on the calling thread and writes it shortly afterwards on a background thread, so
     /// a change made after this returns belongs to the next write.
     /// </summary>
     /// <seealso cref="FlushPendingSave"/>
-#if DEBUG
     /// <summary>Serialize duration in milliseconds above which a save is logged as slow.</summary>
     private const double SlowSerializeMs = 20;
 #endif

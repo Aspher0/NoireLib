@@ -1,18 +1,5 @@
 namespace NoireLib.Helpers.Memory;
 
-/// <summary>How a lookup in a native ordered map came back.</summary>
-public enum StdMapLookup
-{
-    /// <summary>A guarded read refused, or the descent ran deeper than a real tree can be; says nothing about whether the key is there.</summary>
-    Unreadable,
-
-    /// <summary>The map was read and does not hold the key.</summary>
-    Missing,
-
-    /// <summary>The map holds the key.</summary>
-    Found,
-}
-
 /// <summary>
 /// Reads an MSVC <c>std::map</c> out of another process's memory, against the C++ runtime's <c>_Tree_node</c> layout:
 /// left, parent and right pointers, a nil flag, then the key and value. The head node's parent is the tree's root, and

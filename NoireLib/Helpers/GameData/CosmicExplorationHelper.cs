@@ -4,22 +4,6 @@ using System.Collections.Generic;
 
 namespace NoireLib.Helpers;
 
-/// <summary>One Cosmic Exploration planet as the WKS sheets describe it.</summary>
-/// <param name="TerritoryId">The planet's TerritoryType row id.</param>
-/// <param name="Order">The planet's release order, zero-based, from the WKSTerritoryInfo row order.</param>
-public readonly record struct CosmicPlanet(uint TerritoryId, int Order);
-
-/// <summary>One cosmic aethernet shard: the free intra-planet teleport network's stop.</summary>
-/// <param name="WksAetheryteId">The WKSAetheryte row id.</param>
-/// <param name="PlaceNameId">The PlaceName row the shard is named by.</param>
-/// <param name="ObjectIds">The EObj rows placed for this shard, more than one when the stop has several placements.</param>
-public readonly record struct CosmicShardInfo(uint WksAetheryteId, uint PlaceNameId, IReadOnlyList<uint> ObjectIds);
-
-/// <summary>The CustomTalk services the cosmic travel NPCs run, found by their script names.</summary>
-/// <param name="EntranceTalkIds">The boarding service, the planet select at the cosmoport and at Bestways Burrow.</param>
-/// <param name="ExitTalkIds">The leave service, the trip back to Etheirys.</param>
-public readonly record struct CosmicTravelTalks(IReadOnlySet<uint> EntranceTalkIds, IReadOnlySet<uint> ExitTalkIds);
-
 /// <summary>
 /// Reads what the game's WKS sheets say about Cosmic Exploration: which planets exist, the intra-planet aethernet,
 /// the warps its objects run, and the travel services its NPCs offer. Every read is guarded; a missing sheet

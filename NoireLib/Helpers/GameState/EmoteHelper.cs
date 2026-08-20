@@ -82,7 +82,6 @@ public static class EmoteHelper
     /// <returns>True when the emote is unlocked.</returns>
     public unsafe static bool IsEmoteUnlocked(uint emoteId) => UIState.Instance()->IsEmoteUnlocked((ushort)emoteId);
 
-
     /// <inheritdoc cref="IsEmoteUnlocked(uint)"/>
     /// <param name="emote">The emote to check.</param>
     public static bool IsEmoteUnlocked(Emote emote) => IsEmoteUnlocked(emote.RowId);

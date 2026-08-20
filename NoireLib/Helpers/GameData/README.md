@@ -101,7 +101,7 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `ShopHelper` | What every shop sells and charges, indexed both ways, plus the menus that hide shops from a handler scan. |
 | `DutyHelper` | What the duty finder says about a duty, and what the character has unlocked or cleared. |
 | `DiademHelper` | The current Diadem season and what entering it requires. |
-| `CosmicHelper` | The Cosmic Exploration planets, their aethernet, their bound warps, and the travel services. |
+| `CosmicExplorationHelper` | The Cosmic Exploration planets, their aethernet, their bound warps, and the travel services. |
 | `ClassJobHelper` | Class and job identity, roles, `ClassJobCategory` membership, and the character's level in each. |
 | `IconHelper` | An icon id resolved to its game path or its texture, and the icon a sheet row names. |
 | `TextCommandHelper` | The client's own text commands, and the rewrite that makes one work in any language. |
@@ -109,6 +109,11 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `LayoutHelper` | Whether a placement is actually standing in the world right now. |
 | `QuestHelper` | Whether quests are complete or accepted, and how far each accepted one has got. |
 | `WorldHelper` | Worlds, data centres, where the character is against where they live, and which seasonal events are running. |
+| `OrnamentHelper` | Which fashion accessory a character has out, and what carrying it does to the emotes they can play. |
+| `UldHelper` | Part lists out of the game's ULD files, resolved to textures and UVs. |
+| `ExcelSheetHelper` | Any Excel sheet in any client language, lazily loaded and cached. Every helper here reads through it. |
+| `StainHelper` | The game's dyes: their names, their colors, and which are metallic or housing-applicable. |
+| `GameVersionHelper` | The installed client's build, which anything caching derived game data stamps its copies with. |
 
 ---
 
@@ -124,6 +129,10 @@ produces and most of the other helpers consume. `MapProjection` / `MapMarkerEntr
 
 **None of them references Lumina**, so anything built on top of these records is testable with hand-built fixtures
 and no game behind it.
+
+Each record lives in its own file under `Models/`, each enum under `Enums/`, and the helpers sit at the folder
+root. Every one of them is in namespace `NoireLib.Helpers`, so the folder a type sits in never changes the
+`using` a consumer writes.
 
 ---
 

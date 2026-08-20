@@ -3,19 +3,6 @@ using Lumina.Excel.Sheets;
 
 namespace NoireLib.Helpers;
 
-/// <summary>One territory reduced to the three fields that identify the place it is.</summary>
-/// <param name="TerritoryId">The TerritoryType row id.</param>
-/// <param name="LevelPath">The territory's <c>Bg</c> string, which is the path its level files sit under.</param>
-/// <param name="PlaceNameId">The territory's PlaceName row id, or zero when it has none.</param>
-public readonly record struct TerritoryEntry(uint TerritoryId, string LevelPath, uint PlaceNameId);
-
-/// <summary>
-/// One quest condition standing on a zone crossing, in the form the <c>ZoneSharedGroup</c> sheet states it.
-/// </summary>
-/// <param name="QuestId">The quest row id.</param>
-/// <param name="Step">The quest sequence step the crossing opens at; 255 means the quest must be complete.</param>
-public readonly record struct ZoneCrossingGate(uint QuestId, byte Step);
-
 /// <summary>
 /// Reads what the game's sheets say about a territory: its name, the level files it is built from, whether it is a
 /// real place, whether it is queued for rather than walked into, and which crossings out of it a quest gates. Every

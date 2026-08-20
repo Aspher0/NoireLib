@@ -3,7 +3,6 @@ using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
-using NoireLib.Draw3D.Scene;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
