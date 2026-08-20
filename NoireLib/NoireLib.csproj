@@ -1,17 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
-        <Version>1.9.0.0</Version>
-        <PackageReleaseNotes>
-Breaking: the localization resolver NoireUI.Text(string key, string fallback) is renamed to NoireUI.Localize and is now internal. It resolved a translation key and never drew anything, and its name was needed by the new NoireUI.Text drawing surface. NoireUI.StringProvider, the hook a plugin sets to supply translations, is unchanged and stays public.
-
-Added: every NoireUI surface is now also reachable under the NoireUI root (NoireUI.Text.Draw, NoireUI.Shapes.Circle, NoireUI.Buttons.Draw and so on), so completion branches instead of listing every surface flat. The existing top-level names (NoireText, NoireShapes, NoireButtons and the rest) keep working, keep their documentation, and are not deprecated.
-        </PackageReleaseNotes>
+        <Version>2.0.0.0</Version>
         <Use_DalamudPackager>false</Use_DalamudPackager>
         <Title>NoireLib - A library for Dalamud Plugins</Title>
         <Authors>Aspher0</Authors>
         <Description>A flexible library for creating Dalamud Plugins.</Description>
-        <Copyright>© 2025 Aspher0</Copyright>
+        <Copyright>© 2026 Aspher0</Copyright>
         <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
         <PackageTags>NoireLib;Dalamud;Plugin;Dalamud Plugin;Aspher0;Plugins;Library;Plugin Library</PackageTags>
@@ -81,19 +76,16 @@ Added: every NoireUI surface is now also reachable under the NoireUI root (Noire
     </ItemGroup>
 
     <ItemGroup>
-        <!-- Ships in the Dalamud dev folder; referenced like the other Dalamud-provided assemblies (zero package weight). -->
         <Reference Include="TerraFX.Interop.Windows">
             <HintPath>$(DalamudLibPath)TerraFX.Interop.Windows.dll</HintPath>
             <Private>false</Private>
         </Reference>
 
-        <!-- The ImGuizmo backend of NoireGizmo (the interaction layer above the renderer; the render core never touches it). -->
         <Reference Include="Dalamud.Bindings.ImGuizmo">
             <HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGuizmo.dll</HintPath>
             <Private>false</Private>
         </Reference>
 
-        <!-- HexaGen native-binding runtime: the ImGuizmo binding's function table is bound through it (ImGuizmo.InitApi). -->
         <Reference Include="HexaGen.Runtime">
             <HintPath>$(DalamudLibPath)HexaGen.Runtime.dll</HintPath>
             <Private>false</Private>
