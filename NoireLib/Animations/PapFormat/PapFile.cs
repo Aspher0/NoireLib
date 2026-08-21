@@ -174,10 +174,6 @@ public class PapFile
         writer.Write(timelineOffset);
         writer.BaseStream.Position = endPos;
 
-        NoireLogger.LogDebug(
-            $"PapFile.ToBytes: {Animations.Count} animations, {endPos} bytes " +
-            $"(info={infoOffset:X}, havok={havokOffset:X}, timeline={timelineOffset:X}).");
-
         return ms.ToArray();
     }
 

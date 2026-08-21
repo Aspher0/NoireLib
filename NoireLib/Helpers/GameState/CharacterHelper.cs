@@ -583,6 +583,55 @@ public static class CharacterHelper
         => GetDrawnBody(character)?.SkeletonId;
 
     /// <summary>
+    /// The per-weapon animation folder the game serves a character's battle motions from, composed from the
+    /// motion codes their two weapon slots name.
+    /// </summary>
+    /// <param name="character">The character to read.</param>
+    /// <returns>The folder, such as "bt_swd_sld", or null while there is no human model or no motion table.</returns>
+    public static unsafe string? GetWeaponMotionFolder(ICharacter character)
+    {
+        if (GetDrawnBody(character) == null || WeaponMotionTable.Current is not { } table)
+            return null;
+
+        var native = GetCharacterAddress(character);
+        if (native == null)
+            return null;
+
+        return WeaponMotionFolders.Compose(
+            table.CodeFor(WeaponModelSetId(native, DrawDataContainer.WeaponSlot.MainHand)),
+            table.CodeFor(WeaponModelSetId(native, DrawDataContainer.WeaponSlot.OffHand)));
+    }
+
+    /// <summary>
+    /// Whether a character carries a second weapon. A two-handed weapon leaves the slot empty.
+    /// </summary>
+    /// <param name="character">The character to read.</param>
+    /// <returns>True when the off hand holds something.</returns>
+    public static unsafe bool HasOffHandWeapon(ICharacter character)
+    {
+        if (GetDrawnBody(character) == null)
+            return false;
+
+        var native = GetCharacterAddress(character);
+
+        return native != null && WeaponModelSetId(native, DrawDataContainer.WeaponSlot.OffHand) != 0;
+    }
+
+    /// <summary>
+    /// The weapon model set id a hand carries, taken from the drawn weapon and falling back to the equipped
+    /// model id while the weapon is hidden or still loading. A hand holding nothing reads as zero.
+    /// </summary>
+    /// <param name="native">The character to read.</param>
+    /// <param name="slot">The hand to read.</param>
+    /// <returns>The weapon model set id, or 0 for an empty hand.</returns>
+    private static unsafe ushort WeaponModelSetId(Character* native, DrawDataContainer.WeaponSlot slot)
+    {
+        ref var data = ref native->DrawData.Weapon(slot);
+
+        return data.Weapon != null ? data.Weapon->ModelSetId : data.ModelId.Id;
+    }
+
+    /// <summary>
     /// The human skeleton id to serve a character's animations from, taken from the drawn model and falling back to
     /// their customize bytes while no model is readable.
     /// </summary>

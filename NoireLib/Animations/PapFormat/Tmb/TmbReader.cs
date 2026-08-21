@@ -36,10 +36,13 @@ public class TmbReader
         return Encoding.UTF8.GetString(bytes).TrimEnd('\0');
     }
 
-    public string ReadOffsetString()
+    public string ReadOffsetString() => ReadOptionalOffsetString() ?? string.Empty;
+
+    // Null when the field holds offset 0, which means the item carries no string at all rather than an empty one.
+    public string? ReadOptionalOffsetString()
     {
         var offset = Reader.ReadInt32();
-        if (offset == 0) return string.Empty;
+        if (offset == 0) return null;
 
         var savePos = Reader.BaseStream.Position;
         Reader.BaseStream.Position = StartPosition + 8 + offset;

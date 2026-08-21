@@ -33,6 +33,16 @@ public class TmbFile
         ["C173"] = 0x14,
     };
 
+    /// <summary>
+    /// The offsets of the float blocks an item of each magic names by (offset, count), the other kind of field
+    /// a rebuilt timeline places rather than copies. C012's four are its animated scale, rotation, position and
+    /// rgba curves, which live in the extra section and move with it.
+    /// </summary>
+    public static readonly Dictionary<string, int[]> ExtraFloatFieldOffsets = new()
+    {
+        ["C012"] = [0x20, 0x28, 0x30, 0x38],
+    };
+
     /// <summary> The timeline's TMDH header item. </summary>
     public Tmdh HeaderTmdh { get; private set; } = null!;
     /// <summary> The timeline's optional TMPP (face library path) header item; <see cref="Tmb.Tmpp.IsAssigned"/> is false when absent. </summary>
