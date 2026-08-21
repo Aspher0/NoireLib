@@ -12,6 +12,9 @@ public class TmbReader
 {
     public BinaryReader Reader { get; }
     public long StartPosition { get; private set; }
+
+    /// <summary> Where every offset-timeline read so far pointed, which is where the id blocks begin. </summary>
+    public readonly List<long> TimelinePositions = [];
     private readonly Dictionary<int, TmbItemWithId> ItemsWithId = [];
 
     public TmbReader(BinaryReader reader)
@@ -68,6 +71,7 @@ public class TmbReader
 
         var savePos = Reader.BaseStream.Position;
         Reader.BaseStream.Position = StartPosition + 8 + offset;
+        TimelinePositions.Add(Reader.BaseStream.Position);
 
         var result = new List<int>();
         for (var i = 0; i < count; i++)

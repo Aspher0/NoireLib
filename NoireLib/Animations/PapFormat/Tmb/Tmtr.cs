@@ -1,4 +1,6 @@
 using NoireLib.Animations.PapFormat.Tmb.Entries;
+using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -11,17 +13,56 @@ public class Tmtr : TmbItemWithTime
 {
     public override string Magic => "TMTR";
     public override int Size => 0x18;
-    public override int ExtraSize => 0;
+    public override int ExtraSize => Condition.Length;
 
     public readonly List<TmbEntry> Entries = [];
     private List<int> TempIds = [];
+
+    /// <summary> Where this track's condition block sits in the source file, or 0 when it has none. </summary>
+    public int ConditionOffset { get; private set; }
+
+    /// <summary> Where the block starts in the whole timeline's bytes. </summary>
+    public long ConditionPosition { get; private set; }
+
+    /// <summary> The track's condition block, kept whole because nothing here reads its contents. </summary>
+    public byte[] Condition { get; private set; } = [];
+
+    /// <summary> Hands the track the bytes its condition offset pointed at. </summary>
+    /// <param name="condition">The block's bytes.</param>
+    public void SetCondition(byte[] condition) => Condition = condition;
+
+    /// <summary> The header of a condition block: a word of its own, then the number of steps that follow. </summary>
+    private const int ConditionHeaderLength = 8;
+
+    /// <summary> Every step of a condition block is the same length. </summary>
+    private const int ConditionStepLength = 12;
+
+    /// <summary>
+    /// How long the condition block starting at <paramref name="start"/> says it is.
+    /// </summary>
+    /// <param name="timelineBytes">The whole timeline's bytes.</param>
+    /// <param name="start">Where the block starts in them.</param>
+    /// <returns>The block's length in bytes, or 0 when the bytes there cannot say.</returns>
+    public static int DeclaredConditionLength(byte[] timelineBytes, int start)
+    {
+        if (start < 0 || start + ConditionHeaderLength > timelineBytes.Length)
+            return 0;
+
+        var steps = BinaryPrimitives.ReadInt32LittleEndian(timelineBytes.AsSpan(start + 4, sizeof(int)));
+
+        return steps < 0 ? 0 : ConditionHeaderLength + steps * ConditionStepLength;
+    }
 
     public Tmtr(TmbFile file) : base(file) { }
 
     public Tmtr(TmbFile file, TmbReader reader) : base(file, reader)
     {
         TempIds = reader.ReadOffsetTimeline();
-        reader.ReadInt32(); // Lua condition, always 0 and not supported here
+
+        // The condition block gates whether the track runs at all, so one .pap can carry a variant per race and
+        // play only the matching one. Nothing points at its end, so the file slices it later.
+        ConditionOffset = reader.ReadInt32();
+        ConditionPosition = ConditionOffset == 0 ? 0 : reader.StartPosition + 8 + ConditionOffset;
     }
 
     public void PickEntries(TmbReader reader)
@@ -33,7 +74,14 @@ public class Tmtr : TmbItemWithTime
     {
         base.Write(writer);
         writer.WriteOffsetTimeline(Entries);
-        writer.Write(0); // Lua condition, always 0 and not supported here
+
+        if (Condition.Length == 0)
+        {
+            writer.Write(0);
+            return;
+        }
+
+        writer.WriteExtra(extra => extra.Write(Condition));
     }
 
     public List<C009> GetC009Entries()

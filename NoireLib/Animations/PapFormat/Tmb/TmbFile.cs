@@ -101,6 +101,8 @@ public class TmbFile
             binaryReader.BaseStream.Position = startPos;
             SourceBytes = binaryReader.ReadBytes(size);
 
+            CaptureTrackConditions(startPos, size, reader.TimelinePositions);
+
             binaryReader.BaseStream.Position = startPos + size;
         }
         catch (System.Exception ex)
@@ -108,6 +110,56 @@ public class TmbFile
             NoireLogger.LogError(ex, $"Error reading TMB at position {binaryReader.BaseStream.Position}");
             NoireLogger.LogError($"Actors: {Actors.Count}, Tracks: {AllTracks.Count}, Entries: {AllEntries.Count}");
             throw;
+        }
+    }
+
+    /// <summary>
+    /// Hands each track the bytes its condition offset points at. The blocks sit end to end between the last
+    /// item and the id blocks, and each says its own length; the room up to whatever comes next is only the
+    /// ceiling that length must fit under. Taking the ceiling instead swallows the curve data a C012 names and
+    /// copies it into every rebuild.
+    /// </summary>
+    /// <param name="startPos">Where this timeline starts in the stream, which its own offsets are relative to.</param>
+    /// <param name="size">The timeline's length in bytes.</param>
+    /// <param name="timelinePositions">Where every id block begins, the first of which ends the section.</param>
+    private void CaptureTrackConditions(long startPos, int size, IReadOnlyList<long> timelinePositions)
+    {
+        var withCondition = AllTracks.Where(track => track.ConditionOffset != 0)
+            .OrderBy(track => track.ConditionPosition).ToList();
+
+        if (withCondition.Count == 0)
+            return;
+
+        var sectionEnd = size;
+
+        foreach (var position in timelinePositions)
+        {
+            var relative = (int)(position - startPos);
+
+            if (relative > 0 && relative < sectionEnd)
+                sectionEnd = relative;
+        }
+
+        for (var index = 0; index < withCondition.Count; index++)
+        {
+            var track = withCondition[index];
+            var start = (int)(track.ConditionPosition - startPos);
+            var ceiling = index + 1 < withCondition.Count
+                ? (int)(withCondition[index + 1].ConditionPosition - startPos)
+                : sectionEnd;
+
+            if (start < 0 || ceiling > SourceBytes.Length || ceiling <= start)
+            {
+                NoireLogger.LogDebug($"A track's condition block reads as {start}..{ceiling} in a "
+                    + $"{SourceBytes.Length} byte timeline, which cannot be right; it is left out.");
+
+                continue;
+            }
+
+            var declared = Tmtr.DeclaredConditionLength(SourceBytes, start);
+            var end = declared > 0 && start + declared <= ceiling ? start + declared : ceiling;
+
+            track.SetCondition(SourceBytes[start..end]);
         }
     }
 

@@ -26,6 +26,9 @@ public class PapWeaponHoldTests
     private static readonly float[] Colour = [10f, 11f, 12f, 13f];
     private const short TimelineLength = 60;
 
+    // The hold is stated on the first frame and then every ten, so a sixty frame timeline states it six times.
+    private const int HoldStatements = 6;
+
     /// <summary>
     /// One actor, one track, two entries: a C009 with no path and a C012 pointing into the string table.
     /// Offsets are wired by hand exactly as TmbWriter wires them.
@@ -160,14 +163,16 @@ public class PapWeaponHoldTests
         return stream.ToArray();
     }
 
-    private static byte[] BuildPap(byte[] tmb)
+    private static byte[] BuildPap(byte[] tmb) => BuildPap([("cbbm_emot09", tmb)]);
+
+    private static byte[] BuildPap(IReadOnlyList<(string Name, byte[] Tmb)> animations)
     {
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
 
         writer.Write(PapMagic);
         writer.Write(0x00020001);
-        writer.Write((short)1);
+        writer.Write((short)animations.Count);
         writer.Write((short)101);
         writer.Write((byte)0);
         writer.Write((byte)0);
@@ -179,13 +184,16 @@ public class PapWeaponHoldTests
 
         var infoPos = stream.Position;
 
-        var nameBytes = Encoding.UTF8.GetBytes("cbbm_emot09");
-        writer.Write(nameBytes);
-        for (var i = 0; i < NameFieldLength - nameBytes.Length; i++)
-            writer.Write((byte)0);
-        writer.Write((short)0);
-        writer.Write((short)0);
-        writer.Write(0);
+        foreach (var (name, _) in animations)
+        {
+            var nameBytes = Encoding.UTF8.GetBytes(name);
+            writer.Write(nameBytes);
+            for (var i = 0; i < NameFieldLength - nameBytes.Length; i++)
+                writer.Write((byte)0);
+            writer.Write((short)0);
+            writer.Write((short)0);
+            writer.Write(0);
+        }
 
         while (stream.Position % 4 != 0)
             writer.Write((byte)0);
@@ -193,7 +201,18 @@ public class PapWeaponHoldTests
         var havokPos = stream.Position;
         var footerPos = stream.Position;
 
-        writer.Write(tmb);
+        for (var index = 0; index < animations.Count; index++)
+        {
+            writer.Write(animations[index].Tmb);
+
+            // Every timeline but the last is padded up to the four-byte grid the footer starts on.
+            if (index == animations.Count - 1)
+                continue;
+
+            while ((stream.Position - footerPos % 4) % 4 != 0)
+                writer.Write((byte)0);
+        }
+
         var endPos = stream.Position;
 
         stream.Position = offsetsPos;
@@ -212,8 +231,8 @@ public class PapWeaponHoldTests
         return new PapFile(reader);
     }
 
-    private static byte[] Held(bool offHand = false, bool stowAtEnd = true)
-        => PapWeaponHold.Apply(BuildPap(BuildTmb()), offHand, stowAtEnd);
+    private static byte[] Held(bool offHand = false, bool stowAtEnd = true, bool withTravel = false)
+        => PapWeaponHold.Apply(BuildPap(BuildTmb()), offHand, stowAtEnd, withTravel);
 
     [Fact]
     public void Apply_TheResultStillReadsBackAsAPap()
@@ -225,29 +244,61 @@ public class PapWeaponHoldTests
     {
         var entries = Reread(Held()).Animations[0].Tmb.AllEntries;
 
-        // Object Control 0 is the main hand, held on the first frame and sent back on the last.
-        entries.Count(entry => entry.Magic == "C014").Should().Be(2);
-        entries.Count(entry => entry.Magic == "C015").Should().Be(2);
+        // Object Control 0 is the main hand: held on the beat, then sent back on the last frame.
+        entries.Count(entry => entry.Magic == "C014").Should().Be(HoldStatements + 1);
+        entries.Count(entry => entry.Magic == "C015").Should().Be(HoldStatements + 1);
+    }
+
+    // Anything that ends a timeline hands the weapons back, and an overlapping play lands that while this one
+    // is still running, so the hold is stated on a beat rather than at one chosen frame.
+    [Fact]
+    public void Apply_StatesTheHoldOnABeatAcrossTheWholeAnimation()
+    {
+        var times = Reread(Held(stowAtEnd: false)).Animations[0].Tmb.AllEntries
+            .Where(entry => entry.Magic == "C014").Select(entry => entry.GetTime()).ToList();
+
+        times.Should().Equal([0, 10, 20, 30, 40, 50]);
+    }
+
+    [Fact]
+    public void Apply_DoesNotSummonUnlessTravelIsAskedFor()
+        => Reread(Held()).Animations[0].Tmb.AllEntries
+            .Count(entry => entry.Magic == "C031").Should().Be(0,
+                "the travel command summons the object it animates, and an effect in the file can bind itself to a summon");
+
+    [Fact]
+    public void Apply_WithTravel_SummonsOncePerMoment()
+        => Reread(Held(withTravel: true)).Animations[0].Tmb.AllEntries
+            .Count(entry => entry.Magic == "C031").Should().Be(2);
+
+    // The repeats take the weapons back when an overlapping play stows them early, so they carry no travel
+    // command; one flourish per repeat would be seen.
+    [Fact]
+    public void Apply_WithTravel_TheRepeatsDoNotTravel()
+    {
+        var entries = Reread(Held(withTravel: true)).Animations[0].Tmb.AllEntries;
+
+        entries.Count(entry => entry.Magic == "C014").Should().Be(HoldStatements + 1);
         entries.Count(entry => entry.Magic == "C031").Should().Be(2);
     }
 
     [Fact]
     public void Apply_ASecondWeapon_IsAddressedAsWell()
         => Reread(Held(offHand: true)).Animations[0].Tmb.AllEntries
-            .Count(entry => entry.Magic == "C014").Should().Be(4);
+            .Count(entry => entry.Magic == "C014").Should().Be((HoldStatements + 1) * 2);
 
     [Fact]
     public void Apply_WithoutStowing_OnlyHolds()
         => Reread(Held(stowAtEnd: false)).Animations[0].Tmb.AllEntries
-            .Count(entry => entry.Magic == "C014").Should().Be(1);
+            .Count(entry => entry.Magic == "C014").Should().Be(HoldStatements);
 
     [Fact]
-    public void Apply_GivesEveryCommandItsOwnTrack()
+    public void Apply_GivesEveryCommandAChannelOfItsOwn()
     {
         var timeline = Reread(Held()).Animations[0].Tmb;
 
-        // The one track the file came with, plus one per command added.
-        timeline.AllTracks.Should().HaveCount(1 + 6);
+        // The one track the file came with, plus the size and the position channel for the one weapon.
+        timeline.AllTracks.Should().HaveCount(1 + 2);
     }
 
     [Fact]
@@ -348,5 +399,18 @@ public class PapWeaponHoldTests
 
         PapWeaponHold.Apply(source, offHand: false).Should().Equal(source,
             "a rewrite could move data an unknown entry names by an offset nothing here knows about");
+    }
+
+    [Fact]
+    public void Apply_AnEntryOfAnUnknownKind_LeavesOnlyItsOwnAnimationAlone()
+    {
+        var source = BuildPap([("cbbm_emot09", BuildTmb()), ("cbbm_emot10", BuildTmb(entryMagic: "C199"))]);
+
+        var held = Reread(PapWeaponHold.Apply(source, offHand: false));
+
+        held.Animations.Should().HaveCount(2);
+        held.Animations[0].Tmb.AllEntries.Count(entry => entry.Magic == "C014").Should().Be(HoldStatements + 1,
+            "one animation a rewrite cannot be trusted with is no reason to leave the rest of the file unheld");
+        held.Animations[1].Tmb.AllEntries.Count(entry => entry.Magic == "C014").Should().Be(0);
     }
 }

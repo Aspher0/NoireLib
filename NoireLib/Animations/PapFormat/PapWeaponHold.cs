@@ -46,6 +46,12 @@ public static class PapWeaponHold
     private const short HoldFrame = 0;
 
     /// <summary>
+    /// How often the hold is stated again, in frames. Anything that ends a timeline hands the weapons back, and
+    /// an overlapping play lands that while this one is still running, so stating it once is not enough.
+    /// </summary>
+    private const int ReassertInterval = 10;
+
+    /// <summary>
     /// The entry magics a rewritten timeline is known to carry safely: those with a model of their own, those
     /// whose pointing fields <see cref="TmbFile.StringFieldOffsets"/> and
     /// <see cref="TmbFile.ExtraFloatFieldOffsets"/> describe, and those shown to point nowhere. A magic outside
@@ -62,12 +68,17 @@ public static class PapWeaponHold
     /// <param name="papBytes">The .pap's bytes, never modified.</param>
     /// <param name="offHand">Whether the character carries a second weapon. A two-handed weapon has none.</param>
     /// <param name="stowAtEnd">
-    /// Whether each animation sends the weapons back on its last frame. The commands are sticky, so leaving this
-    /// off keeps them in hand once the animation ends.
+    /// Whether each animation sends the weapons back on its last frame. The game hands them back on its own when
+    /// a timeline ends, so leaving this off costs nothing.
+    /// </param>
+    /// <param name="withTravel">
+    /// Whether the weapon plays its own travel animation rather than appearing where it belongs. The command
+    /// driving it summons the object it animates, and an effect already in the file can bind itself to a summon,
+    /// which shows as a copy of that effect per summon.
     /// </param>
     /// <returns>The rewritten .pap's bytes, verified to read back.</returns>
     /// <exception cref="InvalidDataException">The produced bytes do not read back as a valid .pap.</exception>
-    public static byte[] Apply(byte[] papBytes, bool offHand, bool stowAtEnd = true)
+    public static byte[] Apply(byte[] papBytes, bool offHand, bool stowAtEnd = true, bool withTravel = false)
     {
         using var reader = new BinaryReader(new MemoryStream(papBytes));
         var pap = new PapFile(reader);
@@ -83,25 +94,16 @@ public static class PapWeaponHold
             if (animation.Tmb is not { } timeline || timeline.Actors.Count == 0)
                 continue;
 
+            // One animation this cannot rewrite leaves the others held rather than the whole file untouched.
             if (UnrewritableMagic(timeline) is { } blocker)
             {
                 NoireLogger.LogDebug($"'{animation.GetName()}' carries a {blocker} entry, which a rewritten "
                     + "timeline cannot be trusted to carry; its weapons are left where they are.", LogPrefix);
 
-                return papBytes;
+                continue;
             }
 
-            var actor = timeline.Actors[0];
-            var length = timeline.HeaderTmdh.GetLength();
-
-            foreach (var target in objects)
-                AddCommands(timeline, actor, target, HoldFrame, held: true);
-
-            if (stowAtEnd && length > HoldFrame + 1)
-            {
-                foreach (var target in objects)
-                    AddCommands(timeline, actor, target, (short)(length - 1), held: false);
-            }
+            HoldThrough(timeline, timeline.Actors[0], objects, stowAtEnd, withTravel);
 
             timeline.InvalidateSourceLayout();
             timeline.RefreshIds();
@@ -129,25 +131,76 @@ public static class PapWeaponHold
         return null;
     }
 
-    private static void AddCommands(TmbFile timeline, Tmac actor, int objectControl, short frame, bool held)
+    /// <summary>
+    /// States the hold on every frame of the beat, for each of the character's weapons. Each command gets a
+    /// track of its own, as the game's own draw animation gives it.
+    /// </summary>
+    private static void HoldThrough(TmbFile timeline, Tmac actor, IReadOnlyList<int> objects, bool stowAtEnd,
+        bool withTravel)
     {
-        var position = held ? InHand : Stowed;
-        var timelineRow = held ? DrawTimelineRow : SheatheTimelineRow;
+        var length = timeline.HeaderTmdh.GetLength();
+        var lastFrame = (short)(length - 1);
+        var stows = stowAtEnd && lastFrame > HoldFrame;
 
-        AddCommand(timeline, actor, ScaleMagic, frame, [ScaleDuration, 0, position, objectControl]);
-        AddCommand(timeline, actor, PositionMagic, frame, [Enabled, 0, position, objectControl]);
-        AddCommand(timeline, actor, SummonMagic, frame, [Enabled, 0, (objectControl << 16) | timelineRow]);
+        foreach (var objectControl in objects)
+        {
+            var scale = AddTrack(timeline, actor);
+            var position = AddTrack(timeline, actor);
+
+            foreach (var frame in HoldFrames(length))
+            {
+                AddCommand(timeline, scale, ScaleMagic, frame, [ScaleDuration, 0, InHand, objectControl]);
+                AddCommand(timeline, position, PositionMagic, frame, [Enabled, 0, InHand, objectControl]);
+            }
+
+            if (stows)
+            {
+                AddCommand(timeline, scale, ScaleMagic, lastFrame, [ScaleDuration, 0, Stowed, objectControl]);
+                AddCommand(timeline, position, PositionMagic, lastFrame, [Enabled, 0, Stowed, objectControl]);
+            }
+
+            // The travel plays once on the way out and once on the way back: repeating it on the beat would
+            // show as the weapon drawing itself over and over.
+            if (!withTravel)
+                continue;
+
+            var summon = AddTrack(timeline, actor);
+
+            AddCommand(timeline, summon, SummonMagic, HoldFrame,
+                [Enabled, 0, (objectControl << 16) | DrawTimelineRow]);
+
+            if (stows)
+            {
+                AddCommand(timeline, summon, SummonMagic, lastFrame,
+                    [Enabled, 0, (objectControl << 16) | SheatheTimelineRow]);
+            }
+        }
     }
 
-    // The game gives every one of these commands a track of its own, so this does too.
-    private static void AddCommand(TmbFile timeline, Tmac actor, string magic, short frame, int[] payload)
+    /// <summary> The frames the hold is stated on: the first, then the beat up to the animation's end. </summary>
+    private static IEnumerable<short> HoldFrames(short length)
     {
-        var entry = new TmbEntryRaw(timeline, magic, frame, payload);
+        yield return HoldFrame;
+
+        for (var frame = HoldFrame + ReassertInterval; frame < length - 1; frame += ReassertInterval)
+            yield return (short)frame;
+    }
+
+    private static Tmtr AddTrack(TmbFile timeline, Tmac actor)
+    {
         var track = new Tmtr(timeline);
 
-        track.Entries.Add(entry);
         actor.Tracks.Add(track);
         timeline.AllTracks.Add(track);
+
+        return track;
+    }
+
+    private static void AddCommand(TmbFile timeline, Tmtr track, string magic, short frame, int[] payload)
+    {
+        var entry = new TmbEntryRaw(timeline, magic, frame, payload);
+
+        track.Entries.Add(entry);
         timeline.AllEntries.Add(entry);
     }
 
