@@ -45,6 +45,36 @@ public class NoireModalTests : IDisposable
     }
 
     [Fact]
+    public void CountdownSeconds_IsZeroWhenTheButtonDoesNotWait()
+        => NoireModalHost.CountdownSeconds(0f, 10f, 0f).Should().Be(0);
+
+    [Theory]
+    [InlineData(0f, 5, "because the whole wait is still ahead")]
+    [InlineData(0.2f, 5, "because a part second still reads as the second it is in")]
+    [InlineData(1f, 4, "because a second has gone")]
+    [InlineData(4.9f, 1, "because the last second still counts")]
+    public void CountdownSeconds_CountsWholeSecondsDown(float elapsed, int expected, string because)
+        => NoireModalHost.CountdownSeconds(100f, 100f + elapsed, 5f).Should().Be(expected, because);
+
+    [Fact]
+    public void CountdownSeconds_IsZeroOnceTheWaitHasElapsed()
+        => NoireModalHost.CountdownSeconds(100f, 105f, 5f).Should().Be(0);
+
+    [Fact]
+    public void CountdownSeconds_NeverReportsMoreThanTheWaitAskedFor()
+        => NoireModalHost.CountdownSeconds(100f, 50f, 5f).Should()
+            .Be(5, "because a clock reading behind the one the dialog opened at must not extend the wait");
+
+    [Fact]
+    public void WidestLabel_IsTheLabelItselfWithoutACountdown()
+        => NoireModalHost.WidestLabel("Switch", 0f).Should().Be("Switch");
+
+    [Fact]
+    public void WidestLabel_CarriesTheHighestDigitTheCountdownShows()
+        => NoireModalHost.WidestLabel("Switch", 5f).Should()
+            .Be("Switch (5)", "because measuring a narrower form makes the button jitter as the digit changes");
+
+    [Fact]
     public async Task CancelAll_CompletesEveryPendingDialog()
     {
         var first = NoireModal.ConfirmAsync("One", "Really?");

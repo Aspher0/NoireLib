@@ -1,4 +1,4 @@
-﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 
@@ -69,6 +69,7 @@ public sealed class NoireModalHost : NoireDrawable
         if (!request.Opened)
         {
             request.Opened = true;
+            request.OpenedAt = NoireUI.Time;
             ImGui.OpenPopup(PopupId);
         }
 
@@ -170,10 +171,18 @@ public sealed class NoireModalHost : NoireDrawable
             || (request.Options as PromptOptions)?.AllowEmpty == true
             || !string.IsNullOrWhiteSpace(request.Value);
 
+        var countdown = CountdownSeconds(request.OpenedAt, NoireUI.Time, options.EnableAfterSeconds);
+
+        if (countdown > 0)
+        {
+            confirmEnabled = false;
+            confirmLabel = WithCountdown(confirmLabel, countdown);
+        }
+
         var tone = options.Danger ? ButtonTone.Danger : ButtonTone.Accent;
         var hasCancel = cancelLabel.Length > 0;
 
-        var confirmWidth = MeasureButton(confirmLabel);
+        var confirmWidth = MeasureButton(WidestLabel(confirmLabel, options.EnableAfterSeconds));
         var cancelWidth = hasCancel ? MeasureButton(cancelLabel) : 0f;
         var spacing = NoireTheme.Current.ResolveItemSpacing().X;
 
@@ -227,6 +236,24 @@ public sealed class NoireModalHost : NoireDrawable
                 NoireModal.Complete(request, index);
         }
     }
+
+    internal static int CountdownSeconds(float openedAt, float now, float enableAfterSeconds)
+    {
+        if (enableAfterSeconds <= 0f)
+            return 0;
+
+        var remaining = enableAfterSeconds - (now - openedAt);
+
+        if (remaining > enableAfterSeconds)
+            remaining = enableAfterSeconds;
+
+        return remaining <= 0f ? 0 : (int)MathF.Ceiling(remaining);
+    }
+
+    internal static string WithCountdown(string label, int seconds) => $"{label} ({seconds})";
+
+    internal static string WidestLabel(string label, float enableAfterSeconds)
+        => enableAfterSeconds <= 0f ? label : WithCountdown(label, (int)MathF.Ceiling(enableAfterSeconds));
 
     private static string DefaultConfirmLabel(ModalRequest request) => request.Kind switch
     {

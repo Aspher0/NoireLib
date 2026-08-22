@@ -6,6 +6,7 @@
         <IsRoslynComponent>true</IsRoslynComponent>
         <PlatformTarget>x64</PlatformTarget>
         <Platforms>AnyCPU;x64</Platforms>
+        <Configurations>Debug;Release;PublicRelease</Configurations>
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
@@ -21,6 +22,11 @@
     </PropertyGroup>
 
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+      <DebugType>none</DebugType>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'=='PublicRelease'">
+      <Optimize>true</Optimize>
       <DebugType>none</DebugType>
     </PropertyGroup>
 

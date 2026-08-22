@@ -1,4 +1,4 @@
-﻿namespace NoireLib.UI;
+namespace NoireLib.UI;
 
 /// <summary>
 /// How a dialog raised through <see cref="NoireModal"/> behaves and looks.
@@ -27,6 +27,13 @@ public class ModalOptions
     /// Pair it with <see cref="Danger"/> for an irreversible action: the pause is what stops a reflex click.
     /// </summary>
     public float HoldSeconds { get; set; }
+
+    /// <summary>
+    /// How long the confirming button stays disabled after the dialog appears, in seconds.
+    /// Zero, the default, enables it straight away.<br/>
+    /// The remaining whole seconds are appended to its label.
+    /// </summary>
+    public float EnableAfterSeconds { get; set; }
 
     /// <summary>
     /// A key under which the user's answer is remembered, so the dialog offers "don't ask again" and skips itself next

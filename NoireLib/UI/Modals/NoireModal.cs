@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -265,6 +265,11 @@ internal sealed class ModalRequest
 
     /// <summary>Whether the popup has been opened, which happens on the first frame the dialog is drawn.</summary>
     public bool Opened { get; set; }
+
+    /// <summary>
+    /// The time the dialog was first drawn at, which is what <see cref="ModalOptions.EnableAfterSeconds"/> counts from.
+    /// </summary>
+    public float OpenedAt { get; set; }
 
     /// <summary>Whether the prompt's field has been focused, which happens on the first frame it is drawn.</summary>
     public bool Focused { get; set; }
