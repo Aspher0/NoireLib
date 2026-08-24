@@ -15,13 +15,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
-    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="FluentAssertions" Version="8.10.0" />
-    <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="xunit.v3" Version="4.0.0" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -49,9 +49,7 @@
     <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
     <!-- The analyzers and source generators, wired the way a consumer plugin wires them, so the tests can compile
          probe configuration classes against the generated static accessors. -->
-    <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj"
-                      OutputItemType="Analyzer"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
     <ItemGroup>
@@ -115,16 +113,12 @@
       <!-- The native library the managed SQLitePCLRaw assemblies P/Invoke into. A plugin gets it from the Dalamud
            runtime rather than from the package graph, so nothing places it next to the test host on its own and the
            Database system is unreachable without this copy. -->
-      <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll"
-            CopyToOutputDirectory="PreserveNewest"
-            Visible="false" />
+      <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
 
       <!-- The native ImGui library Dalamud.Bindings.ImGui P/Invokes into. UiHarness creates a real context and runs
            real frames, so without this copy every native call fails at load time and the drawing tests cannot run.
            Copied by the build rather than by hand so a clean clone is not a broken test run. -->
-      <None Include="$(DalamudPath)cimgui.dll"
-            CopyToOutputDirectory="PreserveNewest"
-            Visible="false" />
+      <None Include="$(DalamudPath)cimgui.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     </ItemGroup>
 
     <ItemGroup>

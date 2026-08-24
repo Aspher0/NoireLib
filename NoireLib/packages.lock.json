@@ -46,9 +46,9 @@
       },
       "System.Data.SQLite": {
         "type": "Direct",
-        "requested": "[2.0.3, )",
-        "resolved": "2.0.3",
-        "contentHash": "5I9dVqmHp1v0dhco21btIRkUE47zHSy4t6bRLwIO6nGZ1mxGIL1f1yp1zWI/AAZFfdUz7n6RrH1hyi/6EhlIeQ=="
+        "requested": "[2.0.4, )",
+        "resolved": "2.0.4",
+        "contentHash": "iiawN8l6QBzLZTK2BQRyq/1XmvDONghjvXoDhkkQgPTG8bRIsmIxJV1+Lc75fviNgMnjAE3wxReVJAF7P1hkoQ=="
       },
       "Konscious.Security.Cryptography.Blake2": {
         "type": "Transitive",

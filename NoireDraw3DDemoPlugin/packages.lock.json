@@ -52,8 +52,8 @@
       },
       "System.Data.SQLite": {
         "type": "Transitive",
-        "resolved": "2.0.3",
-        "contentHash": "5I9dVqmHp1v0dhco21btIRkUE47zHSy4t6bRLwIO6nGZ1mxGIL1f1yp1zWI/AAZFfdUz7n6RrH1hyi/6EhlIeQ=="
+        "resolved": "2.0.4",
+        "contentHash": "iiawN8l6QBzLZTK2BQRyq/1XmvDONghjvXoDhkkQgPTG8bRIsmIxJV1+Lc75fviNgMnjAE3wxReVJAF7P1hkoQ=="
       },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
@@ -68,7 +68,7 @@
           "Konscious.Security.Cryptography.Argon2": "[1.3.1, )",
           "Newtonsoft.Json": "[13.0.4, )",
           "SharpGLTF.Core": "[1.0.6, )",
-          "System.Data.SQLite": "[2.0.3, )"
+          "System.Data.SQLite": "[2.0.4, )"
         }
       }
     }
