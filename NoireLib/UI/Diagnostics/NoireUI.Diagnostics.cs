@@ -21,11 +21,9 @@ public static partial class NoireUI
 
     /// <summary>
     /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
-    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
-    /// </summary>
-    /// <remarks>
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.<br/>
     /// Free while <see cref="UiProfiler.Enabled"/> is off.
-    /// </remarks>
+    /// </summary>
     /// <example>
     /// <code>
     /// NoireUI.Profile("inventory grid", () => DrawInventoryGrid());
@@ -42,11 +40,9 @@ public static partial class NoireUI
 
     /// <summary>
     /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
-    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
-    /// </summary>
-    /// <remarks>
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.<br/>
     /// Free while <see cref="UiProfiler.Enabled"/> is off.
-    /// </remarks>
+    /// </summary>
     /// <example>
     /// <code>
     /// NoireUI.Profile("inventory grid", inventory, static i => DrawInventoryGrid(i));

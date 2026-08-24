@@ -5,18 +5,10 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Takes an ImGui label apart into the text shown and the text that identifies it, once each, and hands the same
-/// strings back on every later frame.
+/// strings back on every later frame.<br/>
+/// The strings are equal to the substrings each call replaces, since ids travel into <see cref="NoireUiState"/> keys.
+/// Draw thread only: the caches are unsynchronised.
 /// </summary>
-/// <remarks>
-/// ImGui packs both jobs into one string: everything after <c>##</c> is hidden from the display and everything after
-/// <c>###</c> replaces the id outright. Splitting that costs a substring, and a widget is redrawn every frame, so a
-/// settings page whose fields carry stable ids produced two short-lived strings per field sixty times a second for a
-/// split that never changed.<br/>
-/// The strings handed back are equal to the substrings each call replaces: an id travels into
-/// <see cref="NoireUiState"/> keys, so a split that returned different text would orphan every value a user had
-/// saved under it.<br/>
-/// Reached only from the draw thread, like <see cref="UiIds"/>, so the caches need no lock.
-/// </remarks>
 internal static class UiLabel
 {
     /// <summary>
@@ -70,10 +62,6 @@ internal static class UiLabel
     /// <summary>
     /// Splits a label on <c>###</c> into the text drawn and the id the widget is remembered under.
     /// </summary>
-    /// <remarks>
-    /// Only <c>###</c> separates the two here, matching ImGui: <c>##</c> hides text from the display without replacing
-    /// the id, and a surface whose label doubles as its id wants the stable part rather than the hidden one.
-    /// </remarks>
     /// <param name="label">The label to split.</param>
     /// <param name="visible">The text to draw. The whole label when it carries no stable id.</param>
     /// <param name="id">The stable id. The whole label when it carries no stable id.</param>

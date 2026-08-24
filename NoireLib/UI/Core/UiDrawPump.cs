@@ -10,10 +10,6 @@ namespace NoireLib.UI;
 /// Bounded with drop-oldest, so a UI that has stopped drawing costs a bounded amount of memory instead of growing until
 /// the game dies. When NoireLib is not initialized there is no draw thread to marshal onto and actions run inline.
 /// </summary>
-/// <remarks>
-/// This mirrors the delivery queue the networker uses on the framework thread; the two cannot be shared because they
-/// drain on different threads.
-/// </remarks>
 internal sealed class UiDrawPump
 {
     private readonly ConcurrentQueue<Action> queue = new();

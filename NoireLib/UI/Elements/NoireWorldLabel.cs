@@ -10,13 +10,6 @@ namespace NoireLib.UI;
 /// A label pinned to a place in the world rather than to the screen. It is projected every frame, fades and
 /// shrinks with distance, and behaves like a quest marker once the point it follows leaves the screen.
 /// </summary>
-/// <remarks>
-/// What it follows is read on the framework thread and handed to the draw pass as a position, never as a live object.
-/// A game object can be freed between the frame that found it and the frame that draws it, and reading one from the
-/// draw thread is an access violation rather than a wrong number, so the boundary is not negotiable.<br/>
-/// The label is click-through until an <see cref="OnClick"/> handler is set, because something drawn over the world
-/// that silently eats clicks is indistinguishable from a broken game.
-/// </remarks>
 /// <example>
 /// <code>
 /// new NoireWorldLabel("target")
@@ -84,17 +77,15 @@ public sealed class NoireWorldLabel : NoireDrawable
 
     /// <summary>
     /// Where to read the world position from each tick, or <see langword="null"/> to use <see cref="WorldPosition"/>.
-    /// Returning <see langword="null"/> hides the label.
+    /// Returning <see langword="null"/> hides the label.<br/>
+    /// Invoked on the framework thread, so it may read game state freely.
     /// </summary>
-    /// <remarks>Invoked on the framework thread, so it may read game state freely.</remarks>
     public Func<Vector3?>? PositionSource { get; set; }
 
     /// <summary>
-    /// Which game object to follow, resolved each tick. Returning <see langword="null"/> hides the label.
+    /// Which game object to follow, resolved each tick. Returning <see langword="null"/> hides the label.<br/>
+    /// Invoked on the framework thread, and reduced to a position immediately.
     /// </summary>
-    /// <remarks>
-    /// Invoked on the framework thread and reduced to a position immediately, so nothing holds on to the object.
-    /// </remarks>
     public Func<IGameObject?>? ObjectSource { get; set; }
 
     /// <summary>
@@ -146,18 +137,15 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>The text colour. When <see langword="null"/>, the theme's own text colour.</summary>
     public Vector4? TextColor { get; set; }
 
-    /// <summary>The plate colour behind the label. When <see langword="null"/>, the theme's surface.</summary>
-    /// <remarks>Its alpha is scaled by <see cref="BackgroundOpacity"/>, whether it is set here or taken from the theme.</remarks>
+    /// <summary>
+    /// The plate colour behind the label. When <see langword="null"/>, the theme's surface.<br/>
+    /// Its alpha is scaled by <see cref="BackgroundOpacity"/>.
+    /// </summary>
     public Vector4? Background { get; set; }
 
     /// <summary>
     /// How opaque the plate behind the label is, from 0 for none at all to 1 for the colour as given. Defaults to 0.8.
     /// </summary>
-    /// <remarks>
-    /// Scales the alpha of <see cref="Background"/> rather than replacing the colour, so the plate can be faded
-    /// without the caller having to rebuild the theme's own surface colour to do it. Zero leaves the text floating
-    /// on the world with no plate at all.
-    /// </remarks>
     public float BackgroundOpacity { get; set; } = 0.8f;
 
     /// <summary>The padding inside the plate, in pixels at 100%.</summary>
@@ -187,17 +175,10 @@ public sealed class NoireWorldLabel : NoireDrawable
     public float FadeDistance { get; set; }
 
     /// <summary>
-    /// A fixed multiplier on the whole label: the text, the padding, the rounding and the arrow together. Defaults to 1.
-    /// </summary>
-    /// <remarks>
-    /// Applies whether or not the label also scales with distance: the two multiply.<br/>
-    /// It is a multiplier rather than a pixel size so that it moves the plate with the text. Setting
-    /// <see cref="TextSize"/> alone leaves the padding and the arrow where they were, which reads as a label whose
-    /// proportions drift as it grows.<br/>
+    /// A fixed multiplier on the whole label: the text, the padding, the rounding and the arrow together. Defaults to 1.<br/>
     /// Text is drawn with a font built at the size this works out to, so each distinct value a plugin uses is a distinct
-    /// font size. A few are free; a value that varies per label across dozens of labels is not. See
-    /// <see cref="ScaleStep"/>.
-    /// </remarks>
+    /// font size. A few are free; a value that varies per label across dozens of labels is not.
+    /// </summary>
     public float BaseScale { get; set; } = 1f;
 
     /// <summary>Whether the label shrinks with distance. Off by default. See <see cref="Scaling"/>.</summary>
@@ -234,16 +215,10 @@ public sealed class NoireWorldLabel : NoireDrawable
 
     /// <summary>
     /// The steps the distance scale is rounded to, so the label takes a few sharp sizes rather than every size between
-    /// its bounds. Zero scales smoothly instead.
+    /// its bounds. Zero scales smoothly instead.<br/>
+    /// Each step costs a distinct font size. The default spans <see cref="MinScale"/> to <see cref="MaxScale"/> in
+    /// four steps.
     /// </summary>
-    /// <remarks>
-    /// <see cref="NoireText"/> draws at a size by building a real font at it, and a label scaled continuously would
-    /// ask for one per pixel of distance; each is a full glyph atlas, and the cache that holds them is deliberately
-    /// small. Stepped, a label costs a handful of sizes across its whole range and every one of them is rasterized
-    /// rather than resampled.<br/>
-    /// The default spans <see cref="MinScale"/> to <see cref="MaxScale"/> in four steps. Set it smaller for a finer
-    /// ramp and more sizes, or to zero to scale smoothly and accept that the text is stretched between sizes.
-    /// </remarks>
     public float ScaleStep { get; set; } = 0.25f;
 
     #endregion
@@ -263,7 +238,6 @@ public sealed class NoireWorldLabel : NoireDrawable
     public float ArrowSize { get; set; } = 14f;
 
     /// <summary>How far the edge arrow stands clear of the label, in pixels at 100%.</summary>
-    /// <remarks>Counted inside the space reserved by <see cref="EdgeMargin"/>, so widening it never costs the arrow its room.</remarks>
     public float ArrowGap { get; set; } = 4f;
 
     /// <summary>The colour of the edge arrow. When <see langword="null"/>, the theme's accent.</summary>
@@ -285,11 +259,6 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>
     /// Whether the label is kept in front of every other window, for clicks as well as for drawing. Off by default.
     /// </summary>
-    /// <remarks>
-    /// Being drawn on top and receiving the mouse are two different orders in ImGui; moving only the first produces
-    /// a marker plainly visible above a window but completely dead to clicks under it. This moves both, so a label
-    /// that takes input at all (see <see cref="OnClick"/>) stays clickable where it overlaps a window.
-    /// </remarks>
     public bool AlwaysOnTop { get; set; }
 
     /// <summary>Whether the label was drawn on screen last frame, rather than hidden or pinned to an edge.</summary>
@@ -497,10 +466,6 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>
     /// Works out how large the label is drawn, from its fixed size and the distance to what it follows.
     /// </summary>
-    /// <remarks>
-    /// Only the part that varies with distance is stepped. <see cref="BaseScale"/> multiplies afterwards, so it stays a
-    /// free-form number without adding a font size per value it could take between the steps.
-    /// </remarks>
     /// <param name="distance">The distance to the world point, in yalms.</param>
     /// <returns>The multiplier the whole label is drawn at.</returns>
     private float ResolveScale(float distance)
@@ -518,11 +483,6 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>
     /// Draws whatever the label carries: a custom body, rich content, or the plain text.
     /// </summary>
-    /// <remarks>
-    /// Runs inside the <see cref="NoireText"/> scope <see cref="DrawPlate"/> opened, so the plain text asks for no size
-    /// of its own: it is already being drawn at the label's size, and asking again would resolve the step a second time
-    /// and lose the distance scaling with it.
-    /// </remarks>
     /// <param name="theme">The palette in force.</param>
     private void DrawBody(NoireTheme theme)
     {
@@ -560,11 +520,6 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>
     /// Draws the arrow that points off screen toward the world point, the way a quest marker does.
     /// </summary>
-    /// <remarks>
-    /// The arrow points outward, along the direction the label was pinned by, since that is where the thing it
-    /// marks actually is. Pointing it at the projected coordinate instead would make a marker for something
-    /// behind you point back into the middle of the screen, reading as an instruction to walk into your own camera.
-    /// </remarks>
     /// <param name="pinned">Where the label ended up, at its centre.</param>
     /// <param name="direction">The direction the label was pinned along.</param>
     /// <param name="alpha">The distance fade to draw at.</param>

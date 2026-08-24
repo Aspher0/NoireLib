@@ -4,13 +4,6 @@ namespace NoireLib.UI;
 /// Builds the <see cref="NoireUiState"/> key a widget stores a piece of remembered state under, and refuses to build
 /// one when the widget's id was generated rather than given.
 /// </summary>
-/// <remarks>
-/// A generated id is a fresh GUID every session. Persisting against one would write an entry that can never be read
-/// back, so the state file grows forever and restores nothing, and the symptom (a setting that silently never sticks)
-/// points nowhere near the cause.<br/>
-/// Shared rather than written per widget, because every <c>Persist*</c> switch in the library owes the same guarantee
-/// and a widget that quietly skipped it would be the one that fails this way.
-/// </remarks>
 internal static class UiPersistKey
 {
     /// <summary>

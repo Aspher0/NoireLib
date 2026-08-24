@@ -10,10 +10,6 @@ namespace NoireLib.TweakManager;
 /// <summary>
 /// A tweak to automatically close the addon that tells you that the last logged in character has not been found on this data-center.
 /// </summary>
-/// <remarks>
-/// A Lobby instance property likely allows suppressing this notice directly, which would be more efficient than
-/// polling the addon here.
-/// </remarks>
 [TweakKeyMigration("NoireLib_Tweak_AknowledgeCharacterNotFoundOnDC")]
 public class AcknowledgeCharacterNotFoundOnDC : TweakBase
 {

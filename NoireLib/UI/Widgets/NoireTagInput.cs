@@ -10,11 +10,6 @@ namespace NoireLib.UI;
 /// A field that collects short strings as chips: Enter adds one, a separated run adds all of them, and backspace on
 /// an empty field takes the last chip back for editing.
 /// </summary>
-/// <remarks>
-/// Separators, duplicates, tag count and tag length are configurable, along with a <see cref="Validate"/> callback,
-/// and every refusal is reported as a <see cref="TagRejection"/>. Suggestions are matched with
-/// <see cref="FuzzyMatcher"/> and shown under the field while it has focus.
-/// </remarks>
 /// <example>
 /// <code>
 /// var tags = new NoireTagInput("tags", config.Tags)
@@ -103,17 +98,15 @@ public sealed class NoireTagInput
     /// <summary>
     /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
     /// </summary>
-    /// <remarks>
-    /// A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves this field unmarked while
-    /// the rest of the interface keeps its mark.
-    /// </remarks>
     public FocusStyle? FocusStyle { get; set; }
 
     /// <summary>
     /// Replaces each chip's painting, called once per visible chip, with layout, hit testing, removal and the
     /// off-screen cull still handled by NoireUI.
     /// </summary>
-    /// <remarks>A chip's size is measured from the tag and the theme before painting and the hook cannot change it.</remarks>
+    /// <remarks>
+    /// A chip's size is measured from the tag and the theme before painting and the hook cannot change it.
+    /// </remarks>
     public Action<UiTagChipDraw>? ChipDraw { get; set; }
 
     /// <summary>Whether the reason a tag was refused is shown under the field.</summary>
@@ -479,7 +472,6 @@ public sealed class NoireTagInput
     /// <summary>
     /// Draws one chip, reporting whether its cross was clicked.
     /// </summary>
-    /// <remarks>Keyed on the index, since an id built from the text would merge two chips holding the same tag.</remarks>
     /// <param name="tag">The tag the chip holds.</param>
     /// <param name="index">The chip's position, used to build its id.</param>
     /// <param name="size">The chip's size, measured by the caller laying the row out.</param>

@@ -13,13 +13,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Runs a body with everything it draws clipped to a rectangle.
     /// </summary>
-    /// <remarks>
-    /// A painted background is drawn from its centre outwards and has no idea where the block holding it ends: a
-    /// sunburst reaching the corners of a masthead reaches just as far past it, over whatever comes next. Clipping
-    /// keeps a painted panel a panel instead of a wash across the page.<br/>
-    /// A scope rather than a parameter on every shape, for the same reason the gradient is: one call contains a whole
-    /// composition, however many shapes it turns out to be made of.
-    /// </remarks>
     /// <param name="min">The top left of the box to keep drawing inside, in screen space.</param>
     /// <param name="max">The bottom right.</param>
     /// <param name="body">The drawing to contain.</param>
@@ -33,10 +26,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Runs a body with everything it draws clipped to a rectangle.
     /// </summary>
-    /// <remarks>
-    /// Clipping keeps a painted panel a panel instead of a wash across the page: a painted background is drawn from
-    /// its centre outwards and has no idea where the block holding it ends.
-    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left of the box to keep drawing inside, in screen space.</param>
     /// <param name="max">The bottom right.</param>
@@ -63,14 +52,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a line with a bright band travelling along it.
     /// </summary>
-    /// <remarks>
-    /// The mark that makes a masthead rule read as lit rather than drawn. It cannot be a
-    /// <see cref="Gradient(Vector2, Vector2, Vector4, Vector4, Action)"/>: that ramps between two colors across the
-    /// whole span, and this is three stops with the bright one somewhere in the middle and moving, so the line is
-    /// drawn as segments whose alpha is a function of how near each one is to the band.<br/>
-    /// The band runs off both ends rather than bouncing, so <paramref name="phase"/> is taken over a range wider than
-    /// the line: a highlight that reverses reads as a scanner, and one that wraps mid-line flickers.
-    /// </remarks>
     /// <param name="from">Where the line starts, in screen space.</param>
     /// <param name="to">Where it ends.</param>
     /// <param name="color">The line's own color.</param>

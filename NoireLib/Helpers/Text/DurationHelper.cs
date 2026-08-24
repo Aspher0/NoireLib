@@ -8,10 +8,6 @@ namespace NoireLib.Helpers;
 /// Reads and writes durations the way people type them: <c>90s</c>, <c>1m30s</c>, <c>1h30</c>, <c>2m 30s</c>,
 /// <c>1:30</c>, <c>1.5h</c>.
 /// </summary>
-/// <remarks>
-/// Not tied to ImGui: pure string-to-<see cref="TimeSpan"/> conversion, usable behind a command argument or config
-/// importer as well as a text field. <see cref="Format(TimeSpan)"/> writes back in the same shorthand this reads.
-/// </remarks>
 /// <example>
 /// <code>
 /// DurationHelper.TryParse("1m30s", out var span);   // 90 seconds
@@ -39,9 +35,6 @@ public static class DurationHelper
     /// <summary>
     /// Reads a duration.
     /// </summary>
-    /// <remarks>
-    /// The whole text must parse: a trailing scrap that means nothing fails the parse rather than being silently ignored.
-    /// </remarks>
     /// <param name="text">The text to read.</param>
     /// <param name="bareUnit">The unit a leading number with no unit is measured in.</param>
     /// <param name="value">The duration, or <see cref="TimeSpan.Zero"/> when it could not be read.</param>
@@ -86,13 +79,9 @@ public static class DurationHelper
         => TryParse(text, out var value) ? value : fallback;
 
     /// <summary>
-    /// Writes a duration in the shorthand this helper reads.
+    /// Writes a duration in the shorthand this helper reads.<br/>
+    /// Parts that are zero are left out; a duration of nothing is <c>0s</c>, never the empty string.
     /// </summary>
-    /// <remarks>
-    /// Round-trips: anything this writes, <see cref="TryParse(string?, out TimeSpan)"/> reads back to the same value.
-    /// Parts that are zero are left out, so an hour is <c>1h</c> rather than <c>1h0m0s</c>; a duration of nothing is
-    /// <c>0s</c>, never the empty string.
-    /// </remarks>
     /// <param name="value">The duration to write.</param>
     /// <returns>The duration in shorthand.</returns>
     public static string Format(TimeSpan value)
@@ -128,12 +117,9 @@ public static class DurationHelper
     #region Reading
 
     /// <summary>
-    /// Reads the <c>1h30m</c> form: a run of amounts, each with a unit or taking the next one down.
+    /// Reads the <c>1h30m</c> form: a run of amounts, each with a unit or taking the next one down.<br/>
+    /// Units must strictly decrease through the text, so <c>30s1m</c> is rejected.
     /// </summary>
-    /// <remarks>
-    /// Units must strictly decrease through the text, which resolves a bare tail to the next unit down and rejects
-    /// transpositions like <c>30s1m</c> that a tolerant parser would silently sum.
-    /// </remarks>
     private static bool TryReadUnits(ReadOnlySpan<char> span, DurationUnit bareUnit, out double milliseconds)
     {
         milliseconds = 0d;

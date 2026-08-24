@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using NoireLib.Configuration;
@@ -47,9 +47,8 @@ public class NoireConfigJsonHardeningTests : IDisposable
     }
 
     /// <summary>
-    /// A configuration that resolves to a temp file instead of the plugin configuration directory, which is what lets
-    /// these tests exercise the real <see cref="NoireConfigBase.Save"/> and <see cref="NoireConfigBase.Load"/> without
-    /// a running game.
+    /// A configuration resolving to a temp file, so the real <see cref="NoireConfigBase.Save"/> and
+    /// <see cref="NoireConfigBase.Load"/> run without a game.
     /// </summary>
     private sealed class HardeningTestConfig : NoireConfigBase
     {
@@ -356,7 +355,7 @@ public class NoireConfigJsonHardeningTests : IDisposable
         FileHelper.WriteJsonToFile(filePath, new HardeningTestPayload { Text = "value" }, settings).Should().BeTrue();
 
         File.ReadAllText(filePath).Should().NotContain("$type",
-            "the library forbids type information in its JSON, so a caller asking for it is overridden");
+            "the library forbids type information in its JSON");
     }
 
     [Fact]
@@ -436,7 +435,7 @@ public class NoireConfigJsonHardeningTests : IDisposable
         var base64 = EncryptionHelper.SerializeToBase64(new HardeningTestPayload { Text = "value" }, jsonSettings: settings);
 
         base64.FromBase64ToString().Should().NotContain("$type",
-            "the library forbids type information in its JSON, so a caller asking for it is overridden");
+            "the library forbids type information in its JSON");
     }
 
     [Fact]

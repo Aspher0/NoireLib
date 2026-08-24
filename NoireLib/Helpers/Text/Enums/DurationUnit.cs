@@ -3,10 +3,6 @@ namespace NoireLib.Helpers;
 /// <summary>
 /// A unit of time, ordered from the smallest to the largest.
 /// </summary>
-/// <remarks>
-/// <see cref="DurationHelper"/> reads a bare number against this order: in "1h30" the 30 takes the unit one step
-/// below the hour.
-/// </remarks>
 public enum DurationUnit
 {
     /// <summary>Milliseconds, written <c>ms</c>.</summary>

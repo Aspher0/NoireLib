@@ -7,10 +7,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// The position, state and resolved colour a reset-dot hook needs to paint the mark itself.
 /// </summary>
-/// <remarks>
-/// Called only when the dot is shown, with hit testing, layout reservation and the tooltip already handled. The dot
-/// is the only mark an input field paints itself; the focus mark has its own hook on <see cref="FocusStyle"/>.
-/// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Centre">The centre of the dot, in screen pixels.</param>
 /// <param name="Radius">The radius in real pixels, hover growth already applied.</param>

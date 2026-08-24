@@ -1,12 +1,9 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The shape of a sunburst: how many rays, how wide they are, where they start and whether they fade out at the rim.
+/// The shape of a sunburst: how many rays, how wide they are, where they start and whether they fade out at the rim.<br/>
+/// Radii here are fractions of the sunburst's own radius rather than pixels, and need no scaling.
 /// </summary>
-/// <remarks>
-/// Radii here are fractions of the sunburst's own radius rather than pixels, so one style reads the same at any size
-/// and needs no scaling.
-/// </remarks>
 public sealed class SunburstStyle
 {
     /// <summary>How many rays are drawn.</summary>
@@ -25,16 +22,9 @@ public sealed class SunburstStyle
     public float InnerRatio { get; set; }
 
     /// <summary>
-    /// Where the rays begin, as a distance from the centre at 100% (see <see cref="NoireUI.Scale"/>), for lining the
-    /// burst up with something that has a size of its own rather than a share of the radius.<br/>
-    /// Takes precedence over <see cref="InnerRatio"/> when set: a ratio moves with the radius, so a burst sized from
-    /// a window has its hole grow and shrink as the window does, while a distance stays put for an ornament drawn at
-    /// a fixed radius inside the burst.
+    /// Where the rays begin, as a distance from the centre at 100% (see <see cref="NoireUI.Scale"/>).<br/>
+    /// Takes precedence over <see cref="InnerRatio"/> when set, and is clamped to stay inside the radius.
     /// </summary>
-    /// <remarks>
-    /// Clamped to stay inside the radius, so a burst smaller than the hole asked for draws a thin outer band rather
-    /// than nothing.
-    /// </remarks>
     public float? InnerSize { get; set; }
 
     /// <summary>
@@ -51,10 +41,6 @@ public sealed class SunburstStyle
     /// <summary>
     /// How much of each ray's width is spent fading out at its sides, from 0 to 1.
     /// </summary>
-    /// <remarks>
-    /// Zero leaves the sides hard, only as smooth as the one pixel of antialiasing the fill itself provides: enough
-    /// for a handful of wide rays, visibly stepped once there are many narrow ones.
-    /// </remarks>
     public float Softness { get; set; } = 0.35f;
 
     /// <summary>

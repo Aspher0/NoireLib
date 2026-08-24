@@ -10,12 +10,6 @@ namespace NoireLib.UI;
 /// A container that paints chrome around whatever is drawn inside it: a bordered frame, a filled plate, an optional
 /// header, and the room to hold them apart.
 /// </summary>
-/// <remarks>
-/// Runs the body first to measure it, then paints the chrome behind it: guessing a height, or reusing last frame's,
-/// lags a frame the moment the content animates.<br/>
-/// Bodies are taken rather than begun and ended, so there is nothing to close and a body that throws still leaves the
-/// draw list balanced.
-/// </remarks>
 /// <example>
 /// <code>
 /// NoirePanel.Frame(() =>
@@ -86,10 +80,6 @@ public static class NoirePanel
     /// <summary>
     /// Runs a body inside a measured box and paints the chrome behind it.
     /// </summary>
-    /// <remarks>
-    /// The order on screen is chrome then body; the order in time is body then chrome, because the body is what says
-    /// how tall the box is. The draw list is split into channels to let the two disagree.
-    /// </remarks>
     private static void Draw<TState, TStyle>(
         TState state,
         Action<TState> body,
@@ -180,13 +170,6 @@ public static class NoirePanel
     /// <summary>
     /// The draw lists this call is nested inside, and whether each entry is the one that split its list.
     /// </summary>
-    /// <remarks>
-    /// A draw list can only be split once at a time, so a panel inside a panel must not split again: chrome from
-    /// every depth shares one channel and content the other, so an inner panel's chrome lands on top of its parent's
-    /// chrome and still behind all content.<br/>
-    /// Tracked per draw list rather than as a plain depth count, since a body may open a child window that draws to a
-    /// list of its own nothing has split yet.
-    /// </remarks>
     private static readonly List<(nint List, bool Split)> ChromeStack = [];
 
     private static unsafe bool BeginChrome()

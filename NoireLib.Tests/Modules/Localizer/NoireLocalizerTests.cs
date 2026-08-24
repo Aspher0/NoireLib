@@ -1,4 +1,5 @@
 using FluentAssertions;
+using NoireLib.Configuration;
 using NoireLib.EventBus;
 using NoireLib.Localizer;
 using System;
@@ -54,13 +55,18 @@ public class NoireLocalizerTests : IDisposable
     }
 
     /// <summary>
-    /// Returns the cached configuration singleton to the state of a fresh installation. A localizer applies the
-    /// persisted configuration while initializing, so values a previous test persisted would otherwise decide the next
-    /// test's locales.
+    /// Returns the cached configuration to the state of a fresh installation, and pins it in the manager cache the way
+    /// an initialized plugin's load does. A localizer applies the persisted configuration while initializing, so values
+    /// a previous test persisted would otherwise decide the next test's locales.
     /// </summary>
     private static void ResetPersistedConfiguration()
     {
-        var config = LocalizerConfig.Instance;
+        // With no plugin behind the library the configuration resolves no path, so its load reports failure and the
+        // manager deliberately declines to cache it, handing every caller a fresh instance. Caching it explicitly is
+        // what puts the localizer and the assertions below on the one instance they share in game.
+        NoireConfigManager.UnloadConfig<LocalizerConfigInstance>();
+        var config = new LocalizerConfigInstance();
+        NoireConfigManager.AddConfigToCache(typeof(LocalizerConfigInstance), config);
 
         config.SelectedLocale = null;
         config.DefaultLocaleSource = DefaultLocaleSource.Custom;

@@ -105,7 +105,8 @@ public class MigrationBuilder
                     if (oldValue != null)
                     {
                         var newValue = converter(oldValue);
-                        root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
+                        if (newValue != null)
+                            root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
                     }
                 }
                 catch
@@ -129,7 +130,7 @@ public class MigrationBuilder
     {
         orderedOperations.Add(root =>
         {
-            if (!root.ContainsKey(propertyName))
+            if (!root.ContainsKey(propertyName) && defaultValue != null)
                 root[propertyName] = JToken.FromObject(defaultValue, ConversionSerializer);
         });
         return this;
@@ -147,7 +148,8 @@ public class MigrationBuilder
         orderedOperations.Add(root =>
         {
             var value = computeValue(root);
-            root[propertyName] = JToken.FromObject(value, ConversionSerializer);
+            if (value != null)
+                root[propertyName] = JToken.FromObject(value, ConversionSerializer);
         });
         return this;
     }
@@ -171,7 +173,8 @@ public class MigrationBuilder
                     if (oldValue != null)
                     {
                         var newValue = transform(oldValue);
-                        root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
+                        if (newValue != null)
+                            root[propertyName] = JToken.FromObject(newValue, ConversionSerializer);
                     }
                 }
                 catch

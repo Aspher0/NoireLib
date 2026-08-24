@@ -152,10 +152,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// How many rows the search left, written as <c>12 of 340</c>.
     /// </summary>
-    /// <remarks>
-    /// Cached, since the search box asks for it twice every frame: once for the count it is showing and once for
-    /// the widest count it could show. Both change only when rows are added or the search is retyped.
-    /// </remarks>
     /// <param name="visible">How many rows the search left.</param>
     /// <param name="total">How many rows there are.</param>
     /// <returns>The counter text.</returns>
@@ -227,23 +223,12 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// The column currently sitting rightmost, which is not the last one declared once a header has been dragged.
     /// </summary>
-    /// <remarks>
-    /// Read off the previous frame's layout, since ImGui does not report a display order before the columns have been
-    /// laid out. One frame behind a reorder, which nobody can see; getting it from the declaration order instead
-    /// leaves a column stranded in the middle with no grip while the one that really is last still has one.<br/>
-    /// Column *flags* are re-read from every <c>TableSetupColumn</c> call, unlike the width, so this can change from
-    /// frame to frame.
-    /// </remarks>
     private int TrailingColumnSlot()
         => columnLayout.Count > 0 ? columnLayout[^1].Column : CountVisibleColumns() - 1;
 
     /// <summary>
     /// Takes the order from the header the user clicked.
     /// </summary>
-    /// <remarks>
-    /// Read only when ImGui says it changed. The specs are ImGui's own state and the table's is ours, so copying them
-    /// every frame would fight <see cref="SortBy"/> and make setting the order from code impossible.
-    /// </remarks>
     private unsafe void ApplySortSpecs()
     {
         var specs = ImGui.TableGetSortSpecs();
@@ -456,10 +441,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Selects a row from a click, adding to the selection when a modifier says so.
     /// </summary>
-    /// <remarks>
-    /// A plain click always selects rather than toggling: a click that deselects the row under the cursor reads as
-    /// the click having missed. Toggling is what the modifier is for.
-    /// </remarks>
     private void Toggle(T row, bool wasSelected)
     {
         var additive = SelectionMode == TableSelection.Multiple
@@ -504,10 +485,7 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Draws a cell's text, picking out the characters whatever narrowed the table matched on.
     /// </summary>
-    /// <remarks>
-    /// The column's own filter wins over the box above it for that column, since it is the more specific thing the
-    /// user typed about it.
-    /// </remarks>
+    /// <remarks>The column's own filter wins over the box above it for that column.</remarks>
     private void DrawCellText(TableColumn<T> column, T row)
     {
         var text = column.Read(row);
@@ -532,14 +510,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Draws the row of totals, pinned under the rows and lined up with them.
     /// </summary>
-    /// <remarks>
-    /// Drawn rather than tabled, deliberately. A second table cannot be made to match the body's columns:
-    /// <c>TableSetupColumn</c>'s width is only honoured while the table is initialising, so after its first frame
-    /// ImGui keeps its own widths and every later value is ignored. The footer would size itself to its own text and
-    /// nothing could talk it out of that.<br/>
-    /// The body's cells report exactly where they are, so the footer is drawn against that instead: the same
-    /// coordinates, and therefore aligned whatever the columns have been resized, reordered or scrolled to.
-    /// </remarks>
     private void DrawFooter(float width)
     {
         var theme = NoireTheme.Current;
@@ -619,10 +589,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Puts a resize grip on a footer divider, so a column can be sized from the bottom of the table as well as the top.
     /// </summary>
-    /// <remarks>
-    /// The width is handed to the body on the next frame rather than applied here: ImGui only accepts a column width
-    /// while its table's layout is still open, which is long past by the time the footer is drawn.
-    /// </remarks>
     private void DrawFooterGrip(int position, float boundary, float top, float bottom)
     {
         var reach = NoireUI.Scaled(4f);
@@ -660,10 +626,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// The column sitting at a position of the footer, following the body's display order when it is known.
     /// </summary>
-    /// <remarks>
-    /// ImGui numbers only the columns it was given, so its index counts visible columns while ours counts every
-    /// declared one. Walking the visible ones keeps the two in step once a column is hidden.
-    /// </remarks>
     private TableColumn<T>? ColumnAt(int position)
     {
         // Before the first row has ever been drawn there is no layout to follow, so the declared order is the only

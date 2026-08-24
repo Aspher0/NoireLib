@@ -16,13 +16,6 @@ public sealed partial class NoireTabBar
     /// Scrolls the tab strip with the wheel while the pointer is over it, and keeps the surrounding windows from
     /// scrolling with the same notch.
     /// </summary>
-    /// <remarks>
-    /// The tab bar's scroll position lives in ImGui's internals rather than in its public surface, so this reaches it
-    /// through <c>ImGui.GetCurrentContext().CurrentTabBar</c>. That is only valid between <c>BeginTabBar</c> and
-    /// <c>EndTabBar</c>, so this is not a separate call the caller makes.<br/>
-    /// Setting the target rather than the animated position leaves ImGui's own easing in charge, so a wheel notch
-    /// glides the way clicking the arrows does instead of jumping.
-    /// </remarks>
     /// <returns>True when the strip took the wheel.</returns>
     private bool HandleWheelScroll()
     {
@@ -65,10 +58,6 @@ public sealed partial class NoireTabBar
     /// Pulls the window's work rectangle in to the width the bar is allowed, so ImGui builds the strip to that edge
     /// rather than to the window's own.
     /// </summary>
-    /// <remarks>
-    /// Only ever narrows. A bar asked for more room than the window has cannot be given it, and widening the work
-    /// rectangle would push the strip out through the side of the window instead.
-    /// </remarks>
     /// <param name="window">The window being drawn into.</param>
     private void ConstrainWorkRect(ImGuiWindowPtr window)
     {
@@ -94,18 +83,6 @@ public sealed partial class NoireTabBar
     /// Tells ImGui that no window under the pointer may scroll on the wheel, for as long as the pointer is over the
     /// tab strip.
     /// </summary>
-    /// <remarks>
-    /// The wheel has to be refused rather than undone. ImGui hands it to the hovered window inside <c>NewFrame</c>,
-    /// before a single widget has drawn, so by the time a tab bar could notice, the scrolling has already happened;
-    /// and this build of the bindings offers neither <c>SetItemUsingMouseWheel</c> nor a key-owner API to claim it in
-    /// advance. Putting the scroll back afterwards is not equivalent either, because the window that moved is often not
-    /// the one the bar is drawn in: ImGui walks up from the hovered window to the first ancestor that can actually
-    /// scroll, which for a bar inside a non-scrolling column is the page behind it.<br/>
-    /// So the flag is set on the whole ancestor chain, defeating that same walk. It is set a frame ahead, which
-    /// costs nothing in practice: the pointer rests on the strip for many frames before a wheel notch arrives.<br/>
-    /// Nothing is restored, and nothing needs to be. <c>Begin</c> assigns a window's flags from its own arguments every
-    /// frame, so this lasts exactly until the window is next begun and then undoes itself.
-    /// </remarks>
     private static void ClaimWheelForNextFrame()
     {
         for (var window = ImGuiP.GetCurrentWindow(); !window.IsNull; window = window.ParentWindow)
@@ -238,13 +215,6 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// Draws the tab's badge over its header, if it has one to draw.
     /// </summary>
-    /// <remarks>
-    /// Clipped to the ends of the bar rather than pushed back inside them: a tab scrolled halfway off the end has
-    /// half a badge, and one scrolled off entirely has none, matching the tab itself. Holding the badge inside
-    /// instead would leave it stranded at the edge, still showing a count for a tab that is no longer there.<br/>
-    /// Only the ends are clipped. A badge deliberately rides above the top of its tab, so bounding it vertically as
-    /// well would shave the top off every badge in the bar rather than only the ones going out of view.
-    /// </remarks>
     private static void DrawBadge(UiTab tab, UiRect header)
     {
         var count = tab.BadgeCount();

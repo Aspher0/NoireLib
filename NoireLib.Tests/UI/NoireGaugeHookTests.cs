@@ -2,6 +2,7 @@ using FluentAssertions;
 using NoireLib.UI;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Xunit;
 
@@ -200,6 +201,88 @@ public sealed class NoireGaugeHookTests : IClassFixture<UiHarness>
         harness.Draw(() => NoireGauges.Sparkline([5f], style), warmUpFrames: 0);
 
         calls.Should().Be(0, "the shipped trace needs two points and the hook holds the same bar");
+    }
+
+    [Fact]
+    public void TimerLabel_ReadsWholeSeconds()
+    {
+        var captured = default(UiRingDraw);
+        var style = new RingStyle();
+        style.CustomDraw = args => captured = args;
+
+        harness.Draw(
+            () => NoireGauges.Timer(TimeSpan.FromMilliseconds(13_200), TimeSpan.FromSeconds(60), style),
+            warmUpFrames: 0);
+
+        // Was "13s200ms": too wide for the hole it sits in, and a different string on every frame, so a centred label
+        // visibly resized and flickered as the milliseconds ran.
+        captured.Label.Should().Be("14s");
+    }
+
+    [Fact]
+    public void TimerLabel_HoldsStillWithinASecond()
+    {
+        var seen = new List<string?>();
+        var style = new RingStyle();
+        style.CustomDraw = args => seen.Add(args.Label);
+
+        foreach (var milliseconds in new[] { 13_999, 13_500, 13_100, 13_001 })
+        {
+            var remaining = TimeSpan.FromMilliseconds(milliseconds);
+            harness.Draw(() => NoireGauges.Timer(remaining, TimeSpan.FromSeconds(60), style), warmUpFrames: 0);
+        }
+
+        seen.Distinct().Should().HaveCount(1, "every frame of the same second must read the same, or the label flickers");
+    }
+
+    [Fact]
+    public void TimerLabel_ShowsTheLastSecondThenZero()
+    {
+        var style = new RingStyle();
+        string? atTheEnd = null;
+        string? expired = null;
+
+        style.CustomDraw = args => atTheEnd = args.Label;
+        harness.Draw(() => NoireGauges.Timer(TimeSpan.FromMilliseconds(120), TimeSpan.FromSeconds(60), style), warmUpFrames: 0);
+
+        style.CustomDraw = args => expired = args.Label;
+        harness.Draw(() => NoireGauges.Timer(TimeSpan.Zero, TimeSpan.FromSeconds(60), style), warmUpFrames: 0);
+
+        atTheEnd.Should().Be("1s", "rounded up, so the last second is shown for its whole duration");
+        expired.Should().Be("0s");
+    }
+
+    [Fact]
+    public void LabelSize_ShrinksToFitTheSpaceGiven()
+    {
+        var fitted = 0f;
+        var measured = 0f;
+        const float hole = 22f;
+
+        harness.Draw(
+            () =>
+            {
+                fitted = NoireGauges.FitTextSize("1m30s", 14f, hole);
+                measured = NoireText.CalcSize("1m30s", fitted).X;
+            },
+            warmUpFrames: 2);
+
+        fitted.Should().BeLessThan(14f, "a label wider than the ring's hole has to come down to fit it");
+
+        // Either it fits, or it bottomed out at the readable minimum and is allowed to overflow. Headless there is no
+        // rasterized font, so every size is measured through the same stretched stand-in and the floor is the usual
+        // outcome; in game the sizes are real and the first branch is.
+        (measured <= hole || fitted <= NoireGauges.MinFittedLabelSize).Should().BeTrue();
+    }
+
+    [Fact]
+    public void LabelSize_IsLeftAlone_WhenItAlreadyFits()
+    {
+        var fitted = 0f;
+
+        harness.Draw(() => fitted = NoireGauges.FitTextSize("7s", 14f, 400f), warmUpFrames: 2);
+
+        fitted.Should().Be(14f);
     }
 
     [Fact]

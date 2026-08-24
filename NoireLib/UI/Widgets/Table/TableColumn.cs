@@ -7,12 +7,6 @@ namespace NoireLib.UI;
 /// One column of a <see cref="NoireTable{T}"/>: what it is called, what it reads out of a row, and how it sorts,
 /// filters and totals.
 /// </summary>
-/// <remarks>
-/// The minimum is a header and a <see cref="Text"/>, and everything else follows from it: the column sorts on that
-/// text, the global search reads it, a per-column filter matches it, and a CSV export writes it. Set
-/// <see cref="SortKey"/> when the text does not sort the way the data does (a number written "1,024", a date written
-/// "yesterday"), and <see cref="Sort"/> when neither is enough.
-/// </remarks>
 /// <typeparam name="T">The row type.</typeparam>
 public sealed class TableColumn<T>
 {
@@ -28,10 +22,6 @@ public sealed class TableColumn<T>
     /// <summary>
     /// What the column sorts on, when the text does not sort the way the data does.
     /// </summary>
-    /// <remarks>
-    /// A duration written "1m30s" sorts after "1h" as text and before it as a value; a number written with
-    /// thousands separators sorts by its first digit.
-    /// </remarks>
     public Func<T, IComparable?>? SortKey { get; set; }
 
     /// <summary>
@@ -64,19 +54,11 @@ public sealed class TableColumn<T>
     public float Width { get; set; }
 
     /// <summary>Paints a cell instead of the plain text.</summary>
-    /// <remarks>
-    /// Only the painting. The table keeps the sizing, the selection, the sort and the filtering, and the hook is
-    /// handed everything it needs to draw the row it was given.
-    /// </remarks>
     public Action<UiTableCellDraw<T>>? Renderer { get; set; }
 
     /// <summary>
     /// What the footer says for this column, given the rows currently showing.
     /// </summary>
-    /// <remarks>
-    /// Handed the filtered rows rather than all of them, because a total that ignores the filter above it is a total
-    /// of something the user is not looking at.
-    /// </remarks>
     public Func<IReadOnlyList<T>, string>? Aggregate { get; set; }
 
     /// <summary>
@@ -105,10 +87,7 @@ public sealed class TableColumn<T>
     /// </summary>
     /// <remarks>
     /// Resolved in order of how much the caller said: an explicit <see cref="Sort"/>, then a <see cref="SortKey"/>,
-    /// then the text.<br/>
-    /// The table asks this several times a frame, once to decide whether it is sortable at all and once per column
-    /// while declaring them, so the two fallbacks are held rather than converted afresh: converting a method group
-    /// of an instance method builds a new delegate every time.
+    /// then the text.
     /// </remarks>
     /// <returns>The comparison, or <see langword="null"/>.</returns>
     public Comparison<T>? ResolveComparison()

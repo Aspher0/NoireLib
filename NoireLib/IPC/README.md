@@ -21,6 +21,7 @@ You are reading the documentation for `NoireIPC`.
   - [Delegate Availability via `IsIpcAvailable()`](#delegate-availability-via-isipcavailable)
 - [Using Attributed IPC with Instances](#using-attributed-ipc-with-instances)
 - [Availability and Binding State](#availability-and-binding-state)
+- [Caller Identity and Subscription Count](#caller-identity-and-subscription-count)
 - [Attribute Reference](#attribute-reference)
   - [`NoireIpcClassAttribute`](#noireipcclassattribute)
   - [`NoireIpcAttribute`](#noireipcattribute)
@@ -500,6 +501,35 @@ bool available = NoireIPC.IsAvailable(
     returnType: typeof(int),
     prefix: "MyPlugin");
 ```
+
+These read the call gate's `HasFunction`/`HasAction` flags. They never invoke the provider.
+
+---
+
+## Caller Identity and Subscription Count
+
+A provider registration tells you who is on the other side:
+
+- `SubscriptionCount` - how many subscribers are attached to the channel.
+- `CurrentCaller` - the plugin invoking this provider, as a Dalamud `IExposedPlugin`. Read it inside the
+  registered handler. Outside a call it may be null.
+
+```csharp
+[NoireIpc("GetCounter")]
+public static int GetCounter()
+{
+    var registration = NoireIPC.GetRegistration("GetCounter");
+    var caller = registration?.CurrentCaller;
+
+    if (caller != null)
+        NoireLogger.LogDebug($"GetCounter invoked by {caller.InternalName}.");
+
+    return counter;
+}
+```
+
+`NoireIPC.GetRegistration(name, prefix, useDefaultPrefix)` looks up a channel this plugin provides.
+If you already hold the `NoireIpcRegistration`, read it directly.
 
 ---
 

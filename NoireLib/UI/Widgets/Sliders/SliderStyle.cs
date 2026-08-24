@@ -65,9 +65,7 @@ public sealed class SliderStyle
     /// <summary>
     /// How the value is written, as a .NET numeric format string.
     /// </summary>
-    /// <remarks>
-    /// Null lets the slider choose: whole numbers for an integer slider, two decimals for a float one.
-    /// </remarks>
+    /// <remarks>Null lets the slider choose: whole numbers for an integer slider, two decimals for a float one.</remarks>
     public string? ValueFormat { get; set; }
 
     /// <summary>The column the value is written in, at 100%. It is reserved whatever the value reads.</summary>
@@ -88,16 +86,11 @@ public sealed class SliderStyle
     /// <summary>
     /// How wide the label column is, at 100%. When <see langword="null"/>, <see cref="NoireInputs.LabelWidth"/>.
     /// </summary>
-    /// <remarks>
-    /// Shared with the input fields by default so a run of settings lines up; settable here when a row's neighbours
-    /// use a different column.
-    /// </remarks>
     public float? LabelWidth { get; set; }
 
     /// <summary>
     /// Paints the slider instead of the shipped drawing.
     /// </summary>
-    /// <remarks>The widget keeps the sizing, the hit testing, the dragging and the value; the hook only paints.</remarks>
     public Action<UiSliderDraw>? CustomDraw { get; set; }
 
     /// <summary>Returns a copy.</summary>

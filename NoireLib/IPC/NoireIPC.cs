@@ -1,5 +1,7 @@
 using Dalamud.Plugin;
+using Dalamud.Plugin.Ipc;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Linq.Expressions;
@@ -16,6 +18,17 @@ public static class NoireIPC
     private static bool _disposeHookRegistered;
     private static readonly object SyncRoot = new();
     private static readonly List<NoireIpcHandle> OwnedHandles = [];
+
+    /// <summary>
+    /// Resolved Dalamud call gates, keyed by side, name and exact generic arguments.
+    /// Cleared when the owned handles are disposed.
+    /// </summary>
+    private static readonly ConcurrentDictionary<CallGateKey, object> CallGateCache = new();
+
+    /// <summary>
+    /// The scored method per call-gate type, member name and argument count.
+    /// </summary>
+    private static readonly ConcurrentDictionary<(Type TargetType, string MethodName, int ArgumentCount), MethodInfo> InstanceMethodCache = new();
     private static readonly IReadOnlyDictionary<int, MethodInfo> ProviderFactoryMethods = typeof(IDalamudPluginInterface)
         .GetMethods(BindingFlags.Instance | BindingFlags.Public)
         .Where(method => method.Name == nameof(IDalamudPluginInterface.GetIpcProvider) && method.IsGenericMethodDefinition)
@@ -324,7 +337,7 @@ public static class NoireIPC
         {
             if (!type.IsAbstract || !type.IsSealed)
             {
-                //NoireLogger.LogWarning($"Skipping automatic IPC registration for '{type.FullName}' because automatic registration only supports static types. Use NoireIPC.Initialize for instance types.", $"[{typeof(NoireIPC).Name}] ");
+                NoireLogger.LogDebug($"Skipping automatic IPC registration for '{type.FullName}': only static types register automatically. Use NoireIPC.Initialize for instance types.", $"[{typeof(NoireIPC).Name}] ");
                 continue;
             }
 
@@ -356,9 +369,7 @@ public static class NoireIPC
         => GetCallGateFactoryResult(SubscriberFactoryMethods, NormalizeName(fullName), callGateTypes);
 
     /// <summary>
-    /// Checks whether an IPC provider is currently available for the specified channel and signature. Only
-    /// parameterless function IPCs are probe-invoked; actions and parameterized functions are not, since synthetic
-    /// test calls could have side effects or fail for valid providers.
+    /// Checks whether a provider is available for a channel and signature, from the call gate's own flags.
     /// </summary>
     /// <param name="name">The local or fully qualified IPC name to check.</param>
     /// <param name="parameterTypes">The parameter types expected by the IPC signature.</param>
@@ -376,25 +387,42 @@ public static class NoireIPC
         try
         {
             var subscriber = GetCallGateFactoryResult(SubscriberFactoryMethods, fullName, callGateTypes);
-            if (TryGetSubscriberAvailability(subscriber, expectsFunction, out var isAvailable))
-                return isAvailable;
 
-            var methodName = expectsFunction ? "InvokeFunc" : "InvokeAction";
-            var method = subscriber.GetType().GetMethod(methodName, BindingFlags.Instance | BindingFlags.Public);
+            if (subscriber is ICallGateSubscriber typedSubscriber)
+                return expectsFunction ? typedSubscriber.HasFunction : typedSubscriber.HasAction;
 
-            if (method == null)
-                return false;
-
-            if (!expectsFunction || parameterTypes.Length > 0)
-                return true;
-
-            InvokeInstanceMethod(subscriber, methodName, Array.Empty<object>());
-            return true;
+            NoireLogger.LogDebug($"IPC subscriber for '{fullName}' does not expose availability, reporting unavailable.", $"[{typeof(NoireIPC).Name}] ");
+            return false;
         }
         catch
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Finds a provider registration this plugin owns, by IPC name.
+    /// </summary>
+    /// <seealso cref="NoireIpcRegistration.CurrentCaller"/>
+    /// <seealso cref="NoireIpcRegistration.SubscriptionCount"/>
+    /// <param name="name">The local or fully qualified IPC name.</param>
+    /// <param name="prefix">The explicit prefix to apply when <paramref name="name"/> is not already fully qualified.</param>
+    /// <param name="useDefaultPrefix">If set to <see langword="true"/>, default prefix resolution is used when <paramref name="prefix"/> is not supplied.</param>
+    /// <returns>The registration this plugin owns for the resolved name, or <see langword="null"/> when none is tracked.</returns>
+    public static NoireIpcRegistration? GetRegistration(string name, string? prefix = null, bool useDefaultPrefix = true)
+    {
+        var fullName = BuildName(name, prefix, useDefaultPrefix);
+
+        lock (SyncRoot)
+        {
+            foreach (var handle in OwnedHandles)
+            {
+                if (handle is NoireIpcRegistration registration && string.Equals(registration.FullName, fullName, StringComparison.Ordinal))
+                    return registration;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -438,10 +466,22 @@ public static class NoireIPC
         var registration = new NoireIpcRegistration(
             fullName,
             normalizedKind,
+            provider,
             () =>
             {
                 NoireLogger.LogDebug($"Unregistering {normalizedKind} provider '{fullName}'.", $"[{typeof(NoireIPC).Name}] ");
-                InvokeInstanceMethod(provider, normalizedKind == NoireIpcRegistrationKind.Function ? "UnregisterFunc" : "UnregisterAction");
+
+                if (provider is ICallGateProvider typedProvider)
+                {
+                    if (normalizedKind == NoireIpcRegistrationKind.Function)
+                        typedProvider.UnregisterFunc();
+                    else
+                        typedProvider.UnregisterAction();
+                }
+                else
+                {
+                    InvokeInstanceMethod(provider, normalizedKind == NoireIpcRegistrationKind.Function ? "UnregisterFunc" : "UnregisterAction");
+                }
             },
             HandleDisposed);
 
@@ -1134,18 +1174,78 @@ public static class NoireIPC
         EnsureInitialized();
         ValidateCallGateTypes(callGateTypes);
 
+        var key = new CallGateKey(ReferenceEquals(factories, ProviderFactoryMethods), fullName, callGateTypes);
+
+        if (CallGateCache.TryGetValue(key, out var cached))
+            return cached;
+
         if (!factories.TryGetValue(callGateTypes.Length, out var factoryMethod))
             throw new NotSupportedException($"Dalamud IPC only supports signatures with up to {ProviderFactoryMethods.Keys.Max() - 1} parameters.");
 
         var genericMethod = factoryMethod.MakeGenericMethod(callGateTypes);
-        return genericMethod.Invoke(NoireService.PluginInterface, [fullName])
+        var gate = genericMethod.Invoke(NoireService.PluginInterface, [fullName])
             ?? throw new InvalidOperationException($"Failed to resolve IPC call gate '{fullName}'.");
+
+        CallGateCache.TryAdd(key, gate);
+        return gate;
+    }
+
+    /// <summary>
+    /// Identifies a resolved call gate.
+    /// </summary>
+    private readonly struct CallGateKey : IEquatable<CallGateKey>
+    {
+        private readonly bool provider;
+        private readonly string fullName;
+        private readonly Type[] types;
+        private readonly int hashCode;
+
+        public CallGateKey(bool provider, string fullName, Type[] types)
+        {
+            this.provider = provider;
+            this.fullName = fullName;
+            this.types = types;
+
+            var hash = new HashCode();
+            hash.Add(provider);
+            hash.Add(fullName, StringComparer.Ordinal);
+            foreach (var type in types)
+                hash.Add(type);
+
+            hashCode = hash.ToHashCode();
+        }
+
+        public bool Equals(CallGateKey other)
+        {
+            if (provider != other.provider || types.Length != other.types.Length
+                || !string.Equals(fullName, other.fullName, StringComparison.Ordinal))
+                return false;
+
+            for (var i = 0; i < types.Length; i++)
+            {
+                if (types[i] != other.types[i])
+                    return false;
+            }
+
+            return true;
+        }
+
+        public override bool Equals(object? obj) => obj is CallGateKey other && Equals(other);
+
+        public override int GetHashCode() => hashCode;
     }
 
     internal static object? InvokeInstanceMethod(object target, string methodName, params object?[] arguments)
     {
-        var method = FindBestInstanceMethod(target.GetType(), methodName, arguments)
-            ?? throw new MissingMethodException(target.GetType().FullName, methodName);
+        var cacheKey = (target.GetType(), methodName, arguments.Length);
+
+        if (!InstanceMethodCache.TryGetValue(cacheKey, out var method))
+        {
+            method = FindBestInstanceMethod(target.GetType(), methodName, arguments)
+                ?? throw new MissingMethodException(target.GetType().FullName, methodName);
+
+            InstanceMethodCache.TryAdd(cacheKey, method);
+        }
 
         return method.Invoke(target, arguments);
     }
@@ -1163,81 +1263,6 @@ public static class NoireIPC
             .ToArray();
 
         return candidates.FirstOrDefault();
-    }
-
-    private static bool TryGetSubscriberAvailability(object subscriber, bool expectsFunction, out bool isAvailable)
-    {
-        ArgumentNullException.ThrowIfNull(subscriber);
-
-        var availabilityPropertyName = expectsFunction ? "HasFunction" : "HasAction";
-        if (TryGetBooleanMemberValue(subscriber, availabilityPropertyName, out isAvailable))
-            return true;
-
-        if (TryGetObjectMemberValue(subscriber, "Channel", out var channel))
-        {
-            if (TryGetBooleanMemberValue(channel, availabilityPropertyName, out isAvailable))
-                return true;
-
-            var delegatePropertyName = expectsFunction ? "Func" : "Action";
-            if (TryGetObjectMemberValue(channel, delegatePropertyName, out var providerDelegate))
-            {
-                isAvailable = providerDelegate is Delegate;
-                return true;
-            }
-        }
-
-        isAvailable = false;
-        return false;
-    }
-
-    private static bool TryGetBooleanMemberValue(object target, string memberName, out bool value)
-    {
-        ArgumentNullException.ThrowIfNull(target);
-        ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
-
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
-        var property = target.GetType().GetProperty(memberName, flags);
-        if (property is { PropertyType: not null } && property.PropertyType == typeof(bool) && property.GetIndexParameters().Length == 0)
-        {
-            value = (bool)(property.GetValue(target) ?? false);
-            return true;
-        }
-
-        var method = target.GetType().GetMethod(memberName, flags, null, Type.EmptyTypes, null);
-        if (method?.ReturnType == typeof(bool))
-        {
-            value = (bool)(method.Invoke(target, null) ?? false);
-            return true;
-        }
-
-        value = false;
-        return false;
-    }
-
-    private static bool TryGetObjectMemberValue(object target, string memberName, out object? value)
-    {
-        ArgumentNullException.ThrowIfNull(target);
-        ArgumentException.ThrowIfNullOrWhiteSpace(memberName);
-
-        const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
-
-        var property = target.GetType().GetProperty(memberName, flags);
-        if (property != null && property.GetIndexParameters().Length == 0)
-        {
-            value = property.GetValue(target);
-            return true;
-        }
-
-        var field = target.GetType().GetField(memberName, flags);
-        if (field != null)
-        {
-            value = field.GetValue(target);
-            return true;
-        }
-
-        value = null;
-        return false;
     }
 
     private static int ScoreMethod(MethodInfo method, object?[] arguments)
@@ -1478,6 +1503,8 @@ public static class NoireIPC
 
         lock (SyncRoot)
             OwnedHandles.Clear();
+
+        CallGateCache.Clear();
 
         ResetConfiguration();
     }

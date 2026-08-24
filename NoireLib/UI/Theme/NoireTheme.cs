@@ -11,13 +11,6 @@ namespace NoireLib.UI;
 /// One palette the whole library follows. Every NoireUI widget resolves colors it was not given through
 /// <see cref="Current"/>. Nothing is required: an untouched theme resolves everything to the host's ImGui style.
 /// </summary>
-/// <remarks>
-/// Resolution runs in three steps, in this order: the value the widget was given, then this theme, then the ImGui style.
-/// A theme color left <see langword="null"/> falls through rather than forcing a default.<br/>
-/// <see cref="Hover"/> and <see cref="Active"/> derive their states from the base color rather than storing separate
-/// values, and <see cref="TintSource"/> decides which way they move. By default each color decides for itself: a dark
-/// button brightens, a pale accent one darkens.
-/// </remarks>
 /// <example>
 /// <code>
 /// NoireTheme.Current = NoireTheme.FromAccent(ColorHelper.HexToVector4("#C8A96A"));
@@ -47,12 +40,9 @@ public sealed class NoireTheme
 
     /// <summary>
     /// The theme every widget resolves against. Never <see langword="null"/>: assigning <see langword="null"/> restores
-    /// an empty theme, which resolves everything to the ImGui style.
+    /// an empty theme, which resolves everything to the ImGui style.<br/>
+    /// Static per plugin, not per process: NoireLib is compiled into each plugin.
     /// </summary>
-    /// <remarks>
-    /// Static per plugin, not per process: NoireLib is compiled into each plugin, so this cannot reach another
-    /// plugin's interface.
-    /// </remarks>
     public static NoireTheme Current
     {
         get => current;
@@ -155,10 +145,6 @@ public sealed class NoireTheme
     /// <summary>
     /// The shipped proportions of the type scale, as multiples of <see cref="BodySize"/>.
     /// </summary>
-    /// <remarks>
-    /// A size left unset derives from the body size through these rather than carrying an absolute default. Setting a
-    /// size explicitly opts that one step out of the proportion and leaves the others following.
-    /// </remarks>
     private static readonly Dictionary<TextSize, float> SizeRatios = new()
     {
         [TextSize.Display] = 2.2f,
@@ -208,10 +194,6 @@ public sealed class NoireTheme
     /// <summary>
     /// The body size a theme that sets none falls back to: the host's own default font size.
     /// </summary>
-    /// <remarks>
-    /// A logical size, not a scaled one: Dalamud builds its own default font from this constant into a global-scaled
-    /// atlas, and NoireText matches it at every scale.
-    /// </remarks>
     public static float DefaultBodySize => NoireService.IsInitialized() ? UiBuilder.DefaultFontSizePx : 17f;
 
     #endregion
@@ -382,10 +364,6 @@ public sealed class NoireTheme
     /// <summary>
     /// Builds a <see cref="UiStyle"/> that paints raw ImGui with this theme.
     /// </summary>
-    /// <remarks>
-    /// Hand it to <see cref="NoireStyle.With(UiStyle, Action)"/> around a block, or around a whole window body. NoireUI
-    /// widgets do not need it: they already resolve through the theme.
-    /// </remarks>
     /// <returns>The style to apply.</returns>
     public UiStyle ToStyle()
     {

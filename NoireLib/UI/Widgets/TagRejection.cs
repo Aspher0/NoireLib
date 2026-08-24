@@ -3,7 +3,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Why a tag was not accepted.
 /// </summary>
-/// <remarks>Reported rather than swallowed, so the field can say what happened.</remarks>
 public enum TagRejection
 {
     /// <summary>It was accepted.</summary>

@@ -14,10 +14,7 @@ namespace NoireLib.UI;
 /// the preview summarises what is chosen, and the popup stays open until you are finished.
 /// </summary>
 /// <remarks>
-/// Selection is by value rather than by index, so it survives the item list being replaced. Hand a comparer to the
-/// constructor when the items need one.<br/>
-/// The filter matches fuzzily and picks out what it matched, the same way <see cref="NoireComboBox{T}"/> does, and the
-/// option list virtualizes past <see cref="VirtualizeThreshold"/>.
+/// Selection is by value rather than by index. Hand a comparer to the constructor when the items need one.
 /// </remarks>
 /// <typeparam name="T">The type of the items.</typeparam>
 /// <example>
@@ -513,10 +510,6 @@ public sealed class NoireMultiCombo<T>
     /// <summary>
     /// Draws the tick box at the start of a row.
     /// </summary>
-    /// <remarks>
-    /// Drawn rather than assembled from an icon font, so it resolves through the theme like everything else and needs
-    /// no font push per row.
-    /// </remarks>
     private static void DrawCheckbox(bool isSelected)
     {
         var theme = NoireTheme.Current;
@@ -565,13 +558,6 @@ public sealed class NoireMultiCombo<T>
     /// <summary>
     /// Builds the text shown on the closed box, naming the selected items and summarising the rest.
     /// </summary>
-    /// <remarks>
-    /// Composed into a builder the widget keeps and only turned into a string when the text has actually changed.
-    /// This runs every frame the combo draws, open or closed, while the selection behind it moves only when the
-    /// user picks something. The items are walked rather than <see cref="Selected"/> read, since that property
-    /// snapshots the selection into a new list on every read and this needs only the first few. A custom
-    /// <see cref="PreviewFunc"/> still receives that snapshot and still runs every frame.
-    /// </remarks>
     /// <returns>The preview text.</returns>
     internal string BuildPreview()
     {
@@ -628,11 +614,6 @@ public sealed class NoireMultiCombo<T>
     /// <summary>
     /// The summary of everything the preview did not name, for example <c>+2 more</c>.
     /// </summary>
-    /// <remarks>
-    /// Cached, since composing it through a format string allocates and it changes only when the selection crosses
-    /// <see cref="PreviewMaxItems"/>. Shared across every multi-combo in the process, so the format is part of the
-    /// key.
-    /// </remarks>
     /// <param name="format">The format to compose with. <c>{0}</c> is the count.</param>
     /// <param name="remaining">How many items were not named.</param>
     /// <returns>The summary text.</returns>
@@ -658,11 +639,6 @@ public sealed class NoireMultiCombo<T>
     /// The height the dropdown is capped at: the filter row and the shortcuts, when shown, plus exactly
     /// <see cref="VisibleItemCount"/> options.
     /// </summary>
-    /// <remarks>
-    /// The full budget rather than what the current filter leaves, so it is always an upper bound on what the
-    /// option list will actually ask for. The popup then sizes itself to its content and stops short of this,
-    /// keeping a single scrollbar around the list rather than one there and one around the popup.
-    /// </remarks>
     private float MeasureMaxPopupHeight()
     {
         var visibleCount = Math.Max(1, VisibleItemCount);

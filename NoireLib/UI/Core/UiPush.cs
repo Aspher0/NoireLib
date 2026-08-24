@@ -5,20 +5,10 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// ImGui colours, style variables, fonts and disabled scopes pushed around a block of drawing and taken back off when
-/// the block ends, for nothing.
+/// the block ends, for nothing.<br/>
+/// <b>Dispose the accumulated value, once.</b> Disposing a copy as well pops more than was pushed and underflows the
+/// ImGui stack. A <see langword="default"/> value pushes and pops nothing.
 /// </summary>
-/// <remarks>
-/// This exists because <c>ImRaii</c> allocates: its push wrappers are classes, so each call costs 24 bytes on the draw
-/// thread, even when the condition it was given is <see langword="false"/> and it pushes nothing. The raw
-/// <see cref="ImGui.PushStyleColor(ImGuiCol, Vector4)"/> and its siblings cost nothing, and a
-/// <see langword="ref struct"/> cannot be boxed into the <see cref="System.IDisposable"/> that would put the cost
-/// back.<br/>
-/// <b>Dispose the accumulated value, once.</b> The accumulating methods mutate in place and return nothing, so that no
-/// copy exists to dispose twice: two copies would pop more than was pushed, which underflows the ImGui stack rather
-/// than leaking it.<br/>
-/// A <see langword="default"/> value pushes and pops nothing: a method that has no style to apply can return one as a
-/// no-op.
-/// </remarks>
 /// <example>
 /// <code>
 /// using var pushed = UiPush.Color(ImGuiCol.Text, theme.Resolve(ThemeColor.Text));
@@ -44,13 +34,6 @@ internal ref struct UiPush
     /// How many style variables were already pushed when this scope was disabled, so the ones pushed after that can be
     /// popped before it is re-enabled.
     /// </summary>
-    /// <remarks>
-    /// The colour, style-variable and font stacks are independent, so the order they unwind in does not matter. Being
-    /// disabled is not a stack: <c>BeginDisabled</c> multiplies the style's alpha and remembers the value it displaced,
-    /// and <c>EndDisabled</c> writes that remembered value straight back. So a style variable pushed while disabled has
-    /// to come off before <c>EndDisabled</c> restores the alpha, or the pop puts the disabled alpha back afterwards and
-    /// every window drawn for the rest of the frame is faded. Measured in both directions rather than reasoned about.
-    /// </remarks>
     private int disabledAtStyleVars;
 
     #region Opening a scope
@@ -189,6 +172,12 @@ internal ref struct UiPush
     /// <param name="font">The font to draw in.</param>
     public void PushFont(ImFontPtr font)
     {
+        // A null font is not pushed at all rather than pushed and ignored: ImGui balances these by call count, so
+        // skipping both halves is the same to it. This is what lets a surface ask for the icon font and keep drawing
+        // when there is no Dalamud behind the library to answer with one. See UiIconFont.
+        if (font.IsNull)
+            return;
+
         ImGui.PushFont(font);
         fonts++;
     }
@@ -196,10 +185,6 @@ internal ref struct UiPush
     /// <summary>
     /// Disables widgets drawn inside this scope.
     /// </summary>
-    /// <remarks>
-    /// Nothing is begun when <paramref name="when"/> is <see langword="false"/>, rather than beginning a disabled scope
-    /// that disables nothing. ImGui balances these by call count, so skipping both halves is the same to it and cheaper.
-    /// </remarks>
     /// <param name="when">Whether to disable at all.</param>
     public void PushDisabled(bool when = true)
     {
@@ -214,12 +199,9 @@ internal ref struct UiPush
     }
 
     /// <summary>
-    /// Wraps text at a given position for the rest of this scope.
+    /// Wraps text at a given position for the rest of this scope.<br/>
+    /// The position is absolute rather than scaled, matching what ImGui takes.
     /// </summary>
-    /// <remarks>
-    /// The position is absolute rather than scaled, matching what ImGui takes; every caller here already computes it
-    /// from the cursor and the region available.
-    /// </remarks>
     /// <param name="position">Where to wrap, in window coordinates.</param>
     /// <param name="when">Whether to push at all.</param>
     public void PushTextWrapPos(float position, bool when = true)
@@ -236,12 +218,6 @@ internal ref struct UiPush
     /// <summary>
     /// Pops everything this scope pushed. Safe to call more than once.
     /// </summary>
-    /// <remarks>
-    /// The counts are cleared as they are spent, so a second call has nothing left to pop rather than popping a second
-    /// time into whatever the surrounding code had pushed.<br/>
-    /// Style variables straddle the disabled scope: the ones pushed inside it come off first, then the scope is
-    /// re-enabled, then the ones pushed before it. See <see cref="disabledAtStyleVars"/> for what goes wrong otherwise.
-    /// </remarks>
     public void Dispose()
     {
         if (disabled > 0)

@@ -74,9 +74,7 @@ public sealed class ButtonStyle
     /// Replaces the button's own painting entirely, while NoireUI keeps doing the sizing, the hit testing and the state
     /// tracking.
     /// </summary>
-    /// <remarks>
-    /// The label is not drawn for you when this is set. Draw it yourself from the arguments, or leave it out.
-    /// </remarks>
+    /// <remarks>The label is not drawn for you when this is set.</remarks>
     public Action<UiButtonDraw>? CustomDraw { get; set; }
 
     // What the painter draws from: each logical value above is scaled here, and only here.
@@ -117,10 +115,7 @@ public sealed class ButtonStyle
     /// <summary>
     /// Copies every field of <paramref name="source"/> into this style, leaving no reference to it.
     /// </summary>
-    /// <remarks>
-    /// Copies into a reused style instead of allocating via <see cref="Clone"/>, for a per-item variant drawn every
-    /// frame. Keep this field list identical to <see cref="Clone"/>'s.
-    /// </remarks>
+    /// <remarks>Keep this field list identical to <see cref="Clone"/>'s.</remarks>
     /// <param name="source">The style to copy from.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
     internal void CopyFrom(ButtonStyle source)

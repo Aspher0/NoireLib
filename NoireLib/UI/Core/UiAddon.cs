@@ -6,15 +6,10 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Reads the on-screen bounds of native game windows, so a NoireUI element can be placed against one and follow it as
-/// the player moves, rescales or closes it.
+/// the player moves, rescales or closes it.<br/>
+/// Every rectangle is in real pixels relative to the top left corner of the game window, the same frame of reference
+/// <see cref="UiPositionMode.Absolute"/> uses. Reads are safe from the draw thread and fail soft to "not there".
 /// </summary>
-/// <remarks>
-/// Every rectangle here is relative to the top left corner of the game window, in real pixels, which is the same frame
-/// of reference <see cref="UiPositionMode.Absolute"/> uses. Resolving a position adds the ImGui viewport origin, so
-/// nothing here needs an active frame and all of it stays testable.<br/>
-/// Addon reads are safe from the draw thread: the pointers come from Dalamud's own lookup and every member fails soft
-/// to "not there" rather than throwing, including before the library has been initialized at all.
-/// </remarks>
 public static class UiAddon
 {
     /// <summary>
@@ -47,10 +42,6 @@ public static class UiAddon
     /// <summary>
     /// Gets the bounds of a native game window, or <see langword="null"/> when it is not on screen.
     /// </summary>
-    /// <remarks>
-    /// Matches the delegate signature that <see cref="UiPosition.TryResolve(Vector2, Vector2, Vector2, Func{string, UiRect?}, out Vector2)"/>
-    /// takes. Another source of rectangles can be substituted for a preview, an editor, or a test.
-    /// </remarks>
     /// <param name="addonName">The addon name, for example <c>_PartyList</c>.</param>
     /// <returns>The bounds, or <see langword="null"/>.</returns>
     public static UiRect? GetRect(string addonName)

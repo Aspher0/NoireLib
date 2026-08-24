@@ -1,4 +1,4 @@
-# Helper Documentation : AddonHelper
+﻿# Helper Documentation : AddonHelper
 
 You are reading the documentation for the `AddonHelper` static helper.
 
@@ -198,7 +198,7 @@ bool uiShown = AddonHelper.IsNativeUiVisible();
 foreach (NoireAddon visible in AddonHelper.VisibleAddons(ImGui.GetIO().DisplaySize))
     NoireLogger.LogInfo($"{visible.Name} at {visible.ScreenRect}");
 
-// Which addon owns this point, or an invalid wrapper when the point is over no game UI.
+// The addon owning this point, or an invalid wrapper when the point is over no game UI.
 NoireAddon hit = AddonHelper.HitTest(ImGui.GetMousePos(), ImGui.GetIO().DisplaySize);
 if (hit.IsValid)
     NoireLogger.LogInfo($"Cursor is over {hit.Name}");

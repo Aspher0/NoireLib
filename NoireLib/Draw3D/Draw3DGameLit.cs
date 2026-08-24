@@ -7,8 +7,7 @@ namespace NoireLib.Draw3D;
 /// the values measured off the game's own world geometry, so the everyday path is to set nothing at all.
 /// </summary>
 /// <remarks>
-/// Reached through <see cref="NoireDraw3D.GameLit"/>. Read once per injected draw, so a change applies on the
-/// next frame with no re-submission.
+/// Read once per injected draw: a change applies on the next frame with no re-submission.
 /// </remarks>
 public sealed class Draw3DGameLit
 {

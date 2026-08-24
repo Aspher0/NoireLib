@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -48,6 +48,19 @@ internal static class UiTextMeasureCache
     private readonly record struct AmbientKey(string Text, nint Font, float SizePx, float Scale, int Generation);
 
     /// <summary>
+    /// Everything a tracked run's measurement depends on.
+    /// </summary>
+    /// <remarks>
+    /// Tracking joins <see cref="Key"/>'s fields because it is spent per character: the same string at the same size
+    /// is a different width at a different letter-spacing.<br/>
+    /// Worth its own cache rather than being folded into the glyph tables it is built from. Adding up a run's advances
+    /// is cheap, but reaching the advances at all needs the run's font pushed, and a font push allocates inside
+    /// Dalamud whatever the caller does with it. A caller that only wants the width should not pay a font push for a
+    /// label that has not changed.
+    /// </remarks>
+    private readonly record struct TrackedKey(string Text, float Tracking, float SizePx, float AmbientSizePx, float Scale, int Generation);
+
+    /// <summary>
     /// How many measurements are kept before the cache starts over.
     /// </summary>
     /// <remarks>
@@ -61,6 +74,7 @@ internal static class UiTextMeasureCache
     private static readonly HotPathCache<Key, float> CenterOffsets = new(MaxEntries);
     private static readonly HotPathCache<GlyphKey, GlyphMetrics> Glyphs = new(MaxEntries);
     private static readonly HotPathCache<AmbientKey, Vector2> AmbientSizes = new(MaxEntries);
+    private static readonly HotPathCache<TrackedKey, Vector2> TrackedSizes = new(MaxEntries);
 
     /// <summary>
     /// Looks up what a string measured.
@@ -246,6 +260,33 @@ internal static class UiTextMeasureCache
             size);
 
     /// <summary>
+    /// Looks up what a tracked run measured.
+    /// </summary>
+    /// <param name="text">The text being measured.</param>
+    /// <param name="tracking">The extra space per character it is measured with, in ems.</param>
+    /// <param name="sizePx">The size it is being measured at.</param>
+    /// <param name="ambientSizePx">The size of the font currently pushed.</param>
+    /// <param name="size">The remembered measurement.</param>
+    /// <returns>Whether the measurement was already known.</returns>
+    internal static bool TryGetTrackedSize(string text, float tracking, float sizePx, float ambientSizePx, out Vector2 size)
+        => TrackedSizes.TryGet(
+            new TrackedKey(text, tracking, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation),
+            out size);
+
+    /// <summary>
+    /// Remembers what a tracked run measured.
+    /// </summary>
+    /// <param name="text">The text that was measured.</param>
+    /// <param name="tracking">The extra space per character it was measured with, in ems.</param>
+    /// <param name="sizePx">The size it was measured at.</param>
+    /// <param name="ambientSizePx">The size of the font that was current.</param>
+    /// <param name="size">The measurement.</param>
+    internal static void StoreTrackedSize(string text, float tracking, float sizePx, float ambientSizePx, Vector2 size)
+        => TrackedSizes.Set(
+            new TrackedKey(text, tracking, sizePx, ambientSizePx, NoireUI.Scale, UiFontCache.Generation),
+            size);
+
+    /// <summary>
     /// Identifies the font currently pushed, for the keys that measure against it.
     /// </summary>
     /// <remarks>
@@ -288,5 +329,6 @@ internal static class UiTextMeasureCache
         Glyphs.Clear();
         AsciiGlyphs.Clear();
         AmbientSizes.Clear();
+        TrackedSizes.Clear();
     }
 }

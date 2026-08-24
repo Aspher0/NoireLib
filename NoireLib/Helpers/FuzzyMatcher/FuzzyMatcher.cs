@@ -7,18 +7,10 @@ namespace NoireLib.Helpers;
 /// One fuzzy scorer, for every filter box in a plugin.<br/>
 /// A candidate matches when the query's characters all appear in it in order, ignoring case and whatever sits between
 /// them, so "cmbl" finds "Combat Log". The score says how good the match was, so the obvious answer sorts to the top,
-/// and the matched positions come back so they can be highlighted.
+/// and the matched positions come back so they can be highlighted.<br/>
+/// The query is one term: spaces are matched literally rather than splitting it, so "combat log" matches
+/// "Combat Log" and not "Log of Combat".
 /// </summary>
-/// <remarks>
-/// Nothing here touches ImGui: this is a plain data helper, usable from a command or a background task just as readily
-/// as from a window.<br/>
-/// The query is one term. Spaces in it are matched literally rather than splitting it, so "combat log" matches
-/// "Combat Log" and not "Log of Combat".<br/>
-/// <b>On the hot path, prefer the span overloads.</b> <see cref="Score(string?, string?, FuzzyScoring?)"/> and
-/// <see cref="IsMatch(string?, string?)"/> allocate nothing either, but they cap the query length; a filter that runs
-/// per keystroke over thousands of rows should rank once into a list the caller reuses rather than re-scoring per
-/// frame. See <see cref="Rank{T}(List{T}, IEnumerable{T}, string?, Func{T, string}, FuzzyScoring?)"/>.
-/// </remarks>
 /// <example>
 /// <code>
 /// // Filter and order a list when the query changes.
@@ -41,12 +33,6 @@ public static class FuzzyMatcher
     /// <summary>
     /// How many alternative match positions are explored before the best one found so far is accepted.
     /// </summary>
-    /// <remarks>
-    /// Matching greedily takes the first occurrence of each character, which is usually right and is sometimes badly
-    /// wrong: "cl" against "Combat Log" would take the C and then the l of "Combat" rather than the L of "Log", and
-    /// highlight the wrong letters. Exploring the alternatives fixes that. The budget keeps a pathological candidate
-    /// (a long string of one repeated letter) from costing exponential time.
-    /// </remarks>
     public const int RecursionBudget = 10;
 
     /// <summary>
@@ -115,13 +101,9 @@ public static class FuzzyMatcher
     }
 
     /// <summary>
-    /// Matches a candidate against a query and reports which characters matched, for highlighting.
+    /// Matches a candidate against a query and reports which characters matched, for highlighting.<br/>
+    /// The indices are ascending positions in the candidate, one per query character.
     /// </summary>
-    /// <remarks>
-    /// The indices are positions in <paramref name="candidate"/>, ascending, and there are as many of them as the
-    /// query is long. <paramref name="matchedIndices"/> must be at least that long or the call refuses rather than
-    /// reporting a partial match.
-    /// </remarks>
     /// <param name="candidate">The text being filtered.</param>
     /// <param name="query">What the user typed.</param>
     /// <param name="matchedIndices">Receives the matched positions. At least as long as the query.</param>
@@ -171,13 +153,9 @@ public static class FuzzyMatcher
     #region Ranking
 
     /// <summary>
-    /// Fills a list with the items that match, best first.
+    /// Fills a list with the items that match, best first.<br/>
+    /// An empty query keeps every item in its original order.
     /// </summary>
-    /// <remarks>
-    /// The destination is the caller's so it can be reused across keystrokes rather than reallocated. It is cleared
-    /// first.<br/>
-    /// An empty query keeps every item in its original order: the state a freshly opened filter box should show.
-    /// </remarks>
     /// <typeparam name="T">The item type.</typeparam>
     /// <param name="destination">Receives the matches. Cleared before filling.</param>
     /// <param name="source">The items to filter.</param>
@@ -221,13 +199,10 @@ public static class FuzzyMatcher
     }
 
     /// <summary>
-    /// Returns the items that match, best first.
-    /// </summary>
-    /// <remarks>
+    /// Returns the items that match, best first.<br/>
     /// Allocates a list per call. Use
-    /// <see cref="Rank{T}(List{T}, IEnumerable{T}, string?, Func{T, string}, FuzzyScoring?)"/> where the query changes
-    /// often enough for that to matter.
-    /// </remarks>
+    /// <see cref="Rank{T}(List{T}, IEnumerable{T}, string?, Func{T, string}, FuzzyScoring?)"/> to reuse one.
+    /// </summary>
     /// <typeparam name="T">The item type.</typeparam>
     /// <param name="source">The items to filter.</param>
     /// <param name="query">What the user typed.</param>

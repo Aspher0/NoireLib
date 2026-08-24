@@ -4,12 +4,10 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// How a hairline frame is drawn: its shape, its weight, the second line that turns it into a rule, and the corner
-/// ticks that are most of what separates a drawn frame from a border.
-/// </summary>
-/// <remarks>
+/// ticks that are most of what separates a drawn frame from a border.<br/>
 /// Every color left <see langword="null"/> resolves through <see cref="NoireTheme"/>. Sizes are logical pixels at 100%
 /// and are scaled where they are used. See <see cref="NoireUI.Scale"/>.
-/// </remarks>
+/// </summary>
 /// <example>
 /// <code>
 /// // A double hairline with an inner bracket at each corner.
@@ -80,11 +78,8 @@ public sealed class FrameStyle
     /// What to draw when the rect is too small for corner ticks. Defaults to <see cref="TickFallback.None"/>.
     /// </summary>
     /// <remarks>
-    /// Ticks are dropped once two of them would meet, because brackets crossing in the middle read as a smaller frame
-    /// rather than as corners: right for a rect that has merely become small, wrong for one meant to be a strip, which
-    /// loses its edge entirely. <see cref="TickFallback.Brackets"/> draws a full-height bracket at each end instead,
-    /// at the same inset, length, thickness and color the ticks would have had, so a frame switching between the two
-    /// shapes does not appear to move.
+    /// Ticks are dropped once two of them would meet. <see cref="TickFallback.Brackets"/> then draws a full-height
+    /// bracket at each end, at the same inset, length, thickness and color the ticks would have had.
     /// </remarks>
     public TickFallback TickFallback { get; set; } = TickFallback.None;
 

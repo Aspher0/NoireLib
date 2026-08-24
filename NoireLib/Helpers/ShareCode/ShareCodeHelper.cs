@@ -10,25 +10,8 @@ namespace NoireLib.Helpers;
 /// One share-string format for anything serializable: a preset, a theme, a layout, a filter set.<br/>
 /// <see cref="Encode{T}"/> turns a value into a single pasteable token; <see cref="Decode{T}"/> reads one back, telling
 /// you exactly why it could not when it could not. The format is versioned, compressed, checksummed and tagged with a
-/// kind, so a code meant for one thing is refused by another instead of being half-applied.<br/>
-/// Nothing here touches ImGui or the UI: this is a plain data helper, usable from a command, a background task or a
-/// module just as readily as from a window.
+/// kind, so a code meant for one thing is refused by another instead of being half-applied.
 /// </summary>
-/// <remarks>
-/// <b>The format is permanent from the first code a user pastes anywhere.</b> A change that makes an old code
-/// unreadable is a change to <see cref="Prefix"/>, never a quiet reshuffle of the bytes.<br/>
-/// <br/>
-/// Layout, after the prefix and a URL-safe Base64 decode:
-/// <code>
-/// [0]      flags       bit 0 set when the payload is deflate-compressed
-/// [1..4]   crc32       little-endian, over the kind bytes followed by the uncompressed payload
-/// [5]      kindLength  in UTF-8 bytes
-/// [6..]    kind        UTF-8
-/// [...]    payload     UTF-8 JSON, deflated when the flag says so
-/// </code>
-/// The checksum covers the payload as it will be parsed rather than as it travels, so it validates the same bytes the
-/// deserializer sees whether or not compression was worth using.
-/// </remarks>
 /// <example>
 /// <code>
 /// var code = ShareCodeHelper.Encode("myplugin.preset", preset);
@@ -109,15 +92,10 @@ public static class ShareCodeHelper
     }
 
     /// <summary>
-    /// Reads a share code back into a value.
+    /// Reads a share code back into a value.<br/>
+    /// <b>Decode into an inert data type, never into a live object:</b> deserialization runs property setters.
     /// </summary>
-    /// <remarks>
-    /// <b>Decode into an inert data type, never into a live object.</b> Newtonsoft runs property setters while it
-    /// deserializes, so decoding a stranger's code straight onto a live configuration hands them your setter side
-    /// effects and your disk writes before you have looked at a single field. Decode into a plain DTO, show the user
-    /// what would change, and copy the fields across yourself once they agree.
-    /// </remarks>
-    /// <typeparam name="T">The payload type. See the remarks: this should be an inert data type.</typeparam>
+    /// <typeparam name="T">The payload type. This should be an inert data type.</typeparam>
     /// <param name="code">The pasted text. Surrounding whitespace is ignored.</param>
     /// <param name="expectedKind">The kind this importer accepts. Pass an empty string to accept any kind, which is
     /// only appropriate for a tool that inspects codes rather than applying them.</param>
@@ -294,10 +272,6 @@ public static class ShareCodeHelper
     /// <summary>
     /// Decompresses a payload, giving up the moment it grows past the ceiling.
     /// </summary>
-    /// <remarks>
-    /// The ceiling is checked on every chunk rather than on the finished buffer: a zip bomb is small until it is
-    /// decompressed, so measuring afterwards means the damage is already done.
-    /// </remarks>
     private static bool TryInflate(byte[] compressed, int maxBytes, out byte[] result, out ShareCodeError error)
     {
         result = Array.Empty<byte>();

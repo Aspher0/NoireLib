@@ -239,9 +239,7 @@ public class TmbFile
     /// <param name="magic">The entry magic to drop.</param>
     /// <returns>How many were dropped.</returns>
     /// <remarks>
-    /// Removing an entry changes the item table, so the next <see cref="ToBytes"/> rebuilds the timeline
-    /// rather than patching the original bytes. A rebuild relays the string table, so only drop a magic whose
-    /// payload holds no string offset of its own.
+    /// A rebuild relays the string table: only drop a magic whose payload holds no string offset of its own.
     /// </remarks>
     public int RemoveEntries(string magic)
     {

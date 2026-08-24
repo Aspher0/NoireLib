@@ -3,10 +3,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// What decides which way a hovered or held state moves a color.
 /// </summary>
-/// <remarks>
-/// A single fixed direction does not work across a whole palette: brightening looks right on a dark neutral button and
-/// washes out a pale accent one, and darkening does the reverse.
-/// </remarks>
 public enum ThemeTintSource
 {
     /// <summary>

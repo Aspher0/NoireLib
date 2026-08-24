@@ -11,9 +11,7 @@ namespace NoireLib.Animations.PapFormat;
 /// and send them back to their stowed point at its end.
 /// </summary>
 /// <remarks>
-/// These are the three commands the game's own draw and sheathe animations carry, with the same values, so the
-/// weapon travels as it does when the game moves it. They drive the equipped object's attach point and its own
-/// animation, never the character's stance.
+/// These commands drive the equipped object's attach point and its own animation, never the character's stance.
 /// </remarks>
 public static class PapWeaponHold
 {

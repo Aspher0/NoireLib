@@ -231,8 +231,10 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
     /// <inheritdoc/>
     public TDelegate Detour { get; }
 
-    /// <summary>Gets the options the hook was created with.</summary>
-    public HookOptions Options => options;
+    /// <summary>
+    /// Gets a copy of the options the hook runs with. Recreate the hook to change its behavior as this is a copy.
+    /// </summary>
+    public HookOptions Options => options.Clone();
 
     /// <inheritdoc/>
     public TDelegate Original => hook?.Original
@@ -274,7 +276,12 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
 
             if (hook == null)
             {
-                // Still pending, so record the intent and let the hook come up enabled once its address resolves.
+                if (state == HookState.Failed)
+                {
+                    NoireLogger.LogWarning($"Hook '{Name}' cannot be enabled: it failed to install. Recreate it to try again.", HookLog.Prefix);
+                    return;
+                }
+
                 options.AutoEnable = true;
                 return;
             }
@@ -328,7 +335,7 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
         return IsEnabled;
     }
 
-    /// <summary>Puts the hook in a group, so it can be enabled, disabled or disposed with the rest of that group.</summary>
+    /// <summary>Puts the hook in a group for easily disabling or disposing a whole group of hooks.</summary>
     /// <param name="group">The group name, or null to remove it from its group.</param>
     /// <returns>This hook, for chaining.</returns>
     public NoireHook<TDelegate> SetGroup(string? group)
@@ -482,6 +489,12 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
 
         lock (gate)
         {
+            if (disposed)
+            {
+                created.Dispose();
+                return;
+            }
+
             hook = created;
             guard.Original = created.Original;
         }
@@ -543,9 +556,6 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
 
     private HookVerificationResult VerifyDeclaredDelegate(nint resolvedAddress)
     {
-        // The identity comes from the delegate the address was resolved from, which is not always TDelegate: a target
-        // may name one XIVClientStructs function while the hook declares its own delegate for it, and reading the
-        // identity off TDelegate would make that case unverifiable.
         var sourceDelegate = Target.DelegateType ?? typeof(TDelegate);
         var identity = ClientStructsIndex.IdentifyDelegate(sourceDelegate, resolvedAddress);
         var passed = HookSignatureFormatter.Format(typeof(TDelegate));
@@ -606,6 +616,12 @@ public sealed class NoireHook<TDelegate> : INoireHook<TDelegate>
 
             lock (gate)
             {
+                if (disposed)
+                {
+                    created.Dispose();
+                    return;
+                }
+
                 hook = created;
                 guard.Original = created.Original;
             }

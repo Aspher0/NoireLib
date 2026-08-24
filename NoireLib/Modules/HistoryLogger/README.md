@@ -1,4 +1,4 @@
-
+﻿
 # Module Documentation : NoireHistoryLogger
 
 You are reading the documentation for the `NoireHistoryLogger` module.
@@ -456,7 +456,7 @@ foreach (var category in categories ?? Enumerable.Empty<string>())
 Remove individual log entries:
 
 ```csharp
-// AddEntry returns the entry as it was stored, which is what RemoveEntry matches on
+// AddEntry returns the entry as stored, and RemoveEntry matches on it
 var stored = logger?.AddEntry("Test entry", category: "Test");
 
 // Remove the entry (respects user permissions)

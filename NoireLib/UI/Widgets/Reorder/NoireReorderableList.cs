@@ -10,10 +10,7 @@ namespace NoireLib.UI;
 /// A list whose rows can be dragged into a different order, with a grip to take hold of, a gap showing where a row
 /// will land, per-row actions, keyboard reordering and an empty state.
 /// </summary>
-/// <remarks>
-/// Flat lists only; trees are a different widget with different rules and are out of scope.<br/>
-/// The list is yours. The widget reorders it in place and tells you it did; it never holds a copy.
-/// </remarks>
+/// <remarks>Flat lists only. The widget reorders your list in place and never holds a copy.</remarks>
 /// <example>
 /// <code>
 /// var list = new NoireReorderableList&lt;string&gt;("steps", config.Steps)
@@ -61,10 +58,6 @@ public sealed partial class NoireReorderableList<T>
     public Func<T, string>? Label { get; set; }
 
     /// <summary>Paints a row instead of its label.</summary>
-    /// <remarks>
-    /// The list keeps the grip, the drag, the gap, the row's size and its actions. The hook only paints, inside the
-    /// space left between the grip and the buttons.
-    /// </remarks>
     public Action<UiReorderRowDraw<T>>? Renderer { get; set; }
 
     #region Behaviour
@@ -79,8 +72,7 @@ public sealed partial class NoireReorderableList<T>
     /// Copies a row for <see cref="AllowDuplicate"/>. When <see langword="null"/>, the row itself is added again.
     /// </summary>
     /// <remarks>
-    /// Fine for a string or a record; for anything mutable, give this, or the duplicate and the original are one
-    /// object and editing either edits both.
+    /// For anything mutable, give this, or the duplicate and the original are one object and editing either edits both.
     /// </remarks>
     public Func<T, T>? Duplicate { get; set; }
 
@@ -91,11 +83,8 @@ public sealed partial class NoireReorderableList<T>
     /// The binding that moves the focused row up. The up arrow by default.
     /// </summary>
     /// <remarks>
-    /// A <see cref="HotkeyBinding"/> matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey, read
-    /// through <see cref="KeybindsHelper.IsBindingHeld"/>. A plain <see cref="VirtualKey"/> converts implicitly, and
-    /// the full binding surface is there for a key with modifiers. Modifiers are matched exactly, so the default
-    /// fires on the bare arrow and not on ctrl with it. Ignored while a hotkey is attached through
-    /// <see cref="BindReorderHotkeys"/>; read <see cref="ResolvedMoveUpBinding"/> for the one actually in force.
+    /// Modifiers are matched exactly. Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>; read
+    /// <see cref="ResolvedMoveUpBinding"/> for the one actually in force.
     /// </remarks>
     public HotkeyBinding MoveUpBinding { get; set; } = VirtualKey.UP;
 
@@ -103,11 +92,8 @@ public sealed partial class NoireReorderableList<T>
     /// The binding that moves the focused row down. The down arrow by default.
     /// </summary>
     /// <remarks>
-    /// A <see cref="HotkeyBinding"/> matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey, read
-    /// through <see cref="KeybindsHelper.IsBindingHeld"/>. A plain <see cref="VirtualKey"/> converts implicitly, and
-    /// the full binding surface is there for a key with modifiers. Modifiers are matched exactly, so the default
-    /// fires on the bare arrow and not on ctrl with it. Ignored while a hotkey is attached through
-    /// <see cref="BindReorderHotkeys"/>; read <see cref="ResolvedMoveDownBinding"/> for the one actually in force.
+    /// Modifiers are matched exactly. Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>; read
+    /// <see cref="ResolvedMoveDownBinding"/> for the one actually in force.
     /// </remarks>
     public HotkeyBinding MoveDownBinding { get; set; } = VirtualKey.DOWN;
 
@@ -120,11 +106,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Drives the reorder keys from a <see cref="NoireHotkeyManager"/>, so the user can rebind them.
     /// </summary>
-    /// <remarks>
-    /// The same two ways of being bound that <see cref="NoireComboBox{T}"/>'s wheel cycle offers: a local binding for
-    /// a plugin that does not want a rebindable hotkey, and a hotkey id for one that does. A rebinding applies
-    /// immediately, with no bookkeeping on your side.
-    /// </remarks>
     /// <param name="hotkeyManager">The module holding the hotkeys.</param>
     /// <param name="moveUpHotkeyId">The id of the hotkey that moves a row up.</param>
     /// <param name="moveDownHotkeyId">The id of the hotkey that moves a row down.</param>
@@ -169,11 +150,6 @@ public sealed partial class NoireReorderableList<T>
     /// Whether an attached hotkey swallows the key from the game while the shortcut is actually live.
     /// </summary>
     /// <remarks>
-    /// On by default, and only while live: a row focused, the window focused, and the keys otherwise doing nothing.
-    /// Left blocking permanently would take the arrow keys away from the game for as long as the plugin is loaded.
-    /// Held through <see cref="HotkeyEntry.SuppressGameInput"/> rather than by writing
-    /// <see cref="HotkeyEntry.BlockGameInput"/>, which is a persisted setting belonging to whoever registered the
-    /// hotkey. A suppression is runtime only, so the worst this can cost is the rest of the session.<br/>
     /// Only applies with hotkeys attached through <see cref="BindReorderHotkeys"/>. A local binding has no entry to
     /// block with.
     /// </remarks>
@@ -189,12 +165,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Raises or restores the game-input blocking on the attached hotkeys.
     /// </summary>
-    /// <remarks>
-    /// A raised block is renewed for one frame at a time and expires on its own. Blocking works by clearing the key
-    /// out of the game's own key state on every framework tick, so a block left raised swallows that key for as
-    /// long as the plugin is loaded: it cannot be left to a call that only happens while the list is being drawn,
-    /// since the list not being drawn is precisely the case that has to release it.
-    /// </remarks>
     /// <param name="live">Whether the shortcut can currently do anything.</param>
     internal void ApplyInputBlocking(bool live)
     {
@@ -243,13 +213,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Watches for the list going quiet while it still holds the keys, and hands them back when it does.
     /// </summary>
-    /// <remarks>
-    /// Attached only while a block is up, and removes itself as soon as the block comes down, so a list nobody is
-    /// using costs nothing. A frame of slack is allowed before releasing, because the tick and the drawing are on
-    /// separate clocks: a tick landing after the next frame has begun but before the list has drawn into it would
-    /// otherwise take the keys back from a list still being worked in, and hand the game an arrow the user meant
-    /// for the row.
-    /// </remarks>
     private void OnBlockWatchdog(Dalamud.Plugin.Services.IFramework framework)
     {
         if (blockRaised && NoireUI.FrameCount - blockRenewedOnFrame > 1)
@@ -284,10 +247,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Takes one hotkey's key from the game while the shortcut is live, and gives it back otherwise.
     /// </summary>
-    /// <remarks>
-    /// Paired one for one with <see cref="blockRaised"/>: taken only on the transition into a raised block, and
-    /// given back only on the transition out of one.
-    /// </remarks>
     private void ApplyBlockingTo(string? hotkeyId, bool live)
     {
         if (hotkeyId == null || hotkeys == null || !hotkeys.TryGetHotkey(hotkeyId, out var entry))
@@ -315,10 +274,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Whether a drag can start anywhere on a row rather than on its grip alone. Off by default.
     /// </summary>
-    /// <remarks>
-    /// A row that carries its own controls would otherwise start moving every time one of them was used. Turn it
-    /// on for rows that are only a label.
-    /// </remarks>
     public bool DragAnywhere { get; set; }
 
     /// <summary>The height of a row in real pixels. Zero measures it from the text.</summary>
@@ -363,12 +318,7 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Which row a pointer position falls on.
     /// </summary>
-    /// <remarks>
-    /// Worked out from the pointer rather than from which row reports itself hovered: while a drag is running the
-    /// dragged row is ImGui's active item and no other item is given the hover, so a hover-driven target would only
-    /// ever resolve in whichever direction happens to keep the pointer inside the row it started on.
-    /// A pointer above or below the list clamps to its ends, so a drag that leaves the widget still means something.
-    /// </remarks>
+    /// <remarks>A pointer above or below the list clamps to its ends.</remarks>
     /// <param name="pointerY">Where the pointer is.</param>
     /// <param name="listTop">Where the first row starts.</param>
     /// <param name="rowStep">How far apart two rows start, height and spacing together.</param>

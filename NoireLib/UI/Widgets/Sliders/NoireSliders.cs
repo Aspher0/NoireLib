@@ -7,9 +7,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Sliders drawn by the library rather than by ImGui, so they can be restyled to the last pixel.
 /// </summary>
-/// <remarks>
-/// The label column matches <see cref="NoireInputs"/>, so a slider between two number fields lines up with them.
-/// </remarks>
 /// <example>
 /// <code>
 /// NoireSliders.Int("Visible options", ref config.VisibleOptions, 1, 20,
@@ -264,10 +261,7 @@ public static class NoireSliders
     }
 
     /// <summary>What value a pointer position on the track means.</summary>
-    /// <remarks>
-    /// Taken from the absolute pointer position rather than from mouse delta, which accumulates drift away from the
-    /// cursor over a long gesture. Positions past either end clamp to it.
-    /// </remarks>
+    /// <remarks>Positions past either end clamp to it.</remarks>
     /// <param name="pointerX">Where the pointer is, in screen pixels.</param>
     /// <param name="trackX">Where the track starts, in screen pixels.</param>
     /// <param name="span">How long the track is, in pixels.</param>

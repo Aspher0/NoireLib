@@ -8,10 +8,7 @@ namespace NoireLib.UI;
 /// What a <see cref="NoireTagInput.ChipDraw"/> hook needs to paint one chip: where it sits, its state, and the
 /// colors NoireUI would have used.
 /// </summary>
-/// <remarks>
-/// Called once per visible chip, with layout, hit testing, removal and the off-screen cull already handled. The
-/// chip's size is measured from the tag and the theme before painting, so the hook cannot change it.
-/// </remarks>
+/// <remarks>The chip's size is measured from the tag and the theme before painting, so the hook cannot change it.</remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the chip.</param>
 /// <param name="Max">The bottom right corner of the chip.</param>

@@ -11,14 +11,10 @@ namespace NoireLib.Helpers;
 /// A static caching helper that provides a default in-memory cache store for on-demand data reuse.
 /// Entries are keyed by string, support time-to-live (TTL) expiration, and can be organized into groups
 /// for bulk invalidation.<br/>
-/// For strongly typed caching with non-string keys, use <see cref="MemoryCacheStore{TKey, TValue}"/> instead.
+/// For strongly typed caching with non-string keys, use <see cref="MemoryCacheStore{TKey, TValue}"/> instead.<br/>
+/// Not for a draw path: a string key is composed per lookup and values are stored as <see cref="object"/> and box.
+/// Use <see cref="HotPathCache{TKey, TValue}"/> there instead.
 /// </summary>
-/// <remarks>
-/// This is an <b>application</b> cache, for values fetched or computed outside a draw. Do not use it on a draw
-/// path: a string key must be composed per lookup, values are stored as <see cref="object"/> and box, and a
-/// time-to-live recomputes on a clock rather than on what actually changed, serving stale values in between. Use
-/// <see cref="HotPathCache{TKey, TValue}"/> there instead.
-/// </remarks>
 public static class CacheHelper
 {
     private static readonly ConcurrentDictionary<string, CacheEntry> Store = new();

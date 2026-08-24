@@ -1,12 +1,12 @@
 namespace NoireLib.Configuration;
 
 /// <summary>
-/// Interface for NoireLib configuration classes that can be saved and loaded from JSON files.
+/// Interface for NoireLib.Configuration configuration classes that can be saved and loaded from JSON files.
 /// </summary>
 public interface INoireConfig
 {
     /// <summary>
-    /// The version of the configuration schema, for potential migrations.
+    /// The version of the configuration schema, for migrations.
     /// </summary>
     int Version { get; set; }
 

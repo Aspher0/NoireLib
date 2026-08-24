@@ -133,14 +133,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Finishes the tasks and batches a consumer resolved by writing a terminal status directly.
     /// </summary>
-    /// <remarks>
-    /// <see cref="QueuedTask.Status"/> and <see cref="TaskBatch.Status"/> are public and settable, so a consumer
-    /// can resolve work by assigning a status directly, including from inside a completion condition; doing so
-    /// bypasses the queue's own paths, so no callback fires and no event publishes. This runs once at the end of
-    /// each pass to finish those items properly. It restores the callback, event and statistics for the outcome
-    /// that was written, but not policy: it does not apply StopQueueOnFail, StopQueueOnCancel or the parent-batch
-    /// modes, which stay available through the ordinary queue methods.
-    /// </remarks>
     private void ReconcileConsumerWrittenStatuses()
     {
         List<QueuedTask> tasksToFinalize = new();
@@ -305,10 +297,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Advances the task a container is currently on by one pass.
     /// </summary>
-    /// <remarks>
-    /// Shared by the queue and batch levels. The queue keeps a stored current task, while a batch recomputes its
-    /// earliest unfinished one each time; only the queue's own selection may pick a batch.
-    /// </remarks>
     /// <param name="current">The task the container is on.</param>
     /// <param name="batch">The batch that holds the task, or null at the queue level.</param>
     /// <param name="taskToProcess">Set to the task to execute at the end of the pass, if one is chosen here.</param>
@@ -421,12 +409,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Applies the outcomes collected by <see cref="CollectWaitingTaskOutcomes"/>, outside the lock.
     /// </summary>
-    /// <remarks>
-    /// A task collected as complete is skipped only if it was finished as cancelled or failed, so a consumer who
-    /// resolves a task by writing Completed directly still gets its callback. A task collected as failing is
-    /// skipped on any terminal status; otherwise a condition that cancels a task already collected earlier in
-    /// the same pass would have that cancellation silently overwritten.
-    /// </remarks>
     /// <param name="batch">The batch that holds the tasks, or null at the queue level.</param>
     /// <param name="toComplete">The tasks whose conditions were met.</param>
     /// <param name="toFail">The tasks that timed out or exhausted their retries.</param>
@@ -758,12 +740,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Reports whether a task has been resolved to an outcome that a pending completion must not overwrite.
     /// </summary>
-    /// <remarks>
-    /// Narrower than <see cref="IsInTerminalStatus"/>: a task a consumer callback has cancelled or failed must
-    /// keep that outcome, since a pending completion would otherwise overwrite it. A task already marked
-    /// completed is not excluded, since running the pending completion still raises the callback a direct-write
-    /// consumer expects; skipping it would silently drop that callback.
-    /// </remarks>
     /// <param name="task">The task to test.</param>
     /// <returns>True if the task was finished as something other than completed; otherwise, false.</returns>
     private static bool WasFinishedWithoutCompleting(QueuedTask task)

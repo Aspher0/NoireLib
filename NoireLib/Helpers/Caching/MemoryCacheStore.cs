@@ -9,13 +9,10 @@ namespace NoireLib.Helpers;
 
 /// <summary>
 /// A strongly typed, thread-safe, in-memory cache store with TTL-based expiration and optional group invalidation.
-/// For a quick global string-keyed cache, see <see cref="CacheHelper"/> instead.
-/// </summary>
-/// <remarks>
-/// The thread-safe application cache. Its expiry is a time-to-live and every access takes an interlocked counter and
-/// allocates an entry on store, so it is the wrong shape for a draw path even though its key is typed. Use
+/// For a quick global string-keyed cache, see <see cref="CacheHelper"/> instead.<br/>
+/// Every access takes an interlocked counter and a store allocates an entry: use
 /// <see cref="HotPathCache{TKey, TValue}"/> for anything read while a frame is being drawn.
-/// </remarks>
+/// </summary>
 /// <typeparam name="TKey">The type of the cache keys. Must be non-null.</typeparam>
 /// <typeparam name="TValue">The type of the cached values.</typeparam>
 public sealed class MemoryCacheStore<TKey, TValue> : IDisposable where TKey : notnull

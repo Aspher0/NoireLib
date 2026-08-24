@@ -28,12 +28,6 @@ public class QueuedTask
     /// <summary>
     /// Whether the queue has already run its finalization for this task.
     /// </summary>
-    /// <remarks>
-    /// <see cref="Status"/> is public and settable; a consumer can write a terminal status directly, bypassing the
-    /// queue's own completion, failure and cancellation paths and losing the callback and statistics. The queue
-    /// sets this flag when it finalizes a task itself, so reconciliation can distinguish the two and finish the
-    /// latter properly.
-    /// </remarks>
     internal bool QueueFinalized { get; set; }
 
     /// <summary>

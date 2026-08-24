@@ -7,7 +7,6 @@ namespace NoireLib.UI;
 /// Everything a <see cref="PipStyle.CustomDraw"/> hook needs to paint one pip itself: where it sits in the row, its
 /// state, and the colour NoireUI would have used.
 /// </summary>
-/// <remarks>Called once per pip, with the row already laid out and its space already reserved.</remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the pip.</param>
 /// <param name="Max">The bottom right corner of the pip.</param>

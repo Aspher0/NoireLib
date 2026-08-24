@@ -4,13 +4,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// One open measurement, closed when it is disposed. Created by
-/// <see cref="UiProfilerExtensions.Measure(UiProfiler, string)"/>.
+/// <see cref="UiProfilerExtensions.Measure(UiProfiler, string)"/>.<br/>
+/// Closing twice is a no-op.
 /// </summary>
-/// <remarks>
-/// A <see langword="ref struct"/> so it lives on the stack and costs no allocation.<br/>
-/// Closing twice is a no-op: <c>using var scope = ...</c> followed by an explicit <c>scope.Dispose()</c> disposes
-/// once explicitly and once at the end of the block, and without this guard the scope would be counted twice.
-/// </remarks>
 public ref struct UiProfileScope
 {
     private readonly UiProfiler? profiler;
@@ -45,12 +41,6 @@ public ref struct UiProfileScope
 /// <summary>
 /// Opens the measurement an instance widget records itself under.
 /// </summary>
-/// <remarks>
-/// Widgets are not <see cref="NoireDrawable"/>s and are drawn by their owner rather than by the hub; measuring the
-/// hub's pass alone would report nothing for most of an interface. Each widget opens one of these instead.<br/>
-/// For the <c>{kind}:{id}</c> shape, which carries a runtime id and cannot be derived from a call site. A static
-/// surface takes its name from <see cref="UiDraw"/> instead.
-/// </remarks>
 internal static class UiProfile
 {
     /// <summary>
@@ -78,10 +68,6 @@ public static class UiProfilerExtensions
     /// <summary>
     /// Times everything up to the returned scope's disposal, under <paramref name="name"/>.
     /// </summary>
-    /// <remarks>
-    /// This is the <see langword="using"/>-shaped form, used inside the library where a widget's body is not already a
-    /// callback. Prefer <see cref="NoireUI.Profile(string, Action)"/> from a plugin, which needs nothing disposed.
-    /// </remarks>
     /// <param name="profiler">The profiler to measure on.</param>
     /// <param name="name">The scope's name.</param>
     /// <returns>The open scope. Dispose it to close the measurement.</returns>
@@ -100,10 +86,6 @@ public static class UiProfilerExtensions
     /// <summary>
     /// Times everything up to the returned scope's disposal, under a name already resolved to a handle.
     /// </summary>
-    /// <remarks>
-    /// The form the library's own hot paths use: a caller entering the same scope every frame resolves its handle
-    /// once and holds it, avoiding hashing the name on every measurement. See <see cref="UiScopeName"/>.
-    /// </remarks>
     /// <param name="profiler">The profiler to measure on.</param>
     /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
     /// <returns>The open scope. Dispose it to close the measurement.</returns>

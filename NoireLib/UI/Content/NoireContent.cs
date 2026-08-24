@@ -32,9 +32,6 @@ public sealed class NoireContent
     /// <summary>
     /// What one measurement depended on, so a segment measured under the same conditions reuses its answer.
     /// </summary>
-    /// <remarks>
-    /// The same facts <see cref="UiTextMeasureCache"/> keys on, read once per draw rather than hashed per segment ask.
-    /// </remarks>
     /// <param name="Font">Handle of the font in hand.</param>
     /// <param name="SizePx">Font size in pixels.</param>
     /// <param name="Scale">UI scale the measurement was taken at.</param>
@@ -279,10 +276,6 @@ public sealed class NoireContent
     }
 
     /// <summary>Rebuilds the line runs from the break segments.</summary>
-    /// <remarks>
-    /// Every break closes the run before it, including an empty one, so two consecutive breaks are a blank line. The
-    /// final run is closed by the end of the list rather than by a break.
-    /// </remarks>
     private void RebuildLines()
     {
         lines.Clear();
@@ -312,10 +305,6 @@ public sealed class NoireContent
     }
 
     /// <summary>Puts the gap between two lines in front of the second one rather than after the first.</summary>
-    /// <remarks>
-    /// The line advance is a <c>SetCursorPosY</c> rather than a real item, and ImGui grows a window's content height
-    /// to any cursor position set inside it, so spacing after the final line would be permanent bottom padding.
-    /// </remarks>
     /// <param name="isFirstLine">Whether the line about to be drawn is the first.</param>
     private static void SpaceBeforeLine(bool isFirstLine)
     {
@@ -379,10 +368,6 @@ public sealed class NoireContent
     }
 
     /// <summary>The height a segment takes on its line, cached against the conditions it was measured under.</summary>
-    /// <remarks>
-    /// Measured against the font in hand rather than through <c>CalcSize</c>, which resolves and pushes one of its
-    /// own: a segment draws in whatever the caller pushed, and a height taken in another font misplaces the baseline.
-    /// </remarks>
     /// <param name="segment">The segment to measure.</param>
     /// <param name="stamp">The conditions measurements are taken under this draw.</param>
     /// <param name="keyCapPadding">Scaled padding inside a keycap tile.</param>
@@ -398,7 +383,7 @@ public sealed class NoireContent
             case SegmentKind.Icon:
                 if (segment.Stamp != stamp)
                 {
-                    using (UiPush.Font(UiBuilder.IconFont))
+                    using (UiPush.Font(UiIconFont.Current))
                         segment.MeasuredSize = NoireText.CalcSizeInCurrentFont(UiValueText.Icon(segment.Icon));
 
                     segment.Stamp = stamp;
@@ -448,11 +433,6 @@ public sealed class NoireContent
     /// The height a text segment takes on its line, accounting for an ambient text wrap position such as the one
     /// <see cref="NoireLayout.WrapText(float, Action)"/> pushes around a whole <see cref="Draw"/> call.
     /// </summary>
-    /// <remarks>
-    /// Under an active wrap, <c>TextUnformatted</c> reflows the segment onto several lines and advances the cursor
-    /// past all of them, so reserving the cached single-line height would let the next item overlap them. The
-    /// remeasure runs only when the natural width actually exceeds the wrap position.
-    /// </remarks>
     /// <param name="segment">The text segment to measure.</param>
     /// <param name="stamp">The conditions measurements are taken under this draw.</param>
     /// <returns>The height the segment occupies in pixels.</returns>
@@ -504,7 +484,7 @@ public sealed class NoireContent
 
             case SegmentKind.Icon:
                 using (UiPush.Color(ImGuiCol.Text, segment.Color ?? Vector4.One, segment.Color.HasValue))
-                using (UiPush.Font(UiBuilder.IconFont))
+                using (UiPush.Font(UiIconFont.Current))
                     ImGui.TextUnformatted(UiValueText.Icon(segment.Icon));
                 break;
 

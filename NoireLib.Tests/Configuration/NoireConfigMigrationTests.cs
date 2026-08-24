@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using NoireLib.Configuration;
 using NoireLib.Configuration.Migrations;
@@ -12,24 +12,14 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Game-free tests for the configuration migration path, locking the invariant that a configuration file is never
-/// destroyed by a migration that does not work.<br/>
-/// Deserializing un-migrated JSON into the current type mostly succeeds, because Newtonsoft ignores unknown members and
-/// leaves absent ones at their defaults, so a failed migration produces a partially defaulted instance and no exception.
-/// The protections under test are that such an instance refuses to persist (<see cref="NoireConfigBase.IsDegraded"/>)
-/// and that the file is copied to a backup before any migration is attempted.<br/>
-/// The same invariant reaches past a single load, so this also covers what a configuration reports about its own schema
-/// version afterwards, how loudly a refused save repeats itself, and which instances
-/// <see cref="NoireConfigManager.GetConfig{T}"/> is allowed to cache. Each of those decides whether a later save is
-/// aimed at the user's real settings or at defaults standing in for them.<br/>
-/// The opposite failure is covered alongside it, a save that should happen and does not: the suppression that keeps the
-/// member copy onto the auto-save wrapper from writing back what it has just read is scoped to the copying thread and
-/// to the copy, so that neither a copy that throws nor a copy running at that moment can cost an unrelated setting its
-/// write.<br/>
-/// These tests drive the real <see cref="NoireConfigBase.Load"/> and <see cref="NoireConfigBase.Save"/> against real
-/// files in a temporary directory. Each configuration under test overrides
-/// <c>GetConfigFilePath()</c> to point at that directory, which is what keeps them independent of a running game.
+/// Game-free tests for the migration path: a file is never destroyed by a migration that does not work.<br/>
+/// Un-migrated JSON deserializes without throwing, since Newtonsoft ignores unknown members and defaults absent
+/// ones, so the protections are the <see cref="NoireConfigBase.IsDegraded"/> latch and the backup taken before any
+/// migration runs. Also covers the schema version an instance reports afterwards, how often a refused save logs,
+/// and which instances <see cref="NoireConfigManager.GetConfig{T}"/> caches.<br/>
+/// Every configuration here overrides <c>GetConfigFilePath()</c> to a temporary directory.
 /// </summary>
+[Collection(ConfigStateCollection.Name)]
 public class NoireConfigMigrationTests : IDisposable
 {
     #region Fixtures
@@ -71,7 +61,7 @@ public class NoireConfigMigrationTests : IDisposable
 
     /// <summary>
     /// A configuration at schema version 2. <c>AddedInV2</c> stands for a member that only a migration can populate
-    /// from a version 1 file, which is what makes a failed migration observable.
+    /// from a version 1 file, so a failed migration is observable.
     /// </summary>
     private class TestConfigBase : NoireConfigBase
     {
@@ -149,68 +139,8 @@ public class NoireConfigMigrationTests : IDisposable
     }
 
     /// <summary>
-    /// A configuration reached the way plugins reach one that auto-saves, through <see cref="NoireConfigBase{T}.Instance"/>,
-    /// which wraps the loaded instance in the Castle proxy that turns an assignment into a save.<br/>
-    /// Public, and nested in a public class, because the proxy is a generated subclass in another assembly: a type that
-    /// assembly cannot see is not proxied at all, and the wrapper quietly falls back to the unproxied instance, which
-    /// would leave the tests below passing for the wrong reason.<br/>
-    /// <see cref="Save"/> is counted rather than performed, so what a test observes is whether auto-save fired rather
-    /// than whether a file landed. The statics are per closed generic type, so each concrete configuration below gets
-    /// its own, which is also how the singleton and the manager cache key what they hold.
-    /// </summary>
-    /// <typeparam name="T">The concrete configuration type.</typeparam>
-    public abstract class AutoSaveProbeConfig<T> : NoireConfigBase<T> where T : AutoSaveProbeConfig<T>, new()
-    {
-        /// <summary>
-        /// How many times auto-save has reached <see cref="RequestSave"/> on this configuration type.
-        /// </summary>
-        public static int SaveCount;
-
-        /// <summary>
-        /// The path this configuration type resolves, or null to resolve none.
-        /// </summary>
-        public static string? PathOverride;
-
-        public override int Version { get; set; } = 1;
-
-        public override string GetConfigFileName() => $"{typeof(T).Name}.json";
-
-        protected override string? GetConfigFilePath() => PathOverride;
-
-        /// <summary>
-        /// A member whose assignment must persist, which is what auto-save is for.
-        /// </summary>
-        [AutoSave]
-        public virtual string Tripwire { get; set; } = "tripwire-default";
-
-        /// <inheritdoc/>
-        public override void RequestSave()
-        {
-            // Counted here rather than in Save, because auto-save queues the write rather than performing it.
-            Interlocked.Increment(ref SaveCount);
-        }
-
-        /// <summary>
-        /// Returns the state this type keeps statically to what a test is entitled to assume it is.
-        /// </summary>
-        public static void ResetProbeState()
-        {
-            ClearCache();
-            NoireConfigManager.UnloadConfig<T>();
-            SaveCount = 0;
-            PathOverride = null;
-        }
-    }
-
-    public class SaveCountingConfig : AutoSaveProbeConfig<SaveCountingConfig>;
-
-    /// <summary>
-    /// A configuration reached the way plugins reach one that auto-saves, through <see cref="NoireConfigBase{T}.Instance"/>,
-    /// and which performs a real save rather than counting one, so that what the version hardening in
-    /// <see cref="NoireConfigBase.Save"/> writes is observable in a file.<br/>
-    /// Public, and nested in a public class, for the same reason <see cref="AutoSaveProbeConfig{T}"/> is: the auto-save
-    /// wrapper is a generated subclass built in another assembly, and a type that assembly cannot see is never wrapped
-    /// at all, which would leave the tests below passing against a plain instance and proving nothing.
+    /// A configuration reached the way plugins reach one, through <see cref="NoireConfigBase{T}.Instance"/>, so that
+    /// what the version hardening in <see cref="NoireConfigBase.Save"/> writes is observable in a file.
     /// </summary>
     public class VersionProbeConfig : NoireConfigBase<VersionProbeConfig>
     {
@@ -232,17 +162,13 @@ public class NoireConfigMigrationTests : IDisposable
         protected override string? GetConfigFilePath() => PathOverride;
 
         /// <summary>
-        /// Present so that the configuration is wrapped at all: the wrapper is only built for a type that has a member
-        /// marked <see cref="AutoSaveAttribute"/>.
+        /// Enrolls the configuration in automatic saving.
         /// </summary>
         [AutoSave]
-        public virtual string Tripwire { get; set; } = "tripwire-default";
+        public string Tripwire { get; set; } = "tripwire-default";
 
         /// <summary>
-        /// Exposes the protected default-version lookup so that a test can observe what it resolves rather than only
-        /// what a save happens to write.<br/>
-        /// Not virtual, so the wrapper does not intercept it and the call runs against the wrapper itself, which is the
-        /// instance whose reported type is not the configuration type.
+        /// Exposes the protected default-version lookup.
         /// </summary>
         /// <returns>The version the lookup resolves.</returns>
         public int ProbeDefaultVersion() => GetDefaultVersion();
@@ -255,37 +181,6 @@ public class NoireConfigMigrationTests : IDisposable
             ClearCache();
             NoireConfigManager.UnloadConfig<VersionProbeConfig>();
             PathOverride = null;
-        }
-    }
-
-    /// <summary>
-    /// A configuration whose member copy onto the auto-save wrapper can be made to fail, which is the case the
-    /// suppression the copy turns on has to survive.
-    /// </summary>
-    public class ThrowOnCopyConfig : AutoSaveProbeConfig<ThrowOnCopyConfig>
-    {
-        /// <summary>
-        /// Whether <see cref="Exploding"/> refuses assignment, which is what makes the copy throw.
-        /// </summary>
-        public static bool ThrowOnSet;
-
-        private string exploding = "exploding-default";
-
-        /// <summary>
-        /// Stands in for anything a derived configuration can do in a property setter that the member copy runs but
-        /// does not control, a type mismatch or a validating setter among them.
-        /// </summary>
-        [AutoSave]
-        public virtual string Exploding
-        {
-            get => exploding;
-            set
-            {
-                if (ThrowOnSet)
-                    throw new InvalidOperationException("Simulated defect in a configuration property setter.");
-
-                exploding = value;
-            }
         }
     }
 
@@ -312,12 +207,6 @@ public class NoireConfigMigrationTests : IDisposable
         NoireConfigManager.UnloadConfig<CacheProbeConfig>();
         NoireConfigManager.UnloadConfig<DegradedProbeConfig>();
         ManagerProbeConfigBase.PathOverride = null;
-
-        // The auto-save probes are reached through the singleton, which caches the wrapper statically per type on top
-        // of the manager's own cache, so both have to be dropped for a test to get a configuration it can predict.
-        SaveCountingConfig.ResetProbeState();
-        ThrowOnCopyConfig.ResetProbeState();
-        ThrowOnCopyConfig.ThrowOnSet = false;
         VersionProbeConfig.ResetProbeState();
     }
 
@@ -393,12 +282,11 @@ public class NoireConfigMigrationTests : IDisposable
         var config = NewConfigAt<ThrowingConfig>(path);
         config.Load();
 
-        config.IsDegraded.Should().BeTrue("the instance was populated from un-migrated JSON and is only a partial view of the user's settings");
+        config.IsDegraded.Should().BeTrue("the instance holds un-migrated values");
 
-        // The load itself does not fail loudly: the un-migrated file deserializes fine, which is exactly why the latch
-        // has to exist rather than relying on an exception reaching the caller.
+        // The un-migrated file deserializes without throwing, so only the latch marks it.
         config.Value.Should().Be("user-set-value", "members present in the old file still load");
-        config.AddedInV2.Should().Be("added-in-v2-default", "the member the migration was meant to produce stays at its default, which is the silent data loss being guarded");
+        config.AddedInV2.Should().Be("added-in-v2-default", "the member the migration was meant to produce stays defaulted");
     }
 
     [Fact]
@@ -456,10 +344,8 @@ public class NoireConfigMigrationTests : IDisposable
     [Fact]
     public void DegradedState_SurvivesMemberCopyOntoAnotherInstance()
     {
-        // A configuration reached through NoireConfigBase<T>.Instance is copied member by member onto an auto-save
-        // wrapper, and that copy reflects over the concrete type, which cannot see private fields declared on the base
-        // class. If the latch stops surviving this copy, the instance consumers actually hold comes up undegraded and
-        // saves freely, which is the whole defect again.
+        // The member-copy helper reflects over the concrete type and cannot see private fields on the base class.
+        // A copy that came up undegraded would save freely.
         var path = WriteConfigFile("throwing.json", V1FileContent);
         NoireConfigManager.RegisterMigration<ThrowingConfig>(new ThrowingMigration());
 
@@ -778,7 +664,7 @@ public class NoireConfigMigrationTests : IDisposable
         var config = NewConfigAt<WorkingConfig>(path);
         config.Load().Should().BeTrue();
 
-        config.Version.Should().Be(2, "the values have been migrated up to schema 2, which is what the instance now holds");
+        config.Version.Should().Be(2, "the values are at schema 2 now");
     }
 
     [Fact]
@@ -903,168 +789,6 @@ public class NoireConfigMigrationTests : IDisposable
 
     #endregion
 
-    #region Auto-save around the copy onto the wrapper
-
-    [Fact]
-    public void Instance_CopyOntoTheAutoSaveWrapper_DoesNotPersistTheValuesItJustRead()
-    {
-        // The suppression exists for this: the copy assigns through the wrapper's intercepted setters, so every member
-        // marked [AutoSave] would write back the file it was just read from, once per member.
-        SaveCountingConfig.PathOverride = Path.Combine(tempDirectory, "save-counting.json");
-
-        var config = SaveCountingConfig.Instance;
-
-        config.Should().NotBeNull();
-        SaveCountingConfig.SaveCount.Should().Be(0, "the copy carries the values that were just loaded, so writing them back is redundant");
-    }
-
-    [Fact]
-    public void Instance_AssigningAnAutoSaveMember_Persists()
-    {
-        // The baseline the rest of this region measures against. It also catches the wrapper silently not being a
-        // wrapper at all, which is what a configuration type the proxy generator cannot see would produce.
-        SaveCountingConfig.PathOverride = Path.Combine(tempDirectory, "save-counting.json");
-
-        var config = SaveCountingConfig.Instance;
-        SaveCountingConfig.SaveCount = 0;
-
-        config.Tripwire = "set-by-plugin";
-
-        SaveCountingConfig.SaveCount.Should().Be(1, "assigning a member marked [AutoSave] is what persists it");
-    }
-
-    [Fact]
-    public void Instance_WhenTheCopyThrows_DoesNotLeaveAutoSaveSuppressed()
-    {
-        // The copy reflects over the configuration's members and runs whatever a derived class does in a setter, so it
-        // can throw. The suppression it turns on is consulted by every auto-save that follows, so one that outlives its
-        // copy disables auto-save wholesale: settings apply in memory, never reach disk, and report no error.
-        ThrowOnCopyConfig.PathOverride = Path.Combine(tempDirectory, "throw-on-copy.json");
-        ThrowOnCopyConfig.ThrowOnSet = true;
-
-        bool suppressedAfterTheThrow;
-
-        try
-        {
-            var reachInstance = () => ThrowOnCopyConfig.Instance;
-            reachInstance.Should().Throw<Exception>("the test only means anything if the copy actually failed");
-        }
-        finally
-        {
-            ThrowOnCopyConfig.ThrowOnSet = false;
-
-            // Read and then cleared on the thread that ran the copy, which is the thread the flag belongs to. Clearing
-            // it here rather than asserting first keeps a run against code that leaves it set from spoiling every test
-            // that follows on this thread.
-            suppressedAfterTheThrow = NoireConfigBase.IsInternalCopying;
-            NoireConfigBase.IsInternalCopying = false;
-        }
-
-        suppressedAfterTheThrow.Should().BeFalse("a copy that threw must leave auto-save enabled");
-    }
-
-    [Fact]
-    public void Instance_WhenTheCopyThrows_LeavesAutoSaveWorkingAfterwards()
-    {
-        // The observable half of the same defect, stated as what a user would notice: they change a setting, it does
-        // not persist, and nothing says so.
-        ThrowOnCopyConfig.PathOverride = Path.Combine(tempDirectory, "throw-on-copy.json");
-        ThrowOnCopyConfig.ThrowOnSet = true;
-
-        try
-        {
-            var reachInstance = () => ThrowOnCopyConfig.Instance;
-            reachInstance.Should().Throw<Exception>();
-
-            ThrowOnCopyConfig.ThrowOnSet = false;
-
-            // The failed copy cached nothing, so this builds the wrapper again, this time to completion.
-            var config = ThrowOnCopyConfig.Instance;
-            ThrowOnCopyConfig.SaveCount = 0;
-
-            config.Tripwire = "set-after-the-failed-copy";
-
-            ThrowOnCopyConfig.SaveCount.Should().Be(1, "auto-save must survive a copy that failed");
-        }
-        finally
-        {
-            ThrowOnCopyConfig.ThrowOnSet = false;
-            NoireConfigBase.IsInternalCopying = false;
-        }
-    }
-
-    [Fact]
-    public void AutoSave_OnTheThreadRunningACopy_IsSuppressed()
-    {
-        // The half of the semantics that must not be lost: the copy's own assignments do not persist.
-        SaveCountingConfig.PathOverride = Path.Combine(tempDirectory, "same-thread.json");
-
-        var config = SaveCountingConfig.Instance;
-        SaveCountingConfig.SaveCount = 0;
-
-        NoireConfigBase.IsInternalCopying = true;
-
-        try
-        {
-            config.Tripwire = "assigned-by-a-copy";
-        }
-        finally
-        {
-            // Shared by every configuration reached from this thread, so a test that sets it restores it or corrupts
-            // the ones that follow.
-            NoireConfigBase.IsInternalCopying = false;
-        }
-
-        SaveCountingConfig.SaveCount.Should().Be(0, "an assignment made by the copy running on this thread must not persist");
-    }
-
-    [Fact]
-    public void AutoSave_OnAnotherThreadWhileACopyRuns_StillPersists()
-    {
-        // The save a copy has to suppress is the one the copy itself raises, and that save is always on the copying
-        // thread: the interceptor runs inline inside the assignment the copy makes, with no hop or queue between them.
-        // Suppression shared by the whole process would therefore reach further than it has any reason to, as far as an
-        // unrelated consumer assigning a setting on another thread at that moment, applying their change in memory and
-        // dropping the write with nothing reported.
-        SaveCountingConfig.PathOverride = Path.Combine(tempDirectory, "cross-thread.json");
-
-        var config = SaveCountingConfig.Instance;
-        SaveCountingConfig.SaveCount = 0;
-
-        Exception? failure = null;
-
-        NoireConfigBase.IsInternalCopying = true;
-
-        try
-        {
-            // A thread of its own rather than a pool thread, so the assignment cannot land on the thread standing in
-            // for the copy.
-            var assigningThread = new Thread(() =>
-            {
-                try
-                {
-                    config.Tripwire = "set-by-a-user-on-another-thread";
-                }
-                catch (Exception ex)
-                {
-                    failure = ex;
-                }
-            });
-
-            assigningThread.Start();
-            assigningThread.Join();
-        }
-        finally
-        {
-            NoireConfigBase.IsInternalCopying = false;
-        }
-
-        failure.Should().BeNull();
-        SaveCountingConfig.SaveCount.Should().Be(1, "a change made on another thread is a real change and must be persisted however busy this one is");
-    }
-
-    #endregion
-
     #region What the manager caches
 
     [Fact]
@@ -1127,9 +851,8 @@ public class NoireConfigMigrationTests : IDisposable
     [Fact]
     public void GetConfig_WhenTheLoadIsDegraded_CachesTheLiveInstance()
     {
-        // A degraded load succeeded, partially. The instance is the live one whose saves are being refused on purpose,
-        // so dropping it from the cache would hand the next caller a second instance that re-runs the same failed
-        // migration, and split the state the refusal depends on across two objects.
+        // The degraded instance is the live one, and its refusal state lives on it. Dropping it from the cache would
+        // hand the next caller a second instance that re-runs the same failed migration.
         var path = WriteConfigFile("degraded-probe.json", V1FileContent);
         ManagerProbeConfigBase.PathOverride = path;
 
@@ -1147,22 +870,17 @@ public class NoireConfigMigrationTests : IDisposable
     #region The version a save writes
 
     [Fact]
-    public void GetDefaultVersion_OnTheAutoSaveWrapper_ReportsTheSchemaTheClassDeclares()
+    public void GetDefaultVersion_ReportsTheSchemaTheClassDeclares()
     {
-        // A configuration with members marked [AutoSave] is handed to consumers as a generated subclass, so the type
-        // the instance reports is that subclass and not the configuration whose declared schema is wanted. Reading the
-        // declared version off the reported type would therefore not be reading it off the configuration at all.
         VersionProbeConfig.PathOverride = Path.Combine(tempDirectory, "version-probe.json");
 
         var config = VersionProbeConfig.Instance;
 
-        config.GetType().Should().NotBe(typeof(VersionProbeConfig),
-            "this only tests anything if the configuration is actually wrapped");
         config.ProbeDefaultVersion().Should().Be(VersionProbeConfig.DeclaredVersion);
     }
 
     [Fact]
-    public void Save_OnTheAutoSaveWrapper_WritesTheSchemaTheClassDeclaresRatherThanAVersionAssignedOverIt()
+    public void Save_ThroughTheSingleton_WritesTheSchemaTheClassDeclaresRatherThanAVersionAssignedOverIt()
     {
         // The number in the file records the schema the values in it are at, and it is what the next load measures the
         // file against. A version assigned over the property must not reach the file, or that load compares the file
@@ -1171,7 +889,6 @@ public class NoireConfigMigrationTests : IDisposable
         VersionProbeConfig.PathOverride = path;
 
         var config = VersionProbeConfig.Instance;
-        config.GetType().Should().NotBe(typeof(VersionProbeConfig), "this only tests anything if the configuration is actually wrapped");
 
         config.Version = 99;
         config.Save().Should().BeTrue();
@@ -1182,11 +899,9 @@ public class NoireConfigMigrationTests : IDisposable
     }
 
     [Fact]
-    public void Save_OnAnUnwrappedConfiguration_WritesTheSchemaTheClassDeclaresRatherThanAVersionAssignedOverIt()
+    public void Save_OnAFreshInstance_WritesTheSchemaTheClassDeclaresRatherThanAVersionAssignedOverIt()
     {
-        // The same guarantee for a configuration with no [AutoSave] members, which is never wrapped and reaches the
-        // lookup with its own type. Both shapes must label the file the same way.
-        var path = Path.Combine(tempDirectory, "unwrapped-version.json");
+        var path = Path.Combine(tempDirectory, "fresh-version.json");
 
         var config = NewConfigAt<NoMigrationsConfig>(path);
         config.Value = "value";
@@ -1202,23 +917,6 @@ public class NoireConfigMigrationTests : IDisposable
 }
 
 /// <summary>
-/// Groups every test that walks the whole configuration cache rather than only its own entry in it.<br/>
-/// The cache is process-wide and holds one instance per configuration type, and unrelated test classes seed it with
-/// configurations pointing at their own temporary files so that the real save path can run without a plugin
-/// configuration directory. A walk reaches every one of those, so it must not run beside the classes that own them.
-/// Parallelization is disabled for the whole collection to guarantee that, and any future test class that walks or
-/// empties the cache must join this collection.
-/// </summary>
-[CollectionDefinition(Name, DisableParallelization = true)]
-public sealed class ConfigCacheWalkCollection
-{
-    /// <summary>
-    /// The collection name shared by the definition and its member classes.
-    /// </summary>
-    public const string Name = "NoireConfigManager cache walk";
-}
-
-/// <summary>
 /// Game-free tests for saving every cached configuration at once, locking the invariant that one configuration cannot
 /// cost the others their write.<br/>
 /// <see cref="NoireConfigBase.Save"/> is virtual and resolves its file path through another virtual member, so a
@@ -1229,15 +927,15 @@ public sealed class ConfigCacheWalkCollection
 /// A configuration refusing to save because it is <see cref="NoireConfigBase.IsDegraded"/> is the opposite case: the
 /// refusal is the protection working, so the walk owes it only to leave its file alone and carry on.<br/>
 /// These tests drive the real save against real files in a temporary directory. Each configuration under test overrides
-/// <c>GetConfigFilePath()</c> to point at that directory, which is what keeps them independent of a running game.
+/// <c>GetConfigFilePath()</c> to point at that directory, which keeps them game-free.
 /// </summary>
-[Collection(ConfigCacheWalkCollection.Name)]
+[Collection(ConfigStateCollection.Name)]
 public class NoireConfigSaveAllCachedTests : IDisposable
 {
     #region Fixtures
 
     /// <summary>
-    /// A version 1 file holding a value the user set. The migration registered against it throws, which is what leaves
+    /// A version 1 file holding a value the user set. The migration registered against it throws, leaving
     /// the configuration that reads it degraded and therefore refusing to be written.
     /// </summary>
     private const string V1FileContent = "{\"Version\":1,\"Value\":\"user-set-value\"}";
@@ -1371,7 +1069,7 @@ public class NoireConfigSaveAllCachedTests : IDisposable
 
         var degraded = NewConfigAt<WalkDegradedConfig>("degraded.json");
         degraded.Load();
-        degraded.IsDegraded.Should().BeTrue("the version 1 file could not be migrated, which is what the refusal protects");
+        degraded.IsDegraded.Should().BeTrue("the version 1 file could not be migrated");
         degraded.HasLoggedDegradedSaveRefusal.Should().BeFalse("nothing has tried to save it yet");
 
         var healthy = NewConfigAt<WalkBystanderOneConfig>("healthy.json");
@@ -1384,7 +1082,7 @@ public class NoireConfigSaveAllCachedTests : IDisposable
         CacheConfig(healthy);
 
         NoireConfigManager.SaveAllCached()
-            .Should().BeFalse("a configuration that was deliberately not written is still a configuration that is not on disk");
+            .Should().BeFalse("a configuration that was not written is not on disk");
 
         File.ReadAllBytes(degradedPath).Should().Equal(before, "the walk must not write a configuration that is refusing to be written");
         JObject.Parse(File.ReadAllText(healthy.filePathOverride!))["Value"]!.Value<string>()
@@ -1417,25 +1115,23 @@ public class NoireConfigSaveAllCachedTests : IDisposable
 }
 
 /// <summary>
-/// Game-free tests that the manager cache and the singleton hold one object for a configuration that auto-saves.<br/>
-/// A configuration with <see cref="AutoSaveAttribute"/> members is loaded into a raw instance and then handed to
-/// consumers wrapped in a proxy that turns an assignment into a save. Loading caches the raw instance, while consumers
-/// hold and mutate the proxy, so unless the cache is made to hold the proxy a manager-level
-/// <see cref="NoireConfigManager.SaveAllCached"/> writes the raw load-time values over the file the proxy has kept
-/// current, losing the change the user made. These tests join the cache-walk collection because they reach that walk.
+/// Game-free tests that every route to a configuration hands out one object: the singleton, the manager cache and the
+/// generated accessor. A second instance anywhere splits writes across two objects, so a manager-level
+/// <see cref="NoireConfigManager.SaveAllCached"/> would write load-time values over the file a consumer has kept
+/// current, losing the change the user made.
 /// </summary>
-[Collection(ConfigCacheWalkCollection.Name)]
-public class NoireConfigProxyCacheTests : IDisposable
+[Collection(ConfigStateCollection.Name)]
+public class NoireConfigInstanceIdentityTests : IDisposable
 {
     private readonly string tempDirectory;
 
-    public NoireConfigProxyCacheTests()
+    public NoireConfigInstanceIdentityTests()
     {
-        tempDirectory = Path.Combine(Path.GetTempPath(), "NoireLibConfigProxyCacheTests", Guid.NewGuid().ToString("N"));
+        tempDirectory = Path.Combine(Path.GetTempPath(), "NoireLibConfigInstanceIdentityTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(tempDirectory);
 
         NoireConfigManager.ClearMigrations();
-        ProxyCacheProbeConfig.ResetProbeState();
+        IdentityProbeConfig.ResetProbeState();
     }
 
     public void Dispose()
@@ -1444,7 +1140,7 @@ public class NoireConfigProxyCacheTests : IDisposable
         NoireConfigBase.FlushAllPendingSaves();
 
         NoireConfigManager.ClearMigrations();
-        ProxyCacheProbeConfig.ResetProbeState();
+        IdentityProbeConfig.ResetProbeState();
 
         try
         {
@@ -1460,71 +1156,65 @@ public class NoireConfigProxyCacheTests : IDisposable
     }
 
     /// <summary>
-    /// A configuration reached the way plugins reach one that auto-saves, through <see cref="NoireConfigBase{T}.Instance"/>,
-    /// which performs a real save so that what a manager-level walk writes is observable in a file.<br/>
-    /// Public, and nested in a public class, because the auto-save proxy is a generated subclass in another assembly: a
-    /// type that assembly cannot see is never wrapped, which would leave these tests measuring a plain instance and
-    /// proving nothing.
+    /// A configuration reached the way plugins reach one, through <see cref="NoireConfigBase{T}.Instance"/>, which
+    /// performs a real save so that what a manager-level walk writes is observable in a file.
     /// </summary>
-    public class ProxyCacheProbeConfig : NoireConfigBase<ProxyCacheProbeConfig>
+    public class IdentityProbeConfig : NoireConfigBase<IdentityProbeConfig>
     {
         public static string? PathOverride;
 
         public override int Version { get; set; } = 1;
 
-        public override string GetConfigFileName() => "proxy-cache-probe.json";
+        public override string GetConfigFileName() => "identity-probe.json";
 
         protected override string? GetConfigFilePath() => PathOverride;
 
         /// <summary>
-        /// A member whose assignment must persist, which is both what auto-save is for and what makes the configuration
-        /// get wrapped at all.
+        /// A member whose assignment must persist.
         /// </summary>
         [AutoSave]
-        public virtual string Value { get; set; } = "value-default";
+        public string Value { get; set; } = "value-default";
 
         public static void ResetProbeState()
         {
             ClearCache();
-            NoireConfigManager.UnloadConfig<ProxyCacheProbeConfig>();
+            NoireConfigManager.UnloadConfig<IdentityProbeConfig>();
             PathOverride = null;
         }
     }
 
     [Fact]
-    public void TheManagerCachesTheSameWrapperThatConsumersHold()
+    public void TheManagerAndTheSingleton_HandOutTheSameInstance()
     {
-        ProxyCacheProbeConfig.PathOverride = Path.Combine(tempDirectory, "proxy-cache-probe.json");
+        IdentityProbeConfig.PathOverride = Path.Combine(tempDirectory, "identity-probe.json");
 
-        var instance = ProxyCacheProbeConfig.Instance;
-        var cached = NoireConfigManager.GetConfig<ProxyCacheProbeConfig>();
+        var instance = IdentityProbeConfig.Instance;
 
-        instance.GetType().Should().NotBe(typeof(ProxyCacheProbeConfig),
-            "an [AutoSave] configuration is handed to consumers wrapped in a generated proxy subclass, or this proves nothing");
-        cached.Should().BeSameAs(instance,
-            "the manager must cache the wrapper consumers mutate, not the raw instance the load left behind");
+        NoireConfigManager.GetConfig<IdentityProbeConfig>().Should().BeSameAs(instance,
+            "the singleton keeps no cache of its own, so both routes resolve the one cached instance");
     }
 
     [Fact]
-    public void SaveAllCached_WritesTheValueTheWrapperHolds_NotTheRawLoadTimeSnapshot()
+    public void SaveAllCached_WritesTheValueConsumersHold_NotALoadTimeSnapshot()
     {
-        var file = Path.Combine(tempDirectory, "proxy-cache-probe.json");
-        ProxyCacheProbeConfig.PathOverride = file;
+        var file = Path.Combine(tempDirectory, "identity-probe.json");
+        IdentityProbeConfig.PathOverride = file;
 
-        var config = ProxyCacheProbeConfig.Instance;
+        var config = IdentityProbeConfig.Instance;
         config.Value = "set-by-plugin";
 
-        // Auto-save queues the write rather than performing it inline, so the file is read after the queue is drained.
+        // Reaching the configuration armed a check; the framework pump runs it on the next tick, which this drives
+        // directly. The capture queues the write rather than performing it, so the queue is drained before reading.
+        NoireConfigWatch.RunChecks();
         config.FlushPendingSave().Should().BeTrue();
 
-        File.ReadAllText(file).Should().Contain("set-by-plugin", "assigning a member marked [AutoSave] persists it through the wrapper");
+        File.ReadAllText(file).Should().Contain("set-by-plugin");
 
         NoireConfigManager.SaveAllCached();
 
-        // Read fresh from disk. When the cache held the raw load-time instance rather than the wrapper, the walk saved
-        // that instance here and wrote its default value back over the file, losing the plugin's change.
+        // Read fresh from disk: a second instance in the cache would write its own values over the file here.
         File.ReadAllText(file).Should().Contain("set-by-plugin",
-            "SaveAllCached must write the values consumers changed, not the raw load-time snapshot");
+            "SaveAllCached must write the values consumers changed, not a load-time snapshot");
     }
 }
 
@@ -1532,10 +1222,9 @@ public class NoireConfigProxyCacheTests : IDisposable
 /// The generic singleton base resolves through the manager cache, and <see cref="NoireConfigManager.GetConfig{T}"/>
 /// returns any cached instance without touching the file, so a reload that does not evict the manager entry first
 /// hands back the in-memory values and never reads the disk. These tests pin the eviction on both members that
-/// promise a fresh read. They join the cache-walk collection because they cache real configurations a walk would
-/// reach.
+/// promise a fresh read.
 /// </summary>
-[Collection(ConfigCacheWalkCollection.Name)]
+[Collection(ConfigStateCollection.Name)]
 public class NoireConfigSingletonReloadTests : IDisposable
 {
     private readonly string tempDirectory;
@@ -1567,11 +1256,6 @@ public class NoireConfigSingletonReloadTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// Public, and nested in a public class, for the same reason as
-    /// <see cref="NoireConfigProxyCacheTests.ProxyCacheProbeConfig"/>: the auto-save proxy is a generated subclass
-    /// in another assembly and cannot wrap a type it cannot see.
-    /// </summary>
     public class ReloadProbeConfig : NoireConfigBase<ReloadProbeConfig>
     {
         public static string? PathOverride;
@@ -1583,7 +1267,7 @@ public class NoireConfigSingletonReloadTests : IDisposable
         protected override string? GetConfigFilePath() => PathOverride;
 
         [AutoSave]
-        public virtual string Value { get; set; } = "value-default";
+        public string Value { get; set; } = "value-default";
 
         public static void ResetProbeState()
         {
@@ -1601,10 +1285,11 @@ public class NoireConfigSingletonReloadTests : IDisposable
 
         ReloadProbeConfig.Instance.Value = "set-before-edit";
 
-        // Auto-save queues the write rather than performing it inline, so the file is read after the queue is drained.
+        // The access armed a check; running it captures the change and queues the write, which is then drained.
+        NoireConfigWatch.RunChecks();
         ReloadProbeConfig.Instance.FlushPendingSave().Should().BeTrue();
 
-        File.ReadAllText(file).Should().Contain("set-before-edit", "the [AutoSave] assignment persists through the wrapper");
+        File.ReadAllText(file).Should().Contain("set-before-edit", "the [AutoSave] assignment persists");
 
         File.WriteAllText(file, File.ReadAllText(file).Replace("set-before-edit", "edited-on-disk"));
 
@@ -1621,6 +1306,7 @@ public class NoireConfigSingletonReloadTests : IDisposable
         ReloadProbeConfig.PathOverride = file;
 
         ReloadProbeConfig.Instance.Value = "set-before-edit";
+        NoireConfigWatch.RunChecks();
         ReloadProbeConfig.Instance.FlushPendingSave().Should().BeTrue();
 
         File.WriteAllText(file, File.ReadAllText(file).Replace("set-before-edit", "edited-on-disk"));

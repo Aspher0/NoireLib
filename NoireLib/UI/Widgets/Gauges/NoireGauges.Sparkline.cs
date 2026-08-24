@@ -12,8 +12,8 @@ public static partial class NoireGauges
 
     /// <summary>Draws a sparkline over a series of values, oldest first.</summary>
     /// <remarks>
-    /// The vertical range comes from the data unless <see cref="SparklineStyle.Min"/> and
-    /// <see cref="SparklineStyle.Max"/> pin it.
+    /// The vertical range comes from the data unless <see cref="SparklineStyle.Min"/> and <see
+    /// cref="SparklineStyle.Max"/> pin it.
     /// </remarks>
     /// <param name="values">The series, oldest first. Fewer than two values draws nothing but still reserves the space.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default sparkline.</param>
@@ -103,7 +103,7 @@ public static partial class NoireGauges
             DrawTraceMark(line, MathF.Max(style.ScaledMarkSize, 1f), color);
     }
 
-    /// <summary>Draws the filled area under a projected trace, from its points plus the two bottom corners.</summary>
+    /// <summary>Draws the filled area under a projected trace, down to the bottom of the plot.</summary>
     /// <param name="line">The projected points, oldest first.</param>
     /// <param name="plot">The area being drawn into.</param>
     /// <param name="fill">The area colour. Nothing is drawn when it is transparent.</param>
@@ -112,14 +112,7 @@ public static partial class NoireGauges
         if (fill.W <= 0f || line.Length < 2)
             return;
 
-        var count = line.Length;
-        Span<Vector2> area = count + 2 <= 258 ? stackalloc Vector2[count + 2] : new Vector2[count + 2];
-
-        line.CopyTo(area);
-        area[count] = new Vector2(line[count - 1].X, plot.Bottom);
-        area[count + 1] = new Vector2(line[0].X, plot.Bottom);
-
-        NoireShapes.Fill(area, fill);
+        NoireShapes.FillUnder(line, plot.Bottom, fill);
     }
 
     /// <summary>Draws the line through a projected trace.</summary>
@@ -151,7 +144,7 @@ public static partial class NoireGauges
     private const int MaxSparklinePoints = 512;
 
     /// <summary>The vertical range a sparkline is plotted against.</summary>
-    /// <remarks>A flat series is widened around its value, since dividing by a zero range would give infinity.</remarks>
+    /// <remarks>A flat series is widened around its value.</remarks>
     /// <param name="values">The series.</param>
     /// <param name="explicitMin">A pinned lower bound, or <see langword="null"/> to take it from the data.</param>
     /// <param name="explicitMax">A pinned upper bound, or <see langword="null"/> to take it from the data.</param>

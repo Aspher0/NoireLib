@@ -25,7 +25,6 @@ public static class NoireButtons
     /// <summary>
     /// The style a segmented control's segments are drawn from, reused across segments and across frames.
     /// </summary>
-    /// <remarks>Thread-static, and overwritten from the caller's style before each segment is drawn.</remarks>
     [ThreadStatic]
     private static ButtonStyle? segmentScratch;
 
@@ -33,6 +32,17 @@ public static class NoireButtons
     /// The scratch style for a segment, created on first use for this thread.
     /// </summary>
     private static ButtonStyle SegmentScratch => segmentScratch ??= new ButtonStyle();
+
+    /// <summary>
+    /// The scratch style a split button's caret is drawn from.
+    /// </summary>
+    [ThreadStatic]
+    private static ButtonStyle? caretScratch;
+
+    /// <summary>
+    /// The scratch style for a split button's caret, created on first use for this thread.
+    /// </summary>
+    private static ButtonStyle CaretScratch => caretScratch ??= new ButtonStyle();
 
     /// <summary>
     /// How long a hold-to-confirm button must be held by default, in seconds.
@@ -88,10 +98,7 @@ public static class NoireButtons
     /// <summary>
     /// Draws a button that only fires once it has been held down for long enough, filling as it goes.
     /// </summary>
-    /// <remarks>
-    /// The fill runs off wall-clock time, not frames, and ignores <see cref="NoireUI.ReducedMotion"/>. Releasing
-    /// early drains the fill quickly rather than snapping it to empty.
-    /// </remarks>
+    /// <remarks>The fill runs off wall-clock time, not frames, and ignores <see cref="NoireUI.ReducedMotion"/>.</remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="holdSeconds">How long the button must be held. Defaults to <see cref="DefaultHoldSeconds"/>.</param>
     /// <param name="style">The button's look. When <see langword="null"/>, a danger-toned button is drawn.</param>
@@ -148,8 +155,8 @@ public static class NoireButtons
     /// a failed task through <see cref="UiDiagnostics"/>.
     /// </summary>
     /// <remarks>
-    /// The running task is tracked against the button's id. Closing the window mid-task does not cancel it: the task
-    /// runs to completion and the button goes idle the next time it appears.
+    /// Closing the window mid-task does not cancel it: the task runs to completion and the button goes idle the next
+    /// time it appears.
     /// </remarks>
     /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
     /// <param name="action">The work to start. Invoked on the draw thread, so it should return quickly and do its work
@@ -254,11 +261,17 @@ public static class NoireButtons
 
         ImGui.SameLine(0f, spacing);
 
-        var popupId = label + "Menu";
-        var caretStyle = style.Clone();
+        // Composed through the id cache rather than concatenated: both of these were a fresh string on every frame the
+        // button was on screen, and an id's bytes are what ImGui keys the popup on, so they have to come out identical.
+        var popupId = UiIds.For(label, "Menu");
+
+        // Written into a scratch rather than cloned, for the same reason the segments are. The caret is drawn before
+        // the menu body runs, so a split button opened from inside another one cannot see this half written.
+        var caretStyle = CaretScratch;
+        caretStyle.CopyFrom(style);
         caretStyle.Icon = FontAwesomeIcon.CaretDown;
 
-        if (Button("##" + popupId, caretStyle, new Vector2(caretWidth, mainHeight)))
+        if (Button(UiIds.Join("##", label, "Menu"), caretStyle, new Vector2(caretWidth, mainHeight)))
             ImGui.OpenPopup(popupId);
 
         // Read before the popup opens, since inside one the current window is the popup itself.
@@ -667,7 +680,7 @@ public static class NoireButtons
 
         if (style.Icon.HasValue)
         {
-            using (UiPush.Font(UiBuilder.IconFont))
+            using (UiPush.Font(UiIconFont.Current))
                 drawList.AddText(new Vector2(x, centerY - iconSize.Y * 0.5f), iconColor, UiValueText.Icon(style.Icon.Value));
 
             x += iconSize.X + (text.Length > 0 ? gap : 0f);
@@ -701,7 +714,7 @@ public static class NoireButtons
 
     private static Vector2 MeasureIcon(FontAwesomeIcon icon)
     {
-        using (UiPush.Font(UiBuilder.IconFont))
+        using (UiPush.Font(UiIconFont.Current))
             return NoireText.CalcSizeInCurrentFont(UiValueText.Icon(icon));
     }
 
@@ -739,9 +752,6 @@ public static class NoireButtons
     /// <summary>
     /// The progress of a hold, plus whether a new hold may start.
     /// </summary>
-    /// <remarks>
-    /// <c>Armed</c> resets on release, so a completed hold cannot fire again while the mouse stays down.
-    /// </remarks>
     private struct HoldState
     {
         public float Progress;
@@ -753,9 +763,7 @@ public static class NoireButtons
     /// <summary>
     /// One reusable style per tone, so the common <c>Button(label, tone)</c> call allocates nothing per frame.
     /// </summary>
-    /// <remarks>
-    /// Handed out by reference; drawing code only reads them and clones when it needs a variant.
-    /// </remarks>
+    /// <remarks>Handed out by reference; drawing code only reads them and clones when it needs a variant.</remarks>
     private static class ToneStyles
     {
         private static readonly ButtonStyle Neutral = new() { Tone = ButtonTone.Neutral };

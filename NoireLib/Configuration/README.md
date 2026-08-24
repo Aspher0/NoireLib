@@ -1,28 +1,27 @@
+# NoireLib Documentation - NoireConfiguration
 
-
-# NoireLib Documentation - NoireConfigManager
-
-You are reading the documentation for `NoireConfigManager`.
+You are reading the documentation for the `NoireConfiguration` system.
 
 ## Table of Contents
 - [Overview](#overview)
 - [Getting Started](#getting-started)
-- [Configuration Approaches](#configuration-approaches)
-  - [1. With Source Generator](#1-with-source-generator)
-  - [2. With Castle DynamicProxy](#2-with-castle-dynamicproxy)
-  - [3. Legacy-Manual](#3-legacy---manual)
-- [AutoSave Attribute](#autosave-attribute)
-- [Using NoireConfigManager](#using-noireconfigmanager)
-- [Configuration Migrations](#configuration-migrations)
-  - [What are Migrations?](#what-are-migrations)
-  - [Migration Approaches](#migration-approaches)
-    - [1. Nested Class Migration](#1---nested-class-migration)
-    - [2. Attribute-Based Migration](#2---attribute-based-migration)
-    - [3. Runtime Migration Registration](#3---runtime-migration-registration)
-  - [Using MigrationBuilder](#using-migrationbuilder)
-  - [Migration Best Practices](#migration-best-practices)
-  - [When a Migration Fails](#when-a-migration-fails)
-- [Advanced Features](#advanced-features)
+- [Reaching Your Configuration](#reaching-your-configuration)
+  - [1. Generated Accessor](#1-generated-accessor)
+  - [2. Singleton Base](#2-singleton-base)
+  - [Which One](#which-one)
+- [Automatic Saving](#automatic-saving)
+  - [1. What Is Captured](#1-what-is-captured)
+  - [2. How It Works](#2-how-it-works)
+  - [3. What It Does Not Cover](#3-what-it-does-not-cover)
+- [Saving and Loading by Hand](#saving-and-loading-by-hand)
+- [The Manager](#the-manager)
+- [Migrations](#migrations)
+  - [1. Write a Migration](#1-write-a-migration)
+  - [2. Register It](#2-register-it)
+  - [3. When a Migration Fails](#3-when-a-migration-fails)
+- [Attributes](#attributes)
+- [File Location](#file-location)
+- [Rules Your Configuration Must Follow](#rules-your-configuration-must-follow)
 - [Troubleshooting](#troubleshooting)
 - [See Also](#see-also)
 
@@ -30,13 +29,13 @@ You are reading the documentation for `NoireConfigManager`.
 
 ## Overview
 
-The `NoireConfigManager` is a configuration system that manages JSON-based configuration files for your plugin. It provides:
-- **Automatic JSON serialization and management** of configuration files, they are loaded automatically when you access any of the properties
-- **Multiple configuration approaches** to suit different needs
-- **AutoSave functionality** for automatic configuration saving
-- **Configuration migrations** to handle version upgrades seamlessly
-- **Centralized cache management**
-- **Type-safe configuration**
+The `NoireConfiguration` system persists plugin settings as JSON, with:
+- **Plain classes**, plain `List<T>`, `Dictionary<K,V>`, arrays and nested types, at any depth
+- **Automatic saving** of every change in the object graph, including collection and nested changes
+- **Background loading** at initialization, so the game thread never waits on a configuration
+- **Debounced atomic writes**, flushed at plugin unload
+- **Versioned migrations** with an automatic backup of the file they run against
+- **A generated static accessor** per configuration
 
 ---
 
@@ -47,962 +46,318 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 
 ### Things to know and quick example
 
-Whichever way you create your configuration, you will need to either inherit from `NoireConfigBase` or `NoireConfigBase<T>`.<br/>
-You will also need to override the `GetConfigFileName` method to specify the name of the configuration file in the default dalamud config folder.<br/>
-You must also implement the `Version` property to track the configuration schema version.<br/>
-You can also override the `LoadFromDiskOnInitialization` field and set it to `false` to specify that the configuration should not be loaded from disk when NoireLib is initialized. By default, the configuration is loaded from disk when NoireLib initializes. This is the recommended behavior.<br/>
-In the example below, the configuration file will be named `MyPluginConfig.json` and we use the Source Generator.
+A configuration inherits `NoireConfigBase`, overrides `Version` and `GetConfigFileName()`, and exposes public
+`{ get; set; }` properties. Mark it `[AutoSave]` and you never call `Save()` again.
+
+`[NoireConfig("Config")]` generates the static class `Config`, whose members forward to the single instance. The name
+you pass must differ from the class name, since two types cannot share one name in a namespace.
 
 ```csharp
-using System;
 using NoireLib.Configuration;
+using System.Collections.Generic;
 
-namespace MyPlugin.Configuration;
+namespace MyPlugin;
 
 [Serializable]
-[NoireConfig("MyPluginConfig")]
-public class MyPluginConfigInstance : NoireConfigBase
+[NoireConfig("Config")]
+[AutoSave]
+public class ConfigInstance : NoireConfigBase
 {
     public override int Version { get; set; } = 1;
-    public override string GetConfigFileName() => "MyPluginConfig"; // Do not include the .json extension
-    public override bool LoadFromDiskOnInitialization => false; // Will not load from disk on initialization, not recommended!
+    public override string GetConfigFileName() => "Config"; // .json is appended
 
-    [AutoSave]
-    public bool SomeBooleanProperty { get; set; } = true;
+    public bool PluginEnabled { get; set; } = true;
+    public List<uint> Favorites { get; set; } = [];
+    public Dictionary<uint, ZonePrefs> Zones { get; set; } = new();
+    public UiPrefs Ui { get; set; } = new();
 }
 
-// Usage anywhere in your code:
-MyPluginConfig.SomeBooleanProperty = false; // Automatically saves
+// Usage
+Config.PluginEnabled = false;
+Config.Favorites.Add(28);
+Config.Zones[129] = new ZonePrefs();
+Config.Instance.Ui.MainWindow.Locked = true;
 ```
 
-That's it! The configuration is automatically loaded and saved.<br/>
-You can read about the details and other ways of creating configurations below.
+Every line above persists on its own.
 
 ---
 
-## Configuration Approaches
+## Reaching Your Configuration
 
-NoireLib offers **three different approaches** for creating configurations, each with its own trade-offs.
+### 1. Generated Accessor
 
-### 1. With Source Generator
-
-**Uses a compile-time source generator to create a static class wrapper around your configuration.**<br/>
-With this approach, you define your configuration class inheriting from `NoireConfigBase` and decorate it with the `[NoireConfig("ClassName")]` attribute. The source generator will then create a static class named `ClassName` that provides direct access to the configuration instance.
-
-#### Example
-
-To create a configuration using the Source Generator approach, define your configuration class that inherits from `NoireConfigBase` and decorate it with the `[NoireConfig("ClassName")]` attribute:
+`[NoireConfig("Config")]` emits a static class forwarding every public property, every `[AutoSave]` method, plus
+`Instance`, `Save()`, `RequestSave()`, `Reload()` and `ClearCache()`. Without an argument the class is named
+`<ClassName>Static`.
 
 ```csharp
-using System;
-using NoireLib.Configuration;
-
-namespace MyPlugin.Configuration;
-
-[Serializable]
-[NoireConfig("MyConfig")]
-public class MyConfigInstance : NoireConfigBase
-{
-    public override int Version { get; set; } = 1;
-    public override string GetConfigFileName() => "MyConfig"; // Do not include the .json extension
-
-    [AutoSave]
-    public bool AutoSavedProperty { get; set; } = true; // This property will auto save when you access its setter on the static MyConfig class
-
-    public int RegularProperty { get; set; } = 0;
-
-    [AutoSave]
-    public void AutoSaveMethod() => RegularProperty++;
-
-    public void RegularMethod()
-    {
-        RegularProperty--;
-        Save();
-    }
-
-    // This method won't save, you need to decorate it with the [AutoSave] attribute
-    public void WontAutoSave() => AutoSavedProperty = !AutoSavedProperty;
-}
+Config.PluginEnabled = false;
+Config.Favorites.Add(28);
+Config.Save();
 ```
 
-The `[NoireConfig("MyConfig")]` attribute will mark the class as a configuration and the source generator will create a static class named `MyConfig` that provides easy access to the configuration instance.<br/>
-The `[AutoSave]` attribute on properties and methods will ensure that the configuration is automatically saved when those properties are set or methods are called.<br/>
-However, methods not marked with `[AutoSave]` will not trigger an automatic save even if they modify `[AutoSave]` properties.
+`Version`, `LoadFromDiskOnInitialization` and `GetConfigFileName()` are not forwarded.
 
-#### Usage
+### 2. Singleton Base
 
-```csharp
-// Access properties and methods through the generated static class
-MyConfig.AutoSavedProperty = false; // Automatically saves
-MyConfig.AutoSaveMethod(); // Automatically saves after execution
-
-var value = MyConfig.RegularProperty;
-
-// Access the instance directly if needed
-MyConfig.Instance.RegularMethod();
-
-// Manually save, reload, or clear cache
-MyConfig.Save();
-MyConfig.Reload();
-MyConfig.ClearCache();
-```
-
-#### Pros
-- **No instance management needed** - You do not need to instanciate the configuration nor to initialize it, you can access properties and methods directly via static class.
-- **Clean syntax** - No need to call `.Instance` for every access.
-- **No virtual keyword required** - Properties and methods don't need to be virtual unlike the [Castle approach](#2-with-castle-dynamicproxy).
-- **Faster loading times** - Unlike the [Castle approach](#2-with-castle-dynamicproxy), the source generator will not create a proxy of the configuration class, meaning configurations with [AutoSave] attributes will not get proxied, which can cut around +-150ms of loading time.
-
-#### Cons
-- **"Find All References" limitations** - IDE may not find all usages of the instance class since you use the generated static class.
-- **Class name limitation** - You cannot name the instance class the same as the generated static class (e.g., `MyConfig`), you must use a different name like `MyConfigInstance`.
-
----
-
-### 2. With Castle DynamicProxy
-
-**Uses runtime proxying to intercept property and method calls for automatic saving.**<br/>
-With this approach, you define your configuration class inheriting from `NoireConfigBase<T>` and access the singleton instance via the static `Instance` property. Properties and methods that should trigger automatic saving must be marked with the `[AutoSave]` attribute and declared as `virtual`.
-This is not the recommended approach as it might significally impact the loading time the first time the configuration instance is accessed (roughly +-150ms added loading time on first load only).
-
-#### Example
-
-To create a configuration using the Castle DynamicProxy approach, define your configuration class that inherits from `NoireConfigBase<T>` and mark your `[AutoSave]` properties and methods as `virtual`:
-
-```csharp
-using System;
-using NoireLib.Configuration;
-
-namespace MyPlugin.Configuration;
-
-[Serializable]
-public class MyConfigCastle : NoireConfigBase<MyConfigCastle>
-{
-    public override int Version { get; set; } = 1;
-    public override string GetConfigFileName() => "MyConfigCastle";
-
-    [AutoSave]
-    public virtual bool AutoSavedProperty { get; set; } = true;
-
-    public int RegularProperty { get; set; } = 0;
-
-    [AutoSave]
-    public virtual void AutoSaveMethod() => RegularProperty++;
-
-    public void RegularMethod()
-    {
-        AutoSavedProperty = !AutoSavedProperty; // Auto-saves because property has [AutoSave]
-    }
-}
-```
-
-The `NoireConfigBase<T>` base class provides the static `Instance` property that returns the singleton instance of the configuration.<br/>
-Methods and properties marked with `[AutoSave]` and declared as `virtual` will automatically save the configuration when accessed. A warning will be logged in /xllog if you forget to mark them as `virtual`.<br/>
-Methods that are only used to modify `[AutoSave]` properties do not need to be marked with `[AutoSave]` themselves, as the property setter will handle the saving, but depending on your use case we suggest you still add the attribute to methods so the configuration is saved after the method completely executes:
+Inherit `NoireConfigBase<T>` for a typed `Instance` without a generated class.
 
 ```csharp
 [AutoSave]
-public virtual bool Property1 { get; set; } = false;
-
-public bool Property2 { get; set; } = false;
-
-public void Method()
-{
-    Property1 = true;
-    // Implicit auto-save since Property1 has [AutoSave]
-    Property2 = true;
-    // Does not auto-save since Property2 lacks [AutoSave]
-
-    // The configuration file did not save the Property2 change
-    // This is why we suggest adding [AutoSave] to methods too depending on your use case
-}
-```
-
-#### Usage
-
-```csharp
-// Access through the static Instance property
-MyConfigCastle.Instance.AutoSavedProperty = false; // Automatically saves
-MyConfigCastle.Instance.AutoSaveMethod(); // Automatically saves
-
-var value = MyConfigCastle.Instance.RegularProperty;
-
-// The Instance property handles everything
-MyConfigCastle.Reload();
-MyConfigCastle.ClearCache();
-```
-
-#### Pros
-- **"Find All References" works** - IDE can track all usages through the Instance property.
-
-#### Cons
-- **Requires `.Instance`** - Must always access through `ClassName.Instance`.
-- **Virtual keyword required** - Properties and methods with `[AutoSave]` must be virtual.
-- **Runtime overhead** - Performance cost from dynamic proxying. Configuration classes with [AutoSave] attributes might take +-150ms to proxy, on top of the loading from disk time, which can add up to a total of +-300ms load time total the first time it is accessed.
-
----
-
-### 3. Legacy - Manual
-
-**Traditional approach with manual instance management and saving.**<br/>
-With this approach, you need to manually instanciate, store, load and save the configuration yourself.<br>
-We do not recommend that you use this method, but it is still included in the event you find use for it.<br/>
-The `[AutoSave]` attribute will not work and you must use `NoireConfigManager` to load the configuration.
-
-#### Example
-
-```csharp
-using System;
-using NoireLib.Configuration;
-
-namespace MyPlugin.Configuration;
-
-[Serializable]
-public class MyConfigLegacy : NoireConfigBase
+public class ConfigInstance : NoireConfigBase<ConfigInstance>
 {
     public override int Version { get; set; } = 1;
-    public override string GetConfigFileName() => "MyConfigLegacy";
+    public override string GetConfigFileName() => "Config";
 
-    public bool SomeProperty { get; set; } = false;
-
-    public int Counter { get; set; } = 0;
-
-    public void IncrementCounter()
-    {
-        Counter++;
-        Save(); // Must manually call Save()
-    }
+    public bool PluginEnabled { get; set; } = true;
 }
+
+ConfigInstance.Instance.PluginEnabled = false;
+ConfigInstance.Reload();
 ```
 
-#### Usage
+To shorten the call site, forward it from your service class.
 
 ```csharp
-// Get or create the configuration
-var config = NoireConfigManager.GetConfig<MyConfigLegacy>();
-
-// Modify and save manually
-if (config != null)
+public static class Service
 {
-    config.SomeProperty = true;
-    config.Save(); // Manual save required!
+    public static ConfigInstance Config => ConfigInstance.Instance;
 }
-
-// Or use UpdateConfig helper
-NoireConfigManager.UpdateConfig<MyConfigLegacy>(config =>
-{
-    config.Counter++;
-});
 ```
 
-#### Pros
-- **Full control** - You manage when and how configurations are saved
-- **Simple and explicit** - No magic, no attributes, no proxying
-- **No special requirements** - No virtual keywords or attributes needed
-- **Easy to understand**
+Both routes return the same object, and you can use both on the same class.
 
-#### Cons
-- **Manual management** - Must manually get, modify, and save configurations
-- **No AutoSave** - Must remember to call `Save()` after every change
-- **Requires NoireConfigManager** - Must use the manager for caching and access
-- **More boilerplate** - More code needed for basic operations
+### Which One
+
+The accessor gives you the short call site and saves a property inside the assignment. It costs a source generator in
+your build, and a new property only appears on it after a rebuild.
+
+The singleton base is plain C# with nothing generated. Property sets are then captured on the next framework tick like
+any other change, roughly 16ms later.
 
 ---
 
-## AutoSave Attribute
+## Automatic Saving
 
-The `[AutoSave]` attribute automatically saves the configuration when properties are set or methods are called.
+`[AutoSave]` on the class, or on any single member, enrolls the configuration. Enrollment is per configuration: once
+one member carries it, the whole serialized graph is watched. On a member it also captures inside the assignment,
+through the generated accessor.
 
-### On Properties
+### 1. What Is Captured
+
+| Change | Written |
+|---|---|
+| Property set through the accessor, member marked `[AutoSave]` | inside the assignment |
+| `[AutoSave]` method called through the accessor | when it returns |
+| List, dictionary, set or array mutation | next framework tick |
+| Nested object change, at any depth | next framework tick |
+| Edit of an element inside a collection | next framework tick |
+| Anything still unwritten at plugin unload | during disposal |
+
+### 2. How It Works
+
+Reaching a configuration arms one check on the next framework tick. The check hashes the object graph into a 64-bit
+fingerprint, compiled once per type on the background load thread, and compares it to the last persisted state. Only a
+difference serializes and queues a write.
+
+A check that captured something arms itself again, so a burst of changes is followed until one check comes back clean.
+A clean check disarms, and with nothing armed the framework handler detaches. Reading a configuration every frame
+costs one fingerprint per frame, microseconds and no garbage. Touching nothing costs nothing.
+
+Writes go through a 250ms debounce capped at 2s (`SaveDebounceInterval`, `MaxSaveDelay`), then a temp-then-rename, so
+an interrupted write never truncates the file.
+
+### 3. What It Does Not Cover
+
+- A change made through a stored reference, with no further access to that configuration, waits for the next access or
+  for unload. A crash before either loses it.
+- A crash inside the debounce window loses that write.
+- `[JsonIgnore]` members are invisible to the capture, as they are to the serializer.
+- Changes made off the framework thread are caught by the next check.
+
+---
+
+## Saving and Loading by Hand
 
 ```csharp
-[AutoSave]
-public virtual bool EnableFeature { get; set; } = true;
+config.RequestSave();      // queue a write, returns immediately
+config.Save();             // write now, blocking
+config.FlushPendingSave(); // write anything queued for this configuration
+config.HasPendingSave;     // whether a write is queued
 
-// Usage:
-MyConfig.EnableFeature = false; // Automatically saves!
+config.Load();             // read the file, migrate it, populate this instance
+config.Exists();           // whether the file is on disk
+config.Delete();           // delete the file
 ```
 
-**Requirements:**
-- **Source Generator**: No special requirements
-- **Castle DynamicProxy**: Property must be `virtual`
+A save whose text matches the file is skipped. `Load()` returns false when no file exists yet, which is the normal
+first run.
 
-### On Methods
-
-```csharp
-[AutoSave]
-public virtual void UpdateSettings()
-{
-    // Method logic
-    // Configuration saves automatically after execution
-}
-
-// Usage:
-MyConfig.UpdateSettings(); // Automatically saves after execution!
-```
-
-**Requirements:**
-- **Source Generator**: No special requirements
-- **Castle DynamicProxy**: Method must be `virtual`
-
-### Important Notes
-
-#### Source Generator Approach
-- Methods marked with `[AutoSave]` will save the entire configuration after execution
-- If a method modifies an `[AutoSave]` property but the method itself is **not** marked with `[AutoSave]`, the configuration will **not** auto-save
+Override `LoadFromDiskOnInitialization` to keep a configuration out of the background preload. It then loads on first
+access.
 
 ```csharp
-public void WontAutoSave()
-{
-    AutoSavedProperty = false; // Won't auto-save because method lacks [AutoSave]
-}
-
-[AutoSave]
-public void WillAutoSave()
-{
-    AutoSavedProperty = false; // Will auto-save because method has [AutoSave]
-}
-```
-
-#### Castle DynamicProxy Approach
-- Methods don't need `[AutoSave]` if they only modify `[AutoSave]` properties
-- The property setter will trigger the save automatically
-
-```csharp
-public void RegularMethod()
-{
-  AutoSavedProperty = !AutoSavedProperty; // Auto-saves via property!
-}
+public override bool LoadFromDiskOnInitialization => false;
 ```
 
 ---
 
-## Using NoireConfigManager
-
-The `NoireConfigManager` provides centralized configuration management with caching.
-
-### Get Configuration
+## The Manager
 
 ```csharp
-// Get or create configuration (cached)
-var config = NoireConfigManager.GetConfig<MyConfig>();
-
-// Get fresh instance (not cached)
-var freshConfig = NoireConfigManager.LoadConfigFresh<MyConfig>();
+var config = NoireConfigManager.GetConfig<ConfigInstance>(); // cached, background-loaded
+NoireConfigManager.ReloadConfig<ConfigInstance>();           // drop the cache, read the file again
+NoireConfigManager.UnloadConfig<ConfigInstance>();           // drop the cache, keep the file
+NoireConfigManager.SaveConfig(config);                       // save and cache
+NoireConfigManager.SaveAllCached();                          // blocking save of every cached configuration
+NoireConfigManager.FlushPendingSaves();                      // write every queued payload
+NoireConfigManager.ClearCache();                             // drop every cached instance
 ```
 
-`GetConfig<T>()` caches the instance it returns and hands the same one to every later caller. The exception is a
-load that failed against a configuration that is actually there: the file exists but cannot be read or parsed, or
-no path to it could be resolved at all, which is the state of a configuration reached before
-`NoireLibMain.Initialize`. Those instances are returned so the caller has something to work with, but they are not
-cached, so the next call tries the load again instead of being handed defaults for the rest of the session.
-
-A first run, where no file exists yet, is not a failure of that kind. The defaults are the real configuration until
-something saves them, so that instance is cached like any other and a value set on it is visible to the next
-caller. A [degraded](#the-degraded-state) configuration is cached too, since its load succeeded and it is the live
-instance whose saves are being refused deliberately.
-
-### Save Configuration
-
-```csharp
-// Save a specific configuration
-var config = NoireConfigManager.GetConfig<MyConfig>();
-NoireConfigManager.SaveConfig(config);
-// Or saving the instance directly
-config.Save();
-
-// Save all cached configurations
-NoireConfigManager.SaveAllCached();
-```
-
-`SaveAllCached()` saves each cached configuration inside its own boundary, so one that cannot be written costs only
-its own write and every other cached configuration is still saved. `Save()` is virtual and resolves its file path
-through another virtual member, so a configuration can throw out of it rather than return false, and one that did
-would otherwise strand every configuration the walk had not reached yet.
-
-It returns true only when every cached configuration is on disk. A configuration that failed is reported with its
-type name, so the log says which one it was. A [degraded](#the-degraded-state) configuration refusing to write is not
-reported as a fault, since the refusal is the protection working and explains itself where it is decided, but it
-still counts against the return value because the configuration was not written.
-
-### Update Configuration
-
-```csharp
-// Update and automatically save
-NoireConfigManager.UpdateConfig<MyConfig>(config =>
-{
-    config.SomeProperty = true;
-    config.Counter++;
-});
-```
-
-### Reload Configuration
-
-```csharp
-// Reload from disk
-var config = NoireConfigManager.ReloadConfig<MyConfig>();
-```
-
-### Delete Configuration
-
-```csharp
-// Delete file and remove from cache
-NoireConfigManager.DeleteConfig<MyConfig>();
-```
-
-### Check Existence
-
-```csharp
-// Check if configuration file exists
-bool exists = NoireConfigManager.ConfigExists<MyConfig>();
-```
+Marked configurations load in the background when `NoireLibMain.Initialize` runs, and a caller racing that load waits
+only for its own configuration. A configuration whose load failed against an existing file is not cached, so the next
+call tries again.
 
 ---
 
-## Configuration Migrations
+## Migrations
 
-### What are Migrations?
+Bump `Version` and provide a migration from each older version. A load runs the shortest path of them, after copying
+the file to a `.v<N>.bak` sibling.
 
-Configuration migrations allow you to automatically upgrade your configuration files when you change the schema (add/remove/rename properties, change types, etc.). When a user upgrades your plugin to a new version with schema changes, migrations ensure their existing configuration is transformed to match the new structure without data loss.
-
-**Key Concepts:**
-- **Version Property**: Each configuration has a `Version` property that tracks the schema version
-- **Automatic Execution**: Migrations run automatically when loading a configuration with an older version
-- **Migration Chain**: Multiple migrations can be chained together (e.g., v1 -> v2 -> v3)
-- **Attention**: Migrations only support upgrading, not downgrading
-
-### Migration Approaches
-
-NoireLib provides **three different ways** to define migrations, each suited for different scenarios.
-
----
-
-#### 1 - Nested Class Migration
-
-**Define migrations as nested classes inside your configuration class.**
-
-This is the most straightforward approach and keeps your migration logic close to your configuration.
-
-##### Example
+### 1. Write a Migration
 
 ```csharp
-using System;
-using System.Text.Json;
-using NoireLib.Configuration;
-using NoireLib.Configuration.Migrations;
-
-namespace MyPlugin.Configuration;
-
 [Serializable]
-[NoireConfig("MyConfig")]
-public class MyConfigInstance : NoireConfigBase
+[NoireConfig("Config")]
+public class ConfigInstance : NoireConfigBase
 {
-    public override int Version { get; set; } = 3; // Current version
-    public override string GetConfigFileName() => "MyConfig";
+    public override int Version { get; set; } = 2;
+    public override string GetConfigFileName() => "Config";
 
-    public bool NewPropertyName { get; set; } = true;
-    public int SomeCounter { get; set; } = 0;
-    public string UserPreference { get; set; } = "default";
+    public string NewName { get; set; } = "default";
 
-    // Migration from version 1 to version 2: Rename property
-    private class MigrationV1ToV2 : ConfigMigrationBase
+    private sealed class V1ToV2 : ConfigMigrationBase
     {
         public override int FromVersion => 1;
         public override int ToVersion => 2;
 
-        public override string Migrate(JObject jsonObject)
-        {
-            return MigrationBuilder.Create()
-                .RenameProperty("OldPropertyName", "NewPropertyName")
-                .Migrate(jsonObject, ToVersion);
-        }
-    }
-
-    // Migration from version 2 to version 3: Add new property
-    private class MigrationV2ToV3 : ConfigMigrationBase
-    {
-        public override int FromVersion => 2;
-        public override int ToVersion => 3;
-
-        public override string Migrate(JObject jsonObject)
-        {
-            return MigrationBuilder.Create()
-                .AddProperty("UserPreference", "default")
-                .Migrate(jsonObject, ToVersion);
-        }
-    }
-}
-```
-
-##### How It Works
-
-1. The `MigrationExecutor` automatically discovers all nested classes that implement `IConfigMigration`
-2. When loading a v1 configuration, both migrations execute in order: v1 -> v2 -> v3
-3. The migrated configuration is automatically saved to disk with the new version
-
-##### Pros
-- **Organized** - Migrations live with the configuration they modify
-- **No registration needed** - Automatically discovered
-- **Simple** - Easy to understand and maintain
-
-##### Cons
-- **Class clutter** - Can make configuration class large with many migrations
-- **Limited reuse** - Hard to share migrations between configurations
-
----
-
-#### 2 - Attribute-Based Migration
-
-**Define migrations in separate classes and register them with attributes.**
-
-This approach keeps your configuration class clean while organizing migrations in dedicated files.
-
-##### Example
-
-**Migration Class (Migrations/MyConfigMigrations.cs):**
-
-```csharp
-using System.Text.Json;
-using NoireLib.Configuration.Migrations;
-
-namespace MyPlugin.Configuration.Migrations;
-
-public class MyConfigMigrationV1ToV2 : ConfigMigrationBase
-{
-    public override int FromVersion => 1;
-    public override int ToVersion => 2;
-
-    public override string Migrate(JObject jsonObject)
-    {
-        return MigrationBuilder.Create()
-            .RenameProperty("OldPropertyName", "NewPropertyName")
-            .DeleteProperty("ObsoleteProperty")
-            .Migrate(jsonObject, ToVersion);
-    }
-}
-
-public class MyConfigMigrationV2ToV3 : ConfigMigrationBase
-{
-    public override int FromVersion => 2;
-    public override int ToVersion => 3;
-
-    public override string Migrate(JObject jsonObject)
-    {
-        return MigrationBuilder.Create()
-            .AddProperty("UserPreference", "default")
-            .ChangePropertyType<int, string>("SomeCounter", count => count.ToString())
+        public override string Migrate(JObject jsonObject) => MigrationBuilder.Create()
+            .RenameProperty("OldName", "NewName")
             .Migrate(jsonObject, ToVersion);
     }
 }
 ```
 
-**Configuration Class:**
+`MigrationBuilder` covers `RenameProperty`, `DeleteProperty`, `DeleteProperties`, `AddProperty`,
+`AddComputedProperty`, `ChangePropertyType`, `TransformProperty` and `WithCustomOperation`.
+
+### 2. Register It
+
+Nested migration classes are found automatically. Declare one elsewhere and register it with the attribute or the
+manager.
 
 ```csharp
-using System;
-using NoireLib.Configuration;
-using NoireLib.Configuration.Migrations;
-using MyPlugin.Configuration.Migrations;
+[ConfigMigration(typeof(ConfigInstance))]
+public class V1ToV2 : ConfigMigrationBase { /* ... */ }
 
-namespace MyPlugin.Configuration;
-
-[Serializable]
-[ConfigMigration(typeof(MyConfigMigrationV1ToV2))]
-[ConfigMigration(typeof(MyConfigMigrationV2ToV3))]
-public class MyConfig : NoireConfigBase<MyConfig>
-{
-    public override int Version { get; set; } = 3;
-    public override string GetConfigFileName() => "MyConfig";
-
-    public bool NewPropertyName { get; set; } = true;
-    public string SomeCounter { get; set; } = "0"; // Changed to string in v3
-    public string UserPreference { get; set; } = "default";
-}
+NoireConfigManager.RegisterMigration<ConfigInstance>(new V1ToV2());
 ```
 
-##### How It Works
+The version written to the file is the one the class declares, whatever was assigned over `Version`.
 
-1. Apply `[ConfigMigration(typeof(MigrationClass))]` attributes to your configuration class
-2. Each attribute registers one migration class
-3. Migrations are discovered and executed in the correct order automatically
+### 3. When a Migration Fails
 
-##### Pros
-- **Clean separation** - Configuration class stays focused on data
-- **Better organization** - Group migrations in a dedicated folder/namespace
-- **Reusable** - Can share migration classes across configurations if needed
-- **Explicit** - Easy to see which migrations are registered
-
-##### Cons
-- **Attribute overhead** - Need to add attributes for each migration
-
----
-
-#### 3 - Runtime Migration Registration
-
-**Register migrations dynamically at runtime using NoireConfigManager.**
-
-This approach is useful for plugin systems, dynamic configuration, or when you need programmatic control over migrations.
-
-##### Example
-
-**Migration Classes (Migrations/DynamicMigrations.cs):**
+The file still loads, but the instance latches `IsDegraded` and refuses every save, so the partially defaulted values
+never reach disk. `DegradedBackupPath` points at the backup taken before the attempt.
 
 ```csharp
-using System.Text.Json;
-using NoireLib.Configuration.Migrations;
-
-namespace MyPlugin.Configuration.Migrations;
-
-public class DynamicMigrationV1ToV2 : ConfigMigrationBase
-{
-    public override int FromVersion => 1;
-    public override int ToVersion => 2;
-
-    public override string Migrate(JObject jsonObject)
-    {
-        return MigrationBuilder.Create()
-            .RenameProperty("LegacyName", "ModernName")
-            .Migrate(jsonObject, ToVersion);
-    }
-}
-
-public class DynamicMigrationV2ToV3 : ConfigMigrationBase
-{
-    public override int FromVersion => 2;
-    public override int ToVersion => 3;
-
-    public override string Migrate(JObject jsonObject)
-    {
-        return MigrationBuilder.Create()
-            .AddProperty("NewFeatureEnabled", false)
-            .Migrate(jsonObject, ToVersion);
-    }
-}
-```
-
-**Plugin Initialization:**
-
-```csharp
-using NoireLib;
-using NoireLib.Configuration;
-using MyPlugin.Configuration;
-using MyPlugin.Configuration.Migrations;
-
-public class MyPlugin : IDalamudPlugin
-{
-    public void Initialize()
-    {
-        // Initialize NoireLib first
-        NoireService.Initialize(pluginInterface, logger);
-
-        // Register migrations dynamically
-        NoireConfigManager.RegisterMigration<MyConfigInstance>(new DynamicMigrationV1ToV2());
-        NoireConfigManager.RegisterMigration<MyConfigInstance>(new DynamicMigrationV2ToV3());
-
-        // Now when config loads, migrations will be applied
-        var config = NoireConfigManager.GetConfig<MyConfigInstance>();
-    }
-
-    public void Dispose()
-    {
-        // Optional: Clear migrations on cleanup
-        NoireConfigManager.ClearMigrations();
-    }
-}
-```
-
-**Configuration Class:**
-
-```csharp
-using System;
-using NoireLib.Configuration;
-
-namespace MyPlugin.Configuration;
-
-[Serializable]
-[NoireConfig("MyConfig")]
-public class MyConfigInstance : NoireConfigBase
-{
-    public override int Version { get; set; } = 3;
-    public override string GetConfigFileName() => "MyConfig";
-
-    public string ModernName { get; set; } = "value";
-    public bool NewFeatureEnabled { get; set; } = false;
-}
-```
-
-##### How It Works
-
-1. Call `NoireConfigManager.RegisterMigration<TConfig>(migrationInstance)` before first config access
-2. Registered migrations are added to the runtime migration registry
-3. When configurations load, runtime migrations are discovered alongside nested/attribute-based ones
-4. Optionally call `NoireConfigManager.ClearMigrations()` to remove runtime registrations
-
-##### Pros
-- **Maximum flexibility** - Register migrations conditionally based on runtime logic
-- **Dynamic scenarios** - Can add/remove migrations based on configuration, user settings, etc.
-- **Testing** - Easy to test migrations in isolation
-
-##### Cons
-- **Manual registration** - Must remember to register before first config access
-- **Order matters** - Registration must happen during initialization
-- **Less discoverable** - Migrations aren't visible by looking at the configuration class
-
----
-
-### Using MigrationBuilder
-
-The `MigrationBuilder` provides a fluent API for common migration operations. This is the recommended way to write migrations.
-
-#### Common Operations
-
-```csharp
-public override string Migrate(JObject jsonObject)
-{
-    return MigrationBuilder.Create()
-        // Rename a property
-        .RenameProperty("OldName", "NewName")
-        
-        // Delete properties
-        .DeleteProperty("ObsoleteProperty")
-        .DeleteProperties("Prop1", "Prop2", "Prop3")
-        
-        // Add new properties with default values
-        .AddProperty("NewFeature", true)
-        .AddProperty("MaxRetries", 3)
-        
-        // Change property types with conversion
-        .ChangePropertyType<int, string>("Counter", count => count.ToString())
-        .ChangePropertyType<string, bool>("Enabled", str => str == "true")
-        
-        // Transform property values
-        .TransformProperty<int>("Level", level => Math.Max(level, 1))
-        
-        // Add computed properties from existing data
-        .AddComputedProperty("FullName", root =>
-        {
-            var firstName = root.GetValue("FirstName")?.ToString();
-            var lastName = root.GetValue("LastName")?.ToString();
-            return $"{firstName} {lastName}";
-        })
-        
-        .WithCustomOperation(root =>
-        {
-            var fullname = root.GetValue("FullName")?.ToString();
-            if (!string.IsNullOrEmpty(fullname))
-                root["DisplayName"] = $"Name: {fullname}"; // New property
-        })
-        
-        // Build the migrated JSON
-        .Migrate(jsonObject, ToVersion);
-}
-```
-
----
-
-### Migration Best Practices
-
-#### 1. **Test Migrations with Real Data**
-
-Try migrating sample data and see if everything works as it should.
-
-#### 2. **Document Migration Reasons**
-
-```csharp
-/// <summary>
-/// Migration from V1 to V2.
-/// Changes:
-/// - Renamed "EnableDebugMode" to "DebugMode" for consistency
-/// - Removed "LegacyFeature" (deprecated in 1.5.0)
-/// - Added "MaxCacheSize" with default 100
-/// </summary>
-private class MigrationV1ToV2 : ConfigMigrationBase
-{
-    // ...
-}
-```
-
-#### 3. **Never Remove Old Migrations**
-
-Once deployed, migrations should never be removed or modified. Users might be upgrading from any previous version.
-
----
-
-### When a Migration Fails
-
-A migration that throws, returns empty JSON, or has no registered path to the current version cannot be recovered
-from automatically. Loading un-migrated JSON into the current class mostly succeeds anyway, because unknown members
-are ignored and absent ones keep their defaults, so the failure would otherwise be silent. Two protections apply.
-
-#### Backups
-
-Whenever the file on disk is older than `Version`, it is copied to a sibling backup **before** the migration runs,
-so the backup exists whatever the outcome:
-
-```
-MyConfig.json          the configuration
-MyConfig.json.v1.bak   the file as it was while it was still at schema version 1
-```
-
-The backup is named for the schema version it was taken at, not for the moment it was taken. That keeps exactly one
-backup per version the configuration has been through, instead of adding a copy on every start that retries a
-failing migration. An existing backup is never overwritten: the earliest copy taken at a given version is the most
-trustworthy one.
-
-#### The Degraded State
-
-A configuration whose migration failed is marked **degraded**, and `Save()` then refuses to write and returns
-`false`. This is what stops an ordinary save, of the kind modules perform during startup, from replacing a good
-file with the partially defaulted values in memory.
-
-```csharp
-var config = MyConfig.Instance;
-
 if (config.IsDegraded)
 {
-    // The user's file could not be migrated. It is untouched on disk, and backed up at:
-    NoireLogger.LogWarning($"Configuration not migrated. Backup: {config.DegradedBackupPath}");
+    var backup = config.DegradedBackupPath;
+    config.ForceSave();          // write anyway
+    config.ClearDegradedState(); // or declare it repaired without writing
 }
 ```
 
-| Member | Meaning |
-|---|---|
-| `IsDegraded` | True when the most recent `Load()` could not migrate the file. Cleared by a later successful load. |
-| `DegradedBackupPath` | The pre-migration backup to recover from, or null. |
-| `ForceSave()` | Writes anyway and clears the degraded state. **Destructive**: it replaces the stored values with the defaults the failed migration left behind. |
-| `ClearDegradedState()` | Declares the instance repaired and re-enables `Save()`, without writing anything. |
+---
 
-The safe order of recovery is to repair the values in memory first, then call `ClearDegradedState()` and `Save()`.
-Reach for `ForceSave()` only when the degraded values really are the ones that should be persisted.
+## Attributes
 
-Members marked `[AutoSave]` save on every assignment, so a degraded configuration refuses a save as often as the
-plugin assigns to one of them. The first refusal of a degraded state is logged as an error, with the explanation
-and the backup path; the refusals after it are logged at verbose level, so the state stays visible without costing
-an error line per assignment. Each new degraded state explains itself in full again.
+#### `[NoireConfig]`
+
+Generates the static accessor, named by the argument or `<ClassName>Static`.
+
+```csharp
+[NoireConfig("Config")]   // static class Config
+```
+
+#### `[AutoSave]`
+
+Valid on a class, a property or a method.
+
+```csharp
+[AutoSave] public class ConfigInstance : NoireConfigBase   // enrolls the whole configuration
+[AutoSave] public bool PluginEnabled { get; set; }         // enrolls, and saves inside the assignment
+[AutoSave] public void Reset() { }                         // saves when the method returns
+```
+
+#### `[ConfigMigration]`
+
+Registers a migration declared outside its configuration class.
+
+```csharp
+[ConfigMigration(typeof(ConfigInstance))]
+public class V1ToV2 : ConfigMigrationBase { }
+```
 
 ---
 
-## Advanced Features
+## File Location
 
-### Cache Management
-
-```csharp
-// Clear all cached configurations
-NoireConfigManager.ClearCache();
-
-// Unload specific configuration from cache
-NoireConfigManager.UnloadConfig<MyConfig>();
-
-// Get number of cached configurations
-int count = NoireConfigManager.GetCachedConfigCount();
-```
-
-### Configuration Directory
+Files go to the plugin's Dalamud configuration directory, named by `GetConfigFileName()` with `.json` appended when
+missing. Override `GetConfigFilePath()` to put one elsewhere.
 
 ```csharp
-// Get the plugin's configuration directory
-string? configPath = NoireConfigManager.GetConfigDirectoryPath();
+protected override string? GetConfigFilePath() => myOwnPath;
 ```
 
-### Manual Load/Save
+---
 
-```csharp
-// Load configuration from disk
-config.Load();
+## Rules Your Configuration Must Follow
 
-// Save configuration to disk
-config.Save();
-
-// Check if configuration file exists
-bool exists = config.Exists();
-
-// Delete configuration file
-config.Delete();
-```
-
-### Instance Access (Source Generator)
-
-If you ever need to access the instance of the configuration when using the Source Generator approach, you can do it like so:
-```csharp
-// Access the instance directly if needed
-var instance = MyConfig.Instance;
-
-// Use instance methods
-instance.RegularMethod();
-
-// Copy properties
-instance.CopyPropertiesFrom(otherConfig);
-```
-
-### Migration Management
-
-```csharp
-// Register a migration at runtime
-NoireConfigManager.RegisterMigration<MyConfig>(new CustomMigration());
-
-// Clear all runtime-registered migrations (useful for testing)
-NoireConfigManager.ClearMigrations();
-```
+- Members are public properties with both accessors. Analyzer `NoireLib_001` flags one missing an accessor.
+- The class has a public parameterless constructor.
+- Serialization is Newtonsoft.Json with `TypeNameHandling` off. A type it cannot round-trip needs a converter on the
+  member.
 
 ---
 
 ## Troubleshooting
 
-### Configuration not saving
-- Check that NoireLib is initialized before accessing configurations
-- **Source Generator**: Ensure properties/methods are marked with `[AutoSave]`
-- **Castle DynamicProxy**: Ensure properties/methods are `virtual` and marked with `[AutoSave]`
-- **Legacy**: Ensure you call `Save()` manually after modifications
-- Check in the `pluginConfigs` folder in `%APPDATA%/XIVLauncher` for existence of files
-- Report this issue if you believe this is a bug
+### A change is not saved
+- Check that the class or one of its members carries `[AutoSave]`.
+- Check that the member is a public property with both accessors and no `[JsonIgnore]`.
+- Check that your code reaches the configuration through the accessor, `Instance` or `GetConfig<T>()`, and not only
+  through a reference stored long ago.
+- Check `IsDegraded`. A configuration whose migration failed refuses every save.
 
-### Configuration file not found
-- Configuration files are stored in the plugin's configuration directory
-- Use `NoireConfigManager.GetConfigDirectoryPath()` to check the directory
-- Files are created automatically on first save
+### The accessor does not exist, or is missing a member
+- Check that the class carries `[NoireConfig]` and inherits `NoireConfigBase`.
+- Rebuild. The accessor is generated at compile time.
+- `Version`, `LoadFromDiskOnInitialization` and `GetConfigFileName()` are never forwarded.
 
-### Source Generator not working
-- Verify the `[NoireConfig("ClassName")]` attribute is present
-- Check that the class inherits from `NoireConfigBase` and not `NoireConfigBase<T>`
-- Clean and rebuild the solution
-- Check for compilation errors
+### The file is not where you expect
+- `GetConfigFileName()` names the file, not the directory. Override `GetConfigFilePath()` to move it.
+- A `.v<N>.bak` sibling means a migration ran against it.
 
-### Castle DynamicProxy warnings
-- Ensure properties and methods with `[AutoSave]` are marked as `virtual`
-- Check `/xllog` for detailed warning messages
-- If you see "must be virtual" warnings, add the `virtual` keyword to the indicated properties and methods
-
-### Configuration not loading
-- Verify the configuration file exists in the plugin directory
-- Check file permissions
-- Ensure the JSON format is valid
-- Try deleting the file and letting it regenerate
-- Check dalamud logs with `/xllog`
-
-### Loading a configuration freezes the game on first load
-- If you have overriden the `LoadFromDiskOnInitialization` field and set it to `false`, the configuration will not load on NoireLib initialization, but rather the first time you access any of its properties or methods, which can cause a freeze if the configuration is large or if you have many `[AutoSave]` properties/methods and are using the Castle DynamicProxy approach.
-We recommend that you do not change the `LoadFromDiskOnInitialization` field and let the configuration load on NoireLib initialization to avoid this issue.
-- If you need to load the configuration later or if the issue persists, consider using the Source Generator or Legacy approach which mitigates the loading time.
-
-### Migration issues
-
-#### Migration not executing
-- Verify the `Version` property is incremented in your configuration class
-- Check that your migration's `FromVersion` matches the file's version
-- Ensure migrations are properly registered (nested class, attribute, or runtime)
-- Check `/xllog` for migration discovery and execution logs
-
-#### Wrong migration path
-- Verify `FromVersion` and `ToVersion` values create a valid chain
-- Example: v1->v2, v2->v3 works; v1->v3 without v2->v3 fails if user has v2
-- Use `/xllog` to see the discovered migration path
-
-#### Migration executed but version not updated
-- Make sure you updated the Version in your actual configuration class (not just in migrations)
-- Check logs in `/xllog` for potential errors
+If it still does not work, check `/xllog` for lines prefixed `[NoireConfig]`, and report it.
 
 ---
 
 ## See Also
 
-- [NoireLib Documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
+- [NoireLib documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/README.md)
+- [NoireDatabase documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Database/README.md)
+- [NoireIPC documentation](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/IPC/README.md)

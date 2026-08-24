@@ -1,4 +1,4 @@
-# Module Documentation : NoireObservedStore
+﻿# Module Documentation : NoireObservedStore
 
 You are reading the documentation for the `NoireObservedStore` module.
 
@@ -79,7 +79,7 @@ else
     NoireLogger.LogInfo($"{seen.Value.Count} items, last seen {seen.Age.TotalHours:F0}h ago.");
 ```
 
-That is the whole loop. The store answers `null` for something never observed and an aged observation for
+The store answers `null` for something never observed, and an aged observation for
 something observed once, and those are different answers on purpose.
 
 ---
@@ -192,7 +192,7 @@ store's own same-named methods (`store.Record`, `store.Read`, ...) are `store.De
 // The everyday call.
 store.Record("saddlebag", items);
 
-// With provenance and a backdated sighting, which is what an import wants.
+// With provenance and a backdated sighting, for an import.
 store.Record("saddlebag", items, new RecordOptions
 {
     Source = "allagan-import",

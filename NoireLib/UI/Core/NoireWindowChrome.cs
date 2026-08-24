@@ -9,14 +9,6 @@ namespace NoireLib.UI;
 /// Turns a Dalamud window into one the plugin draws every pixel of: no ImGui title bar, no ImGui background, no ImGui
 /// border, and a title bar, drag and close of your own.
 /// </summary>
-/// <remarks>
-/// ImGui's window decoration is drawn from its style and cannot be replaced, so a design whose window is part of the
-/// design has nowhere to go. Removing it breaks draggability (ImGui's own drag is attached to the title bar), closing
-/// and resizing, and leaves the background for the plugin to paint, before anything else and behind everything else.<br/>
-/// Not a window class: creating and registering windows is Dalamud's job and wrapping it would take away the
-/// <see cref="Dalamud.Interface.Windowing.Window"/> surface a plugin already knows. This is the chrome, applied inside a
-/// window a plugin owns.
-/// </remarks>
 /// <example>
 /// <code>
 /// // On the window:
@@ -32,14 +24,6 @@ public static class NoireWindowChrome
     /// <summary>
     /// The window flags a fully custom window needs.
     /// </summary>
-    /// <remarks>
-    /// The background, the title bar and the border are all removed because they would be drawn under, over and around
-    /// what the chrome paints instead. Moving is left with ImGui, which drags a decorationless window from any empty
-    /// space in it: with no title bar to take hold of, the window can still be picked up from any space that is not
-    /// already busy.<br/>
-    /// The scrollbar goes and the wheel stays. A design that paints its own edges cannot afford ImGui's scrollbar down
-    /// the inside of one, but a window that silently refuses the wheel is broken rather than clean.
-    /// </remarks>
     public const ImGuiWindowFlags Flags =
         ImGuiWindowFlags.NoTitleBar
         | ImGuiWindowFlags.NoBackground
@@ -53,50 +37,23 @@ public static class NoireWindowChrome
     /// <summary>
     /// The same as <see cref="Flags"/>, but movable only from a region <see cref="DragFrom"/> names.
     /// </summary>
-    /// <remarks>
-    /// For a design whose empty space is not spare: dragging from anywhere turns every gap between two controls into a
-    /// handle, which suits a window that is mostly chrome and not one that is mostly content.
-    /// </remarks>
     public const ImGuiWindowFlags HandleOnlyFlags = Flags | ImGuiWindowFlags.NoMove;
 
     /// <summary>
     /// The same as <see cref="Flags"/>, and the window itself never scrolls.
     /// </summary>
-    /// <remarks>
-    /// For a window whose masthead and rail stay put while a region inside it scrolls: without this, the wheel moves
-    /// the whole design, header and all.
-    /// </remarks>
     public const ImGuiWindowFlags FixedBodyFlags = Flags | ImGuiWindowFlags.NoScrollWithMouse;
 
     /// <summary>
     /// Keeps the window in front of every other, for the frame being drawn. Call it once per frame from inside the
-    /// window, and again from inside any popup it opens.
+    /// window, and again from inside any popup it opens.<br/>
+    /// Among the windows kept in front, the last caller each frame wins.
     /// </summary>
-    /// <remarks>
-    /// This is the whole of always on top, and it covers both halves of what "in front" means.<br/>
-    /// <b>Clicks</b> are decided by the display list, which this moves the window to the front of. <b>Drawing</b> is
-    /// decided by the draw layer first, and the display list is reordered when a window is focused, after every plugin
-    /// has drawn and before the frame is rendered. A window holding its place by the display list alone is drawn
-    /// behind for one frame whenever an overlapping window is clicked, with no point in plugin code after that reorder
-    /// to undo it, so this lifts the window into the top draw layer as well.<br/>
-    /// It does that by setting the layer's flag on the window <i>after</i> it has been begun. The layer is read when the
-    /// frame is rendered, so the flag counts for that frame, while none of what the same flag does inside <c>Begin</c>
-    /// happens at all: the window is not moved to the cursor, its background and border keep reading the fields an
-    /// ordinary window reads, and its default item width is unchanged. Nothing has to be passed at <c>PreDraw</c>.<br/>
-    /// The layer covers the whole of the ordinary one, so anything the window opens over itself has to join it. Every
-    /// NoireUI popup does that on its own; a popup of your own calls this from inside itself. Among the windows in
-    /// front, the last caller each frame wins, which settles the order between the two.
-    /// </remarks>
     public static void KeepInFront() => UiWindowOrder.KeepInFront();
 
     /// <summary>
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
-    /// <remarks>
-    /// The chrome is painted across the whole window rather than measured from the body, unlike
-    /// <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and no need to
-    /// split the draw list.
-    /// </remarks>
     /// <param name="body">The window's contents.</param>
     /// <param name="style">How the window is painted. When <see langword="null"/>, the theme's surface and border.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
@@ -109,11 +66,6 @@ public static class NoireWindowChrome
     /// <summary>
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
-    /// <remarks>
-    /// The chrome is painted across the whole window rather than measured from the body, unlike
-    /// <see cref="NoirePanel"/>: a window already knows how big it is, so there is nothing to measure and no need to
-    /// split the draw list.
-    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
     /// <param name="body">The window's contents.</param>
@@ -169,13 +121,9 @@ public static class NoireWindowChrome
     }
 
     /// <summary>
-    /// The style variables a custom window has to be begun with, pushed before <c>Begin</c> and popped after.
+    /// The style variables a custom window has to be begun with, pushed before <c>Begin</c> and popped after.<br/>
+    /// A Dalamud window pushes these from <c>PreDraw</c> and releases them in <c>PostDraw</c>.
     /// </summary>
-    /// <remarks>
-    /// ImGui applies its own window padding inside the frame it is no longer drawing, which would sit between the
-    /// window's edge and the chrome's own padding and put every measurement out by it. A Dalamud window pushes these
-    /// from <c>PreDraw</c> and releases them in <c>PostDraw</c>.
-    /// </remarks>
     /// <returns>How many style variables were pushed, to pop in <c>PostDraw</c>.</returns>
     public static int PushWindowStyle() => PushWindowStyle(null);
 
@@ -205,13 +153,6 @@ public static class NoireWindowChrome
     /// <summary>
     /// Makes a rectangle drag the window, replacing the title bar ImGui is no longer drawing.
     /// </summary>
-    /// <remarks>
-    /// Call it with the bounds of whatever reads as the window's handle: a title strip, a masthead, the whole top edge.
-    /// The drag is driven from the pointer's movement while the button is held rather than from where it started,
-    /// because the window moves under the pointer as it goes and an absolute position would fight itself.<br/>
-    /// Held on to across frames by id, so a drag that leaves the rectangle keeps moving the window instead of dropping
-    /// it the moment the pointer outruns the handle.
-    /// </remarks>
     /// <param name="min">The top left of the handle, in screen space.</param>
     /// <param name="max">The bottom right of the handle.</param>
     /// <returns>True while the window is being dragged.</returns>
@@ -262,12 +203,6 @@ public static class NoireWindowChrome
     /// <summary>
     /// Draws one of the window's own chrome buttons, needing no icon font.
     /// </summary>
-    /// <remarks>
-    /// A bare mark floating in a corner reads as debris rather than as a control: nothing says it is clickable until
-    /// the pointer is already on it. So it carries a plate that lights on hover, the mark thickens with it, and every
-    /// part of both is a <see cref="ChromeButtonStyle"/> value.<br/>
-    /// One call for every glyph, so a row of them cannot drift apart in size, weight or hover behaviour.
-    /// </remarks>
     /// <param name="id">A unique id, so a row of buttons does not share one hit box.</param>
     /// <param name="centre">The middle of the button, in screen space.</param>
     /// <param name="size">How wide the button's hit box is, in real pixels.</param>
@@ -397,32 +332,31 @@ public static class NoireWindowChrome
     /// <summary>
     /// A copy of a plate with its fills faded, for a window drawn at less than full opacity.
     /// </summary>
-    /// <remarks>
-    /// Copied rather than written through, because the style belongs to the caller and is usually a shared static: a
-    /// window fading itself out must not fade every other thing drawn from the same style with it.
-    /// </remarks>
     private static PlateStyle Faded(PlateStyle plate, float opacity)
     {
-        var copy = plate.Clone();
+        // Written into a scratch rather than cloned. A window below full opacity takes this branch on every frame it
+        // is drawn, and cloning there put a style's worth of garbage per frame on the draw thread. Drawing is single
+        // threaded and the scratch is only read inside the call that fills it, so there is nothing for a second window
+        // to see half written.
+        FadedScratch.CopyFrom(plate);
 
-        if (copy.Fill is { } fill)
-            copy.Fill = ColorHelper.ScaleAlpha(fill, opacity);
+        if (FadedScratch.Fill is { } fill)
+            FadedScratch.Fill = ColorHelper.ScaleAlpha(fill, opacity);
 
-        if (copy.FillTo is { } fillTo)
-            copy.FillTo = ColorHelper.ScaleAlpha(fillTo, opacity);
+        if (FadedScratch.FillTo is { } fillTo)
+            FadedScratch.FillTo = ColorHelper.ScaleAlpha(fillTo, opacity);
 
-        return copy;
+        return FadedScratch;
     }
+
+    /// <summary>The faded copy of the caller's plate, reused rather than allocated per frame.</summary>
+    private static readonly PlateStyle FadedScratch = new();
 
     private static readonly ChromeButtonStyle DefaultChromeStyle = new();
 
     /// <summary>
     /// Which window is being dragged, so a drag survives the pointer leaving the handle.
     /// </summary>
-    /// <remarks>
-    /// Held by window id rather than as a flag, because two custom windows can be on screen at once and only one of
-    /// them is being dragged.
-    /// </remarks>
     private static uint draggingWindow;
 
     private static readonly WindowChromeStyle DefaultStyle = new();

@@ -11,8 +11,6 @@ namespace NoireLib.UI;
 /// <c>if (child.Success)</c> to get wrong.
 /// </summary>
 /// <remarks>
-/// Every body runs through the same guard: a push left unpopped is unwound at the container boundary and logged once
-/// naming the container, instead of quietly recolouring everything drawn after it.<br/>
 /// Each container has a state overload taking the value the body needs, so the body can stay a <see langword="static"/>
 /// lambda instead of allocating a delegate per call.
 /// </remarks>
@@ -55,11 +53,6 @@ public static partial class NoireLayout
     /// <summary>
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
-    /// <remarks>
-    /// Zero or less indents by nothing at all, deliberately unlike ImGui's own <c>Indent</c>: that reads zero as "use
-    /// the default step", which would jump an animated indent easing to zero back outwards on its last frame. Ask for
-    /// the default step by name with <see cref="DefaultIndent"/>.
-    /// </remarks>
     /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
     /// <param name="body">The drawing to indent.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
@@ -72,11 +65,6 @@ public static partial class NoireLayout
     /// <summary>
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
-    /// <remarks>
-    /// Zero or less indents by nothing at all, deliberately unlike ImGui's own <c>Indent</c>: that reads zero as "use
-    /// the default step", which would jump an animated indent easing to zero back outwards on its last frame. Ask for
-    /// the default step by name with <see cref="DefaultIndent"/>.
-    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -217,11 +205,6 @@ public static partial class NoireLayout
     /// <summary>
     /// Wraps the text in the body at <paramref name="width"/> pixels from the current cursor.
     /// </summary>
-    /// <remarks>
-    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one: passing a screen
-    /// coordinate puts the wrap point far off to the right, where text silently never wraps. This takes a width and
-    /// converts it, so the mistake is not reachable.
-    /// </remarks>
     /// <param name="width">The wrap width in pixels, measured from the cursor.</param>
     /// <param name="body">The drawing to wrap.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
@@ -234,11 +217,6 @@ public static partial class NoireLayout
     /// <summary>
     /// Wraps the text in the body at <paramref name="width"/> pixels from the current cursor.
     /// </summary>
-    /// <remarks>
-    /// ImGui's own <c>PushTextWrapPos</c> takes a window-local x coordinate, not a screen one: passing a screen
-    /// coordinate puts the wrap point far off to the right, where text silently never wraps. This takes a width and
-    /// converts it, so the mistake is not reachable.
-    /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="width">The wrap width in pixels, measured from the cursor.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>

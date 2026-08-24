@@ -20,10 +20,6 @@ public sealed class HotPathCache<TKey, TValue>
     /// <summary>
     /// How many entries a cache keeps before it starts over, when no other bound is given.
     /// </summary>
-    /// <remarks>
-    /// Sized for the case this is built for: an interface draws a stable set of labels and layouts, so a cache fills
-    /// once and hits from then on.
-    /// </remarks>
     public const int DefaultCapacity = 4096;
 
     private readonly Dictionary<TKey, TValue> entries;
@@ -144,12 +140,9 @@ public sealed class HotPathCache<TKey, TValue>
     public bool Remove(in TKey key) => entries.Remove(key);
 
     /// <summary>
-    /// Forgets every entry, and the hit and miss counts with them.
+    /// Forgets every entry, and the hit and miss counts with them.<br/>
+    /// The invalidation token is kept.
     /// </summary>
-    /// <remarks>
-    /// The invalidation token is kept, so this does not make the next <see cref="InvalidateIfChanged"/> report a change
-    /// that did not happen.
-    /// </remarks>
     public void Clear()
     {
         entries.Clear();

@@ -710,7 +710,6 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     // ---------------------------------------------------------------- drawing
 
     /// <inheritdoc/>
-    /// <remarks>The ImGuizmo backend reads ImGui IO through its own host window, so it runs in the pre-pass (<see cref="DrawSelfDriven"/>), not here.</remarks>
     public bool SelfDriven => !IsNative;
 
     /// <inheritdoc/>
@@ -723,12 +722,6 @@ public sealed partial class NoireGizmo : IPointerInteractor, IDisposable
     }
 
     /// <inheritdoc/>
-    /// <remarks>
-    /// UI-thread pass for the native backend: it tracks which handle is hovered and, during a drag, draws the 2D
-    /// preview overlay (anchor, guide line, live values); the handles themselves are drawn in <see cref="DrawOverlay"/>
-    /// on the render thread with the current frame, so their screen-constant size tracks the live camera. ImGuizmo is
-    /// self-driven and never reaches here.
-    /// </remarks>
     public void Draw(in FrameContext frame, object? hovered)
     {
         if (!Active || !IsNative)

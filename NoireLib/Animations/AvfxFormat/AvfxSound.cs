@@ -8,10 +8,6 @@ namespace NoireLib.Animations.AvfxFormat;
 /// <summary>
 /// Reads the sound files an .avfx visual effect plays.
 /// </summary>
-/// <remarks>
-/// An effect names its sound on the emitter that plays it, in the emitter's SdNm chunk, and an effect can carry
-/// several emitters. The walk reports a sound file wherever it is named, not only under that chunk.
-/// </remarks>
 public static class AvfxSound
 {
     /// <summary> The chunk the file opens with, whose body holds every other chunk. </summary>

@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using NoireLib.UI;
 using System;
 using System.Numerics;
@@ -244,6 +244,65 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             warmUpFrames: 3);
 
         result.AllocatedBytes.Should().Be(0L);
+    }
+
+    /// <summary>The splitter's options, held between frames rather than described again on each one.</summary>
+    private static readonly SplitterOptions SplitOptions = new()
+    {
+        MinSize = 50f,
+        MaxSize = 400f,
+        Thickness = 8f,
+        Length = 120f,
+        CustomDraw = static _ => { },
+    };
+
+    [Fact]
+    public void SplitterWithOptions_AllocatesNothing_WhenTheOptionsAreReused()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                var size = 200f;
+
+                for (var i = 0; i < Repeats; i++)
+                    NoireLayout.Splitter("alloc_splitter_options", ref size, SplitOptions);
+            },
+            warmUpFrames: 3);
+
+        // The overload above this one takes its bounds as numbers and was the only one measured, which left the options
+        // form uncovered: the call itself is free, and what a caller pays is entirely in how it produces the options.
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void SplitterOptions_BuiltPerFrame_CostAnObjectPerCall()
+    {
+        var result = harness.Draw(
+            static () =>
+            {
+                var size = 200f;
+
+                for (var i = 0; i < Repeats; i++)
+                {
+                    NoireLayout.Splitter("alloc_splitter_inline", ref size, new SplitterOptions
+                    {
+                        MinSize = 50f,
+                        MaxSize = 400f,
+                        Thickness = 8f,
+                        Length = 120f,
+                        CustomDraw = static _ => { },
+                    });
+                }
+            },
+            warmUpFrames: 3);
+
+        // Stated rather than merely warned about, because the natural way to call an options overload is to describe
+        // the options at the call, and describing them there is an object on every frame the call is reached. Measured
+        // at 112 bytes; the assertion is a floor rather than the exact figure, since what matters is that it is not
+        // zero and that the reused form above it is.
+        var perCall = result.AllocatedBytes / (double)Repeats;
+
+        perCall.Should().BeGreaterThan(64d);
     }
 
     [Fact]

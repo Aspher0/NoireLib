@@ -8,10 +8,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// The geometry, fill fraction and resolved colours passed to a <see cref="BarStyle.CustomDraw"/> hook.
 /// </summary>
-/// <remarks>
-/// Geometry is resolved and the space already reserved when the hook runs. With the hook set, the marks and the label
-/// are only drawn if the hook draws them.
-/// </remarks>
+/// <remarks>With the hook set, the marks and the label are only drawn if the hook draws them.</remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the bar.</param>
 /// <param name="Max">The bottom right corner of the bar.</param>

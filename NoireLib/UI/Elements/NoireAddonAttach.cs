@@ -8,12 +8,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Pins one of your windows to a native game window, and follows it wherever the player drags or rescales it.
 /// </summary>
-/// <remarks>
-/// The attachment writes the window's own <see cref="Window.Position"/> rather than drawing anything, so it composes
-/// with whatever the window already does and leaves its contents alone.<br/>
-/// Visibility follows too: a window attached to a game window that is not on screen has nowhere to be, so by
-/// default it closes with it and reopens when it comes back.
-/// </remarks>
 /// <example>
 /// <code>
 /// new NoireAddonAttach(myWindow, "_PartyList", UiSide.Right) { Gap = 8f };
@@ -114,42 +108,27 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// <summary>
     /// Whether a window closed by <see cref="FollowVisibility"/> reopens when the game window comes back. On by default.
     /// </summary>
-    /// <remarks>
-    /// Without this, following visibility is a one-way trip: the first time the game window closes, the attached
-    /// window is gone for the session and nothing says why. A window the user closed themselves is left closed.
-    /// </remarks>
     public bool RestoreOnReappear { get; set; } = true;
 
     /// <summary>Whether the window is resized to the game window's width. Off by default.</summary>
-    /// <remarks>Independent of <see cref="MatchHeight"/>: an axis left off stays freely resizable by hand.</remarks>
     public bool MatchWidth { get; set; }
 
     /// <summary>Whether the window is resized to the game window's height. Off by default.</summary>
-    /// <remarks>Independent of <see cref="MatchWidth"/>: an axis left off stays freely resizable by hand.</remarks>
     public bool MatchHeight { get; set; }
 
     /// <summary>Whether the game window was on screen the last time the attachment ran.</summary>
     public bool IsAttached { get; private set; }
 
     /// <summary>
-    /// Whether the game window is on screen right now, asked directly rather than remembered from the last frame.
+    /// Whether the game window is on screen right now, asked directly rather than remembered from the last frame.<br/>
+    /// Check this before opening a window that follows visibility: a window opened while its game window is not on
+    /// screen is closed again before it draws.
     /// </summary>
-    /// <remarks>
-    /// Answers for whichever addon is actually in effect, so it stays right when a <see cref="PositionOverride"/>
-    /// names one of its own. Unlike <see cref="IsAttached"/> it does not care whether the attachment is enabled:
-    /// check this before opening a window that follows visibility, since a window opened while its game window is
-    /// not on screen is closed again before it draws.
-    /// </remarks>
     public bool IsAddonVisible => UiAddon.GetRect(EffectiveAddonName) != null;
 
     /// <summary>
     /// The addon actually being followed, which a <see cref="PositionOverride"/> may replace.
     /// </summary>
-    /// <remarks>
-    /// Read straight off the two sources rather than by building the position and asking it, because this is on the
-    /// framework tick and <see cref="BuildPosition"/> allocates. It answers identically: a built position takes its
-    /// addon from <see cref="AddonName"/> and nothing else.
-    /// </remarks>
     private string EffectiveAddonName => PositionOverride?.AddonName ?? AddonName;
 
     /// <summary>Invoked when <see cref="IsAttached"/> changes, with the new value.</summary>
@@ -158,13 +137,10 @@ public sealed class NoireAddonAttach : NoireDrawable
     #endregion
 
     /// <summary>
-    /// Places the window for this frame.
-    /// </summary>
-    /// <remarks>
+    /// Places the window for this frame.<br/>
     /// Called automatically every frame. Call it from the window's own <c>PreDraw</c> override instead when the window
-    /// has to keep up with a game window being dragged: Dalamud applies the position immediately after
-    /// <c>PreDraw</c> returns, whereas the automatic pass runs elsewhere in the frame and can land one frame behind.
-    /// </remarks>
+    /// has to keep up with a game window being dragged, since the automatic pass can land one frame behind.
+    /// </summary>
     /// <returns>True when the game window was found and the window was placed.</returns>
     public bool Apply()
     {
@@ -211,13 +187,6 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// <summary>
     /// Applies the visibility rule for the coming frame, before anything has had a chance to draw.
     /// </summary>
-    /// <remarks>
-    /// Visibility cannot be decided from <see cref="Apply"/>: Dalamud tests whether a window is open, then calls
-    /// its <c>PreDraw</c> and draws it, in that order and in one pass, so a window closed from <c>PreDraw</c> has
-    /// already been let through the test and draws once anyway, flashing a panel whose game window is not on
-    /// screen onto the screen and taking it away again.<br/>
-    /// The framework tick runs before the frame does, so a window closed here is never begun at all.
-    /// </remarks>
     /// <param name="framework">The framework raising the update.</param>
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework framework)
     {
@@ -267,6 +236,19 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// <returns>The position to resolve.</returns>
     private UiPosition BuildPosition()
     {
+        // Rebuilt only when one of the five values it is made of has moved. A UiPosition is a class, and this runs on
+        // every frame the attachment is applied, so building one each time put an object per frame on the draw thread
+        // for a description that changes when the consumer changes it and at no other time.
+        if (builtPosition != null
+            && builtSide == Side
+            && builtAlign == Align
+            && builtGap == Gap
+            && builtOffset == Offset
+            && string.Equals(builtAddonName, AddonName, StringComparison.Ordinal))
+        {
+            return builtPosition;
+        }
+
         var gap = Side switch
         {
             UiSide.Left => new Vector2(-Gap, 0f),
@@ -276,23 +258,32 @@ public sealed class NoireAddonAttach : NoireDrawable
             _ => Vector2.Zero,
         };
 
-        return UiPosition.NextToAddon(AddonName, Side, Align, gap + Offset);
+        builtPosition = UiPosition.NextToAddon(AddonName, Side, Align, gap + Offset);
+        builtAddonName = AddonName;
+        builtSide = Side;
+        builtAlign = Align;
+        builtGap = Gap;
+        builtOffset = Offset;
+
+        return builtPosition;
     }
+
+    /// <summary>The position last built, and the five values it was built from.</summary>
+    private UiPosition? builtPosition;
+
+    private string? builtAddonName;
+
+    private UiSide builtSide;
+
+    private UiAlign builtAlign;
+
+    private float builtGap;
+
+    private Vector2 builtOffset;
 
     /// <summary>
     /// Resizes the window to the game window's own size on the axes that asked for it.
     /// </summary>
-    /// <remarks>
-    /// Written as size constraints rather than as a size, because a size is both axes at once. Matching one axis and
-    /// leaving the other free is something only a per-axis minimum and maximum can express: writing
-    /// <see cref="Window.Size"/> would have to invent a value for the free axis, and the only value available is the
-    /// one it last wrote, so the axis nobody asked to match ends up pinned to itself and stops resizing.<br/>
-    /// A matched axis is its minimum and maximum meeting. A free axis spans nothing to everything, which is the same
-    /// "no constraint" Dalamud writes itself.<br/>
-    /// Dalamud scales both the size and the constraints on the way to ImGui while leaving
-    /// <see cref="Window.Position"/> alone, so the measured rectangle has to be divided back out here or a matched
-    /// window ends up wider than what it is matching at any scale but 100%.
-    /// </remarks>
     /// <param name="window">The window being placed.</param>
     /// <param name="addonRect">The bounds of the game window, in real pixels.</param>
     private void ApplyMatchedSize(Window window, UiRect addonRect)

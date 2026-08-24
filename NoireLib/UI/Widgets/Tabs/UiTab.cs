@@ -8,10 +8,8 @@ namespace NoireLib.UI;
 /// reachable.
 /// </summary>
 /// <remarks>
-/// The tab carries its own body, so nothing is drawn for a tab that is not open and there is no end call to forget.
-/// <br/>
-/// <see cref="Id"/> is what code refers to the tab by and never changes. <see cref="Label"/> is what the user reads
-/// and may change every frame, including its length, without the tab losing its identity or its position.
+/// <see cref="Id"/> is what code refers to the tab by and never changes. <see cref="Label"/> may change every frame
+/// without the tab losing its identity or its position.
 /// </remarks>
 /// <example>
 /// <code>
@@ -56,7 +54,6 @@ public sealed class UiTab
     /// A count drawn as a badge on the tab, re-read every frame. When <see langword="null"/>, or when it returns zero
     /// or less, no badge is drawn.
     /// </summary>
-    /// <remarks>A delegate rather than a number because the thing being counted is the caller's and moves on its own.</remarks>
     public Func<int>? Badge { get; set; }
 
     /// <summary>How the badge looks. When <see langword="null"/>, the shipped defaults. See <see cref="BadgeStyle"/>.</summary>
@@ -66,9 +63,8 @@ public sealed class UiTab
     /// Whether the tab can be reached, re-read every frame. When <see langword="null"/>, it always can.
     /// </summary>
     /// <remarks>
-    /// This gates reaching the tab, not what it shows. A tab that becomes disabled while it is the open one stays open
-    /// and keeps drawing: closing it under the user would move them somewhere they did not ask to go, and blanking it
-    /// would leave them looking at nothing with no way to tell what happened.
+    /// This gates reaching the tab, not what it shows: a tab that becomes disabled while open stays open and keeps
+    /// drawing.
     /// </remarks>
     public Func<bool>? Enabled { get; set; }
 

@@ -6,14 +6,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Everything a <see cref="ToastStyle.CustomDraw"/> hook needs to paint a toast's chrome itself: both rectangles, the
-/// toast, and the colours NoireUI would have used.
+/// toast, and the colours NoireUI would have used.<br/>
+/// The chrome is the background, the severity stripe, the border and the countdown; the body stays the widget's.
 /// </summary>
-/// <remarks>
-/// The chrome is the background, the severity stripe, the border and the countdown; the body stays the widget's,
-/// since its measured height drives the stack's layout. The full-height rectangle and the slot differ while a toast
-/// arrives or leaves: the background paints at full height so a leaving toast looks covered rather than squashed,
-/// while the countdown uses the slot so its geometry matches the clip rectangle.
-/// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Toast">The toast being painted, for telling toasts apart under one area-wide style.</param>
 /// <param name="Min">The top left of the toast's full-height rectangle.</param>

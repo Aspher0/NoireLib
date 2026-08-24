@@ -1,4 +1,4 @@
-# Module Documentation : NoireGameWatcher
+﻿# Module Documentation : NoireGameWatcher
 
 You are reading the documentation for the `NoireGameWatcher` module.
 
@@ -63,7 +63,7 @@ watcher.Characters.OnHpChanged(e => NoireLogger.LogInfo($"HP {e.Previous.Current
 watcher.Characters.OnDied(e => NoireLogger.LogInfo($"{e.Current.Name} died."), scope: Scope.AllPlayers);
 ```
 
-That is the whole loop: nothing to start, nothing to poll, and disposing the returned token releases the source
+Nothing to start, nothing to poll. Disposing the returned token releases the source
 again.
 
 ---

@@ -13,12 +13,6 @@ namespace NoireLib.Helpers;
 /// serializable object) into Base64/Hex, hash it (SHA family, MD5, HMAC), derive password hashes
 /// (Argon2id, BCrypt) or encrypt it with AES.
 /// </summary>
-/// <remarks>
-/// Password hashing relies on the <c>Konscious.Security.Cryptography.Argon2</c> and <c>BCrypt.Net-Next</c>
-/// packages, everything else is built on top of <see cref="System.Security.Cryptography"/>.<br/>
-/// Encryption uses AES-256-GCM for in-memory payloads and AES-256-CBC with HMAC-SHA256 (encrypt-then-MAC)
-/// for file streaming.
-/// </remarks>
 public static partial class EncryptionHelper
 {
     private const string LogPrefix = "[EncryptionHelper] ";

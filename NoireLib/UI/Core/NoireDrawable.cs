@@ -101,11 +101,6 @@ public abstract class NoireDrawable : IDisposable
     /// Builds the <see cref="NoireUiState"/> key this drawable stores a piece of remembered state under, and refuses to
     /// build one when the id was generated rather than given.
     /// </summary>
-    /// <remarks>
-    /// A generated id is a fresh GUID every session. Persisting against one would write an entry that can never be read
-    /// back, so the state file would grow forever and restore nothing, and the symptom (a setting that silently never
-    /// sticks) points nowhere near the cause.
-    /// </remarks>
     /// <param name="subKey">What is being remembered, for example "position".</param>
     /// <param name="key">The state key, or an empty string when persisting is refused.</param>
     /// <returns>True when the state may be persisted.</returns>

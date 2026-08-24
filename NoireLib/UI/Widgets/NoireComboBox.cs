@@ -86,10 +86,8 @@ public class NoireComboBox<T>
     /// Paints the closed combo as a <see cref="NoireShapes.Plate"/> instead of as an ImGui frame.
     /// </summary>
     /// <remarks>
-    /// The plate is drawn first and ImGui's own frame is pushed transparent over it, so the preview text, the hit
-    /// box, the popup and the keyboard all keep working. The arrow becomes ours too; set it with
-    /// <see cref="BoxArrowColor"/>, or use <see cref="ImGuiComboFlags.NoArrowButton"/> for none. When
-    /// <see langword="null"/>, the combo is an ordinary ImGui one.
+    /// When <see langword="null"/>, the combo is an ordinary ImGui one. Set the arrow with <see cref="BoxArrowColor"/>,
+    /// or use <see cref="ImGuiComboFlags.NoArrowButton"/> for none.
     /// </remarks>
     public PlateStyle? BoxStyle { get; set; }
 
@@ -107,10 +105,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// How the dropdown itself is drawn: its surface, its border, its padding and its rows.
     /// </summary>
-    /// <remarks>
-    /// Every value falls back to the theme, so setting one thing does not mean setting all of them. Applied as ImGui
-    /// style pushes around the popup, so the filter box, the scrollbar and the rows all follow it automatically.
-    /// </remarks>
     public ComboPopupStyle? PopupStyle { get; set; }
 
     /// <summary>
@@ -156,8 +150,7 @@ public class NoireComboBox<T>
     /// Whether the filter text is cleared every time the dropdown opens. Defaults to <see langword="true"/>.
     /// </summary>
     /// <remarks>
-    /// Turn it off to keep the search between openings of one live combo. <see cref="FilterMemory"/> is the stronger
-    /// form, surviving the widget itself, and setting it to anything but None turns this off on its own.
+    /// Setting <see cref="FilterMemory"/> to anything but <see cref="UiMemoryScope.None"/> turns this off.
     /// </remarks>
     public bool ClearFilterOnOpen { get; set; } = true;
 
@@ -165,9 +158,8 @@ public class NoireComboBox<T>
     /// How long the search text is remembered. Defaults to <see cref="UiMemoryScope.None"/>.
     /// </summary>
     /// <remarks>
-    /// <see cref="UiMemoryScope.Session"/> keeps it until the plugin reloads; <see cref="UiMemoryScope.Persisted"/>
-    /// keeps it across reloads and needs a stable id. Anything other than <see cref="UiMemoryScope.None"/> implies
-    /// <see cref="ClearFilterOnOpen"/> being off.
+    /// <see cref="UiMemoryScope.Persisted"/> needs a stable id. Anything other than <see cref="UiMemoryScope.None"/>
+    /// implies <see cref="ClearFilterOnOpen"/> being off.
     /// </remarks>
     public UiMemoryScope FilterMemory
     {
@@ -189,20 +181,12 @@ public class NoireComboBox<T>
     /// <summary>
     /// Whether the closed-combo wheel shortcut cycles only what the current search matches.
     /// </summary>
-    /// <remarks>
-    /// With no search text this changes nothing, because everything matches. When the current selection is not
-    /// itself a match, cycling enters the matches at one end rather than refusing.
-    /// </remarks>
     public bool WheelCycleFiltered { get; set; }
 
     /// <summary>
     /// Whether the filter matches fuzzily and orders the options by how well they matched. Defaults to <see langword="true"/>.
     /// </summary>
-    /// <remarks>
-    /// Fuzzy means the typed characters need only appear in order, and the best match is listed first. See
-    /// <see cref="FuzzyMatcher"/>. Turn it off for a plain case-insensitive "contains" match that leaves the options
-    /// in the order they were given. A <see cref="FilterPredicate"/> of your own overrides both.
-    /// </remarks>
+    /// <remarks>A <see cref="FilterPredicate"/> of your own overrides this.</remarks>
     public bool FilterFuzzy { get; set; } = true;
 
     /// <summary>
@@ -218,22 +202,15 @@ public class NoireComboBox<T>
 
     /// <summary>Draws each option yourself.</summary>
     /// <remarks>
-    /// The combo keeps the row and everything about it that is not paint: its size, its hit testing, its selection
-    /// and keyboard state, its filtering and its scrolling. Call <see cref="UiComboItemDraw{T}.DrawLabel"/> for the
-    /// ordinary text, filter highlighting included, rather than reimplementing it. Set <see cref="ItemHeight"/>
-    /// alongside this when the rows are taller than one line, or virtualization will place them wrongly. An
-    /// exception thrown here is caught and logged once rather than taking the frame down.
+    /// Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line, or virtualization will place
+    /// them wrongly.
     /// </remarks>
     public Action<UiComboItemDraw<T>>? ItemRenderer { get; set; }
 
     /// <summary>
     /// The height of one option at 100%. When <see langword="null"/>, one line of text.
     /// </summary>
-    /// <remarks>
-    /// Only worth setting alongside an <see cref="ItemRenderer"/> that draws taller rows. Virtualization positions
-    /// rows arithmetically rather than by measuring them, so a row that does not match this value scrolls out of step
-    /// with the list.
-    /// </remarks>
+    /// <remarks>A row that does not match this value scrolls out of step with the list.</remarks>
     public float? ItemHeight { get; set; }
 
     /// <summary>
@@ -241,10 +218,8 @@ public class NoireComboBox<T>
     /// When <see langword="null"/>, the default, it turns itself on past <see cref="VirtualizeThreshold"/> options.
     /// </summary>
     /// <remarks>
-    /// A dropdown over every item in the game is forty thousand rows; virtualizing draws only what is on screen.
-    /// Every row must be the same height, which is automatic for ordinary text options; an
-    /// <see cref="ItemRenderer"/> drawing taller rows must declare <see cref="ItemHeight"/>, or turn this off if
-    /// rows genuinely vary.
+    /// Every row must be the same height; an <see cref="ItemRenderer"/> drawing taller rows must declare <see
+    /// cref="ItemHeight"/>.
     /// </remarks>
     public bool? Virtualize { get; set; }
 
@@ -256,19 +231,13 @@ public class NoireComboBox<T>
     /// <summary>
     /// How many option rows were actually drawn the last time the dropdown was open.
     /// </summary>
-    /// <remarks>
-    /// What virtualization removes is the per-row work done before ImGui decides an item is off screen: a display
-    /// string, a fuzzy match and a font push.
-    /// </remarks>
     public int DrawnRowCount { get; private set; }
 
     /// <summary>
     /// How an item is matched against the filter text. When <see langword="null"/>, <see cref="FilterFuzzy"/> decides.
     /// </summary>
     /// <remarks>
-    /// Setting this takes the decision over completely, including from <see cref="FilterFuzzy"/>: a predicate answers
-    /// yes or no and has no score to order by, so the options keep the order they were given and nothing is
-    /// highlighted.
+    /// A predicate has no score to order by: the options keep the order they were given and nothing is highlighted.
     /// </remarks>
     public Func<T, string, bool>? FilterPredicate { get; set; } = null;
 
@@ -341,10 +310,6 @@ public class NoireComboBox<T>
     /// How the keyboard focus mark looks on this combo and its filter. When <see langword="null"/>,
     /// <see cref="NoireFocus.Style"/>.
     /// </summary>
-    /// <remarks>
-    /// The per-widget override. A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves
-    /// this combo unmarked while the rest of the interface keeps its mark.
-    /// </remarks>
     public FocusStyle? FocusStyle { get; set; }
 
     /// <summary>
@@ -605,10 +570,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// Pushes the dropdown's own look, so the popup ImGui opens is drawn to this combo's style.
     /// </summary>
-    /// <remarks>
-    /// Pushed before the combo rather than inside the popup, because ImGui reads these when the popup window is begun
-    /// and that happens inside <c>BeginCombo</c>. Held for the whole call and released after the popup has closed.
-    /// </remarks>
     /// <returns>The pushed style, or an empty scope when the dropdown is left as ImGui's.</returns>
     private UiPush BeginPopupStyle()
     {
@@ -680,11 +641,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// Paints the plate under the closed combo and uncovers it, when the combo is drawn as one.
     /// </summary>
-    /// <remarks>
-    /// The rectangle is worked out before the combo is submitted rather than read back off it afterwards, because a
-    /// plate drawn after the combo would cover its own preview text. <see cref="ImGui.CalcItemWidth"/> is what ImGui
-    /// itself is about to use, including a width set by <see cref="Width"/>, so the two cannot disagree.
-    /// </remarks>
     /// <param name="rect">Where the box was drawn, for the arrow to line up with.</param>
     /// <returns>The pushed colours, to release once the box has been drawn, or an empty scope when there is no plate.</returns>
     private UiPush BeginBox(out (Vector2 Min, Vector2 Max) rect)
@@ -740,11 +696,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// Records the height the dropdown actually needs, taken from ImGui rather than worked out.
     /// </summary>
-    /// <remarks>
-    /// The exact quantity ImGui compares against the window's height to decide the scrollbar, so asking for it back
-    /// as a minimum next frame cannot disagree with it. <c>ContentSize</c> is what <c>Begin</c> derived from the
-    /// previous frame, which is the same value that test uses.
-    /// </remarks>
     private void RecordPopupHeight()
     {
         if (!NoireService.IsInitialized())
@@ -760,13 +711,6 @@ public class NoireComboBox<T>
     /// Constrains the dropdown: never shorter than its own contents, and never taller than
     /// <see cref="VisibleItemCount"/> options once there are more of them than that.
     /// </summary>
-    /// <remarks>
-    /// The minimum is a measurement rather than a prediction, on purpose: ImGui decides the scrollbar with
-    /// <c>ContentSize + WindowPadding * 2 &gt; SizeFull.y</c> and floors <c>SizeFull</c> whenever a size constraint
-    /// is present, so a height worked out in advance would be compared against a rounded-down value and any
-    /// fraction in the layout becomes a scrollbar. Asking for the measured height back, rounded up, forces the
-    /// comparison the other way.
-    /// </remarks>
     private void ApplyPopupConstraints()
     {
         // A list longer than the dropdown is capped and scrolls. Only a list that fits gets the floor it needs to
@@ -1059,11 +1003,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// The height one option occupies, which every row must share for virtualization to place them correctly.
     /// </summary>
-    /// <remarks>
-    /// Measured through <see cref="NoireText"/>, which draws the labels, rather than ImGui's current font: a
-    /// theme change to body size moves the rows with it, and sizing from the other font would be wrong by
-    /// exactly the difference.
-    /// </remarks>
     private float ResolveItemHeight()
     {
         if (ItemHeight.HasValue)
@@ -1081,11 +1020,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// The vertical distance from one option to the next: the option itself plus the spacing after it.
     /// </summary>
-    /// <remarks>
-    /// The one number the dropdown's height, the option list's height and the clipper all have to agree on. A clipper
-    /// given the bare row height instead positions rows closer together than they are drawn, and the list slides out
-    /// of step with its own scrollbar as it goes.
-    /// </remarks>
     private float ResolveRowStep() => ResolveItemHeight() + ImGui.GetStyle().ItemSpacing.Y;
 
     /// <summary>
@@ -1102,16 +1036,6 @@ public class NoireComboBox<T>
     /// Handles the held binding + wheel cycling and the hint tooltip on the closed combo, including the wheel claim
     /// that stops a cycling scroll from also moving the window.
     /// </summary>
-    /// <remarks>
-    /// One pass for everything the hover needs: the binding is resolved and the held keys are read once per frame,
-    /// since reading a key is a system call. The wheel claim must be made while the combo is still the last
-    /// submitted item, since ImGui attaches the claim to that item and the tooltip submits items of its own
-    /// afterward. ImGui settles what a wheel event scrolls at the start of the frame, before any widget code runs,
-    /// so the claim can only be declared in advance; it then drops the event for scrolling while leaving the raw
-    /// wheel value readable, which the cycling runs on. Made only while the combo is really cycling, so an ordinary
-    /// scroll over an idle combo still moves the window, and it applies from the next frame on, since ImGui matches
-    /// it against the item hovered the previous one.
-    /// </remarks>
     private void HandleClosedComboInteractions()
     {
         if (!WheelCycleEnabled || !ImGui.IsItemHovered())
@@ -1238,10 +1162,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// Builds the key the search is remembered under.
     /// </summary>
-    /// <remarks>
-    /// A generated id is refused only for the persisted scope; session memory lasts exactly as long as that id does,
-    /// so keying on one there is safe.
-    /// </remarks>
     private bool TryGetFilterKey(out string key)
     {
         if (filterMemory == UiMemoryScope.Session)
@@ -1308,10 +1228,7 @@ public class NoireComboBox<T>
     /// <summary>
     /// The current search text.
     /// </summary>
-    /// <remarks>
-    /// Setting it rebuilds the matches immediately, so <see cref="WheelCycleFiltered"/> is scoped correctly even if
-    /// the dropdown is never opened.
-    /// </remarks>
+    /// <remarks>Setting it rebuilds the matches immediately.</remarks>
     public string FilterText
     {
         get => filterText;

@@ -268,14 +268,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Queues a move of the focused row from the reorder keys.
     /// </summary>
-    /// <remarks>
-    /// The keys are read through <see cref="KeybindsHelper.IsBindingHeld"/> rather than through ImGui: ImGui only
-    /// receives key events the host forwards, and forwards them only when it wants the keyboard, which with no text
-    /// field active it does not, so the game takes the arrow keys and the widget is never told. Reading the key
-    /// state directly is the same route <see cref="NoireHotkeyManager"/> takes.
-    /// The move is queued rather than made here, because this runs inside the loop drawing the rows, and reordering
-    /// the list under that loop would move every later row onto an index that has not been drawn yet.
-    /// </remarks>
     private void HandleKeyboard(int index)
     {
         if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
@@ -296,10 +288,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Whether a binding counts as pressed this frame, including a repeat while it is held.
     /// </summary>
-    /// <remarks>
-    /// The key state read this way is a level, not an edge: it says the key is down, not that it has just gone
-    /// down. The edge is derived here, and a hold repeats on the same delay and rate ImGui uses for a held key.
-    /// </remarks>
     private static bool Pressed(HotkeyBinding binding, ref double heldSince)
     {
         if (!IsBound(binding) || !KeybindsHelper.IsBindingHeld(binding))
@@ -347,12 +335,6 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Asks the host to keep the reorder keys from the game while a row is focused.
     /// </summary>
-    /// <remarks>
-    /// Not what makes the keys arrive: they are read from the key state directly and arrive either way. This is so
-    /// that pressing the shortcut does not *also* do whatever the game does with that key, which for the default
-    /// arrows is turn the character.<br/>
-    /// Claimed only while a row is focused in a focused window; the focus is dropped by clicking anywhere else.
-    /// </remarks>
     private void ClaimKeyboardIfFocused()
     {
         var live = AllowKeyboard

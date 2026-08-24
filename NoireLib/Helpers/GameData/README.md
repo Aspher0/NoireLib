@@ -92,7 +92,7 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `MapCoordinateHelper` | Converts between world positions, map-marker pixels and in-game map coordinates; reads map rows and markers. |
 | `EorzeaTimeHelper` | The Eorzean clock, day and night, and the eight-hour windows the weather is decided in. |
 | `WeatherHelper` | What the weather is and what it will be, forecast from the moment alone. |
-| `TerritoryHelper` | Territory names, level paths, the real/duty/mountable sets, zone-crossing quest gates, aetheryte bindings, handler quests, and the canonical-territory rule. |
+| `TerritoryHelper` | Territory names, level paths, the real/duty/mountable/flight-capable sets, zone-crossing quest gates, aetheryte bindings, handler quests, and the canonical-territory rule. |
 | `AetheryteHelper` | Aetheryte and shard identity, their world positions, residential aethernet crystals, and what the character has attuned. |
 | `EventNpcHelper` | Which NPCs run which event handlers, and where each of them stands. |
 | `WarpHelper` | The interactables that teleport the character, what they cost, and what unlocks them. |
@@ -363,7 +363,8 @@ TerritoryHelper.ReadHandlerQuests(territoryId); // the quests the territory's ow
 
 TerritoryHelper.ReadReal();                 // territories that are a real place, not a placeholder row
 TerritoryHelper.ReadQueueableDuties();      // territories reachable through the Duty Finder
-TerritoryHelper.ReadMountable();            // territories that allow a mount (cached)
+TerritoryHelper.ReadMountable();            // territories that allow a mount, which is NOT flight (cached)
+TerritoryHelper.ReadFlightCapable();        // territories the sheets prove flight in, being the currents zones (cached)
 TerritoryHelper.ReadTeleportBarred();       // territories Teleport cannot be cast from (cached)
 TerritoryHelper.ReadAetherCurrentZones();   // (territory, CompFlgSet) pairs for flight unlocks (cached)
 TerritoryHelper.ReadZoneCrossingGates();    // the quest gates that close a zone boundary

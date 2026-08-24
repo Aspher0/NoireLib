@@ -13,14 +13,6 @@ internal static class UiOutline
     /// Traces the outline of a rectangle clockwise from its top left corner, stopping once
     /// <paramref name="fraction"/> of the perimeter has been drawn.
     /// </summary>
-    /// <remarks>
-    /// The path runs half a thickness inside the rectangle rather than along its edge. A line is drawn centred on its
-    /// path, so an edge-aligned outline puts half of every side outside the rectangle: on a clipped surface the sides
-    /// that fall on a clip boundary lose that half and the others keep it, leaving an outline that is visibly thinner
-    /// on some sides than others, and on an unclipped one the whole outline bleeds over its neighbours instead.<br/>
-    /// Each run that reaches a corner is extended by half a thickness so the corners close rather than leaving a notch
-    /// the size of the line width.
-    /// </remarks>
     /// <param name="drawList">The draw list to paint into.</param>
     /// <param name="min">The top left corner of the rectangle.</param>
     /// <param name="max">The bottom right corner of the rectangle.</param>

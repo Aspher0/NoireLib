@@ -16,13 +16,9 @@ public sealed class CollapsibleOptions
 
     /// <summary>
     /// Whether the open state survives a reload, stored in <see cref="NoireUiState"/> against the section's id.<br/>
-    /// Off by default, like every persistence switch in the library.
+    /// Off by default, like every persistence switch in the library.<br/>
+    /// The id must be stable across sessions: a blank id, or one that changes each run, refuses to persist and logs once.
     /// </summary>
-    /// <remarks>
-    /// The id must be stable across sessions, since state is keyed on it. A section given a blank id, or one built
-    /// from something that changes each run, refuses to persist and logs once rather than filling the state file
-    /// with entries nothing will ever read back.
-    /// </remarks>
     public bool Persist { get; set; }
 
     /// <summary>

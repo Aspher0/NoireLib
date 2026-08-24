@@ -7,13 +7,9 @@ namespace NoireLib.UI;
 /// <summary>
 /// One notification: a message, how serious it is, how long it stays, and anything the user can do about it.<br/>
 /// Create one through the static helpers and it appears in <see cref="NoireToastArea.Default"/>; hand one to a
-/// <see cref="NoireToastArea"/> yourself to place it somewhere else.
+/// <see cref="NoireToastArea"/> yourself to place it somewhere else.<br/>
+/// Showing a toast is safe from any thread. The toast is queued, and its clock starts on the next frame the area draws.
 /// </summary>
-/// <remarks>
-/// Showing a toast is safe from any thread. Nothing here touches ImGui: the toast is queued, and the area picks it up
-/// on the next frame it draws, which is also when its clock starts. A toast created while the interface is hidden
-/// therefore still gets its full duration once it becomes visible, rather than expiring unseen.
-/// </remarks>
 /// <example>
 /// <code>
 /// NoireToast.Success("Preset saved");
@@ -136,11 +132,6 @@ public sealed class NoireToast
     /// <summary>
     /// The height this toast measured last frame, used to paint its background before its contents are laid out.
     /// </summary>
-    /// <remarks>
-    /// An immediate-mode pass cannot know how tall a block is until it has drawn it, and a background drawn afterwards
-    /// would cover it. Reusing last frame's measurement means a toast whose content changes size is painted one frame
-    /// behind, which self-corrects immediately and is invisible in practice.
-    /// </remarks>
     internal float LastHeight { get; set; }
 
     #region Building

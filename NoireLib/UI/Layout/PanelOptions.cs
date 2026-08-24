@@ -5,10 +5,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// How a <see cref="NoirePanel"/> holds its body: the room around it, how wide it is, and the header above it.
 /// </summary>
-/// <remarks>
-/// The chrome itself is not here: a panel measures its body and hands the result to something that paints a box, so
-/// its own look belongs to that thing's style, a <see cref="FrameStyle"/> or a <see cref="PlateStyle"/>.
-/// </remarks>
 public sealed class PanelOptions
 {
     /// <summary>The room between the chrome and the body, at 100%. See <see cref="NoireUI.Scale"/>.</summary>
@@ -17,10 +13,6 @@ public sealed class PanelOptions
     /// <summary>
     /// How wide the panel is, at 100%. Zero fills the width available.
     /// </summary>
-    /// <remarks>
-    /// A panel is a fixed-width box rather than one that shrinks to its body: a stack of panels that each ended
-    /// wherever their own longest line did would read as ragged rather than as a column.
-    /// </remarks>
     public float Width { get; set; }
 
     /// <summary>The label across the top of the panel. When <see langword="null"/>, there is no header.</summary>

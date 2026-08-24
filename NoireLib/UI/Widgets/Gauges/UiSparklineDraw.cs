@@ -8,8 +8,8 @@ namespace NoireLib.UI;
 /// The plot area, projected points and resolved colours handed to a <see cref="SparklineStyle.CustomDraw"/> hook.
 /// </summary>
 /// <remarks>
-/// A <see langword="ref struct"/> because the points are a span over stack memory. The background and baseline are
-/// drawn before the hook runs; the hook replaces only the trace (area, line and end mark).
+/// The background and baseline are drawn before the hook runs; the hook replaces only the trace (area, line and end
+/// mark).
 /// </remarks>
 public readonly ref struct UiSparklineDraw
 {

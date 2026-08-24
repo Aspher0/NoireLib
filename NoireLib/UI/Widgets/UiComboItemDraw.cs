@@ -3,11 +3,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Everything one option of a <see cref="NoireComboBox{T}"/> knows about itself, handed to a custom renderer.
 /// </summary>
-/// <remarks>
-/// The combo keeps the row: its size, its hit testing, its selection and keyboard state, its filtering and its
-/// scrolling. The renderer only paints inside it. Call <see cref="DrawLabel"/> to get the combo's own text back,
-/// including the filter highlighting, rather than reimplementing it.
-/// </remarks>
 /// <typeparam name="T">The item type of the combo.</typeparam>
 /// <param name="Combo">The combo drawing this option.</param>
 /// <param name="Item">The option's value.</param>

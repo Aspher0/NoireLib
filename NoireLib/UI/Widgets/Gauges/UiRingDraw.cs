@@ -1,4 +1,5 @@
 using Dalamud.Bindings.ImGui;
+using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
@@ -6,10 +7,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// The geometry, fill fraction and resolved colours handed to a <see cref="RingStyle.CustomDraw"/> hook.
 /// </summary>
-/// <remarks>
-/// Geometry is resolved and the space reserved before the hook runs. The label is not drawn when a hook is set;
-/// call <see cref="DrawLabel()"/> for it.
-/// </remarks>
+/// <remarks>The label is not drawn when a hook is set; call <see cref="DrawLabel()"/> for it.</remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Centre">The centre of the ring, in screen pixels.</param>
 /// <param name="InnerRadius">The inner radius of the band, in real pixels.</param>
@@ -57,6 +55,13 @@ public readonly record struct UiRingDraw(
     public void DrawLabel()
     {
         if (!string.IsNullOrEmpty(Label))
-            NoireGauges.DrawCentredLabel(Label, LabelSize, LabelColor, Centre);
+            NoireGauges.DrawCentredLabel(Label, LabelSize, LabelColor, Centre, FitWidth);
     }
+
+    /// <summary>
+    /// The width the centre label is shrunk to fit, which is the hole the ring leaves, or the whole disc when it has
+    /// no hole.
+    /// </summary>
+    private float FitWidth
+        => InnerRadius > 0f ? MathF.Max(0f, (InnerRadius * 2f) - NoireUI.Scaled(4f)) : OuterRadius * 2f;
 }

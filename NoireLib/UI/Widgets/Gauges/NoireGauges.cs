@@ -9,9 +9,8 @@ namespace NoireLib.UI;
 /// Small readouts that show a number as a shape: rings, bars, pips and countdowns. Immediate and stateless.
 /// </summary>
 /// <remarks>
-/// Every gauge takes a fraction from 0 to 1 and draws at the cursor, reserving exactly the space it used. Colours
-/// left <see langword="null"/> resolve through <see cref="NoireTheme"/>, and every size is a logical pixel value at
-/// 100% (see <see cref="NoireUI.Scale"/>).
+/// Every gauge takes a fraction from 0 to 1 and draws at the cursor. Colours left <see langword="null"/> resolve
+/// through <see cref="NoireTheme"/>, and sizes are logical pixels at 100% (see <see cref="NoireUI.Scale"/>).
 /// </remarks>
 [NoireFacade]
 public static partial class NoireGauges
@@ -81,8 +80,17 @@ public static partial class NoireGauges
         ImGui.Dummy(new Vector2(size, size));
 
         if (!string.IsNullOrEmpty(label))
-            DrawCentredLabel(label, style.LabelSize, style.LabelColor ?? fill, centre);
+            DrawCentredLabel(label, style.LabelSize, style.LabelColor ?? fill, centre, LabelFitWidth(inner, size));
     }
+
+    /// <summary>
+    /// How wide a ring's centre label may be: the hole it sits in, less a hair so it does not touch the band.
+    /// </summary>
+    /// <param name="inner">The inner radius, in real pixels.</param>
+    /// <param name="size">The outer diameter, in real pixels.</param>
+    /// <returns>The width the label must fit inside, in real pixels.</returns>
+    private static float LabelFitWidth(float inner, float size)
+        => inner > 0f ? MathF.Max(0f, (inner * 2f) - NoireUI.Scaled(4f)) : size;
 
     #endregion
 
@@ -212,11 +220,12 @@ public static partial class NoireGauges
     internal static void DrawBarLabel(
         string text, TextSize size, float align, Vector4 color, Vector2 origin, float width, float height)
     {
-        var measured = NoireText.CalcSize(text, size);
+        var sizePx = FitTextSize(text, NoireTheme.Current.ResolveTextSize(size), width);
+        var measured = NoireText.CalcSize(text, sizePx);
         var x = origin.X + ((width - measured.X) * Math.Clamp(align, 0f, 1f));
         var y = origin.Y + ((height - measured.Y) * 0.5f);
 
-        DrawTextAt(text, size, color, new Vector2(x, y));
+        NoireText.DrawAt(new Vector2(x, y), color, text, sizePx);
     }
 
     #endregion
@@ -283,7 +292,6 @@ public static partial class NoireGauges
     /// <summary>
     /// Draws a ring counting down, labelled with the time left.
     /// </summary>
-    /// <remarks>The ring empties as the time runs out rather than filling.</remarks>
     /// <param name="remaining">How much time is left.</param>
     /// <param name="total">How long the countdown started at.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default ring.</param>
@@ -311,7 +319,15 @@ public static partial class NoireGauges
     /// <param name="remaining">How much time is left.</param>
     /// <returns>The time left, in shorthand.</returns>
     private static string Remaining(TimeSpan remaining)
-        => UiValueText.Duration(remaining < TimeSpan.Zero ? TimeSpan.Zero : remaining);
+    {
+        if (remaining <= TimeSpan.Zero)
+            return ZeroRemaining;
+
+        return UiValueText.Duration(TimeSpan.FromSeconds(MathF.Ceiling((float)remaining.TotalSeconds)));
+    }
+
+    /// <summary>What a finished countdown reads, held as a constant so an expired timer allocates nothing.</summary>
+    private const string ZeroRemaining = "0s";
 
     /// <summary>
     /// How full a countdown is, from 1 at the start to 0 when it runs out.
@@ -367,33 +383,68 @@ public static partial class NoireGauges
     }
 
     /// <summary>
-    /// Draws a label centred on a point.
+    /// Draws a label centred on a point, at a size that fits inside a given width.
     /// </summary>
     /// <param name="text">The text to draw.</param>
     /// <param name="size">The step of the type scale to draw it at.</param>
     /// <param name="color">The colour to draw it in.</param>
     /// <param name="centre">The point to centre it on, in screen pixels.</param>
-    internal static void DrawCentredLabel(string text, TextSize size, Vector4 color, Vector2 centre)
+    /// <param name="fitWidth">The width the text must fit inside, or zero to draw it at its own size.</param>
+    internal static void DrawCentredLabel(string text, TextSize size, Vector4 color, Vector2 centre, float fitWidth = 0f)
     {
-        var measured = NoireText.CalcSize(text, size);
-        DrawTextAt(text, size, color, centre - (measured * 0.5f));
+        var sizePx = FitTextSize(text, NoireTheme.Current.ResolveTextSize(size), fitWidth);
+        var measured = NoireText.CalcSize(text, sizePx);
+
+        NoireText.DrawAt(centre - (measured * 0.5f), color, text, sizePx);
     }
 
     /// <summary>
-    /// Draws text at an exact screen position without disturbing the layout the gauge already reserved.
+    /// The size a label is drawn at so it fits a given width, never larger than the size asked for.
     /// </summary>
-    /// <param name="text">The text to draw.</param>
-    /// <param name="size">The step of the type scale to draw it at.</param>
-    /// <param name="color">The colour to draw it in.</param>
-    /// <param name="position">Where to put its top left corner, in screen pixels.</param>
-    private static void DrawTextAt(string text, TextSize size, Vector4 color, Vector2 position)
+    /// <param name="text">The text being drawn.</param>
+    /// <param name="sizePx">The size it would be drawn at.</param>
+    /// <param name="fitWidth">The width it must fit inside, or zero for no limit.</param>
+    /// <returns>The size to draw at, in logical pixels.</returns>
+    internal static float FitTextSize(string text, float sizePx, float fitWidth)
     {
-        var restore = ImGui.GetCursorScreenPos();
+        if (fitWidth <= 0f || string.IsNullOrEmpty(text))
+            return sizePx;
 
-        ImGui.SetCursorScreenPos(position);
-        NoireText.Colored(color, text, size);
-        ImGui.SetCursorScreenPos(restore);
+        var size = sizePx;
+
+        // Stepped down and measured again rather than scaled once by the ratio. Width is only roughly proportional to
+        // size: glyph advances land on whole pixels, a font is rasterized per size, and an unbuilt size is measured
+        // through a stretched stand-in. One ratio can therefore still overshoot, and overshooting here is a label
+        // drawn straight through the ring around it.
+        for (var attempt = 0; attempt < MaxFitAttempts; attempt++)
+        {
+            var measured = NoireText.CalcSize(text, size).X;
+
+            if (measured <= fitWidth || measured <= 0f)
+                return size;
+
+            var next = MathF.Floor(size * fitWidth / measured);
+
+            // A ratio that does not actually reduce the size would loop forever at the same measurement.
+            if (next >= size)
+                next = size - 1f;
+
+            if (next < MinFittedLabelSize)
+                return MinFittedLabelSize;
+
+            size = next;
+        }
+
+        return size;
     }
+
+    /// <summary>
+    /// The smallest a label is shrunk to before it is simply allowed to overflow.
+    /// </summary>
+    internal const float MinFittedLabelSize = 7f;
+
+    /// <summary>How many times a label may be re-measured on its way down to a size that fits.</summary>
+    private const int MaxFitAttempts = 4;
 
     #endregion
 }

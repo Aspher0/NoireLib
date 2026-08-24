@@ -22,10 +22,8 @@ namespace NoireLib.Draw3D.Core;
 /// <see cref="Draw3DGameLit.CastShadows"/>).
 /// </summary>
 /// <remarks>
-/// This is the only part of Draw3D that draws inside the game's frame rather than into its own target, so a
-/// failure here corrupts the game's rendering rather than Draw3D's. Two rules follow, and neither is optional:
-/// every pipeline slot touched goes through <see cref="StateGuard"/>, and the render targets are never
-/// re-bound - the callback runs with the game's own targets already bound and must leave them that way.
+/// Every pipeline slot touched goes through <see cref="StateGuard"/>, and the render targets are never
+/// re-bound: the callback runs with the game's own targets already bound and must leave them that way.
 /// </remarks>
 internal sealed unsafe class GBufferInject : IDisposable
 {

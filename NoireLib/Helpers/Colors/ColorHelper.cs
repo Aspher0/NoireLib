@@ -9,13 +9,9 @@ namespace NoireLib.Helpers;
 public static class ColorHelper
 {
     /// <summary>
-    /// Converts a display color to linear light, where multiplying two colors means what it physically means.
+    /// Converts a display color to linear light, where multiplying two colors means what it physically means.<br/>
+    /// Convert once: a color already in linear light must never pass through this.
     /// </summary>
-    /// <remarks>
-    /// <b>Convert once, where the color's origin is known.</b> UI colors, hex strings and the game's dye table are
-    /// display-encoded; shader constants are already linear and must never pass through this. Both look like three
-    /// floats in 0..1, so a double conversion is silent and only shows up as a color reading too dark.
-    /// </remarks>
     /// <param name="color">A display-encoded color, each channel in 0..1.</param>
     /// <returns>The same color in linear light.</returns>
     public static Vector3 SrgbToLinear(Vector3 color) => new(
@@ -59,13 +55,9 @@ public static class ColorHelper
         => Vector4ToVector3(HexToVector4(hex));
 
     /// <summary>
-    /// Reads a HEX color string without throwing when it is not one.
-    /// </summary>
-    /// <remarks>
-    /// Use this behind a text field: a hex being typed is invalid for most keystrokes, and the throwing form would
-    /// raise an exception almost every frame.<br/>
+    /// Reads a HEX color string without throwing when it is not one.<br/>
     /// Accepts three, four, six or eight hex digits, with or without the "#".
-    /// </remarks>
+    /// </summary>
     /// <param name="hex">The HEX value of the color, for example "#123456", "#123", or "1234abcd".</param>
     /// <param name="color">The color, or <see cref="Vector4.Zero"/> when the string was not a HEX color.</param>
     /// <returns>True when the string was read.</returns>
@@ -226,10 +218,6 @@ public static class ColorHelper
     /// <summary>
     /// Converts a Vector4 representing RGBA values between 0 and 1 to a uint color value used by ImGui.
     /// </summary>
-    /// <remarks>
-    /// Packs the value directly rather than through ImGui's native converter, for per-vertex gradient work. Layout
-    /// and rounding match ImGui's own conversion.
-    /// </remarks>
     /// <param name="color">The Vector4 color to convert.</param>
     /// <returns>The uint representation of the Vector4 color provided.</returns>
     public static uint Vector4ToUint(Vector4 color)

@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+﻿using Dalamud.Bindings.ImGui;
 using NoireLib.Helpers;
 using System;
 using System.Numerics;
@@ -18,11 +18,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Fills a rectangle whose corners are cut.
     /// </summary>
-    /// <remarks>
-    /// Sizes here are real pixels, because they sit in the same arithmetic as the screen coordinates they are measured
-    /// from. It is the values on a <see cref="PlateStyle"/> or a <see cref="FrameStyle"/> that are logical, and those
-    /// are scaled before they reach this.
-    /// </remarks>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The fill color.</param>
@@ -84,10 +79,6 @@ public static partial class NoireShapes
     /// Fills a path and shades it in one step, for the shapes that build their own gradient rather than wrapping a
     /// caller's body.
     /// </summary>
-    /// <remarks>
-    /// Filled in white so the gradient lands exactly as given. See the alpha rule on
-    /// <see cref="Gradient(Vector2, Vector2, Vector4, Vector4, Action)"/>.
-    /// </remarks>
     private static void FillShaded(ReadOnlySpan<Vector2> path, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         using var draw = UiDraw.BeginMethod();
@@ -108,10 +99,7 @@ public static partial class NoireShapes
     /// <summary>
     /// Paints a soft halo around a rectangle, from a stack of expanding fills that fade as they grow.
     /// </summary>
-    /// <remarks>
-    /// A glow or a drop shadow depending only on the color: a dark one reads as a shadow, a tinted one as a glow.
-    /// Nothing is drawn inside the rectangle itself, so whatever is painted over it covers the brightest part.
-    /// </remarks>
+    /// <remarks>Nothing is drawn inside the rectangle itself.</remarks>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The glow color at full strength.</param>
@@ -152,16 +140,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Paints a soft halo around any convex shape, following the shape rather than its bounding box.
     /// </summary>
-    /// <remarks>
-    /// <see cref="Glow(Vector2, Vector2, Vector4, float, CornerShape, float, RectCorners)"/> can only grow a rectangle,
-    /// so a shape that is not one gets a rectangular halo: a lit diamond comes out sitting in a glowing square. This
-    /// grows the path itself instead.<br/>
-    /// Each vertex moves along the bisector of its two edges, by the distance that keeps both edges parallel to where
-    /// they started. That is a real outward offset rather than a scale about the centre, which only agrees with one for
-    /// shapes that happen to be regular.<br/>
-    /// The path must be convex and wound clockwise, the same requirement <see cref="Fill"/> and <see cref="Bevel"/>
-    /// carry, and for the same reason: neither fails loudly.
-    /// </remarks>
     /// <param name="points">The shape to light, convex and clockwise.</param>
     /// <param name="color">The glow color at full strength.</param>
     /// <param name="spread">How far it reaches beyond the shape, in real pixels.</param>
@@ -215,10 +193,6 @@ public static partial class NoireShapes
     }
 
     /// <summary>The most points a shape handed to <see cref="GlowPath"/> may carry.</summary>
-    /// <remarks>
-    /// A glow is a stack of copies of its shape, so the cost is this times the layer count. The bound keeps the
-    /// stack-allocated working set honest and is far past any shape worth lighting.
-    /// </remarks>
     public const int MaxGlowPathPoints = 64;
 
     private static Vector2 Normalize(Vector2 value)
@@ -235,10 +209,6 @@ public static partial class NoireShapes
     /// Draws a plate: a filled, optionally gradient, optionally beveled surface with its own border and glow. The
     /// building block a bespoke panel, card, masthead or button face is made of.
     /// </summary>
-    /// <remarks>
-    /// Every part is optional and off by default except the fill and the theme's own border, so a plate with no style
-    /// is a surface that matches the interface around it, and a plate with one is whatever the design calls for.
-    /// </remarks>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="style">How to paint it. When <see langword="null"/>, everything resolves through the theme.</param>
@@ -287,11 +257,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a square bracket, <c>[</c> or <c>]</c>, spanning the given rect's height at one of its edges.
     /// </summary>
-    /// <remarks>
-    /// The short form of <see cref="Frame"/>'s corner ticks, for something too short to carry them: a strip whose ticks
-    /// would meet in the middle reads as a smaller frame rather than as corners, so a bracket at each end says the same
-    /// thing in the height available.
-    /// </remarks>
     /// <param name="min">The top left corner of the rect the bracket spans, in screen space.</param>
     /// <param name="max">The bottom right corner of the rect the bracket spans, in screen space.</param>
     /// <param name="color">The line color.</param>
@@ -336,11 +301,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a short elbow inside each corner of a rect, the mark that reads as drawn rather than as a border.
     /// </summary>
-    /// <remarks>
-    /// Each corner is one three-point path rather than two lines meeting at a point. A line is drawn centred on its
-    /// own path, so two of them sharing an end leave the outer corner uncovered by half the thickness: a square notch
-    /// exactly where the tick is supposed to turn.
-    /// </remarks>
     /// <param name="min">The top left corner of the rect they sit inside, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="color">The line color.</param>
@@ -385,10 +345,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a hairline frame: one line, optionally two, with optional brackets set inside the corners.
     /// </summary>
-    /// <remarks>
-    /// The brackets are the reason this is not <c>AddRect</c>: a short tick inside each corner reads as drawn rather
-    /// than as a border.
-    /// </remarks>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
     /// <param name="style">How to draw it. When <see langword="null"/>, a single hairline in the theme's border color.</param>

@@ -10,9 +10,9 @@ namespace NoireLib.UI;
 /// <summary>
 /// An animated stack of notifications anchored somewhere on screen, with buttons, live progress and a countdown that
 /// pauses on hover. <see cref="NoireToast.Success(string)"/> and friends target <see cref="Default"/>, so a second
-/// area is needed only for a second stack.
+/// area is needed only for a second stack.<br/>
+/// Adding a toast is safe from any thread; everything else runs on the draw thread.
 /// </summary>
-/// <remarks>Adding a toast is safe from any thread; everything else runs on the draw thread.</remarks>
 public class NoireToastArea : NoireDrawable
 {
     private const ImGuiWindowFlags ToastWindowFlags =
@@ -33,7 +33,6 @@ public class NoireToastArea : NoireDrawable
     private const string CallbackFault = "A toast hook threw.";
 
     /// <summary>The dismiss button's style, reused rather than composed per toast per frame.</summary>
-    /// <remarks>Its two colours are rewritten from the theme in <see cref="DrawBody"/> immediately before each use.</remarks>
     private static readonly ButtonStyle CloseStyle = new()
     {
         Tone = ButtonTone.Ghost,
@@ -45,8 +44,10 @@ public class NoireToastArea : NoireDrawable
     private readonly object syncRoot = new();
     private readonly List<NoireToast> toasts = new();
 
-    /// <summary>Creates a toast area and registers it for drawing.</summary>
-    /// <remarks>A constructed area follows the <see cref="NoireUI.AutoDraw"/> master default; <see cref="Default"/> opts itself in.</remarks>
+    /// <summary>
+    /// Creates a toast area and registers it for drawing.<br/>
+    /// A constructed area follows the <see cref="NoireUI.AutoDraw"/> master default; <see cref="Default"/> opts itself in.
+    /// </summary>
     /// <param name="id">An optional unique identifier. When <see langword="null"/>, a random one is generated.</param>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public NoireToastArea(string? id = null)
@@ -56,9 +57,9 @@ public class NoireToastArea : NoireDrawable
     }
 
     /// <summary>
-    /// The area the static <see cref="NoireToast"/> helpers put their toasts in, created the first time one is raised.
+    /// The area the static <see cref="NoireToast"/> helpers put their toasts in, created the first time one is raised.<br/>
+    /// It draws itself; set <see cref="NoireDrawable.AutoDraw"/> to <see langword="false"/> to place the stack manually.
     /// </summary>
-    /// <remarks>It draws itself; set <see cref="NoireDrawable.AutoDraw"/> to <see langword="false"/> to place the stack manually.</remarks>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public static NoireToastArea Default
     {
@@ -119,7 +120,6 @@ public class NoireToastArea : NoireDrawable
     }
 
     /// <summary>Copies the toasts into a borrowed buffer for the drawing to walk.</summary>
-    /// <remarks>The lock is held only for the copy, so a toast action firing later in the frame can take it.</remarks>
     /// <returns>A borrowed buffer holding the toasts in order, to be disposed once drawn.</returns>
     private PooledBuffer<NoireToast> SnapshotToasts()
     {
@@ -242,7 +242,6 @@ public class NoireToastArea : NoireDrawable
     /// Advances every visible toast's transition, works out how much vertical room each one takes this frame, and
     /// retires the ones that have finished leaving.
     /// </summary>
-    /// <remarks>Runs before anything is drawn, since the window is sized and positioned from the total.</remarks>
     /// <param name="snapshot">The toasts to consider, oldest first.</param>
     /// <param name="visible">Receives the toasts to draw, in stack order, never beyond its own length.</param>
     /// <param name="total">Receives the total height the stack needs.</param>
@@ -308,10 +307,6 @@ public class NoireToastArea : NoireDrawable
     }
 
     /// <summary>Draws the measured stack, laid out from whichever edge of it is pinned to the screen.</summary>
-    /// <remarks>
-    /// From the pinned edge rather than the moving one, so a toast's position depends only on the toasts between it
-    /// and that edge instead of on the whole stack's height.
-    /// </remarks>
     /// <param name="visible">The toasts to draw, in stack order.</param>
     /// <param name="height">The window's own height, the measured total rounded up to a whole pixel.</param>
     private void DrawStack(ReadOnlySpan<NoireToast> visible, float height)
@@ -349,21 +344,14 @@ public class NoireToastArea : NoireDrawable
     }
 
     /// <summary>The gap between two toasts, as a whole number of pixels.</summary>
-    /// <remarks>Read from one place because both the stack's height and its layout count it, and a gap rounded in one
-    /// but not the other leaves them disagreeing by a pixel per toast.</remarks>
     private float StackGap => MathF.Ceiling(Style.ScaledGap);
 
     /// <summary>The room a toast is given in the stack, as a whole number of pixels, never less than one.</summary>
-    /// <remarks>
-    /// ImGui floors the cursor to the pixel grid after every item, so a block measured from a fractional offset
-    /// measures a different height, and that measurement becomes the next frame's slot.
-    /// </remarks>
     /// <param name="content">The height the toast's contents want.</param>
     /// <returns>The slot height in whole pixels.</returns>
     internal static float ResolveSlotHeight(float content) => MathF.Max(1f, MathF.Ceiling(content));
 
     /// <summary>The height the stack's window is given, from the height its contents measured.</summary>
-    /// <remarks>Whole pixels, so that (placed position + height) cancels back to the fixed screen edge.</remarks>
     /// <param name="total">The height the toasts measured for themselves.</param>
     /// <returns>The window height to use, and to hang the stack from.</returns>
     internal static float ResolveStackHeight(float total) => MathF.Max(1f, MathF.Ceiling(total));
@@ -551,7 +539,7 @@ public class NoireToastArea : NoireDrawable
         {
             var icon = SeverityIcon(toast.Severity);
 
-            using (UiPush.Font(UiBuilder.IconFont))
+            using (UiPush.Font(UiIconFont.Current))
                 ImGui.TextColored(accent, UiValueText.Icon(icon));
 
             ImGui.SameLine(0f, theme.ResolveItemSpacing().X * 0.75f);
@@ -611,7 +599,6 @@ public class NoireToastArea : NoireDrawable
     /// <summary>
     /// Draws a toast's action buttons in a wrapping row, so a toast with several actions grows rather than overflowing.
     /// </summary>
-    /// <remarks>Copied first, because an action's callback may add to or clear the list the loop is walking.</remarks>
     /// <param name="toast">The toast whose actions are drawn.</param>
     private void DrawActions(NoireToast toast)
     {

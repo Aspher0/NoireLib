@@ -12,12 +12,6 @@ namespace NoireLib.Animations.PapFormat.Tmb.Entries;
 /// <summary>
 /// A TMB entry of an unrecognised type, kept as raw bytes so a read/write round trip preserves it.
 /// </summary>
-/// <remarks>
-/// A payload is only raw between the fields that point somewhere else. A rebuilt timeline moves the string and
-/// extra sections, so those fields are read out and written back through the writer's own tables rather than
-/// copied. <see cref="TmbFile.StringFieldOffsets"/> lists the string fields,
-/// <see cref="TmbFile.ExtraFloatFieldOffsets"/> the float blocks.
-/// </remarks>
 public class TmbEntryRaw : TmbEntry
 {
     // magic (4) + size (4) + id (2) + time (2), read by the base constructors.

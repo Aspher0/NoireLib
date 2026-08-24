@@ -1,13 +1,10 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// What one measured scope cost, taken from <see cref="UiProfiler.Snapshot()"/>.
+/// What one measured scope cost, taken from <see cref="UiProfiler.Snapshot()"/>.<br/>
+/// Times are in milliseconds of wall clock on the draw thread. <b>Total</b> includes everything measured inside the
+/// scope and <b>self</b> does not, so summing the total column double-counts nested scopes.
 /// </summary>
-/// <remarks>
-/// Times are in milliseconds of wall clock on the draw thread. Scopes nest: <b>total</b> includes everything measured
-/// inside the scope, <b>self</b> does not; summing the total column double-counts nested scopes. Bytes are reported
-/// the same way and are deterministic across hardware, unlike milliseconds.
-/// </remarks>
 /// <param name="Id">Identifies this call path. A scope called from two places is two entries, one per caller.</param>
 /// <param name="ParentId">The <paramref name="Id"/> of the scope this one sits inside, or 0 when it is outermost.</param>
 /// <param name="Name">The scope's name, as it was measured.</param>

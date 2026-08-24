@@ -8,14 +8,6 @@ namespace NoireLib.UI;
 /// A tab bar you can open from code. <c>tabs.SwitchTab("filters")</c> works from another window, a hotkey, a command
 /// or a toast action, and each tab carries its own body so nothing is drawn for the ones that are closed.
 /// </summary>
-/// <remarks>
-/// The only lever ImGui gives you is <c>ImGuiTabItemFlags.SetSelected</c>, and it has to be set for exactly one
-/// frame: leave it set and the tab is welded open with the user unable to click away, clear it on the wrong frame
-/// and the switch silently does not happen.<br/>
-/// <see cref="SwitchTab"/> handles all of that. It is callable from any thread, callable before the bar has ever
-/// drawn, does nothing if the tab is already open, keeps only the last request when called twice before a frame
-/// runs, and refuses an unknown or unreachable tab with one log rather than silently.
-/// </remarks>
 /// <example>
 /// <code>
 /// var tabs = new NoireTabBar("Settings")
@@ -58,11 +50,6 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// The tab that was open as of the last draw, or <see langword="null"/> before the bar has drawn once.
     /// </summary>
-    /// <remarks>
-    /// Answers for what was actually drawn rather than for what has been asked for, so it is null until there is a real
-    /// answer instead of guessing at the first tab. A <see cref="SwitchTab"/> in flight is visible through
-    /// <see cref="PendingTab"/>.
-    /// </remarks>
     public string? Current { get; private set; }
 
     /// <summary>The tab a <see cref="SwitchTab"/> is waiting to open, or <see langword="null"/> when none is.</summary>
@@ -79,8 +66,7 @@ public sealed partial class NoireTabBar
 
     /// <summary>Whether the user may drag the tabs into a different order. Off by default.</summary>
     /// <remarks>
-    /// ImGui owns the order it draws them in, and does not report it back, so <see cref="Tabs"/> is left as the caller
-    /// wrote it. A reordering made here is for this session and is not something to persist.
+    /// <see cref="Tabs"/> is left as the caller wrote it; a reordering made here is for this session only.
     /// </remarks>
     public bool Reorderable { get; set; }
 
@@ -92,14 +78,6 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// Whether the mouse wheel scrolls the tab strip while the pointer is over it. On by default.
     /// </summary>
-    /// <remarks>
-    /// ImGui's own tab bar does not do this. Its only way to reach a tab that has scrolled off is the little arrows
-    /// at the end of the bar, or selecting the last visible tab so the bar scrolls one along and repeating, which
-    /// changes the open tab as the price of looking for another one. Wheeling over the strip moves it without
-    /// selecting anything.<br/>
-    /// This does nothing while every tab already fits, so it costs nothing to leave on. It also keeps the wheel
-    /// from scrolling the surrounding window at the same time.
-    /// </remarks>
     public bool WheelScrolls { get; set; } = true;
 
     /// <summary>
@@ -110,13 +88,7 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// How wide the bar is allowed to be, in pixels at 100%. Zero, the default, fits the column it is drawn in.
     /// </summary>
-    /// <remarks>
-    /// ImGui builds a tab bar out to the window's right edge and its public surface takes no width at all, so a bar
-    /// inside a page that centres its content in a narrower column runs past the column and out the other side. Left at
-    /// zero this asks <see cref="NoireLayout.ContentWidth"/> instead, which answers for the column rather than the
-    /// window. Set it to hold the bar to a width of your own.<br/>
-    /// Only ever narrows: a bar cannot be given more room than the window it is in.
-    /// </remarks>
+    /// <remarks>Only ever narrows: a bar cannot be given more room than the window it is in.</remarks>
     public float Width { get; set; }
 
     /// <summary>What is drawn when there are no tabs at all. When <see langword="null"/>, nothing is.</summary>
@@ -126,11 +98,8 @@ public sealed partial class NoireTabBar
     /// Opens a tab from code, from anywhere.
     /// </summary>
     /// <remarks>
-    /// Safe from any thread and at any time: the request is marshalled onto the draw thread and applied on the next
-    /// frame the bar draws, so it works before the bar has ever drawn and from a background task alike. Calling it
-    /// twice before a frame runs keeps the last request rather than queueing both.<br/>
-    /// A tab that is already open, does not exist, or is not reachable is refused rather than forced, and each refused
-    /// id is logged once so a typo or a removed tab is visible without filling the log.
+    /// Safe from any thread and before the bar has ever drawn; calling it twice before a frame runs keeps the last
+    /// request.
     /// </remarks>
     /// <param name="id">The <see cref="UiTab.Id"/> to open.</param>
     public void SwitchTab(string id)
@@ -175,7 +144,6 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// What a switch request should do, given the tabs and the tab currently open.
     /// </summary>
-    /// <remarks>Separated from the drawing: the only part that can be checked without an ImGui context.</remarks>
     /// <param name="tabs">The tabs as they stand.</param>
     /// <param name="current">The tab open as of the last draw, if any.</param>
     /// <param name="requested">The tab being asked for.</param>

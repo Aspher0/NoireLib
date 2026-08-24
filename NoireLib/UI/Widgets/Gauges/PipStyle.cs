@@ -7,8 +7,8 @@ namespace NoireLib.UI;
 /// Styling for a row of pips.
 /// </summary>
 /// <remarks>
-/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% and
-/// are scaled where they are used. See <see cref="NoireUI.Scale"/>.
+/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% (see
+/// <see cref="NoireUI.Scale"/>).
 /// </remarks>
 public sealed class PipStyle
 {

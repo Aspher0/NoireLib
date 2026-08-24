@@ -13,12 +13,7 @@ namespace NoireLib.Draw3D.Assets;
 /// one by reading it.
 /// </summary>
 /// <remarks>
-/// A single mirror is a reflection and turns a model into its mirror image; <see cref="MirrorX"/> and
-/// <see cref="MirrorZ"/> together are a 180 degree turn about Y instead, changing only which way the model
-/// faces.<br/>
-/// Applied inside the loaders so both import paths behave identically, and reached through
-/// <see cref="Draw3DDiagnostics.ImportFlips"/>; a change affects models imported afterwards, not what is
-/// already on screen.
+/// A change affects models imported afterwards, not what is already on screen.
 /// </remarks>
 public sealed class Draw3DImportFlips
 {

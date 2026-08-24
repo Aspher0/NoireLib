@@ -4,12 +4,6 @@ namespace NoireLib.Helpers;
 /// The ceilings a share code is decoded under. They are part of the format, not a tuning knob: a code that needs more
 /// than these to read is not a valid share code, and every conformant reader refuses it.
 /// </summary>
-/// <remarks>
-/// A share code arrives from a stranger, pasted out of a chat window. Decompressing one with no ceiling is a zip bomb:
-/// a few kilobytes of paste expands to gigabytes and the game dies with no useful error. Deep nesting is a separate
-/// problem with the same cause, and a worse ending, because it overflows the stack inside the parser where no
-/// <c>try/catch</c> can save you. Both are enforced while decoding rather than checked afterwards.
-/// </remarks>
 public sealed class ShareCodeLimits
 {
     /// <summary>

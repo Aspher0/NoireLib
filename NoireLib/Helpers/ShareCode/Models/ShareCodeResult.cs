@@ -4,11 +4,6 @@ namespace NoireLib.Helpers;
 /// The outcome of reading a share code: the value when it worked, and a reason plus a message a user can be shown when
 /// it did not.
 /// </summary>
-/// <remarks>
-/// Decoding returns a result rather than throwing because the input is authored by a stranger and pasted by hand. A bad
-/// paste is an ordinary thing that happens, not an exceptional one, and it deserves a message in the window rather than
-/// a stack trace in the log.
-/// </remarks>
 /// <typeparam name="T">The decoded payload type.</typeparam>
 /// <param name="Success">Whether the code was read successfully.</param>
 /// <param name="Value">The decoded payload, or <see langword="default"/> when it was not read.</param>

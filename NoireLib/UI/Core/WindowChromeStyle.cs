@@ -15,22 +15,15 @@ public sealed class WindowChromeStyle
     /// <summary>
     /// The window's border. When <see langword="null"/>, there is none.
     /// </summary>
-    /// <remarks>
-    /// A <see cref="FrameStyle"/> rather than a colour and a thickness, so a window edge gets the same double rules and
-    /// corner ticks anything else drawn with one does.
-    /// </remarks>
     public FrameStyle? Frame { get; set; }
 
     /// <summary>The room between the window's edge and its contents, at 100%. See <see cref="NoireUI.Scale"/>.</summary>
     public Vector2 Padding { get; set; } = new(2f, 2f);
 
     /// <summary>
-    /// How opaque the whole window is, from 0 to 1.
+    /// How opaque the whole window is, from 0 to 1.<br/>
+    /// Applied to the surface alone; the text and the controls are not faded with it.
     /// </summary>
-    /// <remarks>
-    /// Spent on the surface alone, when the chrome is painted. Fading the whole window through ImGui's alpha would
-    /// take the text and the controls with it, dimming the window rather than making it translucent.
-    /// </remarks>
     public float Opacity { get; set; } = 1f;
 
     /// <summary>Returns a copy.</summary>

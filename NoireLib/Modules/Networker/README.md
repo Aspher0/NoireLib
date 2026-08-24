@@ -593,7 +593,7 @@ Same-PC multi-process operation is covered by an integration suite that runs the
 ### Messages are not received
 - Ensure the receiving instance subscribed to the type with `On<TMessage>`; unsubscribed types are dropped on arrival.
 - Confirm the message class is identical on both sides, including its namespace, since the full type name identifies it on the wire.
-- Remember that `Send` never delivers to the sender itself. Call your own logic directly if the local instance must react too.
+- `Send` never delivers to the sender itself. Call your own logic directly if the local instance must react too.
 - Ensure the message type is JSON-serializable with public get/set properties.
 - Check for a warning about the outbound buffer or the frame size limit in `/xllog`.
 
@@ -606,7 +606,7 @@ Same-PC multi-process operation is covered by an integration suite that runs the
 ### A barrier never completes
 - Confirm every instance, including the local one, actually calls `SetFlag` with the same flag name.
 - Check `minimumOthers` against the number of peers actually connected; a barrier waiting on more peers than exist can never complete.
-- Remember that barrier evaluation pauses while the networker is not `Ready`, so a re-election in progress delays completion.
+- Barrier evaluation pauses while the networker is not `Ready`, so a re-election in progress delays completion.
 - Pass a `timeout` so the barrier resolves to `false` instead of waiting indefinitely.
 
 ### LAN peers do not appear

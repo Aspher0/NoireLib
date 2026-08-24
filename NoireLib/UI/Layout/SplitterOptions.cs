@@ -6,10 +6,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// How a <see cref="NoireLayout.Splitter(string, ref float, SplitterOptions)"/> behaves and looks.
 /// </summary>
-/// <remarks>
-/// The grab area and the divider are separate concerns here: <see cref="Thickness"/> is how much of the pointer's path
-/// counts as the handle, while the line drawn down the middle of it is a hairline; the two are not the same number.
-/// </remarks>
 public sealed class SplitterOptions
 {
     /// <summary>The smallest the pane may become, in real pixels. Zero uses a usable default, which does scale.</summary>
@@ -49,12 +45,9 @@ public sealed class SplitterOptions
     public bool ShowResizeCursor { get; set; } = true;
 
     /// <summary>
-    /// Paints the divider yourself, in place of the line NoireUI would draw.
+    /// Paints the divider yourself, in place of the line NoireUI would draw.<br/>
+    /// The splitter still owns the handle, the drag and the clamping whatever this draws. See
+    /// <see cref="UiSplitterDraw.DrawLine()"/> for the shipped line.
     /// </summary>
-    /// <remarks>
-    /// The splitter still owns the handle, the drag and the clamping whatever this draws: a hook that draws nothing
-    /// makes an existing divider draggable without changing how it looks. See
-    /// <see cref="UiSplitterDraw.DrawLine()"/> for the shipped line, when the hook only wants to add to it.
-    /// </remarks>
     public Action<UiSplitterDraw>? CustomDraw { get; set; }
 }

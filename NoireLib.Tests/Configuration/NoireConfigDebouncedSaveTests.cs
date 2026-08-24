@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using Newtonsoft.Json.Linq;
 using NoireLib.Configuration;
 using System;
@@ -13,9 +13,8 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the contract of the debounced save path. A member marked <see cref="AutoSaveAttribute"/> is assigned on the
-/// framework thread, so what that assignment is allowed to do on that thread is the whole point: it may serialize, and
-/// it may not touch a file.<br/>
-/// The rest of the contract follows from that. A run of changes inside one window costs a single write rather than one
+/// framework thread, and on that thread it may serialize but may not touch a file.<br/>
+/// A run of changes inside one window costs a single write rather than one
 /// per change, the bytes that reach the file are the ones the synchronous <see cref="NoireConfigBase.Save"/> would have
 /// written, a change may not sit unwritten indefinitely while further changes arrive, and a shutdown flush leaves
 /// nothing behind.

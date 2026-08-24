@@ -5,12 +5,9 @@ using System.Threading;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A profiler scope's name, resolved to an integer once so that measuring one does not hash a string.
+/// A profiler scope's name, resolved to an integer once so that measuring one does not hash a string.<br/>
+/// Handles are interned, so equal ids mean equal names.
 /// </summary>
-/// <remarks>
-/// Interning guarantees two handles for the same name are the same handle: equal ids mean equal names. Names come
-/// from call sites and widget kinds, both bounded by code, so the table does not grow without limit.
-/// </remarks>
 internal sealed class UiScopeName
 {
     private static readonly ConcurrentDictionary<string, UiScopeName> interned = new(StringComparer.Ordinal);
@@ -37,12 +34,9 @@ internal sealed class UiScopeName
     }
 
     /// <summary>
-    /// The handle for a name, creating it the first time that name is seen.
+    /// The handle for a name, creating it the first time that name is seen.<br/>
+    /// This hashes the string, so a caller on a hot path resolves its handle once and holds it.
     /// </summary>
-    /// <remarks>
-    /// The one call that hashes the string; a caller on a hot path should resolve its handle once and hold it rather
-    /// than calling this per draw. <see cref="UiDraw"/> holds one per call site.
-    /// </remarks>
     /// <param name="name">The scope name.</param>
     /// <returns>The handle for <paramref name="name"/>.</returns>
     internal static UiScopeName For(string name)
@@ -52,10 +46,6 @@ internal sealed class UiScopeName
     /// The handle for a name that is guaranteed to arrive as the same string instance every time, such as one built by
     /// <see cref="UiIds"/>.
     /// </summary>
-    /// <remarks>
-    /// Answers with a reference hash instead of hashing the characters, since widget scopes resolve their name on
-    /// every draw while the profiler is on.
-    /// </remarks>
     /// <param name="name">The scope name, as the instance handed out for it every time.</param>
     /// <returns>The handle for <paramref name="name"/>, the same one <see cref="For"/> answers.</returns>
     internal static UiScopeName ForInstance(string name)

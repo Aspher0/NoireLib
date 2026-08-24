@@ -1,4 +1,4 @@
-# NoireInteract & NoireGizmo
+﻿# NoireInteract & NoireGizmo
 
 The interaction layer for [NoireDraw3D](../README.md). The renderer is **deaf by design**: it draws, it reads no input; it only exposes `NoireDraw3D.Pick(screenPx)`, a raw ray query you call yourself. This layer is the half the renderer refuses to own: a UI-thread state machine that reads the mouse, tracks gestures across frames, and turns raw input into **hover / click / drag** events on scene nodes and gizmos.
 
@@ -160,7 +160,7 @@ Dispose the gizmo to remove it.
 
 ## How input is arbitrated
 
-Every frame `NoireInteract.Update()` (auto-driven from `UiBuilder.Draw`) runs the pure `InteractionArbiter`, then shows a fullscreen invisible ImGui window **only while interacting**. Hovering that window makes ImGui set `WantCaptureMouse`, which is exactly what tells Dalamud to withhold the mouse from the game, so the camera cannot pan and nothing is targeted. The rest of the time the game keeps the mouse untouched.
+Every frame `NoireInteract.Update()` (auto-driven from `UiBuilder.Draw`) runs the pure `InteractionArbiter`, then shows a fullscreen invisible ImGui window **only while interacting**. Hovering that window makes ImGui set `WantCaptureMouse`, which tells Dalamud to withhold the mouse from the game, so the camera cannot pan and nothing is targeted. The rest of the time the game keeps the mouse untouched.
 
 **Outside the game window is a hard pass.** When the cursor is not over the game viewport, or the game is not the foreground window, nothing hovers, picks, selects, deselects, drags, or captures. A click in another application never reaches a 3D object.
 

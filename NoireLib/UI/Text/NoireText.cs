@@ -11,12 +11,8 @@ namespace NoireLib.UI;
 /// size asked for instead.
 /// </summary>
 /// <remarks>
-/// Ask for a size by role (<see cref="TextSize"/>) rather than by number: roles resolve through
-/// <see cref="NoireTheme"/>, so a skin can move the whole type scale from one place.<br/>
-/// Sizes are logical pixels at 100%, like every other measurement in NoireUI. See <see cref="NoireUI.Scale"/>.<br/>
-/// Building a size takes a moment; until ready, text draws at the right size by scaling the font already loaded, so
-/// nothing on screen moves when the real font arrives. Call <see cref="Prewarm"/> at startup to have it ready
-/// first.
+/// Sizes are logical pixels at 100%. See <see cref="NoireUI.Scale"/>. Until a size is built, text draws at the right
+/// size by scaling the font already loaded; call <see cref="Prewarm"/> at startup to have it ready first.
 /// </remarks>
 /// <example>
 /// <code>
@@ -50,6 +46,37 @@ public static partial class NoireText
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     public static void Draw(string text, float sizePx)
         => At(sizePx, text, static t => ImGui.TextUnformatted(t));
+
+    /// <summary>
+    /// Draws text at an exact screen position without submitting an ImGui item, at a named size.
+    /// </summary>
+    /// <param name="position">Where the top left of the text goes, in screen pixels.</param>
+    /// <param name="color">The text color.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="size">The step of the type scale to draw it at.</param>
+    public static void DrawAt(Vector2 position, Vector4 color, string text, TextSize size = TextSize.Body)
+        => DrawAt(position, color, text, NoireTheme.Current.ResolveTextSize(size));
+
+    /// <summary>
+    /// Draws text at an exact screen position without submitting an ImGui item, at an explicit size.
+    /// </summary>
+    /// <param name="position">Where the top left of the text goes, in screen pixels.</param>
+    /// <param name="color">The text color.</param>
+    /// <param name="text">The text to draw.</param>
+    /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
+    public static void DrawAt(Vector2 position, Vector4 color, string text, float sizePx)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        At(sizePx, (position, packed: Helpers.ColorHelper.Vector4ToUint(color), text), static state =>
+        {
+            using var draw = UiDraw.Begin();
+
+            if (!draw.List.IsNull)
+                draw.List.AddText(state.position, state.packed, state.text);
+        });
+    }
 
     /// <summary>
     /// Draws text in a color, at a named size.
@@ -143,11 +170,7 @@ public static partial class NoireText
     /// <summary>
     /// Draws text with some of its characters picked out in another color, for showing why a row survived a filter.
     /// </summary>
-    /// <remarks>
-    /// Pairs with <see cref="Helpers.FuzzyMatcher"/>, which reports exactly these positions.<br/>
-    /// Drawn as a run of pieces joined with no spacing, so it sits on one line and does not wrap; wrap the text
-    /// yourself if you need more than a line.
-    /// </remarks>
+    /// <remarks>Sits on one line and does not wrap. Pairs with <see cref="Helpers.FuzzyMatcher"/>.</remarks>
     /// <param name="text">The text to draw.</param>
     /// <param name="indices">
     /// The positions to pick out, ascending. Anything out of range or out of order is ignored rather than throwing,
@@ -258,13 +281,7 @@ public static partial class NoireText
     /// <summary>
     /// Measures text as it would be drawn at an explicit size.
     /// </summary>
-    /// <remarks>
-    /// Measured with the font pushed: a layout built on a measurement taken in one font and drawn in another is
-    /// wrong everywhere by a few pixels. Answers for whatever would draw right now, including the stretched
-    /// stand-in used while a size is still building.<br/>
-    /// Needs a frame in progress: with no font built for the size, it measures against the stand-in, the same path
-    /// <see cref="Tracked(string, float, float)"/> takes.
-    /// </remarks>
+    /// <remarks>Needs a frame in progress. Answers for whatever would draw right now, stand-in size included.</remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The size the text would occupy, in real pixels.</returns>
@@ -294,11 +311,6 @@ public static partial class NoireText
     /// <summary>
     /// Measures text against the font already pushed, through the same cache as everything else.
     /// </summary>
-    /// <remarks>
-    /// For a caller already inside a font scope that must not resolve or push another one. Uses the same key shape
-    /// as the rest of the cache, with the current font's size standing in for both the size asked for and measured
-    /// with.
-    /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <returns>The size the text occupies in the current font.</returns>
     internal static Vector2 CalcSizeInCurrentFont(string text)
@@ -347,23 +359,14 @@ public static partial class NoireText
     /// <summary>
     /// Asks for a size to be built, without drawing or measuring anything.
     /// </summary>
-    /// <remarks>
-    /// The one text call safe outside a frame: every other call here pushes a font handle and asks ImGui to
-    /// measure, both of which need a frame in progress, so reaching for <see cref="CalcSize(string, float)"/> from a
-    /// constructor to warm the cache is a crash rather than a warm cache.<br/>
-    /// Use it for sizes a host can switch to at runtime, such as a reader-facing type scale. Sizes the interface
-    /// always draws are covered by <see cref="Prewarm(bool)"/>.
-    /// </remarks>
+    /// <remarks>The one text call safe outside a frame; every other call here needs one in progress.</remarks>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     public static void Request(float sizePx) => UiFontCache.Get(sizePx);
 
     /// <summary>
     /// How many distinct pixel sizes may be built before the cache refuses more.
     /// </summary>
-    /// <remarks>
-    /// Every size is an atlas entry, and every rebuild re-rasterizes all of them. The default suits one type scale;
-    /// a host offering several scales needs as many sizes as steps times scales.
-    /// </remarks>
+    /// <remarks>Every size is an atlas entry, and every rebuild re-rasterizes all of them.</remarks>
     public static int MaxCachedSizes
     {
         get => UiFontCache.MaxSizes;
@@ -394,12 +397,7 @@ public static partial class NoireText
     /// <summary>
     /// How far below the top of a line the text drawn in it looks centred, for lining a drawn shape up with a label.
     /// </summary>
-    /// <remarks>
-    /// A line is as tall as the font's em box, and letters do not sit in the middle of it: the box reserves room
-    /// under the baseline for descenders most labels never use, so a shape centred on the box sits visibly high
-    /// against the text beside it. Measured on the capital band rather than a particular string, so a row of labels
-    /// keeps one baseline regardless of descenders.
-    /// </remarks>
+    /// <remarks>Measured on the capital band rather than on a particular string.</remarks>
     /// <example>
     /// <code>
     /// // A mark centred on the label, rather than on the line box the label sits in.
@@ -415,10 +413,6 @@ public static partial class NoireText
     /// <summary>
     /// How far below the top of a line the text drawn in it looks centred, for lining a drawn shape up with a label.
     /// </summary>
-    /// <remarks>
-    /// See <see cref="CenterOffset(TextSize)"/> for why this is measured on the capital band rather than a
-    /// particular string.
-    /// </remarks>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>The distance from the top of the line to the text's optical centre, in real pixels.</returns>
     public static float CenterOffset(float sizePx)
@@ -472,11 +466,6 @@ public static partial class NoireText
     /// <summary>
     /// Reads the optical centre off whatever font is current.
     /// </summary>
-    /// <remarks>
-    /// Taken as a fraction of the font's own size and applied to the size actually being drawn, so it is correct on
-    /// both paths <see cref="At{TState}(float, TState, System.Action{TState})"/> takes: glyph metrics belong to the
-    /// unscaled font, while the stretched stand-in draws at a multiple of it.
-    /// </remarks>
     private static unsafe float MeasureCenterOffset()
     {
         var drawnSize = ImGui.GetFontSize();
@@ -495,10 +484,7 @@ public static partial class NoireText
     /// <summary>
     /// Where the capital band sits in a line, as a fraction of the line's height.
     /// </summary>
-    /// <remarks>
-    /// Separated out as the only part that can be checked without a font. Clamped, so a font reporting a band
-    /// outside its own box moves a label by a few pixels rather than throwing the row out of the widget.
-    /// </remarks>
+    /// <remarks>Clamped, so a font reporting a band outside its own box cannot throw the row out of the widget.</remarks>
     /// <param name="bandTop">The top of the capital band, measured down from the top of the line.</param>
     /// <param name="bandBottom">The baseline, measured down from the top of the line.</param>
     /// <param name="lineHeight">The height of the line the band was measured in.</param>
@@ -520,11 +506,7 @@ public static partial class NoireText
     /// When <see langword="null"/>, a shipped range covering Latin with its accents, punctuation, currency, arrows and
     /// common symbols is used, plus whatever the user's Dalamud language needs.
     /// </summary>
-    /// <remarks>
-    /// Decides how long a type scale takes to become available, since rasterizing is per glyph and per size: a
-    /// complete font is several thousand glyphs, the shipped range around seven hundred. Widen it when your plugin
-    /// draws text the default cannot render.
-    /// </remarks>
+    /// <remarks>Decides how long a type scale takes to become available: rasterizing is per glyph and per size.</remarks>
     /// <example>
     /// <code>
     /// // Greek and Cyrillic on top of the usual Latin.
@@ -536,22 +518,14 @@ public static partial class NoireText
     /// <summary>
     /// How long the type scale must hold still before a size that is not built yet is rasterized.
     /// </summary>
-    /// <remarks>
-    /// For a live font-size setting: a size being dragged is a different size every frame, so building immediately
-    /// would rasterize every step of the drag. Held back, a whole sweep costs one build, at the size it stopped on.
-    /// While moving, text draws at the right size with the stretched stand-in. Shorten this for a scale that changes
-    /// in steps rather than by dragging; lengthen it if a build is expensive enough to be worth waiting out.
-    /// </remarks>
+    /// <remarks>Held back so a size being dragged costs one build rather than one per frame.</remarks>
     public static TimeSpan RebuildSettleDelay { get; set; } = TimeSpan.FromMilliseconds(120);
 
     /// <summary>
     /// Replaces how a size is built, for a plugin that needs a different font, different glyphs, or the icon font
     /// merged in.
     /// </summary>
-    /// <remarks>
-    /// NoireText still owns the size cache, the scale and the drawing; the callback owns what a size actually
-    /// contains.
-    /// </remarks>
+    /// <remarks>NoireText still owns the size cache, the scale and the drawing; the callback owns what a size contains.</remarks>
     /// <example>
     /// <code>
     /// // Everything the default font has, icons included. Slower, and what you want if you draw icons in headings.
@@ -563,10 +537,7 @@ public static partial class NoireText
     /// <summary>
     /// Builds the current theme's type scale, so it is ready before anything asks to draw with it.
     /// </summary>
-    /// <remarks>
-    /// Optional: without it, the first draw starts the build and text is drawn at the right size with a scaled
-    /// stand-in until it finishes. Safe to call repeatedly; a size already built is not built again.
-    /// </remarks>
+    /// <remarks>Optional, and safe to call repeatedly; a size already built is not built again.</remarks>
     /// <param name="wait">
     /// Whether to block until the sizes are rasterized, rather than letting them arrive over the following frames.
     /// Pass <see langword="true"/> from a plugin constructor to trade a longer load for an interface never seen
@@ -658,11 +629,6 @@ public static partial class NoireText
     /// <summary>
     /// Stretches the current font to a target size, for the frames before the real one at that size has been built.
     /// </summary>
-    /// <remarks>
-    /// The alternative is leaving text at whatever size the current font happens to be: an unbuilt handle pushes
-    /// exactly that size, so every heading would start small and jump when its font arrives, taking the layout
-    /// around it along. Scaled, text is the right size from the first frame and merely sharpens.
-    /// </remarks>
     /// <param name="sizePx">The target size at 100%.</param>
     /// <returns>The window font scale to restore, or <see langword="null"/> when nothing was changed.</returns>
     private static float? PushApproximateSize(float sizePx)

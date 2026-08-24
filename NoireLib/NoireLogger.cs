@@ -1,4 +1,4 @@
-﻿using Dalamud.Game.Text;
+using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Utility;
@@ -398,7 +398,7 @@ public static class NoireLogger
         /// <param name="foregroundColor">The optional foreground RGB color to apply.</param>
         /// <param name="glowColor">The optional glow RGB color to apply.</param>
         /// <returns>The current chat message builder.</returns>
-        /// <remarks>A link carries no styling of its own, so colouring or bracketing the text is the caller's job.</remarks>
+        /// <remarks>A link has no default styling.</remarks>
         public ChatMessageBuilder AddLink(string text, DalamudLinkPayload? link, Vector3? foregroundColor = null, Vector3? glowColor = null)
         {
             if (!string.IsNullOrEmpty(text))

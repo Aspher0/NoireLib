@@ -8,8 +8,8 @@ namespace NoireLib.UI;
 /// How a ring gauge is drawn: its size, the weight of its band, where it starts, and what it says in the middle.
 /// </summary>
 /// <remarks>
-/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% and
-/// are scaled by <see cref="NoireUI.Scale"/> where they are used.
+/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% (see
+/// <see cref="NoireUI.Scale"/>).
 /// </remarks>
 public sealed class RingStyle
 {
@@ -49,7 +49,9 @@ public sealed class RingStyle
     /// <summary>
     /// Replaces the ring's own painting entirely, while NoireUI keeps doing the sizing and the space reservation.
     /// </summary>
-    /// <remarks>The label is not drawn when this is set; the hook calls the parts on <see cref="UiRingDraw"/> itself.</remarks>
+    /// <remarks>
+    /// The label is not drawn when this is set; the hook calls the parts on <see cref="UiRingDraw"/> itself.
+    /// </remarks>
     public Action<UiRingDraw>? CustomDraw { get; set; }
 
     /// <summary>The outer diameter in pixels, at the user's scale.</summary>

@@ -50,15 +50,11 @@ public sealed class NumberStyle
     /// How the keyboard focus mark looks on this field, falling back to <see cref="NoireFocus.Style"/> when
     /// <see langword="null"/>.
     /// </summary>
-    /// <remarks>A style whose <see cref="FocusStyle.Shape"/> is <see cref="FocusShape.None"/> leaves this one field
-    /// unmarked while the rest of the interface keeps its mark.</remarks>
     public FocusStyle? Focus { get; set; }
 
     /// <summary>
     /// Replaces the reset dot's own painting, while its hit testing, layout and tooltip stay NoireUI's.
     /// </summary>
-    /// <remarks>The dot is the only mark the field paints itself; the focus mark has its own hook on
-    /// <see cref="FocusStyle"/>.</remarks>
     public Action<UiResetDotDraw>? ResetDotDraw { get; set; }
 
     /// <summary>Copies the style.</summary>

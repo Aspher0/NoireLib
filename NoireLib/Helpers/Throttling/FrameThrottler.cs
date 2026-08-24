@@ -13,13 +13,9 @@ namespace NoireLib.Helpers;
 public class FrameThrottler : FrameTimingHelperBase
 {
     /// <summary>
-    /// The "has not run yet" value for a last-run field. Passing it always reports elapsed.
+    /// The "has not run yet" value for a last-run field. Passing it always reports elapsed.<br/>
+    /// Never subtract it: <c>currentFrame - long.MinValue</c> overflows and reads as "still throttled".
     /// </summary>
-    /// <remarks>
-    /// Give a never-run field this value rather than zero, and never subtract it: <c>currentFrame - long.MinValue</c>
-    /// overflows to a large negative number that reads as "still throttled", which wedges the throttled work off for
-    /// the whole session. Both static methods here handle it, so a caller that stores <see cref="Never"/> is safe.
-    /// </remarks>
     public const long Never = long.MinValue;
 
     private long _lastExecutionFrame = Never;

@@ -6,12 +6,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The round shapes: arcs, rings, wedges, and the two pattern fills a bespoke panel is decorated with.
+/// The round shapes: arcs, rings, wedges, and the two pattern fills a bespoke panel is decorated with.<br/>
+/// Angles here are turns rather than radians: 0 is twelve o'clock and a quarter is three o'clock.
 /// </summary>
-/// <remarks>
-/// Angles here are turns rather than radians: 0 is twelve o'clock and a quarter is three o'clock, so a three quarter
-/// arc is written as 0.75 and a gauge reading 40 percent is written as 0.4.
-/// </remarks>
 public static partial class NoireShapes
 {
     /// <summary>
@@ -30,15 +27,14 @@ public static partial class NoireShapes
     public const int MaxArcPathPoints = 257;
 
     /// <summary>
+    /// How far, in real pixels, a curve's straight segments may sit inside the true curve. Defaults to 0.15.
+    /// </summary>
+    /// <remarks>Lower is smoother and costs more points.</remarks>
+    public static float ArcError { get; set; } = 0.15f;
+
+    /// <summary>
     /// Writes the points along an arc, and says whether the arc comes all the way round.
     /// </summary>
-    /// <remarks>
-    /// The primitive every round shape here is drawn from, public for the same reason <see cref="RectPath"/> is: a
-    /// dial or a segmented ring NoireUI does not ship is this path, adjusted, handed to <see cref="Fill"/>,
-    /// <see cref="Stroke"/> or <see cref="Bevel"/>.<br/>
-    /// A closed path stops one step short of coming back to its first point, because both stroking and filling close
-    /// the loop themselves. See <paramref name="closed"/>.
-    /// </remarks>
     /// <param name="points">Receives the path. At least <see cref="MaxArcPathPoints"/> long is always enough.</param>
     /// <param name="centre">The centre of the circle, in screen space.</param>
     /// <param name="radius">The radius, in real pixels.</param>
@@ -51,6 +47,20 @@ public static partial class NoireShapes
     /// </param>
     /// <returns>How many points were written, or zero when the sweep is empty or the buffer is too small.</returns>
     public static int ArcPath(Span<Vector2> points, Vector2 centre, float radius, float fromTurns, float toTurns, out bool closed)
+        => ArcPath(points, centre, radius, fromTurns, toTurns, radius, out closed);
+
+    /// <summary>
+    /// Writes the points along an arc, tessellated for a radius other than its own.
+    /// </summary>
+    /// <param name="points">Receives the path. At least <see cref="MaxArcPathPoints"/> long is always enough.</param>
+    /// <param name="centre">The centre of the circle, in screen space.</param>
+    /// <param name="radius">The radius the points are written at, in real pixels.</param>
+    /// <param name="fromTurns">Where the arc starts, in turns clockwise from twelve o'clock.</param>
+    /// <param name="toTurns">Where it ends.</param>
+    /// <param name="errorRadius">The radius the segment count is solved for.</param>
+    /// <param name="closed">Whether the path is a closed loop, which it is once the sweep is a full turn.</param>
+    /// <returns>How many points were written, or zero when the sweep is empty or the buffer is too small.</returns>
+    internal static int ArcPath(Span<Vector2> points, Vector2 centre, float radius, float fromTurns, float toTurns, float errorRadius, out bool closed)
     {
         closed = false;
 
@@ -64,7 +74,7 @@ public static partial class NoireShapes
 
         closed = MathF.Abs(sweep) >= 0.999f;
 
-        var segments = SegmentsFor(sweep, radius);
+        var segments = SegmentsFor(sweep, MathF.Max(radius, errorRadius));
 
         // A closed loop must not repeat its first point: the edge back to the start is the one the stroke or the fill
         // adds for itself, so a repeated point leaves that edge zero length, with no direction to build a join from,
@@ -100,7 +110,8 @@ public static partial class NoireShapes
         Span<Vector2> points = stackalloc Vector2[MaxArcPathPoints];
 
         // Closed only when the arc comes all the way round, so a gauge does not draw a chord across its own opening.
-        var count = ArcPath(points, centre, radius, fromTurns, toTurns, out var closed);
+        // Tessellated for the band's outer edge rather than for its centre line: that edge is where the facets show.
+        var count = ArcPath(points, centre, radius, fromTurns, toTurns, radius + (thickness * 0.5f), out var closed);
 
         if (count > 0)
             Stroke(points[..count], color, thickness, closed);
@@ -119,10 +130,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Fills a slice of a ring, or a slice of a disc when <paramref name="innerRadius"/> is zero.
     /// </summary>
-    /// <remarks>
-    /// The shape a radial gauge is made of. An inner radius is drawn as a thick arc rather than as a filled band,
-    /// keeping the ends square and the edges antialiased however far round it goes.
-    /// </remarks>
     /// <param name="centre">The centre of the circle, in screen space.</param>
     /// <param name="innerRadius">The inner radius, in real pixels. Zero fills to the centre.</param>
     /// <param name="outerRadius">The outer radius, in real pixels.</param>
@@ -187,7 +194,18 @@ public static partial class NoireShapes
     /// How many segments a curve of a given sweep and radius needs before the facets stop being visible.
     /// </summary>
     private static int SegmentsFor(float sweepTurns, float radius)
-        => Math.Clamp((int)MathF.Ceiling(MathF.Abs(sweepTurns) * radius * 0.6f) + 2, 3, 256);
+    {
+        var sweep = MathF.Abs(sweepTurns);
+
+        if (sweep <= 0f || radius <= 0f)
+            return 3;
+
+        var error = Math.Clamp(ArcError, 0.01f, radius);
+        var wholeTurn = MathF.PI / MathF.Acos(1f - (error / radius));
+
+        // One segment past the sweep's share, so a partial arc is never coarser than the same span of a full circle.
+        return Math.Clamp((int)MathF.Ceiling(wholeTurn * sweep) + 1, 3, MaxArcPathPoints - 1);
+    }
 
     /// <summary>
     /// Turns clockwise from twelve o'clock, as an angle in the draw list's coordinate space.
@@ -201,12 +219,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a sunburst: rays radiating from a point, fading out at the rim.
     /// </summary>
-    /// <remarks>
-    /// Drawn as geometry rather than rendered into a cached texture, so it stays sharp at every scale and takes no
-    /// texture memory. The ray directions are worked out once for a given burst and reused: they are unit vectors,
-    /// scaled by the radius and turned by the rotation on the way out, so one set serves a burst of any size at any
-    /// angle.
-    /// </remarks>
     /// <param name="centre">Where the rays converge, in screen space.</param>
     /// <param name="radius">How far they reach, in real pixels.</param>
     /// <param name="color">The ray color at the centre.</param>
@@ -332,13 +344,6 @@ public static partial class NoireShapes
     /// Writes a fading sunburst as one batch of raw geometry, with the radial fade carried in the vertex colors
     /// instead of applied in a pass afterwards.
     /// </summary>
-    /// <remarks>
-    /// A ray converging at the centre is a triangle; a ray starting off the centre is a quad whose inner corners
-    /// carry the full layer alpha, where the radial ramp holds it at full strength.<br/>
-    /// The vertex and index spans are the region the reservation just appended, so nothing here reaches past what it
-    /// asked for. The base vertex id is read after the reservation, keeping the indices right when the reservation
-    /// itself rolled the buffer over to a new draw command.
-    /// </remarks>
     /// <param name="drawList">The list to write into.</param>
     /// <param name="centre">Where the rays converge, in screen space.</param>
     /// <param name="inner">The radius the rays start at, in real pixels.</param>
@@ -422,12 +427,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Draws a guilloche: the interlaced rosette engraved on banknotes and watch dials.
     /// </summary>
-    /// <remarks>
-    /// Drawn as a polyline rather than rendered into a cached texture, for the same reason as <see cref="Sunburst"/>:
-    /// a curve stays a curve at any scale where a texture would have to be rebuilt. The curve itself is worked out
-    /// once at radius one and then scaled, turned and placed on the way out, so a rosette that sits there, animates its
-    /// size or rotates is tessellated once rather than on every frame.
-    /// </remarks>
     /// <param name="centre">The centre of the rosette, in screen space.</param>
     /// <param name="radius">Its outer radius, in real pixels.</param>
     /// <param name="color">The line color.</param>
@@ -494,10 +493,6 @@ public static partial class NoireShapes
     /// <summary>
     /// How long a curve's straight segments are allowed to be, in real pixels.
     /// </summary>
-    /// <remarks>
-    /// Short enough that a chord across a curve is not visible as a flat, long enough that a small rosette is not drawn
-    /// with hundreds of points nobody can see. Lower it if a large pattern looks faceted.
-    /// </remarks>
     private const float CurveSegmentPx = 3f;
 
     /// <summary>
@@ -509,11 +504,6 @@ public static partial class NoireShapes
     /// <summary>
     /// How many points a guilloche ring of a given radius is drawn with.
     /// </summary>
-    /// <remarks>
-    /// Taken from the radius rather than from the lobe count alone. A count that ignores the radius spends the same
-    /// hundreds of points on a rosette an inch across as on one filling the window: at a small radius those segments
-    /// are a fraction of a pixel each, which costs a great deal and shows nothing.
-    /// </remarks>
     /// <param name="radius">The ring's radius, in real pixels.</param>
     /// <param name="lobes">How many petals the rosette has.</param>
     /// <returns>The number of points to draw the ring with.</returns>
@@ -528,11 +518,6 @@ public static partial class NoireShapes
     /// <summary>
     /// What a sunburst's ray directions are decided by, and nothing else.
     /// </summary>
-    /// <remarks>
-    /// Neither the radius nor the rotation is here: the rays are unit directions scaled and turned on the way out, so
-    /// one entry serves a sunburst of any size at any angle, and a rotating burst still hits the cache every frame
-    /// instead of missing on all of them.
-    /// </remarks>
     /// <param name="Rays">How many rays radiate from the centre.</param>
     /// <param name="HalfWidth">Half the angular width of a ray, in radians.</param>
     /// <param name="Softness">How much the layers narrow inwards.</param>
@@ -559,9 +544,6 @@ public static partial class NoireShapes
     /// Writes the unrotated unit directions for every ray of a sunburst: down the middle of each ray, then the two
     /// edges of each of its layers.
     /// </summary>
-    /// <remarks>
-    /// Pure, so the layout can be asserted on without an ImGui context.
-    /// </remarks>
     /// <param name="directions">Receives the directions. Must be at least rays by stride long.</param>
     /// <param name="rays">How many rays radiate from the centre.</param>
     /// <param name="halfWidth">Half the angular width of a ray, in radians.</param>
@@ -612,11 +594,6 @@ public static partial class NoireShapes
     /// <summary>
     /// What a guilloche ring's shape is decided by, and nothing else.
     /// </summary>
-    /// <remarks>
-    /// The radius is deliberately absent. A hypotrochoid is exactly proportional to it, so one curve serves every size
-    /// of the same rosette and an animated radius keeps hitting the same entry instead of filling the cache with a
-    /// curve per frame. Rotation is absent for the same reason: it is applied on the way out.
-    /// </remarks>
     /// <param name="Lobes">How many petals.</param>
     /// <param name="Depth">How far the tracing point sits from the rolling circle's centre.</param>
     /// <param name="Segments">How many points the ring is drawn with.</param>
@@ -625,25 +602,11 @@ public static partial class NoireShapes
     /// <summary>
     /// Guilloche rings already worked out, so the same rosette is not re-tessellated every frame.
     /// </summary>
-    /// <remarks>
-    /// A rosette is the most expensive thing this file draws: hundreds of points, four trigonometric calls each, on
-    /// every frame it is on screen. The curve itself never changes while the ornament sits there, so it is computed
-    /// once and the points are resubmitted.<br/>
-    /// Not a texture, and it could not be: ImGui builds vertex buffers the host renders at the end of the frame and
-    /// there is no render-to-texture to capture them with. Caching the geometry instead also survives tinting and
-    /// rotation with no invalidation at all, which a cache of pixels would not.
-    /// </remarks>
     private static readonly HotPathCache<GuillocheKey, Vector2[]> GuillocheCache = new();
 
     /// <summary>
     /// Writes one guilloche ring of radius one, centred on the origin and unrotated.
     /// </summary>
-    /// <remarks>
-    /// The hypotrochoid: a point offset from the centre of a small circle rolling inside a large one. The lobe count is
-    /// the ratio of the two radii, and the depth is how far out from that centre the point sits.<br/>
-    /// Pure, and kept that way so the curve can be asserted on without an ImGui context, the way the arc and diamond
-    /// paths already are.
-    /// </remarks>
     /// <param name="points">Receives the curve. Must be at least <paramref name="segments"/> long.</param>
     /// <param name="lobes">How many petals the rosette has.</param>
     /// <param name="depth">How pronounced the petals are, from 0 to 1.</param>

@@ -389,9 +389,8 @@ internal static unsafe class GBufferProbe
     /// Decodes a mapped target into RGBA floats. Half-float targets keep their range, so values above 1 survive.
     /// </summary>
     /// <remarks>
-    /// A decoded 1920x1009 target is a 31 MB float array; allocating one per target puts it on the large object
-    /// heap per invocation, degrading frame rate and corrupting the frame-timing diagnostics elsewhere in this
-    /// renderer. One buffer, grown when needed, reused for every target and every later run.
+    /// One buffer, grown when needed and reused for every target: a decoded 1920x1009 target is a 31 MB float
+    /// array, so allocating per call lands on the large object heap.
     /// </remarks>
     private static float[] ReadPixels(in D3D11_MAPPED_SUBRESOURCE mapped, in D3D11_TEXTURE2D_DESC desc, out bool supported)
     {

@@ -14,9 +14,6 @@ public ref struct PooledBuffer<T>
     /// <summary>
     /// The array the pool handed over, or <see langword="null"/> once it has been given back.
     /// </summary>
-    /// <remarks>
-    /// Cleared on return, so a second <see cref="Dispose"/> does nothing rather than return the same array again.
-    /// </remarks>
     private T[]? rented;
 
     private readonly int length;
@@ -55,11 +52,6 @@ public ref struct PooledBuffer<T>
     /// <summary>
     /// Gives the array back. Safe to call more than once.
     /// </summary>
-    /// <remarks>
-    /// A buffer holding references is cleared on the way back, so the pool does not keep the last frame's objects
-    /// alive until the array is rented again. A buffer of plain values is not, since clearing it would be work spent
-    /// on data the next renter overwrites.
-    /// </remarks>
     public void Dispose()
     {
         var array = rented;

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Newtonsoft.Json;
+using NoireLib.Configuration;
 using NoireLib.EventBus;
 using NoireLib.HotkeyManager;
 using System;
@@ -31,6 +32,23 @@ public class NoireHotkeyManagerTests : IDisposable
 
     private readonly List<NoireHotkeyManager> managersToClean = new();
     private readonly List<NoireEventBus> busesToClean = new();
+
+    public NoireHotkeyManagerTests()
+    {
+        PinConfiguration();
+    }
+
+    /// <summary>
+    /// Caches the configuration the way an initialized plugin's load does. With no plugin behind the library the
+    /// configuration resolves no path, so its load reports failure and the manager deliberately declines to cache it,
+    /// handing every caller a fresh instance; caching it explicitly puts the manager under test and the assertions on
+    /// the one instance they share in game.
+    /// </summary>
+    private static void PinConfiguration()
+    {
+        NoireConfigManager.UnloadConfig<HotkeyManagerConfigInstance>();
+        NoireConfigManager.AddConfigToCache(typeof(HotkeyManagerConfigInstance), new HotkeyManagerConfigInstance());
+    }
 
     public void Dispose()
     {

@@ -1,4 +1,4 @@
-﻿using Dalamud.Bindings.ImGui;
+using Dalamud.Bindings.ImGui;
 using System;
 using System.Numerics;
 
@@ -87,6 +87,31 @@ public static class NoireStyle
     }
 
     /// <summary>
+    /// Runs <paramref name="body"/> with a single ImGui colour overridden, carrying state so the body can stay static.
+    /// </summary>
+    /// <typeparam name="TState">The type carried into the body.</typeparam>
+    /// <param name="color">The colour slot to override.</param>
+    /// <param name="value">The colour to use.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
+    /// <param name="body">The drawing to do inside the style.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
+    public static void WithColor<TState>(ImGuiCol color, Vector4 value, TState state, Action<TState> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+
+        ImGui.PushStyleColor(color, value);
+
+        try
+        {
+            UiScope.Run(nameof(NoireStyle), state, body);
+        }
+        finally
+        {
+            ImGui.PopStyleColor();
+        }
+    }
+
+    /// <summary>
     /// Runs <paramref name="body"/> at a reduced opacity, for a preview or a section that is not currently in effect.
     /// </summary>
     /// <param name="alpha">The opacity multiplier, from 0 to 1.</param>
@@ -101,6 +126,30 @@ public static class NoireStyle
         try
         {
             UiScope.Run(nameof(NoireStyle), body, static b => b());
+        }
+        finally
+        {
+            ImGui.PopStyleVar();
+        }
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> at a reduced opacity, carrying state so the body can stay static.
+    /// </summary>
+    /// <typeparam name="TState">The type carried into the body.</typeparam>
+    /// <param name="alpha">The opacity multiplier, from 0 to 1.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
+    /// <param name="body">The drawing to do inside the style.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
+    public static void WithAlpha<TState>(float alpha, TState state, Action<TState> body)
+    {
+        ArgumentNullException.ThrowIfNull(body);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.Alpha, Math.Clamp(alpha, 0f, 1f));
+
+        try
+        {
+            UiScope.Run(nameof(NoireStyle), state, body);
         }
         finally
         {

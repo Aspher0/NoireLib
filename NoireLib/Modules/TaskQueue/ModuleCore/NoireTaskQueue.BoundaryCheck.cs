@@ -150,11 +150,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Whether the queue's current context is a batch rather than a standalone task.
     /// </summary>
-    /// <remarks>
-    /// currentBatch alone is not enough: a non-blocking standalone task can still be current while a later batch
-    /// runs. The queue never assigns a current task while a batch is processing, so currentTask being null is
-    /// what marks the context as batch.
-    /// </remarks>
     private bool IsCurrentContextBatch => currentBatch != null && currentTask == null;
 
     /// <summary>
@@ -170,11 +165,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Reports whether a batch at the given position ends the strict standalone context.
     /// </summary>
-    /// <remarks>
-    /// Where <see cref="ContextDefinition.SameContextStrict"/> stops: a batch only closes the context when it
-    /// sits after the executing task, or when nothing is executing. A batch the executing task is already past
-    /// does not close it.
-    /// </remarks>
     /// <param name="index">The position of the batch in the unified queue.</param>
     /// <param name="currentTaskIndex">The position of the executing standalone task, or -1 when none is executing.</param>
     /// <returns>True if the batch ends the strict context; otherwise, false.</returns>
@@ -186,16 +176,6 @@ public partial class NoireTaskQueue
     /// <summary>
     /// Lists the tasks a context-scoped query reaches, in queue order.
     /// </summary>
-    /// <remarks>
-    /// What each <see cref="ContextDefinition"/> selects:<br/>
-    /// - CrossContext walks the whole queue and descends into every batch.<br/>
-    /// - SameContext is the current batch's own tasks while a batch is the current context, and the standalone
-    ///   tasks otherwise, with batches in between allowed but not entered.<br/>
-    /// - SameContextStrict is the same, but stops at the first batch that closes the context per
-    ///   <see cref="IsStrictBoundaryBatch"/>.<br/>
-    /// The result is materialized rather than lazy: a consumer predicate can enqueue or clear the queue mid-walk,
-    /// which would otherwise throw "Collection was modified" out of an ordinary read call.
-    /// </remarks>
     /// <param name="contextDefinition">The context to scope the listing to.</param>
     /// <returns>The tasks in that context, in queue order.</returns>
     private List<QueuedTask> ListTasksInContext(ContextDefinition contextDefinition)

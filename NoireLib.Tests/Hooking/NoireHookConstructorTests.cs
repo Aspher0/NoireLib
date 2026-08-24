@@ -1,4 +1,4 @@
-using Dalamud.Hooking;
+﻿using Dalamud.Hooking;
 using FluentAssertions;
 using NoireLib.Hooking;
 using System;
@@ -10,9 +10,8 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the call shape a consumer types, which no other test covers because creating a hook needs the game.
-/// The detour must stay the first parameter and must stay typed as the delegate itself: that is what lets an
-/// IDE generate the detour method with the right signature from a call written before the method exists.
-/// Reordering these parameters compiles and breaks nothing visible, so it is locked here instead.
+/// The detour stays the first parameter, typed as the delegate itself, so an IDE can generate the detour method
+/// from a call written before it exists. Reordering the parameters compiles, so it is pinned here.
 /// </summary>
 public sealed class NoireHookConstructorTests
 {

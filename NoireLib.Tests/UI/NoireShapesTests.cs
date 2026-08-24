@@ -340,6 +340,93 @@ public class NoireShapesTests : IDisposable
         count.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(8f)]
+    [InlineData(17.5f)]
+    [InlineData(20f)]
+    [InlineData(60f)]
+    [InlineData(240f)]
+    public void ArcPath_KeepsItsFacetsWithinTheAllowedError(float radius)
+    {
+        var centre = new Vector2(300f, 300f);
+        var points = ArcBuffer;
+
+        var count = NoireShapes.ArcPath(points, centre, radius, 0f, 1f, out var closed);
+
+        closed.Should().BeTrue();
+
+        // What "smooth" actually means for a polyline standing in for a circle: the middle of each chord is the point
+        // furthest inside the true curve, and how far inside is the error the eye reads as a flat spot. A forty pixel
+        // ring used to come out at thirteen segments, which put this at 0.58 px and looked like a polygon.
+        var worst = 0f;
+
+        for (var step = 0; step < count; step++)
+        {
+            var chordMiddle = (points[step] + points[(step + 1) % count]) * 0.5f;
+            worst = MathF.Max(worst, radius - (chordMiddle - centre).Length());
+        }
+
+        worst.Should().BeLessThanOrEqualTo(NoireShapes.ArcError + 0.01f);
+    }
+
+    [Fact]
+    public void ArcPath_TessellatesAThickBandForItsOuterEdge()
+    {
+        var points = ArcBuffer;
+        var other = new Vector2[NoireShapes.MaxArcPathPoints].AsSpan();
+
+        // A ring gauge is a path down the middle of its band, so the middle radius is what the arc is built from while
+        // the facets show on the edge half a thickness further out.
+        var thin = NoireShapes.ArcPath(points, Vector2.Zero, 40f, 0f, 1f, out _);
+        var wide = NoireShapes.ArcPath(other, Vector2.Zero, 40f, 0f, 1f, 70f, out _);
+
+        wide.Should().BeGreaterThan(thin);
+    }
+
+    #endregion
+
+    #region Filled bands
+
+    [Fact]
+    public void WriteBandIndices_BuildsAStripRatherThanAFan()
+    {
+        Span<ushort> indices = new ushort[6 * 4];
+
+        var written = NoireShapes.WriteBandIndices(indices, 5, 0);
+
+        written.Should().Be(24);
+
+        // The property that separates a strip from a fan, and the whole reason a concave trace was drawn as wedges
+        // radiating from its first sample: every triangle must be built from one pair of neighbouring columns.
+        for (var triangle = 0; triangle < written / 3; triangle++)
+        {
+            var columns = indices.Slice(triangle * 3, 3);
+            var lowest = Math.Min(columns[0], Math.Min(columns[1], columns[2])) / 2;
+            var highest = Math.Max(columns[0], Math.Max(columns[1], columns[2])) / 2;
+
+            (highest - lowest).Should().Be(1, "a triangle spanning more than one segment is a fan");
+        }
+    }
+
+    [Fact]
+    public void WriteBandIndices_OffsetsEveryTriangleByTheBaseVertex()
+    {
+        Span<ushort> indices = new ushort[6];
+
+        NoireShapes.WriteBandIndices(indices, 2, 100);
+
+        foreach (var index in indices)
+            index.Should().BeInRange(100, 103, "the band is written into a shared buffer, not at its start");
+    }
+
+    [Fact]
+    public void WriteBandIndices_WritesNothing_ForFewerThanTwoSamples()
+    {
+        Span<ushort> indices = new ushort[6];
+
+        NoireShapes.WriteBandIndices(indices, 1, 0).Should().Be(0);
+    }
+
     #endregion
 
     #region Scopes

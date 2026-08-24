@@ -1,13 +1,9 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials.
-/// </summary>
-/// <remarks>
-/// The curve is a hypotrochoid, the shape a pen traces through a hole in a small circle rolling inside a larger one.
-/// <see cref="Lobes"/> is the ratio between the two circles and <see cref="Depth"/> is how far out the pen sits.<br/>
+/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials.<br/>
 /// Everything here is scale free except <see cref="Thickness"/>, which is a logical pixel value at 100%.
-/// </remarks>
+/// </summary>
 public sealed class GuillocheStyle
 {
     /// <summary>How many petals the rosette has.</summary>
@@ -43,10 +39,7 @@ public sealed class GuillocheStyle
     /// How many line segments each ring is drawn with. Zero, the default, scales the count to each ring's own radius,
     /// so a small rosette is not over-tessellated and an inner ring costs less than the one around it.
     /// </summary>
-    /// <remarks>
-    /// Setting this fixes the count for every ring regardless of size, for two differently sized patterns that must
-    /// share exactly the same geometry.
-    /// </remarks>
+    /// <remarks>Setting this fixes the count for every ring regardless of size.</remarks>
     public int Segments { get; set; }
 
     /// <summary>

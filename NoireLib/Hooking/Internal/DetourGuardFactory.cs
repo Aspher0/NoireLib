@@ -207,7 +207,7 @@ internal static class DetourGuardFactory
         LocalBuilder? result,
         Label leaveTarget)
     {
-        if (mode == HookGuardMode.Rethrow)
+        if (mode is HookGuardMode.Rethrow or HookGuardMode.None)
         {
             il.Emit(OpCodes.Rethrow);
             return;

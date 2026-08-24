@@ -4,19 +4,10 @@ using System.Globalization;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Builds the ImGui ids the widgets draw with, once each, and hands the same string back on every later frame.
+/// Builds the ImGui ids the widgets draw with, once each, and hands the same string back on every later frame.<br/>
+/// The strings are byte-identical to the interpolation each call replaces, since ids travel into
+/// <see cref="NoireUiState"/> keys. Draw thread only: the cache is unsynchronised.
 /// </summary>
-/// <remarks>
-/// An id like <c>###NoireComboItem_myCombo_42</c> is a constant for the life of the widget, but written as an
-/// interpolated string it is rebuilt on every frame it is drawn. A list of two hundred rows at sixty frames a second is
-/// twelve thousand short-lived strings a second, for a set of values that never changed. That is not a large amount of
-/// memory, but it is a steady stream of garbage in the one place a plugin cannot afford a collection: the draw thread.
-/// <br/>
-/// The strings this returns are byte-identical to the interpolation each call replaces: widget ids travel into
-/// <see cref="NoireUiState"/> keys, so an id that changed shape would silently orphan every value a user had saved
-/// under the old one.<br/>
-/// Reached only from the draw thread, so the dictionary needs no lock.
-/// </remarks>
 internal static class UiIds
 {
     /// <summary>
@@ -55,11 +46,6 @@ internal static class UiIds
     /// <summary>
     /// How many ids are kept before the cache starts over.
     /// </summary>
-    /// <remarks>
-    /// Ids are per widget and per row, so a plugin reaches a stable set almost immediately and never grows again. The
-    /// bound is there for the case that does grow: an id built from a value rather than from a position, such as a tag
-    /// suggestion keyed on the tag itself.
-    /// </remarks>
     private const int MaxEntries = 4096;
 
     private static readonly Dictionary<Key, string> Cache = new();

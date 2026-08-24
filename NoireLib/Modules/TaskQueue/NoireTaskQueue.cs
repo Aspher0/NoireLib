@@ -181,12 +181,6 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
     /// <summary>
     /// Runs a single queue processing pass, the same one a framework frame runs.
     /// </summary>
-    /// <remarks>
-    /// Otherwise reachable only from the framework update, which needs a running game; this lets the queue be
-    /// stepped deterministically without one. It deliberately does not test
-    /// <see cref="NoireModuleBase{TModule}.IsActive"/>, since that flag is about whether the module is wired to
-    /// the frame loop, not about processing; the queue state gate does belong to processing and stays here.
-    /// </remarks>
     internal void TickOnce()
     {
         if (QueueState != QueueState.Running)

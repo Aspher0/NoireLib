@@ -214,6 +214,18 @@ public sealed class NoireWidgetAllocationTests : IClassFixture<UiHarness>
         result.AllocatedBytes.Should().Be(0L);
     }
 
+    [Theory]
+    [InlineData("Save")]
+    [InlineData("Save##split_one")]
+    public void SplitIds_AreByteIdenticalToTheConcatenationTheyReplaced(string label)
+    {
+        // The split button's own zero is asserted in NoireIconAllocationTests, which can drive it now. This pins the
+        // other half: an id's bytes are what ImGui keys the popup on, so a composition that is merely equivalent is
+        // not enough.
+        UiIds.For(label, "Menu").Should().Be(label + "Menu");
+        UiIds.Join("##", label, "Menu").Should().Be("##" + label + "Menu");
+    }
+
     [Fact]
     public void Segmented_DoesNotAllocateAStylePerSegment()
     {

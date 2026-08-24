@@ -18,14 +18,10 @@ public delegate void UiStateUpdater<T>(ref T value);
 /// gone untouched for <see cref="PruneAfterFrames"/> frames, so a widget that stops drawing leaves nothing behind.<br/>
 /// This is deliberately not a configuration store: nothing here is persisted, and everything is lost on reload. See
 /// <see cref="NoireAnim"/> for the animation layer built on top of it.<br/>
-/// <b>Draw thread only.</b> The entries are unsynchronised, matching the thread the UI is drawn from.
+/// <b>Draw thread only.</b> The entries are unsynchronised, matching the thread the UI is drawn from.<br/>
+/// No member returns a reference into the store; change a value in place through
+/// <see cref="Update{T}(string, string, UiStateUpdater{T})"/>.
 /// </summary>
-/// <remarks>
-/// No member returns a reference into the store. A <see langword="ref"/> into a dictionary is invalidated by the next
-/// insert (growing abandons the backing array), so a write through a stale one would vanish silently, triggered by an
-/// unrelated widget happening to exist on the same frame. <see cref="Update{T}(string, string, UiStateUpdater{T})"/>
-/// exists to cover that case safely.
-/// </remarks>
 public static class UiFrameState
 {
     /// <summary>

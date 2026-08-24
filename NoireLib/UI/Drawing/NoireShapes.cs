@@ -7,18 +7,10 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The shapes a bespoke interface is built out of, and that ImGui's draw list does not have: gradients at any angle,
-/// notched and rounded plates, beveled edges, glows, hairline frames with corner ticks, arcs, and pattern fills.
+/// notched and rounded plates, beveled edges, glows, hairline frames with corner ticks, arcs, and pattern fills.<br/>
+/// Coordinates are screen space, in real pixels. The values NoireUI ships a default for are logical and scaled for
+/// you. See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <remarks>
-/// Everything here paints into an ImGui draw list, and everything composes: the shapes are drawn by the same
-/// <see cref="Fill"/>, <see cref="Stroke"/> and <see cref="Bevel"/> that are public, over paths the public
-/// <see cref="RectPath"/> generates. A shape NoireUI does not ship is your own path handed to the same three calls.<br/>
-/// Coordinates are screen space, in real pixels: what a draw list takes, and what
-/// <c>ImGui.GetCursorScreenPos</c> and <c>GetItemRectMin</c> give you. The numbers NoireUI ships a default for
-/// (a bevel depth, a tick length, a glow spread) are logical and scaled for you. See <see cref="NoireUI.Scale"/>.<br/>
-/// This has nothing to do with the Draw3D renderer, which paints the game world through D3D11. The two share no code
-/// and no concepts.
-/// </remarks>
 /// <example>
 /// <code>
 /// var min = ImGui.GetCursorScreenPos();
@@ -41,13 +33,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Whether the shapes drawn here are antialiased. On by default.
     /// </summary>
-    /// <remarks>
-    /// Antialiasing is a draw list flag rather than a per-call argument, so it is whatever the host last left it as;
-    /// NoireUI sets it around its own drawing instead of inheriting it, so shape smoothness does not depend on a
-    /// setting elsewhere in the process.<br/>
-    /// Turn it off for the shapes here without touching anything else, if a plugin has deliberately traded
-    /// antialiasing for fill rate.
-    /// </remarks>
     public static bool AntiAlias { get; set; } = true;
 
     /// <summary>
@@ -68,11 +53,6 @@ public static partial class NoireShapes
     /// The draw list everything here paints into: the one <see cref="On(ImDrawListPtr, Action)"/> is currently
     /// redirecting to, and the current window's otherwise.
     /// </summary>
-    /// <remarks>
-    /// Public so a block of drawing can mix these shapes with raw <c>ImDrawListPtr</c> calls and be sure both land in
-    /// the same place, including inside an <see cref="On(ImDrawListPtr, Action)"/> scope where the current window's
-    /// list is not the answer.
-    /// </remarks>
     public static ImDrawListPtr DrawList
     {
         get
@@ -146,12 +126,8 @@ public static partial class NoireShapes
     /// run of text.
     /// </summary>
     /// <remarks>
-    /// ImGui's own gradient is a single axis-aligned rectangle with no rounding. This is a scope over arbitrary
-    /// drawing instead, not one more shape.<br/>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, since ImGui carries its antialiasing
-    /// in the alpha of the outer vertices: a body drawn in white takes the gradient exactly, a body drawn in a color
-    /// is tinted by it, and a gradient that fades to zero alpha fades the shape out.<br/>
-    /// Nests. An inner gradient shades only what it drew, and the outer one then shades that again.
+    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn: a body drawn in white takes the
+    /// gradient exactly, and a gradient fading to zero alpha fades the shape out. Nests.
     /// </remarks>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
     /// <param name="to">Where <paramref name="toColor"/> is at full strength, in screen space.</param>
@@ -177,10 +153,8 @@ public static partial class NoireShapes
     /// run of text.
     /// </summary>
     /// <remarks>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn, since ImGui carries its antialiasing
-    /// there: a body drawn in white takes the gradient exactly, a body drawn in a color is tinted by it, and a
-    /// gradient fading to zero alpha fades the shape out.<br/>
-    /// Nests. An inner gradient shades only what it drew, and the outer one then shades that again.
+    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn: a body drawn in white takes the
+    /// gradient exactly, and a gradient fading to zero alpha fades the shape out. Nests.
     /// </remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
@@ -259,12 +233,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Moves a reservation's write positions past vertices and indices written directly into the buffers.
     /// </summary>
-    /// <remarks>
-    /// A reservation hands back write pointers and expects them walked as the primitives land; writing through the
-    /// buffer spans leaves them behind. ImGui's own helpers reset the pointers on their next reservation, but the
-    /// current vertex id is read, not reset, so leaving it behind would hand the next primitive indices pointing at
-    /// what was just written.
-    /// </remarks>
     /// <param name="drawList">The list whose reservation was written by hand.</param>
     /// <param name="vertexCount">How many vertices were written.</param>
     /// <param name="indexCount">How many indices were written.</param>
@@ -280,14 +248,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
     /// </summary>
-    /// <remarks>
-    /// Distance from a centre is the same measure for every arm, so a whole radiating shape is shaded in one pass
-    /// instead of once per arm: a sunburst of sixty rays in three layers called the per-arm version a hundred and
-    /// eighty times a frame, and the cost was almost entirely in being called rather than in the arithmetic.<br/>
-    /// Only differs from the per-arm version off the arm's own axis, where a point near the edge of a wide arm sits
-    /// slightly further from the centre than its projection along the arm; that is the more correct answer for a
-    /// radial fade.
-    /// </remarks>
     /// <param name="drawList">The list holding the vertices.</param>
     /// <param name="start">The first vertex to shade.</param>
     /// <param name="end">One past the last vertex to shade.</param>
@@ -370,12 +330,7 @@ public static partial class NoireShapes
     /// <summary>
     /// Writes the outline of a rectangle whose corners are cut, walking clockwise from the top left.
     /// </summary>
-    /// <remarks>
-    /// The primitive every rectangular shape here is drawn from, public so a shape NoireUI does not ship is still one
-    /// call away: generate the path, adjust it, and hand it to <see cref="Fill"/>, <see cref="Stroke"/> or
-    /// <see cref="Bevel"/>.<br/>
-    /// A cut deeper than half the shortest side would meet the cut opposite it, so it is clamped there.
-    /// </remarks>
+    /// <remarks>A cut deeper than half the shortest side is clamped there.</remarks>
     /// <param name="points">Receives the path. At least <see cref="MaxRectPathPoints"/> long is always enough.</param>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
@@ -459,15 +414,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Removes points that repeat the one before them, and the last point when it repeats the first.
     /// </summary>
-    /// <remarks>
-    /// A cut deep enough to reach half a side collapses the centres of the two arcs meeting there onto one point, so
-    /// those arcs share an endpoint. A pill does this on <b>both</b> sides: once mid-path where the right-hand arcs
-    /// meet, once at the wrap where the left-hand ones do. Every duplicate has to go, not only the wrap: each is a
-    /// zero-length edge with no direction to build a join from, and a join built from nothing renders as a spike
-    /// across the shape.<br/>
-    /// Applied to every path, not only the pill case, since the same collapse happens to a fully notched rectangle
-    /// and to any degenerate rectangle thin enough for two corners to meet.
-    /// </remarks>
     /// <param name="points">The path to compact, in place.</param>
     /// <param name="count">How many points it holds.</param>
     /// <returns>How many points remain.</returns>
@@ -495,11 +441,7 @@ public static partial class NoireShapes
     /// <summary>
     /// Fills a convex path.
     /// </summary>
-    /// <remarks>
-    /// Convex is a real requirement, not a hint: a path that turns back on itself renders as overlapping fans rather
-    /// than as the shape you drew. Every path <see cref="RectPath"/> produces is convex. A concave shape is drawn as
-    /// two or more convex pieces.
-    /// </remarks>
+    /// <remarks>A path that turns back on itself renders as overlapping fans. Draw a concave shape in convex pieces.</remarks>
     /// <param name="points">The path, in order.</param>
     /// <param name="color">The fill color.</param>
     public static unsafe void Fill(ReadOnlySpan<Vector2> points, Vector4 color)
@@ -516,6 +458,83 @@ public static partial class NoireShapes
             drawList.AddConvexPolyFilled(first, points.Length, ColorHelper.Vector4ToUint(color));
 
         drawList.Flags = flags;
+    }
+
+    /// <summary>
+    /// Fills the area between a path and a horizontal line, for the region under a trace.
+    /// </summary>
+    /// <remarks>The path is expected to run left to right.</remarks>
+    /// <param name="points">The upper edge, in order.</param>
+    /// <param name="baselineY">The screen y the area closes to.</param>
+    /// <param name="color">The fill color.</param>
+    public static unsafe void FillUnder(ReadOnlySpan<Vector2> points, float baselineY, Vector4 color)
+    {
+        using var draw = UiDraw.BeginMethod();
+        var drawList = draw.List;
+
+        if (drawList.IsNull || points.Length < 2 || color.W <= 0f)
+            return;
+
+        var vertexCount = points.Length * 2;
+        var indexCount = (points.Length - 1) * 6;
+
+        // The 16 bit index buffer cannot address more than this in one draw list, and a trace long enough to hit it
+        // has samples well under a pixel apart.
+        if (vertexCount > ushort.MaxValue)
+            return;
+
+        drawList.PrimReserve(indexCount, vertexCount);
+
+        // Read after the reservation, never before: reserving can roll the index offset over.
+        var baseVertex = drawList.VtxCurrentIdx;
+        var vertices = drawList.VtxBuffer.AsSpan()[^vertexCount..];
+        var indices = drawList.IdxBuffer.AsSpan()[^indexCount..];
+
+        var white = ImGui.GetFontTexUvWhitePixel();
+        var packed = ColorHelper.Vector4ToUint(color);
+
+        for (var point = 0; point < points.Length; point++)
+        {
+            var top = point * 2;
+
+            vertices[top] = new ImDrawVert { Pos = points[point], Uv = white, Col = packed };
+            vertices[top + 1] = new ImDrawVert { Pos = new Vector2(points[point].X, baselineY), Uv = white, Col = packed };
+        }
+
+        WriteBandIndices(indices, points.Length, (ushort)baseVertex);
+
+        AdvancePrimWrite(drawList, vertexCount, indexCount);
+    }
+
+    /// <summary>
+    /// Writes the triangles of a band whose vertices alternate upper, lower, upper, lower.
+    /// </summary>
+    /// <param name="indices">Receives the triangles. Must hold <c>6 * (points - 1)</c>.</param>
+    /// <param name="points">How many samples the band spans.</param>
+    /// <param name="baseVertex">The index the band's first vertex was written at.</param>
+    /// <returns>How many indices were written.</returns>
+    internal static int WriteBandIndices(Span<ushort> indices, int points, ushort baseVertex)
+    {
+        if (points < 2)
+            return 0;
+
+        var written = 0;
+
+        for (var segment = 0; segment < points - 1; segment++)
+        {
+            var corner = (ushort)(baseVertex + (segment * 2));
+
+            indices[written] = corner;
+            indices[written + 1] = (ushort)(corner + 1);
+            indices[written + 2] = (ushort)(corner + 2);
+            indices[written + 3] = (ushort)(corner + 1);
+            indices[written + 4] = (ushort)(corner + 3);
+            indices[written + 5] = (ushort)(corner + 2);
+
+            written += 6;
+        }
+
+        return written;
     }
 
     /// <summary>
@@ -544,11 +563,6 @@ public static partial class NoireShapes
     /// <summary>
     /// Strokes a closed path with a light source: edges facing the light are lit, edges facing away fall into shadow.
     /// </summary>
-    /// <remarks>
-    /// Works on any closed path: a notched plate bevels its diagonal cuts, and a rounded one turns smoothly from
-    /// light to shadow around each corner, both from the same call.<br/>
-    /// The path is expected to wind clockwise, matching what <see cref="RectPath"/> produces.
-    /// </remarks>
     /// <param name="points">The closed path, in clockwise order.</param>
     /// <param name="light">The color of the edges facing the light.</param>
     /// <param name="shadow">The color of the edges facing away from it.</param>

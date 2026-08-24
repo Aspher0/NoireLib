@@ -13,13 +13,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// A searchable, icon-rich picker over any sheet of game data, filtered fuzzily and drawn with icons.
 /// </summary>
-/// <remarks>
-/// Reading a sheet is not free: the rows are read once, on a background thread, and the picker shows that it is
-/// happening rather than freezing the frame that opened it. Nothing here touches the object table, the game state
-/// that has to be read on the framework thread; Excel data is static content on disk.<br/>
-/// The <see cref="Combo"/> underneath is fully public: everything <see cref="NoireComboBox{T}"/> can do, including a
-/// renderer of your own, is reachable from here.
-/// </remarks>
+/// <remarks>The sheet is read once on a background thread; nothing here needs the framework thread.</remarks>
 /// <typeparam name="TRow">The Excel row type, for example <c>Lumina.Excel.Sheets.Item</c>.</typeparam>
 /// <example>
 /// <code>
@@ -39,11 +33,6 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Serializes sheet reads across every picker in the plugin.
     /// </summary>
-    /// <remarks>
-    /// Lumina loads a sheet's pages on demand, so two pickers reading two sheets at once would be two threads
-    /// walking that lazy loading concurrently. Costs nothing worth measuring here, since a picker reads its sheet
-    /// once for the life of the plugin.
-    /// </remarks>
     private static readonly SemaphoreSlim SheetGate = new(1, 1);
 
     private readonly Dictionary<uint, UiImageSource> icons = new();
@@ -80,10 +69,6 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// The combo this picker is assembled from, fully usable on its own.
     /// </summary>
-    /// <remarks>
-    /// Reach through it for anything this surface does not name: the wheel-cycle shortcut, the filter's pinning,
-    /// a renderer of your own, the visible option count. The picker only fills it and draws it.
-    /// </remarks>
     public NoireComboBox<ExcelPickerEntry<TRow>> Combo { get; }
 
     /// <summary>
@@ -99,7 +84,6 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Which rows the picker offers. When <see langword="null"/>, all of them.
     /// </summary>
-    /// <remarks>A predicate rather than a fixed set of categories, so the decision stays the consumer's.</remarks>
     public Func<TRow, bool>? Include { get; set; }
 
     /// <summary>Whether rows whose name is empty are dropped. On by default.</summary>
@@ -254,8 +238,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
 
     /// <summary>Selects a row by its id.</summary>
     /// <remarks>
-    /// Safe to call before the sheet has been read: the request is remembered and applied when the rows arrive, so a
-    /// plugin restoring a saved id on load does not have to wait for anything.
+    /// Safe to call before the sheet has been read: the request is remembered and applied when the rows arrive.
     /// </remarks>
     /// <param name="rowId">The row id to select.</param>
     /// <returns>True when the row was found and selected.</returns>
@@ -303,10 +286,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Reads the sheet again, for when <see cref="Display"/>, <see cref="Include"/> or <see cref="Icon"/> has changed.
     /// </summary>
-    /// <remarks>
-    /// A language change reloads on its own; this is for the other three, which the picker cannot notice being
-    /// reassigned.
-    /// </remarks>
+    /// <remarks>A language change reloads on its own.</remarks>
     public void Reload()
     {
         loadedLanguage = null;

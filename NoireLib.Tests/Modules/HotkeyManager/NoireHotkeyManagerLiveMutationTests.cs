@@ -1,4 +1,5 @@
 using FluentAssertions;
+using NoireLib.Configuration;
 using NoireLib.HotkeyManager;
 using System;
 using System.Collections.Generic;
@@ -25,6 +26,15 @@ namespace NoireLib.Tests;
 public class NoireHotkeyManagerLiveMutationTests : IDisposable
 {
     private readonly List<NoireHotkeyManager> managersToClean = new();
+
+    public NoireHotkeyManagerLiveMutationTests()
+    {
+        // With no plugin behind the library the configuration resolves no path, so its load reports failure and the
+        // manager declines to cache it. Caching it explicitly is what an initialized plugin's load does, and what puts
+        // the manager under test and the assertions on one instance.
+        NoireConfigManager.UnloadConfig<HotkeyManagerConfigInstance>();
+        NoireConfigManager.AddConfigToCache(typeof(HotkeyManagerConfigInstance), new HotkeyManagerConfigInstance());
+    }
 
     public void Dispose()
     {

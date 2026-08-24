@@ -3,21 +3,20 @@ using System;
 namespace NoireLib.Configuration;
 
 /// <summary>
-/// Marks a configuration class for source generation.
-/// Generates static property accessors for all public properties.
+/// Marks a configuration class for source generation. The generator emits a static accessor class
+/// whose members forward to the singleton instance resolved through <see cref="NoireConfigManager.GetConfig{T}"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
 public sealed class NoireConfigAttribute : Attribute
 {
     /// <summary>
-    /// Gets the name of the generated static accessor class.
-    /// If null, the generator will use the instance class name.
+    /// Gets the name of the generated static accessor class, or null to append "Static" to the class name.
     /// </summary>
     public string? StaticClassName { get; }
 
     /// <summary>
-    /// Marks a configuration class for source generation.
-    /// The generated static class will have the same name as the instance class.
+    /// Marks the class for source generation with the default accessor name
+    /// (your configuration class name with the "Static" suffix, example: Configuration -> ConfigurationStatic).
     /// </summary>
     public NoireConfigAttribute()
     {
@@ -25,7 +24,7 @@ public sealed class NoireConfigAttribute : Attribute
     }
 
     /// <summary>
-    /// Marks a configuration class for source generation with a custom static class name.
+    /// Marks the class for source generation with a custom static accessor name.
     /// </summary>
     /// <param name="staticClassName">The name for the generated static accessor class.</param>
     public NoireConfigAttribute(string staticClassName)

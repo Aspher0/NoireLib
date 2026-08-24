@@ -75,7 +75,6 @@ public class NoireOverlayButton : NoireDrawable
     /// <summary>
     /// Whether the button is kept in front of every other window, for clicks as well as for drawing.
     /// </summary>
-    /// <remarks>Moves the button in both ImGui orders, draw and input, so it stays clickable as well as visible.</remarks>
     public bool AlwaysOnTop { get; set; } = false;
 
     /// <summary>
@@ -493,7 +492,7 @@ public class NoireOverlayButton : NoireDrawable
         {
             ImGui.SetCursorPos(new Vector2(cursorX, (size.Y - iconSize.Value.Y) / 2f));
             using (UiPush.Color(ImGuiCol.Text, Style.IconColor ?? Style.TextColor ?? Vector4.One, (Style.IconColor ?? Style.TextColor).HasValue))
-            using (UiPush.Font(UiBuilder.IconFont))
+            using (UiPush.Font(UiIconFont.Current))
                 ImGui.TextUnformatted(UiValueText.Icon(Icon!.Value));
 
             cursorX += iconSize.Value.X + Style.ScaledContentSpacing;
@@ -522,7 +521,6 @@ public class NoireOverlayButton : NoireDrawable
     /// <summary>
     /// The size the button is drawn at: the explicit <see cref="Size"/> scaled, or one measured from the content.
     /// </summary>
-    /// <remarks>The measured size needs no scaling, being built from text metrics and a resolved padding that are already real pixels.</remarks>
     private Vector2 ResolveSize()
         => Size.HasValue ? NoireUI.Scaled(Size.Value) : MeasureAutoSize();
 
@@ -536,7 +534,7 @@ public class NoireOverlayButton : NoireDrawable
         Vector2? iconSize = null;
         if (Icon.HasValue)
         {
-            using (UiPush.Font(UiBuilder.IconFont))
+            using (UiPush.Font(UiIconFont.Current))
                 iconSize = NoireText.CalcSizeInCurrentFont(UiValueText.Icon(Icon.Value)) * externalFontScale;
         }
 

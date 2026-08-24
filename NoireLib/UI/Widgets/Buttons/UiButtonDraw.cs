@@ -7,11 +7,6 @@ namespace NoireLib.UI;
 /// Everything a <see cref="ButtonStyle.CustomDraw"/> hook needs to paint a button itself: where it is, what state it is
 /// in, and the colors NoireUI would have used.
 /// </summary>
-/// <remarks>
-/// Called with the geometry already resolved and the item already submitted: hit testing, keyboard navigation and
-/// the returned click are handled whatever the hook draws. Read <see cref="Color"/> rather than hardcoding one to
-/// stay on theme.
-/// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the button.</param>
 /// <param name="Max">The bottom right corner of the button.</param>
@@ -44,8 +39,8 @@ public readonly record struct UiButtonDraw(
     /// Draws the button's own label, centred, in the colour NoireUI would have used.
     /// </summary>
     /// <remarks>
-    /// Always centred. For a label positioned elsewhere, use <see cref="Label"/>, <see cref="TextColor"/> and
-    /// <see cref="DrawList"/> directly.
+    /// Always centred. For a label positioned elsewhere, use <see cref="Label"/>, <see cref="TextColor"/> and <see
+    /// cref="DrawList"/> directly.
     /// </remarks>
     public void DrawLabel() => DrawLabel(TextColor);
 

@@ -5,9 +5,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Everything a cell renderer is handed: which table, which row, which column, and whether the row is selected.
 /// </summary>
-/// <remarks>
-/// The table has already placed the cell and decided its size, its selection and its order. A renderer only paints.
-/// </remarks>
 /// <typeparam name="T">The row type.</typeparam>
 /// <param name="Table">The table being drawn.</param>
 /// <param name="Row">The row this cell belongs to.</param>

@@ -99,7 +99,7 @@ filtering: short human-readable labels like command names, setting titles and it
 | Leading skip | `-5` each, `-15` total | A match further into the string is worse, but not fatally. |
 | Unmatched characters | `-1` each, `-50` total | Prefers shorter candidates. **Capped**, because length is a tiebreaker and must not become the ranking. |
 
-Two of these are worth knowing about, because they decide the results you will actually see:
+Two of these decide the results you actually see:
 
 **A run bonus that grows means an exact substring beats everything.** `colour` ranks `Colour Picker` first even though
 several other entries match, because six consecutive characters outweigh any combination of boundary bonuses.

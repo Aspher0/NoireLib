@@ -5,7 +5,7 @@ namespace NoireLib.Configuration.Migrations;
 /// <summary>
 /// Attribute to register a migration for a configuration type.<br/>
 /// Can be applied multiple times to register multiple migrations.<br/>
-/// Needs to be applies to a class that inherits from <see cref="NoireConfigBase"/>, <see cref="NoireConfigBase{T}"/>.
+/// Needs to be applied to a class that inherits from <see cref="NoireConfigBase"/>, <see cref="NoireConfigBase{T}"/>.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
 public class ConfigMigrationAttribute : Attribute

@@ -6,12 +6,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Everything a <see cref="SplitterOptions.CustomDraw"/> hook needs to paint a splitter's divider itself: where the
-/// handle is, what state it is in, and the color NoireUI would have used.
+/// handle is, what state it is in, and the color NoireUI would have used.<br/>
+/// The hook is called with the handle already submitted and the drag already applied.
 /// </summary>
-/// <remarks>
-/// The hook is called with the handle already submitted and the drag already applied, so hit testing, the resize cursor
-/// and the clamped size are handled whatever it draws.
-/// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the grab handle.</param>
 /// <param name="Max">The bottom right corner of the grab handle.</param>

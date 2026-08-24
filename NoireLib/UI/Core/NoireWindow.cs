@@ -4,15 +4,9 @@ using Dalamud.Interface.Windowing;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A Dalamud window that decides for itself which game states it stays visible in.
+/// A Dalamud window that decides for itself which game states it stays visible in.<br/>
+/// Overriding <see cref="DrawConditions"/> requires keeping the base call.
 /// </summary>
-/// <remarks>
-/// Which is not something a window decides when reached through Dalamud directly: hiding is settled once per plugin, so
-/// keeping one window up in gpose keeps every window of that plugin up in gpose. This carries the bookkeeping, so a
-/// consumer sets a property and stops thinking about it.<br/>
-/// Derive from this instead of <see cref="Window"/> and everything else about the window is unchanged. Overriding
-/// <see cref="DrawConditions"/> is fine as long as the base call is kept.
-/// </remarks>
 /// <example>
 /// <code>
 /// internal sealed class MyWindow : NoireWindow
@@ -41,13 +35,10 @@ public abstract class NoireWindow : Window
 
     /// <summary>
     /// Which normally-hidden game states this window keeps drawing in. Defaults to
-    /// <see cref="UiVisibility.Default"/>, which is ordinary plugin behaviour.
+    /// <see cref="UiVisibility.Default"/>, which is ordinary plugin behaviour.<br/>
+    /// Asking for anything here switches Dalamud's own hiding off for that state across the whole plugin, so every
+    /// window of the plugin must then be a <see cref="NoireWindow"/>.
     /// </summary>
-    /// <remarks>
-    /// Asking for anything here switches Dalamud's own hiding off for that state, across the whole plugin, and hands
-    /// the decision to each window instead: every window of a plugin using this should be a <see cref="NoireWindow"/>,
-    /// since one that is not would no longer be hidden by anyone.
-    /// </remarks>
     public UiVisibility Visibility
     {
         get => visibility;
@@ -61,10 +52,6 @@ public abstract class NoireWindow : Window
     /// <summary>
     /// Whether the window draws this frame, which is where the per-window hiding happens.
     /// </summary>
-    /// <remarks>
-    /// Dalamud asks this to decide whether to draw the window at all, so returning false is the same thing its own
-    /// hiding would have done, decided one window at a time rather than once for the plugin.
-    /// </remarks>
     /// <returns>True when the window should draw.</returns>
     public override bool DrawConditions() => !NoireUI.ShouldHide(visibility);
 

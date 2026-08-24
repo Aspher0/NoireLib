@@ -1,18 +1,15 @@
 using NoireLib.Helpers;
+using System;
 using System.Numerics;
 
 namespace NoireLib.UI;
 
 /// <summary>
 /// How a plate is painted: its shape, its fill, its border, the bevel that raises it and the glow that lifts it off the
-/// background.
+/// background.<br/>
+/// Every color left <see langword="null"/> resolves through <see cref="NoireTheme"/>. Sizes are logical pixels at 100%
+/// and are scaled where they are used. See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <remarks>
-/// Every color left <see langword="null"/> resolves through <see cref="NoireTheme"/>, so a plate with no style at all
-/// already matches the interface around it.<br/>
-/// Sizes are logical pixels at 100% and are scaled where they are used, like every other measurement NoireUI ships a
-/// default for. See <see cref="NoireUI.Scale"/>.
-/// </remarks>
 /// <example>
 /// <code>
 /// // An art deco plate: chamfered on the diagonal, lit from above, sitting in its own glow.
@@ -151,4 +148,29 @@ public sealed class PlateStyle
     /// </summary>
     /// <returns>The copy.</returns>
     public PlateStyle Clone() => (PlateStyle)MemberwiseClone();
+
+    /// <summary>
+    /// Copies every value of <paramref name="source"/> into this style, leaving no reference to it.
+    /// </summary>
+    /// <param name="source">The style to copy from.</param>
+    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    public void CopyFrom(PlateStyle source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        CornerShape = source.CornerShape;
+        CornerSize = source.CornerSize;
+        Corners = source.Corners;
+        Fill = source.Fill;
+        FillTo = source.FillTo;
+        FillAxis = source.FillAxis;
+        BorderColor = source.BorderColor;
+        BorderSize = source.BorderSize;
+        BevelSize = source.BevelSize;
+        BevelLight = source.BevelLight;
+        BevelShadow = source.BevelShadow;
+        BevelDirection = source.BevelDirection;
+        GlowColor = source.GlowColor;
+        GlowSpread = source.GlowSpread;
+    }
 }

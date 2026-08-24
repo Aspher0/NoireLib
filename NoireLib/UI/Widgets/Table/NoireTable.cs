@@ -10,10 +10,7 @@ namespace NoireLib.UI;
 /// A data grid over a list you already have: sorted by clicking a header, narrowed by a search box and by per-column
 /// filters, virtualized so a hundred thousand rows cost what a screenful costs, selectable, totalled, and exportable.
 /// </summary>
-/// <remarks>
-/// The table never copies your rows. It holds the list you gave it and works in indices into it, so the row a
-/// selection or a renderer sees is the one you own.
-/// </remarks>
+/// <remarks>The table never copies your rows; it holds the list you gave it and works in indices into it.</remarks>
 /// <example>
 /// <code>
 /// var table = new NoireTable&lt;PlayerModel&gt;("players", players)
@@ -66,8 +63,8 @@ public sealed partial class NoireTable<T>
     /// The rows to show. Held rather than copied, so the table sees your edits.
     /// </summary>
     /// <remarks>
-    /// Assigning marks the table for a rebuild. Editing the list in place does not, since nothing tells the table it
-    /// happened: call <see cref="Invalidate"/> for that.
+    /// Assigning marks the table for a rebuild. Editing the list in place does not: call <see cref="Invalidate"/> for
+    /// that.
     /// </remarks>
     public IReadOnlyList<T> Rows
     {
@@ -134,10 +131,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Tells the table its rows or its rules changed and the visible set has to be worked out again.
     /// </summary>
-    /// <remarks>
-    /// Filtering and sorting run when something changes rather than every frame, because a hundred thousand rows
-    /// scored per keystroke is free and the same work at 144 frames a second is not.
-    /// </remarks>
     public void Invalidate() => dirty = true;
 
     #endregion
@@ -172,11 +165,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// The rows selected, in the order they appear in the source list.
     /// </summary>
-    /// <remarks>
-    /// Held by value rather than by index, for the reason every selection here is: an index keeps pointing at whatever
-    /// moves into that slot when the rows are replaced, and the symptom is a selection that silently means something
-    /// else after a reload.
-    /// </remarks>
     public IReadOnlyList<T> Selected
     {
         get

@@ -1,4 +1,4 @@
-﻿using Dalamud.Plugin;
+using Dalamud.Plugin;
 using Dalamud.Utility;
 using NoireLib.Configuration;
 using NoireLib.Core.Modules;
@@ -47,7 +47,8 @@ public class NoireLibMain
             NoireDatabase.InitializeRegisteredDatabases();
 
             NoireIPC.RegisterAttributedTypes(plugin.GetType().Assembly);
-            NoireConfigManager.LoadMarkedConfigsFromDisk();
+
+            NoireConfigManager.PreloadMarked(plugin.GetType().Assembly);
 
             NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
         }

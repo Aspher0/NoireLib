@@ -14,12 +14,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Fills a list with the indices of the rows that survive the column filters and the search, in source order.
     /// </summary>
-    /// <remarks>
-    /// Indices rather than rows: the table keeps pointing at the caller's own list, so nothing is copied per frame and
-    /// a row's identity is wherever the caller put it.<br/>
-    /// Filters are applied before the search because a column filter is usually the cheaper test and always the
-    /// narrower one.
-    /// </remarks>
     /// <param name="rows">The rows to consider.</param>
     /// <param name="columns">The columns whose filters and searchability apply.</param>
     /// <param name="search">The global search text, or empty for none.</param>
@@ -92,10 +86,6 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Whether any searchable column of a row matches the search text.
     /// </summary>
-    /// <remarks>
-    /// A hit in one column is enough: someone typing into a search box above a table is looking for a row, not for a
-    /// row whose every column says the same thing.
-    /// </remarks>
     private static bool MatchesSearch(T row, IReadOnlyList<TableColumn<T>> columns, string search, bool fuzzy)
     {
         for (var i = 0; i < columns.Count; i++)
@@ -123,13 +113,7 @@ public sealed partial class NoireTable<T>
     /// <summary>
     /// Orders a list of row indices by one column.
     /// </summary>
-    /// <remarks>
-    /// Ties break on the source index, making the order stable and deterministic:
-    /// <see cref="List{T}.Sort(Comparison{T})"/> is an introsort and gives no guarantee otherwise, so a table sorted
-    /// on a column full of equal values would reshuffle its rows every time anything else changed.<br/>
-    /// The search deliberately does not reorder here, unlike the combo box's filter. A table has an explicit sort that
-    /// the user chose by clicking a header, and quietly reordering it by search score would take that away.
-    /// </remarks>
+    /// <remarks>Ties break on the source index, making the order stable and deterministic.</remarks>
     /// <param name="rows">The rows the indices point into.</param>
     /// <param name="indices">The indices to order, in place.</param>
     /// <param name="column">The column to order by, or <see langword="null"/> to leave source order.</param>
@@ -170,10 +154,8 @@ public sealed partial class NoireTable<T>
     /// Writes rows as CSV, in the order and with the columns they are currently shown in.
     /// </summary>
     /// <remarks>
-    /// What is exported is what is on screen: the visible columns, the surviving rows, the chosen order. An export
-    /// that quietly hands back the unfiltered table is the one thing a user cannot check by looking.<br/>
     /// Quoting follows RFC 4180, so a field containing a comma, a quote or a newline survives the trip into a
-    /// spreadsheet instead of splitting the row.
+    /// spreadsheet.
     /// </remarks>
     /// <param name="rows">The rows the indices point into.</param>
     /// <param name="columns">The columns to write. Hidden ones are skipped.</param>

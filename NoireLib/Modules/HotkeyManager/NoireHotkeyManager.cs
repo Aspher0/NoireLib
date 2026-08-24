@@ -86,12 +86,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     /// <summary>
     /// One rebind capture session, held as a single immutable value.
     /// </summary>
-    /// <remarks>
-    /// The hotkey being rebound, the input source, and the captured modifiers are one unit read and written
-    /// across threads: a session starts and stops on the caller's thread, advances on the detection timer
-    /// thread, and is read by the framework thread drawing the binding UI and blocking input. Every field is
-    /// init-only; a session is replaced by reference rather than mutated in place.
-    /// </remarks>
     /// <param name="HotkeyId">The identifier of the hotkey being rebound.</param>
     /// <param name="Mode">The input source being watched for the new binding.</param>
     /// <param name="ModifierState">The modifiers that were held when the session last saw a modifier only combination, if any.</param>
@@ -578,10 +572,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     /// <summary>
     /// Reports whether the rebind capture in progress, if any, is the given hotkey's.
     /// </summary>
-    /// <remarks>
-    /// The session is read once, so the answer describes a single session rather than a field the detection
-    /// timer can empty partway through, and the id is matched by the module's case-insensitive rule.
-    /// </remarks>
     /// <param name="id">The identifier of the hotkey to test.</param>
     /// <returns>True if a rebind capture is in progress for that hotkey; otherwise, false.</returns>
     internal bool IsListeningFor(string id)
@@ -594,12 +584,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     /// Reports whether the given hotkey's binding has changed since this was last asked about it, and consumes
     /// the report so that only the first caller to ask sees it.
     /// </summary>
-    /// <remarks>
-    /// A rebind is recorded by whichever thread writes the binding (the detection timer for a capture) and read
-    /// here on the framework thread. The record is cleared with a compare and swap rather than an unconditional
-    /// write, so a different hotkey's rebind landing between the read and the clear survives to be reported to
-    /// its own caller instead of being wiped out by this one.
-    /// </remarks>
     /// <param name="id">The identifier of the hotkey to report on.</param>
     /// <returns>True if the hotkey's binding changed since the last call; otherwise, false.</returns>
     internal bool TryConsumeBindingChanged(string id)
@@ -1100,17 +1084,10 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     }
 
     /// <summary>
-    /// Runs a consumer visible notification on the framework thread.
+    /// Runs a consumer visible notification on the framework thread.<br/>
+    /// Callers must have released <see cref="hotkeyLock"/> first: the notification runs arbitrary consumer code
+    /// that may call back into this manager.
     /// </summary>
-    /// <remarks>
-    /// Callers must have released <see cref="hotkeyLock"/> first, since the notification runs arbitrary
-    /// consumer code of unknown duration that may call back into this manager. The framework thread is the only
-    /// one safe to touch game state from, and detection can change bindings from its own timer thread when it
-    /// captures a rebind, so marshalling here keeps a handler's thread independent of whichever caller reached
-    /// it; a caller already on the framework thread runs the notification inline. Without an initialized
-    /// NoireLib there is no framework thread to marshal onto, so the notification runs inline on the calling
-    /// thread.
-    /// </remarks>
     /// <param name="notification">The notification to run.</param>
     private void PostToFrameworkThread(Action notification)
     {
@@ -1237,14 +1214,6 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     /// <summary>
     /// Writes the binding of every hotkey this instance holds to the stored keybinds.
     /// </summary>
-    /// <remarks>
-    /// The stored keybinds are keyed by hotkey id alone and shared by every hotkey manager instance in the
-    /// plugin, so this updates only the entries it owns and leaves every other id untouched; replacing the
-    /// whole dictionary would erase a sibling instance's bindings, or any hotkey registered after this runs.<br/>
-    /// Nothing is removed here: a stored id with no registered hotkey cannot be told apart from one belonging
-    /// to another instance, an unregistered hotkey, or a retired feature, so there is no way to know it is
-    /// stale. Removal is driven by <see cref="UnregisterHotkey"/> instead, which knows the single id it retires.
-    /// </remarks>
     private void SaveAllHotkeys()
     {
         if (!shouldSaveKeybinds)
@@ -1407,12 +1376,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     /// Hands a detected trigger to the framework thread; called from the detection timer thread.
     /// </summary>
     /// <remarks>
-    /// Every detected trigger is queued separately and delivered in order, never coalesced, so a hotkey that
-    /// fires more than once between two frames (a Repeat hotkey at its 80ms default does, below roughly 12 FPS)
-    /// produces one callback per trigger rather than one. Detection deliberately runs on a 16ms system timer
-    /// rather than the framework update so a press is not lost to a low frame rate. The queue is bounded by
-    /// <see cref="MaxPendingTriggers"/>: a framework thread that stops pumping drops the oldest triggers rather
-    /// than letting the queue grow without limit.
+    /// Triggers are delivered in order and never coalesced; the queue is bounded by
+    /// <see cref="MaxPendingTriggers"/> and drops the oldest when the framework thread stops pumping.
     /// </remarks>
     /// <param name="entry">The hotkey entry whose trigger should be delivered.</param>
     internal void QueueTrigger(HotkeyEntry entry)

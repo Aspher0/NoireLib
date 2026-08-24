@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using NoireLib.UI;
 using System;
 using System.Numerics;
@@ -118,15 +118,52 @@ public class UiTextMeasureCacheTests : IDisposable
     }
 
     [Fact]
-    public void ClearingForgetsBothCaches()
+    public void ClearingForgetsEveryCache()
     {
         UiTextMeasureCache.StoreSize("Save", 14f, 14f, Vector2.One);
         UiTextMeasureCache.StoreCenterOffset(14f, 14f, 0.32f);
+        UiTextMeasureCache.StoreTrackedSize("SAVE", 0.26f, 14f, 14f, Vector2.One);
 
         UiTextMeasureCache.Clear();
 
         UiTextMeasureCache.TryGetSize("Save", 14f, 14f, out _).Should().BeFalse();
         UiTextMeasureCache.TryGetCenterOffset(14f, 14f, out _).Should().BeFalse();
+        UiTextMeasureCache.TryGetTrackedSize("SAVE", 0.26f, 14f, 14f, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ATrackedMeasurementThatWasStored_IsFoundAgain()
+    {
+        UiTextMeasureCache.StoreTrackedSize("SAVE", 0.26f, 14f, 14f, new Vector2(52f, 16f));
+
+        UiTextMeasureCache.TryGetTrackedSize("SAVE", 0.26f, 14f, 14f, out var size).Should().BeTrue();
+        size.Should().Be(new Vector2(52f, 16f));
+    }
+
+    [Fact]
+    public void TrackingIsPartOfTheKey()
+    {
+        // The one field this cache has that the plain one does not. Tracking is spent per character, so the same run
+        // at the same size is a different width at a different letter-spacing; sharing a key would hand a caps label
+        // the width of the same string set solid.
+        UiTextMeasureCache.StoreTrackedSize("SAVE", 0.26f, 14f, 14f, new Vector2(52f, 16f));
+
+        UiTextMeasureCache.TryGetTrackedSize("SAVE", 0.12f, 14f, 14f, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void TrackedMeasurementsFollowTheSameInvalidationRule()
+    {
+        UiTextMeasureCache.StoreTrackedSize("SAVE", 0.26f, 14f, 14f, new Vector2(52f, 16f));
+
+        generation++;
+        UiTextMeasureCache.TryGetTrackedSize("SAVE", 0.26f, 14f, 14f, out _).Should()
+            .BeFalse("a run measured against a stand-in font must not survive the real font arriving");
+
+        generation--;
+        scale = 1.25f;
+
+        UiTextMeasureCache.TryGetTrackedSize("SAVE", 0.26f, 14f, 14f, out _).Should().BeFalse();
     }
 
     [Fact]

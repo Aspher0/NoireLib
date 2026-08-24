@@ -1,5 +1,5 @@
-using System.Collections.Generic;
 using Lumina.Excel.Sheets;
+using System.Collections.Generic;
 
 namespace NoireLib.Helpers;
 
@@ -10,7 +10,8 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class TerritoryHelper
 {
-    private static IReadOnlySet<uint>? flightUnlocked;
+    private static IReadOnlySet<uint>? mountable;
+    private static IReadOnlySet<uint>? flightCapable;
     private static IReadOnlySet<uint>? teleportBarred;
     private static IReadOnlyList<(uint TerritoryId, uint CompFlgSet)>? aetherCurrentZones;
 
@@ -193,12 +194,33 @@ public static class TerritoryHelper
         => ReadWhere(static territory => territory.ContentFinderCondition.RowId != 0);
 
     /// <summary>
-    /// Reads the territories a mount can be summoned in, which is also the set flight can ever be unlocked in.
+    /// Reads the territories a mount can be summoned in. This says nothing about flight: the residential districts,
+    /// Idyllshire, Rhalgr's Reach, the Doman Enclave, Eureka, Bozja and the PvP arenas all allow mounts and can
+    /// never be flown in. Use <see cref="ReadFlightCapable"/> for flight.
     /// Cached, since the sheet cannot change while the client runs.
     /// </summary>
     /// <returns>The territory row ids that allow mounts.</returns>
     public static IReadOnlySet<uint> ReadMountable()
-        => flightUnlocked ??= ReadWhere(static territory => territory.Mount);
+        => mountable ??= ReadWhere(static territory => territory.Mount);
+
+    /// <summary>
+    /// Reads the territories the sheets can prove flight in.
+    /// Whether a zone permits flight is not in the client's data, the
+    /// server states it per zone-in, and the client keeps that answer in <c>PlayerState.CanFly</c>, which
+    /// <see cref="FlightHelper.CanFlyHere"/> reads.
+    /// </summary>
+    /// <returns>The territory row ids flight is provably possible in.</returns>
+    public static IReadOnlySet<uint> ReadFlightCapable()
+    {
+        if (flightCapable != null)
+            return flightCapable;
+
+        var found = new HashSet<uint>();
+        foreach (var (territory, _) in ReadAetherCurrentZones())
+            found.Add(territory);
+
+        return flightCapable = found;
+    }
 
     /// <summary>
     /// Reads the territories whose intended use bars casting Teleport, which the game states as

@@ -240,7 +240,9 @@ Everything here runs on a game's draw thread and runs again next frame, so every
 - **Nothing allocates per frame.** Ids are built once by `UiIds`, not interpolated per frame. No `ToString()` on an unchanged value, no `ToArray()`/`ToList()` in a draw path, no closure where a state overload exists.
 - **Working sets are borrowed, not allocated.** A scratch buffer with a known maximum is `stackalloc`; one sized by the data is a `PooledBuffer<T>` or a list the surface keeps between frames.
 - **A shorthand overload never costs more than the long one.** An overload taking loose arguments and forwarding them as an options or style object writes them into a reused instance instead of constructing one, because the shorthand is the overload most callers reach for and it draws every frame. See `NoireInputs.Number`, `NoireLayout.Splitter` and `NoireButtons.Segmented`.
+- **A style or options object is held, not described at the call.** `new SplitterOptions { ... }` written inside a draw call is one object on every frame that call is reached, measured at 112 bytes; the same holds for every `*Style` and `*Options` type here. Keep them in a `static readonly` field and write the values that move, such as anything scaled, into it before the call. This is the one allocation the library cannot fix on your behalf, since the object is yours.
 - **Style is pushed through `UiPush`, not `ImRaii`.** Every `ImRaii` push wrapper is a class, so it costs 24 bytes per call even when its condition is false and it pushes nothing.
+- **A font push is not free.** `IFontHandle.Push()` allocates a small object inside Dalamud on every call, so a size resolved through `UiFontCache` costs bytes however briefly the scope is held. Text at the host's own size resolves to no handle and pushes nothing; everything else is measured once and remembered, so a size is pushed to draw with and not to ask about. This cost is invisible to the headless tests, which have no Dalamud atlas behind them and take the no-handle path throughout.
 - **Nothing is recomputed that has not changed.** Text measurement is cached; so is layout arithmetic, against what actually moves it.
 - **Nothing off screen is drawn.** Collections of unknown length virtualize past a threshold, with a `Virtualize` override.
 - **Tessellation follows the radius.** A fixed segment count spends hundreds of points on a shape an inch across, each segment a fraction of a pixel: expensive and invisible.
@@ -519,7 +521,7 @@ A **tone** is what a button means (`Neutral`, `Accent`, `Success`, `Warning`, `D
 if (NoireButtons.HoldToConfirm("Hold to delete everything"))
     DeleteEverything();
 
-// The fill is the whole interface of a hold button, so its shape is a setting.
+// The fill is the interface of a hold button, so its shape is a setting.
 new ButtonStyle { Tone = ButtonTone.Danger, HoldFill = HoldFillMode.CenterOut };
 ```
 
@@ -849,7 +851,7 @@ await NoireModal.ConfirmAsync("Close to tray", "Keep running in the background?"
     new ModalOptions { RememberKey = "close-to-tray" });
 ```
 
-Only for confirmations whose answer is genuinely stable. **Never offer it for a destructive action or for applying content from outside the plugin**: a remembered yes turns the confirmation into no confirmation at all, which is exactly what those dialogs exist to prevent. An answer is only remembered when the user ticked the box, and a cancelled dialog remembers nothing.
+Only for confirmations whose answer is genuinely stable. **Never offer it for a destructive action or for applying content from outside the plugin**: a remembered yes turns the confirmation into no confirmation at all. An answer is only remembered when the user ticked the box, and a cancelled dialog remembers nothing.
 
 `NoireModal.Host` presents the dialogs and draws itself, because an awaited dialog nobody drew would never return and the symptom is a hang with nothing on screen to explain it. Set its `AutoDraw` to `false` and call `NoireModal.Draw()` to place it in your own draw order.
 
@@ -1096,7 +1098,7 @@ if (position.TryResolve(size, out var topLeft))
     ImGui.SetNextWindowPos(topLeft);
 ```
 
-That is the whole of "a button that exists only while the Duty Finder is open": name the addon, and skip the frame when it is not there. The overlay button already does this, so `button.Position = UiPosition.AtAddon("ContentsFinder")` is enough on its own.
+For "a button that exists only while the Duty Finder is open": name the addon, and skip the frame when it is not there. The overlay button already does this, so `button.Position = UiPosition.AtAddon("ContentsFinder")` is enough on its own.
 
 `Resolve` always answers, falling back to the equivalent screen anchor when the game window is missing, and stays the right call where hiding would be worse than being in the wrong place (the toast area, for one).
 
@@ -1123,7 +1125,7 @@ Docks one of your windows to a native game window. It writes the window's own po
 new NoireAddonAttach(myWindow, "_PartyList", UiSide.Right) { Gap = 8f };
 ```
 
-That is the whole setup. The attachment registers itself and applies every frame.
+The attachment registers itself and applies every frame.
 
 | Property | Default | What it does |
 |---|---|---|
@@ -1271,7 +1273,13 @@ Every gauge takes a fraction from 0 to 1 and clamps it, so no caller has to guar
 
 **Thresholds** apply at or below their value, and the lowest matching one wins: under a quarter is critical, under a half is a warning, above is fine. A gauge counting the other way inverts the values.
 
-**Countdowns empty rather than fill.** `Timer` takes a `TimeSpan` pair and labels itself through `DurationHelper.Format` unless the style already carries a label.
+**Countdowns empty rather than fill.** `Timer` takes a `TimeSpan` pair and labels itself unless the style already carries a label.
+
+**A countdown's own label reads whole seconds, rounded up.** `13s`, not `13s200ms`. Sub-second digits are a different string on every frame, so a centred label visibly resizes and flickers as they run; nobody answers "how long have I got" in milliseconds; and the remembered text is keyed on the value, so a label that changes every frame never hits its cache. Rounded **up**, so the last second reads `1s` for its whole duration and `0s` only once the time is actually gone.
+
+**A ring's centre label shrinks to fit the hole it sits in**, and a bar's label to fit the bar, rather than drawing straight through the shape around it. The step down is measured rather than scaled once, because glyph advances land on whole pixels and a font is rasterized per size, so width is only roughly proportional to the size asked for. Past a readable minimum the label is left to overflow, which is more honest than an unreadable one.
+
+**A gauge's label is painted, not laid out.** It goes onto the draw list through `NoireText.DrawAt`, so it submits no ImGui item and the space the gauge reserved is what the next widget measures from. Drawing it as an ordinary text call is what used to put every gauge after a labelled one on top of its neighbour.
 
 **Sparkline bounds default to the data**, which is the wrong default for anything you plan to compare: left to itself, every trace fills its own box, so a flat line and a violent one draw the same picture. Pin `Min` and `Max` when two sparklines sit near each other. A flat series and an empty one both get a usable range rather than a division by zero.
 
@@ -1901,7 +1909,7 @@ ImGui.InputText("##notes", ref notes, 256);
 NoireFocus.OnLast();                           // a control the library does not provide
 ```
 
-**Focus and selection have to differ in kind, not in degree.** Hover, selection and emphasis are drawn with soft marks: a glow, a tint, a lit plate. Focus is drawn hard edged, and that is the whole design. Two marks that differ only in brightness are read as "this one is selected harder", which is not a thing an interface can mean, and a glow spent on selection is the loudest mark in the vocabulary spent on the quietest state. The natures differ too: focus is singular, transient and moves on every keystroke, while selection is plural, persistent and moves rarely.
+**Focus and selection have to differ in kind, not in degree.** Hover, selection and emphasis are drawn with soft marks: a glow, a tint, a lit plate. Focus is drawn hard edged. Two marks that differ only in brightness read as "this one is selected harder", which means nothing, and a glow spent on selection is the loudest mark in the vocabulary spent on the quietest state. The natures differ too: focus is singular, transient and moves on every keystroke, while selection is plural, persistent and moves rarely.
 
 | `FocusShape` | What it is | Where it fits |
 |---|---|---|
@@ -2092,7 +2100,15 @@ NoireText.At(TextSize.Display, () =>
 });
 ```
 
-`Draw`, `Colored`, `Muted`, `Disabled`, `Wrapped`, `Bullet`, `Centered`, `Highlighted`, `CalcSize`, `LineHeight`, `CenterOffset`, and the `At` scopes. Sizes are logical pixels at 100%, like every other measurement here.
+`Draw`, `Colored`, `Muted`, `Disabled`, `Wrapped`, `Bullet`, `Centered`, `Highlighted`, `DrawAt`, `CalcSize`, `LineHeight`, `CenterOffset`, and the `At` scopes. Sizes are logical pixels at 100%, like every other measurement here.
+
+**`DrawAt` paints text at a screen position without submitting an ImGui item.** For a label drawn over something that has already reserved its own room: a badge on a button, the number inside a ring gauge, a caption on a plate you painted yourself.
+
+```csharp
+NoireText.DrawAt(centre - (measured * 0.5f), color, "72%", TextSize.Caption);
+```
+
+Use it whenever the text is not meant to take part in the layout. An ordinary text call submits an item, which advances the cursor and grows the current line's bounding box, so the next widget placed with `SameLine` measures from the text instead of from the widget that reserved the space. That is a real defect this fixed rather than a theoretical one: the gauges drew their labels through `Colored`, and every gauge following a labelled one landed on top of its neighbour.
 
 ### Ask by role, not by number
 
@@ -2135,7 +2151,7 @@ What it drops is the icon font and the parts of Unicode you are not about to put
 // Wider glyphs: Greek and Cyrillic on top of the usual Latin.
 NoireText.GlyphRanges = [0x0020, 0x00FF, 0x0370, 0x03FF, 0x0400, 0x04FF, 0];
 
-// Or take over the build entirely. This line is exactly what NoireText did before it was made fast:
+// Or take over the build entirely. This is what NoireText did before it was made fast:
 // everything the default font has, icons included, and slower for it.
 NoireText.FontBuilder = (toolkit, sizePx) => toolkit.AddDalamudDefaultFont(sizePx);
 ```
@@ -2181,6 +2197,27 @@ With `wait`, the glyphs are rasterized on the calling thread and are finished wh
 
 Safe to call repeatedly: a size already built is not built again.
 
+### Warming the code, not just the fonts
+
+A font is not the only thing a window builds on its first frame. **A .NET method is compiled the first time it runs**, and for a large window that first run is a frame of the game, so the whole draw path is jitted inside one frame. Measured on the library's own acceptance window: **170 ms in a single frame**, which Dalamud reports as a hitch.
+
+`NoireUI.WarmDrawPath()` compiles it in advance, on a background thread:
+
+```csharp
+public Plugin()
+{
+    NoireLibMain.Initialize(PluginInterface, this);
+    NoireText.Prewarm(wait: true);                   // the fonts
+    NoireUI.WarmDrawPath(typeof(MyBigWindow));       // the code
+}
+```
+
+Every drawing surface NoireUI ships is always included, since that is most of what any window's first frame actually runs; the types you pass are added to it. `NoireUI.DrawPathWarmed` says when it has finished, for a diagnostics readout.
+
+**Opt in, and worth being honest about.** It spends CPU at load that a plugin drawing one modest window has no reason to spend, and it does not make anything faster afterwards: like the font prewarm, it decides *where* the cost lands, not whether it is paid. Reach for it when a window's first open is visibly slow, and confirm with the profiler's **Longest** column first: jitting shows up as every scope peaking at ten to a hundred times its average on the frame it first runs, spread across unrelated surfaces, rather than as one scope holding the time.
+
+Anything that refuses to be compiled early, such as a generic widget before its type arguments are known, is skipped rather than attempted. The warmup runs once per process.
+
 **`CalcSize` measures whatever would draw.** It pushes the same font first, stand-in included, so a layout built on it cannot end up a few pixels wrong everywhere with neither font looking like the one lying.
 
 ---
@@ -2195,6 +2232,8 @@ var width = NoireText.TrackedSize("OVERLAYS", NoireText.CapsTracking, TextSize.C
 ```
 
 `Tracked` returns the size it drew, so placing something beside a tracked label needs no second call. Each glyph's advance is measured once per font size and remembered, not re-measured on every frame the label is drawn, and neither call allocates.
+
+**`TrackedSize` answers from a remembered measurement**, keyed on the run, its tracking, both sizes, the UI scale and the font generation, and `Tracked` files the measurement it took while drawing under the same key. The reason is not the arithmetic, which is trivial: reaching a run's glyph advances at all needs its font pushed, and a font push allocates inside Dalamud whatever the caller does with the scope. A heading that measures its label to run a rule off the end of it therefore costs one font push a frame rather than two, and none at all on the frames it has not changed.
 
 **Never measure text outside a frame.** `CalcSize`, `Draw`, `Tracked` and the rest push a font handle and call into ImGui, both of which need a frame in progress: reaching for one from a plugin or window constructor to warm the cache is a crash, not a warm cache. `NoireText.Request(sizePx)` is the frame-safe call: it only tells the cache a size is wanted, so it can be built before the frame that needs it. Use it for sizes a host can switch to at runtime, such as a reader-facing type scale; `Prewarm` already covers the sizes the interface always draws.
 
@@ -2337,6 +2376,8 @@ NoireShapes.Stroke(points[..count], accent, 4f, closed);
 
 A repeated first point leaves the closing edge zero length, and a zero-length edge has no direction to build a join from, so a thick ring draws a spike at twelve o'clock instead of nothing. A full-turn wedge is a disc for the matching reason: it carries no centre vertex, which would otherwise fold the fan back through the middle and leave a seam along the radius.
 
+**How smooth a curve is comes from `NoireShapes.ArcError`**, the distance in real pixels a chord may sit inside the true curve. It defaults to 0.15, deliberately finer than ImGui's own 0.30 for circles, because a ring gauge is a large smooth curve the eye follows and a facet there reads as a flat spot rather than as a rounded corner. The segment count is solved from that error and the radius, so it follows the user's interface scale without being told. A thick arc is tessellated for its **outer** edge, not for the centre line its points lie on, since that edge is further out and shows the facets first.
+
 ### Pattern fills
 
 Two patterns, both drawn as geometry rather than rendered into a cached texture.
@@ -2389,7 +2430,16 @@ NoireShapes.Stroke(tag, border);
 
 `NoireShapes.RectPath` and `NoireShapes.ArcPath` are public for the same reason: generate the outline NoireUI would have used, adjust it, and draw that instead. A buffer of `NoireShapes.MaxRectPathPoints` or `MaxArcPathPoints` is always large enough.
 
-Two properties are load-bearing and both hold for every path `RectPath` produces. `Fill` needs the path **convex**, because a path that turns back on itself renders as overlapping fans rather than as the shape you drew; a concave shape is drawn as two or more convex pieces. `Bevel` needs it wound **clockwise**, because that is how an edge works out which way it faces.
+Two properties are load-bearing and both hold for every path `RectPath` produces. `Fill` needs the path **convex**, because a path that turns back on itself renders as overlapping fans rather than as the shape you drew; a concave shape is drawn as two or more convex pieces. `Bevel` needs it wound **clockwise**, since that is how an edge works out which way it faces.
+
+**`FillUnder` is the concave case that comes up anyway**: the area between a left-to-right polyline and a horizontal line, needed by an area chart or a sparkline and impossible with `Fill`. A trace is concave at every change of direction, and handing one to `Fill` paints wedges radiating from its first sample.
+
+```csharp
+NoireShapes.FillUnder(projectedPoints, plot.Bottom, ColorHelper.ScaleAlpha(accent, 0.18f));
+NoireShapes.Stroke(projectedPoints, accent, 1.5f, closed: false);
+```
+
+It writes one triangle strip, so no two triangles share an edge. That matters for a translucent fill: built from a quad per sample instead, the vertical edge each pair shares is feathered by antialiasing on both sides and composites twice, leaving a bright seam at every sample.
 
 ---
 

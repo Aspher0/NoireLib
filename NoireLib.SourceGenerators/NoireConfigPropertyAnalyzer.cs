@@ -2,6 +2,7 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
 using System.Collections.Immutable;
+using System.Linq;
 
 namespace NoireLib.SourceGenerators;
 
@@ -47,6 +48,9 @@ public class NoireConfigPropertyAnalyzer : DiagnosticAnalyzer
         if (!InheritsFromNoireConfigBase(containingClass))
             return;
 
+        if (IsJsonIgnored(propertySymbol))
+            return;
+
         bool hasGetter = propertySymbol.GetMethod != null && propertySymbol.GetMethod.DeclaredAccessibility == Accessibility.Public;
         bool hasSetter = propertySymbol.SetMethod != null && propertySymbol.SetMethod.DeclaredAccessibility == Accessibility.Public;
 
@@ -74,9 +78,15 @@ public class NoireConfigPropertyAnalyzer : DiagnosticAnalyzer
         if (!InheritsFromNoireConfigBase(containingClass))
             return;
 
+        if (IsJsonIgnored(fieldSymbol))
+            return;
+
         var diagnostic = Diagnostic.Create(Rule, fieldSymbol.Locations[0], fieldSymbol.Name);
         context.ReportDiagnostic(diagnostic);
     }
+
+    private static bool IsJsonIgnored(ISymbol symbol)
+        => symbol.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == "Newtonsoft.Json.JsonIgnoreAttribute");
 
     private bool InheritsFromNoireConfigBase(INamedTypeSymbol classSymbol)
     {

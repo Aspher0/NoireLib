@@ -7,17 +7,9 @@ namespace NoireLib.UI;
 /// <summary>
 /// Letter-spaced text, which ImGui has no notion of.
 /// </summary>
-/// <remarks>
-/// ImGui draws a string in one call at the font's own advances, so the only way to add space between characters is
-/// to place each glyph individually.
-/// </remarks>
 public static partial class NoireText
 {
     /// <summary>The tracking a caps label wants when nothing else is said, in ems.</summary>
-    /// <remarks>
-    /// Capitals have no ascenders or descenders to separate them, so they need noticeably more room than lower case to
-    /// stop reading as one block. This is the value the demo's small caps labels use.
-    /// </remarks>
     public const float CapsTracking = 0.26f;
 
     /// <summary>
@@ -41,9 +33,8 @@ public static partial class NoireText
     /// <param name="tracking">Extra space per character, in ems. See <see cref="Tracked(string, float, TextSize)"/>.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
     /// <returns>
-    /// The size the run occupies. Returned rather than left to a second
-    /// <see cref="TrackedSize(string, float, float)"/> call, because measuring tracked text costs the same walk over
-    /// its glyphs that drawing it does: a caller that measures and then draws pays for the string twice.
+    /// The size the run occupies, so a caller placing something beside the run needs no second call. The measurement
+    /// is also remembered, so a <see cref="TrackedSize(string, float, float)"/> for the same run answers from it.
     /// </returns>
     public static Vector2 Tracked(string text, float tracking, float sizePx)
     {
@@ -52,7 +43,16 @@ public static partial class NoireText
 
         NoireUI.EnsureFrameServices();
 
-        return InFont(sizePx, text, tracking, paint: true);
+        // Read before the font is pushed, so the key matches the one a measurement of the same run is asked under.
+        var ambient = ImGui.GetFontSize();
+        var size = InFont(sizePx, text, tracking, paint: true);
+
+        // Remembered although this call did not need it. Placing the glyphs measures the run as a by-product, and a
+        // window that draws a label and states its width elsewhere, such as a heading with a rule running off the end
+        // of it, would otherwise measure it a second time and push its font again to do so.
+        UiTextMeasureCache.StoreTrackedSize(text, tracking, sizePx, ambient, size);
+
+        return size;
     }
 
     /// <summary>
@@ -68,10 +68,6 @@ public static partial class NoireText
     /// <summary>
     /// Measures text as it would be drawn with tracking, at an explicit size.
     /// </summary>
-    /// <remarks>
-    /// Measured with the font pushed: a layout built on a measurement taken in one font and drawn in another is
-    /// wrong everywhere by a few pixels.
-    /// </remarks>
     /// <param name="text">The text to measure.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
     /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
@@ -84,18 +80,20 @@ public static partial class NoireText
         if (string.IsNullOrEmpty(text) || !UiDraw.Available)
             return Vector2.Zero;
 
-        return InFont(sizePx, text, tracking, paint: false);
+        var ambient = ImGui.GetFontSize();
+
+        if (UiTextMeasureCache.TryGetTrackedSize(text, tracking, sizePx, ambient, out var cached))
+            return cached;
+
+        var size = InFont(sizePx, text, tracking, paint: false);
+        UiTextMeasureCache.StoreTrackedSize(text, tracking, sizePx, ambient, size);
+
+        return size;
     }
 
     /// <summary>
     /// Places a run with the font for a size pushed, falling back to the stretched stand-in while that size builds.
     /// </summary>
-    /// <remarks>
-    /// The same two paths <see cref="Highlighted"/> takes, for the same reason: a measurement and the drawing it
-    /// feeds have to happen in the same font, or the layout is wrong by a few pixels everywhere.<br/>
-    /// Calls <see cref="PlaceGlyphs"/> directly rather than taking a body to run: a lambda capturing the size to
-    /// return would allocate a display class and a delegate on every frame a tracked label draws.
-    /// </remarks>
     /// <param name="sizePx">The size at 100%.</param>
     /// <param name="text">The text to place.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
@@ -127,15 +125,6 @@ public static partial class NoireText
     /// <summary>
     /// Places each character in turn, and reports the run's size.
     /// </summary>
-    /// <remarks>
-    /// Drawn straight onto the draw list rather than as one ImGui item per character, which would put the run at
-    /// the mercy of item spacing. One <see cref="ImGui.Dummy"/> at the end reserves what was drawn, so a tracked
-    /// label lays out like any other item.<br/>
-    /// Each glyph is still its own draw-list text call: the font atlas spreads glyphs across several textures, and
-    /// the text call binds the right one per glyph, where a hand-written quad would draw noise off another page.
-    /// The metrics cache only removes the measuring around those calls; a space is skipped outright rather than
-    /// handed to a call that paints nothing.
-    /// </remarks>
     /// <param name="text">The text to place.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
     /// <param name="paint">Whether to actually paint, as opposed to only measuring.</param>
@@ -213,11 +202,6 @@ public static partial class NoireText
     /// <summary>
     /// Reads a glyph's advance and visibility out of the font in hand, scaled to the size it is being drawn at.
     /// </summary>
-    /// <remarks>
-    /// The font's glyph table holds metrics at the font's own baked size, while the run may be drawn at another
-    /// during the stand-in path. A codepoint the font does not carry comes back as the font's fallback glyph,
-    /// matching what ImGui's own renderer draws for it.
-    /// </remarks>
     /// <param name="codepoint">The character, as a full codepoint.</param>
     /// <param name="fontSize">The size the run is drawn at, in real pixels.</param>
     /// <returns>The glyph's metrics at the drawn size.</returns>
