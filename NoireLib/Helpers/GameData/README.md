@@ -114,6 +114,7 @@ if (HousingHelper.TryGetPlotPosition(territoryId, 16, out var plot))
 | `ExcelSheetHelper` | Any Excel sheet in any client language, lazily loaded and cached. Every helper here reads through it. |
 | `StainHelper` | The game's dyes: their names, their colors, and which are metallic or housing-applicable. |
 | `GameVersionHelper` | The installed client's build, which anything caching derived game data stamps its copies with. |
+| `GameClientHelper` | Which game client is installer, told apart by the language variants its data files ship. |
 
 ---
 

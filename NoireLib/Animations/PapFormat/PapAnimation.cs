@@ -25,7 +25,7 @@ public class PapAnimation
     /// <summary>The name the game matches against an emote's expected animation name.</summary>
     public readonly ParsedPaddedString Name = new("Name", "cbbm_replace_this", MaxNameLength + 1, 0x00);
     private readonly ParsedShort Type = new("Type", 0);
-    private readonly ParsedBool Face = new("Face Animation", false, 4);
+    private readonly ParsedInt Face = new("Face Animation", 4, 0);
 
     /// <summary>This animation's timeline, populated by <see cref="ReadTmb"/> once its bytes are reached.</summary>
     public TmbFile Tmb { get; private set; } = null!;
