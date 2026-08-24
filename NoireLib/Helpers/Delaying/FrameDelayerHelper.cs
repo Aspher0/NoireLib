@@ -24,11 +24,7 @@ public static class FrameDelayerHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_FrameDelayerHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a frame delayer for the specified key.
-    /// </summary>
-    /// <param name="key">The key to identify this delayer instance.</param>
-    /// <returns>The FrameDelayer instance for the specified key.</returns>
+    // Gets or creates a frame delayer for the specified key.
     private static FrameDelayer GetOrCreateDelayer(string key)
     {
         if (string.IsNullOrEmpty(key))
@@ -201,9 +197,6 @@ public static class FrameDelayerHelper
         _delayers.Clear();
     }
 
-    /// <summary>
-    /// Disposes all frame delayer states and clears them.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

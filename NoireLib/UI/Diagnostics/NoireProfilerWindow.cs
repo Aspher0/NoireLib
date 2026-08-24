@@ -10,21 +10,8 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// A window listing what every measured scope costs, sortable, searchable and copyable. Right-click a row to leave
-/// that scope out of the totals (marked red); right-click again to put it back. See
-/// <see cref="UiProfiler.SetExcluded"/>.
+/// that scope out of the totals (marked red); right-click again to put it back.
 /// </summary>
-/// <remarks>
-/// Built on raw ImGui rather than <see cref="NoireTable{T}"/>: a profiler drawn with a profiled widget would report
-/// itself in its own list.
-/// </remarks>
-/// <example>
-/// <code>
-/// var profiler = new NoireProfilerWindow();
-/// windowSystem.AddWindow(profiler);
-///
-/// profiler.IsOpen = true;   // or bind it to a command
-/// </code>
-/// </example>
 public sealed class NoireProfilerWindow : Window
 {
     /// <summary>
@@ -32,64 +19,35 @@ public sealed class NoireProfilerWindow : Window
     /// </summary>
     public const string DefaultName = "NoireUI Profiler";
 
-    /// <summary>
-    /// Above this many milliseconds an average is drawn as a warning. One sixtieth of a frame at 60 FPS is 0.27 ms.
-    /// </summary>
+    // Above this many milliseconds an average is drawn as a warning. One sixtieth of a frame at 60 FPS is 0.27 ms.
     private const double WarnMs = 0.5d;
 
-    /// <summary>
-    /// The allocation per frame a scope is flagged at.
-    /// </summary>
-    /// <remarks>
-    /// Just above zero: the threshold exists to ignore rounding on a rolling average, not to tolerate a budget.
-    /// </remarks>
+    // The allocation per frame a scope is flagged at.
     private const double WarnBytes = 1d;
 
-    /// <summary>
-    /// The colour a figure over its threshold is drawn in.
-    /// </summary>
     private static readonly Vector4 WarnColour = new(0.93f, 0.72f, 0.35f, 1f);
 
-    /// <summary>
-    /// The background a scope excluded from the totals is drawn on.
-    /// </summary>
-    /// <remarks>
-    /// Dark and half transparent rather than a flat red, so the figures on the row stay as legible as any other
-    /// row's.
-    /// </remarks>
     private static readonly Vector4 ExcludedColour = new(0.42f, 0.09f, 0.11f, 0.55f);
 
-    /// <summary>
-    /// The colour the count of excluded scopes is written in: the same red lifted to where it is readable as text.
-    /// </summary>
+    // The same red lifted to where it is readable as text.
     private static readonly Vector4 ExcludedTextColour = new(0.86f, 0.36f, 0.38f, 1f);
 
     private readonly List<UiProfileEntry> rows = new();
     private readonly StringBuilder clipboard = new();
 
-    /// <summary>
-    /// The profiler's own read, taken into a list this window owns so that looking costs no garbage.
-    /// </summary>
+    // The profiler's own read, taken into a list this window owns so that looking costs no garbage.
     private readonly List<UiProfileEntry> snapshot = new();
 
-    /// <summary>
-    /// The row comparison, held rather than passed as a method group.
-    /// </summary>
-    /// <remarks>
-    /// A method group converted to a delegate at the call site allocates one every time, since an instance method
-    /// carries its receiver; sorting the roots and every branch would make that a delegate per branch per frame.
-    /// </remarks>
+    // The row comparison, held rather than passed as a method group.
     private readonly Comparison<UiProfileEntry> compareRows;
 
-    /// <summary>
-    /// What the cached rows and text were built from, so a frame that changed nothing rebuilds nothing.
-    /// </summary>
+    // What the cached rows and text were built from, so a frame that changed nothing rebuilds nothing.
     private int lastGeneration = -1;
 
-    /// <summary>How often the rows are rebuilt while the figures move every frame, in seconds.</summary>
+    // In seconds.
     private const float RefreshInterval = 0.15f;
 
-    /// <summary>When the rows were last rebuilt. Negative so the first frame always builds.</summary>
+    // Negative so the first frame always builds.
     private float lastRefreshTime = float.NegativeInfinity;
 
     private string lastSearch = string.Empty;
@@ -97,106 +55,55 @@ public sealed class NoireProfilerWindow : Window
     private int lastSortColumn = -1;
     private bool lastSortAscending;
 
-    /// <summary>
-    /// Whether the tree has to be regrouped before it is drawn again.
-    /// </summary>
     private bool treeDirty = true;
 
-    /// <summary>
-    /// One row as it appears on screen, with the tree already walked.
-    /// </summary>
-    /// <param name="Row">The scope.</param>
-    /// <param name="Depth">How far in it sits, which is drawn as indentation rather than as a tree push.</param>
-    /// <param name="HasChildren">Whether it can be opened.</param>
     private readonly record struct VisibleRow(UiProfileEntry Row, int Depth, bool HasChildren);
 
-    /// <summary>
-    /// Every row a reader could scroll to, in the order they appear, flattened out of the tree.
-    /// </summary>
-    /// <remarks>
-    /// A clipper needs a count and an index; a tree drawn by recursion offers neither, since <c>TreePop</c> cannot be
-    /// paired across a range the clipper skipped. Flattened once into a list, with indentation drawn by hand.
-    /// </remarks>
+    // Flattened out of the tree, in the order the rows appear.
     private readonly List<VisibleRow> visibleRows = new();
 
-    /// <summary>
-    /// Whether the flattened rows have to be rebuilt before they are drawn again.
-    /// </summary>
     private bool flattenDirty = true;
 
-    /// <summary>
-    /// The rows that sit under each scope, rebuilt each frame. Held as a field rather than built fresh, so measuring
-    /// allocation does not itself allocate a dictionary and a list per frame.
-    /// </summary>
+    // Held as a field rather than built fresh, so measuring allocation does not itself allocate a dictionary and a
+    // list per frame.
     private readonly Dictionary<int, List<UiProfileEntry>> children = new();
 
     private readonly List<UiProfileEntry> roots = new();
     private readonly HashSet<int> drawn = new();
     private readonly HashSet<int> present = new();
 
-    /// <summary>
-    /// Which node each one sits inside, so a search can walk from a match up to its roots.
-    /// </summary>
+    // Which node each one sits inside, so a search can walk from a match up to its roots.
     private readonly Dictionary<int, int> parentOf = new();
 
-    /// <summary>
-    /// While a search is running, the nodes that matched plus every ancestor of one. Empty means no search, which
-    /// shows everything.
-    /// </summary>
+    // While a search is running, the nodes that matched plus every ancestor of one; empty means no search, showing
+    // everything.
     private readonly HashSet<int> visible = new();
 
-    /// <summary>
-    /// Whether scopes that did not run on the last measured frame are listed.
-    /// </summary>
-    /// <remarks>
-    /// On by default: a scope that stopped running still carries a reading worth having, usually the frame that
-    /// built it for the first time. Turn off once accumulated rows bury what is actually costing something.
-    /// </remarks>
     private bool showInactive = true;
 
-    /// <summary>
-    /// Which branches are open, by node id.
-    /// </summary>
-    /// <remarks>
-    /// Held here rather than in ImGui's own tree storage, which cannot be reached for a node that is not being
-    /// submitted: expanding everything has to reach branches hidden inside collapsed parents.
-    /// </remarks>
+    // Which branches are open, by node id.
     private readonly Dictionary<int, bool> openState = new();
 
-    /// <summary>
-    /// Set for one frame by the expand and collapse buttons, and applied to every known node, drawn or not.
-    /// </summary>
+    // Set for one frame by the expand and collapse buttons, and applied to every known node, drawn or not.
     private bool? pendingTreeState;
 
-    /// <summary>
-    /// Every scope in the last snapshot, by name, so a search can walk a match's parents back up to a root.
-    /// </summary>
+    // Every scope in the last snapshot, by name, so a search can walk a match's parents back up to a root.
     private readonly Dictionary<string, UiProfileEntry> byName = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Set for one frame by the expand and collapse buttons, and applied to every node as it is drawn.
-    /// </summary>
+    // Set for one frame by the expand and collapse buttons, and applied to every node as it is drawn.
     private bool? pendingOpenAll;
 
     private double totalLastMs;
     private double totalAverageMs;
 
-    /// <summary>
-    /// How many scopes are currently marked as excluded, counted from the read rather than asked of the profiler.
-    /// </summary>
-    /// <remarks>
-    /// Taken from the snapshot, which holds every node, rather than from the rows, which the idle filter can thin
-    /// out: a scope excluded and then hidden would otherwise leave no control to lift the mark.
-    /// </remarks>
+    // Counted from the read rather than asked of the profiler.
     private int excludedCount;
 
     private string search = string.Empty;
     private int sortColumn = (int)Column.Self;
     private bool sortAscending;
 
-    /// <summary>
-    /// The table's columns, in the order they are drawn.
-    /// </summary>
+    // In the order they are drawn.
     private enum Column
     {
         Scope,
@@ -211,7 +118,7 @@ public sealed class NoireProfilerWindow : Window
     /// <summary>
     /// Creates the window.
     /// </summary>
-    /// <param name="name">The window title. Defaults to <see cref="DefaultName"/>.</param>
+    /// <param name="name">The window title, <see cref="DefaultName"/> by default.</param>
     public NoireProfilerWindow(string name = DefaultName)
         : base(name)
     {
@@ -228,8 +135,7 @@ public sealed class NoireProfilerWindow : Window
     }
 
     /// <summary>
-    /// Draws the window: the controls, the totals, and the tree of measured scopes. Called by Dalamud's window
-    /// system; a host that registered the window does not call this itself.
+    /// Draws the window: the controls, the totals, and the tree of measured scopes.
     /// </summary>
     public override void Draw()
     {
@@ -247,8 +153,7 @@ public sealed class NoireProfilerWindow : Window
     public const string SelfScopeName = "NoireProfilerWindow";
 
     /// <summary>
-    /// Draws the profiler's controls and table into whatever is currently being drawn, for a plugin that would rather
-    /// put this on a page of its own settings than in a window of its own.
+    /// Draws the profiler's controls and table into whatever is currently being drawn.
     /// </summary>
     public void DrawContents()
     {
@@ -263,9 +168,6 @@ public sealed class NoireProfilerWindow : Window
         DrawTable();
     }
 
-    /// <summary>
-    /// The tracking switch and the two whole-list actions.
-    /// </summary>
     private void DrawControls()
     {
         var enabled = NoireUI.Profiler.Enabled;
@@ -363,9 +265,6 @@ public sealed class NoireProfilerWindow : Window
             ImGui.SetTooltip("Counts every excluded scope towards the totals again. Nothing measured is forgotten.");
     }
 
-    /// <summary>
-    /// The totals across every scope.
-    /// </summary>
     private void DrawTotals()
     {
         var (lastTotal, averageTotal) = SelfTotals();
@@ -453,14 +352,7 @@ public sealed class NoireProfilerWindow : Window
         }
     }
 
-    /// <summary>
-    /// The self time across every scope, for the last frame and averaged.
-    /// </summary>
-    /// <remarks>
-    /// Self time, not total: summing the total column would double-count nested scopes. Scopes the reader has
-    /// excluded are skipped.
-    /// </remarks>
-    /// <returns>The last frame's total and the rolling average.</returns>
+    // The self time across every scope, for the last frame and averaged.
     private (double Last, double Average) SelfTotals()
     {
         var last = 0d;
@@ -478,18 +370,13 @@ public sealed class NoireProfilerWindow : Window
         return (last, average);
     }
 
-    /// <summary>
-    /// The name filter.
-    /// </summary>
     private void DrawSearch()
     {
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("###NoireProfilerSearch", "Search", ref search, 128);
     }
 
-    /// <summary>
-    /// The table itself, sorted by whichever header was last clicked.
-    /// </summary>
+    // Sorted by whichever header was last clicked.
     private void DrawTable()
     {
         Refresh();
@@ -583,13 +470,6 @@ public sealed class NoireProfilerWindow : Window
         }
     }
 
-    /// <summary>
-    /// Groups the rows by the scope they sit inside, and collects the ones with nothing above them.
-    /// </summary>
-    /// <remarks>
-    /// A scope whose parent was filtered out, or measured before its parent existed, becomes a root rather than
-    /// being dropped.
-    /// </remarks>
     private void BuildTree()
     {
         foreach (var list in children.Values)
@@ -631,14 +511,7 @@ public sealed class NoireProfilerWindow : Window
         BuildVisibility();
     }
 
-    /// <summary>
-    /// Works out which scopes a search leaves on screen: the ones that matched, and every scope between a match and its
-    /// root.
-    /// </summary>
-    /// <remarks>
-    /// Showing only the matches would strand them with nothing above them, and hiding a parent that did not match
-    /// itself would hide every match beneath it.
-    /// </remarks>
+    // Which scopes a search leaves on screen: the ones that matched, and every scope between a match and its root.
     private void BuildVisibility()
     {
         visible.Clear();
@@ -659,13 +532,6 @@ public sealed class NoireProfilerWindow : Window
         }
     }
 
-    /// <summary>
-    /// Walks the tree once and writes out the rows a reader can actually reach, in the order they appear.
-    /// </summary>
-    /// <remarks>
-    /// Everything inside a collapsed branch is left out, so the count the clipper is given is rows on screen rather
-    /// than scopes measured.
-    /// </remarks>
     private void FlattenVisible()
     {
         visibleRows.Clear();
@@ -675,12 +541,7 @@ public sealed class NoireProfilerWindow : Window
             FlattenBranch(root, depth: 0);
     }
 
-    /// <summary>
-    /// Adds a scope and, when it is open, everything measured inside it.
-    /// </summary>
-    /// <param name="row">The scope to add.</param>
-    /// <param name="depth">How deep the branch is, drawn as indentation and used to stop a malformed chain from
-    /// recursing forever.</param>
+    // Adds a scope and, when it is open, everything measured inside it.
     private void FlattenBranch(UiProfileEntry row, int depth)
     {
         // A scope seen under two parents in one frame could otherwise be reached twice and, in the worst case, become
@@ -711,15 +572,9 @@ public sealed class NoireProfilerWindow : Window
             FlattenBranch(child, depth + 1);
     }
 
-    /// <summary>
-    /// How deep the tree may go before it is assumed to be malformed.
-    /// </summary>
+    // How deep the tree may go before it is assumed to be malformed.
     private const int MaxDepth = 32;
 
-    /// <summary>
-    /// Draws one scope's row.
-    /// </summary>
-    /// <param name="visibleRow">The scope to draw, with its place in the tree already resolved.</param>
     private void DrawRow(in VisibleRow visibleRow)
     {
         var row = visibleRow.Row;
@@ -809,15 +664,7 @@ public sealed class NoireProfilerWindow : Window
         ImGui.TextUnformatted(WriteValue(cell, row.PeakMs, MsFormat));
     }
 
-    /// <summary>
-    /// Takes a fresh read and regroups the tree, but only when something behind them moved.
-    /// </summary>
-    /// <remarks>
-    /// While tracking is on this runs every frame, since the figures are rolling averages. Skips frames where
-    /// nothing moved: all of them while tracking is off.<br/>
-    /// The tree cannot be regrouped less often than the rows are read, since its branches hold copies of the
-    /// entries; skipping it would draw stale numbers.
-    /// </remarks>
+    // Takes a fresh read and regroups the tree, but only when something behind them moved.
     private void Refresh()
     {
         var generation = NoireUI.Profiler.Generation;
@@ -861,18 +708,9 @@ public sealed class NoireProfilerWindow : Window
         treeDirty = true;
     }
 
-    /// <summary>
-    /// Sorts by the current column, largest first unless the header says otherwise.
-    /// </summary>
     private void Sort() => rows.Sort(compareRows);
 
-    /// <summary>
-    /// Orders two scopes by the column the header says, largest first unless it says otherwise.
-    /// </summary>
-    /// <remarks>
-    /// Used for the flat list and for each set of siblings in the tree, so a branch is ordered the same way the table
-    /// as a whole is.
-    /// </remarks>
+    // Largest first unless the header says otherwise.
     private int CompareRows(UiProfileEntry left, UiProfileEntry right)
     {
         var order = (Column)sortColumn switch
@@ -893,13 +731,6 @@ public sealed class NoireProfilerWindow : Window
         return sortAscending ? order : -order;
     }
 
-    /// <summary>
-    /// Reads which header the user last clicked.
-    /// </summary>
-    /// <remarks>
-    /// Read after the rows have been sorted rather than before, so a click takes effect on the next frame. Sorting the
-    /// list a second time inside the same table would leave the header and the rows disagreeing for a frame.
-    /// </remarks>
     private void ReadSortSpecs()
     {
         var specs = ImGui.TableGetSortSpecs();
@@ -913,9 +744,7 @@ public sealed class NoireProfilerWindow : Window
         sortAscending = primary.SortDirection == ImGuiSortDirection.Ascending;
     }
 
-    /// <summary>
-    /// Builds the whole table as tab separated text, in the order it is displayed.
-    /// </summary>
+    // Tab separated, in the order the table is displayed.
     private string BuildClipboardText()
     {
         var (lastTotal, averageTotal) = SelfTotals();
@@ -981,14 +810,7 @@ public sealed class NoireProfilerWindow : Window
         return clipboard.ToString();
     }
 
-    /// <summary>
-    /// The full chain of scopes a row sits under, outermost first.
-    /// </summary>
-    /// <remarks>
-    /// The whole path rather than the parent's name, since names repeat: a helper called from thirty places has
-    /// thirty nodes whose parents may all be called the same thing, and naming only the parent would read as thirty
-    /// identical rows.
-    /// </remarks>
+    // The full chain of scopes a row sits under, outermost first.
     private string PathOf(UiProfileEntry row)
     {
         path.Clear();
@@ -1019,46 +841,28 @@ public sealed class NoireProfilerWindow : Window
 
     private readonly List<string> path = new();
 
-    /// <summary>
-    /// How much stack one formatted cell is given. Comfortably past the longest a millisecond or byte figure reaches.
-    /// </summary>
+    // How much stack one formatted cell is given, past the longest a millisecond or byte figure reaches.
     private const int CellCapacity = 32;
 
-    /// <summary>
-    /// How much stack a summary line is given, which is longer than the widest the four figures on it can reach.
-    /// </summary>
+    // How much stack a summary line is given, past the widest the four figures on it can reach.
     private const int LineCapacity = 256;
 
     private const string MsFormat = "0.0000";
     private const string BytesFormat = "N0";
 
-    /// <summary>
-    /// Writes a value into <paramref name="buffer"/> and returns the part written.
-    /// </summary>
-    /// <remarks>
-    /// Falls back to an empty span rather than throwing when the buffer is too small: a blank cell beats an
-    /// exception in a diagnostic.
-    /// </remarks>
+    // Returns the part of the buffer written.
     private static ReadOnlySpan<char> WriteValue(Span<char> buffer, double value, string format)
         => value.TryFormat(buffer, out var written, format, CultureInfo.CurrentCulture)
             ? buffer[..written]
             : default;
 
-    /// <summary>
-    /// Writes a call count into <paramref name="buffer"/> and returns the part written.
-    /// </summary>
+    // Returns the part of the buffer written.
     private static ReadOnlySpan<char> WriteCount(Span<char> buffer, int value)
         => value.TryFormat(buffer, out var written, default, CultureInfo.CurrentCulture)
             ? buffer[..written]
             : default;
 
-    /// <summary>
-    /// Draws one numeric cell, in <see cref="WarnColour"/> when it is over its threshold.
-    /// </summary>
-    /// <remarks>
-    /// Coloured by pushing rather than with <c>TextColored</c>, which is printf-style and would read a percent sign in
-    /// the text as a conversion.
-    /// </remarks>
+    // Draws one numeric cell, in WarnColour when it is over its threshold.
     private static void WriteCell(Span<char> buffer, double value, string format, bool warn)
     {
         var text = WriteValue(buffer, value, format);

@@ -145,8 +145,8 @@ public class NoireUiProfilerTests
 
             var entry = profiler.Snapshot().Single(e => e.Name == "allocating");
 
-            // Approximately, not exactly: the array carries a header on top of its elements. The point is that the
-            // figure is the caller's allocation rather than a count of something else.
+            // Approximately, not exactly: the array carries a header on top of its elements. The figure is the
+            // caller's allocation rather than a count of something else.
             entry.SelfLastBytes.Should().BeGreaterThanOrEqualTo(size);
             entry.SelfLastBytes.Should().BeLessThan(size + 512);
         }, trackAllocations: true);
@@ -218,8 +218,7 @@ public class NoireUiProfilerTests
 
             child.SelfLastBytes.Should().BeGreaterThanOrEqualTo(size);
 
-            // The parent's total includes the child's allocation and its self excludes it, which is what stops a page
-            // from looking responsible for the garbage of every widget on it.
+            // The parent's total includes the child's allocation and its self excludes it.
             parent.LastBytes.Should().BeGreaterThanOrEqualTo(size);
             parent.SelfLastBytes.Should().Be(0L);
         }, trackAllocations: true);
@@ -577,7 +576,7 @@ public class NoireUiProfilerTests
     {
         // NoireUI's own draw handler can run before the host's, so on the first frames its scopes open with no root to
         // be adopted by. Left alone they sit outside the tree forever and the same scope appears twice, once stranded
-        // and once adopted, which is exactly what shipped.
+        // and once adopted.
         WithProfiler((profiler, advance) =>
         {
             using (profiler.Measure("hub pass"))

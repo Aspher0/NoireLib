@@ -162,11 +162,6 @@ public sealed class NoireDatabase : IDisposable
         SQLiteConnection.ClearAllPools();
     }
 
-    /// <summary>
-    /// Overrides the database directory for a database name.
-    /// </summary>
-    /// <param name="databaseName">The database name.</param>
-    /// <param name="directoryPath">The database directory path.</param>
     internal static void SetDatabaseDirectoryOverride(string databaseName, string directoryPath)
     {
         if (string.IsNullOrWhiteSpace(databaseName))

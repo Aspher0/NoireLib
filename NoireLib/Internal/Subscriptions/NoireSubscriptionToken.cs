@@ -39,10 +39,8 @@ public sealed class NoireSubscriptionToken : IDisposable
     /// </summary>
     public bool IsActive => Volatile.Read(ref unsubscribeAction) != null;
 
-    /// <summary>
-    /// Marks the token as no longer registered without invoking the unsubscribe action.<br/>
-    /// Called by the owning registry when the subscription is removed through another path.
-    /// </summary>
+    // Marks the token as no longer registered without invoking the unsubscribe action. Called by the owning registry
+    // when the subscription is removed through another path.
     internal void Invalidate()
         => Interlocked.Exchange(ref unsubscribeAction, null);
 

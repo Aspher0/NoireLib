@@ -318,14 +318,9 @@ public static class FileHelper
         }
     }
 
-    /// <summary>
-    /// Builds the temporary path a <see cref="ReplaceFileAtomically"/> call writes into: the target path, a fresh
-    /// identifier and a <c>.tmp</c> suffix.
-    /// Unique per call so two concurrent writes cannot interleave inside one temporary, and beside the target so the
-    /// move that follows stays on one volume and therefore stays atomic.
-    /// </summary>
-    /// <param name="filePath">The file being written.</param>
-    /// <returns>A path beside <paramref name="filePath"/> that no other call will pick.</returns>
+    // Builds the temporary path a ReplaceFileAtomically call writes into: the target path, a fresh identifier and a
+    // .tmp suffix. Unique per call so two concurrent writes cannot interleave inside one temporary, and beside the
+    // target so the move that follows stays on one volume and therefore stays atomic.
     internal static string TemporaryWritePathFor(string filePath)
         => $"{filePath}.{Guid.NewGuid():N}.tmp";
 
@@ -639,16 +634,10 @@ public static class FileHelper
         return Path.GetDirectoryName(filePath);
     }
 
-    /// <summary>
-    /// The serializer used by the JSON file operations when the caller supplies no settings.
-    /// </summary>
+    // The serializer used by the JSON file operations when the caller supplies no settings.
     private static readonly JsonSerializer DefaultJsonSerializer = CreateJsonSerializer(null);
 
-    /// <summary>
-    /// Builds the serializer that backs every JSON file operation here.
-    /// </summary>
-    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>A serializer honouring <paramref name="settings"/>, with type-name handling forced off.</returns>
+    // Builds the serializer that backs every JSON file operation here.
     private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? settings)
     {
         // Create ignores the mutable JsonConvert.DefaultSettings global, unlike the JsonConvert entry points.
@@ -663,20 +652,11 @@ public static class FileHelper
         return serializer;
     }
 
-    /// <summary>
-    /// Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
-    /// </summary>
-    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The serializer to use.</returns>
+    // Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
     private static JsonSerializer GetJsonSerializer(JsonSerializerSettings? settings)
         => settings == null ? DefaultJsonSerializer : CreateJsonSerializer(settings);
 
-    /// <summary>
-    /// Serializes an object to the JSON written to a file.
-    /// </summary>
-    /// <param name="obj">The object to serialize.</param>
-    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The JSON representation of the object.</returns>
+    // Serializes an object to the JSON written to a file.
     private static string SerializeToJson(object? obj, JsonSerializerSettings? settings)
     {
         var builder = new StringBuilder(256);
@@ -690,13 +670,6 @@ public static class FileHelper
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Deserializes the JSON read from a file.
-    /// </summary>
-    /// <typeparam name="T">The type to deserialize to.</typeparam>
-    /// <param name="json">The JSON read from the file.</param>
-    /// <param name="settings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The deserialized object.</returns>
     private static T? DeserializeFromJson<T>(string json, JsonSerializerSettings? settings)
     {
         using var stringReader = new StringReader(json);

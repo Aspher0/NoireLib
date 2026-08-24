@@ -53,7 +53,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Fills a rectangle with a gradient, corners and all, unlike ImGui's own multicolor rectangle.
+    /// Fills a rectangle with a gradient, corners and all.
     /// </summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
@@ -75,10 +75,8 @@ public static partial class NoireShapes
         FillShaded(path[..count], from, to, fromColor, toColor);
     }
 
-    /// <summary>
-    /// Fills a path and shades it in one step, for the shapes that build their own gradient rather than wrapping a
-    /// caller's body.
-    /// </summary>
+    // Fills a path and shades it in one step, for the shapes that build their own gradient rather than wrapping a
+    // caller's body.
     private static void FillShaded(ReadOnlySpan<Vector2> path, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         using var draw = UiDraw.BeginMethod();
@@ -97,7 +95,7 @@ public static partial class NoireShapes
     #region Glow
 
     /// <summary>
-    /// Paints a soft halo around a rectangle, from a stack of expanding fills that fade as they grow.
+    /// Paints a soft halo around a rectangle.
     /// </summary>
     /// <remarks>Nothing is drawn inside the rectangle itself.</remarks>
     /// <param name="min">The top left corner, in screen space.</param>
@@ -140,6 +138,7 @@ public static partial class NoireShapes
     /// <summary>
     /// Paints a soft halo around any convex shape, following the shape rather than its bounding box.
     /// </summary>
+    /// <remarks>At most <see cref="MaxGlowPathPoints"/> points; more draws nothing.</remarks>
     /// <param name="points">The shape to light, convex and clockwise.</param>
     /// <param name="color">The glow color at full strength.</param>
     /// <param name="spread">How far it reaches beyond the shape, in real pixels.</param>
@@ -206,8 +205,7 @@ public static partial class NoireShapes
     #region Plate
 
     /// <summary>
-    /// Draws a plate: a filled, optionally gradient, optionally beveled surface with its own border and glow. The
-    /// building block a bespoke panel, card, masthead or button face is made of.
+    /// Draws a plate: a filled, optionally gradient, optionally beveled surface with its own border and glow.
     /// </summary>
     /// <param name="min">The top left corner, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
@@ -299,7 +297,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Draws a short elbow inside each corner of a rect, the mark that reads as drawn rather than as a border.
+    /// Draws a short elbow inside each corner of a rect.
     /// </summary>
     /// <param name="min">The top left corner of the rect they sit inside, in screen space.</param>
     /// <param name="max">The bottom right corner, in screen space.</param>
@@ -382,13 +380,7 @@ public static partial class NoireShapes
             FrameCornerTicks(outerMin, outerMax, gap, style);
     }
 
-    /// <summary>
-    /// Draws the inner bracket at each corner the style asks for.
-    /// </summary>
-    /// <param name="min">The top left of the outer frame line.</param>
-    /// <param name="max">The bottom right of the outer frame line.</param>
-    /// <param name="gap">How far in the innermost frame line already sits.</param>
-    /// <param name="style">The frame style.</param>
+    // The gap is how far in the innermost frame line already sits.
     private static void FrameCornerTicks(Vector2 min, Vector2 max, float gap, FrameStyle style)
     {
         var length = style.ScaledTickLength;
@@ -418,7 +410,7 @@ public static partial class NoireShapes
     #region Separators
 
     /// <summary>
-    /// Draws a rule that fades out at both ends, for a divider that stops rather than being cut off.
+    /// Draws a rule that fades out at both ends.
     /// </summary>
     /// <param name="from">Where the rule starts, in screen space.</param>
     /// <param name="to">Where it ends, in screen space.</param>

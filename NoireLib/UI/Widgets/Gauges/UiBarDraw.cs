@@ -12,17 +12,17 @@ namespace NoireLib.UI;
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the bar.</param>
 /// <param name="Max">The bottom right corner of the bar.</param>
-/// <param name="Fraction">The fraction filled, already clamped to 0 to 1.</param>
+/// <param name="Fraction">The fraction filled, clamped to 0 to 1.</param>
 /// <param name="Rounding">The corner radius the bar would have used, in real pixels.</param>
-/// <param name="TrackColor">The colour of the unfilled part, already resolved through the style and the theme.</param>
-/// <param name="FillColor">The colour of the filled part, thresholds already applied.</param>
+/// <param name="TrackColor">The colour of the unfilled part.</param>
+/// <param name="FillColor">The colour of the filled part.</param>
 /// <param name="FillColorTo">The colour the fill runs to, or <see langword="null"/> for a flat fill.</param>
 /// <param name="Marks">Fractions along the bar carrying a hairline, or <see langword="null"/> for none.</param>
-/// <param name="MarkColor">The colour of the hairlines, already resolved.</param>
+/// <param name="MarkColor">The colour of the hairlines.</param>
 /// <param name="Label">The text over the bar, countdown text included, or <see langword="null"/> for none.</param>
 /// <param name="LabelSize">The step of the type scale the label draws at.</param>
 /// <param name="LabelAlign">Where the label sits along the bar, from 0 (left) to 1 (right).</param>
-/// <param name="LabelColor">The colour the label draws in, already resolved.</param>
+/// <param name="LabelColor">The colour the label draws in.</param>
 public readonly record struct UiBarDraw(
     ImDrawListPtr DrawList,
     Vector2 Min,

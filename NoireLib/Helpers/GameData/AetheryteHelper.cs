@@ -189,15 +189,8 @@ public static class AetheryteHelper
         return (unlocked, IsCurrentAnswer(read, unlocked.Count, teleportListOwner, CharacterHelper.LocalContentId));
     }
 
-    /// <summary>
-    /// Decides whether a teleport-list read answers for the character standing there now: it succeeded, found at least
-    /// one attunement, and the list was last refreshed by that same character.
-    /// </summary>
-    /// <param name="read">Whether the list was read at all.</param>
-    /// <param name="attunedCount">How many attunements the read found.</param>
-    /// <param name="listOwner">The character the list was last refreshed for, zero when it never was.</param>
-    /// <param name="character">The character logged in now, zero when none is.</param>
-    /// <returns>True when the read is the current character's answer.</returns>
+    // Decides whether a teleport-list read answers for the character standing there now: it succeeded, found at least
+    // one attunement, and the list was last refreshed by that same character.
     internal static bool IsCurrentAnswer(bool read, int attunedCount, ulong listOwner, ulong character)
         => read && attunedCount > 0 && listOwner != 0 && listOwner == character;
 

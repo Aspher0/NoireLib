@@ -6,9 +6,7 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A lightweight description of an image usable by the NoireLib UI helpers (overlay buttons, custom tooltips...).<br/>
-/// Sources backed by the <see cref="Dalamud.Plugin.Services.ITextureProvider"/> (files, game icons, game textures) are resolved
-/// through Dalamud's shared texture cache and are cheap to resolve every frame.
+/// A lightweight description of an image usable by the NoireLib UI helpers (overlay buttons, custom tooltips...).
 /// </summary>
 public sealed class UiImageSource
 {
@@ -71,9 +69,9 @@ public sealed class UiImageSource
     }
 
     /// <summary>
-    /// Creates an image source from an existing texture wrap.<br/>
-    /// The wrap stays owned by the caller: it will not be disposed by NoireLib and must outlive this source.
+    /// Creates an image source from an existing texture wrap.
     /// </summary>
+    /// <remarks>The wrap stays owned by the caller and must outlive this source.</remarks>
     /// <param name="textureWrap">The texture wrap to use.</param>
     /// <returns>The created <see cref="UiImageSource"/>.</returns>
     public static UiImageSource FromWrap(IDalamudTextureWrap textureWrap)
@@ -85,9 +83,9 @@ public sealed class UiImageSource
     }
 
     /// <summary>
-    /// Resolves this source to a texture wrap usable with ImGui for the current frame.<br/>
-    /// Shared sources may return an empty placeholder texture while still loading.
+    /// Resolves this source to a texture wrap usable with ImGui for the current frame.
     /// </summary>
+    /// <remarks>Shared sources may return an empty placeholder texture while still loading.</remarks>
     /// <returns>The resolved texture wrap, or <see langword="null"/> if it could not be resolved.</returns>
     public IDalamudTextureWrap? GetWrap()
     {

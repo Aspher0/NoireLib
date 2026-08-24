@@ -72,10 +72,8 @@ public partial class NoireGameWatcher
         return SubscribeCore(null, handler, options, LookupSource(typeof(TEvent)), null, null, typeof(TEvent).Name);
     }
 
-    /// <summary>
-    /// The single subscription path behind every facade helper and the public <see cref="Subscribe{TEvent}"/>.
-    /// Handles keyed replacement, owner tagging, demand-driven interest and once-cleanup in one place.
-    /// </summary>
+    // The single subscription path behind every facade helper and the public Subscribe{TEvent}. Handles keyed
+    // replacement, owner tagging, demand-driven interest and once-cleanup in one place.
     internal NoireSubscriptionToken SubscribeCore<TEvent>(
         Action<TEvent>? handler,
         Func<TEvent, Task>? asyncHandler,
@@ -181,10 +179,8 @@ public partial class NoireGameWatcher
         return outerToken;
     }
 
-    /// <summary>
-    /// Registers a non-registry watch (distance/region watchers, node watchers, threshold watchers) in the
-    /// ledger so it gets keyed replacement, owner teardown and demand-driven interest like every subscription.
-    /// </summary>
+    // Registers a non-registry watch (distance/region watchers, node watchers, threshold watchers) in the ledger so
+    // it gets keyed replacement, owner teardown and demand-driven interest like every subscription.
     internal NoireSubscriptionToken RegisterExternalWatch(
         string description,
         SourceKind? interest,
@@ -351,16 +347,12 @@ public partial class NoireGameWatcher
         DispatchUntyped(evt);
     }
 
-    /// <summary>
-    /// The single dispatch path: counts the event, feeds the diagnostics log, dispatches through the registry
-    /// and mirrors to the EventBus for opted-in types.
-    /// </summary>
+    // The single dispatch path: counts the event, feeds the diagnostics log, dispatches through the registry and
+    // mirrors to the EventBus for opted-in types.
     internal void DispatchEvent<TEvent>(TEvent evt) where TEvent : notnull
         => DispatchUntyped(evt);
 
-    /// <summary>
-    /// Dispatches an event by its runtime type - used by table-driven sources that create events from factories.
-    /// </summary>
+    // Dispatches an event by its runtime type - used by table-driven sources that create events from factories.
     internal void DispatchUntyped(object evt)
     {
         var type = evt.GetType();
@@ -392,9 +384,7 @@ public partial class NoireGameWatcher
 
     #region Event → source map
 
-    /// <summary>
-    /// Looks up the producing source for an event type. Custom (user-defined) events have none.
-    /// </summary>
+    // Looks up the producing source for an event type. Custom (user-defined) events have none.
     internal static SourceKind? LookupSource(Type eventType)
         => EventSourceMap.Value.TryGetValue(eventType, out var kind) ? kind : null;
 
@@ -483,20 +473,18 @@ public partial class NoireGameWatcher
 
     #region Diagnostics accessors (internal)
 
-    /// <summary>Per-event-type dispatch counters, for diagnostics.</summary>
     internal IReadOnlyDictionary<Type, long> EventCounters => eventCounters;
 
-    /// <summary>Per-event-type custom publish counters, for diagnostics.</summary>
     internal IReadOnlyDictionary<Type, long> CustomPublishCounters => customPublishCounters;
 
-    /// <summary>A snapshot of the recent event log, newest last, for diagnostics.</summary>
+    // A snapshot of the recent event log, newest last, for diagnostics.
     internal (DateTimeOffset At, string Description)[] RecentEventsSnapshot()
     {
         lock (recentEvents)
             return recentEvents.ToArray();
     }
 
-    /// <summary>A snapshot of live subscriptions (description, event type, key, interest), for diagnostics.</summary>
+    // A snapshot of live subscriptions (description, event type, key, interest), for diagnostics.
     internal (string Description, string EventType, string? Key, SourceKind? Interest)[] LedgerSnapshot()
     {
         lock (gate)

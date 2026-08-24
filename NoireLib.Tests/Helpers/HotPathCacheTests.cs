@@ -10,10 +10,6 @@ namespace NoireLib.Tests;
 /// Locks the cache the draw path reads: that it answers, that it forgets when it should, that it stays bounded, and
 /// that a hit costs nothing.
 /// </summary>
-/// <remarks>
-/// The last of those is the whole reason this type exists rather than one of the other two cache helpers, so it is
-/// asserted as behaviour rather than assumed from the implementation.
-/// </remarks>
 public class HotPathCacheTests
 {
     /// <summary>

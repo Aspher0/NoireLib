@@ -8,10 +8,6 @@ namespace NoireLib.Tests;
 /// Unit tests for the arithmetic behind <see cref="NoireSliders"/>: what a pointer position on the track means, and
 /// where a value sits along it.
 /// </summary>
-/// <remarks>
-/// The drawing needs a context and the eye; this is the part that decides what number the user actually gets, and it
-/// is where an off-by-one hides. The two halves have to agree, so the round trip is checked rather than each alone.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireSlidersTests
 {

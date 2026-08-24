@@ -11,8 +11,7 @@ namespace NoireLib.Tests;
 /// Locks the fuzzy scorer: what matches, what a match is worth relative to another, and where it says the match
 /// landed.
 /// <br/>
-/// Ordering is the whole product here. A filter that returns the right set in the wrong order is experienced as
-/// broken, because the answer a person wanted is the one they expect first and nowhere else.
+/// A filter that returns the right set in the wrong order is experienced as broken.
 /// </summary>
 public class FuzzyMatcherTests
 {
@@ -171,9 +170,8 @@ public class FuzzyMatcherTests
     [Fact]
     public void Rank_PutsInitialismsAboveMidWordMatches()
     {
-        // "cl" read as initials is what a command palette is for, so the two candidates whose words begin with those
-        // letters lead. Which of the two leads is decided only by length, so this deliberately does not pin the pair's
-        // internal order.
+        // "cl" read as initials: the two candidates whose words begin with those letters lead. Which of the two
+        // leads is decided only by length, so this does not pin the pair's internal order.
         var ranked = FuzzyMatcher.Rank(Commands, "cl", text => text);
 
         ranked.Take(2).Should().BeEquivalentTo(["Copy Link", "Combat Log"]);
@@ -274,7 +272,7 @@ public class FuzzyMatcherTests
         var query = new string('a', 64);
 
         // Warmed outside the measurement, because the first call through here also pays for JIT and this is not a
-        // benchmark. The bound below is deliberately far looser than the real cost: the regression being guarded
+        // benchmark. The bound below is far looser than the real cost: the regression being guarded
         // against is exponential, which takes minutes rather than milliseconds, and anything tighter would fail on a
         // loaded machine for reasons that have nothing to do with the algorithm.
         FuzzyMatcher.Score(candidate, query);

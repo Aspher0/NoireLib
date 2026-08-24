@@ -4,19 +4,12 @@ using System.Text;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// Renders delegates and addresses the way Dalamud's hook verification reports them.
-/// </summary>
+// Renders delegates and addresses the way Dalamud's hook verification reports them.
 internal static class HookSignatureFormatter
 {
     private static readonly object ModuleLock = new();
     private static ProcessModule[]? modules;
 
-    /// <summary>
-    /// Renders a delegate as <c>Boolean (Int32, Vector3*, Int32)</c>.
-    /// </summary>
-    /// <param name="delegateType">The delegate type.</param>
-    /// <returns>The rendered signature.</returns>
     public static string Format(Type? delegateType)
     {
         var invoke = delegateType?.GetMethod("Invoke");
@@ -37,11 +30,7 @@ internal static class HookSignatureFormatter
         return builder.Append(')').ToString();
     }
 
-    /// <summary>
-    /// Renders an address as <c>ffxiv_dx11.exe+0xB30F70</c>, falling back to the absolute value when no module contains it.
-    /// </summary>
-    /// <param name="address">The address.</param>
-    /// <returns>The rendered address.</returns>
+    // Renders an address as ffxiv_dx11.exe+0xB30F70, falling back to the absolute value when no module contains it.
     public static string FormatAddress(nint address)
     {
         if (address == 0)
@@ -53,12 +42,6 @@ internal static class HookSignatureFormatter
             : $"{module.ModuleName}+0x{address - module.BaseAddress:X}";
     }
 
-    /// <summary>
-    /// Gets the address range of the process main module.
-    /// </summary>
-    /// <param name="baseAddress">The main module base address.</param>
-    /// <param name="size">The main module size in bytes.</param>
-    /// <returns>True if the main module could be read.</returns>
     public static bool TryGetMainModuleRange(out nint baseAddress, out int size)
     {
         try

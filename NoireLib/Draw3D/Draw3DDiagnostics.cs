@@ -286,19 +286,8 @@ public sealed unsafe class Draw3DDiagnostics
         }
     }
 
-    /// <summary>
-    /// Per-rendered-frame camera-phase sampling for <see cref="RunCameraPhaseTrace"/>, called from the shared render
-    /// body on the render thread.
-    /// </summary>
-    /// <param name="device">Render device, for the throttled depth-buffer readback.</param>
-    /// <param name="frame">This frame's viewport and projection.</param>
-    /// <param name="projCam">The camera the overlay was projected with.</param>
-    /// <param name="viaInject">Whether the frame rendered through the pre-UI inject path.</param>
-    /// <param name="usedWorldSnapshot">Whether the inject path used the render-thread world-pass camera snapshot.</param>
-    /// <param name="usedMainPass">Whether that snapshot came from the main scene pass rather than the first-depth fallback.</param>
-    /// <param name="usedGpuCamera">Whether the frame projected with the captured GPU camera constants.</param>
-    /// <param name="gpuVp">The frame's committed GPU camera constants, identity when <paramref name="hasGpuVp"/> is false.</param>
-    /// <param name="hasGpuVp">Whether a fresh capture commit existed for this frame.</param>
+    // Per-rendered-frame camera-phase sampling for RunCameraPhaseTrace, called from the shared render body on the
+    // render thread.
     internal void OnCameraTrace(RenderDevice device, in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot, bool usedMainPass, bool usedGpuCamera, in Matrix4x4 gpuVp, bool hasGpuVp)
     {
         if (camTraceFramesRemaining <= 0)
@@ -379,11 +368,9 @@ public sealed unsafe class Draw3DDiagnostics
             ReportCameraTrace();
     }
 
-    /// <summary>
-    /// Scores each candidate frame-lag's camera by reprojecting world anchors onto this frame's image, a screen
-    /// residual every frame and a depth residual on a throttled subset, and files the captured-camera row, the
-    /// per-band used-camera residual and the after-stop drift classification alongside it.
-    /// </summary>
+    // Scores each candidate frame-lag's camera by reprojecting world anchors onto this frame's image, a screen
+    // residual every frame and a depth residual on a throttled subset, and files the captured-camera row, the
+    // per-band used-camera residual and the after-stop drift classification alongside it.
     private void SweepFrameLags(RenderDevice device, in FrameContext frame, in Matrix4x4 gpuVp, bool hasGpuVp, int band, bool usedGpuCamera, bool viaInject)
     {
         // The game's collision raycast under a screen grid gives camera-agnostic physical anchors.
@@ -576,7 +563,7 @@ public sealed unsafe class Draw3DDiagnostics
         }
     }
 
-    /// <summary>Formats the frame-lag sweep and names the best-fit lag (the correction the injected overlay should apply).</summary>
+    // Formats the frame-lag sweep and names the best-fit lag (the correction the injected overlay should apply).
     private void ReportCameraTrace()
     {
         var traced = camTraceInjectFrames + camTraceFallbackFrames;
@@ -717,10 +704,6 @@ public sealed unsafe class Draw3DDiagnostics
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 
-    /// <summary>Largest absolute element-wise difference between two matrices.</summary>
-    /// <param name="a">First matrix.</param>
-    /// <param name="b">Second matrix.</param>
-    /// <returns>The largest absolute per-element difference.</returns>
     private static float MaxElementDelta(in Matrix4x4 a, in Matrix4x4 b)
     {
         var m = MathF.Abs(a.M11 - b.M11);
@@ -741,12 +724,7 @@ public sealed unsafe class Draw3DDiagnostics
         return MathF.Max(m, MathF.Abs(a.M44 - b.M44));
     }
 
-    /// <summary>Projects a world point through a raw View*Proj into framebuffer-pixel screen space.</summary>
-    /// <param name="viewProj">Combined view-projection matrix.</param>
-    /// <param name="world">World-space point.</param>
-    /// <param name="viewport">Viewport size in pixels.</param>
-    /// <param name="screen">The projected pixel position.</param>
-    /// <returns>False when the point is behind the camera.</returns>
+    // Projects a world point through a raw View*Proj into framebuffer-pixel screen space.
     private static bool TryProjectToScreen(in Matrix4x4 viewProj, Vector3 world, Vector2 viewport, out Vector2 screen)
     {
         screen = default;

@@ -52,7 +52,7 @@ public sealed class InventoryWatcher : GameWatcherFacade
         => On(null, handler, options, nameof(OnItemMoved));
 
     /// <summary>
-    /// Subscribes to item property changes (quantity, spiritbond, …).
+    /// Subscribes to item property changes (quantity, spiritbond, ...).
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="options">Optional subscription settings.</param>

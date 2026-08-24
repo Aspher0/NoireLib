@@ -5,33 +5,22 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A set of ImGui colours and style variables applied around a block of drawing, and taken back off afterwards.<br/>
-/// The named properties cover what most widgets touch; the <see cref="Colors"/>, <see cref="Scalars"/> and
-/// <see cref="Vectors"/> maps underneath them reach every value ImGui has, so nothing is out of range because it did not
-/// get a property of its own.<br/>
-/// Nothing here pushes anything on its own: hand it to <see cref="NoireStyle.With(UiStyle, System.Action)"/>, or set it
-/// as a widget's style, and the scope is handled for you.
+/// A set of ImGui colours and style variables applied around a block of drawing, and taken back off afterwards.
 /// </summary>
-/// <example>
-/// <code>
-/// var danger = new UiStyle { TextColor = theme.Danger, FrameRounding = 0f };
-/// danger.Colors[ImGuiCol.PlotHistogram] = theme.Danger;   // anything without a named property
-/// </code>
-/// </example>
 public sealed class UiStyle
 {
     /// <summary>
-    /// Every colour this style overrides, keyed by ImGui colour slot. The named colour properties read and write here.
+    /// Every colour this style overrides, keyed by ImGui colour slot.
     /// </summary>
     public Dictionary<ImGuiCol, Vector4> Colors { get; } = new();
 
     /// <summary>
-    /// Every single-value style variable this style overrides. The named scalar properties read and write here.
+    /// Every single-value style variable this style overrides.
     /// </summary>
     public Dictionary<ImGuiStyleVar, float> Scalars { get; } = new();
 
     /// <summary>
-    /// Every two-value style variable this style overrides. The named vector properties read and write here.
+    /// Every two-value style variable this style overrides.
     /// </summary>
     public Dictionary<ImGuiStyleVar, Vector2> Vectors { get; } = new();
 
@@ -187,10 +176,7 @@ public sealed class UiStyle
         return clone;
     }
 
-    /// <summary>
-    /// Pushes everything this style overrides.
-    /// </summary>
-    /// <returns>How many colours and how many style variables were pushed, to be popped in the same numbers.</returns>
+    // Returns how many colours and how many style variables were pushed, to be popped in the same numbers.
     internal (int Colors, int Vars) Push()
     {
         foreach (var entry in Colors)
@@ -205,10 +191,6 @@ public sealed class UiStyle
         return (Colors.Count, Scalars.Count + Vectors.Count);
     }
 
-    /// <summary>
-    /// Pops exactly what <see cref="Push"/> pushed.
-    /// </summary>
-    /// <param name="pushed">The counts returned by <see cref="Push"/>.</param>
     internal static void Pop((int Colors, int Vars) pushed)
     {
         if (pushed.Vars > 0)

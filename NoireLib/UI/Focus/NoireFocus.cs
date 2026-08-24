@@ -8,43 +8,16 @@ namespace NoireLib.UI;
 /// <summary>
 /// Marks the control holding keyboard focus, so the user can see where typing and the arrow keys will go.
 /// </summary>
-/// <remarks>
-/// Every widget NoireUI ships draws this itself, so a plugin gets focus indication by using the widgets and
-/// setting nothing. <see cref="Style"/> changes how it looks everywhere at once and <see cref="Enabled"/> turns it
-/// off; <see cref="OnLast(FocusStyle)"/> is there for a control the library does not provide.<br/>
-/// Hard edged deliberately: hover, selection and emphasis use soft, glowing or tinted marks, and a focus mark
-/// differing only in brightness would read as "this one is selected harder" rather than a different kind of thing.
-/// Focus is also singular and transient, where selection is plural and persistent.
-/// </remarks>
-/// <example>
-/// <code>
-/// NoireFocus.Style = new FocusStyle { Shape = FocusShape.Corners };   // everywhere, once
-///
-/// ImGui.InputText("##notes", ref notes, 256);
-/// NoireFocus.OnLast();                                                // a control the library does not provide
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireFocus
 {
-    /// <summary>
-    /// Where the mark currently is, and when it arrived there.
-    /// </summary>
-    /// <remarks>
-    /// One slot rather than a keyed store, since exactly one control holds focus at a time: no id to compose,
-    /// nothing to look up, nothing to prune.
-    /// </remarks>
     private static uint focusedItem;
     private static float arrivedAt;
     private static int lastMarkedFrame = int.MinValue;
 
     /// <summary>
-    /// Whether the focus mark is drawn at all. On by default.
+    /// Whether the focus mark is drawn at all.
     /// </summary>
-    /// <remarks>
-    /// Turning it off is a deliberate accessibility loss: without it there is nothing on screen saying where the
-    /// keyboard is pointed, and a user navigating without a mouse has to guess.
-    /// </remarks>
     public static bool Enabled { get; set; } = true;
 
     /// <summary>
@@ -72,11 +45,6 @@ public static class NoireFocus
     /// <summary>
     /// Draws the focus mark on the widget that was just submitted, if it has focus.
     /// </summary>
-    /// <remarks>
-    /// Nothing is drawn when the widget does not have focus, so this can be called unconditionally. Nothing is
-    /// submitted to ImGui either: like a badge, the mark is painted over the layout rather than added to it, so it
-    /// never moves what is around it.
-    /// </remarks>
     /// <param name="style">How it looks. When <see langword="null"/>, <see cref="Style"/>.</param>
     public static void OnLast(FocusStyle? style = null)
     {
@@ -90,11 +58,8 @@ public static class NoireFocus
     /// Draws the focus mark on a rectangle.
     /// </summary>
     /// <param name="target">The control being marked, in screen pixels.</param>
-    /// <param name="focused">Whether it holds focus, so this can be called unconditionally.</param>
-    /// <param name="id">
-    /// A value identifying the control, used only to notice that focus has moved so the arrival can restart. Pass the
-    /// same value on every frame the same control is marked.
-    /// </param>
+    /// <param name="focused">Whether it holds focus.</param>
+    /// <param name="id">A value identifying the control, the same on every frame that control is marked.</param>
     /// <param name="style">How it looks. When <see langword="null"/>, <see cref="Style"/>.</param>
     public static void On(UiRect target, bool focused, uint id, FocusStyle? style = null)
     {
@@ -107,13 +72,9 @@ public static class NoireFocus
     /// <summary>
     /// Draws the focus mark on a rectangle, identifying the control by where it is.
     /// </summary>
-    /// <remarks>
-    /// The overload to reach for when there is no ImGui id to hand: the control's position stands in for one. That is
-    /// enough for the arrival to restart when focus moves between controls, and it costs an arrival replay in the one
-    /// case a marked control changes position while keeping focus, such as being scrolled.
-    /// </remarks>
+    /// <remarks>The control's position stands in for an ImGui id, replaying the arrival if a marked control moves.</remarks>
     /// <param name="target">The control being marked, in screen pixels.</param>
-    /// <param name="focused">Whether it holds focus, so this can be called unconditionally.</param>
+    /// <param name="focused">Whether it holds focus.</param>
     /// <param name="style">How it looks. When <see langword="null"/>, <see cref="Style"/>.</param>
     public static void On(UiRect target, bool focused, FocusStyle? style = null)
     {
@@ -122,13 +83,8 @@ public static class NoireFocus
         On(target, focused, id, style);
     }
 
-    /// <summary>
-    /// How far through its arrival the mark is, from 0 the moment focus lands to 1 once it has settled.
-    /// </summary>
-    /// <remarks>
-    /// Restarted by focus moving to a different control rather than by a timer, and held at 1 under
-    /// <see cref="NoireUI.ReducedMotion"/> so the mark is drawn in place and at full strength rather than not at all.
-    /// </remarks>
+    // How far through its arrival the mark is, from 0 the moment focus lands to 1 once it has settled, and held at 1
+    // under NoireUI.ReducedMotion.
     private static float Arrival(uint id, FocusStyle style)
     {
         var frame = NoireUI.FrameCount;
@@ -152,7 +108,6 @@ public static class NoireFocus
         return Math.Clamp((NoireUI.Time - arrivedAt) / style.ArrivalSeconds, 0f, 1f);
     }
 
-    /// <summary>Works out where the mark belongs this frame and hands it to the style's painter.</summary>
     private static void Draw(UiRect target, uint id, FocusStyle style)
     {
         var eased = UiEasing.OutCubic.Apply(Arrival(id, style));
@@ -186,11 +141,8 @@ public static class NoireFocus
         NoireShapes.On(draw.List, args, static state => Paint(state));
     }
 
-    /// <summary>
-    /// Paints the shape a style asks for. Public through <see cref="UiFocusDraw.DrawShape"/> so a custom hook can add
-    /// to the shipped look rather than having to reproduce it.
-    /// </summary>
-    /// <param name="args">Where the mark belongs and what it is drawn with.</param>
+    // Paints the shape a style asks for, exposed publicly through UiFocusDraw.DrawShape so a custom hook can add to
+    // the shipped look rather than having to reproduce it.
     internal static void Paint(UiFocusDraw args)
     {
         var style = args.Style;

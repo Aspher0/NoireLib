@@ -10,12 +10,6 @@ namespace NoireLib.Tests;
 /// Drives the two cached ornaments through real ImGui frames, to show that caching their geometry did not change what
 /// reaches the screen.
 /// </summary>
-/// <remarks>
-/// The pure path tests assert the curve and the ray directions. What they cannot show is that the drawing still submits
-/// the same geometry from them, which is where a wrong index or a lost transform would appear. The first frame computes
-/// a shape and the second is served from the cache, so a cache that changed the shape would change the vertex count
-/// between two otherwise identical frames.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireShapesGeometryCacheTests : IClassFixture<UiHarness>
 {
@@ -79,8 +73,8 @@ public sealed class NoireShapesGeometryCacheTests : IClassFixture<UiHarness>
         var turned = harness.Draw(static () => NoireShapes.On(ImGui.GetWindowDrawList(), static () =>
             NoireShapes.Guilloche(Centre, 120f, White, new GuillocheStyle { RotationTurns = 0.3f })));
 
-        // Rotation is applied at submission and is not part of the key, which is what lets a turning ornament keep
-        // hitting the cache. The same curve turned is still the same number of points.
+        // Rotation is applied at submission and is not part of the key. The same curve turned is still the same
+        // number of points.
         turned.TotalVtxCount.Should().Be(upright.TotalVtxCount);
     }
 

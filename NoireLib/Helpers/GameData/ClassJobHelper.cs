@@ -196,11 +196,8 @@ public static unsafe class ClassJobHelper
             string.Empty) ?? string.Empty;
     }
 
-    /// <summary>
-    /// Indexes every category's membership once. Column order matches <c>ClassJob</c> row order, so the columns are
-    /// read positionally: a job added in a patch needs no code change, and no localised abbreviation is matched.
-    /// </summary>
-    /// <returns>The ClassJob row ids each category holds.</returns>
+    // Indexes every category's membership once. Column order matches ClassJob row order, so the columns are read
+    // positionally: a job added in a patch needs no code change, and no localised abbreviation is matched.
     private static IReadOnlyDictionary<uint, IReadOnlySet<uint>> CategoryIndex()
     {
         if (cachedCategoryIndex != null)
@@ -253,10 +250,8 @@ public static unsafe class ClassJobHelper
             .Where(property => property.PropertyType == typeof(bool))
             .ToArray();
 
-    /// <summary>
-    /// The ClassJob rows the sheet actually names. The sheet reserves blank rows ahead of a job shipping, and the
-    /// category sheet has columns for them, so membership is only reported for a class or job that exists.
-    /// </summary>
+    // The ClassJob rows the sheet actually names. The sheet reserves blank rows ahead of a job shipping, and the
+    // category sheet has columns for them, so membership is only reported for a class or job that exists.
     private static IReadOnlySet<uint> NamedClassJobIds()
     {
         var named = new HashSet<uint>();

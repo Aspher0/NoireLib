@@ -293,10 +293,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
 
     #endregion
 
-    /// <summary>
-    /// Runs the module's teardown, unregistering any module window before the module tears itself down.<br/>
-    /// The window goes first so that a module stops being drawn before the state its window reads is taken apart.
-    /// </summary>
+    // Runs the module's teardown, unregistering any module window before the module tears itself down. The window
+    // goes first so that a module stops being drawn before the state its window reads is taken apart.
     private protected override void DisposeCore()
     {
         UnregisterWindow();

@@ -5,9 +5,7 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Presents the dialogs raised through <see cref="NoireModal"/>, one at a time.<br/>
-/// There is one of these, reached through <see cref="NoireModal.Host"/>. It exists as a drawable so the dialog can be
-/// placed in your own draw order if you want it there, and so it is disposed with the rest of the library.
+/// Presents the dialogs raised through <see cref="NoireModal"/>, one at a time.
 /// </summary>
 public sealed class NoireModalHost : NoireDrawable
 {
@@ -15,15 +13,11 @@ public sealed class NoireModalHost : NoireDrawable
 
     private static readonly object InstanceLock = new();
 
-    /// <summary>
-    /// The prompt options a prompt raised without any draws through. Read only, and never handed out.
-    /// </summary>
+    // The prompt options a prompt raised without any draws through. Read only, and never handed out.
     private static readonly PromptOptions PromptDefaults = new();
 
-    /// <summary>
-    /// The confirm button's style, reused rather than composed per frame. Its tone is written immediately before it is
-    /// drawn with, and one dialog is drawn at a time on one thread.
-    /// </summary>
+    // The confirm button's style, reused rather than composed per frame. Its tone is written immediately before it is
+    // drawn with, and one dialog is drawn at a time on one thread.
     private static readonly ButtonStyle ConfirmStyle = new();
 
     private static NoireModalHost? instance;
@@ -37,10 +31,6 @@ public sealed class NoireModalHost : NoireDrawable
         Register();
     }
 
-    /// <summary>
-    /// The one host, created on first use.
-    /// </summary>
-    /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     internal static NoireModalHost Instance
     {
         get
@@ -264,9 +254,6 @@ public sealed class NoireModalHost : NoireDrawable
     private static float MeasureButton(string label)
         => MathF.Max(NoireUI.Scaled(80f), NoireText.CalcSizeInCurrentFont(label).X + NoireTheme.Current.ResolveFramePadding().X * 4f);
 
-    /// <summary>
-    /// Moves the cursor so a row of that width ends at the right edge of the dialog.
-    /// </summary>
     private static void AlignRight(float width)
     {
         var offset = ImGui.GetContentRegionAvail().X - width;

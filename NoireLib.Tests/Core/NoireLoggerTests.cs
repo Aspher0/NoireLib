@@ -13,7 +13,7 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Game-free tests for <see cref="NoireLogger"/>. They lock two invariants: nothing on the logger throws at a caller
 /// (a log write and chat output both swallow their own failures), and every chat print reaches the chat log through
-/// a single funnel that hands the message to the framework thread, which is what makes
+/// a single funnel that hands the message to the framework thread, which makes
 /// <see cref="NoireLogger.PrintToChat(string, string?, string?, Vector3?, Vector3?)"/> and its overloads callable
 /// from a background task, a timer callback or an HTTP continuation.<br/>
 /// Without a running game, <see cref="NoireService.IsInitialized"/> is false, so a print only ever reaches its
@@ -57,8 +57,7 @@ public class NoireLoggerTests
 
     /// <summary>
     /// The reachable half of the safety contract. A print made while there is no chat log to print to resolves to
-    /// nothing rather than to the null service behind it, which is what lets module and plugin code print without
-    /// knowing whether a game is attached.
+    /// nothing rather than to the null service behind it.
     /// </summary>
     [Fact]
     public void PrintToChat_WhileNoireLibIsNotInitialized_DoesNotThrow()

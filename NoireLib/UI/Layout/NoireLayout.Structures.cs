@@ -16,13 +16,9 @@ public static partial class NoireLayout
 
     #region Splitter
 
-    /// <summary>
-    /// The smallest a splitter lets a pane become when the caller names no minimum, at 100%, large enough that a
-    /// pane cannot be dragged shut and lost.
-    /// </summary>
+    // At 100%, large enough that a pane cannot be dragged shut and lost.
     private const float DefaultSplitterMinimum = 40f;
 
-    /// <summary>Where a splitter's grab offset is kept for the length of a drag.</summary>
     private const string GrabKey = "grab";
 
     /// <summary>Draws a draggable divider that resizes the pane before it, clamping the size every frame.</summary>
@@ -31,8 +27,7 @@ public static partial class NoireLayout
     /// <param name="minSize">The smallest the pane may become, or zero for a scaled default.</param>
     /// <param name="maxSize">The largest the pane may become, or zero for the space available.</param>
     /// <param name="thickness">The grab thickness, or zero for a scaled default.</param>
-    /// <param name="vertical">Whether the divider is a vertical bar resizing the pane to its left, rather than a
-    /// horizontal bar resizing the pane above it.</param>
+    /// <param name="vertical">Whether the divider is a vertical bar resizing the pane to its left.</param>
     /// <param name="length">How long the divider is across the panes it separates, or zero for the space remaining
     /// in the current region.</param>
     /// <returns>True while the splitter is being dragged.</returns>
@@ -48,15 +43,11 @@ public static partial class NoireLayout
         return Splitter(id, ref size, Shorthand);
     }
 
-    /// <summary>
-    /// The options the shorthand <see cref="Splitter(string, ref float, float, float, float, bool, float)"/> draws
-    /// through, reused rather than allocated per call and only read inside the call that wrote it.
-    /// </summary>
+    // Reused rather than allocated per call, and only read inside the call that wrote it.
     private static readonly SplitterOptions Shorthand = new();
 
     /// <summary>
-    /// Draws a draggable divider between two panes. The size is clamped every frame, not only while dragging, so a
-    /// size restored from a config written on a wider screen is corrected on the first frame.
+    /// Draws a draggable divider between two panes, clamping the size every frame.
     /// </summary>
     /// <param name="id">A unique id for the splitter.</param>
     /// <param name="size">The size of the pane before the splitter in real pixels, read and written.</param>
@@ -125,16 +116,8 @@ public static partial class NoireLayout
         return dragging;
     }
 
-    /// <summary>
-    /// Resolves where a splitter's pane edge belongs for a pointer at the given position, clamped to its bounds.
-    /// Derived from the pointer's absolute position, never from how far it moved, so a clamped delta cannot
-    /// accumulate into drift between the divider and the pointer.
-    /// </summary>
-    /// <param name="pointer">The pointer's position along the axis being resized, in screen coordinates.</param>
-    /// <param name="grabOffset">The distance from the pointer to the pane edge, taken when the drag started.</param>
-    /// <param name="minSize">The smallest the pane may be.</param>
-    /// <param name="maxSize">The largest the pane may be.</param>
-    /// <returns>The pane size.</returns>
+    // Derived from the pointer's absolute position, never from how far it moved, so a clamped delta cannot accumulate
+    // into drift between the divider and the pointer.
     internal static float ResolveSize(float pointer, float grabOffset, float minSize, float maxSize)
         => Math.Clamp(pointer - grabOffset, minSize, MathF.Max(minSize, maxSize));
 
@@ -143,11 +126,10 @@ public static partial class NoireLayout
     #region Collapsible
 
     /// <summary>
-    /// Draws a section that folds away, with an optional memory of whether it was open. The body is not called
-    /// while the section is closed, and there is no end call.
+    /// Draws a section that folds away, with an optional memory of whether it was open.
     /// </summary>
     /// <param name="id">A unique id for the section, also the state key when
-    /// <see cref="CollapsibleOptions.Persist"/> is set, so it must be stable across sessions.</param>
+    /// <see cref="CollapsibleOptions.Persist"/> is set.</param>
     /// <param name="label">The heading.</param>
     /// <param name="body">The drawing to fold away.</param>
     /// <param name="options">How the section behaves and looks, or null for an open, unpersisted section.</param>
@@ -159,8 +141,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Draws a section that folds away, passing state into the body without a closure. The body is not called
-    /// while the section is closed, and there is no end call.
+    /// Draws a section that folds away, passing state into the body without a closure.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the section, also the state key when
@@ -270,8 +251,7 @@ public static partial class NoireLayout
     #region Flow
 
     /// <summary>
-    /// Lays items out left to right, wrapping to a new line when the next one will not fit. The measure runs
-    /// before each item is drawn and only has to be close, since measuring short wraps one item early.
+    /// Lays items out left to right, wrapping to a new line when the next one will not fit.
     /// </summary>
     /// <typeparam name="T">The item type.</typeparam>
     /// <param name="items">The items to lay out.</param>
@@ -299,10 +279,9 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Places the next item of a wrapping row, beside the previous one or at the start of a new line. Called
-    /// immediately before drawing each item, for items that are not a list
-    /// <see cref="Flow{T}(IReadOnlyList{T}, Func{T, Vector2}, Action{T}, float, float)"/> can take.
+    /// Places the next item of a wrapping row, beside the previous one or at the start of a new line.
     /// </summary>
+    /// <remarks>Called immediately before drawing each item.</remarks>
     /// <param name="itemWidth">How wide the item about to be drawn will be.</param>
     /// <param name="first">Whether this is the first item of the row, which always starts on the current line.</param>
     /// <param name="spacing">The gap between items in pixels, or a negative value for the theme item spacing.</param>
@@ -326,19 +305,14 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Measures how wide content may be from the current cursor, taking an active text wrap position over the
-    /// content region, which always reports the window's own right edge however deeply a column is nested.
+    /// Measures how wide content may be from the current cursor.
     /// </summary>
     /// <returns>The width available in real pixels.</returns>
     public static float ContentWidth()
         => MathF.Max(0f, ResolveRowRightEdge(0f) - ImGui.GetCursorScreenPos().X);
 
-    /// <summary>
-    /// Resolves where a wrapping row has to stop, preferring an explicit width, then an active text wrap position,
-    /// then the window's content edge. ImGui has no right margin: indenting moves the left edge only.
-    /// </summary>
-    /// <param name="width">An explicit row width, or zero to resolve it.</param>
-    /// <returns>The screen x coordinate the row must not cross.</returns>
+    // Prefers an explicit width, then an active text wrap position, then the window's content edge. ImGui has no right
+    // margin: indenting moves the left edge only.
     private static float ResolveRowRightEdge(float width)
     {
         // Submitting an item puts the cursor back at the start of the next line, so this is the row's left edge.
@@ -353,9 +327,7 @@ public static partial class NoireLayout
         return rowLeft + ImGui.GetContentRegionAvail().X;
     }
 
-    /// <summary>Gets the screen x coordinate an active text wrap position sits at.</summary>
-    /// <param name="rightEdge">The wrap position in screen coordinates, valid only when this returns <see langword="true"/>.</param>
-    /// <returns>True when a wrap position is pushed, as opposed to there being no constraint at all.</returns>
+    // rightEdge is in screen coordinates and valid only when this returns true.
     private static bool TryGetWrapRightEdge(out float rightEdge)
     {
         rightEdge = 0f;
@@ -376,8 +348,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Measures the wrap width text would be drawn against right now. Unlike <see cref="ContentWidth"/> it answers
-    /// nothing rather than the window's content edge, separating a wrapped column from an unwrapped one.
+    /// Measures the wrap width text would be drawn against right now.
     /// </summary>
     /// <returns>
     /// The wrap width in real pixels from the current cursor, or <see langword="null"/> when no wrap position is pushed.
@@ -389,12 +360,7 @@ public static partial class NoireLayout
 
     private static readonly CollapsibleOptions DefaultCollapsibleOptions = new();
 
-    /// <summary>Draws the caret of a collapsible header.</summary>
-    /// <param name="drawList">The draw list to paint into.</param>
-    /// <param name="center">The caret's center in screen coordinates.</param>
-    /// <param name="radius">The caret's radius in real pixels.</param>
-    /// <param name="turn">The rotation, 0 pointing right and 1 pointing down.</param>
-    /// <param name="color">The caret's color.</param>
+    // turn is the rotation, 0 pointing right and 1 pointing down.
     private static void DrawCaret(ImDrawListPtr drawList, Vector2 center, float radius, float turn, Vector4 color)
     {
         var angle = turn * MathF.PI * 0.5f;
@@ -409,13 +375,8 @@ public static partial class NoireLayout
         drawList.AddTriangleFilled(Point(0f), Point(MathF.Tau / 3f), Point(-MathF.Tau / 3f), packed);
     }
 
-    /// <summary>
-    /// Resolves the state key a collapsible section persists under, refusing a blank id, which would grow the state
-    /// file by an entry per session while never restoring one.
-    /// </summary>
-    /// <param name="id">The section's id.</param>
-    /// <param name="persist">Whether the section asked to persist its open state.</param>
-    /// <returns>The state key, or null when nothing should be persisted.</returns>
+    // Returns null when nothing should be persisted. A blank id is refused, since it would grow the state file by an
+    // entry per session while never restoring one.
     private static string? ResolvePersistKey(string id, bool persist)
     {
         if (!persist)

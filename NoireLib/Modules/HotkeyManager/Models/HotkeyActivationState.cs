@@ -1,10 +1,7 @@
 namespace NoireLib.HotkeyManager;
 
-/// <summary>
-/// The phase of a hotkey's physical hold, tracked per entry by the activation state machine. The remaining
-/// runtime state (whether a release is armed, and the hold and repeat timers) lives alongside it in
-/// <see cref="HotkeyActivationState"/>.
-/// </summary>
+// The phase of a hotkey's physical hold, tracked per entry by the activation state machine. The remaining runtime
+// state (whether a release is armed, and the hold and repeat timers) lives alongside it in HotkeyActivationState.
 internal enum HotkeyActivationPhase
 {
     /// <summary>
@@ -25,10 +22,8 @@ internal enum HotkeyActivationPhase
     HoldFired,
 }
 
-/// <summary>
-/// The per-entry runtime state of the hotkey activation state machine. Every field here is written only by
-/// <see cref="NoireHotkeyManager.EvaluateActivation"/> and its trigger predicates, on the detection thread.
-/// </summary>
+// The per-entry runtime state of the hotkey activation state machine. Every field here is written only by
+// EvaluateActivation and its trigger predicates, on the detection thread.
 internal struct HotkeyActivationState
 {
     /// <summary>

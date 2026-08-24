@@ -8,9 +8,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// A compiled VS+PS pair with its input layout. Failed pipelines render nothing.
-/// </summary>
+// A compiled VS+PS pair with its input layout. Failed pipelines render nothing.
 internal sealed unsafe class ShaderPipeline : IDisposable
 {
     internal ComPtr<ID3D11VertexShader> VsPtr;
@@ -44,10 +42,8 @@ internal sealed unsafe class ShaderPipeline : IDisposable
     }
 }
 
-/// <summary>
-/// Named pipeline cache over the embedded HLSL sources. Variants are #define permutations; a compile
-/// error disables only the owning pipeline (logged once) and never throws into the frame.
-/// </summary>
+// Named pipeline cache over the embedded HLSL sources. Variants are #define permutations; a compile error disables
+// only the owning pipeline (logged once) and never throws into the frame.
 internal sealed unsafe class ShaderLibrary : IDisposable
 {
     private readonly Dictionary<string, ShaderPipeline?> cache = new();

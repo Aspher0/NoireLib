@@ -220,10 +220,8 @@ public static class FuzzyMatcher
 
     #region Searching
 
-    /// <summary>
-    /// The working set of one search. A ref struct so the spans can be carried without copying them through every
-    /// level of the recursion.
-    /// </summary>
+    // The working set of one search. A ref struct so the spans can be carried without copying them through every
+    // level of the recursion.
     private ref struct MatchState
     {
         public ReadOnlySpan<char> Candidate;
@@ -236,9 +234,7 @@ public static class FuzzyMatcher
         public int Recursions;
     }
 
-    /// <summary>
-    /// Whether every character of the query appears in the candidate in order. The cheap rejection.
-    /// </summary>
+    // Whether every character of the query appears in the candidate in order. The cheap rejection.
     private static bool IsSubsequence(ReadOnlySpan<char> candidate, ReadOnlySpan<char> query)
     {
         var queryIndex = 0;
@@ -252,10 +248,8 @@ public static class FuzzyMatcher
         return queryIndex == query.Length;
     }
 
-    /// <summary>
-    /// Walks the candidate matching the query, exploring the alternative position for each character it could have
-    /// taken, and keeps the best-scoring complete match it finds.
-    /// </summary>
+    // Walks the candidate matching the query, exploring the alternative position for each character it could have
+    // taken, and keeps the best-scoring complete match it finds.
     private static void Search(ref MatchState state, int candidateIndex, int queryIndex, int matchCount)
     {
         while (queryIndex < state.Query.Length && candidateIndex < state.Candidate.Length)
@@ -290,9 +284,6 @@ public static class FuzzyMatcher
         state.Working[..matchCount].CopyTo(state.Best);
     }
 
-    /// <summary>
-    /// Scores one complete match from where its characters landed.
-    /// </summary>
     private static int ScoreMatch(ref MatchState state, int matchCount)
     {
         var scoring = state.Scoring;

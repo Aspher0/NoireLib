@@ -49,12 +49,7 @@ public partial class NoireObservedStore : NoireModuleBase<NoireObservedStore>
             SetActive(true);
     }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>, for internal module management only.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireObservedStore(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -72,7 +67,6 @@ public partial class NoireObservedStore : NoireModuleBase<NoireObservedStore>
     /// </summary>
     public ObservedStoreOptions Options => options;
 
-    /// <summary>The options snapshot in effect since the last activation.</summary>
     internal ObservedStoreOptions ActiveOptions => activeOptions ?? options;
 
     /// <summary>The database file this store is writing to.</summary>
@@ -194,13 +188,7 @@ public partial class NoireObservedStore : NoireModuleBase<NoireObservedStore>
 
     #region Internal plumbing
 
-    /// <summary>
-    /// Resolves the character a call is about, given whatever the caller named.
-    /// </summary>
-    /// <param name="scope">The scope in play.</param>
-    /// <param name="requested">The character id the caller named, or null to take the logged-in one.</param>
-    /// <param name="characterId">The resolved id.</param>
-    /// <returns>False when a character-scoped call has no character to key on.</returns>
+    // Resolves the character a call is about, given whatever the caller named.
     internal bool TryResolveCharacter(ObservationScope scope, ulong? requested, out ulong characterId)
     {
         if (scope == ObservationScope.Shared)
@@ -225,11 +213,7 @@ public partial class NoireObservedStore : NoireModuleBase<NoireObservedStore>
         return false;
     }
 
-    /// <summary>
-    /// Whether the store can be used right now, logging the reason once per call when it cannot.
-    /// </summary>
-    /// <param name="operation">The operation's name, for the log line.</param>
-    /// <returns>True when the store is usable.</returns>
+    // Whether the store can be used right now, logging the reason once per call when it cannot.
     internal bool IsUsable(string operation)
     {
         if (IsActive && !IsDisposed)
@@ -241,16 +225,12 @@ public partial class NoireObservedStore : NoireModuleBase<NoireObservedStore>
         return false;
     }
 
-    /// <summary>The serializer settings in force, with the type-name invariant applied.</summary>
+    // The serializer settings in force, with the type-name invariant applied.
     internal JsonSerializerSettings? SerializerSettings => resolvedSerializerSettings;
 
-    /// <summary>
-    /// Copies the caller's settings and forces the one field that must never be taken from configuration. A payload
-    /// that names its own type would let anything able to write the database file choose which type gets constructed
-    /// on read, so the store always deserializes into the type the caller asked for.
-    /// </summary>
-    /// <param name="requested">The caller's settings, or null.</param>
-    /// <returns>The settings to serialize with, or null to use the Newtonsoft defaults.</returns>
+    // Copies the caller's settings and forces the one field that must never be taken from configuration. A payload
+    // that names its own type would let anything able to write the database file choose which type gets constructed
+    // on read, so the store always deserializes into the type the caller asked for.
     internal static JsonSerializerSettings? BuildSerializerSettings(JsonSerializerSettings? requested)
     {
         if (requested == null)

@@ -11,18 +11,12 @@ namespace NoireLib.Tests;
 /// Drives <see cref="NoireShapes.FillUnder"/> through real ImGui frames, to show it submits one strip over the samples
 /// it was given rather than a fan from the first of them.
 /// </summary>
-/// <remarks>
-/// The index pattern is checked without ImGui by the band tests in <see cref="NoireShapesTests"/>. What those cannot
-/// show is that the geometry reaching the draw list is exactly two vertices per sample, which is the property that
-/// separates this from the convex fill it replaced: a concave trace handed to a convex fill is re-triangulated into
-/// wedges, and the vertex count stops tracking the samples.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireShapesBandTests : IClassFixture<UiHarness>
 {
     private static readonly Vector4 White = new(1f, 1f, 1f, 1f);
 
-    /// <summary>A deliberately concave trace: it rises, dips hard, and rises again.</summary>
+    /// <summary>A concave trace: it rises, dips hard, and rises again.</summary>
     private static readonly Vector2[] Jagged =
     [
         new(100f, 200f), new(120f, 140f), new(140f, 190f), new(160f, 120f),

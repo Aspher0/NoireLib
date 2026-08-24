@@ -36,7 +36,7 @@ public sealed class ImDraw3D
         public Matrix4x4 World;
     }
 
-    /// <summary>Line width, in world units, for a decal outline traced in wireframe mode.</summary>
+    // Line width, in world units, for a decal outline traced in wireframe mode.
     private const float OutlineWidth = 0.03f;
 
     private readonly object sync = new();
@@ -117,14 +117,7 @@ public sealed class ImDraw3D
             commands.Add(command);
     }
 
-    /// <summary>Converts the buffered commands into draw items for this frame and clears the buffer.</summary>
-    /// <param name="pass">The pass to add draw items to.</param>
-    /// <param name="frame">This frame's context.</param>
-    /// <param name="stats">Counters to report drops into.</param>
-    /// <param name="depthAvailable">Whether the game depth buffer could be read this frame.</param>
-    /// <param name="wireframe">Wireframe mode: grounded shapes trace their outline instead of projecting, since the pass drops decals (a decal's box carries no shape to rasterize).</param>
-    /// <param name="outlineDecals">Trace grounded shapes' outlines on top of normal rendering. An immediate-mode shape has no node to opt in with, so this is the only way to outline one.</param>
-    /// <param name="volumeDecals">Trace grounded shapes' projection boxes (the volume the SDF runs in) on top of normal rendering. Same reasoning: an immediate-mode shape can only be reached from here.</param>
+    // Converts the buffered commands into draw items for this frame and clears the buffer.
     internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe = false, bool outlineDecals = false, bool volumeDecals = false)
     {
         Command[] snapshot;
@@ -266,11 +259,9 @@ public sealed class ImDraw3D
         pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable, cmd.Style.ExcludeVolumes);
     }
 
-    /// <summary>
-    /// Emits a grounded shape as its painted outline (wireframe mode): the same loops
-    /// <see cref="Scene.SceneNode.ShowDecalShape"/> traces, as camera-facing ribbons. Drawn on the shape's own plane
-    /// rather than projected, since without the decal shader there is no surface to project onto.
-    /// </summary>
+    // Emits a grounded shape as its painted outline (wireframe mode): the same loops ShowDecalShape traces, as
+    // camera-facing ribbons. Drawn on the shape's own plane rather than projected, since without the decal shader
+    // there is no surface to project onto.
     private void AddDecalOutline(ScenePass pass, DecalShape shape, Vector4 shapeParams, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
     {
         var path = outlinePath ??= new List<Vector3>(DecalOutline.Segments * 2 + 8);
@@ -306,11 +297,9 @@ public sealed class ImDraw3D
         }
     }
 
-    /// <summary>
-    /// Emits a grounded shape's projection box as camera-facing ribbons (<see cref="NoireDraw3D.DecalVolumeOutlines"/>):
-    /// the twelve edges of the volume the decal's SDF is evaluated in, which an immediate-mode shape has no node to opt
-    /// into. Mirrors <see cref="Scene.SceneNode.ShowDecalVolume"/> for the retained side.
-    /// </summary>
+    // Emits a grounded shape's projection box as camera-facing ribbons (DecalVolumeOutlines): the twelve edges of the
+    // volume the decal's SDF is evaluated in, which an immediate-mode shape has no node to opt into. Mirrors
+    // ShowDecalVolume for the retained side.
     private void AddDecalVolume(ScenePass pass, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
     {
         Span<Vector3> corners = stackalloc Vector3[DecalOutline.VolumeCorners];
@@ -513,11 +502,10 @@ public sealed class ImDraw3D
         Params1 = new Vector4(style.DepthFade, 0f, 0f, 0f),
     };
 
-    /// <summary>The rotation aiming a +Y-built mesh (cone, cylinder) along a direction.</summary>
+    // The rotation aiming a +Y-built mesh (cone, cylinder) along a direction.
     private static Matrix4x4 RotationFromYTo(Vector3 dir)
         => Matrix4x4.CreateFromQuaternion(TransformHelper.FromToRotation(Vector3.UnitY, dir));
 
-    /// <summary>Releases the layer's pooled meshes (hub cleanup only).</summary>
     internal void DisposeResources()
     {
         unitBox?.Dispose();

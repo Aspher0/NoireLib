@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Drives <see cref="NoireContent"/> through a real ImGui frame, which is where its per-frame cost is observable.
 /// <see cref="NoireContentTests"/> covers the building contract, which needs no context.
 /// </summary>
-/// <remarks>
-/// Content is the body of every custom tooltip, so it draws on any frame a tooltip is open and its line working set is
-/// sized by how many segments the caller built. That makes it the shape a borrowed buffer is for: bounded by data
-/// rather than by a constant, and therefore not something <see langword="stackalloc"/> can carry.
-/// </remarks>
 [SupportedOSPlatform("windows")]
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireContentDrawTests : IClassFixture<UiHarness>
@@ -24,8 +19,7 @@ public sealed class NoireContentDrawTests : IClassFixture<UiHarness>
     public NoireContentDrawTests(UiHarness harness) => this.harness = harness;
 
     /// <summary>
-    /// Content with several lines, which is what makes the line working set non-trivial: every new line flushes one
-    /// batch of segments and starts another.
+    /// Content with several lines: every new line flushes one batch of segments and starts another.
     /// </summary>
     private static NoireContent MultiLine()
         => new NoireContent()
@@ -69,7 +63,7 @@ public sealed class NoireContentDrawTests : IClassFixture<UiHarness>
     public void Draw_SegmentsThatPushNothing_AllocatesNothing()
     {
         // Twenty-four segments across four lines, none of which pushes a colour, a style or a font. Every byte a frame
-        // of this allocated would be the working set the lines are gathered into, so zero is the whole claim.
+        // of this allocated would be the working set the lines are gathered into.
         var content = MultiLineWithoutPushes();
 
         var result = harness.Draw(() => content.Draw());

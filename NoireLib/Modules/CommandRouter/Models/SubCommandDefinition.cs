@@ -73,22 +73,6 @@ public sealed class SubCommandDefinition
     /// </summary>
     public Func<bool>? Condition { get; }
 
-    /// <summary>
-    /// Creates a new subcommand definition.
-    /// </summary>
-    /// <param name="name">The primary name.</param>
-    /// <param name="helpText">Optional help text.</param>
-    /// <param name="aliases">Alternative names.</param>
-    /// <param name="arguments">Typed argument definitions.</param>
-    /// <param name="subCommands">Nested child subcommands.</param>
-    /// <param name="handler">The handler delegate.</param>
-    /// <param name="isAsync">Whether the handler is async.</param>
-    /// <param name="hasArguments">Whether the handler expects parsed arguments.</param>
-    /// <param name="condition">An optional availability predicate.</param>
-    /// <param name="showInHelp">Whether this subcommand should appear in generated help output.</param>
-    /// <param name="displayOrder">The display order within the parent command scope.</param>
-    /// <param name="allowUnorderedOptionalArguments">Whether optional arguments can be matched in any order after required positional arguments.</param>
-    /// <param name="failOnExtraArguments">Whether extra trailing arguments should cause command parsing to fail.</param>
     internal SubCommandDefinition(
         string name,
         string? helpText,

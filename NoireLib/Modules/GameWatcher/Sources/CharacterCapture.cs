@@ -7,11 +7,8 @@ namespace NoireLib.GameWatcher;
 
 using NativeCharacter = FFXIVClientStructs.FFXIV.Client.Game.Character.Character;
 
-/// <summary>
-/// The scalar, allocation-free view of a character used by the compare-first gate: masked fields are compared
-/// against the stored snapshot straight from game memory, and a new snapshot record is allocated only when
-/// something changed.
-/// </summary>
+// The scalar, allocation-free view of a character used by the compare-first gate: masked fields are compared against
+// the stored snapshot straight from game memory, and a new snapshot record is allocated only when something changed.
 internal struct CharacterFieldSet
 {
     public uint EntityId;
@@ -71,10 +68,8 @@ internal struct CharacterFieldSet
     };
 }
 
-/// <summary>
-/// The pure diff logic of the Characters source: which aspects changed between two field sets.
-/// No game access - unit-testable against fabricated values.
-/// </summary>
+// The pure diff logic of the Characters source: which aspects changed between two field sets. No game access -
+// unit-testable against fabricated values.
 internal static class CharacterDiffEngine
 {
     /// <summary>
@@ -130,10 +125,8 @@ internal static class CharacterDiffEngine
     }
 }
 
-/// <summary>
-/// Shared capture helpers: subject enumeration per iteration class, relationship flags, field sets and full
-/// snapshots. All reads run on the framework thread.
-/// </summary>
+// Shared capture helpers: subject enumeration per iteration class, relationship flags, field sets and full snapshots.
+// All reads run on the framework thread.
 internal static class CharacterCapture
 {
     private const ulong NoTargetSentinel = 0xE0000000;

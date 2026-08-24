@@ -32,7 +32,7 @@ public sealed record ItemRemovedEvent(uint ItemId, int Quantity, GameInventoryTy
 public sealed record ItemMovedEvent(uint ItemId, GameInventoryType SourceInventory, uint SourceSlot, GameInventoryType TargetInventory, uint TargetSlot);
 
 /// <summary>
-/// Fired when an inventory item's properties change (quantity, spiritbond, …).
+/// Fired when an inventory item's properties change (quantity, spiritbond, ...).
 /// </summary>
 /// <param name="ItemId">The item row id.</param>
 /// <param name="PreviousQuantity">The quantity before the change.</param>

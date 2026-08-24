@@ -14,7 +14,7 @@ public static class ChatLinkHelper
     /// <summary>How many links stay clickable at once; past this the least recently registered one is dropped.</summary>
     public static int MaxLinks { get; set; } = 256;
 
-    /// <summary>The first command id handed out, well clear of anything a plugin is likely to register by hand.</summary>
+    // The first command id handed out, well clear of anything a plugin is likely to register by hand.
     private const uint FirstCommandId = 1000;
 
     private static readonly Dictionary<string, Registration> ByKey = new(StringComparer.Ordinal);
@@ -22,9 +22,7 @@ public static class ChatLinkHelper
 
     private static uint nextCommandId = FirstCommandId;
 
-    /// <summary>What one name is registered as: the command id the game knows it by, and what a click does.</summary>
-    /// <param name="CommandId">The chat-link command id.</param>
-    /// <param name="Payload">The payload marking the clickable text.</param>
+    // What one name is registered as: the command id the game knows it by, and what a click does.
     private sealed record Registration(uint CommandId, DalamudLinkPayload Payload)
     {
         /// <summary>The click action, replaced rather than re-registered when a name is reused, so the command id stays the same.</summary>
@@ -106,8 +104,7 @@ public static class ChatLinkHelper
             Unregister(KeysInOrder[0]);
     }
 
-    /// <summary>Runs a click, swallowing a handler exception so it cannot reach the chat log.</summary>
-    /// <param name="registration">The registration whose action to run, or null.</param>
+    // Runs a click, swallowing a handler exception so it cannot reach the chat log.
     private static void Click(Registration? registration)
     {
         if (registration == null)

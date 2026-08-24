@@ -100,7 +100,7 @@ public class Draw3DGameLightHarvestTests
         rows[2] = new Vector4(1.960f, 1.869f, 1.765f, 1f);
         rows[3] = new Vector4(1.960f, 1.869f, 1.765f, 1f);
 
-        // The volume transform is the identity, which is what yields the reported radius of exactly 1.
+        // The volume transform is the identity, which yields the reported radius of exactly 1.
         rows[13] = new Vector4(1f, 0f, 0f, 0f);
         rows[14] = new Vector4(0f, 1f, 0f, 0f);
         rows[15] = new Vector4(0f, 0f, 1f, 0f);

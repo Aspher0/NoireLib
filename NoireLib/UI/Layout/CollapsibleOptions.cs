@@ -15,9 +15,7 @@ public sealed class CollapsibleOptions
     public bool DefaultOpen { get; set; } = true;
 
     /// <summary>
-    /// Whether the open state survives a reload, stored in <see cref="NoireUiState"/> against the section's id.<br/>
-    /// Off by default, like every persistence switch in the library.<br/>
-    /// The id must be stable across sessions: a blank id, or one that changes each run, refuses to persist and logs once.
+    /// Whether the open state survives a reload, stored in <see cref="NoireUiState"/> against the section's id.
     /// </summary>
     public bool Persist { get; set; }
 
@@ -27,8 +25,7 @@ public sealed class CollapsibleOptions
     public string? Description { get; set; }
 
     /// <summary>
-    /// Extra content drawn on the header row, right-aligned: a count, a reset button, a status chip.<br/>
-    /// Drawn whether the section is open or closed.
+    /// Extra content drawn on the header row, right-aligned: a count, a reset button, a status chip.
     /// </summary>
     public Action? HeaderExtras { get; set; }
 

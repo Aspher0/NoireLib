@@ -4,10 +4,8 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Frame counters plus a 4-deep GPU timestamp-query ring, resolved oldest-first and never stalling. Every frame
-/// the renderer skips increments one of the named counters.
-/// </summary>
+// Frame counters plus a 4-deep GPU timestamp-query ring, resolved oldest-first and never stalling. Every frame the
+// renderer skips increments one of the named counters.
 internal sealed unsafe class RenderStats : IDisposable
 {
     private const int RingDepth = 4;

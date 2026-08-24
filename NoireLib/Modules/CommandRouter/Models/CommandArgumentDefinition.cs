@@ -37,14 +37,6 @@ public sealed class CommandArgumentDefinition
     /// </summary>
     public string? Description { get; }
 
-    /// <summary>
-    /// Creates a new argument definition.
-    /// </summary>
-    /// <param name="name">The argument name.</param>
-    /// <param name="type">The expected type.</param>
-    /// <param name="isRequired">Whether the argument is required.</param>
-    /// <param name="defaultValue">The default value when the argument is optional and not provided.</param>
-    /// <param name="description">An optional description for help output.</param>
     internal CommandArgumentDefinition(string name, Type type, bool isRequired, object? defaultValue, string? description)
     {
         Name = name;
@@ -54,14 +46,7 @@ public sealed class CommandArgumentDefinition
         Description = description;
     }
 
-    /// <summary>
-    /// Creates a new argument definition with a dynamically evaluated default value.
-    /// </summary>
-    /// <param name="name">The argument name.</param>
-    /// <param name="type">The expected type.</param>
-    /// <param name="isRequired">Whether the argument is required.</param>
-    /// <param name="defaultValueFactory">The factory used to produce the default value when the argument is optional and not provided.</param>
-    /// <param name="description">An optional description for help output.</param>
+    // Creates a new argument definition with a dynamically evaluated default value.
     internal CommandArgumentDefinition(string name, Type type, bool isRequired, Func<object?> defaultValueFactory, string? description)
     {
         Name = name;
@@ -71,10 +56,6 @@ public sealed class CommandArgumentDefinition
         Description = description;
     }
 
-    /// <summary>
-    /// Gets the default value for this argument.
-    /// </summary>
-    /// <returns>The fixed or dynamically evaluated default value.</returns>
     internal object? GetDefaultValue()
         => DefaultValueFactory != null ? DefaultValueFactory() : DefaultValue;
 }

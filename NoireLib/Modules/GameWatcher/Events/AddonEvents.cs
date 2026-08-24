@@ -3,7 +3,7 @@ using Dalamud.Game.Addon.Lifecycle;
 namespace NoireLib.GameWatcher;
 
 /// <summary>
-/// Fired for every lifecycle transition of a watched addon (setup, refresh, requested update, finalize, …).
+/// Fired for every lifecycle transition of a watched addon (setup, refresh, requested update, finalize, ...).
 /// Lifecycle events are exact (pushed by Dalamud).
 /// </summary>
 /// <param name="AddonName">The addon's internal name.</param>

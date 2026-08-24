@@ -59,8 +59,6 @@ public sealed class HookStats
         Volatile.Write(ref consecutiveFaults, 0);
     }
 
-    /// <summary>Records one detour entry and its duration.</summary>
-    /// <param name="elapsedTicks">Ticks spent inside the detour.</param>
     internal void RecordCall(long elapsedTicks)
     {
         Interlocked.Increment(ref callCount);
@@ -78,11 +76,9 @@ public sealed class HookStats
         }
     }
 
-    /// <summary>Clears the consecutive-fault run after a call that did not throw.</summary>
+    // Clears the consecutive-fault run after a call that did not throw.
     internal void RecordSuccess() => Volatile.Write(ref consecutiveFaults, 0);
 
-    /// <summary>Records one detour fault.</summary>
-    /// <returns>The new consecutive-fault count.</returns>
     internal int RecordFault()
     {
         Interlocked.Increment(ref faultCount);

@@ -10,10 +10,6 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Holds the profiler window's own draw cost down.
 /// </summary>
-/// <remarks>
-/// The window is library code that is roughly a third of any capture taken while it is open, so its cost distorts
-/// every reading taken through it. These measure the instrument rather than what it reports.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireProfilerWindowTests : IClassFixture<UiHarness>
 {
@@ -43,10 +39,7 @@ public sealed class NoireProfilerWindowTests : IClassFixture<UiHarness>
     /// <summary>
     /// Draws the window inside a fixed-height region with <paramref name="scopes"/> scopes measured ahead of it.
     /// </summary>
-    /// <remarks>
-    /// The height has to be bounded for the table to scroll, and a table that does not scroll has every row on screen
-    /// and nothing to clip. The harness host window auto-sizes, so the constraint is applied here.
-    /// </remarks>
+    /// <remarks>The harness host window auto-sizes, so the height is bounded here for the table to scroll.</remarks>
     private UiHarnessResult MeasureWithScopes(NoireProfilerWindow window, string[] names)
     {
         return harness.Draw(

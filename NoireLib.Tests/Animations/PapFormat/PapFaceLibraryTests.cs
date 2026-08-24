@@ -11,12 +11,12 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Builds minimal but structurally complete .paps entirely in memory, the same way <see cref="PapRetargeterTests"/>
-/// does (the builder is deliberately duplicated per test file, not shared), then drives them through
+/// does (the builder is duplicated per test file, not shared), then drives them through
 /// <see cref="PapFaceLibrary"/>. The fixtures mirror the two vanilla shapes the face-preservation investigation
 /// dumped from the game: a charmed-style TMB (C010 face entry, C009 body entry, and a raw C012 vfx entry carrying
 /// its own offset string, no TMPP) and a balldance-style TMB (TMPP first, then the same entries). The C012 is the
 /// load-bearing fixture: a raw entry AFTER the TMPP insertion point whose string offset must survive injection
-/// untouched, which is exactly the guarantee the surgical splice exists to give and a parse-and-rebuild would break.
+/// untouched.
 /// </summary>
 public class PapFaceLibraryTests
 {

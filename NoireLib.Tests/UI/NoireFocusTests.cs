@@ -9,12 +9,7 @@ namespace NoireLib.Tests;
 /// Holds the focus mark: drawn only for the control that has focus, visibly different per shape, and free per frame.
 /// </summary>
 /// <remarks>
-/// The mark exists to be told apart from hover, selection and emphasis, which are drawn with soft and glowing marks. A
-/// shape that stopped reaching the screen, or that collapsed into the same geometry as another, would look like a theme
-/// change rather than like a bug, so both are asserted rather than left to the eye.<br/>
-/// Arrival is switched off in most of these. The mark fades in as it settles, so on the frame focus lands it is
-/// legitimately at zero alpha and draws nothing; a test that did not account for that would be measuring the early
-/// return rather than the drawing.
+/// Arrival is switched off in most of these: on the frame focus lands the mark is at zero alpha and draws nothing.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireFocusTests : IClassFixture<UiHarness>
@@ -138,7 +133,7 @@ public sealed class NoireFocusTests : IClassFixture<UiHarness>
         // visit still sitting there, read the arrival as long finished, and placed the mark instantly ever after.
         harness.Draw(() => NoireFocus.On(Target, focused: true, 200u, arriving), warmUpFrames: 60);
 
-        // Frames where nothing is marked at all, which is what a control losing focus looks like from in here.
+        // From in here, a control losing focus looks like frames where nothing is marked at all.
         harness.Draw(static () => NoireFocus.On(Target, focused: false, 200u), warmUpFrames: 4);
 
         var returning = harness.Draw(() => NoireFocus.On(Target, focused: true, 200u, arriving), warmUpFrames: 0);

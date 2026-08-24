@@ -49,7 +49,7 @@ public readonly ref struct UiSparklineDraw
     /// <summary>The value at the top of the plot.</summary>
     public float Max { get; }
 
-    /// <summary>The series projected into screen coordinates, oldest first. Always two or more points.</summary>
+    /// <summary>The series projected into screen coordinates, oldest first, always two or more points.</summary>
     public ReadOnlySpan<Vector2> Points { get; }
 
     /// <summary>The colour of the trace, already resolved through the style and the theme.</summary>
@@ -68,7 +68,7 @@ public readonly ref struct UiSparklineDraw
     public float MarkRadius { get; }
 
     /// <summary>
-    /// Draws the sparkline's own filled area under the trace. Nothing when <see cref="FillColor"/> is transparent.
+    /// Draws the sparkline's own filled area under the trace, nothing when <see cref="FillColor"/> is transparent.
     /// </summary>
     public void DrawArea() => NoireGauges.DrawTraceArea(Points, Plot, FillColor);
 
@@ -78,7 +78,7 @@ public readonly ref struct UiSparklineDraw
     public void DrawLine() => NoireGauges.DrawTraceLine(Points, Color, Thickness);
 
     /// <summary>
-    /// Draws the sparkline's own end-point mark. Nothing when <see cref="MarkLast"/> is off.
+    /// Draws the sparkline's own end-point mark, nothing when <see cref="MarkLast"/> is off.
     /// </summary>
     public void DrawMark()
     {

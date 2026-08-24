@@ -144,7 +144,7 @@ public static partial class MeshSimplifier
         return (uint)remap[index];
     }
 
-    /// <summary>Attempts to collapse edge (u,v) onto its least-cost placement; commits only if no incident face would flip.</summary>
+    // Attempts to collapse edge (u,v) onto its least-cost placement; commits only if no incident face would flip.
     private static void TryCollapse(
         int u, int v, Quadric[] quad, Vector3[] pos, Vertex3D[] vert,
         int[] t0, int[] t1, int[] t2, bool[] removed, List<int>[] incident,
@@ -214,7 +214,7 @@ public static partial class MeshSimplifier
         pq.Enqueue((u, w, version[u], version[w]), cost);
     }
 
-    /// <summary>Deduplicated union of the non-retired faces incident to u or v (for the flip test).</summary>
+    // Deduplicated union of the non-retired faces incident to u or v (for the flip test).
     private static IEnumerable<int> Faces(List<int>[] incident, bool[] removed, int u, int v)
     {
         foreach (var t in incident[u])
@@ -230,7 +230,8 @@ public static partial class MeshSimplifier
     private static Vector3 Place(int corner, int u, int v, Vector3 target, Vector3[] pos)
         => corner == u || corner == v ? target : pos[corner];
 
-    /// <summary>The least-cost placement for collapsing (u,v): whichever of u, v, or their midpoint minimizes the summed quadric error.</summary>
+    // The least-cost placement for collapsing (u,v): whichever of u, v, or their midpoint minimizes the summed
+    // quadric error.
     private static (double Cost, Vector3 Target) EvalCollapse(Quadric[] quad, Vector3[] pos, int u, int v)
     {
         var q = quad[u];
@@ -258,7 +259,7 @@ public static partial class MeshSimplifier
         return ((long)lo << 32) | (uint)hi;
     }
 
-    /// <summary>Adds a pinning quadric for each boundary edge (an edge used by exactly one face), so open borders hold.</summary>
+    // Adds a pinning quadric for each boundary edge (an edge used by exactly one face), so open borders hold.
     private static void AddBoundaryQuadrics(Dictionary<long, int> edgeFaces, int[] t0, int[] t1, int[] t2, Vector3[] pos, Quadric[] quad, int triCount)
     {
         const float boundaryWeight = 3.16f; // sqrt(10): scales the plane so its quadric weighs ~10x a face's
@@ -289,7 +290,7 @@ public static partial class MeshSimplifier
         quad[b].Add(in q);
     }
 
-    /// <summary>A symmetric 4x4 error quadric (upper triangle), evaluating squared distance to a set of planes.</summary>
+    // A symmetric 4x4 error quadric (upper triangle), evaluating squared distance to a set of planes.
     private struct Quadric
     {
         private double a, b, c, d, e, f, g, h, i, j; // xx xy xz xw  yy yz yw  zz zw  ww

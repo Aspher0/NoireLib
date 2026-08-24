@@ -9,13 +9,6 @@ namespace NoireLib.Tests;
 /// Holds the two row-based widgets at zero allocation per frame, and holds the ids they build to the exact bytes the
 /// interpolations they replaced produced.
 /// </summary>
-/// <remarks>
-/// These carry the highest-volume id sites in the library: eight built per frame, three of them per row. Routing them
-/// through <see cref="UiIds"/> is only safe while the strings stay byte-identical, because a widget id reaches
-/// <see cref="NoireUiState"/> keys, so an id that changed shape would silently orphan every column width, sort order
-/// and scroll position a user had saved under the old one. That is asserted here against the literal rather than
-/// against another call to the same builder, which would agree with itself whatever it produced.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireDataWidgetAllocationTests : IClassFixture<UiHarness>
 {

@@ -46,11 +46,7 @@ public sealed class NoireIpcConsumer<TDelegate> where TDelegate : Delegate
         });
     }
 
-    /// <summary>
-    /// Creates a consumer wrapper that represents an unavailable IPC binding.
-    /// </summary>
-    /// <param name="fullName">The logical IPC name to associate with the wrapper.</param>
-    /// <returns>An unavailable consumer wrapper.</returns>
+    // Creates a consumer wrapper that represents an unavailable IPC binding.
     internal static NoireIpcConsumer<TDelegate> Unavailable(string fullName)
     {
         ArgumentNullException.ThrowIfNull(fullName);
@@ -101,7 +97,7 @@ public sealed class NoireIpcConsumer<TDelegate> where TDelegate : Delegate
     public TDelegate? Delegate => _binding.Value.Delegate;
 
     /// <summary>
-    /// Implicitly converts the consumer to its underlying delegate.
+    /// Gets the underlying delegate for direct invocation.
     /// </summary>
     public static implicit operator TDelegate?(NoireIpcConsumer<TDelegate> consumer) => consumer?.Delegate;
 

@@ -2,10 +2,9 @@ using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>The stylized light <c>Material.Lit</c> shades against. Unlit, textured and decal materials ignore all of it.</summary>
+// The stylized light Material.Lit shades against. Unlit, textured and decal materials ignore all of it.
 internal sealed class LightingPage
 {
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         var light = NoireDraw3D.Lighting;

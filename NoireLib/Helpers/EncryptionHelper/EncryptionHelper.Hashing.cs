@@ -215,13 +215,7 @@ public static partial class EncryptionHelper
 
     #region Internals
 
-    /// <summary>
-    /// Computes the hash of the given bytes using the specified algorithm.
-    /// </summary>
-    /// <param name="data">The bytes to hash.</param>
-    /// <param name="algorithm">The hashing algorithm to use.</param>
-    /// <returns>The raw hash bytes.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="algorithm"/> is not a known value.</exception>
+    // Computes the hash of the given bytes using the specified algorithm.
     private static byte[] ComputeHash(byte[] data, HashAlgorithmType algorithm)
     {
         return algorithm switch
@@ -235,12 +229,7 @@ public static partial class EncryptionHelper
         };
     }
 
-    /// <summary>
-    /// Creates a disposable <see cref="HashAlgorithm"/> instance, for hashing a stream.
-    /// </summary>
-    /// <param name="algorithm">The hashing algorithm to create.</param>
-    /// <returns>The algorithm instance, which the caller disposes.</returns>
-    /// <exception cref="ArgumentOutOfRangeException">Thrown when <paramref name="algorithm"/> is not a known value.</exception>
+    // Creates a disposable HashAlgorithm instance, for hashing a stream.
     private static HashAlgorithm CreateHashAlgorithm(HashAlgorithmType algorithm)
     {
         return algorithm switch

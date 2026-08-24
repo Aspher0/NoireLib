@@ -15,10 +15,7 @@ public sealed class FallbackCommandBuilder
     private bool showInHelp = true;
     private Action<ParsedCommandArguments>? handler;
 
-    /// <summary>
-    /// Creates a new fallback builder for the given argument name.
-    /// </summary>
-    /// <param name="name">The display name of the free-form argument, rendered as &lt;name&gt; in help listings.</param>
+    // Creates a new fallback builder for the given argument name.
     internal FallbackCommandBuilder(string name)
     {
         this.name = name;
@@ -69,15 +66,7 @@ public sealed class FallbackCommandBuilder
         return this;
     }
 
-    /// <summary>
-    /// Builds the presentation definition from the current builder state.
-    /// </summary>
-    /// <returns>The fallback's help presentation definition.</returns>
     internal FallbackCommandDefinition BuildDefinition() => new(name, helpText, displayOrder, showInHelp);
 
-    /// <summary>
-    /// Returns the configured handler.
-    /// </summary>
-    /// <returns>The handler, or null when none was set.</returns>
     internal Action<ParsedCommandArguments>? BuildHandler() => handler;
 }

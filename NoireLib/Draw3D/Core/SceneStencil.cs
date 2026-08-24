@@ -3,13 +3,10 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Read-only access to the <b>stencil</b> plane of the game's scene depth-stencil buffer (bound only as an SRV,
-/// never a DSV), so a ground decal can occlude itself along an excluded character's silhouette without any
-/// volume. Creates its own <c>*_G8_UINT</c> view of the typeless depth-stencil texture; formats with no stencil
-/// plane leave this off and the decal paints as before. Mirrors <see cref="SceneDepth"/>; re-derives on any
-/// texture change.
-/// </summary>
+// Read-only access to the stencil plane of the game's scene depth-stencil buffer (bound only as an SRV, never a DSV),
+// so a ground decal can occlude itself along an excluded character's silhouette without any volume. Creates its own
+// *_G8_UINT view of the typeless depth-stencil texture; formats with no stencil plane leave this off and the decal
+// paints as before. Mirrors SceneDepth; re-derives on any texture change.
 internal sealed unsafe class SceneStencil : System.IDisposable
 {
     private ComPtr<ID3D11ShaderResourceView> srv;
@@ -69,7 +66,8 @@ internal sealed unsafe class SceneStencil : System.IDisposable
         }
     }
 
-    /// <summary>Maps a depth-stencil texture's (typeless) format to the SRV format that reads its <i>stencil</i> plane, or UNKNOWN when it has none.</summary>
+    // Maps a depth-stencil texture's (typeless) format to the SRV format that reads its stencil plane, or UNKNOWN
+    // when it has none.
     internal static DXGI_FORMAT StencilSrvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT

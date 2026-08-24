@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// The client role: a single loopback TCP connection to this machine's hub.<br/>
-/// <see cref="Completion"/> completes when the connection ends for any reason; the supervision loop then re-elects.
-/// </summary>
+// The client role: a single loopback TCP connection to this machine's hub. Completion completes when the connection
+// ends for any reason; the supervision loop then re-elects.
 internal sealed class ClientConnection : IDisposable
 {
     private readonly NoireNetworker owner;
@@ -28,14 +26,10 @@ internal sealed class ClientConnection : IDisposable
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
     }
 
-    /// <summary>
-    /// Completes when the connection to the hub is gone (goodbye, EOF, or transport failure).
-    /// </summary>
+    // Completes when the connection to the hub is gone (goodbye, EOF, or transport failure).
     public Task Completion => completion.Task;
 
-    /// <summary>
-    /// Connects to the hub at the given loopback port and performs the handshake. Returns true on success.
-    /// </summary>
+    // Connects to the hub at the given loopback port and performs the handshake. Returns true on success.
     public async Task<bool> ConnectAsync(int port, CancellationToken cancellationToken)
     {
         try
@@ -199,9 +193,7 @@ internal sealed class ClientConnection : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sends a goodbye and closes the connection, without blocking the caller.
-    /// </summary>
+    // Sends a goodbye and closes the connection, without blocking the caller.
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)

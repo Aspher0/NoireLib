@@ -112,8 +112,8 @@ public class PapRetargeterTests
 
         // C010 (id=6), the face animation: parsed like C009 but with flags and start/end frames after the
         // duration; path offset stays 0 (empty string). Staged LATE (time 74) with a real playback segment
-        // (end frame 40) on purpose - the production stepdance values whose unclamped time and segment kept
-        // a "one-frame" intro alive in game (2026-08-16).
+        // (end frame 40), the production stepdance values whose unclamped time and segment kept a
+        // "one-frame" intro alive in game (2026-08-16).
         if (includeFace)
         {
             WriteItemHeader("C010", 0x28);
@@ -129,7 +129,7 @@ public class PapRetargeterTests
         }
 
         // C042 (id=7), a footstep: raw, staged late, and its payload is four plain values with no string
-        // offset among them, which is what makes it the one entry a clamp can drop.
+        // offset among them, which makes it the one entry a clamp can drop.
         if (includeFootstep)
         {
             WriteItemHeader("C042", 0x1C);
@@ -141,8 +141,8 @@ public class PapRetargeterTests
             writer.Write(0);
         }
 
-        // C125 (id=5), the animation lock: a raw, unparsed entry, so magic plus the id/time framing every entry
-        // carries is the whole thing - PapAnimationLock.HasLock/Remove only ever look at Magic.
+        // C125 (id=5), the animation lock: a raw, unparsed entry of magic plus the id/time framing every entry
+        // carries. PapAnimationLock.HasLock/Remove only ever look at Magic.
         if (includeAnimationLock)
         {
             WriteItemHeader("C125", 0x0C);
@@ -167,7 +167,7 @@ public class PapRetargeterTests
             writer.Write((short)5); // C125's id
 
         // String table: only written when c009Path is non-empty, so the default shape (offset 0 -> "", no table
-        // at all) is exactly what it was before this parameter existed.
+        // at all) is what it was before this parameter existed.
         var stringTablePos = stream.Position;
         if (!string.IsNullOrEmpty(c009Path))
         {

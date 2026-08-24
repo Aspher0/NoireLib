@@ -6,18 +6,7 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// One light read out of a payload the game uploaded for a frame.
-/// </summary>
-/// <param name="Position">Row 0, relative to the camera. Add the camera's own position to place it in the world.</param>
-/// <param name="Direction">Row 1. Unit length, matching the source object's forward axis.</param>
-/// <param name="Color">Rows 2 and 3, which the game writes identically. Values above 1 are ordinary here - only an emitter has them.</param>
-/// <param name="Radius">The light volume's reach: the reciprocal of its uniform scale.</param>
-/// <param name="TransformDisagreement">
-/// How far the volume transform's own idea of where the light is falls from <paramref name="Position"/>.<br/>
-/// The two are independent encodings of one point, so this is near zero while the layout holds and grows if it
-/// stops holding. It is a running check on the parse rather than a property of the light.
-/// </param>
+// One light read out of a payload the game uploaded for a frame.
 internal readonly record struct GameLight(
     Vector3 Position,
     Vector3 Direction,
@@ -43,28 +32,23 @@ internal readonly record struct GameLight(
     public Vector3 WorldPosition(Vector3 camera) => IsDirectional ? Position : Position + camera;
 }
 
-/// <summary>Reads the game's per-light records out of the payloads a write-log run captured.</summary>
+// Reads the game's per-light records out of the payloads a write-log run captured.
 internal static class GameLightHarvest
 {
     /// <summary>Bytes in one record. The whole 512 B buffer carries a single light, with the tail rows unused.</summary>
     public const int RecordBytes = 512;
 
-    /// <summary>Rows in one record.</summary>
     private const int RecordRows = RecordBytes / 16;
 
-    /// <summary>Row holding the position.</summary>
     private const int PositionRow = 0;
 
-    /// <summary>Row holding the direction.</summary>
     private const int DirectionRow = 1;
 
-    /// <summary>First of the two rows holding the colour.</summary>
     private const int ColorRow = 2;
 
-    /// <summary>First of the three rows holding the light's transform.</summary>
     private const int TransformRow = 13;
 
-    /// <summary>How far from unit length a direction may be and still count as one.</summary>
+    // How far from unit length a direction may be and still count as one.
     private const float DirectionTolerance = 0.01f;
 
     /// <summary>
@@ -108,15 +92,11 @@ internal static class GameLightHarvest
         return true;
     }
 
-    /// <summary>
-    /// Reads the light volume's reach and where it sits.<br/>
-    /// Rows 13-15 are a world-to-volume transform: a rotation scaled uniformly, with the translation in the `w`
-    /// slots. Its scale is the reciprocal of the light's reach, because the volume is a unit shape stretched to
-    /// that reach.<br/>
-    /// <b>The translation is not the position.</b> It is expressed in the volume's own rotated frame, so reading
-    /// it directly yields a point that wanders as the light turns. The rotation has to be undone: for
-    /// <c>M = [R*s | t]</c>, the centre is <c>-(R^T/s)*t</c>.
-    /// </summary>
+    // Reads the light volume's reach and where it sits. Rows 13-15 are a world-to-volume transform: a rotation scaled
+    // uniformly, with the translation in the `w` slots. Its scale is the reciprocal of the light's reach, because the
+    // volume is a unit shape stretched to that reach. The translation is not the position. It is expressed in the
+    // volume's own rotated frame, so reading it directly yields a point that wanders as the light turns. The rotation
+    // has to be undone: for M = [R*s | t], the centre is -(R^T/s)*t.
     private static void ReadTransform(byte[] payload, out Vector3 centre, out float radius)
     {
         centre = Vector3.Zero;
@@ -209,7 +189,6 @@ internal static class GameLightHarvest
         return sb.ToString();
     }
 
-    /// <summary>Reads one 16-byte row of a payload.</summary>
     private static Vector4 Row(byte[] payload, int index)
         => BufferHelper.ReadVector4(payload, index * 16);
 }

@@ -67,10 +67,7 @@ public sealed class ThemeSnapshot
     }
 
     /// <summary>
-    /// Builds a theme from this snapshot.<br/>
-    /// A color name this version of the library does not know, or a HEX value that does not parse, is skipped rather
-    /// than failing the whole theme: a code written by a newer version still applies everything it has in common with
-    /// this one.
+    /// Builds a theme from this snapshot.
     /// </summary>
     /// <returns>The theme.</returns>
     public NoireTheme ToTheme()

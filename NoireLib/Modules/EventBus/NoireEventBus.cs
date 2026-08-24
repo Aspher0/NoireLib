@@ -17,10 +17,8 @@ namespace NoireLib.EventBus;
 /// </summary>
 public class NoireEventBus : NoireModuleBase<NoireEventBus>
 {
-    /// <summary>
-    /// One subscription's outer/inner token pairing plus the metadata the per-type and per-owner unsubscribe
-    /// operations need, which the registry does not expose per key.
-    /// </summary>
+    // One subscription's outer/inner token pairing plus the metadata the per-type and per-owner unsubscribe
+    // operations need, which the registry does not expose per key.
     private sealed class Registration
     {
         public required EventSubscriptionToken Outer { get; init; }
@@ -68,13 +66,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         bool enableLogging = true,
         EventExceptionMode exceptionHandling = EventExceptionMode.LogAndContinue) : base(moduleId, active, enableLogging, exceptionHandling) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireEventBus(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
     /// <summary>
@@ -262,9 +254,7 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
     private static NoireSubscriptionOptions<object> BuildOptions(int priority, object? owner)
         => new() { Priority = priority, Owner = owner };
 
-    /// <summary>
-    /// Creates the registry subscription and records the outer/inner pairing, applying keyed replacement first.
-    /// </summary>
+    // Creates the registry subscription and records the outer/inner pairing, applying keyed replacement first.
     private EventSubscriptionToken Register(string? key, Type eventType, int priority, object? owner, bool isAsync, Func<NoireSubscriptionToken> subscribe)
     {
         var outer = new EventSubscriptionToken(Guid.NewGuid());
@@ -552,10 +542,9 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
 
     #region Ledger
 
-    /// <summary>
-    /// Adds a registration to the outer-token, key and per-type indexes. The per-type list is kept in the registry's
-    /// dispatch order (priority descending, stable) so order-sensitive operations agree with dispatch. Call under <see cref="ledgerLock"/>.
-    /// </summary>
+    // Adds a registration to the outer-token, key and per-type indexes. The per-type list is kept in the registry's
+    // dispatch order (priority descending, stable) so order-sensitive operations agree with dispatch. Call under
+    // ledgerLock.
     private void AddToLedger(Registration reg)
     {
         byOuterToken[reg.Outer] = reg;
@@ -583,10 +572,8 @@ public class NoireEventBus : NoireModuleBase<NoireEventBus>
         list.Insert(index, reg);
     }
 
-    /// <summary>
-    /// Removes a registration from every index and, when requested, disposes its inner token so the registry drops
-    /// the underlying subscription. Call under <see cref="ledgerLock"/>.
-    /// </summary>
+    // Removes a registration from every index and, when requested, disposes its inner token so the registry drops the
+    // underlying subscription. Call under ledgerLock.
     private void RemoveFromLedger(Registration reg, bool disposeInner)
     {
         byOuterToken.Remove(reg.Outer);

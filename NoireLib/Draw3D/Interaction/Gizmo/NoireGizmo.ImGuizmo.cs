@@ -33,7 +33,8 @@ namespace NoireLib.Draw3D.Interaction.Gizmo;
 /// </summary>
 public sealed partial class NoireGizmo
 {
-    /// <summary>Which operation a drag is manipulating, so the matching snap increment can be fed to ImGuizmo's single snap slot.</summary>
+    // Which operation a drag is manipulating, so the matching snap increment can be fed to ImGuizmo's single snap
+    // slot.
     private enum SnapKind { None, Translate, Rotate, Scale }
 
     private static int nextImguizmoId;
@@ -61,20 +62,19 @@ public sealed partial class NoireGizmo
     private int imguizmoSavedTextBits, imguizmoSavedShadowBits; // ImGuizmo TEXT / TEXT_SHADOW alpha saved across one Manipulate call
     private bool imguizmoTextHidden;
 
-    /// <summary>Calls the native <c>ImGuizmo_GetStyle</c> (unwrapped by the binding); returns <c>&amp;ImGuizmo::Style</c>.</summary>
+    // Calls the native ImGuizmo_GetStyle (unwrapped by the binding); returns &amp;ImGuizmo::Style.
     [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
     private delegate nint ImGuizmoGetStyleDelegate();
 
-    /// <summary>The PHYSICAL (hardware) left-mouse state, read straight from the OS: ImGui's own <c>io.MouseDown</c> can
-    /// desync (Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui,
-    /// stranding an ImGuizmo drag), so reading the hardware bit is the only reliable release signal. VK_LBUTTON = 0x01.</summary>
+    // The PHYSICAL (hardware) left-mouse state, read straight from the OS: ImGui's own io.MouseDown can desync
+    // (Dalamud routes a release to the game while the mouse is captured, so the up is never delivered to ImGui,
+    // stranding an ImGuizmo drag), so reading the hardware bit is the only reliable release signal. VK_LBUTTON =
+    // 0x01.
     private static bool PhysicalLeftDown() => KeybindsHelper.IsAsyncKeyDown(0x01);
 
-    /// <summary>
-    /// Re-arms the once-only diagnostics so a fresh <c>[Gizmo]</c> line lands in the log the next time the backend
-    /// draws or falls back (the flags are process-static and would otherwise stay silent after the first use); logs
-    /// the current API state, called when the reference scene spawns.
-    /// </summary>
+    // Re-arms the once-only diagnostics so a fresh [Gizmo] line lands in the log the next time the backend draws or
+    // falls back (the flags are process-static and would otherwise stay silent after the first use); logs the current
+    // API state, called when the reference scene spawns.
     internal static void ResetImGuizmoDiagnostics()
     {
         imguizmoDrewOnce = false;
@@ -82,13 +82,10 @@ public sealed partial class NoireGizmo
         NoireLogger.LogInfo($"[Gizmo] diagnostics re-armed. imguizmoApiState={imguizmoApiState} (0=untried, 1=ready, 2=unavailable).", "Draw3D");
     }
 
-    /// <summary>
-    /// Binds the ImGuizmo native function table once: Dalamud initialises the ImGui binding but not ImGuizmo's, so
-    /// without this every ImGuizmo call hits a null table and draws nothing. Binds against the same native module
-    /// ImGui uses (ImGuizmo lives in it), then points ImGuizmo at Dalamud's live ImGui context; attempted once,
-    /// failure disables the backend cleanly (no per-frame retry, no crash spam).
-    /// </summary>
-    /// <returns>True when the ImGuizmo API is bound and usable.</returns>
+    // Binds the ImGuizmo native function table once: Dalamud initialises the ImGui binding but not ImGuizmo's, so
+    // without this every ImGuizmo call hits a null table and draws nothing. Binds against the same native module
+    // ImGui uses (ImGuizmo lives in it), then points ImGuizmo at Dalamud's live ImGui context; attempted once,
+    // failure disables the backend cleanly (no per-frame retry, no crash spam).
     private static bool EnsureImGuizmoApi()
     {
         var state = Volatile.Read(ref imguizmoApiState);
@@ -113,12 +110,10 @@ public sealed partial class NoireGizmo
         }
     }
 
-    /// <summary>
-    /// Runs the ImGuizmo manipulation for the frame inside a fullscreen passthrough host window, applies the edit, and
-    /// returns whether it owns the mouse right now (a handle hovered or being dragged), so <see cref="NoireInteract"/>
-    /// can make the frame a hard pass for scene picking; the game camera is blocked here via
-    /// <c>SetNextFrameWantCaptureMouse</c> (no window), driven from the self-driven pre-pass.
-    /// </summary>
+    // Runs the ImGuizmo manipulation for the frame inside a fullscreen passthrough host window, applies the edit, and
+    // returns whether it owns the mouse right now (a handle hovered or being dragged), so NoireInteract can make the
+    // frame a hard pass for scene picking; the game camera is blocked here via SetNextFrameWantCaptureMouse (no
+    // window), driven from the self-driven pre-pass.
     private bool DrawImGuizmo(in FrameContext frame, in Matrix4x4 world)
     {
         // Hardware stuck-drag watchdog (runs before every early-out): a gizmo drag lives only while the button is
@@ -364,11 +359,9 @@ public sealed partial class NoireGizmo
         return ownsMouse;
     }
 
-    /// <summary>
-    /// Ends the current ImGuizmo drag: clears the using/snap/group state and raises <c>EditEnd</c> once; called on the
-    /// normal release and by the hardware watchdog when the physical button comes up while we still think we are
-    /// dragging, so a missed mouse-up can never leave the gizmo permanently owning the mouse.
-    /// </summary>
+    // Ends the current ImGuizmo drag: clears the using/snap/group state and raises EditEnd once; called on the normal
+    // release and by the hardware watchdog when the physical button comes up while we still think we are dragging, so
+    // a missed mouse-up can never leave the gizmo permanently owning the mouse.
     private void EndImguizmoDrag()
     {
         if (!imguizmoUsing)
@@ -380,7 +373,8 @@ public sealed partial class NoireGizmo
         RaiseEditEnd();
     }
 
-    /// <summary>The snap kind for a single-operation gizmo (so its snap is applied without waiting to detect the active op), else None.</summary>
+    // The snap kind for a single-operation gizmo (so its snap is applied without waiting to detect the active op),
+    // else None.
     private SnapKind SingleOpKind() => Op switch
     {
         GizmoOp.Translate => SnapKind.Translate,
@@ -389,12 +383,10 @@ public sealed partial class NoireGizmo
         _ => SnapKind.None,
     };
 
-    /// <summary>
-    /// The op whose handle is under the cursor right now (from ImGuizmo's last frame), so a drag that starts next frame
-    /// already knows which single op to lock and which snap increment to feed, or None when the cursor is over no
-    /// handle; priority is Scale &gt; Translate &gt; Rotate, the topmost handle where they overlap (a scale ball drawn
-    /// over the screen rotation ring), matching ImGuizmo's own hit priority.
-    /// </summary>
+    // The op whose handle is under the cursor right now (from ImGuizmo's last frame), so a drag that starts next
+    // frame already knows which single op to lock and which snap increment to feed, or None when the cursor is over
+    // no handle; priority is Scale &gt; Translate &gt; Rotate, the topmost handle where they overlap (a scale ball
+    // drawn over the screen rotation ring), matching ImGuizmo's own hit priority.
     private SnapKind HoveredOpKind()
     {
         if ((Op & GizmoOp.Scale) != 0 && ImGuizmo.IsOver(ImGuizmoOperation.Scaleu))
@@ -406,7 +398,7 @@ public sealed partial class NoireGizmo
         return SnapKind.None;
     }
 
-    /// <summary>Maps a driven <see cref="SnapKind"/> to the single ImGuizmo operation to feed during that drag.</summary>
+    // Maps a driven SnapKind to the single ImGuizmo operation to feed during that drag.
     private static ImGuizmoOperation SnapKindToOperation(SnapKind kind) => kind switch
     {
         SnapKind.Translate => ImGuizmoOperation.Translate,
@@ -415,7 +407,8 @@ public sealed partial class NoireGizmo
         _ => (ImGuizmoOperation)0,
     };
 
-    /// <summary>Detects which operation changed between the pre- and post-manipulate matrices, so the right snap is fed next frame.</summary>
+    // Detects which operation changed between the pre- and post-manipulate matrices, so the right snap is fed next
+    // frame.
     private static SnapKind DetectChangedOp(in Matrix4x4 before, in Matrix4x4 after)
     {
         if (!Matrix4x4.Decompose(before, out var s0, out var r0, out var t0) ||
@@ -433,12 +426,10 @@ public sealed partial class NoireGizmo
         return SnapKind.None;
     }
 
-    /// <summary>
-    /// Builds ImGuizmo's snap array for the operation the drag is driving: translation snaps per axis (World mode
-    /// snaps world axes, Local mode snaps the object's own axes, both handled inside ImGuizmo), rotation and scale
-    /// snap by a single increment; returns false when the driven operation has no snap set, so the manipulation runs
-    /// unsnapped.
-    /// </summary>
+    // Builds ImGuizmo's snap array for the operation the drag is driving: translation snaps per axis (World mode
+    // snaps world axes, Local mode snaps the object's own axes, both handled inside ImGuizmo), rotation and scale
+    // snap by a single increment; returns false when the driven operation has no snap set, so the manipulation runs
+    // unsnapped.
     private bool TryBuildSnap(SnapKind kind, out float[] snap)
     {
         snap = imguizmoSnap;
@@ -463,7 +454,6 @@ public sealed partial class NoireGizmo
         }
     }
 
-    /// <summary>Whether the given operation has a snap increment configured.</summary>
     private bool OpHasSnap(SnapKind kind) => kind switch
     {
         SnapKind.Translate => Options.Snap != Vector3.Zero,
@@ -472,14 +462,12 @@ public sealed partial class NoireGizmo
         _ => false,
     };
 
-    /// <summary>
-    /// A finite-far, non-reversed perspective projection for ImGuizmo, built from the game's projection but with a
-    /// well-conditioned Z column. ImGuizmo unprojects the cursor ray by inverting <c>view * proj</c>; the game's
-    /// projection is reversed-Z and infinite-far (far plane at w to 0), which collapses that inverse and breaks every
-    /// ray-based handle. Only clip.z (M13/M23/M33/M43) is rebuilt; clip.x/clip.y/clip.w are copied verbatim, so the
-    /// gizmo projects to the same screen pixels as the object it edits. The w-column sign (M34) carries the game's
-    /// handedness, so this works whether the game view is left- or right-handed.
-    /// </summary>
+    // A finite-far, non-reversed perspective projection for ImGuizmo, built from the game's projection but with a
+    // well-conditioned Z column. ImGuizmo unprojects the cursor ray by inverting view * proj; the game's projection
+    // is reversed-Z and infinite-far (far plane at w to 0), which collapses that inverse and breaks every ray-based
+    // handle. Only clip.z (M13/M23/M33/M43) is rebuilt; clip.x/clip.y/clip.w are copied verbatim, so the gizmo
+    // projects to the same screen pixels as the object it edits. The w-column sign (M34) carries the game's
+    // handedness, so this works whether the game view is left- or right-handed.
     private static Matrix4x4 BuildImGuizmoProjection(in FrameContext frame)
     {
         var proj = frame.Proj;
@@ -493,7 +481,7 @@ public sealed partial class NoireGizmo
         return proj;
     }
 
-    /// <summary>True when every element is finite and the matrix does not collapse the target to nothing.</summary>
+    // True when every element is finite and the matrix does not collapse the target to nothing.
     private static bool IsUsableTransform(in Matrix4x4 m)
     {
         var finite =
@@ -510,13 +498,11 @@ public sealed partial class NoireGizmo
             : scale.LengthSquared() > 1e-12f;
     }
 
-    /// <summary>
-    /// Turns ImGuizmo's proxy result (whose scale is <see cref="NoireGizmo.baseScale"/> multiplied by ImGuizmo's factor)
-    /// back into the real world transform: translation and rotation are taken verbatim, and scale becomes an additive
-    /// delta on the size at press - <c>pressScale + (resultScale - baseScale)</c>, floored at <see cref="MinScale"/> so a
-    /// component never collapses, matching the native backend instead of ImGuizmo's multiply-the-current-size behaviour;
-    /// falls back to the raw result if it will not decompose.
-    /// </summary>
+    // Turns ImGuizmo's proxy result (whose scale is baseScale multiplied by ImGuizmo's factor) back into the real
+    // world transform: translation and rotation are taken verbatim, and scale becomes an additive delta on the size
+    // at press - pressScale + (resultScale - baseScale), floored at MinScale so a component never collapses, matching
+    // the native backend instead of ImGuizmo's multiply-the-current-size behaviour; falls back to the raw result if
+    // it will not decompose.
     private Matrix4x4 RebuildFromScaleProxy(in Matrix4x4 proxyResult)
     {
         if (!Matrix4x4.Decompose(proxyResult, out var s, out var rot, out var trans))
@@ -534,7 +520,8 @@ public sealed partial class NoireGizmo
 
     private static ImGuizmoOperation MapOperation(GizmoOp op) => MapOperationLocked(op, ImGuizmoOperation.Rotate);
 
-    /// <summary>Like <see cref="MapOperation"/>, but the rotation bit is <paramref name="rotateFlag"/> - a single-axis rotate for a plane-locked decal (so only its yaw ring is fed to ImGuizmo), or the full <c>Rotate</c> otherwise.</summary>
+    // Like MapOperation, but the rotation bit is  - a single-axis rotate for a plane-locked decal (so only its yaw
+    // ring is fed to ImGuizmo), or the full Rotate otherwise.
     private static ImGuizmoOperation MapOperationLocked(GizmoOp op, ImGuizmoOperation rotateFlag)
     {
         ImGuizmoOperation r = 0;
@@ -547,11 +534,9 @@ public sealed partial class NoireGizmo
         return r;
     }
 
-    /// <summary>
-    /// The single ImGuizmo rotation operation a plane-locked decal allows: the yaw that re-aims it. In World space that
-    /// is <c>RotateY</c> (world up); in Local space it is the object's local axis most aligned with world up (Ground keeps
-    /// its box local Y up, Wall keeps local Z up), so the ring drawn is the one that actually rotates the decal.
-    /// </summary>
+    // The single ImGuizmo rotation operation a plane-locked decal allows: the yaw that re-aims it. In World space
+    // that is RotateY (world up); in Local space it is the object's local axis most aligned with world up (Ground
+    // keeps its box local Y up, Wall keeps local Z up), so the ring drawn is the one that actually rotates the decal.
     private ImGuizmoOperation ConstrainedYawOperation(in Quaternion rot)
     {
         if (Options.Space != GizmoSpace.Local)
@@ -568,11 +553,9 @@ public sealed partial class NoireGizmo
         };
     }
 
-    /// <summary>
-    /// Resolves <c>&amp;ImGuizmo::Style</c> once, straight from the native module's <c>ImGuizmo_GetStyle</c> export (the
-    /// Dalamud binding wraps no style accessor); zeroing two alpha floats in that struct is how the built-in drag text
-    /// is hidden, returning 0 when the export cannot be resolved, in which case the built-in text is simply left visible.
-    /// </summary>
+    // Resolves &amp;ImGuizmo::Style once, straight from the native module's ImGuizmo_GetStyle export (the Dalamud
+    // binding wraps no style accessor); zeroing two alpha floats in that struct is how the built-in drag text is
+    // hidden, returning 0 when the export cannot be resolved, in which case the built-in text is simply left visible.
     private static nint ResolveImGuizmoStyle()
     {
         if (imguizmoStyleResolved)
@@ -602,18 +585,17 @@ public sealed partial class NoireGizmo
         return imguizmoStylePtr;
     }
 
-    /// <summary>Reads the float at <paramref name="offset"/> in the ImGuizmo Style and reports whether it looks like a colour alpha (finite, 0..1), used to sanity-check the struct layout before writing.</summary>
+    // Reads the float at  in the ImGuizmo Style and reports whether it looks like a colour alpha (finite, 0..1), used
+    // to sanity-check the struct layout before writing.
     private static bool IsAlpha(nint style, int offset)
     {
         var value = BitConverter.Int32BitsToSingle(Marshal.ReadInt32(style, offset));
         return float.IsFinite(value) && value >= 0f && value <= 1f;
     }
 
-    /// <summary>
-    /// Zeroes ImGuizmo's TEXT / TEXT_SHADOW alpha (saving the prior values) so its built-in drag info text is invisible
-    /// for the next Manipulate call; paired with <see cref="RestoreImGuizmoText"/> so the change never outlives the
-    /// call, since ImGuizmo's global style is shared with any other plugin using it and is left exactly as found.
-    /// </summary>
+    // Zeroes ImGuizmo's TEXT / TEXT_SHADOW alpha (saving the prior values) so its built-in drag info text is
+    // invisible for the next Manipulate call; paired with RestoreImGuizmoText so the change never outlives the call,
+    // since ImGuizmo's global style is shared with any other plugin using it and is left exactly as found.
     private void HideImGuizmoText()
     {
         var style = ResolveImGuizmoStyle();
@@ -627,7 +609,7 @@ public sealed partial class NoireGizmo
         imguizmoTextHidden = true;
     }
 
-    /// <summary>Restores the TEXT / TEXT_SHADOW alpha saved by <see cref="HideImGuizmoText"/>, undoing the frame-local hide.</summary>
+    // Restores the TEXT / TEXT_SHADOW alpha saved by HideImGuizmoText, undoing the frame-local hide.
     private void RestoreImGuizmoText()
     {
         if (!imguizmoTextHidden)
@@ -642,11 +624,9 @@ public sealed partial class NoireGizmo
         Marshal.WriteInt32(style, ImGuizmoStyleTextShadowAlpha, imguizmoSavedShadowBits);
     }
 
-    /// <summary>
-    /// Freezes the press-time transform and readout basis for the ImGuizmo drag feedback: the origin, the rotation the
-    /// gesture is measured against, and the axes the translation readout projects onto - world axes in World space, the
-    /// object's own axes in Local space; mirrors what the native backend captures in <c>OnDragStart</c>.
-    /// </summary>
+    // Freezes the press-time transform and readout basis for the ImGuizmo drag feedback: the origin, the rotation the
+    // gesture is measured against, and the axes the translation readout projects onto - world axes in World space,
+    // the object's own axes in Local space; mirrors what the native backend captures in OnDragStart.
     private void CaptureImGuizmoPress(in Matrix4x4 world)
     {
         TransformHelper.DecomposeSafe(in world, out _, out pressRot, out pressTrans);
@@ -666,12 +646,10 @@ public sealed partial class NoireGizmo
         }
     }
 
-    /// <summary>
-    /// Refreshes the live drag readout from the current transform against the press transform: the movement (which the
-    /// translate readout projects onto the frozen press axes, so a Local-space axis drag reads its own distance rather
-    /// than a world projection), the angle swept and the scale relative to the base size; the representative handle
-    /// selects which of the three the overlay prints, matching the operation ImGuizmo is driving.
-    /// </summary>
+    // Refreshes the live drag readout from the current transform against the press transform: the movement (which the
+    // translate readout projects onto the frozen press axes, so a Local-space axis drag reads its own distance rather
+    // than a world projection), the angle swept and the scale relative to the base size; the representative handle
+    // selects which of the three the overlay prints, matching the operation ImGuizmo is driving.
     private void UpdateImGuizmoFeedback(in Matrix4x4 current)
     {
         TransformHelper.DecomposeSafe(in current, out var scale, out var rot, out var trans);
@@ -689,12 +667,10 @@ public sealed partial class NoireGizmo
         };
     }
 
-    /// <summary>
-    /// Which scale handle the readout should report, from the per-axis change since press (relative to
-    /// <see cref="NoireGizmo.baseScale"/> so the axes compare fairly): near-equal change on all three reads as a uniform
-    /// scale (<see cref="GizmoHandle.ScaleUniform"/>, printed <c>xN.NN</c>), otherwise the axis that moved most (printed
-    /// <c>Y xN.NN</c>); used because ImGuizmo's universal-scale op does not surface which sub-handle is driving.
-    /// </summary>
+    // Which scale handle the readout should report, from the per-axis change since press (relative to baseScale so
+    // the axes compare fairly): near-equal change on all three reads as a uniform scale (ScaleUniform, printed
+    // xN.NN), otherwise the axis that moved most (printed Y xN.NN); used because ImGuizmo's universal-scale op does
+    // not surface which sub-handle is driving.
     private GizmoHandle ScaleHandleFromDelta(in Vector3 currentScale)
     {
         var rx = MathF.Abs((currentScale.X - pressScale.X) / baseScale.X);

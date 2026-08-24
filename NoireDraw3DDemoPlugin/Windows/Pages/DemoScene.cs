@@ -5,12 +5,10 @@ using System.Collections.Generic;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>
-/// One scene the Scenes tab manages: the <see cref="Scene3D"/> itself, the <see cref="SceneEditor"/> that drives its
-/// gizmo, the demo-spawned nodes tracked for the object list, and whether this section owns the scene (demo scenes are
-/// disposable; the permanent <c>MainScene</c> is not). The object list is the nodes this section spawned, since the
-/// scene graph itself is not publicly enumerable.
-/// </summary>
+// One scene the Scenes tab manages: the Scene3D itself, the SceneEditor that drives its gizmo, the demo-spawned nodes
+// tracked for the object list, and whether this section owns the scene (demo scenes are disposable; the permanent
+// MainScene is not). The object list is the nodes this section spawned, since the scene graph itself is not publicly
+// enumerable.
 internal sealed class DemoScene
 {
     private readonly List<SceneNode> nodes = new();
@@ -22,13 +20,11 @@ internal sealed class DemoScene
         Label = label;
     }
 
-    /// <summary>The live scene.</summary>
     public Scene3D Scene { get; }
 
     /// <summary>Whether this section disposes the scene (false for the permanent main scene).</summary>
     public bool Owned { get; }
 
-    /// <summary>Display name in the scene list.</summary>
     public string Label { get; }
 
     /// <summary>The editor (click-to-select + gizmo) for this scene, created lazily when the scene is opened.</summary>
@@ -37,17 +33,14 @@ internal sealed class DemoScene
     /// <summary>The demo-spawned root nodes in this scene, in spawn order (the object list).</summary>
     public IReadOnlyList<SceneNode> Nodes => nodes;
 
-    /// <summary>The scene's selection (what the gizmo follows).</summary>
     public InteractSelection Selection => Scene.Selection;
 
-    /// <summary>Tracks a freshly spawned node for the object list. Returns it for fluent use.</summary>
     public SceneNode Track(SceneNode node)
     {
         nodes.Add(node);
         return node;
     }
 
-    /// <summary>Ensures the scene has an editor, creating one on first use. Returns it.</summary>
     public SceneEditor EnsureEditor(GizmoOp op = GizmoOp.Universal)
     {
         if (Editor is { IsDisposed: false })
@@ -69,7 +62,6 @@ internal sealed class DemoScene
         }
     }
 
-    /// <summary>Removes and destroys a tracked node.</summary>
     public void DestroyNode(SceneNode node)
     {
         nodes.Remove(node);

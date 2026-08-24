@@ -1,9 +1,7 @@
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// What a detour reads for an argument or a return value. Two types in the same class are interchangeable in a
-/// hook signature; two in different classes are not.
-/// </summary>
+// What a detour reads for an argument or a return value. Two types in the same class are interchangeable in a hook
+// signature; two in different classes are not.
 internal enum ArgumentClass
 {
     /// <summary>

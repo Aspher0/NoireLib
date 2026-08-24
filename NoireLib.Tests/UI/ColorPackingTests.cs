@@ -9,13 +9,6 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Pins <see cref="ColorHelper.Vector4ToUint"/> to ImGui's own packing, bit for bit.
 /// </summary>
-/// <remarks>
-/// The packing moved from a native call into managed arithmetic for speed. That is only sound while the two agree
-/// exactly: the vertex colours it produces are handed straight to ImGui, so a single rounding step out of line is a
-/// colour that is wrong by one and a gradient that bands. Asserted against the native converter rather than against a
-/// table written by hand, so it keeps holding if ImGui's rounding ever changes.<br/>
-/// Needs a context, since the converter it compares against is a native call.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class ColorPackingTests : IClassFixture<UiHarness>
 {
@@ -58,7 +51,7 @@ public sealed class ColorPackingTests : IClassFixture<UiHarness>
         {
             var colour = new Vector4(r, g, b, a);
 
-            // Out of range values included on purpose: ImGui saturates rather than wrapping, and a packer that wrapped
+            // Out of range values included: ImGui saturates rather than wrapping, and a packer that wrapped
             // would turn an over-bright colour into a dark one.
             ColorHelper.Vector4ToUint(colour).Should().Be(ImGui.ColorConvertFloat4ToU32(colour));
         });

@@ -116,9 +116,7 @@ public partial class NoireNetworker
         share.PublishInbound(eventObject, ResolvePeer(envelope.Origin));
     }
 
-    /// <summary>
-    /// Publishes a networker lifecycle event to the attached EventBus, when one is configured.
-    /// </summary>
+    // Publishes a networker lifecycle event to the attached EventBus, when one is configured.
     private void PublishModuleEvent<TEvent>(TEvent eventData)
     {
         var bus = ActiveOptions.EventBus;

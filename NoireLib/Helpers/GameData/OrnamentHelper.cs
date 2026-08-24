@@ -43,10 +43,7 @@ public static class OrnamentHelper
         _ => EmoteCondition.HoldingTorch,
     };
 
-    /// <summary>Reads the <c>Ornament</c> row for whatever a character has out.</summary>
-    /// <param name="character">The character to read.</param>
-    /// <param name="row">The row, when one was found.</param>
-    /// <returns>False when nothing is out or the row cannot be read.</returns>
+    // Reads the Ornament row for whatever a character has out.
     private static unsafe bool TryGetOrnamentRow(ICharacter character, out Lumina.Excel.Sheets.Ornament row)
     {
         row = default;

@@ -11,11 +11,8 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>
-/// Development tooling: render-pass probes, the G-buffer injection's raw channels, the live G-buffer
-/// comparison and the import orientation overrides. Compiled only into debug builds; a release build has no
-/// trace of this page.
-/// </summary>
+// Development tooling: render-pass probes, the G-buffer injection's raw channels, the live G-buffer comparison and
+// the import orientation overrides. Compiled only into debug builds.
 internal sealed class DebugPage
 {
     private enum MiscRed
@@ -41,7 +38,6 @@ internal sealed class DebugPage
 
     private static readonly string[] TargetNames = ["normal + id", "material", "albedo", "misc", "geo normal"];
 
-    /// <summary>Draws the page.</summary>
     public void Draw()
     {
         Ui.Section("Debug");
@@ -94,7 +90,7 @@ internal sealed class DebugPage
 
     // ---------------------------------------------------------------- probes
 
-    /// <summary>One-shot diagnostics, each a chat command under the hood. Output lands in the Dalamud log.</summary>
+    // One-shot diagnostics, each a chat command under the hood. Output lands in the Dalamud log.
     private static void DrawProbes()
     {
         Ui.Section("Render probes");
@@ -131,7 +127,7 @@ internal sealed class DebugPage
 
     // ---------------------------------------------------------------- G-buffer channels
 
-    /// <summary>The values the G-buffer injection writes. Defaults are the measured ones.</summary>
+    // The values the G-buffer injection writes. Defaults are the measured ones.
     private void DrawGameLitChannels()
     {
         Ui.Section("Injection channels");
@@ -209,7 +205,7 @@ internal sealed class DebugPage
 
     // ---------------------------------------------------------------- G-buffer compare
 
-    /// <summary>Reads the game's G-buffer under the cursor and diffs it against a held reading.</summary>
+    // Reads the game's G-buffer under the cursor and diffs it against a held reading.
     private void DrawGBufferCompare()
     {
         Ui.Section("G-buffer compare");

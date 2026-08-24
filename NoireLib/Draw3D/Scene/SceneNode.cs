@@ -24,7 +24,8 @@ public sealed partial class SceneNode
     internal Scene3D? SceneRef;
     internal bool Destroyed;
 
-    /// <summary>The mesh this node created and owns (via a <see cref="MeshData"/> <see cref="SetMesh(MeshData, Material, bool)"/> / Spawn), freed on replace or destroy; null when the node references a shared mesh instead.</summary>
+    // The mesh this node created and owns (via a MeshData SetMesh(MeshData, Material, bool) / Spawn), freed on
+    // replace or destroy; null when the node references a shared mesh instead.
     private Mesh? ownedMesh;
 
     /// <summary>Optional debug/lookup name.</summary>
@@ -45,13 +46,10 @@ public sealed partial class SceneNode
     /// <summary>Whether this node (and its whole subtree) renders. ANDs down the hierarchy.</summary>
     public bool Visible { get; set; } = true;
 
-    /// <summary>
-    /// The frame on which this node was submitted to the G-buffer injection, so the scene pass skips drawing it
-    /// itself and the object is not rendered twice.<br/>
-    /// Deliberately not <see cref="Visible"/>: hiding a node also removes it from picking and hover, and an
-    /// injected object is still standing in the world and still has to be clickable, so only the drawing is
-    /// suppressed, and only for the one frame that was submitted.
-    /// </summary>
+    // The frame on which this node was submitted to the G-buffer injection, so the scene pass skips drawing it itself
+    // and the object is not rendered twice. Deliberately not Visible: hiding a node also removes it from picking and
+    // hover, and an injected object is still standing in the world and still has to be clickable, so only the drawing
+    // is suppressed, and only for the one frame that was submitted.
     internal long GameLitFrameId;
 
     /// <summary>The node's renderer, when one was attached via <see cref="SetMesh"/>.</summary>
@@ -161,7 +159,8 @@ public sealed partial class SceneNode
         return SetMeshOwnedInternal(mesh, material);
     }
 
-    /// <summary>Attaches a renderer for a mesh this node should own (dispose on replace/destroy); the caller must not dispose or share <paramref name="mesh"/>.</summary>
+    // Attaches a renderer for a mesh this node should own (dispose on replace/destroy); the caller must not dispose
+    // or share .
     internal MeshRenderer SetMeshOwnedInternal(Mesh mesh, Material material)
     {
         lock (Scene3D.GraphLock)
@@ -184,7 +183,8 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Disposes the node's owned mesh (if any) and clears the reference; caller holds <see cref="Scene3D.GraphLock"/>, idempotent since <see cref="Mesh.Dispose"/> is render-thread-deferred and safe to call twice.</summary>
+    // Disposes the node's owned mesh (if any) and clears the reference; caller holds GraphLock, idempotent since
+    // Dispose is render-thread-deferred and safe to call twice.
     private void DisposeOwnedMeshNoLock()
     {
         var owned = ownedMesh;
@@ -299,13 +299,10 @@ public sealed partial class SceneNode
         return worldMatrix;
     }
 
-    /// <summary>
-    /// Re-orients a ground-decal's world matrix to its <see cref="DecalSurface"/> plane, keeping the box's horizontal
-    /// heading (yaw), scale and position but dropping any pitch/roll: <see cref="DecalSurface.Ground"/> forces the
-    /// footprint (local XZ) horizontal with the sweep (local Y) pointing down, <see cref="DecalSurface.Wall"/> stands
-    /// the footprint upright with the sweep pointing horizontally into the wall, and the thin (local Y) axis is the
-    /// projection depth in both, so one box works for either mode.
-    /// </summary>
+    // Re-orients a ground-decal's world matrix to its DecalSurface plane, keeping the box's horizontal heading (yaw),
+    // scale and position but dropping any pitch/roll: Ground forces the footprint (local XZ) horizontal with the
+    // sweep (local Y) pointing down, Wall stands the footprint upright with the sweep pointing horizontally into the
+    // wall, and the thin (local Y) axis is the projection depth in both, so one box works for either mode.
     private static Matrix4x4 ConstrainDecalWorld(in Matrix4x4 world, DecalSurface surface)
     {
         // Row-vector basis: rows = local X/Y/Z in world, length = per-axis scale.

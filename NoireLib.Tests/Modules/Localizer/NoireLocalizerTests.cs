@@ -62,8 +62,8 @@ public class NoireLocalizerTests : IDisposable
     private static void ResetPersistedConfiguration()
     {
         // With no plugin behind the library the configuration resolves no path, so its load reports failure and the
-        // manager deliberately declines to cache it, handing every caller a fresh instance. Caching it explicitly is
-        // what puts the localizer and the assertions below on the one instance they share in game.
+        // manager declines to cache it, handing every caller a fresh instance. Caching it explicitly puts the
+        // localizer and the assertions below on the one instance they share in game.
         NoireConfigManager.UnloadConfig<LocalizerConfigInstance>();
         var config = new LocalizerConfigInstance();
         NoireConfigManager.AddConfigToCache(typeof(LocalizerConfigInstance), config);
@@ -184,7 +184,7 @@ public class NoireLocalizerTests : IDisposable
     }
 
     /// <summary>
-    /// The flag is the whole difference between a stored selection and a stored default, so a locale sitting in the
+    /// The flag is the difference between a stored selection and a stored default, so a locale sitting in the
     /// custom slot without it must not decide anything.
     /// </summary>
     [Fact]
@@ -451,8 +451,8 @@ public class NoireLocalizerTests : IDisposable
     }
 
     /// <summary>
-    /// Adding or removing translations cannot change the order of locales to try, so those paths deliberately keep the
-    /// cache. This pins that they stay off the invalidation list rather than being forgotten additions to it.
+    /// Adding or removing translations cannot change the order of locales to try, so those paths keep the cache.
+    /// This pins that they stay off the invalidation list rather than being forgotten additions to it.
     /// </summary>
     [Fact]
     public void AddingTranslations_DoesNotInvalidateTheLookupOrderCache()

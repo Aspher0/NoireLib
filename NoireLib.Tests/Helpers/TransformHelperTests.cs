@@ -66,7 +66,7 @@ public class TransformHelperTests
     [Fact]
     public void DecomposeSafe_MatrixDecomposeRefuses_ReturnsIdentityRatherThanWhateverWasLeftBehind()
     {
-        // Two identical basis rows: the matrix has no orthonormal basis to recover, which is what Decompose refuses.
+        // Two identical basis rows: the matrix has no orthonormal basis to recover.
         var rankDeficient = new Matrix4x4(1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 1, 2, 3, 1);
 
         Matrix4x4.Decompose(rankDeficient, out _, out _, out _)

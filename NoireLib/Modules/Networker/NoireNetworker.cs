@@ -83,15 +83,9 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             SetActive(true);
     }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>, for
-    /// internal module management only. No network name can be supplied here, so the module is always created
-    /// inactive regardless of <paramref name="active"/>; configure it through <see cref="SetNetworkName(string)"/>
-    /// and <see cref="Options"/>, then activate.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Requests activation on creation; cannot be honored here, since no network name is available to activate with.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only. No network name can
+    // be supplied here, so the module is always created inactive regardless of ; configure it through
+    // SetNetworkName(string) and Options, then activate.
     internal NoireNetworker(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, false, enableLogging)
     {
         if (active)
@@ -268,12 +262,8 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         InternalLog($"Networker stopped for network '{networkName}'.");
     }
 
-    /// <summary>
-    /// Waits a bounded time for the supervision loop to finish, and reports whether it is no longer running;
-    /// bounded because teardown runs during a plugin unload, which must never block on the network.
-    /// </summary>
-    /// <param name="task">The supervision task, or null when the loop was never started.</param>
-    /// <returns>True when the loop has finished and the objects it reads can be disposed.</returns>
+    // Waits a bounded time for the supervision loop to finish, and reports whether it is no longer running; bounded
+    // because teardown runs during a plugin unload, which must never block on the network.
     private static bool WaitForSupervisionExit(Task? task)
     {
         if (task == null)
@@ -292,27 +282,21 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     #endregion
 
-    /// <summary>
-    /// Forces this networker's deliveries through the framework thread queue even when NoireLib is not initialized,
-    /// leaving <see cref="DrainDeliveries"/> as the only way to run them; read when the module activates. Inline
-    /// delivery is the fallback that lets a networker run without a game at all, but it hides the queue, so this
-    /// is the seam for exercising the queued path a running game actually takes.
-    /// </summary>
+    // Forces this networker's deliveries through the framework thread queue even when NoireLib is not initialized,
+    // leaving DrainDeliveries as the only way to run them; read when the module activates. Inline delivery is the
+    // fallback that lets a networker run without a game at all, but it hides the queue, so this is the seam for
+    // exercising the queued path a running game actually takes.
     internal bool ForceQueuedDelivery { get; set; }
 
-    /// <summary>
-    /// Runs the deliveries the pump has queued, on the calling thread; the companion to <see cref="ForceQueuedDelivery"/>,
-    /// standing in for the frame that would otherwise drain the pump.
-    /// </summary>
+    // Runs the deliveries the pump has queued, on the calling thread; the companion to ForceQueuedDelivery, standing
+    // in for the frame that would otherwise drain the pump.
     internal void DrainDeliveries()
         => pump?.Drain();
 
     #region Supervision (election / connection loop)
 
-    /// <summary>
-    /// The number of hub elections this instance has attempted since it was created; each attempt costs a
-    /// dedicated election thread, so this measures the supervision loop's churn.
-    /// </summary>
+    // The number of hub elections this instance has attempted since it was created; each attempt costs a dedicated
+    // election thread, so this measures the supervision loop's churn.
     internal long ElectionAttempts => Interlocked.Read(ref electionAttempts);
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -369,14 +353,10 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
     }
 
-    /// <summary>
-    /// The delay before the next election attempt, after a number of consecutive attempts that established no role:
-    /// it doubles from 100 milliseconds up to a two second ceiling, so a hub merely slow to publish its rendezvous
-    /// still joins within a few hundred milliseconds, while a network that cannot form settles at one attempt every
-    /// couple of seconds rather than ten per second.
-    /// </summary>
-    /// <param name="idleAttempts">The number of consecutive attempts that established no role, one for the first.</param>
-    /// <returns>The delay to wait before attempting again.</returns>
+    // The delay before the next election attempt, after a number of consecutive attempts that established no role: it
+    // doubles from 100 milliseconds up to a two second ceiling, so a hub merely slow to publish its rendezvous still
+    // joins within a few hundred milliseconds, while a network that cannot form settles at one attempt every couple
+    // of seconds rather than ten per second.
     internal static TimeSpan ComputeElectionBackoff(int idleAttempts)
     {
         if (idleAttempts <= 1)
@@ -392,9 +372,7 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
             : TimeSpan.FromMilliseconds(delayMs);
     }
 
-    /// <summary>
-    /// Runs the hub role until it can no longer operate, returning whether the network was served before it ended.
-    /// </summary>
+    // Runs the hub role until it can no longer operate, returning whether the network was served before it ended.
     private async Task<bool> RunAsHubAsync(CancellationToken cancellationToken)
     {
         var hub = new HubServer(this, cancellationToken);
@@ -426,10 +404,8 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         return true;
     }
 
-    /// <summary>
-    /// Runs the client role: connects to this machine's hub and holds the connection until it ends, returning
-    /// whether the network was served (false when no hub could be reached at all).
-    /// </summary>
+    // Runs the client role: connects to this machine's hub and holds the connection until it ends, returning whether
+    // the network was served (false when no hub could be reached at all).
     private async Task<bool> RunAsClientAsync(CancellationToken cancellationToken)
     {
         var rendezvous = RendezvousFile.TryRead(NetworkerNames.MapName(networkName!));
@@ -465,10 +441,8 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
         }
     }
 
-    /// <summary>
-    /// After becoming hub, peers inherited from the previous role re-confirm themselves by reconnecting.
-    /// Anything not seen again within the grace period is treated as departed.
-    /// </summary>
+    // After becoming hub, peers inherited from the previous role re-confirm themselves by reconnecting. Anything not
+    // seen again within the grace period is treated as departed.
     private void BeginPeerGenerationSweep(CancellationToken cancellationToken)
     {
         var sweepGeneration = Interlocked.Increment(ref peerGeneration);
@@ -516,13 +490,10 @@ public partial class NoireNetworker : NoireModuleBase<NoireNetworker>
 
     internal NetworkerOptions ActiveOptions => activeOptions ?? options;
 
-    /// <summary>
-    /// Moves to a new state and tells consumers about it, doing nothing when the state already holds. The change is
-    /// delivered through the pump so it stays ordered against the surrounding peer events and message deliveries;
-    /// once the pump is gone (teardown clears it before the final change to <see cref="NetworkerState.Stopped"/>),
-    /// it is dispatched on the calling thread instead.
-    /// </summary>
-    /// <param name="newState">The state to move to.</param>
+    // Moves to a new state and tells consumers about it, doing nothing when the state already holds. The change is
+    // delivered through the pump so it stays ordered against the surrounding peer events and message deliveries; once
+    // the pump is gone (teardown clears it before the final change to Stopped), it is dispatched on the calling
+    // thread instead.
     private void SetState(NetworkerState newState)
     {
         NetworkerState oldState;

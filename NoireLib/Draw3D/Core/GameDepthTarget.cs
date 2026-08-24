@@ -3,14 +3,11 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// A writable depth-stencil view over the game's scene depth buffer, used ONLY by
-/// <see cref="Enums.NameplateOcclusion.DepthAware"/>: at pre-UI injection time Draw3D re-rasterizes its opaque
-/// objects' depth into the game's buffer (greater-equal tested against the world's own depth), so the game's
-/// later nameplate pass occludes against 3D objects that stand in front of a character. This deliberately departs
-/// from the usual rule that the game's depth buffer is read-only; hence it is fail-soft, and re-derives itself
-/// whenever the underlying texture changes (resolution, GPose, upscaler).
-/// </summary>
+// A writable depth-stencil view over the game's scene depth buffer, used ONLY by DepthAware: at pre-UI injection time
+// Draw3D re-rasterizes its opaque objects' depth into the game's buffer (greater-equal tested against the world's own
+// depth), so the game's later nameplate pass occludes against 3D objects that stand in front of a character. This
+// deliberately departs from the usual rule that the game's depth buffer is read-only; hence it is fail-soft, and
+// re-derives itself whenever the underlying texture changes (resolution, GPose, upscaler).
 internal sealed unsafe class GameDepthTarget : System.IDisposable
 {
     private ComPtr<ID3D11DepthStencilView> dsv;
@@ -80,7 +77,7 @@ internal sealed unsafe class GameDepthTarget : System.IDisposable
         }
     }
 
-    /// <summary>Maps a (typeless or typed) depth texture format to the DSV format that writes its depth plane.</summary>
+    // Maps a (typeless or typed) depth texture format to the DSV format that writes its depth plane.
     private static DXGI_FORMAT DsvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT => DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT,

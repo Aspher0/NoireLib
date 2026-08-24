@@ -25,12 +25,9 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
 
-    /// <summary>
-    /// Reads the plugin repository response. Built via <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>
-    /// rather than <see cref="JsonConvert"/> or <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>, so
-    /// no process-global <see cref="JsonConvert.DefaultSettings"/> is merged into how a remote response is parsed.<br/>
-    /// TypeNameHandling stays None so a response can never name a type into existence.
-    /// </summary>
+    // Reads the plugin repository response. Built via Create(JsonSerializerSettings) rather than JsonConvert or
+    // CreateDefault(JsonSerializerSettings), so no process-global DefaultSettings is merged into how a remote
+    // response is parsed. TypeNameHandling stays None so a response can never name a type into existence.
     private static readonly JsonSerializer RepositoryReader = CreateRepositoryReader();
 
     private static JsonSerializer CreateRepositoryReader()
@@ -45,12 +42,6 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
         return serializer;
     }
 
-    /// <summary>
-    /// Reads a plugin repository response body into its entries.
-    /// </summary>
-    /// <param name="json">The repository response body.</param>
-    /// <returns>The parsed entries, or null when the body carries no array.</returns>
-    /// <exception cref="JsonException">Thrown when the body is not a well-formed repository response.</exception>
     internal static List<RepoEntry>? ParseRepositoryResponse(string json)
     {
         using var stringReader = new StringReader(json);
@@ -61,18 +52,12 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 
     private readonly HttpClient httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
 
-    /// <summary>
-    /// Cancelled at the start of teardown, so a check in flight cannot resume against a disposed <see cref="httpClient"/>.
-    /// </summary>
+    // Cancelled at the start of teardown, so a check in flight cannot resume against a disposed httpClient.
     private readonly CancellationTokenSource disposalTokenSource = new();
 
-    /// <summary>
-    /// Latched at the start of teardown, before anything it protects is released, so no in-flight check or timer start
-    /// treats a disposed module as active. Latched here rather than read from
-    /// <see cref="NoireModuleBase{TModule}.IsActive"/> because active
-    /// state clears only once teardown has finished.<br/>
-    /// Also makes teardown idempotent.
-    /// </summary>
+    // Latched at the start of teardown, before anything it protects is released, so no in-flight check or timer start
+    // treats a disposed module as active. Latched here rather than read from IsActive because active state clears
+    // only once teardown has finished. Also makes teardown idempotent.
     private volatile bool disposed;
 
     private Timer? updateCheckTimer;
@@ -125,13 +110,7 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
                shouldStopNotifyingAfterFirstNotification)
     { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireUpdateTracker(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
     /// <summary>
@@ -488,9 +467,6 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
 
     #region EventBus Integration
 
-    /// <summary>
-    /// Publishes events to the EventBus if available.
-    /// </summary>
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);
@@ -598,14 +574,9 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
         }
     }
 
-    /// <summary>
-    /// Carries a detected update to every configured channel and closes the
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> gate if any channel took it.<br/>
-    /// Framework thread only: reaches the notification manager and chat log, and runs
-    /// <see cref="NewPluginVersionDetectedEvent"/> subscribers inline.
-    /// </summary>
-    /// <param name="currentVersion">The currently installed plugin version.</param>
-    /// <param name="remoteVersion">The newer version found in the repository.</param>
+    // Carries a detected update to every configured channel and closes the ShouldStopNotifyingAfterFirstNotification
+    // gate if any channel took it. Framework thread only: reaches the notification manager and chat log, and runs
+    // NewPluginVersionDetectedEvent subscribers inline.
     internal void ApplyUpdateDetected(Version currentVersion, Version remoteVersion)
     {
         if (EventBus != null)
@@ -639,14 +610,8 @@ public class NoireUpdateTracker : NoireModuleBase<NoireUpdateTracker>
             HasShownUpdateNotification = true;
     }
 
-    /// <summary>
-    /// Whether a detected update reaches at least one channel, and therefore whether
-    /// <see cref="ShouldStopNotifyingAfterFirstNotification"/> has a delivery to close its gate on.
-    /// </summary>
-    /// <param name="hasEventBus">Whether an <see cref="EventBus"/> is attached to receive the detection.</param>
-    /// <param name="showsNotification">The value of <see cref="ShouldShowNotificationOnUpdate"/>.</param>
-    /// <param name="printsInChat">The value of <see cref="ShouldPrintMessageInChatOnUpdate"/>.</param>
-    /// <returns>True when at least one channel carries the detection; otherwise, false.</returns>
+    // Whether a detected update reaches at least one channel, and therefore whether
+    // ShouldStopNotifyingAfterFirstNotification has a delivery to close its gate on.
     internal static bool DetectionReachesAChannel(bool hasEventBus, bool showsNotification, bool printsInChat)
         => hasEventBus || showsNotification || printsInChat;
 

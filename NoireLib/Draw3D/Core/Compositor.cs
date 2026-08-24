@@ -5,7 +5,7 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>Composite constants - must match CompositeCB in Composite.hlsl exactly (4112 bytes).</summary>
+// Composite constants - must match CompositeCB in Composite.hlsl exactly (4112 bytes).
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct CompositeCBData
 {
@@ -14,28 +14,23 @@ internal unsafe struct CompositeCBData
     public fixed float Factors[128 * 4]; // x of each float4 = UI visibility inside the rect (1 = UI on top)
 }
 
-/// <summary>Outline composite constants - must match OutlineCB in Outline.hlsl exactly (16 bytes).</summary>
+// Outline composite constants - must match OutlineCB in Outline.hlsl exactly (16 bytes).
 [StructLayout(LayoutKind.Sequential)]
 internal struct OutlineCBData
 {
     public Vector4 OutlineParams; // x = width px, yz = 1/viewport, w unused
 }
 
-/// <summary>
-/// Blits the premultiplied scene layer onto the target with one fullscreen triangle; no ImGui call is
-/// involved anywhere in Draw3D's visible output. On the over-everything path it also applies per-pixel
-/// game-UI-on-top masking (the difference between the pre-UI and post-UI present-buffer snapshots) and the
-/// nameplate policy rects in the same pass. The blend writes RGB only, leaving the target's alpha channel
-/// untouched.
-/// </summary>
+// Blits the premultiplied scene layer onto the target with one fullscreen triangle; no ImGui call is involved
+// anywhere in Draw3D's visible output. On the over-everything path it also applies per-pixel game-UI-on-top masking
+// (the difference between the pre-UI and post-UI present-buffer snapshots) and the nameplate policy rects in the same
+// pass. The blend writes RGB only, leaving the target's alpha channel untouched.
 internal sealed unsafe class Compositor : IDisposable
 {
-    /// <summary>
-    /// Scales the pre/post-UI colour difference into mask coverage, steeply enough that any pixel the UI
-    /// touched at all masks fully: one 8-bit step of change saturates. This is safe because both snapshots are
-    /// bit-identical outside what the UI drew, so any difference at all is the UI; a gentler gain would let a
-    /// semi-transparent HUD panel bleed the layer through at half strength instead of masking it.
-    /// </summary>
+    // Scales the pre/post-UI colour difference into mask coverage, steeply enough that any pixel the UI touched at
+    // all masks fully: one 8-bit step of change saturates. This is safe because both snapshots are bit-identical
+    // outside what the UI drew, so any difference at all is the UI; a gentler gain would let a semi-transparent HUD
+    // panel bleed the layer through at half strength instead of masking it.
     private const float UiDiffGain = 255f;
 
     private GpuBuffer? compositeCb;

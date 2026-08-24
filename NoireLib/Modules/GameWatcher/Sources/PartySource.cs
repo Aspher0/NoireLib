@@ -6,11 +6,9 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Diffs the party list (and the alliance through the native group manager): joins/leaves/changes,
-/// leader changes, size and role-composition changes, and member territory changes - the latter working
-/// even for members outside the local object table (remote presence, server-synchronized).
-/// </summary>
+// Diffs the party list (and the alliance through the native group manager): joins/leaves/changes, leader changes,
+// size and role-composition changes, and member territory changes - the latter working even for members outside the
+// local object table (remote presence, server-synchronized).
 internal sealed class PartySource : GameWatcherSource
 {
     private readonly Dictionary<ulong, PartyMemberSnapshot> members = new();
@@ -251,7 +249,7 @@ internal sealed class PartySource : GameWatcherSource
         return (tanks, healers, dps);
     }
 
-    /// <summary>The ClassJob sheet role: 1 = tank, 2/3 = DPS, 4 = healer, 0 = crafter/gatherer.</summary>
+    // The ClassJob sheet role: 1 = tank, 2/3 = DPS, 4 = healer, 0 = crafter/gatherer.
     internal static byte GetRole(uint classJobId)
         => ExcelSheetHelper.TryGetRow<ClassJob>(classJobId, out var classJob) ? classJob?.Role ?? 0 : (byte)0;
 }

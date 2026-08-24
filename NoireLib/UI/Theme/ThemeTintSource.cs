@@ -11,8 +11,7 @@ public enum ThemeTintSource
     Item,
 
     /// <summary>
-    /// The theme's surface decides for everything: a dark theme brightens, a light one darkens. Consistent across the
-    /// interface, at the cost of washing out a color already close to that direction.
+    /// The theme's surface decides for everything: a dark theme brightens, a light one darkens.
     /// </summary>
     Surface,
 

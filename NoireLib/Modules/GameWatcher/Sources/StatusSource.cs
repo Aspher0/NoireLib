@@ -5,13 +5,10 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Scope-unified status effect diffing: gained/lost/stack-changed for any scoped character, plus
-/// duration-threshold watchers. Statuses are kept separate from <see cref="CharacterSnapshot"/> so the hot
-/// character snapshot stays small.<br/>
-/// This is the one legitimately heavy path when watching wide scopes in crowds - dial its cadence down via
-/// <see cref="GameWatcherOptions.PollCadences"/> when needed.
-/// </summary>
+// Scope-unified status effect diffing: gained/lost/stack-changed for any scoped character, plus duration-threshold
+// watchers. Statuses are kept separate from CharacterSnapshot so the hot character snapshot stays small. This is the
+// one legitimately heavy path when watching wide scopes in crowds - dial its cadence down via PollCadences when
+// needed.
 internal sealed class StatusSource : GameWatcherSource
 {
     internal sealed class ThresholdWatcherRegistration
@@ -37,7 +34,6 @@ internal sealed class StatusSource : GameWatcherSource
 
     public StatusSource(NoireGameWatcher owner) : base(owner, SourceKind.Statuses) { }
 
-    /// <summary>Registers a scope interest and returns the removal action.</summary>
     internal Action AddScopeInterest(Scope scope)
     {
         var registration = new ScopeRegistration { Scope = scope };
@@ -58,7 +54,6 @@ internal sealed class StatusSource : GameWatcherSource
         };
     }
 
-    /// <summary>Registers a duration-threshold watcher and returns the removal action.</summary>
     internal Action AddThresholdWatcher(ThresholdWatcherRegistration registration)
     {
         lock (scopeRegistrations)
@@ -303,7 +298,7 @@ internal sealed class StatusSource : GameWatcherSource
         }
     }
 
-    /// <summary>Reads the current statuses of a character, for facade queries.</summary>
+    // Reads the current statuses of a character, for facade queries.
     internal static Dictionary<(uint StatusId, uint SourceId), StatusSnapshot> ReadStatuses(IBattleChara battleChara, DateTimeOffset now)
     {
         var result = new Dictionary<(uint, uint), StatusSnapshot>();

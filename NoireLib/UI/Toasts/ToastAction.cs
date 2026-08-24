@@ -11,7 +11,7 @@ public sealed class ToastAction
     /// Creates an action.
     /// </summary>
     /// <param name="label">The button label.</param>
-    /// <param name="onInvoke">What the button does. Receives the toast it was drawn on.</param>
+    /// <param name="onInvoke">What the button does.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="onInvoke"/> is <see langword="null"/>.</exception>
     public ToastAction(string label, Action<NoireToast> onInvoke)
     {
@@ -32,13 +32,12 @@ public sealed class ToastAction
     public Action<NoireToast> OnInvoke { get; set; }
 
     /// <summary>
-    /// How the button is colored. Defaults to a ghost button, so an action never shouts louder than the message.
+    /// How the button is colored.
     /// </summary>
     public ButtonTone Tone { get; set; } = ButtonTone.Ghost;
 
     /// <summary>
-    /// Whether invoking the action also dismisses the toast. Defaults to <see langword="true"/>: an action that has
-    /// been taken has no reason to keep asking.
+    /// Whether invoking the action also dismisses the toast.
     /// </summary>
     public bool DismissesToast { get; set; } = true;
 }

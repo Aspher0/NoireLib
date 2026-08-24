@@ -19,14 +19,9 @@ public static partial class AddonHelper
     /// </summary>
     public const float DefaultFullScreenSkip = 0.9f;
 
-    /// <summary>
-    /// How deep the hit test recurses into component nodes.
-    /// </summary>
     private const int MaxNodeDepth = 8;
 
-    /// <summary>
-    /// How many ancestors the visibility walk climbs before giving up on a cyclic or corrupt node tree.
-    /// </summary>
+    // How many ancestors the visibility walk climbs before giving up on a cyclic or corrupt node tree.
     private const int MaxAncestorDepth = 64;
 
     /// <summary>
@@ -107,9 +102,7 @@ public static partial class AddonHelper
         return default;
     }
 
-    /// <summary>
-    /// Whether every ancestor of the node is visible. The node's own flag is the caller's to check.
-    /// </summary>
+    // Whether every ancestor of the node is visible. The node's own flag is the caller's to check.
     internal static unsafe bool AreAncestorsVisible(AtkResNode* node)
     {
         var parent = node->ParentNode;
@@ -125,11 +118,10 @@ public static partial class AddonHelper
         return true;
     }
 
-    /// <summary>
-    /// Whether the point falls in a visible collision node reachable from this node list. Component nodes hold their own
-    /// node list, so a component's inner controls (an action-bar slot, a window button) are only found by recursing into
-    /// them. A display-only addon such as a job gauge carries no collision node and so never catches a point.
-    /// </summary>
+    // Whether the point falls in a visible collision node reachable from this node list. Component nodes hold their
+    // own node list, so a component's inner controls (an action-bar slot, a window button) are only found by
+    // recursing into them. A display-only addon such as a job gauge carries no collision node and so never catches a
+    // point.
     private static unsafe bool NodeListHit(AtkResNode** nodes, int nodeCount, float unitScale, Vector2 pointPx, bool gatePhantoms, int depth)
     {
         if (nodes == null || depth > MaxNodeDepth)
@@ -176,12 +168,10 @@ public static partial class AddonHelper
         return false;
     }
 
-    /// <summary>
-    /// Whether a visible collision node has no visible non-collision sibling under the same parent. True marks a phantom
-    /// hit region: a hotbar keeps its number-badge collision node visible while the label and arrows beside it are
-    /// hidden, so nothing visible next to the collision means the control is switched off. A live button or slot always
-    /// keeps visible content beside its collision.
-    /// </summary>
+    // Whether a visible collision node has no visible non-collision sibling under the same parent. True marks a
+    // phantom hit region: a hotbar keeps its number-badge collision node visible while the label and arrows beside it
+    // are hidden, so nothing visible next to the collision means the control is switched off. A live button or slot
+    // always keeps visible content beside its collision.
     private static unsafe bool CollisionLacksVisibleSibling(AtkResNode** nodes, int nodeCount, AtkResNode* collision)
     {
         var parent = collision->ParentNode;

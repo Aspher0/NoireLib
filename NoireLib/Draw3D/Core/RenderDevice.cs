@@ -4,11 +4,9 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Owns the (borrowed) game D3D11 device and immediate context, validated via QueryInterface. The device is
-/// free-threaded (resource creation is safe from any thread); the immediate context may only be used on the
-/// render thread inside the present callback.
-/// </summary>
+// Owns the (borrowed) game D3D11 device and immediate context, validated via QueryInterface. The device is
+// free-threaded (resource creation is safe from any thread); the immediate context may only be used on the render
+// thread inside the present callback.
 internal sealed unsafe class RenderDevice : IDisposable
 {
     private ComPtr<ID3D11Device> device;

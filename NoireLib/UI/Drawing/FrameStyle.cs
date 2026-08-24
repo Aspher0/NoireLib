@@ -4,16 +4,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// How a hairline frame is drawn: its shape, its weight, the second line that turns it into a rule, and the corner
-/// ticks that are most of what separates a drawn frame from a border.<br/>
-/// Every color left <see langword="null"/> resolves through <see cref="NoireTheme"/>. Sizes are logical pixels at 100%
-/// and are scaled where they are used. See <see cref="NoireUI.Scale"/>.
+/// ticks. Every color left <see langword="null"/> resolves through <see cref="NoireTheme"/>. Sizes are logical pixels
+/// at 100%. See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <example>
-/// <code>
-/// // A double hairline with an inner bracket at each corner.
-/// var style = new FrameStyle { DoubleGap = 3f, TickLength = 16f };
-/// </code>
-/// </example>
 public sealed class FrameStyle
 {
     #region Shape
@@ -77,42 +70,29 @@ public sealed class FrameStyle
     /// <summary>
     /// What to draw when the rect is too small for corner ticks. Defaults to <see cref="TickFallback.None"/>.
     /// </summary>
-    /// <remarks>
-    /// Ticks are dropped once two of them would meet. <see cref="TickFallback.Brackets"/> then draws a full-height
-    /// bracket at each end, at the same inset, length, thickness and color the ticks would have had.
-    /// </remarks>
     public TickFallback TickFallback { get; set; } = TickFallback.None;
 
     #endregion
 
     #region Resolution
 
-    /// <summary>The line color to paint with.</summary>
     internal Vector4 ResolveColor() => Color ?? NoireTheme.Current.Resolve(ThemeColor.Border);
 
-    /// <summary>The bracket color to paint with.</summary>
     internal Vector4 ResolveTickColor() => TickColor ?? ResolveColor();
 
-    /// <summary>The corner depth in pixels, at the user's scale.</summary>
     internal float ResolveCornerSize()
         => CornerSize.HasValue ? NoireUI.Scaled(CornerSize.Value) : NoireTheme.Current.ResolveSurfaceRounding();
 
-    /// <summary>The bracket thickness in pixels, at the user's scale.</summary>
     internal float ResolveTickThickness() => NoireUI.Scaled(TickThickness ?? Thickness);
 
-    /// <summary>The line thickness in pixels, at the user's scale.</summary>
     internal float ScaledThickness => NoireUI.Scaled(Thickness);
 
-    /// <summary>The frame inset in pixels, at the user's scale.</summary>
     internal float ScaledInset => NoireUI.Scaled(Inset);
 
-    /// <summary>The gap to the second line in pixels, at the user's scale.</summary>
     internal float ScaledDoubleGap => NoireUI.Scaled(DoubleGap);
 
-    /// <summary>The bracket arm length in pixels, at the user's scale.</summary>
     internal float ScaledTickLength => NoireUI.Scaled(TickLength);
 
-    /// <summary>The bracket offset in pixels, at the user's scale.</summary>
     internal float ScaledTickInset => NoireUI.Scaled(TickInset);
 
     #endregion

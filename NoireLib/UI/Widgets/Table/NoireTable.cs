@@ -7,25 +7,10 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A data grid over a list you already have: sorted by clicking a header, narrowed by a search box and by per-column
-/// filters, virtualized so a hundred thousand rows cost what a screenful costs, selectable, totalled, and exportable.
+/// A data grid over a list you already have: sortable, searchable, filterable, virtualized, selectable, totalled and
+/// exportable.
 /// </summary>
 /// <remarks>The table never copies your rows; it holds the list you gave it and works in indices into it.</remarks>
-/// <example>
-/// <code>
-/// var table = new NoireTable&lt;PlayerModel&gt;("players", players)
-/// {
-///     Columns =
-///     {
-///         new TableColumn&lt;PlayerModel&gt; { Header = "Name", Text = p =&gt; p.Name },
-///         new TableColumn&lt;PlayerModel&gt; { Header = "World", Text = p =&gt; p.World },
-///         new TableColumn&lt;PlayerModel&gt; { Header = "Level", Text = p =&gt; $"{p.Level}", SortKey = p =&gt; p.Level },
-///     },
-/// };
-///
-/// table.Draw();
-/// </code>
-/// </example>
 /// <typeparam name="T">The row type.</typeparam>
 [NoireFacadeFactory]
 public sealed partial class NoireTable<T>
@@ -43,7 +28,7 @@ public sealed partial class NoireTable<T>
     /// </summary>
     /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
     /// <param name="rows">The rows to show. Held, never copied.</param>
-    /// <param name="comparer">How two rows are compared for selection. Defaults to the type's own equality.</param>
+    /// <param name="comparer">How two rows are compared for selection. When <see langword="null"/>, the type's own equality.</param>
     public NoireTable(string? id = null, IReadOnlyList<T>? rows = null, IEqualityComparer<T>? comparer = null)
     {
         Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
@@ -60,12 +45,9 @@ public sealed partial class NoireTable<T>
     public List<TableColumn<T>> Columns { get; } = new();
 
     /// <summary>
-    /// The rows to show. Held rather than copied, so the table sees your edits.
+    /// The rows to show, held rather than copied.
     /// </summary>
-    /// <remarks>
-    /// Assigning marks the table for a rebuild. Editing the list in place does not: call <see cref="Invalidate"/> for
-    /// that.
-    /// </remarks>
+    /// <remarks>Assigning marks the table for a rebuild; editing the list in place needs <see cref="Invalidate"/>.</remarks>
     public IReadOnlyList<T> Rows
     {
         get => rows;
@@ -94,16 +76,16 @@ public sealed partial class NoireTable<T>
         }
     }
 
-    /// <summary>Whether the search matches out of order, scored by <see cref="FuzzyMatcher"/>. On by default.</summary>
+    /// <summary>Whether the search matches out of order, scored by <see cref="FuzzyMatcher"/>.</summary>
     public bool SearchFuzzy { get; set; } = true;
 
-    /// <summary>Whether the search box is drawn above the table. On by default.</summary>
+    /// <summary>Whether the search box is drawn above the table.</summary>
     public bool ShowSearch { get; set; } = true;
 
     /// <summary>The hint shown in the empty search box.</summary>
     public string SearchHint { get; set; } = "Search...";
 
-    /// <summary>Whether each column draws its own filter box under its header. Off by default.</summary>
+    /// <summary>Whether each column draws its own filter box under its header.</summary>
     public bool ShowColumnFilters { get; set; }
 
     /// <summary>How many rows survived the filters and the search.</summary>
@@ -159,7 +141,7 @@ public sealed partial class NoireTable<T>
 
     #region Selection
 
-    /// <summary>Whether rows can be selected, and whether more than one at a time. Off by default.</summary>
+    /// <summary>Whether rows can be selected, and whether more than one at a time.</summary>
     public TableSelection SelectionMode { get; set; } = TableSelection.None;
 
     /// <summary>
@@ -227,7 +209,7 @@ public sealed partial class NoireTable<T>
     /// </summary>
     public bool? Virtualize { get; set; }
 
-    /// <summary>Whether a footer of column totals is drawn. On when any column has an aggregate.</summary>
+    /// <summary>Whether a footer of column totals is drawn, when any column has an aggregate.</summary>
     public bool ShowFooter { get; set; } = true;
 
     /// <summary>How many rows were actually drawn last frame.</summary>
@@ -238,7 +220,7 @@ public sealed partial class NoireTable<T>
     #region Export
 
     /// <summary>
-    /// Writes what is on screen as CSV: the visible columns, the surviving rows, the chosen order.
+    /// Writes what is on screen as CSV.
     /// </summary>
     /// <returns>The CSV text.</returns>
     public string ToCsv()
@@ -249,9 +231,6 @@ public sealed partial class NoireTable<T>
 
     #endregion
 
-    /// <summary>
-    /// Runs the filter, the search and the sort, unless nothing has changed since the last time.
-    /// </summary>
     private void Rebuild(bool force)
     {
         if (!dirty && !force)

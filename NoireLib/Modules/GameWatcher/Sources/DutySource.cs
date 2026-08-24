@@ -5,10 +5,8 @@ using System;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Wraps the native duty-state events (started/wiped/recommenced/completed) and derives duty-queue tracking
-/// (entered/left/pop with measured queue duration) from condition flags and content-finder pops.
-/// </summary>
+// Wraps the native duty-state events (started/wiped/recommenced/completed) and derives duty-queue tracking
+// (entered/left/pop with measured queue duration) from condition flags and content-finder pops.
 internal sealed class DutySource : GameWatcherSource
 {
     private bool lastInQueue;

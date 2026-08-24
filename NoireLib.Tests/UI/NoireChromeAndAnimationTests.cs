@@ -10,11 +10,7 @@ namespace NoireLib.Tests;
 /// animation clock still moves.
 /// </summary>
 /// <remarks>
-/// Most of this batch cannot be driven from the harness. Window chrome, overlay buttons and world labels are all
-/// drawables that need an initialized plugin service to exist, and anything that pushes the icon font is worse than
-/// unmeasurable: reading <c>UiBuilder.IconFont</c> without Dalamud behind it <b>hangs the test process</b> rather than
-/// throwing, taking the whole run with it. So the icon work is held by testing the conversion the drawing calls, which
-/// touches no font at all, and the id work by asserting the builder against the literal it replaced.
+/// Reading <c>UiBuilder.IconFont</c> without Dalamud behind it hangs the test process rather than throwing.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireChromeAndAnimationTests : IClassFixture<UiHarness>

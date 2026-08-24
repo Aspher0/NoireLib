@@ -10,19 +10,15 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>
-/// The per-object editor: everything the public <see cref="SceneNode"/> / <see cref="MeshRenderer"/> /
-/// <see cref="Material"/> surface exposes for one object - transform, material, overlays, interaction flags, decal
-/// exclusions, selection and destroy.
-/// <para>
-/// It is deep, so it is split across its own tab strip rather than a stack of collapsing headers: one object has more
-/// settings than fit a screen, and tabs make each group a fixed, findable place instead of something whose position
-/// depends on what happens to be expanded above it.
-/// </para>
-/// </summary>
+// The per-object editor: everything the public SceneNode / MeshRenderer / Material surface exposes for one object -
+// transform, material, overlays, interaction flags, decal exclusions, selection and destroy. It is deep, so it is
+// split across its own tab strip rather than a stack of collapsing headers: one object has more settings than fit a
+// screen, and tabs make each group a fixed, findable place instead of something whose position depends on what
+// happens to be expanded above it.
 internal sealed class NodeInspector
 {
-    /// <summary>A tighter caption column than a full-width page uses: the inspector lives in a split pane, where the default would starve the controls.</summary>
+    // A tighter caption column than a full-width page uses: the inspector lives in a split pane, where the default
+    // would starve the controls.
     private const float InspectorLabelWidth = 150f;
 
     private float rotStepDeg = 15f;
@@ -109,8 +105,7 @@ internal sealed class NodeInspector
         return true;
     }
 
-    /// <summary>The object's identity strip: what is being edited, whether it is selected, and the destructive action.</summary>
-    /// <returns>False when the node was destroyed.</returns>
+    // The object's identity strip: what is being edited, whether it is selected, and the destructive action.
     private static bool DrawHeader(DemoScene demo, SceneNode node)
     {
         var selection = demo.Selection;

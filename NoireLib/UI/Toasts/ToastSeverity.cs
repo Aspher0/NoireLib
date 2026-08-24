@@ -14,6 +14,6 @@ public enum ToastSeverity
     /// <summary>Something needs attention but nothing failed.</summary>
     Warning,
 
-    /// <summary>Something failed. Shown for longer than the rest, because it is the one nobody should miss.</summary>
+    /// <summary>Something failed, shown for longer than the rest.</summary>
     Error,
 }

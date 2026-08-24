@@ -8,11 +8,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// Pins one of your windows to a native game window, and follows it wherever the player drags or rescales it.
 /// </summary>
-/// <example>
-/// <code>
-/// new NoireAddonAttach(myWindow, "_PartyList", UiSide.Right) { Gap = 8f };
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed class NoireAddonAttach : NoireDrawable
 {
@@ -46,7 +41,7 @@ public sealed class NoireAddonAttach : NoireDrawable
         Side = side;
 
         // AutoDraw is set because an attachment nobody applied does nothing: the symptom is a window that simply
-        // never moves. Following the game window is this object's entire purpose.
+        // never moves.
         AutoDraw = true;
 
         if (NoireService.IsInitialized())
@@ -66,10 +61,10 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// <summary>The native game window to pin to, for example <c>_PartyList</c>.</summary>
     public string AddonName { get; set; }
 
-    /// <summary>Which side of the game window to sit on. Defaults to <see cref="UiSide.Right"/>.</summary>
+    /// <summary>Which side of the game window to sit on.</summary>
     public UiSide Side { get; set; } = UiSide.Right;
 
-    /// <summary>How the window lines up along that side. Defaults to <see cref="UiAlign.Start"/>.</summary>
+    /// <summary>How the window lines up along that side.</summary>
     public UiAlign Align { get; set; } = UiAlign.Start;
 
     /// <summary>
@@ -78,15 +73,12 @@ public sealed class NoireAddonAttach : NoireDrawable
     public float Gap { get; set; }
 
     /// <summary>
-    /// An additional offset applied after the placement, in pixels at 100%. Unlike <see cref="Gap"/> this is taken
-    /// verbatim, so it can nudge along either axis.
+    /// An additional offset applied after the placement, in pixels at 100%.
     /// </summary>
     public Vector2 Offset { get; set; } = Vector2.Zero;
 
     /// <summary>
-    /// A position to use instead of the one built from <see cref="Side"/>, <see cref="Align"/> and <see cref="Gap"/>.<br/>
-    /// Set it to place the window against a point the four sides cannot name, for example a third of the way down the
-    /// right edge. It is used exactly as given, including its own addon name.
+    /// A position to use instead of the one built from <see cref="Side"/>, <see cref="Align"/> and <see cref="Gap"/>.
     /// </summary>
     public UiPosition? PositionOverride { get; set; }
 
@@ -95,40 +87,34 @@ public sealed class NoireAddonAttach : NoireDrawable
     #region Behaviour
 
     /// <summary>
-    /// Whether the attachment is doing anything. Turning it off hands the window straight back: it keeps the position
-    /// and size it had, and is free to be moved and resized like any other window.
+    /// Whether the attachment is doing anything.
     /// </summary>
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Whether the window closes while the game window is not on screen. On by default.
+    /// Whether the window closes while the game window is not on screen.
     /// </summary>
     public bool FollowVisibility { get; set; } = true;
 
     /// <summary>
-    /// Whether a window closed by <see cref="FollowVisibility"/> reopens when the game window comes back. On by default.
+    /// Whether a window closed by <see cref="FollowVisibility"/> reopens when the game window comes back.
     /// </summary>
     public bool RestoreOnReappear { get; set; } = true;
 
-    /// <summary>Whether the window is resized to the game window's width. Off by default.</summary>
+    /// <summary>Whether the window is resized to the game window's width.</summary>
     public bool MatchWidth { get; set; }
 
-    /// <summary>Whether the window is resized to the game window's height. Off by default.</summary>
+    /// <summary>Whether the window is resized to the game window's height.</summary>
     public bool MatchHeight { get; set; }
 
     /// <summary>Whether the game window was on screen the last time the attachment ran.</summary>
     public bool IsAttached { get; private set; }
 
     /// <summary>
-    /// Whether the game window is on screen right now, asked directly rather than remembered from the last frame.<br/>
-    /// Check this before opening a window that follows visibility: a window opened while its game window is not on
-    /// screen is closed again before it draws.
+    /// Whether the game window is on screen right now, asked directly rather than remembered from the last frame.
     /// </summary>
     public bool IsAddonVisible => UiAddon.GetRect(EffectiveAddonName) != null;
 
-    /// <summary>
-    /// The addon actually being followed, which a <see cref="PositionOverride"/> may replace.
-    /// </summary>
     private string EffectiveAddonName => PositionOverride?.AddonName ?? AddonName;
 
     /// <summary>Invoked when <see cref="IsAttached"/> changes, with the new value.</summary>
@@ -137,9 +123,7 @@ public sealed class NoireAddonAttach : NoireDrawable
     #endregion
 
     /// <summary>
-    /// Places the window for this frame.<br/>
-    /// Called automatically every frame. Call it from the window's own <c>PreDraw</c> override instead when the window
-    /// has to keep up with a game window being dragged, since the automatic pass can land one frame behind.
+    /// Places the window for this frame.
     /// </summary>
     /// <returns>True when the game window was found and the window was placed.</returns>
     public bool Apply()
@@ -184,10 +168,7 @@ public sealed class NoireAddonAttach : NoireDrawable
     /// <inheritdoc/>
     protected override void DrawCore() => Apply();
 
-    /// <summary>
-    /// Applies the visibility rule for the coming frame, before anything has had a chance to draw.
-    /// </summary>
-    /// <param name="framework">The framework raising the update.</param>
+    // Applies the visibility rule for the coming frame, before anything has had a chance to draw.
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework framework)
     {
         if (IsDisposed)
@@ -230,10 +211,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         }
     }
 
-    /// <summary>
-    /// Builds the position the window is placed at, from the side, alignment and gap.
-    /// </summary>
-    /// <returns>The position to resolve.</returns>
     private UiPosition BuildPosition()
     {
         // Rebuilt only when one of the five values it is made of has moved. A UiPosition is a class, and this runs on
@@ -268,7 +245,7 @@ public sealed class NoireAddonAttach : NoireDrawable
         return builtPosition;
     }
 
-    /// <summary>The position last built, and the five values it was built from.</summary>
+    // The position last built, and the five values it was built from.
     private UiPosition? builtPosition;
 
     private string? builtAddonName;
@@ -281,11 +258,7 @@ public sealed class NoireAddonAttach : NoireDrawable
 
     private Vector2 builtOffset;
 
-    /// <summary>
-    /// Resizes the window to the game window's own size on the axes that asked for it.
-    /// </summary>
-    /// <param name="window">The window being placed.</param>
-    /// <param name="addonRect">The bounds of the game window, in real pixels.</param>
+    // addonRect is in real pixels.
     private void ApplyMatchedSize(Window window, UiRect addonRect)
     {
         if (!MatchWidth && !MatchHeight)
@@ -312,12 +285,8 @@ public sealed class NoireAddonAttach : NoireDrawable
         };
     }
 
-    /// <summary>
-    /// Measures the window as it currently stands, so alignments that depend on its size have something real to work
-    /// with rather than the size it was asked to be.
-    /// </summary>
-    /// <param name="window">The window to measure.</param>
-    /// <returns>The size in real pixels, or zero when the window has never been drawn.</returns>
+    // Measures the window as it currently stands rather than the size it was asked to be, in real pixels, or zero when
+    // the window has never been drawn.
     private static Vector2 MeasureWindow(Window window)
     {
         if (NoireService.IsInitialized())
@@ -331,10 +300,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         return NoireUI.Scaled(window.Size ?? Vector2.Zero);
     }
 
-    /// <summary>
-    /// Records whether the game window is on screen and reports the transitions.
-    /// </summary>
-    /// <param name="attached">Whether it was found this frame.</param>
     private void SetAttached(bool attached)
     {
         IsAttached = attached;
@@ -346,10 +311,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         OnAttachedChanged?.Invoke(attached);
     }
 
-    /// <summary>
-    /// Takes over the window's position, remembering what it was so it can be given back.
-    /// </summary>
-    /// <param name="window">The window being placed.</param>
     private void TakePosition(Window window)
     {
         TrackWindow(window);
@@ -362,10 +323,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         holdingPosition = true;
     }
 
-    /// <summary>
-    /// Takes over the window's size constraints, remembering what they were so they can be given back.
-    /// </summary>
-    /// <param name="window">The window being placed.</param>
     private void TakeSize(Window window)
     {
         TrackWindow(window);
@@ -377,11 +334,8 @@ public sealed class NoireAddonAttach : NoireDrawable
         holdingSize = true;
     }
 
-    /// <summary>
-    /// Notices that <see cref="Window"/> has been pointed at something else, and gives the previous one back before
-    /// anything is remembered about the new one.
-    /// </summary>
-    /// <param name="window">The window about to be written to.</param>
+    // Notices that Window has been pointed at something else, and gives the previous one back before anything is
+    // remembered about the new one.
     private void TrackWindow(Window window)
     {
         if (ReferenceEquals(held, window))
@@ -391,7 +345,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         held = window;
     }
 
-    /// <summary>Gives back the window's position, if this attachment had taken it.</summary>
     private void ReleasePosition()
     {
         if (!holdingPosition || held == null)
@@ -402,7 +355,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         holdingPosition = false;
     }
 
-    /// <summary>Gives back the window's size constraints, if this attachment had taken them.</summary>
     private void ReleaseSize()
     {
         if (!holdingSize || held == null)
@@ -412,7 +364,6 @@ public sealed class NoireAddonAttach : NoireDrawable
         holdingSize = false;
     }
 
-    /// <summary>Gives back everything this attachment had taken over, leaving the window as it found it.</summary>
     private void ReleaseWindow()
     {
         ReleasePosition();

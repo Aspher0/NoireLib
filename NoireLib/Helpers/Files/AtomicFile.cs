@@ -57,14 +57,8 @@ public static class AtomicFile
         }
     }
 
-    /// <summary>
-    /// Runs <paramref name="replace"/>, and on an <see cref="IOException"/> (the destination held open by another
-    /// process) tries <paramref name="deleteThenMove"/> then <paramref name="copyOver"/> before rethrowing the
-    /// original failure. Never waits between attempts, since callers include the framework thread.
-    /// </summary>
-    /// <param name="replace">The atomic replacement attempt.</param>
-    /// <param name="deleteThenMove">First non-atomic fallback.</param>
-    /// <param name="copyOver">Second non-atomic fallback.</param>
+    // Runs , and on an IOException (the destination held open by another process) tries  then  before rethrowing the
+    // original failure. Never waits between attempts, since callers include the framework thread.
     internal static void ReplaceWithFallback(Action replace, Action deleteThenMove, Action copyOver)
     {
         try
@@ -97,8 +91,7 @@ public static class AtomicFile
         }
     }
 
-    /// <summary>Cleans up a stray temporary file after a failed write.</summary>
-    /// <param name="path">The temporary file to remove.</param>
+    // Cleans up a stray temporary file after a failed write.
     private static void TryDelete(string path)
     {
         try

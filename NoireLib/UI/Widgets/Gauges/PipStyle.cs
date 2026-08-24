@@ -6,10 +6,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// Styling for a row of pips.
 /// </summary>
-/// <remarks>
-/// Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>. Sizes are logical pixels at 100% (see
-/// <see cref="NoireUI.Scale"/>).
-/// </remarks>
+/// <remarks>Colours left <see langword="null"/> resolve through <see cref="NoireTheme"/>; sizes are logical pixels at 100%.</remarks>
 public sealed class PipStyle
 {
     /// <summary>The size of one pip at 100%.</summary>
@@ -18,16 +15,16 @@ public sealed class PipStyle
     /// <summary>The gap between pips at 100%.</summary>
     public float Spacing { get; set; } = 4f;
 
-    /// <summary>The shape of a pip. Defaults to rounded.</summary>
+    /// <summary>The shape of a pip.</summary>
     public CornerShape Shape { get; set; } = CornerShape.Rounded;
 
-    /// <summary>The colour of a filled pip. When <see langword="null"/>, the theme's accent.</summary>
+    /// <summary>The colour of a filled pip.</summary>
     public Vector4? Color { get; set; }
 
-    /// <summary>The colour of an empty pip. When <see langword="null"/>, the theme's sunken surface.</summary>
+    /// <summary>The colour of an empty pip.</summary>
     public Vector4? EmptyColor { get; set; }
 
-    /// <summary>Whether empty pips are drawn as outlines rather than filled. Off by default.</summary>
+    /// <summary>Whether empty pips are drawn as outlines rather than filled.</summary>
     public bool OutlineEmpty { get; set; }
 
     /// <summary>
@@ -35,18 +32,14 @@ public sealed class PipStyle
     /// </summary>
     public Action<UiPipDraw>? CustomDraw { get; set; }
 
-    /// <summary>The size of one pip in pixels, at the user's scale.</summary>
+    // The values a row of pips draws with, in pixels at the user's scale.
+
     internal float ScaledSize => NoireUI.Scaled(Size);
 
-    /// <summary>The gap between pips in pixels, at the user's scale.</summary>
     internal float ScaledSpacing => NoireUI.Scaled(Spacing);
 
-    /// <summary>Resolves the colour of a filled pip.</summary>
-    /// <returns>The explicit colour, or the theme accent.</returns>
     internal Vector4 ResolveColor() => Color ?? NoireTheme.Current.Resolve(ThemeColor.Accent);
 
-    /// <summary>Resolves the colour of an empty pip.</summary>
-    /// <returns>The explicit colour, or the theme sunken surface.</returns>
     internal Vector4 ResolveEmptyColor()
         => EmptyColor ?? NoireTheme.Current.Resolve(ThemeColor.SurfaceSunken);
 

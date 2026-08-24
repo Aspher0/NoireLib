@@ -42,13 +42,13 @@ public static class GltfLoader
     public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
         => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, generateLods, ct), ct);
 
-    /// <summary>Below this triangle count a mesh is left at full detail.</summary>
+    // Below this triangle count a mesh is left at full detail.
     private const int LodMinTriangles = 4000;
 
-    /// <summary>Target triangle fractions for the LOD levels (finest first): 50%, 25%, 12% of the original.</summary>
+    // Target triangle fractions for the LOD levels (finest first): 50%, 25%, 12% of the original.
     private static readonly float[] LodTargetRatios = { 0.5f, 0.25f, 0.12f };
 
-    /// <summary>Counts what the import did, reported as a single log line.</summary>
+    // Counts what the import did, reported as a single log line.
     private sealed class ImportStats
     {
         public int Primitives;
@@ -229,10 +229,8 @@ public static class GltfLoader
         renderNode.SetMesh(mesh, material);
     }
 
-    /// <summary>
-    /// Builds and attaches a quadric-error LOD chain for a large primitive, skipping small meshes and leaving the
-    /// mesh at full detail when decimation fails.
-    /// </summary>
+    // Builds and attaches a quadric-error LOD chain for a large primitive, skipping small meshes and leaving the mesh
+    // at full detail when decimation fails.
     private static void GenerateLods(Mesh mesh, Vertex3D[] vertices, List<uint> triangles, ImportStats stats)
     {
         if (triangles.Count / 3 < LodMinTriangles)
@@ -429,7 +427,7 @@ public static class GltfLoader
         };
     }
 
-    /// <summary>Reads a channel factor by name; <paramref name="isDefault"/> says whether it was authored or is the spec default.</summary>
+    // Reads a channel factor by name;  says whether it was authored or is the spec default.
     private static float ChannelFactor(in MaterialChannel channel, string name, float fallback, out bool isDefault)
     {
         isDefault = true;
@@ -447,7 +445,7 @@ public static class GltfLoader
         return fallback;
     }
 
-    /// <summary>The import's shared 1x1 white texture, created on first use and owned by the model's texture list.</summary>
+    // The import's shared 1x1 white texture, created on first use and owned by the model's texture list.
     private static GpuTexture WhitePixel(List<GpuTexture> textures, ImportStats stats)
     {
         if (stats.WhitePixel != null)

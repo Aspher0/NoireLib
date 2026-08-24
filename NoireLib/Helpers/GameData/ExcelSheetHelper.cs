@@ -16,10 +16,7 @@ public static class ExcelSheetHelper
     private static readonly ConcurrentDictionary<(Type SheetType, ClientLanguage Language), object> Sheets = new();
     private static readonly ConcurrentDictionary<(Type SheetType, ClientLanguage Language), object> SubrowSheets = new();
 
-    /// <summary>
-    /// Loads the Excel sheets for the specified type across all client languages.
-    /// </summary>
-    /// <typeparam name="T">The type of the Excel row.</typeparam>
+    // Loads the Excel sheets for the specified type across all client languages.
     private static void LoadSheets<T>() where T : struct, IExcelRow<T>
     {
         foreach (var lang in Enum.GetValues<ClientLanguage>())

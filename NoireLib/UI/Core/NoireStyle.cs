@@ -5,17 +5,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Applies a style around a block of drawing.<br/>
-/// There is nothing to release: the scope takes its body, and everything pushed is popped when the body returns,
-/// including when it throws. Raw ImGui inside the body is fine, and anything it leaves pushed is unwound at the boundary
-/// with a single log line naming this scope.
+/// Applies a style around a block of drawing. There is nothing to release: everything pushed is popped when the body
+/// returns, including when it throws.
 /// </summary>
-/// <example>
-/// <code>
-/// NoireStyle.With(new UiStyle { TextColor = theme.Danger }, () => ImGui.TextUnformatted("Careful"));
-/// NoireStyle.WithAlpha(0.5f, () => DrawPreview());
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireStyle
 {
@@ -32,9 +24,7 @@ public static class NoireStyle
     }
 
     /// <summary>
-    /// Runs <paramref name="body"/> with <paramref name="style"/> applied, passing <paramref name="state"/> through.<br/>
-    /// This overload exists so the body can stay a <see langword="static"/> lambda and allocate nothing per frame; the
-    /// simpler overload allocates one delegate per call.
+    /// Runs <paramref name="body"/> with <paramref name="style"/> applied, passing <paramref name="state"/> through.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="style">The style to apply. A <see langword="null"/> or empty style changes nothing.</param>
@@ -87,7 +77,7 @@ public static class NoireStyle
     }
 
     /// <summary>
-    /// Runs <paramref name="body"/> with a single ImGui colour overridden, carrying state so the body can stay static.
+    /// Runs <paramref name="body"/> with a single ImGui colour overridden, passing <paramref name="state"/> through.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="color">The colour slot to override.</param>
@@ -112,7 +102,7 @@ public static class NoireStyle
     }
 
     /// <summary>
-    /// Runs <paramref name="body"/> at a reduced opacity, for a preview or a section that is not currently in effect.
+    /// Runs <paramref name="body"/> at a reduced opacity.
     /// </summary>
     /// <param name="alpha">The opacity multiplier, from 0 to 1.</param>
     /// <param name="body">The drawing to do inside the style.</param>
@@ -134,7 +124,7 @@ public static class NoireStyle
     }
 
     /// <summary>
-    /// Runs <paramref name="body"/> at a reduced opacity, carrying state so the body can stay static.
+    /// Runs <paramref name="body"/> at a reduced opacity, passing <paramref name="state"/> through.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="alpha">The opacity multiplier, from 0 to 1.</param>

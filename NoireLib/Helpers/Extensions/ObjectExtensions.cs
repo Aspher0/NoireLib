@@ -15,11 +15,8 @@ namespace NoireLib.Helpers.ObjectExtensions;
 /// </summary>
 public static class ObjectExtensions
 {
-    /// <summary>
-    /// Backs the JSON round trip in <see cref="Clone{T}(T)"/>, built through
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it never picks up the mutable process-global
-    /// <see cref="JsonConvert.DefaultSettings"/>.
-    /// </summary>
+    // Backs the JSON round trip in Clone{T}(T), built through Create(JsonSerializerSettings) so it never picks up the
+    // mutable process-global DefaultSettings.
     private static readonly JsonSerializer CloneSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {
         TypeNameHandling = TypeNameHandling.None,

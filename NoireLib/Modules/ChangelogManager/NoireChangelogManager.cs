@@ -44,13 +44,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         NoireEventBus? eventBus = null)
             : base(moduleId, active, enableLogging, shouldAutomaticallyShowChangelog, versions, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireChangelogManager(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -160,9 +154,6 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     #region EventBus Integration
 
-    /// <summary>
-    /// Publishes a changelog event to the EventBus if available.
-    /// </summary>
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);
@@ -170,25 +161,19 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     #endregion
 
-    /// <summary>
-    /// Internal method called by ChangelogWindow when the window is opened.
-    /// </summary>
+    // Internal method called by ChangelogWindow when the window is opened.
     internal void OnWindowOpened(Version version)
     {
         PublishEvent(new ChangelogWindowOpenedEvent(version));
     }
 
-    /// <summary>
-    /// Internal method called by ChangelogWindow when the window is closed.
-    /// </summary>
+    // Internal method called by ChangelogWindow when the window is closed.
     internal void OnWindowClosed()
     {
         PublishEvent(new ChangelogWindowClosedEvent());
     }
 
-    /// <summary>
-    /// Internal method called by ChangelogWindow when the selected version changes.
-    /// </summary>
+    // Internal method called by ChangelogWindow when the selected version changes.
     internal void OnVersionChanged(Version? oldVersion, Version newVersion)
     {
         PublishEvent(new ChangelogVersionChangedEvent(oldVersion, newVersion));
@@ -315,10 +300,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
         return this;
     }
 
-    /// <summary>
-    /// Records a changelog version and announces it, leaving the window rebuild to the caller.
-    /// </summary>
-    /// <param name="version">The <see cref="ChangelogVersion"/> to add or update.</param>
+    // Records a changelog version and announces it, leaving the window rebuild to the caller.
     private void AddVersionInternal(ChangelogVersion version)
     {
         changelogs[version.Version] = version;
@@ -375,9 +357,7 @@ public class NoireChangelogManager : NoireModuleWithWindowBase<NoireChangelogMan
 
     #endregion
 
-    /// <summary>
-    /// Automatically loads changelog versions from the plugin assembly using reflection.
-    /// </summary>
+    // Automatically loads changelog versions from the plugin assembly using reflection.
     private void LoadVersionsFromAssembly()
     {
         try

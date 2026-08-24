@@ -7,7 +7,7 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The drawing half of the table. Everything that decides <em>what</em> is shown lives in the pipeline beside it.
+/// The drawing half of the table.
 /// </summary>
 public sealed partial class NoireTable<T>
 {
@@ -15,9 +15,7 @@ public sealed partial class NoireTable<T>
         ImGuiTableFlags.Resizable | ImGuiTableFlags.Reorderable | ImGuiTableFlags.Hideable
         | ImGuiTableFlags.RowBg | ImGuiTableFlags.BordersInnerV | ImGuiTableFlags.ScrollY;
 
-    /// <summary>
-    /// The width a column with no <see cref="TableColumn{T}.Width"/> stretches with, relative to the others.
-    /// </summary>
+    // The width a column with no TableColumn.Width stretches with, relative to the others.
     private const float DefaultStretchWeight = 1f;
 
     /// <summary>
@@ -120,9 +118,6 @@ public sealed partial class NoireTable<T>
         return changed;
     }
 
-    /// <summary>
-    /// Draws the box above the table that narrows every searchable column at once.
-    /// </summary>
     private void DrawSearchBox()
     {
         var text = search;
@@ -149,12 +144,7 @@ public sealed partial class NoireTable<T>
         ImGui.PopTextWrapPos();
     }
 
-    /// <summary>
-    /// How many rows the search left, written as <c>12 of 340</c>.
-    /// </summary>
-    /// <param name="visible">How many rows the search left.</param>
-    /// <param name="total">How many rows there are.</param>
-    /// <returns>The counter text.</returns>
+    // How many rows the search left, written as "12 of 340".
     private static string Counter(int visible, int total)
     {
         var key = new CounterKey(visible, total);
@@ -168,14 +158,10 @@ public sealed partial class NoireTable<T>
         return text;
     }
 
-    /// <summary>A pair of counts the counter text is written from.</summary>
     private readonly record struct CounterKey(int Visible, int Total);
 
     private static readonly HotPathCache<CounterKey, string> Counters = new(512);
 
-    /// <summary>
-    /// Declares every visible column to ImGui, in order.
-    /// </summary>
     private void SetupColumns()
     {
         var trailing = TrailingColumnSlot();
@@ -220,15 +206,10 @@ public sealed partial class NoireTable<T>
         }
     }
 
-    /// <summary>
-    /// The column currently sitting rightmost, which is not the last one declared once a header has been dragged.
-    /// </summary>
+    // The column currently sitting rightmost, which is not the last one declared once a header has been dragged.
     private int TrailingColumnSlot()
         => columnLayout.Count > 0 ? columnLayout[^1].Column : CountVisibleColumns() - 1;
 
-    /// <summary>
-    /// Takes the order from the header the user clicked.
-    /// </summary>
     private unsafe void ApplySortSpecs()
     {
         var specs = ImGui.TableGetSortSpecs();
@@ -256,9 +237,6 @@ public sealed partial class NoireTable<T>
         SortBy(Columns[index], primary.SortDirection == ImGuiSortDirection.Descending);
     }
 
-    /// <summary>
-    /// Draws the row of per-column filter boxes under the headers.
-    /// </summary>
     private void DrawFilterRow()
     {
         ImGui.TableNextRow();
@@ -292,9 +270,7 @@ public sealed partial class NoireTable<T>
         }
     }
 
-    /// <summary>
-    /// Draws the rows, only the ones on screen when there are enough of them to be worth it.
-    /// </summary>
+    // Draws the rows, only the ones on screen when there are enough of them to be worth it.
     private bool DrawBody()
     {
         var changed = false;
@@ -324,9 +300,6 @@ public sealed partial class NoireTable<T>
         return changed;
     }
 
-    /// <summary>
-    /// Draws one row of the visible set.
-    /// </summary>
     private bool DrawRow(int position)
     {
         if (position < 0 || position >= visible.Count)
@@ -390,7 +363,7 @@ public sealed partial class NoireTable<T>
                 var cellStart = ImGui.GetCursorPos();
                 var style = ImGui.GetStyle();
 
-                // A selectable grows its hit box by half the item spacing above and below, on purpose, so stacked
+                // A selectable grows its hit box by half the item spacing above and below, so stacked
                 // selectables leave no click-gap between them. In a table the gap between rows is the *cell
                 // padding*, not the item spacing, so a theme whose spacing is the larger of the two overshoots into
                 // the rows either side: two rows report hovered at once and the click goes to whichever was
@@ -438,9 +411,7 @@ public sealed partial class NoireTable<T>
         return changed;
     }
 
-    /// <summary>
-    /// Selects a row from a click, adding to the selection when a modifier says so.
-    /// </summary>
+    // Selects a row from a click, adding to the selection when a modifier says so.
     private void Toggle(T row, bool wasSelected)
     {
         var additive = SelectionMode == TableSelection.Multiple
@@ -459,9 +430,6 @@ public sealed partial class NoireTable<T>
             selected.Add(row);
     }
 
-    /// <summary>
-    /// Draws one cell, through the column's renderer when it has one.
-    /// </summary>
     private void DrawCell(TableColumn<T> column, int columnIndex, T row, int rowIndex, bool isSelected)
     {
         if (column.Renderer == null)
@@ -482,10 +450,7 @@ public sealed partial class NoireTable<T>
         }
     }
 
-    /// <summary>
-    /// Draws a cell's text, picking out the characters whatever narrowed the table matched on.
-    /// </summary>
-    /// <remarks>The column's own filter wins over the box above it for that column.</remarks>
+    // Draws a cell's text, highlighting what matched; the column's own filter wins over the box above it.
     private void DrawCellText(TableColumn<T> column, T row)
     {
         var text = column.Read(row);
@@ -507,9 +472,6 @@ public sealed partial class NoireTable<T>
             NoireText.Draw(text);
     }
 
-    /// <summary>
-    /// Draws the row of totals, pinned under the rows and lined up with them.
-    /// </summary>
     private void DrawFooter(float width)
     {
         var theme = NoireTheme.Current;
@@ -586,9 +548,7 @@ public sealed partial class NoireTable<T>
         ImGui.Dummy(new Vector2(width, height));
     }
 
-    /// <summary>
-    /// Puts a resize grip on a footer divider, so a column can be sized from the bottom of the table as well as the top.
-    /// </summary>
+    // Puts a resize grip on a footer divider, so a column can be sized from the bottom of the table as well as the top.
     private void DrawFooterGrip(int position, float boundary, float top, float bottom)
     {
         var reach = NoireUI.Scaled(4f);
@@ -611,9 +571,7 @@ public sealed partial class NoireTable<T>
         pendingWidth = MathF.Max(NoireUI.Scaled(24f), ImGui.GetIO().MousePos.X - geometry.ContentLeft + padding);
     }
 
-    /// <summary>
-    /// Hands the body the width a footer grip was dragged to, while its layout will still take one.
-    /// </summary>
+    // Hands the body the width a footer grip was dragged to, while its layout will still take one.
     private void ApplyPendingColumnWidth()
     {
         if (pendingWidthColumn < 0)
@@ -623,9 +581,7 @@ public sealed partial class NoireTable<T>
         pendingWidthColumn = -1;
     }
 
-    /// <summary>
-    /// The column sitting at a position of the footer, following the body's display order when it is known.
-    /// </summary>
+    // The column sitting at a position of the footer, following the body's display order when it is known.
     private TableColumn<T>? ColumnAt(int position)
     {
         // Before the first row has ever been drawn there is no layout to follow, so the declared order is the only
@@ -647,22 +603,13 @@ public sealed partial class NoireTable<T>
         return null;
     }
 
-    /// <summary>
-    /// How much room the footer takes, so the body can be shortened by exactly that much.
-    /// </summary>
     private static float FooterHeight()
         => NoireText.LineHeight() + (ImGui.GetStyle().CellPadding.Y * 2f);
 
-    /// <summary>
-    /// Where one of the body's cells actually sat this frame: which column it belongs to, and the screen span of its
-    /// content.
-    /// </summary>
     private readonly record struct ColumnGeometry(int Column, float ContentLeft, float ContentRight);
 
-    /// <summary>
-    /// Where the body laid its columns out this frame, in display order. Kept from the last frame that had rows, so an
-    /// empty or fully filtered table still lines up.
-    /// </summary>
+    // Where the body laid its columns out this frame, in display order, kept from the last frame that had rows so an
+    // empty or fully filtered table still lines up.
     private readonly List<ColumnGeometry> columnLayout = new();
 
     private bool capturedLayout;

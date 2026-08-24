@@ -108,10 +108,6 @@ public sealed partial class NoireReorderableList<T>
         return changedThisFrame;
     }
 
-    /// <summary>The area the rows occupy on screen.</summary>
-    /// <param name="width">The width the rows were drawn at.</param>
-    /// <param name="height">The height of one row.</param>
-    /// <returns>The bounds in screen pixels.</returns>
     private UiRect ListBounds(float width, float height)
     {
         // The trailing spacing belongs to whatever comes next, so the last row's own height closes the list off.
@@ -120,15 +116,9 @@ public sealed partial class NoireReorderableList<T>
         return new UiRect(new Vector2(listLeft, listTop), new Vector2(width, MathF.Max(height, total)));
     }
 
-    /// <summary>
-    /// Which position the pointer is currently over.
-    /// </summary>
     private int ResolveDropTarget(float pointerY)
         => rowStep <= 0f ? draggingIndex : ResolveSlot(pointerY, listTop, rowStep, items.Count);
 
-    /// <summary>
-    /// Draws one row: the grip, the content, the buttons, and the marker showing where a dragged row would land.
-    /// </summary>
     private void DrawRow(int index, float width, float height)
     {
         var theme = NoireTheme.Current;
@@ -194,9 +184,6 @@ public sealed partial class NoireReorderableList<T>
             HandleKeyboard(index);
     }
 
-    /// <summary>
-    /// Whether the drag began somewhere that is allowed to start one.
-    /// </summary>
     private bool StartedOnAHandle(Vector2 origin, float gripWidth)
     {
         if (DragAnywhere)
@@ -208,9 +195,6 @@ public sealed partial class NoireReorderableList<T>
         return pressedAt >= origin.X && pressedAt <= origin.X + gripWidth;
     }
 
-    /// <summary>
-    /// Draws the row's content, through the renderer when there is one.
-    /// </summary>
     private void DrawContent(T item, int index, bool isDragging, Vector2 size)
     {
         var label = LabelOf(item);
@@ -233,9 +217,6 @@ public sealed partial class NoireReorderableList<T>
         }
     }
 
-    /// <summary>
-    /// Draws the delete and duplicate buttons at the right end of a row.
-    /// </summary>
     private void DrawRowButtons(int index, Vector2 origin, Vector2 size, float buttonWidth, float height)
     {
         var x = origin.X + size.X - buttonWidth;
@@ -265,9 +246,6 @@ public sealed partial class NoireReorderableList<T>
         return count * height;
     }
 
-    /// <summary>
-    /// Queues a move of the focused row from the reorder keys.
-    /// </summary>
     private void HandleKeyboard(int index)
     {
         if (!ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows))
@@ -285,9 +263,6 @@ public sealed partial class NoireReorderableList<T>
         }
     }
 
-    /// <summary>
-    /// Whether a binding counts as pressed this frame, including a repeat while it is held.
-    /// </summary>
     private static bool Pressed(HotkeyBinding binding, ref double heldSince)
     {
         if (!IsBound(binding) || !KeybindsHelper.IsBindingHeld(binding))
@@ -317,24 +292,17 @@ public sealed partial class NoireReorderableList<T>
         return ticks > previous;
     }
 
-    /// <summary>
-    /// Whether a binding names anything at all, so an empty binding reads as unbound rather than always-held.
-    /// </summary>
+    // An empty binding reads as unbound rather than always-held.
     private static bool IsBound(HotkeyBinding binding)
         => binding.VkCode != 0 || binding.GamepadButton.HasValue;
 
-    /// <summary>How long a reorder key must be held before it starts repeating.</summary>
     private const double RepeatDelaySeconds = 0.35d;
 
-    /// <summary>How often a held reorder key repeats.</summary>
     private const double RepeatRateSeconds = 0.12d;
 
     private double upHeldSince;
     private double downHeldSince;
 
-    /// <summary>
-    /// Asks the host to keep the reorder keys from the game while a row is focused.
-    /// </summary>
     private void ClaimKeyboardIfFocused()
     {
         var live = AllowKeyboard
@@ -372,9 +340,6 @@ public sealed partial class NoireReorderableList<T>
             NoireShapes.RectOutline(origin, origin + size, ColorHelper.ScaleAlpha(accent, 0.5f), 1f, CornerShape.Rounded, rounding);
     }
 
-    /// <summary>
-    /// Draws the row that is following the pointer, and the line showing where it will land.
-    /// </summary>
     private void PaintDropMarker(Vector2 origin, Vector2 size, NoireTheme theme)
     {
         var accent = theme.Resolve(ThemeColor.Accent);
@@ -386,8 +351,8 @@ public sealed partial class NoireReorderableList<T>
         if (draggingIndex < 0 || draggingIndex >= items.Count)
             return;
 
-        // The ghost follows the pointer rather than sitting in the gap, because the gap already says where the row
-        // lands and the ghost is what says which row is moving.
+        // The ghost follows the pointer rather than sitting in the gap, since the gap already says where the row
+        // lands.
         var ghostSize = new Vector2(size.X * 0.5f, size.Y);
         var ghostOrigin = ImGui.GetIO().MousePos + new Vector2(NoireUI.Scaled(12f), -ghostSize.Y * 0.5f);
 
@@ -411,7 +376,6 @@ public sealed partial class NoireReorderableList<T>
             LabelOf(items[draggingIndex]));
     }
 
-    /// <summary>Draws the handle: three short bars, no icon font needed.</summary>
     private static void PaintGrip(Vector2 origin, Vector2 size, float gripWidth, bool lit, NoireTheme theme)
     {
         var color = ColorHelper.ScaleAlpha(theme.Resolve(ThemeColor.TextMuted), lit ? 0.9f : 0.45f);
@@ -434,9 +398,6 @@ public sealed partial class NoireReorderableList<T>
         }
     }
 
-    /// <summary>
-    /// The two marks the row buttons draw, so neither needs an icon font.
-    /// </summary>
     private enum GlyphShape
     {
         Cross,

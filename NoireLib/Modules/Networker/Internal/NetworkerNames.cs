@@ -4,10 +4,8 @@ using System.Text;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// Derives kernel object names, the LAN beacon port, and the beacon network hash from a network name; strong
-/// hashing makes cross-network collisions a non-issue, and the full network name is verified in handshakes anyway.
-/// </summary>
+// Derives kernel object names, the LAN beacon port, and the beacon network hash from a network name; strong hashing
+// makes cross-network collisions a non-issue, and the full network name is verified in handshakes anyway.
 internal static class NetworkerNames
 {
     private const string KernelSalt = "NoireNetworker.v1|";
@@ -21,9 +19,7 @@ internal static class NetworkerNames
     public static string MapName(string networkName)
         => @"Local\NoireNetworker_" + HashHex(KernelSalt + networkName) + "_map";
 
-    /// <summary>
-    /// The salted hash identifying the network inside LAN beacons - the plaintext name never crosses the wire.
-    /// </summary>
+    // The salted hash identifying the network inside LAN beacons - the plaintext name never crosses the wire.
     public static string BeaconNetworkHash(string networkName)
         => HashHex(BeaconSalt + networkName);
 
@@ -34,9 +30,7 @@ internal static class NetworkerNames
         return BeaconPortRangeStart + (int)(value % BeaconPortRangeSize);
     }
 
-    /// <summary>
-    /// Computes the HMAC proof for a handshake challenge using the LAN secret.
-    /// </summary>
+    // Computes the HMAC proof for a handshake challenge using the LAN secret.
     public static string ComputeProof(string secret, string nonce)
     {
         using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(secret));

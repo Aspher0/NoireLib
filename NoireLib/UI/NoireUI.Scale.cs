@@ -9,18 +9,13 @@ namespace NoireLib.UI;
 /// </summary>
 public static partial class NoireUI
 {
-    /// <summary>
-    /// Test seam replacing Dalamud's global scale when no ImGui context exists.
-    /// </summary>
+    // Test seam replacing Dalamud's global scale when no ImGui context exists.
     internal static Func<float>? ScaleOverride { get; set; }
 
     /// <summary>
-    /// The user's UI scale, where 1 is 100%.<br/>
-    /// Dalamud applies this to the ImGui style, so text, frame padding and everything else read out of
-    /// <c>ImGui.GetStyle()</c> already arrives at the right size. Numbers NoireUI and your own code ship do not, which is
-    /// what <see cref="Scaled(float)"/> is for.<br/>
-    /// Reads 1 before NoireLib is initialized, so a value computed off it is never zero.
+    /// The user's UI scale, where 1 is 100%.
     /// </summary>
+    /// <remarks>Reads 1 before NoireLib is initialized, so a value computed off it is never zero.</remarks>
     public static float Scale
     {
         get
@@ -42,11 +37,8 @@ public static partial class NoireUI
     /// Converts a pixel value authored at 100% into pixels at the user's scale.
     /// </summary>
     /// <remarks>
-    /// Every pixel value in the NoireUI surface is a logical unit: a toast <c>Width</c> of 400 means 400 at 100% and
-    /// arrives 600 wide at 150%, without the plugin knowing the scale exists. Use this for pixel values of your own so
-    /// they follow the same rule.<br/>
     /// Never apply it to a value read out of <c>ImGui.GetStyle()</c>, or to anything a NoireUI <c>Resolve</c> method
-    /// returned. Those are finished pixels, and scaling them again is the one way to get this wrong.
+    /// returned; those are finished pixels.
     /// </remarks>
     /// <param name="logical">The pixel value at 100%.</param>
     /// <returns>The value at the current scale.</returns>
@@ -62,11 +54,6 @@ public static partial class NoireUI
     /// <summary>
     /// Converts a real pixel value back into the logical unit it would have been authored as.
     /// </summary>
-    /// <remarks>
-    /// The inverse of <see cref="Scaled(float)"/>, for the few places that have to hand a measured pixel value to an
-    /// API that scales it again. Dalamud's <c>Window.Size</c> is the example: it multiplies by the global scale on the
-    /// way to ImGui, so a size measured off the screen has to be divided back out first.
-    /// </remarks>
     /// <param name="real">The pixel value at the current scale.</param>
     /// <returns>The value at 100%.</returns>
     public static float Unscaled(float real) => real / Scale;

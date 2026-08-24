@@ -6,10 +6,8 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// CPU readback of individual depth-texture texels (calibration + probe ground truth).
-/// Depth resources must be copied whole - a full staging copy per readback, so callers throttle.
-/// </summary>
+// CPU readback of individual depth-texture texels (calibration + probe ground truth). Depth resources must be copied
+// whole - a full staging copy per readback, so callers throttle.
 internal static unsafe class DepthReadback
 {
     /// <summary>
@@ -126,14 +124,14 @@ internal static unsafe class DepthReadback
         }
     }
 
-    /// <summary>Whether the (typeless / depth-stencil) format carries a readable 8-bit stencil plane.</summary>
+    // Whether the (typeless / depth-stencil) format carries a readable 8-bit stencil plane.
     internal static bool HasStencilPlane(DXGI_FORMAT format) => format
         is DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS
         or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT
         or DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS
         or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 
-    /// <summary>Reads the 8-bit stencil value of a depth-stencil texel (null when the format has no stencil plane).</summary>
+    // Reads the 8-bit stencil value of a depth-stencil texel (null when the format has no stencil plane).
     internal static int? ReadStencilTexel(in D3D11_MAPPED_SUBRESOURCE mapped, DXGI_FORMAT format, int x, int y)
     {
         var row = (byte*)mapped.pData + (nint)y * (nint)mapped.RowPitch;

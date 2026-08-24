@@ -11,13 +11,10 @@ namespace NoireLib.Animations.PapFormat;
 /// </summary>
 public static class PapAnimationNames
 {
-    /// <summary>The "pap " magic, little-endian.</summary>
     private const int Magic = 0x20706170;
 
-    /// <summary>The name field's length in bytes.</summary>
     private const int NameLength  = 32;
 
-    /// <summary>One entry: name, type, havok index, face flag.</summary>
     private const int EntryLength = 40;
 
     /// <summary>The names declared in a .pap, in order.</summary>

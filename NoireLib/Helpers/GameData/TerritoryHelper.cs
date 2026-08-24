@@ -377,9 +377,7 @@ public static class TerritoryHelper
     public static uint ResolveAlias(IReadOnlyDictionary<uint, uint>? aliases, uint territoryId)
         => aliases != null && aliases.TryGetValue(territoryId, out var canonical) ? canonical : territoryId;
 
-    /// <summary>Collects the row ids of every non-zero TerritoryType row the predicate accepts.</summary>
-    /// <param name="predicate">The test each row is put to.</param>
-    /// <returns>The matching territory row ids, or an empty set when the sheet cannot be read.</returns>
+    // Collects the row ids of every non-zero TerritoryType row the predicate accepts.
     private static IReadOnlySet<uint> ReadWhere(System.Func<TerritoryType, bool> predicate)
     {
         return SafeExecutor.ExecuteSafely(() =>

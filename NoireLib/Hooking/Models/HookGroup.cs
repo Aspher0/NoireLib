@@ -9,8 +9,7 @@ namespace NoireLib.Hooking;
 /// </summary>
 public sealed class HookGroup
 {
-    /// <summary>Creates a handle over the hooks carrying a group name.</summary>
-    /// <param name="name">The group name.</param>
+    // Creates a handle over the hooks carrying a group name.
     internal HookGroup(string name) => Name = name;
 
     /// <summary>The group name.</summary>

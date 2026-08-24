@@ -23,10 +23,6 @@ public sealed class SubCommandBuilder
     private bool allowUnorderedOptionalArguments;
     private bool failOnExtraArguments;
 
-    /// <summary>
-    /// Creates a new subcommand builder for the given name.
-    /// </summary>
-    /// <param name="name">The primary name of the subcommand.</param>
     internal SubCommandBuilder(string name)
     {
         this.name = name;
@@ -205,10 +201,7 @@ public sealed class SubCommandBuilder
         return this;
     }
 
-    /// <summary>
-    /// Builds the final <see cref="SubCommandDefinition"/> from the current builder state.
-    /// </summary>
-    /// <returns>The built subcommand definition.</returns>
+    // Builds the final SubCommandDefinition from the current builder state.
     internal SubCommandDefinition Build() =>
         new(name, helpText, aliases, arguments, subCommands, handler, isAsync, hasArguments, condition, showInHelp, displayOrder, allowUnorderedOptionalArguments, failOnExtraArguments);
 }

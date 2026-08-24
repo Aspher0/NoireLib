@@ -6,11 +6,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// How the keyboard focus mark looks. See <see cref="NoireFocus"/>.
 /// </summary>
-/// <example>
-/// <code>
-/// NoireFocus.Style = new FocusStyle { Shape = FocusShape.Corners, Color = gold, Thickness = 1f };
-/// </code>
-/// </example>
 public sealed class FocusStyle
 {
     /// <summary>Which mark is drawn. Defaults to <see cref="FocusShape.Ring"/>.</summary>
@@ -23,12 +18,8 @@ public sealed class FocusStyle
     public float Thickness { get; set; } = 1.5f;
 
     /// <summary>
-    /// How far outside the control's own edge the mark sits, at 100%. Defaults to 2.
+    /// How far outside the control's own edge the mark sits, at 100%; defaults to 2.
     /// </summary>
-    /// <remarks>
-    /// Outside rather than on the edge, so the mark does not sit on top of the frame the control already draws and
-    /// read as that frame having changed colour.
-    /// </remarks>
     public float Spread { get; set; } = 2f;
 
     /// <summary>The corner treatment of <see cref="FocusShape.Ring"/>. Defaults to rounded.</summary>
@@ -36,7 +27,7 @@ public sealed class FocusStyle
 
     /// <summary>
     /// The corner size of <see cref="FocusShape.Ring"/>, at 100%. When <see langword="null"/>, the theme's frame
-    /// rounding, so the mark follows whatever the surrounding widgets are shaped like.
+    /// rounding.
     /// </summary>
     public float? CornerSize { get; set; }
 
@@ -48,13 +39,8 @@ public sealed class FocusStyle
 
     /// <summary>
     /// How far the arms of <see cref="FocusShape.Corners"/> and <see cref="FocusShape.Brackets"/> reach, as a fraction
-    /// of the control's shorter side. Defaults to 0.55.
+    /// of the control's shorter side; defaults to 0.55.
     /// </summary>
-    /// <remarks>
-    /// A fraction rather than a distance, because a mark that is right on a text field is stubby on a tall list box and
-    /// closes into a full frame on a small icon button. <see cref="ArmLength"/> overrides it where a fixed reach is
-    /// wanted.
-    /// </remarks>
     public float ArmRatio { get; set; } = 0.55f;
 
     /// <summary>
@@ -65,58 +51,42 @@ public sealed class FocusStyle
 
     /// <summary>
     /// The bar thickness of <see cref="FocusShape.Underline"/>, at 100%. When <see langword="null"/>, twice
-    /// <see cref="Thickness"/>, since a hairline along one edge alone reads as an artefact rather than as a mark.
+    /// <see cref="Thickness"/>.
     /// </summary>
     public float? UnderlineThickness { get; set; }
 
     /// <summary>
-    /// How long the mark takes to settle onto a control that has just taken focus, in seconds. Defaults to 0.12. Zero
-    /// places it immediately.
+    /// How long the mark takes to settle onto a control that has just taken focus, in seconds; defaults to 0.12, and
+    /// zero places it immediately.
     /// </summary>
-    /// <remarks>
-    /// Motion on arrival, never motion at rest: a mark that kept moving would animate underneath text the user is
-    /// mid-typing. Under <see cref="NoireUI.ReducedMotion"/> it does not run at all; the mark is still drawn, in
-    /// place, at full strength.
-    /// </remarks>
+    /// <remarks>Under <see cref="NoireUI.ReducedMotion"/> it does not run at all.</remarks>
     public float ArrivalSeconds { get; set; } = 0.12f;
 
     /// <summary>
-    /// How much further out the mark begins before settling to <see cref="Spread"/>, at 100%. Defaults to 3.
+    /// How much further out the mark begins before settling to <see cref="Spread"/>, at 100%; defaults to 3.
     /// </summary>
     public float ArrivalSpread { get; set; } = 3f;
 
     /// <summary>
     /// Paints the mark instead of <see cref="Shape"/>, for a look the four shapes do not cover.
     /// </summary>
-    /// <remarks>
-    /// Handed everything the shipped painter works from, so a hook can animate with the arrival rather than against
-    /// it. See <see cref="UiFocusDraw"/> for what it receives and how to draw nothing or add to the shipped look.
-    /// </remarks>
     public Action<UiFocusDraw>? CustomDraw { get; set; }
 
     /// <summary>Copies the style, for a variant that differs in a field or two.</summary>
     /// <returns>An independent copy.</returns>
     public FocusStyle Clone() => (FocusStyle)MemberwiseClone();
 
-    /// <summary>The colour the mark draws in.</summary>
     internal Vector4 ResolveColor() => Color ?? NoireTheme.Current.Resolve(ThemeColor.Accent);
 
-    /// <summary>The line thickness in real pixels.</summary>
     internal float ScaledThickness => MathF.Max(1f, NoireUI.Scaled(Thickness));
 
-    /// <summary>The underline's bar thickness in real pixels.</summary>
     internal float ScaledUnderlineThickness
         => MathF.Max(1f, NoireUI.Scaled(UnderlineThickness ?? Thickness * 2f));
 
-    /// <summary>The ring's corner size in real pixels.</summary>
     internal float ResolveCornerSize()
         => CornerSize.HasValue ? NoireUI.Scaled(CornerSize.Value) : NoireTheme.Current.ResolveRounding();
 
-    /// <summary>
-    /// How far an arm reaches on a control of a given size, in real pixels.
-    /// </summary>
-    /// <param name="size">The control's size, already spread, in real pixels.</param>
-    /// <returns>The arm reach, never long enough for two arms on one edge to meet.</returns>
+    // Takes the control's size, already spread, in real pixels.
     internal float ResolveArmLength(Vector2 size)
     {
         var shorter = MathF.Min(size.X, size.Y);

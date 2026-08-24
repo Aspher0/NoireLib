@@ -4,9 +4,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// The offscreen premultiplied scene color target (R8G8B8A8, RTV + SRV), recreated on resize.
-/// </summary>
+// The offscreen premultiplied scene color target (R8G8B8A8, RTV + SRV), recreated on resize.
 internal sealed unsafe class RenderTarget : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;
@@ -87,10 +85,8 @@ internal sealed unsafe class RenderTarget : IDisposable
     public void Dispose() => Release();
 }
 
-/// <summary>
-/// The private D32_FLOAT depth buffer for depth testing among Draw3D's own objects, kept separate from
-/// the game's depth buffer, which Draw3D never writes. Cleared to 0.0 (reversed-Z "far").
-/// </summary>
+// The private D32_FLOAT depth buffer for depth testing among Draw3D's own objects, kept separate from the game's
+// depth buffer, which Draw3D never writes. Cleared to 0.0 (reversed-Z "far").
 internal sealed unsafe class DepthTarget : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;
@@ -155,11 +151,9 @@ internal sealed unsafe class DepthTarget : IDisposable
     public void Dispose() => Release();
 }
 
-/// <summary>
-/// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV), used to
-/// render the collision world's device-z so the ground decal can skip anything standing in front of it.
-/// Cleared to 0.0 (reversed-Z "far" = no collision).
-/// </summary>
+// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV), used to render
+// the collision world's device-z so the ground decal can skip anything standing in front of it. Cleared to 0.0
+// (reversed-Z "far" = no collision).
 internal sealed unsafe class DepthTargetSrv : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;

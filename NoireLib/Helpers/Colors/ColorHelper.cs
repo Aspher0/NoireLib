@@ -111,9 +111,6 @@ public static class ColorHelper
         return false;
     }
 
-    /// <summary>
-    /// Reads one hexadecimal digit.
-    /// </summary>
     private static bool TryReadNibble(char digit, out byte value)
     {
         value = digit switch
@@ -223,9 +220,7 @@ public static class ColorHelper
     public static uint Vector4ToUint(Vector4 color)
         => Saturate(color.X) | (Saturate(color.Y) << 8) | (Saturate(color.Z) << 16) | (Saturate(color.W) << 24);
 
-    /// <summary>
-    /// Turns one channel from 0 to 1 into the byte ImGui packs, clamping and rounding the way ImGui does.
-    /// </summary>
+    // Turns one channel from 0 to 1 into the byte ImGui packs, clamping and rounding the way ImGui does.
     private static uint Saturate(float channel)
         => (uint)((channel < 0f ? 0f : channel > 1f ? 1f : channel) * 255f + 0.5f);
 

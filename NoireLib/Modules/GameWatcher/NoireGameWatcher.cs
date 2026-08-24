@@ -55,13 +55,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
             SetActive(true);
     }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireGameWatcher(ModuleId? moduleId, bool active = true, bool enableLogging = true) : base(moduleId, active, enableLogging) { }
 
     /// <inheritdoc/>
@@ -136,7 +130,6 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     /// </summary>
     public GameWatcherOptions Options => options;
 
-    /// <summary>The options snapshot in effect since the last activation.</summary>
     internal GameWatcherOptions ActiveOptions => activeOptions ?? options;
 
     /// <summary>Character facts for anyone: vitals, casts, death, modes, emotes, job/level - scoped by <see cref="Scope"/>.</summary>
@@ -301,15 +294,11 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
 
     #region Demand-driven activation
 
-    /// <summary>
-    /// Resolves the effective poll cadence for a source: the configured override, or the source default.
-    /// </summary>
+    // Resolves the effective poll cadence for a source: the configured override, or the source default.
     internal TimeSpan ResolvePollCadence(SourceKind kind, TimeSpan defaultCadence)
         => ActiveOptions.PollCadences.TryGetValue(kind, out var cadence) ? cadence : defaultCadence;
 
-    /// <summary>
-    /// Registers interest in a source (refcount up) and starts it when it becomes needed.
-    /// </summary>
+    // Registers interest in a source (refcount up) and starts it when it becomes needed.
     internal void AddInterest(SourceKind kind)
     {
         lock (gate)
@@ -318,9 +307,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         ReevaluateSource(kind);
     }
 
-    /// <summary>
-    /// Releases interest in a source (refcount down) and stops it when nothing needs it anymore.
-    /// </summary>
+    // Releases interest in a source (refcount down) and stops it when nothing needs it anymore.
     internal void ReleaseInterest(SourceKind kind)
     {
         lock (gate)
@@ -332,9 +319,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         ReevaluateSource(kind);
     }
 
-    /// <summary>
-    /// Starts or stops one source according to module state, refcount and configuration overrides.
-    /// </summary>
+    // Starts or stops one source according to module state, refcount and configuration overrides.
     internal void ReevaluateSource(SourceKind kind)
     {
         var source = sources[kind];
@@ -377,9 +362,7 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
     private SourceOverride GetSourceOverride(SourceKind kind)
         => ActiveOptions.Sources.TryGetValue(kind, out var configured) ? configured : SourceOverride.Default;
 
-    /// <summary>
-    /// Histories only collect while their source runs, so a configured history capacity implies AlwaysOn.
-    /// </summary>
+    // Histories only collect while their source runs, so a configured history capacity implies AlwaysOn.
     private bool HasImpliedAlwaysOn(SourceKind kind) => kind switch
     {
         SourceKind.Chat => ActiveOptions.Chat.HistoryCapacity > 0,
@@ -396,28 +379,22 @@ public partial class NoireGameWatcher : NoireModuleWithWindowBase<NoireGameWatch
         }
     }
 
-    /// <summary>
-    /// Whether a source is turned off by its configured override. A source that is not disabled is not necessarily
-    /// running: it still has to be started.
-    /// </summary>
+    // Whether a source is turned off by its configured override. A source that is not disabled is not necessarily
+    // running: it still has to be started.
     internal bool IsSourceDisabled(SourceKind kind)
         => GetSourceOverride(kind) == SourceOverride.Disabled;
 
-    /// <summary>Typed access to a source for facades. Internal.</summary>
     internal TSource GetSource<TSource>(SourceKind kind) where TSource : GameWatcherSource
         => (TSource)sources[kind];
 
-    /// <summary>The sources table, for diagnostics.</summary>
     internal IReadOnlyDictionary<SourceKind, GameWatcherSource> SourcesView => sources;
 
     #endregion
 
     #region Thread guard
 
-    /// <summary>
-    /// Throws when called off the framework thread while the game is available. Queries always read live game
-    /// state and must run on the framework thread; use <c>NoireService.Framework.RunOnFrameworkThread</c> to hop.
-    /// </summary>
+    // Throws when called off the framework thread while the game is available. Queries always read live game state
+    // and must run on the framework thread; use NoireService.Framework.RunOnFrameworkThread to hop.
     internal static void EnsureFrameworkThread()
     {
         if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)

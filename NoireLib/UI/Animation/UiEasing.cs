@@ -3,9 +3,7 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The shape an animation follows between its start and its end.<br/>
-/// <c>In</c> curves start slow, <c>Out</c> curves end slow, <c>InOut</c> curves do both. <see cref="UiEasing.OutCubic"/>
-/// is the usual choice for interface motion: it arrives quickly and settles softly.
+/// The shape an animation follows between its start and its end.
 /// </summary>
 public enum UiEasing
 {
@@ -81,13 +79,11 @@ public static class UiEasingExtensions
     private const float BackOvershoot = 1.70158f;
 
     /// <summary>
-    /// Evaluates the curve at <paramref name="t"/>.<br/>
-    /// Pure and side-effect free, so it composes with anything: pass it a normalised progress and use the result to
-    /// interpolate a colour, a size, or anything else.
+    /// Evaluates the curve at <paramref name="t"/>.
     /// </summary>
     /// <param name="easing">The curve.</param>
-    /// <param name="t">The progress from 0 to 1. Values outside that range are clamped.</param>
-    /// <returns>The eased progress. Most curves return 0 at 0 and 1 at 1; the back and elastic curves overshoot in between.</returns>
+    /// <param name="t">The progress from 0 to 1, clamped.</param>
+    /// <returns>The eased progress.</returns>
     public static float Apply(this UiEasing easing, float t)
     {
         t = Math.Clamp(t, 0f, 1f);

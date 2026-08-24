@@ -4,12 +4,10 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Saves and restores exactly the pipeline slots Draw3D touches. The slot list below is the exhaustive contract:
-/// touching a new slot anywhere in the renderer without adding it here is a bug. Rules encoded: every XXGet
-/// AddRefs (each gets one Release); null is a value (restored, never skipped); viewport/scissor counts are
-/// captured and restored exactly.
-/// </summary>
+// Saves and restores exactly the pipeline slots Draw3D touches. The slot list below is the exhaustive contract:
+// touching a new slot anywhere in the renderer without adding it here is a bug. Rules encoded: every XXGet AddRefs
+// (each gets one Release); null is a value (restored, never skipped); viewport/scissor counts are captured and
+// restored exactly.
 internal sealed unsafe class StateGuard
 {
     private const int ViewportSlotCount = 16; // D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE
@@ -212,11 +210,9 @@ internal sealed unsafe class StateGuard
         ReleaseAll();
     }
 
-    /// <summary>
-    /// Debug-only: verifies stages Draw3D never touches (and therefore never saves) are clean at the
-    /// present-time callback - a null geometry shader and zero OM UAVs. If either assert ever fires,
-    /// the slot enters the save/restore contract above.
-    /// </summary>
+    // Debug-only: verifies stages Draw3D never touches (and therefore never saves) are clean at the present-time
+    // callback - a null geometry shader and zero OM UAVs. If either assert ever fires, the slot enters the
+    // save/restore contract above.
     [Conditional("DEBUG")]
     private void AssertUntouchedStagesClean(ID3D11DeviceContext* ctx)
     {

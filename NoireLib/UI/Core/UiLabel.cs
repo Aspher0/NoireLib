@@ -3,39 +3,21 @@ using System;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// Takes an ImGui label apart into the text shown and the text that identifies it, once each, and hands the same
-/// strings back on every later frame.<br/>
-/// The strings are equal to the substrings each call replaces, since ids travel into <see cref="NoireUiState"/> keys.
-/// Draw thread only: the caches are unsynchronised.
-/// </summary>
+// The strings are equal to the substrings each call replaces, since ids travel into NoireUiState keys.
+// Draw thread only: the caches are unsynchronised.
 internal static class UiLabel
 {
-    /// <summary>
-    /// How many labels are kept before a cache starts over. See <see cref="UiIds"/> for why a plugin reaches a stable
-    /// set almost immediately.
-    /// </summary>
     private const int MaxEntries = 4096;
 
-    /// <summary>
-    /// A label, as itself. A record struct rather than a bare string, since <see cref="HotPathCache{TKey, TValue}"/>
-    /// takes a struct key and this keeps a lookup from boxing.
-    /// </summary>
+    // A record struct rather than a bare string, since HotPathCache takes a struct key and this keeps a lookup from
+    // boxing.
     private readonly record struct Key(string Label);
 
-    /// <summary>
-    /// The two halves of a label split on <c>###</c>.
-    /// </summary>
     private readonly record struct Parts(string Visible, string Id);
 
     private static readonly HotPathCache<Key, string> Visibles = new(MaxEntries);
     private static readonly HotPathCache<Key, Parts> Stables = new(MaxEntries);
 
-    /// <summary>
-    /// The part of a label that is drawn, which is everything before the first <c>##</c>.
-    /// </summary>
-    /// <param name="label">The label to read.</param>
-    /// <returns>The visible text, or <paramref name="label"/> itself when it carries no id marker.</returns>
     internal static string Visible(string label)
     {
         if (label == null)
@@ -59,12 +41,6 @@ internal static class UiLabel
         return visible;
     }
 
-    /// <summary>
-    /// Splits a label on <c>###</c> into the text drawn and the id the widget is remembered under.
-    /// </summary>
-    /// <param name="label">The label to split.</param>
-    /// <param name="visible">The text to draw. The whole label when it carries no stable id.</param>
-    /// <param name="id">The stable id. The whole label when it carries no stable id.</param>
     internal static void Split(string label, out string visible, out string id)
     {
         if (label == null)

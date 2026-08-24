@@ -146,15 +146,15 @@ public class Draw3DLightConstantProbeTests
 
     /// <summary>
     /// A view matrix's rows are unit vectors, so without this test every one of them reads as a possible light
-    /// direction. A frame buffer holding view matrices then produces pages of candidates and no signal, which is
-    /// exactly what the first real run of this probe returned.
+    /// direction. A frame buffer holding view matrices then produces pages of candidates and no signal, which the
+    /// first real run of this probe returned.
     /// </summary>
     [Fact]
     public void Classify_RotationRows_AreMarkedAsMatrixData()
     {
         var bytes = new byte[48];
-        Write(bytes, 0, 1f, 0f, 0f, 12.5f);      // an orthonormal basis with translation in w,
-        Write(bytes, 16, 0f, 1f, 0f, -3.25f);    // which is what a view matrix looks like
+        Write(bytes, 0, 1f, 0f, 0f, 12.5f);      // an orthonormal basis with translation in w
+        Write(bytes, 16, 0f, 1f, 0f, -3.25f);
         Write(bytes, 32, 0f, 0f, 1f, 7f);
 
         var snapshot = LightConstantProbe.Classify(0, bytes, bytes.Length);

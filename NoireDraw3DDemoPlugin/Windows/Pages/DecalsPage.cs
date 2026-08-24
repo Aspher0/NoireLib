@@ -3,10 +3,9 @@ using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>The collision height-map that <c>HighestOnly</c> reads, and the stencil value that cuts actors out of a decal.</summary>
+// The collision height-map that HighestOnly reads, and the stencil value that cuts actors out of a decal.
 internal sealed class DecalsPage
 {
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         Ui.Section("Top-surface projection");

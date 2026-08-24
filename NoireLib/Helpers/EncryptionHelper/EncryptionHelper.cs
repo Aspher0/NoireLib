@@ -17,29 +17,18 @@ public static partial class EncryptionHelper
 {
     private const string LogPrefix = "[EncryptionHelper] ";
 
-    /// <summary>
-    /// The number of PBKDF2 iterations used when deriving an encryption key from a password.
-    /// </summary>
+    // The number of PBKDF2 iterations used when deriving an encryption key from a password.
     private const int DefaultPbkdf2Iterations = 210_000;
 
-    /// <summary>
-    /// The size, in bytes, of the salt used for password-based key derivation.
-    /// </summary>
+    // The size, in bytes, of the salt used for password-based key derivation.
     private const int SaltSize = 16;
 
-    /// <summary>
-    /// The size, in bytes, of the AES key (256-bit).
-    /// </summary>
     private const int AesKeySize = 32;
 
-    /// <summary>
-    /// The size, in bytes, of the nonce used by AES-GCM.
-    /// </summary>
+    // The size, in bytes, of the nonce used by AES-GCM.
     private const int GcmNonceSize = 12;
 
-    /// <summary>
-    /// The size, in bytes, of the authentication tag used by AES-GCM.
-    /// </summary>
+    // The size, in bytes, of the authentication tag used by AES-GCM.
     private const int GcmTagSize = 16;
 
     /// <summary>
@@ -60,17 +49,10 @@ public static partial class EncryptionHelper
         Base64Url,
     }
 
-    /// <summary>
-    /// The serializer used when the caller supplies no settings.
-    /// </summary>
     private static readonly JsonSerializer DefaultJsonSerializer = CreateJsonSerializer(null);
 
-    /// <summary>
-    /// Builds the serializer that backs every JSON conversion here, which is the single point where a value handed to
-    /// this class becomes JSON and where JSON becomes a value again.
-    /// </summary>
-    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>A serializer that honours <paramref name="jsonSettings"/> without leaving the format open to the process.</returns>
+    // Builds the serializer that backs every JSON conversion here, which is the single point where a value handed to
+    // this class becomes JSON and where JSON becomes a value again.
     private static JsonSerializer CreateJsonSerializer(JsonSerializerSettings? jsonSettings)
     {
         // Create rather than CreateDefault, which merges the mutable process-global JsonConvert.DefaultSettings and
@@ -89,21 +71,11 @@ public static partial class EncryptionHelper
         return serializer;
     }
 
-    /// <summary>
-    /// Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
-    /// </summary>
-    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The serializer to use.</returns>
+    // Gets the serializer for the given settings, reusing the shared instance when there are none to honour.
     private static JsonSerializer GetJsonSerializer(JsonSerializerSettings? jsonSettings)
         => jsonSettings == null ? DefaultJsonSerializer : CreateJsonSerializer(jsonSettings);
 
-    /// <summary>
-    /// Deserializes a JSON document produced by one of the serializing entry points.
-    /// </summary>
-    /// <typeparam name="T">The type to deserialize into.</typeparam>
-    /// <param name="json">The JSON document.</param>
-    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The deserialized value.</returns>
+    // Deserializes a JSON document produced by one of the serializing entry points.
     private static T? FromJson<T>(string json, JsonSerializerSettings? jsonSettings)
     {
         using var stringReader = new StringReader(json);
@@ -112,14 +84,9 @@ public static partial class EncryptionHelper
         return GetJsonSerializer(jsonSettings).Deserialize<T>(jsonReader);
     }
 
-    /// <summary>
-    /// Resolves an arbitrary value into its raw byte representation.<br/>
-    /// <see langword="null"/> becomes an empty array, byte buffers are returned as-is, strings are
-    /// encoded as UTF-8, and any other object is serialized to JSON before being encoded as UTF-8.
-    /// </summary>
-    /// <param name="data">The value to convert.</param>
-    /// <param name="jsonSettings">Optional JSON serializer settings used when the value is serialized.</param>
-    /// <returns>The raw bytes representing the value.</returns>
+    // Resolves an arbitrary value into its raw byte representation.  becomes an empty array, byte buffers are
+    // returned as-is, strings are encoded as UTF-8, and any other object is serialized to JSON before being encoded
+    // as UTF-8.
     private static byte[] ToRawBytes(object? data, JsonSerializerSettings? jsonSettings = null)
     {
         switch (data)
@@ -141,12 +108,7 @@ public static partial class EncryptionHelper
         }
     }
 
-    /// <summary>
-    /// Serializes a value to the JSON that stands in for it when it is hashed, encrypted or encoded.
-    /// </summary>
-    /// <param name="data">The value to serialize.</param>
-    /// <param name="jsonSettings">The caller-supplied settings, or null for the defaults.</param>
-    /// <returns>The JSON representation of the value.</returns>
+    // Serializes a value to the JSON that stands in for it when it is hashed, encrypted or encoded.
     private static string ToJson(object data, JsonSerializerSettings? jsonSettings)
     {
         var builder = new StringBuilder(256);
@@ -160,12 +122,7 @@ public static partial class EncryptionHelper
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Formats raw bytes as a string using the specified representation.
-    /// </summary>
-    /// <param name="bytes">The bytes to format.</param>
-    /// <param name="format">The textual representation to use.</param>
-    /// <returns>The formatted string.</returns>
+    // Formats raw bytes as a string using the specified representation.
     private static string FormatBytes(byte[] bytes, BinaryTextFormat format)
     {
         return format switch
@@ -178,21 +135,10 @@ public static partial class EncryptionHelper
         };
     }
 
-    /// <summary>
-    /// Derives a 256-bit AES key from a password and salt using PBKDF2 (HMAC-SHA256).
-    /// </summary>
-    /// <param name="password">The password to derive from.</param>
-    /// <param name="salt">The salt to use.</param>
-    /// <param name="iterations">The number of PBKDF2 iterations.</param>
-    /// <param name="length">The length of the derived key in bytes.</param>
-    /// <returns>The derived key bytes.</returns>
+    // Derives a 256-bit AES key from a password and salt using PBKDF2 (HMAC-SHA256).
     private static byte[] DeriveKey(string password, byte[] salt, int iterations, int length = AesKeySize)
         => Rfc2898DeriveBytes.Pbkdf2(Encoding.UTF8.GetBytes(password ?? string.Empty), salt, iterations, HashAlgorithmName.SHA256, length);
 
-    /// <summary>
-    /// Generates a cryptographically secure random byte array of the specified size.
-    /// </summary>
-    /// <param name="size">The number of bytes to generate.</param>
-    /// <returns>The generated bytes.</returns>
+    // Generates a cryptographically secure random byte array of the specified size.
     private static byte[] RandomBytes(int size) => RandomNumberGenerator.GetBytes(size);
 }

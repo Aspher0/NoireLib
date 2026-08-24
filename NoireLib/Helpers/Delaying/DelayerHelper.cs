@@ -24,11 +24,7 @@ public static class DelayerHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_DelayerHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a task delayer for the specified key.
-    /// </summary>
-    /// <param name="key">The key to identify this delayer instance.</param>
-    /// <returns>The Delayer instance for the specified key.</returns>
+    // Gets or creates a task delayer for the specified key.
     private static Delayer GetOrCreateDelayer(string key)
     {
         if (string.IsNullOrEmpty(key))
@@ -201,9 +197,6 @@ public static class DelayerHelper
         _delayers.Clear();
     }
 
-    /// <summary>
-    /// Disposes all task delayer states and clears them.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

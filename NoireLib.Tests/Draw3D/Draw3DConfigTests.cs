@@ -17,9 +17,9 @@ public class Draw3DConfigTests
     [Fact]
     public void NativeUi_DefaultsTo_UnderGameUi_WithDepthAwareNameplates()
     {
-        // The defaults are the whole contract: the layer reads under the game's UI, and the game's nameplates are
+        // The defaults are the contract: the layer reads under the game's UI, and the game's nameplates are
         // occluded by 3D objects in front of them. Nothing needs configuring to get correct layering.
-        // Read-only on purpose: assigning Layering arms the render-thread injection, which has no device here.
+        // Read-only: assigning Layering arms the render-thread injection, which has no device here.
         NoireDraw3D.NativeUi.Layering.Should().Be(Draw3DLayering.UnderGameUi);
         NoireDraw3D.NativeUi.Nameplates.Should().Be(NameplateOcclusion.DepthAware);
     }
@@ -54,8 +54,7 @@ public class Draw3DConfigTests
     public void NameplateOcclusion_Covered_ExistsForOverEverythingOnly()
     {
         // Covered is the one mode the under-UI path cannot express: the game draws the plates after the layer
-        // composites, so nothing can paint over them there. It exists because OverEverything CAN express it,
-        // which is the whole reason that path keeps its own masking rather than deferring to the injection.
+        // composites, so nothing can paint over them there. It exists because OverEverything CAN express it.
         Enum.IsDefined(NameplateOcclusion.Covered).Should().BeTrue();
     }
 

@@ -16,50 +16,23 @@ public static partial class NoireUI
 
     private static bool frameServicesReady;
 
-    /// <summary>
-    /// The registry as it was when it last changed, so the per-frame pass can walk it without copying it.
-    /// </summary>
-    /// <remarks>
-    /// The pass has to iterate something that a drawable registering or disposing itself mid-draw cannot invalidate,
-    /// and it runs every frame. Copying the list each time is an allocation per frame for a collection that changes
-    /// perhaps a dozen times over a plugin's life, so the copy is made when it changes instead.
-    /// </remarks>
+    // The registry as it was when it last changed, so the per-frame pass can walk it without copying it.
     private static NoireDrawable[] drawableSnapshot = Array.Empty<NoireDrawable>();
 
-    /// <summary>
-    /// Test seam replacing the ImGui frame counter when no ImGui context exists.
-    /// </summary>
+    // Test seam replacing the ImGui frame counter when no ImGui context exists.
     internal static Func<int>? FrameOverride { get; set; }
 
-    /// <summary>
-    /// Test seam replacing the ImGui clock when no ImGui context exists.
-    /// </summary>
+    // Test seam replacing the ImGui clock when no ImGui context exists.
     internal static Func<float>? TimeOverride { get; set; }
 
     /// <summary>
-    /// The master default for automatic drawing, inherited by every drawable that does not decide for itself.<br/>
-    /// Defaults to <see langword="false"/>: nothing draws itself out of the box and you own every <c>Draw()</c> call, so
-    /// draw order is yours by construction. Setting it to <see langword="true"/> makes the whole library draw itself,
-    /// with per-object opt-outs.<br/>
-    /// This is a default, not a kill switch: a drawable that sets <see cref="NoireDrawable.AutoDraw"/> explicitly wins in
-    /// either direction. Every one of those values was set by the same plugin, so a master that overrode an explicit
-    /// request would only be lying to its author.
+    /// The master default for automatic drawing, inherited by every drawable that does not decide for itself.
     /// </summary>
     public static bool AutoDraw { get; set; }
 
     /// <summary>
-    /// Whether animations are reduced to their final state.<br/>
-    /// When enabled, <see cref="NoireAnim"/> snaps to targets instead of easing, and decorative motion (pulse, shimmer,
-    /// shake, flash) stops. Widgets stay fully functional; only the movement goes away.<br/>
-    /// Follows <see cref="HostReducedMotion"/> until something assigns it. Assigning takes it over for good;
-    /// <see cref="ClearReducedMotion"/> hands it back.
+    /// Whether animations are reduced to their final state.
     /// </summary>
-    /// <remarks>
-    /// Reading the host's preference is the default because it is an accessibility setting the user has already stated
-    /// once, to Dalamud, and a library that ignores it makes every plugin using it ask again. A plugin offering the
-    /// choice itself should offer a way back to the host's answer as well, rather than turning a preference into a
-    /// setting the user now owns in two places.
-    /// </remarks>
     public static bool ReducedMotion
     {
         get => reducedMotion ?? HostReducedMotion;
@@ -67,7 +40,7 @@ public static partial class NoireUI
     }
 
     /// <summary>
-    /// Whether Dalamud reports that the user has asked for reduced motion. False when there is no host to ask.
+    /// Whether Dalamud reports that the user has asked for reduced motion, false when there is no host to ask.
     /// </summary>
     public static bool HostReducedMotion
         => NoireService.IsInitialized() && NoireService.PluginInterface.UiBuilder.ShouldUseReducedMotion;
@@ -85,11 +58,8 @@ public static partial class NoireUI
     private static bool? reducedMotion;
 
     /// <summary>
-    /// An optional translation hook for every user-facing string NoireUI shows.<br/>
-    /// Returning <see langword="null"/> for a key falls back to the shipped English default. NoireLib depends on no
-    /// localization system and ships no locale files; wiring this to one is up to the plugin.
+    /// An optional translation hook for every user-facing string NoireUI shows.
     /// </summary>
-    /// <example><c>NoireUI.StringProvider = key =&gt; myLocalizer.GetOrNull(key);</c></example>
     public static Func<string, string?>? StringProvider { get; set; }
 
     /// <summary>
@@ -103,8 +73,7 @@ public static partial class NoireUI
     public static float Time => TimeOverride?.Invoke() ?? (NoireService.IsInitialized() ? (float)ImGui.GetTime() : 0f);
 
     /// <summary>
-    /// The duration of the last frame in seconds, clamped to a sane range so a stalled frame cannot make an animation
-    /// jump. Returns a nominal 60 FPS step when there is no ImGui context.
+    /// The duration of the last frame in seconds, clamped to a sane range.
     /// </summary>
     public static float DeltaTime
     {
@@ -118,8 +87,7 @@ public static partial class NoireUI
     }
 
     /// <summary>
-    /// How many actions <see cref="RunOnDraw"/> holds before the oldest are dropped. Bounded on purpose: an unbounded
-    /// queue in front of a UI that has stopped drawing is a memory leak.
+    /// How many actions <see cref="RunOnDraw"/> holds before the oldest are dropped.
     /// </summary>
     public static int RunOnDrawCapacity
     {
@@ -133,10 +101,7 @@ public static partial class NoireUI
     public static int PendingDrawActions => DrawPump.Count;
 
     /// <summary>
-    /// Runs an action on the draw thread, at the start of the next frame.<br/>
-    /// Safe to call from anywhere. Use it for anything that touches ImGui or a widget from a timer, a socket, a hotkey
-    /// callback or a background task. When NoireLib is not initialized there is no draw thread to marshal onto, and the
-    /// action runs inline on the calling thread.
+    /// Runs an action on the draw thread, at the start of the next frame.
     /// </summary>
     /// <param name="action">The action to run.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
@@ -148,12 +113,7 @@ public static partial class NoireUI
         DrawPump.Post(action);
     }
 
-    /// <summary>
-    /// Resolves a user-facing string through <see cref="StringProvider"/>, falling back to the shipped default.
-    /// </summary>
-    /// <param name="key">The translation key.</param>
-    /// <param name="fallback">The shipped English default.</param>
-    /// <returns>The translated string, or <paramref name="fallback"/>.</returns>
+    // Falls back to the shipped default when the string provider answers nothing or throws.
     internal static string Localize(string key, string fallback)
     {
         var provider = StringProvider;
@@ -184,11 +144,7 @@ public static partial class NoireUI
             return Drawables.ToArray();
     }
 
-    /// <summary>
-    /// Registers a drawable so the hub can draw it. Called by <see cref="NoireDrawable.Register"/>.
-    /// </summary>
-    /// <param name="drawable">The drawable to register.</param>
-    /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
+    // Called by NoireDrawable.Register. Throws when NoireLib has not been initialized yet.
     internal static void RegisterDrawable(NoireDrawable drawable)
     {
         if (!NoireService.IsInitialized())
@@ -209,10 +165,7 @@ public static partial class NoireUI
             RefreshUiHideOverrides();
     }
 
-    /// <summary>
-    /// Unregisters a drawable so it stops being drawn. Called by <see cref="NoireDrawable.Dispose"/>.
-    /// </summary>
-    /// <param name="drawable">The drawable to unregister.</param>
+    // Called by NoireDrawable.Dispose.
     internal static void UnregisterDrawable(NoireDrawable drawable)
     {
         lock (SyncRoot)
@@ -225,11 +178,7 @@ public static partial class NoireUI
             RefreshUiHideOverrides();
     }
 
-    /// <summary>
-    /// Makes sure the per-frame pass is running, so state pruning, the draw queue and diagnostics work for a plugin that
-    /// only uses in-window helpers and never creates a drawable.<br/>
-    /// Cheap enough to call from any helper entry point, and a no-op before NoireLib is initialized.
-    /// </summary>
+    // Cheap enough to call from any helper entry point, and a no-op before NoireLib is initialized.
     internal static void EnsureFrameServices()
     {
         if (frameServicesReady || !NoireService.IsInitialized())
@@ -245,10 +194,8 @@ public static partial class NoireUI
         }
     }
 
-    /// <summary>
-    /// The hub's per-frame pass: repairs any ImGui stack left unbalanced, drains the draw queue, prunes transient state
-    /// and draws everything that draws itself.
-    /// </summary>
+    // The hub's per-frame pass: repairs any ImGui stack left unbalanced, drains the draw queue, prunes transient state
+    // and draws everything that draws itself.
     private static void OnFrame()
     {
         if (!NoireService.IsInitialized())

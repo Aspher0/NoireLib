@@ -146,8 +146,8 @@ public class NoireShapesTests : IDisposable
     {
         var points = Buffer;
 
-        // A corner radius of half the height is a fully rounded chip, which is what any pill-shaped tag asks for. Both
-        // left-hand arcs then centre on the vertical middle and meet at the same point on the left edge.
+        // A corner radius of half the height is a fully rounded chip. Both left-hand arcs then centre on the vertical
+        // middle and meet at the same point on the left edge.
         var height = Max.Y - Min.Y;
         var count = NoireShapes.RectPath(points, Min, Max, CornerShape.Rounded, height * 0.5f);
 

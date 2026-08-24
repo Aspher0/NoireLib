@@ -3,9 +3,7 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// One open measurement, closed when it is disposed. Created by
-/// <see cref="UiProfilerExtensions.Measure(UiProfiler, string)"/>.<br/>
-/// Closing twice is a no-op.
+/// One open measurement, closed when it is disposed. Closing twice is a no-op.
 /// </summary>
 public ref struct UiProfileScope
 {
@@ -26,7 +24,7 @@ public ref struct UiProfileScope
     }
 
     /// <summary>
-    /// Closes the measurement. Safe to call more than once.
+    /// Closes the measurement.
     /// </summary>
     public void Dispose()
     {
@@ -38,17 +36,9 @@ public ref struct UiProfileScope
     }
 }
 
-/// <summary>
-/// Opens the measurement an instance widget records itself under.
-/// </summary>
 internal static class UiProfile
 {
-    /// <summary>
-    /// Times a widget's draw under <c>{kind}:{id}</c>.
-    /// </summary>
-    /// <param name="kind">The widget's type name.</param>
-    /// <param name="id">The widget's own id.</param>
-    /// <returns>The open scope. Dispose it to close the measurement.</returns>
+    // Times a widget's draw under {kind}:{id}.
     internal static UiProfileScope Widget(string kind, string id)
     {
         // Composed only while the profiler is on, since composing it costs a dictionary lookup of its own. UiIds
@@ -70,7 +60,7 @@ public static class UiProfilerExtensions
     /// </summary>
     /// <param name="profiler">The profiler to measure on.</param>
     /// <param name="name">The scope's name.</param>
-    /// <returns>The open scope. Dispose it to close the measurement.</returns>
+    /// <returns>The open scope.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="profiler"/> is <see langword="null"/>.</exception>
     public static UiProfileScope Measure(this UiProfiler profiler, string name)
     {
@@ -83,12 +73,7 @@ public static class UiProfilerExtensions
             profiler.Enabled && !string.IsNullOrEmpty(name) ? UiScopeName.For(name) : null);
     }
 
-    /// <summary>
-    /// Times everything up to the returned scope's disposal, under a name already resolved to a handle.
-    /// </summary>
-    /// <param name="profiler">The profiler to measure on.</param>
-    /// <param name="name">The scope's name, or <see langword="null"/> for nothing to measure.</param>
-    /// <returns>The open scope. Dispose it to close the measurement.</returns>
+    // A null name means nothing to measure.
     internal static UiProfileScope Measure(this UiProfiler profiler, UiScopeName? name)
         => new(profiler, name);
 }

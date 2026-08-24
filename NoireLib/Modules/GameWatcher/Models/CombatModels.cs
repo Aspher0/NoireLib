@@ -183,7 +183,7 @@ public sealed class ActionEffectStatistics
     /// <summary>The total number of parried hits observed.</summary>
     public long TotalParries { get { lock (statsLock) return totalParries; } }
 
-    /// <summary>The critical-hit rate as a percentage (0–100).</summary>
+    /// <summary>The critical-hit rate as a percentage (0-100).</summary>
     public double CritRate
     {
         get
@@ -193,7 +193,7 @@ public sealed class ActionEffectStatistics
         }
     }
 
-    /// <summary>The direct-hit rate as a percentage (0–100).</summary>
+    /// <summary>The direct-hit rate as a percentage (0-100).</summary>
     public double DirectHitRate
     {
         get
@@ -203,10 +203,6 @@ public sealed class ActionEffectStatistics
         }
     }
 
-    /// <summary>
-    /// Records a single action-effect entry into the running statistics.
-    /// </summary>
-    /// <param name="entry">The action-effect entry to record.</param>
     internal void Record(ActionEffectEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);

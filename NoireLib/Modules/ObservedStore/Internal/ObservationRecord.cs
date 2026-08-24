@@ -5,14 +5,12 @@ using System.Threading;
 
 namespace NoireLib.ObservedStore;
 
-/// <summary>
-/// The row an observation is stored as. One row per (scope, character, key), replaced in place when the same key is
-/// observed again.
-/// </summary>
+// The row an observation is stored as. One row per (scope, character, key), replaced in place when the same key is
+// observed again.
 #pragma warning disable CS1591 // Missing XML comment for publicly visible type or member
 public sealed class ObservationRecord : NoireDbModelBase<ObservationRecord>
 {
-    /// <summary>The table every store writes into, whatever database file it was pointed at.</summary>
+    // The table every store writes into, whatever database file it was pointed at.
     public const string Table = "observations";
 
     // NoireDbModelBase resolves its database from a parameterless instance, so the name has to reach the constructor
@@ -101,13 +99,7 @@ public sealed class ObservationRecord : NoireDbModelBase<ObservationRecord>
             : DatabaseNameContext.Value!;
     }
 
-    /// <summary>
-    /// Runs a unit of work against one named database, with the table and its uniqueness index in place.
-    /// </summary>
-    /// <typeparam name="TResult">The work's result type.</typeparam>
-    /// <param name="databaseName">The database file to work against.</param>
-    /// <param name="work">The work, given the live database.</param>
-    /// <returns>The work's result.</returns>
+    // Runs a unit of work against one named database, with the table and its uniqueness index in place.
     internal static TResult Scoped<TResult>(string databaseName, Func<NoireDatabase, TResult> work)
     {
         var previous = DatabaseNameContext.Value;
@@ -129,13 +121,7 @@ public sealed class ObservationRecord : NoireDbModelBase<ObservationRecord>
         }
     }
 
-    /// <summary>
-    /// Runs a query against one named database through the fluent builder.
-    /// </summary>
-    /// <typeparam name="TResult">The query's result type.</typeparam>
-    /// <param name="databaseName">The database file to query.</param>
-    /// <param name="query">The query.</param>
-    /// <returns>The query's result.</returns>
+    // Runs a query against one named database through the fluent builder.
     internal static TResult Query<TResult>(string databaseName, Func<QueryBuilder<ObservationRecord>, TResult> query)
     {
         var previous = DatabaseNameContext.Value;
@@ -179,7 +165,7 @@ public sealed class ObservationRecord : NoireDbModelBase<ObservationRecord>
         }
     }
 
-    /// <summary>Forgets which databases have had their index created, so a test can start from nothing.</summary>
+    // Forgets which databases have had their index created, so a test can start from nothing.
     internal static void ResetIndexCache()
     {
         lock (IndexedDatabases)
@@ -187,3 +173,5 @@ public sealed class ObservationRecord : NoireDbModelBase<ObservationRecord>
     }
 }
 #pragma warning restore CS1591 // Missing XML comment for publicly visible type or member
+
+    // Forgets which databases have had their index created, so a test can start from nothing.

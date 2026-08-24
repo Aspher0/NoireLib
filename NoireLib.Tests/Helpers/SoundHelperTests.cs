@@ -56,8 +56,7 @@ public sealed class SoundHelperTests
 
     /// <summary>
     /// Nests folders under a root until the file path inside reaches at least the requested length. The folder names
-    /// are long on purpose, because that is the shape a real music library or plugin folder has and a path built from
-    /// many one-letter folders instead is the worst case rather than the ordinary one.
+    /// are long, because that is the shape a real music library or plugin folder has.
     /// </summary>
     private static string NestedPath(string root, int length)
     {

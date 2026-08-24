@@ -8,7 +8,7 @@ namespace NoireLib.UI;
 /// time it reaches you.
 /// </summary>
 /// <param name="Source">What produced the fault: a drawable id, or the name of the hub member that failed.</param>
-/// <param name="Message">A description of what went wrong, in plain terms.</param>
+/// <param name="Message">A description of what went wrong.</param>
 /// <param name="Exception">The exception behind it, when there was one.</param>
 /// <param name="Frame">The frame the fault happened on.</param>
 /// <param name="TimeUtc">When it happened.</param>

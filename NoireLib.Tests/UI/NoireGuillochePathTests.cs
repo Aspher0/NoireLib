@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Unit tests for the guilloche curve itself, asserted through the pure path function rather than by drawing.
 /// <see cref="NoireGuillocheSegmentsTests"/> covers how many points a ring gets; this covers where they go.
 /// </summary>
-/// <remarks>
-/// The curve is now computed once at radius one and scaled on the way out, so the property that has to hold is that
-/// scaling a unit curve lands where computing the curve at that radius directly would have. If it does not, a cached
-/// rosette is a different shape from the one that shipped, and nothing about the drawing would say so.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireGuillochePathTests
 {
@@ -84,8 +79,7 @@ public class NoireGuillochePathTests
         var points = new Vector2[segments];
         NoireShapes.GuillochePath(points, 5, 0.7f, segments);
 
-        // The last point steps to just short of a full turn rather than repeating the first, which is what lets the
-        // ring be stroked as a closed polyline without a doubled vertex at the seam.
+        // The last point steps to just short of a full turn rather than repeating the first.
         points[^1].Should().NotBe(points[0]);
         Vector2.Distance(points[^1], points[0]).Should().BeLessThan(0.25f);
     }

@@ -3,10 +3,9 @@ using System.Collections.Generic;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
-/// <summary>The demo's pages. One page is one screen; the rail lists them all.</summary>
+// The demo's pages. One page is one screen; the rail lists them all.
 internal enum DemoPage
 {
-    /// <summary>The prebuilt gallery scene.</summary>
     Showcase,
 
     /// <summary>Scenes, spawning, the object list and the per-object inspector.</summary>
@@ -18,7 +17,6 @@ internal enum DemoPage
     /// <summary>Layer-wide render switches.</summary>
     Renderer,
 
-    /// <summary>How decals project onto the world.</summary>
     Decals,
 
     /// <summary>Where the layer lands against the game's HUD and nameplates.</summary>
@@ -27,7 +25,6 @@ internal enum DemoPage
     /// <summary>The light <c>Material.Lit</c> shades against.</summary>
     Lighting,
 
-    /// <summary>Pointer input.</summary>
     Interaction,
 
     /// <summary>Validators, live stats, fault feed.</summary>
@@ -39,11 +36,6 @@ internal enum DemoPage
 #endif
 }
 
-/// <summary>A rail entry: the page, its group heading, its caption and its glyph.</summary>
-/// <param name="Page">The page this selects.</param>
-/// <param name="Group">The heading it sits under.</param>
-/// <param name="Label">The caption.</param>
-/// <param name="Icon">The leading glyph.</param>
 internal readonly record struct DemoPageInfo(DemoPage Page, string Group, string Label, FontAwesomeIcon Icon)
 {
     /// <summary>Every page, in rail order.</summary>

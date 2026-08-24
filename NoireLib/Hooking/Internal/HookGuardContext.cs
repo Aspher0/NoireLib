@@ -4,72 +4,41 @@ using System.Threading;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// The state a generated detour guard reads at runtime. The fields are public because the emitted method loads them directly.
-/// </summary>
-/// <typeparam name="TDelegate">The delegate type of the hooked function.</typeparam>
+// The state a generated detour guard reads at runtime. The fields are public because the emitted method loads them
+// directly.
 internal sealed class HookGuardContext<TDelegate>
     where TDelegate : Delegate
 {
-    /// <summary>
-    /// The detour the consumer supplied.
-    /// </summary>
     public TDelegate Detour = null!;
 
-    /// <summary>
-    /// The original function, assigned once the underlying hook exists.
-    /// </summary>
     public TDelegate? Original;
 
-    /// <summary>
-    /// The counters to update, shared with the hook.
-    /// </summary>
     public HookStats Stats = null!;
 
-    /// <summary>
-    /// The hook name used in fault reports.
-    /// </summary>
     public string Name = string.Empty;
 
-    /// <summary>
-    /// The number of consecutive faults after which the hook disables itself, or zero to never disable.
-    /// </summary>
+    // The number of consecutive faults after which the hook disables itself, or zero to never disable.
     public int FaultLimit;
 
-    /// <summary>
-    /// Whether call counts and timings are recorded.
-    /// </summary>
     public bool CollectStats;
 
-    /// <summary>
-    /// The shortest interval between two fault log entries.
-    /// </summary>
     public TimeSpan FaultLogInterval = TimeSpan.FromSeconds(5);
 
-    /// <summary>
-    /// Invoked when the fault limit is reached.
-    /// </summary>
     public Action? OnFaultLimitReached;
 
     private long lastFaultLogTimestamp;
 
-    /// <summary>
-    /// Records a call that returned without throwing.
-    /// </summary>
-    /// <param name="startTimestamp">The timestamp taken before the detour ran, or zero when timing is off.</param>
     public void AfterCall(long startTimestamp)
     {
         // Timing needs a wrapper built to capture a timestamp, while counting can be turned on for an installed hook.
         if (CollectStats)
             Stats.RecordCall(startTimestamp == 0 ? 0 : Stopwatch.GetElapsedTime(startTimestamp).Ticks);
-
+    // The number of consecutive faults after which the hook disables itself, or zero to never disable.
         Stats.RecordSuccess();
     }
 
-    /// <summary>
-    /// Records a detour that threw, logs it at most once per interval, and disables the hook when the fault limit is reached.
-    /// </summary>
-    /// <param name="exception">The exception the detour threw.</param>
+    // Records a detour that threw, logs it at most once per interval, and disables the hook when the fault limit is
+    // reached.
     public void OnFault(Exception exception)
     {
         // Runs inside the catch that keeps a faulting detour away from the game: an escaping exception would

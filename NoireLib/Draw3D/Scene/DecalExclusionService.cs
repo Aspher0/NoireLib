@@ -4,12 +4,10 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Drives per-decal actor exclusions on the framework thread: nodes that opted in (<see cref="SceneNode.ExcludeObjects(Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
-/// and friends) are refreshed here each tick - the library walks the object table where it is safe to and assigns the
-/// resulting volumes to each node's renderer, so consumers never plumb the object table by hand. Fail-soft: a throwing
-/// collector is logged and skipped; a destroyed node is auto-unregistered.
-/// </summary>
+// Drives per-decal actor exclusions on the framework thread: nodes that opted in (IGameObject, bool}, float) and
+// friends) are refreshed here each tick - the library walks the object table where it is safe to and assigns the
+// resulting volumes to each node's renderer, so consumers never plumb the object table by hand. Fail-soft: a throwing
+// collector is logged and skipped; a destroyed node is auto-unregistered.
 internal static class DecalExclusionService
 {
     private const string DisposeKey = "NoireLib.Draw3D.DecalExclusionService";

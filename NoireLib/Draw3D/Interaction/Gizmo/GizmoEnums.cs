@@ -94,7 +94,6 @@ public enum GizmoHandle
     ScaleUniform,
 }
 
-/// <summary>Helpers to classify a <see cref="GizmoHandle"/>.</summary>
 internal static class GizmoHandleInfo
 {
     /// <summary>The axis index (0/1/2) an axis-bound handle addresses, or -1 for screen/uniform handles.</summary>

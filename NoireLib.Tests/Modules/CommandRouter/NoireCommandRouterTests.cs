@@ -460,9 +460,9 @@ public class NoireCommandRouterTests
     /// Every rejected invocation records what happened and then tells the user about it, in that order.
     /// <br/><br/>
     /// Announcing reaches the game's chat, which is not there in a test, so the announcement throws on each of the
-    /// paths below. That is exactly what the ordering protects against: reporting an outcome is allowed to fail, and an
-    /// outcome that is already known must survive that failure rather than be replaced by the rootless entry the
-    /// dispatch-wide error boundary records for the reporting fault itself.
+    /// paths below. Reporting an outcome is allowed to fail, and an outcome that is already known must survive that
+    /// failure rather than be replaced by the rootless entry the dispatch-wide error boundary records for the
+    /// reporting fault itself.
     /// </summary>
     [Fact]
     public void Dispatch_ShouldRecordTheBlockedSubCommand_EvenWhenAnnouncingItFails()

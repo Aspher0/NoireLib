@@ -5,9 +5,8 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Ported from BypassEmote. Both rules under test are pure, which is the whole point of having them separate
-/// from the VirtualQuery call: the decision about whether an address is safe to dereference is the part that
-/// can be got wrong, and it is the part that can be pinned without a running process.
+/// Ported from BypassEmote. Both rules under test are pure and separate from the VirtualQuery call, so whether
+/// an address is safe to dereference can be pinned without a running process.
 /// </summary>
 public class GuardedMemoryTests
 {

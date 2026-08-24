@@ -8,11 +8,9 @@ using System.Numerics;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Hooks the action-effect packet handler, dispatches a parsed <see cref="ActionEffectEvent"/> per packet, and
-/// keeps rolling statistics plus an opt-in bounded history. The hook is created on first activation and
-/// disabled, not disposed, on deactivation.
-/// </summary>
+// Hooks the action-effect packet handler, dispatches a parsed ActionEffectEvent per packet, and keeps rolling
+// statistics plus an opt-in bounded history. The hook is created on first activation and disabled, not disposed, on
+// deactivation.
 internal sealed class ActionEffectSource : GameWatcherSource
 {
     private readonly LinkedList<ActionEffectEntry> history = new();
@@ -26,7 +24,7 @@ internal sealed class ActionEffectSource : GameWatcherSource
     /// <inheritdoc/>
     public override bool IsPolling => false;
 
-    /// <summary>Rolling statistics over every observed action effect since the last activation.</summary>
+    // Rolling statistics over every observed action effect since the last activation.
     internal ActionEffectStatistics Statistics { get; } = new();
 
     /// <inheritdoc/>
@@ -50,14 +48,12 @@ internal sealed class ActionEffectSource : GameWatcherSource
         receiveHook = null;
     }
 
-    /// <summary>A snapshot of the retained history, newest first.</summary>
     internal ActionEffectEntry[] GetHistory()
     {
         lock (historyLock)
             return history.ToArray();
     }
 
-    /// <summary>Clears the retained history.</summary>
     internal void ClearHistory()
     {
         lock (historyLock)

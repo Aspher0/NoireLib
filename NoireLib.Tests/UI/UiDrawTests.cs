@@ -21,10 +21,6 @@ public sealed class UiDrawTests : IClassFixture<UiHarness>
     /// <summary>
     /// The scope name the gate derives for calls made from this file.
     /// </summary>
-    /// <remarks>
-    /// Written out rather than taken from <c>nameof</c>, so that a rename of this class which did not rename the file
-    /// fails the test rather than quietly agreeing with itself.
-    /// </remarks>
     private const string ThisFileScope = "UiDrawTests";
 
     [Fact]

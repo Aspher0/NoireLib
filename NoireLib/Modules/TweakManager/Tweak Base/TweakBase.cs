@@ -139,35 +139,17 @@ public abstract class TweakBase : IDisposable
         Manager?.RecordTweakConfig(InternalKey);
     }
 
-    /// <summary>
-    /// Gets the <see cref="Type"/> of this tweak's configuration class, if any.
-    /// </summary>
-    /// <returns>The config type for <see cref="TweakBase{TConfig}"/> instances; <see langword="null"/> for configless tweaks.</returns>
+    // Gets the Type of this tweak's configuration class, if any.
     internal virtual Type? GetConfigType() => null;
 
-    /// <summary>
-    /// Gets the current configuration instance, if any.
-    /// </summary>
-    /// <returns>The <see cref="TweakConfigBase"/> instance for <see cref="TweakBase{TConfig}"/> instances; <see langword="null"/> for configless tweaks.</returns>
     internal virtual TweakConfigBase? GetConfigInstance() => null;
 
-    /// <summary>
-    /// Serializes the tweak's configuration to a JSON string for storage.
-    /// </summary>
-    /// <returns>The JSON string, or <see langword="null"/> if this tweak has no config.</returns>
+    // Serializes the tweak's configuration to a JSON string for storage.
     internal virtual string? SerializeConfig() => null;
 
-    /// <summary>
-    /// Deserializes configuration from a JSON string, applying any necessary migrations.
-    /// </summary>
-    /// <param name="json">The JSON to deserialize from.</param>
-    /// <param name="storedVersion">The version of the stored config data.</param>
+    // Deserializes configuration from a JSON string, applying any necessary migrations.
     internal virtual void DeserializeConfig(string? json, int storedVersion) { }
 
-    /// <summary>
-    /// Enables the tweak, invoking <see cref="OnEnable"/> and handling errors.
-    /// </summary>
-    /// <returns><see langword="true"/> if the tweak was enabled successfully; otherwise, <see langword="false"/>.</returns>
     internal bool Enable()
     {
         if (Enabled)
@@ -191,10 +173,6 @@ public abstract class TweakBase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Disables the tweak, invoking <see cref="OnDisable"/> and handling errors.
-    /// </summary>
-    /// <returns><see langword="true"/> if the tweak was disabled successfully; otherwise, <see langword="false"/>.</returns>
     internal bool Disable()
     {
         if (!Enabled)
@@ -216,9 +194,6 @@ public abstract class TweakBase : IDisposable
         }
     }
 
-    /// <summary>
-    /// Clears the error state of this tweak.
-    /// </summary>
     internal void ClearError()
     {
         HasError = false;

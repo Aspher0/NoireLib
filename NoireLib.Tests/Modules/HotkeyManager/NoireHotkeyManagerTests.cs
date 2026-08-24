@@ -40,7 +40,7 @@ public class NoireHotkeyManagerTests : IDisposable
 
     /// <summary>
     /// Caches the configuration the way an initialized plugin's load does. With no plugin behind the library the
-    /// configuration resolves no path, so its load reports failure and the manager deliberately declines to cache it,
+    /// configuration resolves no path, so its load reports failure and the manager declines to cache it,
     /// handing every caller a fresh instance; caching it explicitly puts the manager under test and the assertions on
     /// the one instance they share in game.
     /// </summary>
@@ -108,7 +108,7 @@ public class NoireHotkeyManagerTests : IDisposable
     /// Creates a manager that persists its bindings, for the tests that cover the stored keybinds.<br/>
     /// This stays game-free: with NoireLib uninitialized the configuration resolves no file path, so it keeps
     /// the bindings in memory and writes nothing. That in-memory dictionary holds exactly what a real save
-    /// would serialize, which is what these tests assert against.
+    /// would serialize.
     /// </summary>
     private NoireHotkeyManager MakePersistingManager()
     {

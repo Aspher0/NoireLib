@@ -5,16 +5,12 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// The per-pixel "game UI on top" source for the over-everything composite, built by difference rather than by
-/// reading a coverage channel: the game's present-composition buffer is copied once at the pre-UI injection point
-/// (world image, no UI) and once at present time (the same buffer, now with the UI drawn into it). Any pixel whose
-/// colour changed between the two is a pixel the native UI painted, so the difference IS the UI - letter-exact,
-/// antialiased edges included, with no rectangles anywhere.
-/// <br/>
-/// Both snapshots are of the same texture, so they always agree on format and resolution and the difference needs
-/// no rescaling.
-/// </summary>
+// The per-pixel "game UI on top" source for the over-everything composite, built by difference rather than by reading
+// a coverage channel: the game's present-composition buffer is copied once at the pre-UI injection point (world
+// image, no UI) and once at present time (the same buffer, now with the UI drawn into it). Any pixel whose colour
+// changed between the two is a pixel the native UI painted, so the difference IS the UI - letter-exact, antialiased
+// edges included, with no rectangles anywhere. Both snapshots are of the same texture, so they always agree on format
+// and resolution and the difference needs no rescaling.
 internal sealed unsafe class UiDiffMask : IDisposable
 {
     private ComPtr<ID3D11Texture2D> beforeTex, afterTex;
@@ -150,17 +146,14 @@ internal sealed unsafe class UiDiffMask : IDisposable
     public void Dispose() => Release();
 }
 
-/// <summary>
-/// Self-check for the difference mask, and the answer to "is UI protection actually doing anything". Samples a
-/// sparse screen grid from both snapshots every ~2 seconds (stall-free: the staging copies are mapped one
-/// check-cycle later) and reports what fraction of samples the UI changed.
-/// <br/>
-/// Two failure modes matter, and they are opposites. If virtually every sample differs, the two snapshots are not
-/// the same image - the present buffer is being transformed on its way to the screen - and differencing them would
-/// read as "UI everywhere" and erase the whole layer; the mask disables itself. If no sample ever differs across
-/// many checks, the injection point is not landing where the UI is drawn and the mask is inert; that is reported
-/// rather than disabled, because "no UI on screen right now" looks identical and is perfectly normal.
-/// </summary>
+// Self-check for the difference mask, and the answer to "is UI protection actually doing anything". Samples a sparse
+// screen grid from both snapshots every ~2 seconds (stall-free: the staging copies are mapped one check-cycle later)
+// and reports what fraction of samples the UI changed. Two failure modes matter, and they are opposites. If virtually
+// every sample differs, the two snapshots are not the same image - the present buffer is being transformed on its way
+// to the screen - and differencing them would read as "UI everywhere" and erase the whole layer; the mask disables
+// itself. If no sample ever differs across many checks, the injection point is not landing where the UI is drawn and
+// the mask is inert; that is reported rather than disabled, because "no UI on screen right now" looks identical and
+// is perfectly normal.
 internal sealed unsafe class UiDiffMaskHealth : IDisposable
 {
     private const int GridX = 6, GridY = 4;
@@ -344,7 +337,8 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         }
     }
 
-    /// <summary>Largest per-channel colour difference between the two snapshots at one sample, or NaN for an undecodable format.</summary>
+    // Largest per-channel colour difference between the two snapshots at one sample, or NaN for an undecodable
+    // format.
     private static float Difference(in D3D11_MAPPED_SUBRESOURCE before, in D3D11_MAPPED_SUBRESOURCE after, DXGI_FORMAT format, int index)
     {
         var b = (byte*)before.pData;

@@ -13,11 +13,9 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public static class MigrationExecutor
 {
-    /// <summary>
-    /// Migrations registered at runtime, keyed by configuration type. Every plugin sharing this process reaches the
-    /// same table, so lists are treated as immutable once published; a registration replaces the whole list rather
-    /// than appending, so a concurrent read never sees a list mid-mutation.
-    /// </summary>
+    // Migrations registered at runtime, keyed by configuration type. Every plugin sharing this process reaches the
+    // same table, so lists are treated as immutable once published; a registration replaces the whole list rather
+    // than appending, so a concurrent read never sees a list mid-mutation.
     private static readonly ConcurrentDictionary<Type, List<IConfigMigration>> RuntimeMigrations = new();
 
     /// <summary>
@@ -53,11 +51,6 @@ public static class MigrationExecutor
         return ExecuteMigrationChain(json, migrationPath);
     }
 
-    /// <summary>
-    /// Discovers all migrations registered for a configuration type.
-    /// </summary>
-    /// <param name="configType">The configuration type.</param>
-    /// <returns>A list of discovered migrations.</returns>
     private static List<IConfigMigration> DiscoverMigrations(Type configType)
     {
         var migrations = new List<IConfigMigration>();
@@ -102,13 +95,7 @@ public static class MigrationExecutor
         return migrations;
     }
 
-    /// <summary>
-    /// Builds an optimal migration path from current version to target version.
-    /// </summary>
-    /// <param name="migrations">Available migrations.</param>
-    /// <param name="currentVersion">Starting version.</param>
-    /// <param name="targetVersion">Target version.</param>
-    /// <returns>A list of migrations to execute in order, or null if no path exists.</returns>
+    // Builds an optimal migration path from current version to target version.
     private static List<IConfigMigration>? BuildMigrationPath(List<IConfigMigration> migrations, int currentVersion, int targetVersion)
     {
         var graph = migrations
@@ -145,12 +132,6 @@ public static class MigrationExecutor
         return null;
     }
 
-    /// <summary>
-    /// Executes a chain of migrations in order.
-    /// </summary>
-    /// <param name="json">The starting JSON string.</param>
-    /// <param name="migrations">The migrations to execute in order.</param>
-    /// <returns>The final migrated JSON string, or null if any migration failed.</returns>
     private static string? ExecuteMigrationChain(string json, List<IConfigMigration> migrations)
     {
         var currentJson = json;
@@ -199,11 +180,6 @@ public static class MigrationExecutor
         NoireLogger.LogDebug($"Registered runtime migration {migration.FromVersion} -> {migration.ToVersion} for {configType.Name}", "[MigrationExecutor] ");
     }
 
-    /// <summary>
-    /// Gets all runtime-registered migrations for a configuration type.
-    /// </summary>
-    /// <param name="configType">The configuration type.</param>
-    /// <returns>A list of runtime-registered migrations.</returns>
     internal static List<IConfigMigration> GetRuntimeMigrations(Type configType)
     {
         // Copied rather than handed out directly, so that a caller cannot reach the list held in the table and the

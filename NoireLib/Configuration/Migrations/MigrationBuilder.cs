@@ -12,23 +12,17 @@ namespace NoireLib.Configuration.Migrations;
 /// </summary>
 public class MigrationBuilder
 {
-    /// <summary>
-    /// Settings for every conversion performed by this builder. TypeNameHandling stays None: honouring a type name
-    /// embedded in the user's file would let the file choose which type to instantiate.
-    /// </summary>
+    // Settings for every conversion performed by this builder. TypeNameHandling stays None: honouring a type name
+    // embedded in the user's file would let the file choose which type to instantiate.
     private static readonly JsonSerializerSettings ConversionSettings = new()
     {
         TypeNameHandling = TypeNameHandling.None,
         PreserveReferencesHandling = PreserveReferencesHandling.None,
     };
 
-    /// <summary>
-    /// The serializer every conversion runs through, built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from
-    /// <see cref="ConversionSettings"/> alone. The serializer-less <see cref="JToken.FromObject(object)"/> and
-    /// <see cref="JToken.ToObject{T}()"/> overloads instead merge in the process-global
-    /// <see cref="JsonConvert.DefaultSettings"/>; nothing here may use those overloads.
-    /// </summary>
+    // The serializer every conversion runs through, built with Create(JsonSerializerSettings) so it resolves settings
+    // from onversionSettings alone. The serializer-less FromObject(object) and ToObject{T}() overloads instead merge
+    // in the process-global DefaultSettings; nothing here may use those overloads.
     private static readonly JsonSerializer ConversionSerializer = JsonSerializer.Create(ConversionSettings);
 
     private readonly List<Action<JObject>> orderedOperations = new();

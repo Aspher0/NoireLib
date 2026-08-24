@@ -22,8 +22,8 @@ namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
 /// <summary>
 /// The showcase scene: (almost) every Draw3D feature in one disposable scene, built entirely on the public API and laid
-/// out as stations around the player so features can be found and compared in the world. Owns its scene, editor, render
-/// view and icon texture; frees them all on <see cref="Clear"/> / <see cref="Dispose"/>.
+/// out as stations around the player. Owns its scene, editor, render view and icon texture; frees them all on
+/// <see cref="Clear"/> / <see cref="Dispose"/>.
 /// </summary>
 public sealed class ShowcasePage : IDisposable
 {
@@ -43,10 +43,8 @@ public sealed class ShowcasePage : IDisposable
     private string modelPath = string.Empty;
     private string status = string.Empty;
 
-    /// <summary>Whether the showcase scene is currently in the world.</summary>
     public bool IsSpawned => scene is { IsDisposed: false };
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         Ui.Section("Scene");
@@ -117,10 +115,6 @@ public sealed class ShowcasePage : IDisposable
             SpawnModel(modelPath);
     }
 
-    /// <summary>One station row: where it is, and what it demonstrates.</summary>
-    /// <param name="where">Direction from the spawn point.</param>
-    /// <param name="what">The feature group.</param>
-    /// <param name="detail">What it proves.</param>
     private static void Station(string where, string what, string detail)
     {
         Ui.Row(where);
@@ -161,7 +155,7 @@ public sealed class ShowcasePage : IDisposable
         Row(s.Spawn(combined, Material.Lit(new Vector4(0.80f, 0.80f, 0.88f, 1f)), new Vector3(x, center.Y + 0.6f, pz), "Prim.Combined", keepCpuData: true));
 
         // ---- Station 2: every ground-decal footprint shape (Texture added when the icon loads, in LoadIcon). Every setting
-        // rides the Material.Decal(...) factory in one call, and each footprint is scaled differently on purpose - the rim
+        // rides the Material.Decal(...) factory in one call, and each footprint is scaled differently - the rim
         // keeps a constant world thickness regardless, so a 4m and a 12m decal read with the same edge.
         var dz = center.Z - 7f;
         s.AddBox(Material.Decal(DecalShape.Circle, new Vector4(0.30f, 0.70f, 1f, 0.9f), projection: DecalProjection.HighestOnly), new Vector3(center.X - 9f, center.Y, dz), "Decal.Circle", keepCpuData: true)
@@ -230,14 +224,13 @@ public sealed class ShowcasePage : IDisposable
         status = "Spawned around you. Left-click an object to select it, then drag the gizmo handles.";
     }
 
-    /// <summary>The showcase decals' actor-exclusion predicate: characters, monsters and NPCs are skipped.</summary>
+    // The showcase decals' actor-exclusion predicate: characters, monsters and NPCs are skipped.
     private static bool ActorExclusion(IGameObject o)
         => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 
-    /// <summary>
-    /// Loads a game-icon texture off-thread, then swaps it onto the icon quad + textured decal (a material-reference
-    /// assignment is atomic, so it is safe from any thread). Guarded against the scene being cleared/re-spawned mid-load.
-    /// </summary>
+    // Loads a game-icon texture off-thread, then swaps it onto the icon quad + textured decal (a material-reference
+    // assignment is atomic, so it is safe from any thread). Guarded against the scene being cleared/re-spawned
+    // mid-load.
     private void LoadIcon(Scene3D forScene, uint iconId)
     {
         TextureLoader.FromGameIconAsync(iconId).ContinueWith(task =>
@@ -266,7 +259,7 @@ public sealed class ShowcasePage : IDisposable
         }, TaskScheduler.Default);
     }
 
-    /// <summary>Loads a glTF/glb model from disk into the running showcase scene (spawned in front of the player, selectable).</summary>
+    // Loads a glTF/glb model from disk into the running showcase scene (spawned in front of the player, selectable).
     private void SpawnModel(string path)
     {
         if (scene is not { IsDisposed: false } s)
@@ -291,10 +284,8 @@ public sealed class ShowcasePage : IDisposable
         status = $"Loading model '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).";
     }
 
-    /// <summary>
-    /// Per-frame showcase work (render thread, via <see cref="Scene3D.OnPrepareFrame"/>): swaps the render view's
-    /// texture onto the portal quad once it exists, and draws the animated immediate-layer markers.
-    /// </summary>
+    // Per-frame showcase work (render thread, via OnPrepareFrame): swaps the render view's texture onto the portal
+    // quad once it exists, and draws the animated immediate-layer markers.
     private void OnPrepareFrame(FrameContext frame)
     {
         if (scene is not { IsDisposed: false })
@@ -335,14 +326,11 @@ public sealed class ShowcasePage : IDisposable
         status = "Scene cleared.";
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Clear();
 
-    /// <summary>
-    /// The custom pipeline HLSL for the pulse box: an unlit shader whose brightness pulses with time (<c>EyePosTime.w</c>),
-    /// premultiplied and world-depth tested, over the standard vertex layout - the minimal shape of a
-    /// <see cref="NoireDraw3D.RegisterPipeline"/> shader.
-    /// </summary>
+    // The custom pipeline HLSL for the pulse box: an unlit shader whose brightness pulses with time (EyePosTime.w),
+    // premultiplied and world-depth tested, over the standard vertex layout - the minimal shape of a RegisterPipeline
+    // shader.
     private const string PulseHlsl = """
         #include "Common.hlsli"
 

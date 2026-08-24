@@ -11,9 +11,8 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Game-free tests for <see cref="EorzeaTimeHelper"/> and <see cref="WeatherHelper"/>.
 /// <br/><br/>
-/// Both are pure functions of real time, which is the whole reason a forecast is possible, and it is also what makes
-/// them testable with no client behind them. Only the rate table has to come from the sheets, so the tests that need
-/// one build it by hand and drive the rate-taking overloads.
+/// Both are pure functions of real time, so they are testable with no client behind them. Only the rate table has to
+/// come from the sheets, so the tests that need one build it by hand and drive the rate-taking overloads.
 /// </summary>
 [SupportedOSPlatform("windows")]
 public class WeatherAndTimeHelperTests

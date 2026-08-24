@@ -6,9 +6,8 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Reads the on-screen bounds of native game windows, so a NoireUI element can be placed against one and follow it as
-/// the player moves, rescales or closes it.<br/>
-/// Every rectangle is in real pixels relative to the top left corner of the game window, the same frame of reference
-/// <see cref="UiPositionMode.Absolute"/> uses. Reads are safe from the draw thread and fail soft to "not there".
+/// the player moves, rescales or closes it. Every rectangle is in real pixels relative to the top left corner of the
+/// game window, the frame of reference <see cref="UiPositionMode.Absolute"/> uses.
 /// </summary>
 public static class UiAddon
 {
@@ -55,8 +54,6 @@ public static class UiAddon
     public static bool IsVisible(string addonName)
         => TryGetRect(addonName, out _);
 
-    /// <summary>
-    /// The live source of addon rectangles, used whenever a caller does not supply one of its own.
-    /// </summary>
+    // The live source of addon rectangles, used whenever a caller does not supply one of its own.
     internal static readonly Func<string, UiRect?> LiveRects = GetRect;
 }

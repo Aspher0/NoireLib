@@ -9,9 +9,7 @@ namespace NoireLib.TaskQueue;
 /// </summary>
 public partial class NoireTaskQueue
 {
-    /// <summary>
-    /// Main queue processing method called every frame - processes unified queue of tasks and batches.
-    /// </summary>
+    // Main queue processing method called every frame - processes unified queue of tasks and batches.
     private void ProcessQueue()
     {
         if (currentBatch != null)
@@ -130,9 +128,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Finishes the tasks and batches a consumer resolved by writing a terminal status directly.
-    /// </summary>
+    // Finishes the tasks and batches a consumer resolved by writing a terminal status directly.
     private void ReconcileConsumerWrittenStatuses()
     {
         List<QueuedTask> tasksToFinalize = new();
@@ -174,11 +170,8 @@ public partial class NoireTaskQueue
             FinalizeConsumerWrittenBatch(batch);
     }
 
-    /// <summary>
-    /// Raises the callback, event and bookkeeping the queue would have run for a task the consumer resolved
-    /// by writing its status.
-    /// </summary>
-    /// <param name="task">The task carrying a consumer-written terminal status.</param>
+    // Raises the callback, event and bookkeeping the queue would have run for a task the consumer resolved by writing
+    // its status.
     private void FinalizeConsumerWrittenTask(QueuedTask task)
     {
         task.QueueFinalized = true;
@@ -214,11 +207,8 @@ public partial class NoireTaskQueue
             NoireLogger.LogDebug(this, $"Reconciled a directly written task status: {task}");
     }
 
-    /// <summary>
-    /// Raises the callback, event and bookkeeping the queue would have run for a batch the consumer resolved
-    /// by writing its status, and resolves the tasks that batch would otherwise strand.
-    /// </summary>
-    /// <param name="batch">The batch carrying a consumer-written terminal status.</param>
+    // Raises the callback, event and bookkeeping the queue would have run for a batch the consumer resolved by
+    // writing its status, and resolves the tasks that batch would otherwise strand.
     private void FinalizeConsumerWrittenBatch(TaskBatch batch)
     {
         batch.QueueFinalized = true;
@@ -276,11 +266,7 @@ public partial class NoireTaskQueue
             NoireLogger.LogDebug(this, $"Reconciled a directly written batch status: {batch}");
     }
 
-    /// <summary>
-    /// Runs a consumer callback, logging rather than propagating anything it throws.
-    /// </summary>
-    /// <param name="callback">The callback to run.</param>
-    /// <param name="description">The callback's name, used only in the log message.</param>
+    // Runs a consumer callback, logging rather than propagating anything it throws.
     private void InvokeGuarded(Action callback, string description)
     {
         try
@@ -294,14 +280,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Advances the task a container is currently on by one pass.
-    /// </summary>
-    /// <param name="current">The task the container is on.</param>
-    /// <param name="batch">The batch that holds the task, or null at the queue level.</param>
-    /// <param name="taskToProcess">Set to the task to execute at the end of the pass, if one is chosen here.</param>
-    /// <param name="earlyReturn">Set when this pass has done its one piece of work.</param>
-    /// <param name="shouldWaitForBlocking">Set when the task gates everything behind it.</param>
+    // Advances the task a container is currently on by one pass.
     private void AdvanceCurrentTask(
         QueuedTask current,
         TaskBatch? batch,
@@ -385,13 +364,8 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Evaluates the completion conditions of the tasks waiting alongside the current one, recording what each
-    /// pass decided rather than acting on it inside the lock.
-    /// </summary>
-    /// <param name="candidates">The waiting tasks to evaluate. Must already be materialized.</param>
-    /// <param name="toComplete">Collects the tasks whose conditions were met.</param>
-    /// <param name="toFail">Collects the tasks that timed out or exhausted their retries.</param>
+    // Evaluates the completion conditions of the tasks waiting alongside the current one, recording what each pass
+    // decided rather than acting on it inside the lock.
     private void CollectWaitingTaskOutcomes(List<QueuedTask> candidates, List<QueuedTask> toComplete, List<QueuedTask> toFail)
     {
         foreach (var wt in candidates)
@@ -406,12 +380,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Applies the outcomes collected by <see cref="CollectWaitingTaskOutcomes"/>, outside the lock.
-    /// </summary>
-    /// <param name="batch">The batch that holds the tasks, or null at the queue level.</param>
-    /// <param name="toComplete">The tasks whose conditions were met.</param>
-    /// <param name="toFail">The tasks that timed out or exhausted their retries.</param>
+    // Applies the outcomes collected by CollectWaitingTaskOutcomes, outside the lock.
     private void ApplyWaitingTaskOutcomes(TaskBatch? batch, List<QueuedTask> toComplete, List<QueuedTask> toFail)
     {
         foreach (var wt in toComplete)
@@ -454,9 +423,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Processes a batch by executing its tasks like a mini task queue with configured failure/cancellation handling.
-    /// </summary>
+    // Processes a batch by executing its tasks like a mini task queue with configured failure/cancellation handling.
     private void ProcessBatch(TaskBatch batch)
     {
         if (batch.Status == BatchStatus.Cancelled || batch.Status == BatchStatus.Failed || batch.Status == BatchStatus.Completed)
@@ -615,9 +582,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Executes a task.
-    /// </summary>
     private void ExecuteTask(QueuedTask task)
     {
         if (task.Status != TaskStatus.Executing)
@@ -727,33 +691,19 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Reports whether a task has already reached an outcome and must not be acted on again.
-    /// </summary>
-    /// <param name="task">The task to test.</param>
-    /// <returns>True if the task is completed, cancelled or failed; otherwise, false.</returns>
+    // Reports whether a task has already reached an outcome and must not be acted on again.
     private static bool IsInTerminalStatus(QueuedTask task)
     {
         return task.Status is TaskStatus.Completed or TaskStatus.Cancelled or TaskStatus.Failed;
     }
 
-    /// <summary>
-    /// Reports whether a task has been resolved to an outcome that a pending completion must not overwrite.
-    /// </summary>
-    /// <param name="task">The task to test.</param>
-    /// <returns>True if the task was finished as something other than completed; otherwise, false.</returns>
+    // Reports whether a task has been resolved to an outcome that a pending completion must not overwrite.
     private static bool WasFinishedWithoutCompleting(QueuedTask task)
     {
         return task.Status is TaskStatus.Cancelled or TaskStatus.Failed;
     }
 
-    /// <summary>
-    /// Processes a waiting task's status and determines if it should complete, fail, or continue waiting.
-    /// </summary>
-    /// <param name="task">The task to process.</param>
-    /// <param name="shouldComplete">Set to true if the task should be added to completion list.</param>
-    /// <param name="shouldFail">Set to true if the task should be added to failure list.</param>
-    /// <returns>True if early return is needed (task was completed or failed immediately).</returns>
+    // Processes a waiting task's status and determines if it should complete, fail, or continue waiting.
     private bool ProcessWaitingTaskStatus(QueuedTask task, out bool shouldComplete, out bool shouldFail)
     {
         shouldComplete = false;
@@ -870,12 +820,7 @@ public partial class NoireTaskQueue
         return false;
     }
 
-    /// <summary>
-    /// Handles the completion or failure of a waiting task, respecting parent batch policies for max retries.
-    /// </summary>
-    /// <param name="task">The task to finalize.</param>
-    /// <param name="isFailing">True if the task is failing.</param>
-    /// <returns>True if parent batch was failed/cancelled and task was handled, false if normal processing should continue.</returns>
+    // Handles the completion or failure of a waiting task, respecting parent batch policies for max retries.
     private bool HandleWaitingTaskFinalization(QueuedTask task, bool isFailing)
     {
         if (!isFailing)
@@ -912,11 +857,7 @@ public partial class NoireTaskQueue
         return false;
     }
 
-    /// <summary>
-    /// Attempts to retry a stalled task by re-executing its action or retry override.
-    /// </summary>
-    /// <param name="task">The task to retry.</param>
-    /// <returns>True if retry was initiated, false if max retries exceeded.</returns>
+    // Attempts to retry a stalled task by re-executing its action or retry override.
     private bool TryRetryTask(QueuedTask task)
     {
         if (task.RetryConfiguration == null)
@@ -966,11 +907,6 @@ public partial class NoireTaskQueue
         return ExecuteRetryAction(task);
     }
 
-    /// <summary>
-    /// Executes the retry action for a task.
-    /// </summary>
-    /// <param name="task">The task to execute retry action for.</param>
-    /// <returns>True if retry action executed successfully, false if it failed.</returns>
     private bool ExecuteRetryAction(QueuedTask task)
     {
         try
@@ -1023,9 +959,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Completes a task successfully.
-    /// </summary>
     private void CompleteTask(QueuedTask task)
     {
         task.Status = TaskStatus.Completed;
@@ -1053,9 +986,6 @@ public partial class NoireTaskQueue
             NoireLogger.LogDebug(this, $"Task completed: {task} (Duration: {task.GetExecutionTime()})");
     }
 
-    /// <summary>
-    /// Marks a task as failed.
-    /// </summary>
     private void FailTask(QueuedTask task, Exception exception)
     {
         task.FailureException = exception;
@@ -1122,9 +1052,7 @@ public partial class NoireTaskQueue
             NoireLogger.LogError(this, exception, $"Task failed: {task}");
     }
 
-    /// <summary>
-    /// Finalizes a task failure without invoking callbacks (used after post-delay completion).
-    /// </summary>
+    // Finalizes a task failure without invoking callbacks (used after post-delay completion).
     private void FinalizeTaskFailure(QueuedTask task)
     {
         task.Status = TaskStatus.Failed;
@@ -1151,9 +1079,7 @@ public partial class NoireTaskQueue
             NoireLogger.LogError(this, task.FailureException, $"Task failed after post-failure delay: {task}");
     }
 
-    /// <summary>
-    /// Finalizes a task cancellation without invoking callbacks (used after post-delay completion).
-    /// </summary>
+    // Finalizes a task cancellation without invoking callbacks (used after post-delay completion).
     private void FinalizeTaskCancellation(QueuedTask task)
     {
         task.Status = TaskStatus.Cancelled;
@@ -1179,9 +1105,7 @@ public partial class NoireTaskQueue
             NoireLogger.LogDebug(this, $"Task cancelled after post-cancellation delay: {task}");
     }
 
-    /// <summary>
-    /// Fails a task within a batch with configured failure mode handling.
-    /// </summary>
+    // Fails a task within a batch with configured failure mode handling.
     private void FailBatchTask(TaskBatch batch, QueuedTask task, Exception exception)
     {
         FailTask(task, exception);
@@ -1208,9 +1132,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Handles task cancellation within a batch with configured cancellation mode.
-    /// </summary>
+    // Handles task cancellation within a batch with configured cancellation mode.
     private void HandleBatchTaskCancellation(TaskBatch batch, QueuedTask task)
     {
         switch (batch.TaskCancellationMode)
@@ -1235,9 +1157,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Finalizes a batch task failure without invoking callbacks (used after post-delay completion).
-    /// </summary>
+    // Finalizes a batch task failure without invoking callbacks (used after post-delay completion).
     private void FinalizeBatchTaskFailure(TaskBatch batch, QueuedTask task)
     {
         task.Status = TaskStatus.Failed;
@@ -1273,9 +1193,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Finalizes a batch task cancellation without invoking callbacks (used after post-delay completion).
-    /// </summary>
+    // Finalizes a batch task cancellation without invoking callbacks (used after post-delay completion).
     private void FinalizeBatchTaskCancellation(TaskBatch batch, QueuedTask task)
     {
         task.Status = TaskStatus.Cancelled;
@@ -1292,9 +1210,6 @@ public partial class NoireTaskQueue
         HandleBatchTaskCancellation(batch, task);
     }
 
-    /// <summary>
-    /// Checks if a batch has completed all its tasks.
-    /// </summary>
     private void CheckBatchCompletion(TaskBatch batch)
     {
         bool batchCompleted = false;
@@ -1344,9 +1259,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Completes a batch successfully.
-    /// </summary>
     private void CompleteBatch(TaskBatch batch)
     {
         if (!batch.PostDelayStartTicks.HasValue)
@@ -1394,9 +1306,6 @@ public partial class NoireTaskQueue
             NoireLogger.LogDebug(this, $"Batch completed: {batch} (Duration: {batch.GetExecutionTime()})");
     }
 
-    /// <summary>
-    /// Marks a batch as failed.
-    /// </summary>
     private void FailBatch(TaskBatch batch, Exception exception)
     {
         batch.FailureException = exception;
@@ -1458,9 +1367,7 @@ public partial class NoireTaskQueue
             NoireLogger.LogError(this, exception, $"Batch failed: {batch}");
     }
 
-    /// <summary>
-    /// Checks if the queue has completed all tasks and batches.
-    /// </summary>
+    // Checks if the queue has completed all tasks and batches.
     private void CheckQueueCompletion()
     {
         bool queueEmpty = false;
@@ -1517,9 +1424,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Creates an exception for task timeout or max retry attempts exceeded.
-    /// </summary>
+    // Creates an exception for task timeout or max retry attempts exceeded.
     private static Exception CreateTaskTimeoutOrRetryException(QueuedTask task)
     {
         // A failure the task already carries takes precedence: a completion condition that throws records its
@@ -1533,10 +1438,7 @@ public partial class NoireTaskQueue
             : new TimeoutException("Task timed out.");
     }
 
-    /// <summary>
-    /// Handles parent batch policies (FailParentBatchOnFail, CancelParentBatchOnFail, etc.) for a task.
-    /// </summary>
-    /// <returns>True if parent batch was affected and processing should stop, false otherwise.</returns>
+    // Handles parent batch policies (FailParentBatchOnFail, CancelParentBatchOnFail, etc.) for a task.
     private bool HandleTaskParentBatchPolicies(QueuedTask task, bool isFailure, bool isCancellation)
     {
         if (task.ParentBatch == null)
@@ -1586,9 +1488,7 @@ public partial class NoireTaskQueue
         return false;
     }
 
-    /// <summary>
-    /// Clears the current task reference if it matches the specified task.
-    /// </summary>
+    // Clears the current task reference if it matches the specified task.
     private void ClearCurrentTaskReference(QueuedTask task)
     {
         if (ReferenceEquals(currentTask, task))

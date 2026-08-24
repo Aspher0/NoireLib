@@ -12,73 +12,72 @@ namespace NoireLib.UI;
 public sealed class OverlayButtonStyle
 {
     /// <summary>
-    /// The background color of the button. When <see langword="null"/>, the current ImGui button color is used.
+    /// The background color of the button.
     /// </summary>
     public Vector4? Background { get; set; } = null;
 
     /// <summary>
-    /// The background color of the button while hovered. When <see langword="null"/>, the current ImGui hovered button color is used.
+    /// The background color of the button while hovered.
     /// </summary>
     public Vector4? BackgroundHovered { get; set; } = null;
 
     /// <summary>
-    /// The background color of the button while pressed. When <see langword="null"/>, the current ImGui active button color is used.
+    /// The background color of the button while pressed.
     /// </summary>
     public Vector4? BackgroundActive { get; set; } = null;
 
     /// <summary>
-    /// The text color of the button. When <see langword="null"/>, the current ImGui text color is used.
+    /// The text color of the button.
     /// </summary>
     public Vector4? TextColor { get; set; } = null;
 
     /// <summary>
-    /// The icon color of the button. When <see langword="null"/>, <see cref="TextColor"/> is used.
+    /// The icon color of the button, or <see cref="TextColor"/> when <see langword="null"/>.
     /// </summary>
     public Vector4? IconColor { get; set; } = null;
 
     /// <summary>
-    /// The tint applied to the image content of the button. Defaults to white (no tint).
+    /// The tint applied to the image content of the button.
     /// </summary>
     public Vector4 ImageTint { get; set; } = Vector4.One;
 
     /// <summary>
-    /// The border color of the button. When <see langword="null"/>, the current ImGui border color is used.
+    /// The border color of the button.
     /// </summary>
     public Vector4? BorderColor { get; set; } = null;
 
     /// <summary>
-    /// The border thickness of the button, at 100%. Defaults to 0 (no border).
+    /// The border thickness of the button, at 100%.
     /// </summary>
     public float BorderSize { get; set; } = 0f;
 
     /// <summary>
-    /// The corner rounding of the button, at 100%. When <see langword="null"/>, the current ImGui frame rounding is used.
+    /// The corner rounding of the button, at 100%.
     /// </summary>
     public float? Rounding { get; set; } = null;
 
     /// <summary>
     /// The inner padding between the content and the edges of the button, used when no explicit size is set.
-    /// When <see langword="null"/>, the current ImGui frame padding is used.
     /// </summary>
     public Vector2? Padding { get; set; } = null;
 
     /// <summary>
-    /// The horizontal spacing between the icon, text and image parts of the content, at 100%. Defaults to 4 pixels.
+    /// The horizontal spacing between the icon, text and image parts of the content, at 100%.
     /// </summary>
     public float ContentSpacing { get; set; } = 4f;
 
     /// <summary>
-    /// The global opacity of the button, from 0 (invisible) to 1 (opaque). Defaults to 1.
+    /// The global opacity of the button, from 0 (invisible) to 1 (opaque).
     /// </summary>
     public float Alpha { get; set; } = 1f;
 
     /// <summary>
-    /// The opacity multiplier applied when the button is disabled. Defaults to 0.5.
+    /// The opacity multiplier applied when the button is disabled.
     /// </summary>
     public float DisabledAlpha { get; set; } = 0.5f;
 
     /// <summary>
-    /// The font scale applied to the text and icon content of the button. Defaults to 1.
+    /// The font scale applied to the text and icon content of the button.
     /// </summary>
     public float FontScale { get; set; } = 1f;
 
@@ -86,26 +85,21 @@ public sealed class OverlayButtonStyle
     /// Replaces the button's own painting entirely (background, border and content), while NoireUI keeps the sizing,
     /// the hit testing, the dragging, the clicks and the tooltip.
     /// </summary>
-    /// <remarks>When set, <see cref="NoireOverlayButton.CustomContent"/> is not called.</remarks>
     public Action<UiOverlayButtonDraw>? CustomDraw { get; set; }
 
     /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public OverlayButtonStyle Clone() => (OverlayButtonStyle)MemberwiseClone();
 
-    /// <summary><see cref="BorderSize"/> in real pixels.</summary>
+    // The values the button draws with, in real pixels.
+
     internal float ScaledBorderSize => NoireUI.Scaled(BorderSize);
 
-    /// <summary><see cref="ContentSpacing"/> in real pixels.</summary>
     internal float ScaledContentSpacing => NoireUI.Scaled(ContentSpacing);
 
-    /// <summary>The corner rounding to draw with, in real pixels.</summary>
-    /// <returns>The scaled <see cref="Rounding"/>, or the current ImGui frame rounding.</returns>
     internal float ResolveRounding()
         => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : ImGui.GetStyle().FrameRounding;
 
-    /// <summary>The inner padding to draw with, in real pixels.</summary>
-    /// <returns>The scaled <see cref="Padding"/>, or the current ImGui frame padding.</returns>
     internal Vector2 ResolvePadding()
         => Padding.HasValue ? NoireUI.Scaled(Padding.Value) : ImGui.GetStyle().FramePadding;
 }

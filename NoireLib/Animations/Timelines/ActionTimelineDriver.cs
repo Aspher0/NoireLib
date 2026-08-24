@@ -17,13 +17,13 @@ namespace NoireLib.Animations.Timelines;
 /// </summary>
 public sealed class ActionTimelineDriver : IDisposable
 {
-    /// <summary> The size the sequencer expects its parameter block to be. </summary>
+    // The size the sequencer expects its parameter block to be.
     private const int AnimParamsSize = 0x60;
 
-    /// <summary> The neutral standing timeline, played to settle a character after an override is lifted. </summary>
+    // The neutral standing timeline, played to settle a character after an override is lifted.
     private const ushort IdleTimelineId = 3;
 
-    /// <summary> The one timeline the game flags differently in the parameter block. </summary>
+    // The one timeline the game flags differently in the parameter block.
     private const ushort SpeciallyFlaggedTimelineId = 3123;
 
     /// <summary> Priority value meaning "use whatever the animation itself asks for". </summary>

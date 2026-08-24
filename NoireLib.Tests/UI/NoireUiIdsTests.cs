@@ -8,9 +8,8 @@ namespace NoireLib.Tests;
 /// Locks the id cache against the interpolation it replaced.
 /// </summary>
 /// <remarks>
-/// Every assertion here compares against the interpolated string written out longhand, which is the whole point: widget
-/// ids reach <see cref="NoireUiState"/> keys, so an id that changed shape would not look like a bug, it would look like
-/// every user's saved values having quietly vanished.
+/// Widget ids reach <see cref="NoireUiState"/> keys, so an id that changed shape would orphan every value a user saved
+/// under it.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireUiIdsTests

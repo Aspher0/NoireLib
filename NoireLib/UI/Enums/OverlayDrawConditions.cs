@@ -3,22 +3,14 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Controls in which normally-hidden game states a <see cref="NoireOverlayButton"/> keeps being drawn.<br/>
-/// By default (<see cref="None"/>), Dalamud hides all plugin UI during cutscenes, group pose and while the game UI is hidden by the user;
-/// an overlay button follows that behavior. Setting one or more of these flags keeps the button visible in the matching state.
+/// Controls in which normally-hidden game states a <see cref="NoireOverlayButton"/> keeps being drawn.
 /// </summary>
-/// <remarks>
-/// These flags apply to the overlay button that carries them and to nothing else: NoireLib draws overlays independently of the host plugin's
-/// own UI, so the plugin's windows and other overlay buttons keep hiding exactly as they would have.<br/>
-/// The one exception is a Dalamud NoireLib cannot install its own draw hook into: overlays then fall back to drawing with the rest of the
-/// plugin's UI, so any of these flags also keeps the rest of the plugin's UI visible in that state. NoireLib logs when this happens; see
-/// <see cref="NoireUI.OverlaysDrawIndependently"/>.
-/// </remarks>
+/// <remarks>Without its own draw hook, any of these flags also keeps the rest of the plugin's UI visible in that state; see <see cref="NoireUI.OverlaysDrawIndependently"/>.</remarks>
 [Flags]
 public enum OverlayDrawConditions
 {
     /// <summary>
-    /// The default behavior: the button is hidden during cutscenes, group pose and while the game UI is hidden, like regular plugin UI.
+    /// The default behavior: the button is hidden during cutscenes, group pose and while the game UI is hidden.
     /// </summary>
     None = 0,
 
@@ -33,12 +25,12 @@ public enum OverlayDrawConditions
     DrawInGpose = 1 << 1,
 
     /// <summary>
-    /// The button keeps being drawn while the user has hidden the game UI (e.g. via the game's "Hide UI" keybind).
+    /// The button keeps being drawn while the user has hidden the game UI.
     /// </summary>
     DrawWhenGameUiHidden = 1 << 2,
 
     /// <summary>
-    /// The button is always drawn, no matter the game state (the combination of every other flag).
+    /// The button is always drawn, no matter the game state.
     /// </summary>
     AlwaysDraw = DrawInCutscenes | DrawInGpose | DrawWhenGameUiHidden,
 }

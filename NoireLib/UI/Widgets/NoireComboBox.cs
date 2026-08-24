@@ -42,9 +42,9 @@ public class NoireComboBox<T>
     /// <summary>
     /// Initializes a new combo box.
     /// </summary>
-    /// <param name="id">An optional unique identifier used for the ImGui ids. When <see langword="null"/>, a random one is generated.</param>
+    /// <param name="id">An optional unique identifier used for the ImGui ids.</param>
     /// <param name="items">The initial items of the combo box.</param>
-    /// <param name="displayFunc">How an item is converted to its display text. Defaults to <c>ToString()</c>.</param>
+    /// <param name="displayFunc">How an item is converted to its display text.</param>
     public NoireComboBox(string? id = null, IEnumerable<T>? items = null, Func<T, string>? displayFunc = null)
     {
         HasGeneratedId = string.IsNullOrWhiteSpace(id);
@@ -56,8 +56,7 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Whether this combo's id was generated rather than given. A generated id is a new GUID every session, so
-    /// <see cref="FilterMemory"/> refuses to persist against one; session-scoped memory is unaffected.
+    /// Whether this combo's id was generated rather than given.
     /// </summary>
     public bool HasGeneratedId { get; }
 
@@ -72,8 +71,7 @@ public class NoireComboBox<T>
     public string? Label { get; set; } = null;
 
     /// <summary>
-    /// The width of the combo box. When <see langword="null"/>, the default ImGui item width is used. In real
-    /// pixels, not scaled.
+    /// The width of the combo box, in real pixels, not scaled.
     /// </summary>
     public float? Width { get; set; } = null;
 
@@ -85,10 +83,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// Paints the closed combo as a <see cref="NoireShapes.Plate"/> instead of as an ImGui frame.
     /// </summary>
-    /// <remarks>
-    /// When <see langword="null"/>, the combo is an ordinary ImGui one. Set the arrow with <see cref="BoxArrowColor"/>,
-    /// or use <see cref="ImGuiComboFlags.NoArrowButton"/> for none.
-    /// </remarks>
     public PlateStyle? BoxStyle { get; set; }
 
     /// <summary>
@@ -125,7 +119,7 @@ public class NoireComboBox<T>
     #region Filter options
 
     /// <summary>
-    /// Whether the dropdown shows a filter text input at the top. Defaults to <see langword="false"/>.
+    /// Whether the dropdown shows a filter text input at the top.
     /// </summary>
     public bool FilterEnabled { get; set; } = false;
 
@@ -135,32 +129,25 @@ public class NoireComboBox<T>
     public string FilterHint { get; set; } = "Filter...";
 
     /// <summary>
-    /// Whether the filter input is automatically focused when the dropdown opens. Defaults to <see langword="true"/>.
+    /// Whether the filter input is automatically focused when the dropdown opens.
     /// </summary>
     public bool FilterAutoFocus { get; set; } = true;
 
     /// <summary>
-    /// Whether the filter input stays pinned above the options while they scroll (the default), or scrolls away with them.<br/>
-    /// Either way the dropdown shows a single scrollbar: when pinned, only the option list scrolls; when not, the whole
-    /// dropdown does.
+    /// Whether the filter input stays pinned above the options while they scroll, or scrolls away with them.
     /// </summary>
     public bool FilterPinned { get; set; } = true;
 
     /// <summary>
-    /// Whether the filter text is cleared every time the dropdown opens. Defaults to <see langword="true"/>.
+    /// Whether the filter text is cleared every time the dropdown opens.
     /// </summary>
-    /// <remarks>
-    /// Setting <see cref="FilterMemory"/> to anything but <see cref="UiMemoryScope.None"/> turns this off.
-    /// </remarks>
+    /// <remarks>Setting <see cref="FilterMemory"/> to anything but <see cref="UiMemoryScope.None"/> turns this off.</remarks>
     public bool ClearFilterOnOpen { get; set; } = true;
 
     /// <summary>
-    /// How long the search text is remembered. Defaults to <see cref="UiMemoryScope.None"/>.
+    /// How long the search text is remembered.
     /// </summary>
-    /// <remarks>
-    /// <see cref="UiMemoryScope.Persisted"/> needs a stable id. Anything other than <see cref="UiMemoryScope.None"/>
-    /// implies <see cref="ClearFilterOnOpen"/> being off.
-    /// </remarks>
+    /// <remarks><see cref="UiMemoryScope.Persisted"/> needs a stable id.</remarks>
     public UiMemoryScope FilterMemory
     {
         get => filterMemory;
@@ -184,13 +171,13 @@ public class NoireComboBox<T>
     public bool WheelCycleFiltered { get; set; }
 
     /// <summary>
-    /// Whether the filter matches fuzzily and orders the options by how well they matched. Defaults to <see langword="true"/>.
+    /// Whether the filter matches fuzzily and orders the options by how well they matched.
     /// </summary>
     /// <remarks>A <see cref="FilterPredicate"/> of your own overrides this.</remarks>
     public bool FilterFuzzy { get; set; } = true;
 
     /// <summary>
-    /// Whether the characters the filter matched are picked out in the option list. Defaults to <see langword="true"/>.
+    /// Whether the characters the filter matched are picked out in the option list.
     /// </summary>
     /// <remarks>Only applies while <see cref="FilterFuzzy"/> is on and something has been typed.</remarks>
     public bool FilterHighlight { get; set; } = true;
@@ -201,10 +188,7 @@ public class NoireComboBox<T>
     public Vector4? FilterHighlightColor { get; set; }
 
     /// <summary>Draws each option yourself.</summary>
-    /// <remarks>
-    /// Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line, or virtualization will place
-    /// them wrongly.
-    /// </remarks>
+    /// <remarks>Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line.</remarks>
     public Action<UiComboItemDraw<T>>? ItemRenderer { get; set; }
 
     /// <summary>
@@ -214,17 +198,14 @@ public class NoireComboBox<T>
     public float? ItemHeight { get; set; }
 
     /// <summary>
-    /// Whether the option list is drawn through a clipper, so only the visible rows cost anything.<br/>
-    /// When <see langword="null"/>, the default, it turns itself on past <see cref="VirtualizeThreshold"/> options.
+    /// Whether the option list is drawn through a clipper; when <see langword="null"/>, the default, it turns itself
+    /// on past <see cref="VirtualizeThreshold"/> options.
     /// </summary>
-    /// <remarks>
-    /// Every row must be the same height; an <see cref="ItemRenderer"/> drawing taller rows must declare <see
-    /// cref="ItemHeight"/>.
-    /// </remarks>
+    /// <remarks>Every row must be the same height.</remarks>
     public bool? Virtualize { get; set; }
 
     /// <summary>
-    /// How many options it takes before <see cref="Virtualize"/> turns itself on. Defaults to 100.
+    /// How many options it takes before <see cref="Virtualize"/> turns itself on.
     /// </summary>
     public int VirtualizeThreshold { get; set; } = 100;
 
@@ -236,9 +217,7 @@ public class NoireComboBox<T>
     /// <summary>
     /// How an item is matched against the filter text. When <see langword="null"/>, <see cref="FilterFuzzy"/> decides.
     /// </summary>
-    /// <remarks>
-    /// A predicate has no score to order by: the options keep the order they were given and nothing is highlighted.
-    /// </remarks>
+    /// <remarks>A predicate has no score to order by: the options keep the order they were given.</remarks>
     public Func<T, string, bool>? FilterPredicate { get; set; } = null;
 
     /// <summary>
@@ -251,14 +230,12 @@ public class NoireComboBox<T>
     #region Dropdown options
 
     /// <summary>
-    /// The maximum number of options visible in the dropdown before it scrolls. Defaults to 8.<br/>
-    /// The dropdown is sized to hold exactly this many options (plus the filter input when there is one), so it never
-    /// grows a second scrollbar of its own around the option list.
+    /// The maximum number of options visible in the dropdown before it scrolls.
     /// </summary>
     public int VisibleItemCount { get; set; } = 8;
 
     /// <summary>
-    /// Whether cycling the highlighted option with the arrow keys wraps around when reaching the first/last option. Defaults to <see langword="false"/>.
+    /// Whether cycling the highlighted option with the arrow keys wraps around when reaching the first/last option.
     /// </summary>
     public bool DropdownCycleLoop { get; set; } = false;
 
@@ -267,37 +244,34 @@ public class NoireComboBox<T>
     #region Closed combo wheel cycling options
 
     /// <summary>
-    /// Whether scrolling the mouse wheel over the closed combo cycles the selection. Defaults to <see langword="false"/>.<br/>
-    /// See also <see cref="WheelCycleBinding"/> and <see cref="WheelCycleLoop"/>.
+    /// Whether scrolling the mouse wheel over the closed combo cycles the selection.
     /// </summary>
     public bool WheelCycleEnabled { get; set; } = false;
 
     /// <summary>
-    /// An optional binding that must be held for the closed-combo wheel cycling to trigger. A plain
-    /// <see cref="VirtualKey"/> converts implicitly; the full <see cref="HotkeyBinding"/> surface covers a modifier
-    /// combination, a key plus modifiers, or a gamepad button. Defaults to an empty binding, meaning no key is
-    /// required. Matched with the same rules as a <see cref="NoireHotkeyManager"/> hotkey (see
-    /// <see cref="KeybindsHelper.IsBindingHeld"/>). Ignored while a hotkey is attached through
-    /// <see cref="BindWheelCycleHotkey"/>; read <see cref="ResolvedWheelCycleBinding"/> for the binding actually in
-    /// effect.
+    /// An optional binding that must be held for the closed-combo wheel cycling to trigger; a plain
+    /// <see cref="VirtualKey"/> converts implicitly.
     /// </summary>
+    /// <remarks>
+    /// Ignored while a hotkey is attached through <see cref="BindWheelCycleHotkey"/>; read
+    /// <see cref="ResolvedWheelCycleBinding"/> for the binding actually in effect.
+    /// </remarks>
     public HotkeyBinding WheelCycleBinding { get; set; } = default;
 
     /// <summary>
-    /// Whether the closed-combo wheel cycling wraps around when reaching the first/last item,
-    /// instead of stopping at the boundaries. Defaults to <see langword="false"/>.
+    /// Whether the closed-combo wheel cycling wraps around when reaching the first/last item, instead of stopping at
+    /// the boundaries.
     /// </summary>
     public bool WheelCycleLoop { get; set; } = false;
 
     /// <summary>
-    /// Whether a hint tooltip advertising the wheel shortcut is shown when hovering the closed combo. Defaults to <see langword="true"/>.<br/>
-    /// Only shown when <see cref="WheelCycleEnabled"/> is <see langword="true"/>. See <see cref="WheelCycleHintContent"/> to customize it.
+    /// Whether a hint tooltip advertising the wheel shortcut is shown when hovering the closed combo.
     /// </summary>
     public bool WheelCycleHintEnabled { get; set; } = true;
 
     /// <summary>
-    /// A custom content for the wheel shortcut hint tooltip. When <see langword="null"/>, a default hint is generated from
-    /// <see cref="ResolvedWheelCycleBinding"/> (e.g. "Ctrl + &lt;mouse icon&gt; to cycle"), and it follows a rebinding automatically.
+    /// A custom content for the wheel shortcut hint tooltip; when <see langword="null"/>, a default hint is generated
+    /// from <see cref="ResolvedWheelCycleBinding"/>.
     /// </summary>
     public NoireContent? WheelCycleHintContent { get; set; } = null;
 
@@ -314,11 +288,7 @@ public class NoireComboBox<T>
 
     /// <summary>
     /// The binding the closed-combo wheel cycling currently requires: the live binding of the hotkey attached
-    /// through <see cref="BindWheelCycleHotkey"/> when there is one, otherwise <see cref="WheelCycleBinding"/>. An
-    /// attached hotkey is read on every access rather than copied, so a rebinding through
-    /// <see cref="NoireHotkeyManager.DrawKeybindInputButton"/> (or any other path) applies immediately. An attached
-    /// hotkey that is disabled or no longer registered resolves to an empty binding, which disables the cycling
-    /// rather than making it unconditional.
+    /// through <see cref="BindWheelCycleHotkey"/> when there is one, otherwise <see cref="WheelCycleBinding"/>.
     /// </summary>
     public HotkeyBinding ResolvedWheelCycleBinding
     {
@@ -329,14 +299,8 @@ public class NoireComboBox<T>
         }
     }
 
-    /// <summary>
-    /// Resolves the binding that currently gates the cycling, and reports whether the cycling may run at all.
-    /// </summary>
-    /// <param name="binding">The resolved binding, or an empty binding when there is none to honor.</param>
-    /// <returns>
-    /// False when an attached hotkey cannot be honored (disabled, or unregistered since attaching), so the cycling
-    /// stays off rather than becoming unconditional.
-    /// </returns>
+    // False when an attached hotkey cannot be honored (disabled, or unregistered since attaching), so the cycling
+    // stays off rather than becoming unconditional.
     private bool TryResolveWheelCycleBinding(out HotkeyBinding binding)
     {
         if (wheelCycleHotkeyManager == null || wheelCycleHotkeyId == null)
@@ -356,24 +320,9 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>, so the
-    /// user can rebind the shortcut through the manager and the combo (and its hint tooltip) follow automatically.
-    /// The hotkey's binding is only ever read, never triggered: the manager keeps owning it, and it stays usable as
-    /// a regular hotkey at the same time. This is a convenience over <see cref="WheelCycleBinding"/>, which stays
-    /// available. Does not enable the cycling on its own; set <see cref="WheelCycleEnabled"/> as well.
-    /// <see cref="NoireHotkeyManager.RegisterHotkey"/> requires every hotkey to carry a callback, so one registered
-    /// only to gate a combo takes an empty one: the combo reads the binding, not the trigger.
+    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>.
     /// </summary>
-    /// <example>
-    /// <code>
-    /// hotkeyManager.RegisterHotkey(new HotkeyEntry("combo.cycle", "Cycle combo", VirtualKey.CONTROL, () => { }, true, HotkeyActivationMode.Pressed));
-    /// combo.WheelCycleEnabled = true;
-    /// combo.BindWheelCycleHotkey(hotkeyManager, "combo.cycle");
-    ///
-    /// // Anywhere in your settings, let the user rebind it. The combo and its hint tooltip follow automatically:
-    /// hotkeyManager.DrawKeybindInputButton("combo.cycle");
-    /// </code>
-    /// </example>
+    /// <remarks>Does not enable the cycling on its own; set <see cref="WheelCycleEnabled"/> as well.</remarks>
     /// <param name="hotkeyManager">The hotkey manager owning the hotkey.</param>
     /// <param name="hotkeyId">The id of the hotkey whose binding gates the cycling.</param>
     /// <returns>This <see cref="NoireComboBox{T}"/> instance, for chaining.</returns>
@@ -390,8 +339,8 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Detaches the hotkey attached through <see cref="BindWheelCycleHotkey"/>, so the cycling falls back to <see cref="WheelCycleBinding"/>.<br/>
-    /// Safe to call when no hotkey is attached.
+    /// Detaches the hotkey attached through <see cref="BindWheelCycleHotkey"/>, so the cycling falls back to
+    /// <see cref="WheelCycleBinding"/>.
     /// </summary>
     /// <returns>This <see cref="NoireComboBox{T}"/> instance, for chaining.</returns>
     public NoireComboBox<T> UnbindWheelCycleHotkey()
@@ -406,14 +355,14 @@ public class NoireComboBox<T>
     #region Items & Selection
 
     /// <summary>
-    /// The items of the combo box. Use <see cref="SetItems"/> to modify them.
+    /// The items of the combo box, modified through <see cref="SetItems"/>.
     /// </summary>
     public IReadOnlyList<T> Items => items;
 
     /// <summary>
-    /// The index of the selected item, or -1 when nothing is selected.<br/>
-    /// Setting this property does not invoke <see cref="OnSelectionChanged"/>; use <see cref="Select(int)"/> for that.
+    /// The index of the selected item, or -1 when nothing is selected.
     /// </summary>
+    /// <remarks>Setting this property does not invoke <see cref="OnSelectionChanged"/>; use <see cref="Select(int)"/> for that.</remarks>
     public int SelectedIndex
     {
         get => selectedIndex;
@@ -487,8 +436,9 @@ public class NoireComboBox<T>
     #region Drawing
 
     /// <summary>
-    /// Draws the combo box. Call this every frame inside your window.
+    /// Draws the combo box.
     /// </summary>
+    /// <remarks>Call this every frame inside your window.</remarks>
     /// <returns>True if the selection changed this frame, false otherwise.</returns>
     public bool Draw()
     {
@@ -567,10 +517,7 @@ public class NoireComboBox<T>
         return changedThisFrame;
     }
 
-    /// <summary>
-    /// Pushes the dropdown's own look, so the popup ImGui opens is drawn to this combo's style.
-    /// </summary>
-    /// <returns>The pushed style, or an empty scope when the dropdown is left as ImGui's.</returns>
+    // Returns an empty scope when the dropdown is left as ImGui's.
     private UiPush BeginPopupStyle()
     {
         if (PopupStyle == null)
@@ -619,10 +566,7 @@ public class NoireComboBox<T>
         return pushed;
     }
 
-    /// <summary>
-    /// Pushes the filter box's own border and text colours, for the moment it is drawn.
-    /// </summary>
-    /// <returns>The pushed colours. Always at least a border, since the box is drawn either way.</returns>
+    // Always pushes at least a border, since the box is drawn either way.
     private UiPush PushFilterStyle()
     {
         var style = PopupStyle;
@@ -638,11 +582,7 @@ public class NoireComboBox<T>
         return pushed;
     }
 
-    /// <summary>
-    /// Paints the plate under the closed combo and uncovers it, when the combo is drawn as one.
-    /// </summary>
-    /// <param name="rect">Where the box was drawn, for the arrow to line up with.</param>
-    /// <returns>The pushed colours, to release once the box has been drawn, or an empty scope when there is no plate.</returns>
+    // The pushed colours are released once the box has been drawn; an empty scope when there is no plate.
     private UiPush BeginBox(out (Vector2 Min, Vector2 Max) rect)
     {
         rect = default;
@@ -669,9 +609,6 @@ public class NoireComboBox<T>
         return pushed;
     }
 
-    /// <summary>
-    /// Draws the chevron on a plated combo, in its own colour.
-    /// </summary>
     private void DrawBoxArrow((Vector2 Min, Vector2 Max) rect)
     {
         if (BoxStyle == null || ComboFlags.HasFlag(ImGuiComboFlags.NoArrowButton))
@@ -693,9 +630,6 @@ public class NoireComboBox<T>
     }
 
 
-    /// <summary>
-    /// Records the height the dropdown actually needs, taken from ImGui rather than worked out.
-    /// </summary>
     private void RecordPopupHeight()
     {
         if (!NoireService.IsInitialized())
@@ -707,10 +641,7 @@ public class NoireComboBox<T>
             neededPopupHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
     }
 
-    /// <summary>
-    /// Constrains the dropdown: never shorter than its own contents, and never taller than
-    /// <see cref="VisibleItemCount"/> options once there are more of them than that.
-    /// </summary>
+    // Never shorter than its own contents, and never taller than VisibleItemCount options once there are more of them.
     private void ApplyPopupConstraints()
     {
         // A list longer than the dropdown is capped and scrolls. Only a list that fits gets the floor it needs to
@@ -726,13 +657,10 @@ public class NoireComboBox<T>
             new Vector2(float.MaxValue, float.MaxValue));
     }
 
-    /// <summary>The height the dropdown reported needing last time it was drawn.</summary>
+    // The height the dropdown reported needing last time it was drawn.
     private float neededPopupHeight;
 
-    /// <summary>
-    /// The height the dropdown is capped at: the filter row, when shown, plus exactly <see cref="VisibleItemCount"/>
-    /// options. Mirrors how ImGui itself sizes a popup from an option count.
-    /// </summary>
+    // The height the dropdown is capped at: the filter row, when shown, plus exactly VisibleItemCount options.
     private float MeasureMaxPopupHeight()
     {
         var style = ImGui.GetStyle();
@@ -821,11 +749,8 @@ public class NoireComboBox<T>
         }
     }
 
-    /// <summary>
-    /// Draws the option list, in a scrolling child of its own when the filter is pinned above it, or straight into
-    /// the dropdown when the filter is free to scroll away with the options. Exactly one of the two scrolls in
-    /// either case, keeping the dropdown to a single scrollbar.
-    /// </summary>
+    // A scrolling child of its own when the filter is pinned above it, straight into the dropdown otherwise. Exactly
+    // one of the two scrolls in either case, keeping the dropdown to a single scrollbar.
     private void DrawItemList()
     {
         if (!FilterEnabled || !FilterPinned)
@@ -857,9 +782,6 @@ public class NoireComboBox<T>
         RecordListHeight();
     }
 
-    /// <summary>
-    /// Records the height the option list actually needs, taken from ImGui rather than worked out.
-    /// </summary>
     private void RecordListHeight()
     {
         if (!NoireService.IsInitialized())
@@ -871,7 +793,7 @@ public class NoireComboBox<T>
             neededListHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
     }
 
-    /// <summary>The height the option list reported needing last time it was drawn.</summary>
+    // The height the option list reported needing last time it was drawn.
     private float neededListHeight;
 
     private void DrawItemRows()
@@ -913,11 +835,7 @@ public class NoireComboBox<T>
         clipper.End();
     }
 
-    /// <summary>
-    /// Draws one option of the filtered list.
-    /// </summary>
-    /// <param name="position">The option's position in the filtered list.</param>
-    /// <param name="mouseMoved">Whether the mouse moved this frame, so hovering only takes the highlight when it did.</param>
+    // Hovering only takes the highlight when the mouse moved this frame.
     private void DrawItemRow(int position, bool mouseMoved)
     {
         var itemIndex = filteredIndices[position];
@@ -974,11 +892,7 @@ public class NoireComboBox<T>
             highlightIndex = position;
     }
 
-    /// <summary>
-    /// Draws an option's label the way the combo would, filter highlighting included. Called by
-    /// <see cref="UiComboItemDraw{T}.DrawLabel"/>.
-    /// </summary>
-    /// <param name="display">The display text.</param>
+    // Called by UiComboItemDraw.DrawLabel.
     internal void DrawItemLabel(string display)
     {
         if (!showMatches)
@@ -995,47 +909,33 @@ public class NoireComboBox<T>
             NoireText.Draw(display);
     }
 
-    /// <summary>
-    /// Whether the option list is drawn through a clipper this frame.
-    /// </summary>
     internal bool IsVirtualizing => Virtualize ?? filteredIndices.Count >= VirtualizeThreshold;
 
-    /// <summary>
-    /// The height one option occupies, which every row must share for virtualization to place them correctly.
-    /// </summary>
+    // Every row must share this height for virtualization to place them correctly.
     private float ResolveItemHeight()
     {
         if (ItemHeight.HasValue)
             return NoireUI.Scaled(ItemHeight.Value);
 
         // The dropdown's text need not be the size in force outside it, and measuring at the outer size lays the rows
-        // out for a font they are not drawn in. The padding is deliberately not added on top: it is already pushed as
-        // ImGui's frame padding, and counting it twice leaves each row a line of empty space taller than its text.
+        // out for a font they are not drawn in. The padding is not added on top: it is already pushed as ImGui's
+        // frame padding, and counting it twice leaves each row a line of empty space taller than its text.
         if (PopupStyle?.TextSizePx is { } size)
             return NoireText.CalcSize(" ", size).Y;
 
         return NoireText.LineHeight();
     }
 
-    /// <summary>
-    /// The vertical distance from one option to the next: the option itself plus the spacing after it.
-    /// </summary>
+    // The vertical distance from one option to the next: the option itself plus the spacing after it.
     private float ResolveRowStep() => ResolveItemHeight() + ImGui.GetStyle().ItemSpacing.Y;
 
-    /// <summary>
-    /// Selects an option from the list and closes the dropdown.
-    /// </summary>
-    /// <param name="itemIndex">The index of the option chosen.</param>
     private void Choose(int itemIndex)
     {
         SelectFromUi(itemIndex);
         ImGui.CloseCurrentPopup();
     }
 
-    /// <summary>
-    /// Handles the held binding + wheel cycling and the hint tooltip on the closed combo, including the wheel claim
-    /// that stops a cycling scroll from also moving the window.
-    /// </summary>
+    // Includes the wheel claim that stops a cycling scroll from also moving the window.
     private void HandleClosedComboInteractions()
     {
         if (!WheelCycleEnabled || !ImGui.IsItemHovered())
@@ -1068,12 +968,7 @@ public class NoireComboBox<T>
             SelectFromUi(newIndex);
     }
 
-    /// <summary>
-    /// The item index the wheel lands on when cycling is scoped to what the search matches.
-    /// </summary>
-    /// <param name="currentIndex">The currently selected item index, or -1.</param>
-    /// <param name="direction">+1 for the next match, -1 for the previous one.</param>
-    /// <returns>The item index to select, or -1 when there is nothing to move to.</returns>
+    // Direction is +1 for the next match, -1 for the previous one; returns -1 when there is nothing to move to.
     private int ComputeFilteredCycleTarget(int currentIndex, int direction)
     {
         // The filtered set is rebuilt when the dropdown opens or the search changes, and the search can outlive both
@@ -1090,14 +985,7 @@ public class NoireComboBox<T>
 
     #region Internal logic
 
-    /// <summary>
-    /// Computes the next index when cycling a selection by a direction, with or without looping.
-    /// </summary>
-    /// <param name="current">The current index, or -1 when nothing is selected.</param>
-    /// <param name="direction">The cycling direction: +1 for the next item, -1 for the previous one.</param>
-    /// <param name="count">The total number of items.</param>
-    /// <param name="loop">Whether to wrap around at the boundaries instead of clamping.</param>
-    /// <returns>The new index, or -1 when there are no items.</returns>
+    // Direction is +1 for the next item, -1 for the previous one; returns -1 when there are no items.
     internal static int ComputeCycledIndex(int current, int direction, int count, bool loop)
     {
         if (count <= 0)
@@ -1112,18 +1000,10 @@ public class NoireComboBox<T>
             : Math.Clamp(next, 0, count - 1);
     }
 
-    /// <summary>
-    /// The default filter match: case-insensitive "contains" on the display text.
-    /// </summary>
-    /// <param name="displayText">The display text of the item.</param>
-    /// <param name="filter">The filter text.</param>
-    /// <returns>True if the item matches the filter.</returns>
     internal static bool DefaultFilterMatch(string displayText, string filter)
         => displayText.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Applies the remembered search, once, the first time the combo draws after <see cref="FilterMemory"/> is set.
-    /// </summary>
+    // Applies the remembered search once, the first time the combo draws after FilterMemory is set.
     private void RestorePersistedFilter()
     {
         if (filterMemory == UiMemoryScope.None || filterRestored)
@@ -1145,9 +1025,6 @@ public class NoireComboBox<T>
         }
     }
 
-    /// <summary>
-    /// Remembers the current search.
-    /// </summary>
     private void SavePersistedFilter()
     {
         if (filterMemory == UiMemoryScope.None || !TryGetFilterKey(out var key))
@@ -1159,9 +1036,6 @@ public class NoireComboBox<T>
             NoireUiState.Set(key, filterText);
     }
 
-    /// <summary>
-    /// Builds the key the search is remembered under.
-    /// </summary>
     private bool TryGetFilterKey(out string key)
     {
         if (filterMemory == UiMemoryScope.Session)
@@ -1177,9 +1051,6 @@ public class NoireComboBox<T>
 
     internal int CycleFiltered(int direction) => ComputeFilteredCycleTarget(selectedIndex, direction);
 
-    /// <summary>
-    /// Rebuilds the list of item indices matching the current filter text.
-    /// </summary>
     internal void RebuildFilteredIndices()
     {
         filteredIndices.Clear();
@@ -1228,7 +1099,6 @@ public class NoireComboBox<T>
     /// <summary>
     /// The current search text.
     /// </summary>
-    /// <remarks>Setting it rebuilds the matches immediately.</remarks>
     public string FilterText
     {
         get => filterText;
@@ -1303,12 +1173,7 @@ public class NoireComboBox<T>
         }
     }
 
-    /// <summary>
-    /// Builds the default hint tooltip advertising the wheel shortcut, rebuilding it only when the binding it describes changed
-    /// (a hotkey attached through <see cref="BindWheelCycleHotkey"/> can be rebound at any time).
-    /// </summary>
-    /// <param name="binding">The binding currently gating the cycling, from <see cref="ResolvedWheelCycleBinding"/>.</param>
-    /// <returns>The hint content to show.</returns>
+    // Rebuilt only when the binding it describes changed, since an attached hotkey can be rebound at any time.
     private NoireContent GetWheelCycleHint(HotkeyBinding binding)
     {
         if (WheelCycleHintContent != null)

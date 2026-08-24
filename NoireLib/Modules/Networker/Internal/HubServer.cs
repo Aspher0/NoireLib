@@ -8,11 +8,9 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// The hub role: owns the TCP listener (ephemeral port), the rendezvous publication, local client sessions,
-/// hub-to-hub LAN links, and all routing. Routing runs on socket threads so a frozen framework thread never
-/// stalls relaying for the rest of the network.
-/// </summary>
+// The hub role: owns the TCP listener (ephemeral port), the rendezvous publication, local client sessions, hub-to-hub
+// LAN links, and all routing. Routing runs on socket threads so a frozen framework thread never stalls relaying for
+// the rest of the network.
 internal sealed class HubServer : IDisposable
 {
     private readonly NoireNetworker owner;
@@ -40,16 +38,12 @@ internal sealed class HubServer : IDisposable
         lifetime = CancellationTokenSource.CreateLinkedTokenSource(parentToken);
     }
 
-    /// <summary>
-    /// A unique id for this hub incarnation, used for LAN link dial direction and deduplication.
-    /// </summary>
+    // A unique id for this hub incarnation, used for LAN link dial direction and deduplication.
     public Guid HubId { get; } = Guid.NewGuid();
 
     public int Port { get; private set; }
 
-    /// <summary>
-    /// Completes (faulted or not) when the hub can no longer operate and the supervision loop must react.
-    /// </summary>
+    // Completes (faulted or not) when the hub can no longer operate and the supervision loop must react.
     public Task Completion => completion.Task;
 
     public void Start()
@@ -254,9 +248,7 @@ internal sealed class HubServer : IDisposable
         session.RunReadLoop();
     }
 
-    /// <summary>
-    /// Dials another machine's hub discovered through LAN beacons; only the lower hub id dials, so links are unique.
-    /// </summary>
+    // Dials another machine's hub discovered through LAN beacons; only the lower hub id dials, so links are unique.
     public async Task DialHubLinkAsync(IPEndPoint remoteEndPoint, Guid remoteHubId)
     {
         lock (sessionGate)
@@ -352,9 +344,7 @@ internal sealed class HubServer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Routes an envelope originating from this machine (the hub's own module or a local client session).
-    /// </summary>
+    // Routes an envelope originating from this machine (the hub's own module or a local client session).
     public void RouteFromLocal(Envelope envelope, Session? originSession)
     {
         var target = envelope.Target;
@@ -403,9 +393,8 @@ internal sealed class HubServer : IDisposable
         }
     }
 
-    /// <summary>
-    /// Routes an envelope received from a hub link: local delivery only - never re-forwarded to other links (no multi-hop).
-    /// </summary>
+    // Routes an envelope received from a hub link: local delivery only - never re-forwarded to other links (no
+    // multi-hop).
     public void RouteFromRemote(Envelope envelope)
     {
         var target = envelope.Target;
@@ -514,9 +503,7 @@ internal sealed class HubServer : IDisposable
         return states;
     }
 
-    /// <summary>
-    /// Handles a session ending, whether through a goodbye, an EOF, or a transport error.
-    /// </summary>
+    // Handles a session ending, whether through a goodbye, an EOF, or a transport error.
     internal void OnSessionClosed(Session session)
     {
         if (session.IsHubLink)
@@ -731,9 +718,7 @@ internal sealed class HubServer : IDisposable
         completion.TrySetResult();
     }
 
-    /// <summary>
-    /// One connected session: a local client (RemoteId = peer id) or a hub link (RemoteId = remote hub id).
-    /// </summary>
+    // One connected session: a local client (RemoteId = peer id) or a hub link (RemoteId = remote hub id).
     internal sealed class Session : IDisposable
     {
         private readonly HubServer hub;
@@ -756,10 +741,7 @@ internal sealed class HubServer : IDisposable
         public void Post(Envelope envelope)
             => connection.Post(envelope, ex => hub.owner.InternalLog($"Send to {RemoteId} failed: {ex.Message}"));
 
-        /// <summary>
-        /// Sends one last frame and closes the session once it has been written, without blocking the caller.
-        /// </summary>
-        /// <param name="envelope">The farewell frame to send.</param>
+        // Sends one last frame and closes the session once it has been written, without blocking the caller.
         public void CloseAfterSending(Envelope envelope)
             => connection.CloseAfterSending(envelope, ex => hub.owner.InternalLog($"Goodbye to {RemoteId} failed: {ex.Message}"));
 

@@ -10,10 +10,6 @@ namespace NoireLib.Tests;
 /// Unit tests for <see cref="NoireTabBar"/> and <see cref="NoireBadge"/>: the switch state machine that the widget
 /// exists to get right, and the badge placement arithmetic.
 /// </summary>
-/// <remarks>
-/// The switch resolution is deliberately separable from the drawing, because every case worth testing here is a case
-/// that a hand-rolled pending-tab field gets wrong, and none of them need an ImGui context to state.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireTabBarTests
 {

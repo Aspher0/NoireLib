@@ -49,7 +49,7 @@ public sealed class RenderView : IDisposable
         Height = Math.Max(1, height);
     }
 
-    /// <summary>Ensures the GPU target exists (render thread) and returns whether the view can render.</summary>
+    // Ensures the GPU target exists (render thread) and returns whether the view can render.
     internal unsafe bool EnsureTarget(RenderDevice device)
     {
         if (IsDisposed)

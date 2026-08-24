@@ -27,11 +27,8 @@ public class HotkeyManagerConfigInstance : NoireConfigBase
     /// </summary>
     public Dictionary<string, PersistedHotkey> Hotkeys { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Restores the case insensitive comparer of <see cref="Hotkeys"/> after a load from disk, since
-    /// deserialization always rebuilds the dictionary with the default ordinal comparer.
-    /// </summary>
-    /// <param name="context">The streaming context supplied by the serializer.</param>
+    // Restores the case insensitive comparer of Hotkeys after a load from disk, since deserialization always rebuilds
+    // the dictionary with the default ordinal comparer.
     [OnDeserialized]
     internal void NormalizeHotkeysComparer(StreamingContext context)
     {

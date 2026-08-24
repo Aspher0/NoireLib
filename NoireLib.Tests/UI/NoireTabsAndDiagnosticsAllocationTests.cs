@@ -8,12 +8,6 @@ namespace NoireLib.Tests;
 /// Holds the tab bar at zero allocation per frame, and holds the instrument itself to costing nothing while it is not
 /// being asked for anything.
 /// </summary>
-/// <remarks>
-/// The profiler is the one surface where a per-frame allocation would be self-concealing: it would land inside the
-/// measurement everything else is judged against. The gate is that the profiler adds nothing to a frame when it is off,
-/// and that allocation tracking adds nothing on top when only it is off.<br/>
-/// The profiler window's own draw is held separately, by the tests ticket 05 left behind.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireTabsAndDiagnosticsAllocationTests : IClassFixture<UiHarness>
 {

@@ -174,7 +174,7 @@ public readonly unsafe struct NoireAddonNode
         return true;
     }
 
-    /// <summary>The owning addon's scale, or 1 when there is no readable addon to scale against.</summary>
+    // The owning addon's scale, or 1 when there is no readable addon to scale against.
     private float AddonScale
     {
         get

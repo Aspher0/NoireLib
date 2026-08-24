@@ -3,10 +3,8 @@ using System.Threading;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// Owns the named election mutex on a dedicated thread (kernel mutexes are thread-affine).<br/>
-/// Acquiring the mutex IS becoming the hub; an abandoned mutex (dead hub) counts as acquired.
-/// </summary>
+// Owns the named election mutex on a dedicated thread (kernel mutexes are thread-affine). Acquiring the mutex IS
+// becoming the hub; an abandoned mutex (dead hub) counts as acquired.
 internal sealed class ElectionMutex : IDisposable
 {
     private static readonly TimeSpan AcquireTimeout = TimeSpan.FromSeconds(5);
@@ -26,10 +24,8 @@ internal sealed class ElectionMutex : IDisposable
 
     public bool IsHeld { get; private set; }
 
-    /// <summary>
-    /// Tries to acquire the election mutex without waiting, returning true when this instance becomes the hub.
-    /// Once disposed, this permanently returns false.
-    /// </summary>
+    // Tries to acquire the election mutex without waiting, returning true when this instance becomes the hub. Once
+    // disposed, this permanently returns false.
     public bool TryAcquire()
     {
         lock (gate)
@@ -138,9 +134,7 @@ internal sealed class ElectionMutex : IDisposable
         return false;
     }
 
-    /// <summary>
-    /// Releases the mutex if held, allowing another instance to become the hub.
-    /// </summary>
+    // Releases the mutex if held, allowing another instance to become the hub.
     public void Release()
     {
         Thread? thread;
@@ -172,10 +166,8 @@ internal sealed class ElectionMutex : IDisposable
         JoinAndDispose(thread, acquireSignal, releaseSignal);
     }
 
-    /// <summary>
-    /// Releases the role and refuses any further acquisition; safe to call while another thread is acquiring,
-    /// since the in-flight attempt observes the disposal and hands the role back.
-    /// </summary>
+    // Releases the role and refuses any further acquisition; safe to call while another thread is acquiring, since
+    // the in-flight attempt observes the disposal and hands the role back.
     public void Dispose()
     {
         lock (gate)
@@ -185,15 +177,13 @@ internal sealed class ElectionMutex : IDisposable
 
             disposed = true;
         }
-
+    // Releases the role and refuses any further acquisition; safe to call while another thread is acquiring, since the in-flight attempt observes the disposal and hands the role back.
         Release();
     }
 
-    /// <summary>
-    /// Waits for the holder thread to exit, then disposes the events it signals; a thread that outlives the join
-    /// keeps its events instead, reclaimed later by finalization, since disposing them out from under a live
-    /// thread would fault it.
-    /// </summary>
+    // Waits for the holder thread to exit, then disposes the events it signals; a thread that outlives the join keeps
+    // its events instead, reclaimed later by finalization, since disposing them out from under a live thread would
+    // fault it.
     private static void JoinAndDispose(Thread thread, ManualResetEventSlim acquireSignal, ManualResetEventSlim releaseSignal)
     {
         if (!thread.Join(HolderJoinTimeout))
@@ -203,3 +193,6 @@ internal sealed class ElectionMutex : IDisposable
         releaseSignal.Dispose();
     }
 }
+
+    // Waits for the holder thread to exit, then disposes the events it signals; a thread that outlives the join keeps
+    // its events instead, reclaimed later by finalization, since disposing them out from under a live

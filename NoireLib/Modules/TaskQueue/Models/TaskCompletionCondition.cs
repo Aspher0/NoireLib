@@ -43,9 +43,7 @@ public class TaskCompletionCondition
     /// </summary>
     public ContextDefinition EventCaptureBoundaryType { get; set; } = ContextDefinition.CrossContext;
 
-    /// <summary>
-    /// Internal flag to track if the event-based condition has been met.
-    /// </summary>
+    // Internal flag to track if the event-based condition has been met.
     internal bool EventConditionMet { get; set; }
 
     /// <summary>

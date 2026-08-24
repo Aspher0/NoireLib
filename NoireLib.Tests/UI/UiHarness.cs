@@ -10,11 +10,7 @@ namespace NoireLib.Tests;
 /// Runs NoireUI drawing inside a real ImGui frame, with no game and no rendering backend, and reports what happened.
 /// </summary>
 /// <remarks>
-/// An ImGui context is process-wide, exactly like the hub, the transient state store and the animation clock, so a test
-/// class using this must join <see cref="NoireUiTestCollection"/>. One harness owns one context and destroys it on
-/// disposal, which is what keeps a class from inheriting the windows, settings and ids of the class before it.<br/>
-/// The native library is reached through the bindings Dalamud ships rather than through a private P/Invoke, so a test
-/// measures the same code path a plugin runs.
+/// An ImGui context is process-wide, so a test class using this must join <see cref="NoireUiTestCollection"/>.
 /// </remarks>
 /// <example>
 /// <code>
@@ -54,10 +50,8 @@ public sealed class UiHarness : IDisposable
     /// The window every draw runs inside unless the draw opens its own.
     /// </summary>
     /// <remarks>
-    /// Drawing outside a window is not an error ImGui reports; it is geometry that goes nowhere, and the vertex count
-    /// then reads zero for a draw that looked correct. Opening one here removes that failure from every test.<br/>
-    /// A UTF-8 literal rather than a string, so opening the window marshals nothing. A UTF-16 title would be re-encoded
-    /// on every frame, and those bytes would land in the reading the harness exists to take.
+    /// A UTF-8 literal rather than a string: a UTF-16 title would be re-encoded on every frame, into the reading the
+    /// harness exists to take.
     /// </remarks>
     private static ReadOnlySpan<byte> HostWindowTitle => "NoireLib.Tests"u8;
 
@@ -65,11 +59,8 @@ public sealed class UiHarness : IDisposable
     /// Strips the host window of everything that would draw.
     /// </summary>
     /// <remarks>
-    /// A default window contributes its own title bar, border and background to the frame, which measured 36 vertices
-    /// before anything under test drew. That floor would put a magic number in every assertion and would move whenever
-    /// the ImGui style changed, so the host draws nothing and a vertex count is entirely the caller's.<br/>
-    /// <c>NoSavedSettings</c> is not cosmetic: without it ImGui persists window state to an ini file, and a test run
-    /// would inherit the position and size left by the run before it.
+    /// Without <c>NoSavedSettings</c> ImGui persists window state to an ini file, and a run would inherit the position
+    /// and size left by the run before it.
     /// </remarks>
     private const ImGuiWindowFlags HostWindowFlags =
         ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoSavedSettings |

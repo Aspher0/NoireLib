@@ -7,10 +7,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// The placement, text and resolved colours passed to a <see cref="BadgeStyle.CustomDraw"/> hook.
 /// </summary>
-/// <remarks>
-/// <see cref="Text"/> is <see langword="null"/> for a dot badge. Placement and measurement are done, and the pulse is
-/// already applied to every colour.
-/// </remarks>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Bounds">The badge's own rectangle, in screen pixels.</param>
 /// <param name="Text">The count as it would be shown, or <see langword="null"/> for a dot badge.</param>
@@ -57,7 +53,6 @@ public readonly record struct UiBadgeDraw(
     /// <summary>
     /// Draws the count centred on the plate, or nothing for a dot badge.
     /// </summary>
-    /// <remarks>Written onto the draw list rather than as an ImGui item, so it does not affect the row layout.</remarks>
     public void DrawLabel()
     {
         if (string.IsNullOrEmpty(Text))

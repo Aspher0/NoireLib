@@ -4,27 +4,19 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Blend state catalog keys. <see cref="CompositeRgb"/> is premultiplied with the alpha write masked off - the
-/// backbuffer's alpha channel is the game's native-UI coverage (our per-pixel mask source, and other overlay
-/// libraries read it too), so the composite must never write into it.
-/// </summary>
+// Blend state catalog keys. CompositeRgb is premultiplied with the alpha write masked off - the backbuffer's alpha
+// channel is the game's native-UI coverage (our per-pixel mask source, and other overlay libraries read it too), so
+// the composite must never write into it.
 internal enum BlendKey { Opaque = 0, Premultiplied = 1, Additive = 2, CompositeRgb = 3, Max = 4 }
 
-/// <summary>Depth-stencil state catalog keys (reversed-Z GREATER_EQUAL semantics).</summary>
 internal enum DepthKey { WriteGE = 0, ReadGE = 1, Disabled = 2 }
 
-/// <summary>Rasterizer state catalog keys.</summary>
 internal enum RasterKey { CullBack = 0, CullFront = 1, TwoSided = 2, Wire = 3 }
 
-/// <summary>Sampler catalog keys.</summary>
 internal enum SamplerKey { PointClamp = 0, LinearWrap = 1, LinearClamp = 2 }
 
-/// <summary>
-/// Lazily-created, enum-keyed immutable pipeline state objects. Exact descriptor values are normative:
-/// blending is premultiplied everywhere translucent, and depth bias stays zero (the SRV-compare design
-/// needs none).
-/// </summary>
+// Lazily-created, enum-keyed immutable pipeline state objects. Exact descriptor values are normative: blending is
+// premultiplied everywhere translucent, and depth bias stays zero (the SRV-compare design needs none).
 internal sealed unsafe class StateCache : IDisposable
 {
     private readonly ComPtr<ID3D11BlendState>[] blends = new ComPtr<ID3D11BlendState>[5];

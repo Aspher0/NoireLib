@@ -6,16 +6,16 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Everything a <see cref="ToastStyle.CustomDraw"/> hook needs to paint a toast's chrome itself: both rectangles, the
-/// toast, and the colours NoireUI would have used.<br/>
+/// toast, and the colours NoireUI would have used.
 /// The chrome is the background, the severity stripe, the border and the countdown; the body stays the widget's.
 /// </summary>
 /// <param name="DrawList">The draw list to paint into.</param>
-/// <param name="Toast">The toast being painted, for telling toasts apart under one area-wide style.</param>
+/// <param name="Toast">The toast being painted.</param>
 /// <param name="Min">The top left of the toast's full-height rectangle.</param>
 /// <param name="Max">The bottom right of the toast's full-height rectangle.</param>
 /// <param name="SlotMin">The top left of the slot the toast is clipped to.</param>
 /// <param name="SlotMax">The bottom right of that slot.</param>
-/// <param name="Accent">The severity colour, unscaled, for deriving further colours.</param>
+/// <param name="Accent">The severity colour, unscaled.</param>
 /// <param name="Alpha">The toast's presence, from 0 to 1, already applied to every colour here.</param>
 /// <param name="Hovered">Whether the mouse is over the slot.</param>
 /// <param name="Rounding">The corner radius the toast would have used, in real pixels.</param>
@@ -27,7 +27,7 @@ namespace NoireLib.UI;
 /// <param name="TimerMode">The countdown shape the style asked for.</param>
 /// <param name="TimerFraction">How much of the countdown is drawn, drain direction already applied; zero when there is nothing to count.</param>
 /// <param name="TimerColor">The countdown colour, already resolved and presence-scaled.</param>
-/// <param name="TimerThickness">The countdown thickness in real pixels, for the bar and outline modes.</param>
+/// <param name="TimerThickness">The countdown thickness in real pixels.</param>
 /// <param name="TimerTintAlpha">The opacity of the tint modes, before the presence is applied.</param>
 public readonly record struct UiToastDraw(
     ImDrawListPtr DrawList,

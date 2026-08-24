@@ -7,20 +7,6 @@ namespace NoireLib.UI;
 /// One tab of a <see cref="NoireTabBar"/>: what it is called, what it draws, and the conditions under which it is
 /// reachable.
 /// </summary>
-/// <remarks>
-/// <see cref="Id"/> is what code refers to the tab by and never changes. <see cref="Label"/> may change every frame
-/// without the tab losing its identity or its position.
-/// </remarks>
-/// <example>
-/// <code>
-/// new UiTab("filters", "Filters", () =&gt; DrawFilters())
-/// {
-///     Badge = () =&gt; activeFilters,
-///     Enabled = () =&gt; hasData,
-///     DisabledReason = "Load a log first.",
-/// }
-/// </code>
-/// </example>
 public sealed class UiTab
 {
     /// <summary>
@@ -44,7 +30,7 @@ public sealed class UiTab
     /// <summary>What the user reads on the tab. Free to change at any time.</summary>
     public string Label { get; set; }
 
-    /// <summary>What the tab draws when it is open. Nothing is drawn while it is closed.</summary>
+    /// <summary>What the tab draws when it is open.</summary>
     public Action? Body { get; set; }
 
     /// <summary>A tooltip shown when the tab is hovered.</summary>
@@ -62,10 +48,6 @@ public sealed class UiTab
     /// <summary>
     /// Whether the tab can be reached, re-read every frame. When <see langword="null"/>, it always can.
     /// </summary>
-    /// <remarks>
-    /// This gates reaching the tab, not what it shows: a tab that becomes disabled while open stays open and keeps
-    /// drawing.
-    /// </remarks>
     public Func<bool>? Enabled { get; set; }
 
     /// <summary>Why the tab is disabled, shown on hover.</summary>

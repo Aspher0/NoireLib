@@ -6,10 +6,8 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Wraps the granular native inventory events into typed item events, plus item-count and gil conveniences
-/// computed over the main player inventories. Event-driven with a light per-change recount.
-/// </summary>
+// Wraps the granular native inventory events into typed item events, plus item-count and gil conveniences computed
+// over the main player inventories. Event-driven with a light per-change recount.
 internal sealed class InventorySource : GameWatcherSource
 {
     private static readonly GameInventoryType[] CountedInventories =
@@ -52,7 +50,7 @@ internal sealed class InventorySource : GameWatcherSource
     /// <inheritdoc/>
     public override bool IsPolling => false;
 
-    /// <summary>Registers an item id whose total count should be watched, returns the removal action.</summary>
+    // Registers an item id whose total count should be watched, returns the removal action.
     internal Action AddItemCountWatch(uint itemId)
     {
         lock (watchGate)
@@ -201,7 +199,7 @@ internal sealed class InventorySource : GameWatcherSource
             Owner.DispatchEvent(new GilChangedEvent(previous, gil));
     }
 
-    /// <summary>Counts an item across the main player inventories (live read).</summary>
+    // Counts an item across the main player inventories (live read).
     internal static long CountItem(uint itemId)
     {
         long total = 0;
@@ -220,7 +218,7 @@ internal sealed class InventorySource : GameWatcherSource
         return total;
     }
 
-    /// <summary>Reads the local player's gil (live read), or -1 when unavailable.</summary>
+    // Reads the local player's gil (live read), or -1 when unavailable.
     internal static unsafe long ReadGil()
     {
         var manager = FFXIVClientStructs.FFXIV.Client.Game.InventoryManager.Instance();

@@ -1,21 +1,8 @@
 namespace NoireLib.UI;
 
-/// <summary>
-/// Builds the <see cref="NoireUiState"/> key a widget stores a piece of remembered state under, and refuses to build
-/// one when the widget's id was generated rather than given.
-/// </summary>
+// Refuses to build a NoireUiState key when the widget's id was generated rather than given.
 internal static class UiPersistKey
 {
-    /// <summary>
-    /// Builds a state key for a widget.
-    /// </summary>
-    /// <param name="kind">The widget kind, for example "ComboBox".</param>
-    /// <param name="id">The widget's id.</param>
-    /// <param name="hasGeneratedId">Whether that id was generated rather than given by the consumer.</param>
-    /// <param name="subKey">What is being remembered, for example "filter".</param>
-    /// <param name="refusalLogged">Whether the refusal has already been logged for this widget. Set when it is.</param>
-    /// <param name="key">The state key, or an empty string when persisting is refused.</param>
-    /// <returns>True when the state may be persisted.</returns>
     internal static bool TryBuild(string kind, string id, bool hasGeneratedId, string subKey, ref bool refusalLogged, out string key)
     {
         if (!hasGeneratedId)

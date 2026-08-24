@@ -6,13 +6,9 @@ using System.Reflection;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The central hub of the NoireLib UI helpers.<br/>
-/// It owns the per-frame pass every other helper leans on: the drawable registry and the automatic-drawing policy
-/// (<see cref="AutoDraw"/>), the draw-thread queue (<see cref="RunOnDraw"/>), the frame clock, transient widget state,
-/// the reduced-motion switch and <see cref="Diagnostics"/>.<br/>
-/// Registered <see cref="NoireOverlayButton"/> instances are drawn from a hook of NoireLib's own rather than from the
-/// host plugin's draw callback, so an overlay's <see cref="NoireOverlayButton.DrawConditions"/> answer for that overlay
-/// alone. See <see cref="OverlaysDrawIndependently"/>.
+/// The central hub of the NoireLib UI helpers. It owns the per-frame pass every other helper leans on: the drawable
+/// registry and the automatic-drawing policy (<see cref="AutoDraw"/>), the draw-thread queue (<see cref="RunOnDraw"/>),
+/// the frame clock, transient widget state, the reduced-motion switch and <see cref="Diagnostics"/>.
 /// </summary>
 public static partial class NoireUI
 {
@@ -37,41 +33,28 @@ public static partial class NoireUI
     private static int tooltipFrame = -1;
     private static int tooltipCounter;
 
-    /// <summary>
-    /// How the hub's per-frame pass reaches the screen.
-    /// </summary>
+    // How the hub's per-frame pass reaches the screen.
     private enum OverlayHookMode
     {
-        /// <summary>
-        /// Nothing needs a frame yet, so no hook is installed.
-        /// </summary>
+        // Nothing needs a frame yet, so no hook is installed.
         None,
 
-        /// <summary>
-        /// The pass runs straight from Dalamud's own frame, independently of the host plugin's draw callback.
-        /// Dalamud's per-plugin UI hiding therefore never applies to overlays, and each one decides for itself.
-        /// </summary>
+        // Straight from Dalamud's own frame: Dalamud's per-plugin UI hiding never applies to overlays, and each one
+        // decides for itself.
         Independent,
 
-        /// <summary>
-        /// The pass runs from the host plugin's draw callback, which Dalamud gates for the whole plugin at once.
-        /// Only used when the independent hook could not be installed.
-        /// </summary>
+        // From the host plugin's draw callback, which Dalamud gates for the whole plugin at once. Only used when the
+        // independent hook could not be installed.
         Shared,
     }
 
     /// <summary>
-    /// Whether overlay buttons are drawn independently of the rest of the host plugin's UI.<br/>
-    /// When <see langword="true"/> (the normal case), an overlay's <see cref="NoireOverlayButton.DrawConditions"/> affect
-    /// that overlay and nothing else: keeping one visible during a cutscene, in group pose or while the game UI is hidden
-    /// leaves every window the plugin draws hiding exactly as it would have.<br/>
-    /// When <see langword="false"/>, NoireLib could not install its own draw hook and falls back to drawing overlays from
-    /// the plugin's own draw callback, where Dalamud decides for the whole plugin at once. In that mode, and only in that
-    /// mode, setting a draw condition on any single overlay also keeps the rest of the plugin's UI visible in that state.
-    /// The reason is logged once when it happens.<br/>
-    /// The hook is installed the first time anything needs a frame, so this only answers for something once that has
-    /// happened: it reads <see langword="false"/> before that, when there is no hook of either kind rather than a fallback.
+    /// Whether overlay buttons are drawn independently of the rest of the host plugin's UI.
     /// </summary>
+    /// <remarks>
+    /// Reads <see langword="false"/> before anything has needed a frame, when there is no hook of either kind rather
+    /// than a fallback.
+    /// </remarks>
     public static bool OverlaysDrawIndependently => hookMode == OverlayHookMode.Independent;
 
     /// <summary>
@@ -112,11 +95,8 @@ public static partial class NoireUI
             drawable.Dispose();
     }
 
-    /// <summary>
-    /// Returns a unique ImGui window id for a custom tooltip drawn this frame.<br/>
-    /// Ids are stable across frames as long as tooltips are shown in the same order.
-    /// </summary>
-    /// <returns>A unique ImGui window id for the current frame.</returns>
+    // A unique ImGui window id for a custom tooltip drawn this frame. Ids are stable across frames as long as tooltips
+    // are shown in the same order.
     internal static string NextTooltipId()
     {
         var frame = ImGui.GetFrameCount();
@@ -127,22 +107,15 @@ public static partial class NoireUI
         }
 
         // Built through the id cache rather than interpolated, so the tooltips a frame shows cost nothing after the
-        // first frame that showed that many. The empty owner is what puts the separator in the right place: the shape
+        // first frame that showed that many. The empty owner puts the separator in the right place: the shape
         // is {prefix}{owner}_{index}, so a prefix without its own trailing underscore composes the same string this
         // replaced, which the tooltip id test asserts against the literal.
         return UiIds.For("###NoireTooltip", string.Empty, tooltipCounter++);
     }
 
-    /// <summary>
-    /// Recomputes the per-plugin UiBuilder "keep UI visible" switches from the <see cref="NoireOverlayButton.DrawConditions"/> of every
-    /// registered overlay button and applies them.<br/>
-    /// Only does anything in <see cref="OverlayHookMode.Shared"/>, where overlays are drawn from the host plugin's own draw callback and
-    /// Dalamud would otherwise not call it at all in those states. A switch is forced on as soon as one button needs it; each individual
-    /// button still hides itself when its own conditions do not include the current state.<br/>
-    /// NoireLib only ever forces a switch on, and reverts exactly the ones it turned on, to avoid overriding a value the host plugin set itself.<br/>
-    /// In <see cref="OverlayHookMode.Independent"/> the switches are left completely alone: overlays are not drawn from the callback those
-    /// switches gate, so exempting the plugin would buy nothing and would keep the plugin's own windows on screen for no reason.
-    /// </summary>
+    // Recomputes the per-plugin UiBuilder "keep UI visible" switches from every registered overlay button's
+    // DrawConditions. Only does anything in OverlayHookMode.Shared; NoireLib only ever forces a switch on, and reverts
+    // exactly the ones it turned on, to avoid overriding a value the host plugin set itself.
     internal static void RefreshUiHideOverrides()
     {
         if (!NoireService.IsInitialized() || hookMode == OverlayHookMode.Independent)
@@ -170,10 +143,8 @@ public static partial class NoireUI
         ApplyOverride(ref forcedUserHideOverride, needUserHide, uiBuilder.DisableUserUiHide, v => uiBuilder.DisableUserUiHide = v);
     }
 
-    /// <summary>
-    /// Applies a single "keep UI visible" switch: forces it on when needed (remembering it did), and reverts it only if NoireLib was the one
-    /// that forced it. A value the host plugin set to <see langword="true"/> itself is never touched.
-    /// </summary>
+    // Forces the switch on when needed (remembering it did), and reverts it only if NoireLib was the one that forced
+    // it: a value the host plugin set to true itself is never touched.
     private static void ApplyOverride(ref bool forced, bool needed, bool current, Action<bool> setter)
     {
         if (needed)
@@ -191,9 +162,7 @@ public static partial class NoireUI
         }
     }
 
-    /// <summary>
-    /// Installs the hub's per-frame hook if it is not installed yet. Callers hold <see cref="SyncRoot"/>.
-    /// </summary>
+    // Installs the hub's per-frame hook if it is not installed yet. Callers hold SyncRoot.
     private static void EnsureFrameHook()
     {
         if (hookMode != OverlayHookMode.None)
@@ -219,24 +188,8 @@ public static partial class NoireUI
             NoireLibMain.RegisterOnDispose(DisposeCallbackKey, Cleanup);
     }
 
-    /// <summary>
-    /// Installs a draw hook that belongs to NoireLib rather than to the host plugin, and reports whether it worked.
-    /// </summary>
-    /// <remarks>
-    /// Dalamud decides whether to hide plugin UI once per plugin, inside the callback it invokes to draw that plugin: an
-    /// overlay drawn from there can only be exempted by exempting the whole plugin along with it, using the
-    /// per-plugin <c>DisableUserUiHide</c>, <c>DisableCutsceneUiHide</c> and <c>DisableGposeUiHide</c> switches.<br/>
-    /// Every plugin's callback is in turn invoked from a single event inside Dalamud that carries no such gate. Subscribing
-    /// to it directly puts the overlays beside the plugin's callback rather than inside it, so nothing Dalamud decides about
-    /// this plugin's UI reaches them and each overlay is free to answer for itself
-    /// (see <see cref="NoireOverlayButton.ShouldHideForGameState(OverlayDrawConditions, bool, bool, bool)"/>).<br/>
-    /// That event is only reachable by reflection, so this is written to fail into the shared hook rather than to throw:
-    /// the names are checked against the running Dalamud every time, and a Dalamud that no longer matches costs the
-    /// per-overlay independence, not the overlays.<br/>
-    /// Nothing else is lost by bypassing the plugin's callback. It gates, draws Dalamud's own error window and keeps draw
-    /// statistics; it establishes no ImGui state (no font and no id scope) that an overlay drawn beside it would miss.
-    /// </remarks>
-    /// <returns>True if the independent hook is installed, false to fall back to the plugin's draw callback.</returns>
+    // Installs a draw hook that belongs to NoireLib rather than to the host plugin, and reports whether it worked. The
+    // event is only reachable by reflection, so a Dalamud that no longer matches costs the per-overlay independence.
     private static bool TryHookIndependently()
     {
         try

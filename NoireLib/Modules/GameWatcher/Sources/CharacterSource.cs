@@ -5,13 +5,11 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// The interest-masked polling source over every character in the object table.<br/>
-/// Each scoped subscription contributes its aspect bits and its scope; the source keeps the union mask and
-/// the union iteration class (recomputed on subscribe/unsubscribe, not per tick). Per tick it visits only
-/// subjects matched by the union scope and compares only fields under the union mask - compare first,
-/// materialize second: a new snapshot is allocated only when something changed.
-/// </summary>
+// The interest-masked polling source over every character in the object table. Each scoped subscription contributes
+// its aspect bits and its scope; the source keeps the union mask and the union iteration class (recomputed on
+// subscribe/unsubscribe, not per tick). Per tick it visits only subjects matched by the union scope and compares only
+// fields under the union mask - compare first, materialize second: a new snapshot is allocated only when something
+// changed.
 internal sealed class CharacterSource : GameWatcherSource
 {
     private sealed class InterestRegistration
@@ -29,16 +27,12 @@ internal sealed class CharacterSource : GameWatcherSource
 
     public CharacterSource(NoireGameWatcher owner) : base(owner, SourceKind.Characters) { }
 
-    /// <summary>The current union interest mask, for diagnostics.</summary>
     internal CharacterAspect UnionMask => unionMask;
 
-    /// <summary>The current union iteration class, for diagnostics.</summary>
     internal Scope.IterationClass UnionIteration => unionIteration;
 
-    /// <summary>
-    /// Registers a scoped aspect interest and returns its removal handle.
-    /// Called by facade helpers alongside the registry subscription.
-    /// </summary>
+    // Registers a scoped aspect interest and returns its removal handle. Called by facade helpers alongside the
+    // registry subscription.
     internal IDisposable AddScopedInterest(CharacterAspect aspect, Scope scope)
     {
         var registration = new InterestRegistration { Aspect = aspect, Scope = scope };
@@ -363,10 +357,8 @@ internal sealed class CharacterSource : GameWatcherSource
             Owner.DispatchEvent(new CharacterCastCompletedEvent(prev, cur, prev.CastActionId));
     }
 
-    /// <summary>
-    /// The stored snapshot for an entity when the source is active and tracking it, for same-tick coherence
-    /// lookups by other sources.
-    /// </summary>
+    // The stored snapshot for an entity when the source is active and tracking it, for same-tick coherence lookups by
+    // other sources.
     internal CharacterSnapshot? TryGetTracked(uint entityId)
         => baseline.TryGetValue(entityId, out var snapshot) ? snapshot : null;
 }

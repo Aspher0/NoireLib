@@ -36,13 +36,11 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     private int deliveriesInFlight;
     private int disposed;
 
-    /// <summary>
-    /// The watcher instances whose deliveries the current thread is currently inside, innermost last.<br/>
-    /// A consumer callback may dispose the very module that invoked it, and that delivery is still in flight while
-    /// <see cref="DisposeInternal"/> runs, so a disposing thread has to recognize its own deliveries rather than
-    /// wait for them to finish. Deliveries nest (a callback can post further work that runs inline), and several
-    /// watcher instances can be delivering on one thread, hence a stack rather than a flag.
-    /// </summary>
+    // The watcher instances whose deliveries the current thread is currently inside, innermost last. A consumer
+    // callback may dispose the very module that invoked it, and that delivery is still in flight while
+    // DisposeInternal runs, so a disposing thread has to recognize its own deliveries rather than wait for them to
+    // finish. Deliveries nest (a callback can post further work that runs inline), and several watcher instances can
+    // be delivering on one thread, hence a stack rather than a flag.
     [ThreadStatic]
     private static List<NoireFileWatcher>? DeliveriesOnThisThread;
 
@@ -92,10 +90,7 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         int duplicateNotificationWindowMs = 100)
         : base(moduleId, active, enableLogging, eventBus, autoEnableNewWatches, suppressDuplicateNotifications, duplicateNotificationWindowMs) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireFileWatcher(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -584,14 +579,10 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
     /// <returns>The module instance for chaining.</returns>
     public NoireFileWatcher DisableAllWatches() => SetAllWatchesEnabled(false);
 
-    /// <summary>
-    /// Applies one enabled state to every registered watch, reporting the watches whose state actually changed.<br/>
-    /// Reports itself as the same per-watch <see cref="FileWatchStateChangedEvent"/> that <see cref="SetWatchEnabled"/>
-    /// publishes, rather than an event of its own. Only watches that actually changed are reported, so a bulk call
-    /// over watches already in the requested state is silent.
-    /// </summary>
-    /// <param name="enabled">The state to apply to every registered watch.</param>
-    /// <returns>The module instance for chaining.</returns>
+    // Applies one enabled state to every registered watch, reporting the watches whose state actually changed.
+    // Reports itself as the same per-watch FileWatchStateChangedEvent that SetWatchEnabled publishes, rather than an
+    // event of its own. Only watches that actually changed are reported, so a bulk call over watches already in the
+    // requested state is silent.
     private NoireFileWatcher SetAllWatchesEnabled(bool enabled)
     {
         List<string> changedWatchIds = [];
@@ -768,31 +759,22 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Framework Thread Delivery
 
-    /// <summary>
-    /// Maximum number of deliveries allowed to wait for the framework thread at once.<br/>
-    /// A filesystem event storm can produce notifications far faster than the game renders frames, so the queue
-    /// is bounded: beyond this many pending deliveries the oldest is dropped rather than letting memory grow.
-    /// </summary>
+    // Maximum number of deliveries allowed to wait for the framework thread at once. A filesystem event storm can
+    // produce notifications far faster than the game renders frames, so the queue is bounded: beyond this many
+    // pending deliveries the oldest is dropped rather than letting memory grow.
     internal const int DeliveryQueueCapacity = 4096;
 
-    /// <summary>
-    /// Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
-    /// <see cref="DrainDeliveryQueue"/> as the only way to run them.<br/>
-    /// This is the seam for exercising queueing, ordering and the drop policy without a running game.
-    /// </summary>
+    // Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
+    // DrainDeliveryQueue as the only way to run them. This is the seam for exercising queueing, ordering and the drop
+    // policy without a running game.
     internal bool ForceQueuedDelivery { get; set; } = false;
 
-    /// <summary>
-    /// Whether deliveries run inline on the thread that observed the filesystem event.<br/>
-    /// Without an initialized NoireLib there is no framework thread to marshal onto, so inline is the only option.
-    /// </summary>
+    // Whether deliveries run inline on the thread that observed the filesystem event. Without an initialized NoireLib
+    // there is no framework thread to marshal onto, so inline is the only option.
     private bool InlineDelivery => !NoireService.IsInitialized() && !ForceQueuedDelivery;
 
-    /// <summary>
-    /// Queues a delivery to run on the framework thread, or runs it inline when there is no framework thread
-    /// to marshal onto. Deliveries posted after disposal are discarded.
-    /// </summary>
-    /// <param name="delivery">The delivery to run.</param>
+    // Queues a delivery to run on the framework thread, or runs it inline when there is no framework thread to
+    // marshal onto. Deliveries posted after disposal are discarded.
     internal void PostDelivery(Action delivery)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -827,11 +809,9 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     private void OnFrameworkUpdate(IFramework framework) => DrainDeliveryQueue();
 
-    /// <summary>
-    /// Runs the deliveries queued as of entry, on the calling thread.<br/>
-    /// The underlying watchers raise events concurrently on several thread pool threads; draining serializes them
-    /// so consumer callbacks never run in parallel with each other.
-    /// </summary>
+    // Runs the deliveries queued as of entry, on the calling thread. The underlying watchers raise events
+    // concurrently on several thread pool threads; draining serializes them so consumer callbacks never run in
+    // parallel with each other.
     internal void DrainDeliveryQueue()
     {
         // Only drain what was queued at entry, so a callback that triggers further filesystem activity cannot
@@ -849,12 +829,9 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             Volatile.Write(ref deliveryOverflowReported, 0);
     }
 
-    /// <summary>
-    /// Runs one delivery, containing any exception so that a single failing handler cannot stop the drain.<br/>
-    /// A delivery that starts after disposal is discarded, and one that has already started keeps
-    /// <see cref="DisposeInternal"/> waiting until it finishes.
-    /// </summary>
-    /// <param name="delivery">The delivery to run.</param>
+    // Runs one delivery, containing any exception so that a single failing handler cannot stop the drain. A delivery
+    // that starts after disposal is discarded, and one that has already started keeps DisposeInternal waiting until
+    // it finishes.
     private void RunDelivery(Action delivery)
     {
         var stack = DeliveriesOnThisThread ??= [];
@@ -886,12 +863,10 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Blocks until every delivery that had already passed the disposal latch has finished.<br/>
-    /// Deliveries the calling thread is itself inside are excluded: a consumer callback is allowed to dispose the
-    /// module that invoked it, and waiting for that delivery would be waiting for the caller's own stack frame.<br/>
-    /// No lock is held while waiting, so a callback that is still running remains free to call back into the module.
-    /// </summary>
+    // Blocks until every delivery that had already passed the disposal latch has finished. Deliveries the calling
+    // thread is itself inside are excluded: a consumer callback is allowed to dispose the module that invoked it, and
+    // waiting for that delivery would be waiting for the caller's own stack frame. No lock is held while waiting, so
+    // a callback that is still running remains free to call back into the module.
     private void WaitForDeliveriesToDrain()
     {
         var selfInFlight = 0;
@@ -914,15 +889,11 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
 
     #region Private Helper Methods
 
-    /// <summary>
-    /// Removes one registration from every index that holds it. The caller must hold <see cref="watchLock"/>.<br/>
-    /// Dropping a registration from <see cref="watchRegistrations"/> retires it: every site that touches a
-    /// registration's <see cref="FileSystemWatcher"/> looks it up here and touches it within the same lock
-    /// acquisition, never across two, so an unindexed registration is unreachable and its watcher can be disposed
-    /// outside the lock safely.<br/>
-    /// <see cref="keyToWatchId"/> is retired conditionally, because a key can resolve to a watch other than this one.
-    /// </summary>
-    /// <param name="registration">The registration to remove from the indexes.</param>
+    // Removes one registration from every index that holds it. The caller must hold watchLock. Dropping a
+    // registration from watchRegistrations retires it: every site that touches a registration's FileSystemWatcher
+    // looks it up here and touches it within the same lock acquisition, never across two, so an unindexed
+    // registration is unreachable and its watcher can be disposed outside the lock safely. keyToWatchId is retired
+    // conditionally, because a key can resolve to a watch other than this one.
     private void UnindexRegistration(WatchRegistration registration)
     {
         watchRegistrations.Remove(registration.WatchId);
@@ -1035,11 +1006,8 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         PostDelivery(() => DeliverError(error));
     }
 
-    /// <summary>
-    /// Invokes the error event and publishes the matching EventBus event.<br/>
-    /// Runs on the framework thread unless NoireLib is not initialized.
-    /// </summary>
-    /// <param name="error">The error to deliver.</param>
+    // Invokes the error event and publishes the matching EventBus event. Runs on the framework thread unless NoireLib
+    // is not initialized.
     private void DeliverError(FileWatchError error)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -1103,12 +1071,8 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         PostDelivery(() => DeliverNotification(registration, notification));
     }
 
-    /// <summary>
-    /// Invokes the callbacks and events of one notification.<br/>
-    /// Runs on the framework thread unless NoireLib is not initialized.
-    /// </summary>
-    /// <param name="registration">The watch registration that captured the notification.</param>
-    /// <param name="notification">The notification to deliver.</param>
+    // Invokes the callbacks and events of one notification. Runs on the framework thread unless NoireLib is not
+    // initialized.
     private void DeliverNotification(WatchRegistration registration, FileWatchNotification notification)
     {
         List<CallbackRegistration> callbacks;
@@ -1190,12 +1154,8 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         }
     }
 
-    /// <summary>
-    /// Whether a notification repeats one already seen for the same watch, event type and paths within
-    /// <see cref="DuplicateNotificationWindow"/>. Collapses the burst of events a single file write produces.
-    /// </summary>
-    /// <param name="notification">The notification to test.</param>
-    /// <returns>True when the notification should be discarded as a duplicate.</returns>
+    // Whether a notification repeats one already seen for the same watch, event type and paths within
+    // DuplicateNotificationWindow. Collapses the burst of events a single file write produces.
     internal bool IsSuppressedDuplicate(FileWatchNotification notification)
     {
         var now = notification.OccurredAtUtc;
@@ -1243,14 +1203,9 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
         return false;
     }
 
-    /// <summary>
-    /// Whether a watch is configured to observe a given kind of filesystem notification.<br/>
-    /// Only the four notification kinds are mapped. A watcher-level error arrives through a separate event instead,
-    /// checked against <see cref="FileWatchRegistrationOptions.NotifyOnError"/> rather than this method.
-    /// </summary>
-    /// <param name="options">The options of the watch that captured the event.</param>
-    /// <param name="eventType">The kind of notification to test.</param>
-    /// <returns>True when the notification should be processed.</returns>
+    // Whether a watch is configured to observe a given kind of filesystem notification. Only the four notification
+    // kinds are mapped. A watcher-level error arrives through a separate event instead, checked against NotifyOnError
+    // rather than this method.
     private static bool IsEventEnabled(FileWatchRegistrationOptions options, FileWatchEventType eventType)
     {
         return eventType switch
@@ -1345,15 +1300,10 @@ public class NoireFileWatcher : NoireModuleBase<NoireFileWatcher>
             AsyncCallbackCount: registration.Callbacks.Count(c => c.IsAsync));
     }
 
-    /// <summary>
-    /// Publishes one event to the associated EventBus, if there is one.<br/>
-    /// Every call site reaches this through <see cref="PostDelivery"/> and never directly, because
-    /// <see cref="NoireEventBus.Publish{TEvent}(TEvent)"/> invokes synchronous handlers inline: publishing straight
-    /// from a public method would run a subscriber on whatever thread that method's caller used, rather than the
-    /// framework thread this module guarantees.
-    /// </summary>
-    /// <typeparam name="TEvent">The event type.</typeparam>
-    /// <param name="eventData">The event to publish.</param>
+    // Publishes one event to the associated EventBus, if there is one. Every call site reaches this through
+    // PostDelivery and never directly, because Publish{TEvent}(TEvent) invokes synchronous handlers inline:
+    // publishing straight from a public method would run a subscriber on whatever thread that method's caller used,
+    // rather than the framework thread this module guarantees.
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);

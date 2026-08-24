@@ -22,19 +22,19 @@ public sealed record ZoneInfo
     /// <summary>The current weather row id, or 0 when unavailable.</summary>
     public required byte WeatherId { get; init; }
 
-    /// <summary>The current Eorzea hour (0–23).</summary>
+    /// <summary>The current Eorzea hour (0-23).</summary>
     public required int EorzeaHour { get; init; }
 
-    /// <summary>The current Eorzea minute (0–59).</summary>
+    /// <summary>The current Eorzea minute (0-59).</summary>
     public required int EorzeaMinute { get; init; }
 
-    /// <summary>The current Eorzea second (0–59).</summary>
+    /// <summary>The current Eorzea second (0-59).</summary>
     public required int EorzeaSecond { get; init; }
 
     /// <summary>The exact Eorzea time of day (hour + minute + second within the Eorzea day).</summary>
     public TimeSpan EorzeaTimeOfDay => new(EorzeaHour, EorzeaMinute, EorzeaSecond);
 
-    /// <summary>Whether it is currently night in Eorzea (18:00–5:59 ET).</summary>
+    /// <summary>Whether it is currently night in Eorzea (18:00-5:59 ET).</summary>
     public bool IsEorzeaNight => EorzeaHour < 6 || EorzeaHour >= 18;
 
     /// <summary>The UTC timestamp when the info was captured.</summary>

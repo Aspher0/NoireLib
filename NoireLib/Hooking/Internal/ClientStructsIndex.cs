@@ -4,10 +4,8 @@ using System.Reflection;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// Maps a game address back to the function XIVClientStructs declares there, so a hook delegate can be
-/// checked against the real function before the hook exists.
-/// </summary>
+// Maps a game address back to the function XIVClientStructs declares there, so a hook delegate can be checked against
+// the real function before the hook exists.
 internal static class ClientStructsIndex
 {
     private const BindingFlags NestedTypes = BindingFlags.Public | BindingFlags.NonPublic;
@@ -21,16 +19,10 @@ internal static class ClientStructsIndex
     private static nint mainModuleBase;
     private static int mainModuleSize;
 
-    /// <summary>
-    /// Gets the number of indexed functions, building the index if it has not been built.
-    /// </summary>
+    // Gets the number of indexed functions, building the index if it has not been built.
     public static int Count => GetIndex().Count;
 
-    /// <summary>
-    /// Returns what XIVClientStructs declares at an address, or null when it declares nothing there.
-    /// </summary>
-    /// <param name="address">The address to look up.</param>
-    /// <returns>The identity, or null.</returns>
+    // Returns what XIVClientStructs declares at an address, or null when it declares nothing there.
     public static HookIdentity? Identify(nint address)
     {
         if (address == 0 || !IsInsideGameModule(address))
@@ -39,25 +31,15 @@ internal static class ClientStructsIndex
         return GetIndex().GetValueOrDefault(address);
     }
 
-    /// <summary>
-    /// Builds the identity of a XIVClientStructs delegate directly from its declaring types, without touching the index.
-    /// </summary>
-    /// <param name="delegateType">The delegate type.</param>
-    /// <param name="address">The resolved address.</param>
-    /// <returns>The identity, or null when the delegate is not a XIVClientStructs delegate.</returns>
+    // Builds the identity of a XIVClientStructs delegate directly from its declaring types, without touching the
+    // index.
     public static HookIdentity? IdentifyDelegate(Type delegateType, nint address)
     {
         var ownerType = HookAddressResolver.FindOwnerType(delegateType);
         return ownerType == null ? null : CreateIdentity(ownerType, delegateType.Name, delegateType, address);
     }
 
-    /// <summary>
-    /// Checks a delegate against the function declared at an address.
-    /// </summary>
-    /// <param name="delegateType">The delegate to check.</param>
-    /// <param name="address">The resolved address.</param>
-    /// <param name="strict">Whether parameter types must match exactly rather than only in calling-convention shape.</param>
-    /// <returns>The result.</returns>
+    // Checks a delegate against the function declared at an address.
     public static HookVerificationResult Verify(Type delegateType, nint address, bool strict = false)
     {
         var passed = HookSignatureFormatter.Format(delegateType);
@@ -69,14 +51,6 @@ internal static class ClientStructsIndex
         return Compare(delegateType, identity, passed, strict);
     }
 
-    /// <summary>
-    /// Checks a delegate against a known identity.
-    /// </summary>
-    /// <param name="delegateType">The delegate to check.</param>
-    /// <param name="identity">What XIVClientStructs declares.</param>
-    /// <param name="passed">The checked delegate rendered as a signature.</param>
-    /// <param name="strict">Whether parameter types must match exactly.</param>
-    /// <returns>The result.</returns>
     public static HookVerificationResult Compare(Type delegateType, HookIdentity identity, string passed, bool strict)
     {
         var expectedType = identity.ExpectedDelegateType;
@@ -91,13 +65,7 @@ internal static class ClientStructsIndex
             : new HookVerificationResult(HookVerificationStatus.Mismatched, delegateType, identity, passed, expected, difference);
     }
 
-    /// <summary>
-    /// Compares two delegate signatures and describes the first difference, or returns null when they agree.
-    /// </summary>
-    /// <param name="passed">The delegate the consumer wrote.</param>
-    /// <param name="expected">The delegate XIVClientStructs declares.</param>
-    /// <param name="strict">Whether types must match exactly rather than only in calling-convention shape.</param>
-    /// <returns>The first difference, or null.</returns>
+    // Compares two delegate signatures and describes the first difference, or returns null when they agree.
     public static string? CompareDelegates(Type passed, Type expected, bool strict)
     {
         var passedInvoke = passed.GetMethod("Invoke");
@@ -124,13 +92,7 @@ internal static class ClientStructsIndex
         return null;
     }
 
-    /// <summary>
-    /// Decides whether two types are interchangeable in a hook signature.
-    /// </summary>
-    /// <param name="passed">The type the consumer wrote.</param>
-    /// <param name="expected">The type XIVClientStructs declares.</param>
-    /// <param name="strict">Whether the types must be identical.</param>
-    /// <returns>True if the types agree.</returns>
+    // Decides whether two types are interchangeable in a hook signature.
     public static bool TypesAgree(Type passed, Type expected, bool strict)
     {
         if (passed == expected)
@@ -146,12 +108,8 @@ internal static class ClientStructsIndex
         return passedClass != ArgumentClass.Aggregate && passedClass == Classify(expected);
     }
 
-    /// <summary>
-    /// Groups a type by what a detour actually reads for it, so a pointer written as <c>nint</c> or <c>ulong</c>
-    /// is not reported as a mismatch.
-    /// </summary>
-    /// <param name="type">The type to classify.</param>
-    /// <returns>The group.</returns>
+    // Groups a type by what a detour actually reads for it, so a pointer written as nint or ulong is not reported as
+    // a mismatch.
     public static ArgumentClass Classify(Type type)
     {
         if (type == typeof(void))
@@ -224,11 +182,7 @@ internal static class ClientStructsIndex
         return BuildByReflection();
     }
 
-    /// <summary>
-    /// Reads the interop generator's own list of every address it resolved, in a single collection walk.
-    /// </summary>
-    /// <param name="withDelegate">How many entries resolved to a delegate that a hook can be checked against.</param>
-    /// <returns>The index, or an empty map when the resolver is unavailable or has not run.</returns>
+    // Reads the interop generator's own list of every address it resolved, in a single collection walk.
     private static Dictionary<nint, HookIdentity> BuildFromResolver(out int withDelegate)
     {
         var map = new Dictionary<nint, HookIdentity>();
@@ -282,13 +236,8 @@ internal static class ClientStructsIndex
         return map;
     }
 
-    /// <summary>
-    /// Turns a resolver entry name into an identity, finding the delegate the function declares when the name can
-    /// be resolved back to a type.
-    /// </summary>
-    /// <param name="name">The name the resolver recorded.</param>
-    /// <param name="address">The resolved address.</param>
-    /// <returns>The identity.</returns>
+    // Turns a resolver entry name into an identity, finding the delegate the function declares when the name can be
+    // resolved back to a type.
     private static HookIdentity CreateIdentityFromName(string name, nint address)
     {
         var separator = name.LastIndexOf('.');
@@ -308,12 +257,8 @@ internal static class ClientStructsIndex
         };
     }
 
-    /// <summary>
-    /// Resolves the type part of a resolver entry name, which may or may not carry the XIVClientStructs namespace
-    /// and may separate namespaces with <c>::</c>.
-    /// </summary>
-    /// <param name="typeName">The type part of the name.</param>
-    /// <returns>The type, or null when nothing matches.</returns>
+    // Resolves the type part of a resolver entry name, which may or may not carry the XIVClientStructs namespace and
+    // may separate namespaces with ::.
     private static Type? FindOwnerTypeByName(string typeName)
     {
         var assembly = typeof(FFXIVClientStructs.FFXIV.Client.Game.GameMain).Assembly;

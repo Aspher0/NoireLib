@@ -53,9 +53,7 @@ public sealed class NoireHookWindow : Window
 
     internal static bool IsSharedOpen => shared is { IsOpen: true };
 
-    /// <summary>
-    /// Whether the shared window has been constructed, which reading it must never cause.
-    /// </summary>
+    // Whether the shared window has been constructed, which reading it must never cause.
     internal static bool HasSharedInstance => shared != null;
 
     /// <summary>Draws the window, called by the window system it was added to.</summary>

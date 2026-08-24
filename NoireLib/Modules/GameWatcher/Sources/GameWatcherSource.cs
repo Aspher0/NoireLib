@@ -2,15 +2,11 @@ using System;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// The internal base for the watcher's diff-producers. Sources own no subscription logic: they detect a fact
-/// change and hand a typed event record to the module core, which dispatches through the shared registry.<br/>
-/// Lifecycle is driven entirely by the owning module (demand refcounting + config overrides): sources are
-/// constructed cold (no game access in constructors) and only touch game state between
-/// <see cref="Activate"/> and <see cref="Deactivate"/>.<br/>
-/// Source isolation: any exception thrown from activation or a tick marks the source failed and shuts it
-/// down - every other source keeps working.
-/// </summary>
+// The internal base for the watcher's diff-producers. Sources own no subscription logic: they detect a fact change
+// and hand a typed event record to the module core, which dispatches through the shared registry. Lifecycle is driven
+// entirely by the owning module (demand refcounting + config overrides): sources are constructed cold (no game access
+// in constructors) and only touch game state between Activate and Deactivate. Source isolation: any exception thrown
+// from activation or a tick marks the source failed and shuts it down - every other source keeps working.
 internal abstract class GameWatcherSource
 {
     private TimeSpan pollCadence = TimeSpan.Zero;
@@ -141,10 +137,8 @@ internal abstract class GameWatcherSource
     /// <summary>Releases unmanaged resources (hooks). Called once when the module is disposed.</summary>
     public virtual void DisposeSource() { }
 
-    /// <summary>
-    /// Marks the source failed and logs it. A failed source never restarts until the module is reactivated;
-    /// subscriptions to its events are reported in diagnostics.
-    /// </summary>
+    // Marks the source failed and logs it. A failed source never restarts until the module is reactivated;
+    // subscriptions to its events are reported in diagnostics.
     private protected void MarkFailed(Exception ex, string stage)
     {
         HasFailed = true;
@@ -152,9 +146,7 @@ internal abstract class GameWatcherSource
         NoireLogger.LogError(Owner, ex, $"GameWatcher source {Kind} failed during {stage} and disabled itself. Every other source keeps working.");
     }
 
-    /// <summary>
-    /// Clears a failure so the source can be retried, used when the module is reactivated.
-    /// </summary>
+    // Clears a failure so the source can be retried, used when the module is reactivated.
     internal void ResetFailure()
     {
         HasFailed = false;

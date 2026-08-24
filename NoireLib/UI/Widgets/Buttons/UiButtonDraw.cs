@@ -13,10 +13,10 @@ namespace NoireLib.UI;
 /// <param name="Label">The button's label, with any id suffix already stripped.</param>
 /// <param name="Hovered">Whether the mouse is over the button.</param>
 /// <param name="Held">Whether the button is currently pressed.</param>
-/// <param name="Color">The fill color for the current state, already resolved through the style and the theme.</param>
+/// <param name="Color">The fill color for the current state.</param>
 /// <param name="TextColor">The label color for the current state.</param>
 /// <param name="Rounding">The corner radius the button would have used.</param>
-/// <param name="Progress">How far a progressive button has filled, from 0 to 1. Always 1 for an ordinary button.</param>
+/// <param name="Progress">How far a progressive button has filled, from 0 to 1.</param>
 public readonly record struct UiButtonDraw(
     ImDrawListPtr DrawList,
     Vector2 Min,
@@ -38,10 +38,6 @@ public readonly record struct UiButtonDraw(
     /// <summary>
     /// Draws the button's own label, centred, in the colour NoireUI would have used.
     /// </summary>
-    /// <remarks>
-    /// Always centred. For a label positioned elsewhere, use <see cref="Label"/>, <see cref="TextColor"/> and <see
-    /// cref="DrawList"/> directly.
-    /// </remarks>
     public void DrawLabel() => DrawLabel(TextColor);
 
     /// <summary>

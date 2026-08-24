@@ -10,8 +10,7 @@ namespace NoireLib.SourceGenerators;
 
 /// <summary>
 /// Reports a NoireUI surface that acquires an ImGui draw list directly instead of through the
-/// <c>UiDraw</c> gate, which is what makes instrumentation a property of the code rather than a
-/// thing to remember.
+/// <c>UiDraw</c> gate.
 /// </summary>
 /// <remarks>
 /// A surface that reaches for its own list opens no profiler scope, so its cost lands in whichever

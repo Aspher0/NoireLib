@@ -52,7 +52,7 @@ public sealed class FateWatcher : GameWatcherFacade
         => On(null, handler, options, nameof(OnProgressChanged));
 
     /// <summary>
-    /// Subscribes to fate state changes (preparing, running, ending, …).
+    /// Subscribes to fate state changes (preparing, running, ending, ...).
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="options">Optional subscription settings.</param>

@@ -47,11 +47,6 @@ public class Deck
     /// </summary>
     public double AutoRefillThresholdPercentage { get; set; } = 0;
 
-    /// <summary>
-    /// Initializes a new deck with the specified cards.
-    /// </summary>
-    /// <param name="cards">The cards to initialize the deck with.</param>
-    /// <param name="deckCount">The number of standard decks represented.</param>
     internal Deck(List<PlayingCard> cards, int deckCount)
     {
         _remainingCards = cards;

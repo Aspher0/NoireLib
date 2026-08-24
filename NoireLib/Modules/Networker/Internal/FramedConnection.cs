@@ -8,19 +8,15 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// A length-prefixed frame connection over TCP. Writes are serialized by a semaphore;
-/// a bounded pending-send counter keeps a slow consumer from growing memory unboundedly.
-/// </summary>
+// A length-prefixed frame connection over TCP. Writes are serialized by a semaphore; a bounded pending-send counter
+// keeps a slow consumer from growing memory unboundedly.
 internal sealed class FramedConnection : IDisposable
 {
     private const int MaxPendingSends = 4096;
 
-    /// <summary>
-    /// How long a farewell frame is given to reach the peer before its socket is closed anyway: bounds the
-    /// pathological case of a peer that stopped reading, since a normal loopback write completes in well under
-    /// a millisecond.
-    /// </summary>
+    // How long a farewell frame is given to reach the peer before its socket is closed anyway: bounds the
+    // pathological case of a peer that stopped reading, since a normal loopback write completes in well under a
+    // millisecond.
     private static readonly TimeSpan FarewellFlushTimeout = TimeSpan.FromMilliseconds(250);
 
     private readonly TcpClient tcpClient;
@@ -48,9 +44,6 @@ internal sealed class FramedConnection : IDisposable
 
     public bool IsDisposed => Volatile.Read(ref disposed) != 0;
 
-    /// <summary>
-    /// The <see cref="Environment.TickCount64"/> of the last successfully received frame.
-    /// </summary>
     public long LastReceivedTick { get; private set; } = Environment.TickCount64;
 
     public async Task SendAsync(Envelope envelope, CancellationToken cancellationToken)
@@ -76,10 +69,8 @@ internal sealed class FramedConnection : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sends without awaiting: failures dispose the connection (the read loop notices and tears down), and
-    /// pending-counter overflow drops the frame and reports it.
-    /// </summary>
+    // Sends without awaiting: failures dispose the connection (the read loop notices and tears down), and
+    // pending-counter overflow drops the frame and reports it.
     public void Post(Envelope envelope, Action<Exception>? onError = null)
     {
         if (IsDisposed)
@@ -115,14 +106,10 @@ internal sealed class FramedConnection : IDisposable
         }
     }
 
-    /// <summary>
-    /// Sends one last frame and closes the connection as soon as it is written, without blocking the caller.
-    /// Closing first would discard the frame, and waiting on the calling thread is not an option since teardown
-    /// reaches this from the framework thread, where blocking on a socket stalls the game's frame; handing the
-    /// close to the write's own continuation settles the race without a fixed pause.
-    /// </summary>
-    /// <param name="envelope">The farewell frame to send.</param>
-    /// <param name="onError">Invoked when the frame could not be written. The connection closes either way.</param>
+    // Sends one last frame and closes the connection as soon as it is written, without blocking the caller. Closing
+    // first would discard the frame, and waiting on the calling thread is not an option since teardown reaches this
+    // from the framework thread, where blocking on a socket stalls the game's frame; handing the close to the write's
+    // own continuation settles the race without a fixed pause.
     public void CloseAfterSending(Envelope envelope, Action<Exception>? onError = null)
     {
         if (IsDisposed)
@@ -148,9 +135,7 @@ internal sealed class FramedConnection : IDisposable
         }
     }
 
-    /// <summary>
-    /// Receives the next frame, or null on clean end-of-stream. Throws on transport failure or protocol violation.
-    /// </summary>
+    // Receives the next frame, or null on clean end-of-stream. Throws on transport failure or protocol violation.
     public async Task<Envelope?> ReceiveAsync(CancellationToken cancellationToken)
     {
         var header = new byte[4];

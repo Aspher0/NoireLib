@@ -116,10 +116,8 @@ public static class DurationHelper
 
     #region Reading
 
-    /// <summary>
-    /// Reads the <c>1h30m</c> form: a run of amounts, each with a unit or taking the next one down.<br/>
-    /// Units must strictly decrease through the text, so <c>30s1m</c> is rejected.
-    /// </summary>
+    // Reads the 1h30m form: a run of amounts, each with a unit or taking the next one down. Units must strictly
+    // decrease through the text, so 30s1m is rejected.
     private static bool TryReadUnits(ReadOnlySpan<char> span, DurationUnit bareUnit, out double milliseconds)
     {
         milliseconds = 0d;
@@ -182,9 +180,7 @@ public static class DurationHelper
         return groups > 0;
     }
 
-    /// <summary>
-    /// Reads the <c>1:30</c> form: minutes and seconds, or hours, minutes and seconds.
-    /// </summary>
+    // Reads the 1:30 form: minutes and seconds, or hours, minutes and seconds.
     private static bool TryReadClock(ReadOnlySpan<char> span, out double milliseconds)
     {
         milliseconds = 0d;
@@ -223,9 +219,7 @@ public static class DurationHelper
         return !double.IsNaN(milliseconds) && milliseconds <= MaxMilliseconds;
     }
 
-    /// <summary>
-    /// Reads one number, accepting either decimal separator so a field does not depend on the machine's locale.
-    /// </summary>
+    // Reads one number, accepting either decimal separator so a field does not depend on the machine's locale.
     private static bool TryReadAmount(ReadOnlySpan<char> text, out double amount)
     {
         amount = 0d;
@@ -246,9 +240,7 @@ public static class DurationHelper
             && !double.IsInfinity(amount);
     }
 
-    /// <summary>
-    /// Matches a written unit, in every spelling worth accepting from someone typing quickly.
-    /// </summary>
+    // Matches a written unit, in every spelling worth accepting from someone typing quickly.
     private static bool TryResolveUnit(ReadOnlySpan<char> text, out DurationUnit unit)
     {
         unit = DurationUnit.Seconds;
@@ -303,9 +295,7 @@ public static class DurationHelper
         return false;
     }
 
-    /// <summary>
-    /// The unit one step below another, or false when there is nothing below it.
-    /// </summary>
+    // The unit one step below another, or false when there is nothing below it.
     private static bool TryStepDown(DurationUnit unit, out DurationUnit smaller)
     {
         var exists = unit > DurationUnit.Milliseconds;
@@ -322,9 +312,7 @@ public static class DurationHelper
         _ => 86_400_000d,
     };
 
-    /// <summary>
-    /// The largest duration that survives the trip through <see cref="TimeSpan.FromMilliseconds(double)"/>.
-    /// </summary>
+    // The largest duration that survives the trip through FromMilliseconds(double).
     private const double MaxMilliseconds = 922_337_203_685_477d;
 
     #endregion

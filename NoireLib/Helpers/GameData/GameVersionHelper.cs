@@ -6,7 +6,7 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class GameVersionHelper
 {
-    /// <summary> The repository holding the base game's own files, as opposed to an expansion's. </summary>
+    // The repository holding the base game's own files, as opposed to an expansion's.
     private const string BaseRepositoryKey = "ffxiv";
 
     /// <summary>Reads the base game repository's version string.</summary>

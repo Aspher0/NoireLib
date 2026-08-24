@@ -11,10 +11,10 @@ public enum SourceKind
     /// <summary>Login/logout, territory, map, instance, class/job, level, PvP state, content-finder pops and housing-interior transitions.</summary>
     Session,
 
-    /// <summary>Raw <see cref="Dalamud.Game.ClientState.Conditions.ConditionFlag"/> changes and the derived enter/leave pairs (combat, mounted, crafting, …).</summary>
+    /// <summary>Raw <see cref="Dalamud.Game.ClientState.Conditions.ConditionFlag"/> changes and the derived enter/leave pairs (combat, mounted, crafting, ...).</summary>
     Condition,
 
-    /// <summary>Interest-masked polling over every character in the object table (vitals, casts, modes, death, targets, job/level, …).</summary>
+    /// <summary>Interest-masked polling over every character in the object table (vitals, casts, modes, death, targets, job/level, ...).</summary>
     Characters,
 
     /// <summary>Generic object-table diffing for every <see cref="Dalamud.Game.ClientState.Objects.Enums.ObjectKind"/>, plus distance and region watchers.</summary>
@@ -35,7 +35,7 @@ public enum SourceKind
     /// <summary>Chat messages with SeString payloads preserved and senders resolved.</summary>
     Chat,
 
-    /// <summary>Parsed action effects (damage, healing, crits, …) received from the server, via hook.</summary>
+    /// <summary>Parsed action effects (damage, healing, crits, ...) received from the server, via hook.</summary>
     ActionEffect,
 
     /// <summary>Local action cooldowns/charges/GCD (exact) and other characters' cooldown estimates (inferred).</summary>

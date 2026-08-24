@@ -4,11 +4,9 @@ using System.Collections.Generic;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// The shared tick pump behind waits: while at least one waiter is active, it evaluates them once per
-/// framework tick, and detaches entirely when the last waiter completes - waits are demand-activated like
-/// everything else. All completions run inline on the framework thread.
-/// </summary>
+// The shared tick pump behind waits: while at least one waiter is active, it evaluates them once per framework tick,
+// and detaches entirely when the last waiter completes - waits are demand-activated like everything else. All
+// completions run inline on the framework thread.
 internal static class GameConditionPump
 {
     private static readonly object Gate = new();
@@ -22,7 +20,7 @@ internal static class GameConditionPump
     public static void Register(Func<DateTimeOffset, bool> waiter)
     {
         ArgumentNullException.ThrowIfNull(waiter);
-
+    // The callback is invoked once per framework tick with the current UTC time and returns true when the wait completed (the waiter is then removed).
         lock (Gate)
         {
             Waiters.Add(waiter);

@@ -3,15 +3,14 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Decides, per window, which normally-hidden game states it keeps drawing in.<br/>
-/// Once a plugin asks for any of this, a window that never consults <see cref="NoireUI.ShouldHide"/> stays visible.
-/// See <see cref="NoireUI.RequiredVisibility"/>.
+/// Decides, per window, which normally-hidden game states it keeps drawing in.
+/// A window that never consults <see cref="NoireUI.ShouldHide"/> stays visible.
 /// </summary>
 [Flags]
 public enum UiVisibility
 {
     /// <summary>
-    /// The default: hidden during cutscenes, in group pose, and while the game UI is hidden, like ordinary plugin UI.
+    /// The default: hidden during cutscenes, in group pose, and while the game UI is hidden.
     /// </summary>
     Default = 0,
 

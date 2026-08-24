@@ -10,11 +10,6 @@ public sealed class LocaleWriter
     private readonly NoireLocalizer owner;
     private readonly string locale;
 
-    /// <summary>
-    /// Initializes a new instance of the <see cref="LocaleWriter"/> class.
-    /// </summary>
-    /// <param name="owner">The owner localizer instance.</param>
-    /// <param name="locale">The locale bound to this writer.</param>
     internal LocaleWriter(NoireLocalizer owner, string locale)
     {
         this.owner = owner;

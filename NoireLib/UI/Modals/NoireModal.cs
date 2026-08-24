@@ -5,27 +5,11 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Dialogs you await: <c>if (await NoireModal.ConfirmAsync(...))</c>. No popup-open boolean, no "pending action"
-/// field, no callback that runs later elsewhere in the file.
+/// Dialogs you await: <c>if (await NoireModal.ConfirmAsync(...))</c>. Dialogs queue: raising two shows the first, then
+/// the second, and the queue is safe to add to from any thread.<br/>
+/// Never block on one of these from the draw or framework thread: the task completes on the draw thread, so a wait
+/// there hangs the game.
 /// </summary>
-/// <remarks>
-/// Dialogs queue: raising two shows the first, then the second. The queue is safe to add to from any thread.<br/>
-/// Never block on one of these from the draw or framework thread. The task completes on the draw thread, so waiting on
-/// it there waits for a frame that cannot start until the wait ends. Await it, or hang the whole game.<br/>
-/// Every dialog still waiting when NoireLib is disposed is completed as cancelled, so nothing awaiting one is left
-/// suspended forever by a plugin unload.
-/// </remarks>
-/// <example>
-/// <code>
-/// if (await NoireModal.ConfirmAsync("Delete preset", $"Delete '{name}'? This cannot be undone.",
-///         new ModalOptions { Danger = true, HoldSeconds = 1f }))
-///     DeletePreset(name);
-///
-/// var newName = await NoireModal.PromptAsync("Rename", "What should it be called?", name);
-/// if (newName != null)
-///     Rename(newName);
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireModal
 {
@@ -47,14 +31,8 @@ public static class NoireModal
     }
 
     /// <summary>
-    /// The drawable that presents the dialogs. It draws itself, so an awaited dialog always appears.
+    /// The drawable that presents the dialogs.
     /// </summary>
-    /// <remarks>
-    /// A dialog nobody draws never completes, and the await behind it never returns, which is a hang with no visible
-    /// cause. The host therefore opts itself into automatic drawing rather than following the
-    /// <see cref="NoireUI.AutoDraw"/> master default. Set its <see cref="NoireDrawable.AutoDraw"/> to
-    /// <see langword="false"/> and call <see cref="Draw"/> yourself to control where in your draw order it lands.
-    /// </remarks>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public static NoireModalHost Host => NoireModalHost.Instance;
 
@@ -64,7 +42,7 @@ public static class NoireModal
     /// Asks the user to confirm something.
     /// </summary>
     /// <param name="title">The dialog title.</param>
-    /// <param name="message">What is being asked. Rich content is fully supported.</param>
+    /// <param name="message">What is being asked.</param>
     /// <param name="options">How the dialog behaves and looks.</param>
     /// <returns>True when the user confirmed, false when they declined or dismissed the dialog.</returns>
     public static async Task<bool> ConfirmAsync(string title, NoireContent message, ModalOptions? options = null)
@@ -84,7 +62,7 @@ public static class NoireModal
     /// Asks the user for a line of text.
     /// </summary>
     /// <param name="title">The dialog title.</param>
-    /// <param name="message">What is being asked. Rich content is fully supported.</param>
+    /// <param name="message">What is being asked.</param>
     /// <param name="initialValue">What the field starts with.</param>
     /// <param name="options">How the dialog behaves and looks.</param>
     /// <returns>The value the user confirmed, or <see langword="null"/> when they cancelled.</returns>
@@ -103,7 +81,7 @@ public static class NoireModal
     /// Asks the user to pick one of several options.
     /// </summary>
     /// <param name="title">The dialog title.</param>
-    /// <param name="message">What is being asked. Rich content is fully supported.</param>
+    /// <param name="message">What is being asked.</param>
     /// <param name="choices">The options, drawn as buttons in the order given.</param>
     /// <param name="options">How the dialog behaves and looks.</param>
     /// <returns>The index of the chosen option, or -1 when the user cancelled.</returns>
@@ -125,8 +103,7 @@ public static class NoireModal
     #region Drawing and lifetime
 
     /// <summary>
-    /// Draws the dialog at the front of the queue, if there is one.<br/>
-    /// Only needed when <see cref="Host"/> has had its automatic drawing turned off.
+    /// Draws the dialog at the front of the queue, if there is one.
     /// </summary>
     public static void Draw() => Host.Draw();
 
@@ -157,9 +134,7 @@ public static class NoireModal
 
     #endregion
 
-    /// <summary>
-    /// The dialog currently being shown, or <see langword="null"/> when the queue is empty.
-    /// </summary>
+    // Null when the queue is empty.
     internal static ModalRequest? Current
     {
         get
@@ -169,12 +144,7 @@ public static class NoireModal
         }
     }
 
-    /// <summary>
-    /// Completes a dialog and takes it off the queue.
-    /// </summary>
-    /// <param name="request">The dialog to finish.</param>
-    /// <param name="result">1 for confirmed, a zero-based index for a choice, or
-    /// <see cref="CancelledResult"/> for cancelled.</param>
+    // result is 1 for confirmed, a zero-based index for a choice, or CancelledResult for cancelled.
     internal static void Complete(ModalRequest request, int result)
     {
         lock (SyncRoot)
@@ -217,9 +187,6 @@ public static class NoireModal
     }
 }
 
-/// <summary>
-/// Which kind of question a queued dialog is asking.
-/// </summary>
 internal enum ModalKind
 {
     Confirm,
@@ -227,9 +194,6 @@ internal enum ModalKind
     Choice,
 }
 
-/// <summary>
-/// One queued dialog: what it asks, how it should look, and the task waiting on its answer.
-/// </summary>
 internal sealed class ModalRequest
 {
     public ModalRequest(ModalKind kind, string title, NoireContent message, ModalOptions options, IReadOnlyList<string>? choices)
@@ -257,21 +221,16 @@ internal sealed class ModalRequest
 
     public TaskCompletionSource<int> Completion { get; }
 
-    /// <summary>The current value of a prompt's field.</summary>
     public string Value { get; set; } = string.Empty;
 
-    /// <summary>Whether the user ticked "don't ask again".</summary>
+    // Whether the user ticked "don't ask again".
     public bool Remember { get; set; }
 
-    /// <summary>Whether the popup has been opened, which happens on the first frame the dialog is drawn.</summary>
     public bool Opened { get; set; }
 
-    /// <summary>
-    /// The time the dialog was first drawn at, which is what <see cref="ModalOptions.EnableAfterSeconds"/> counts from.
-    /// </summary>
+    // The time the dialog was first drawn at, which ModalOptions.EnableAfterSeconds counts from.
     public float OpenedAt { get; set; }
 
-    /// <summary>Whether the prompt's field has been focused, which happens on the first frame it is drawn.</summary>
     public bool Focused { get; set; }
 
     public void Resolve(int result) => Completion.TrySetResult(result);

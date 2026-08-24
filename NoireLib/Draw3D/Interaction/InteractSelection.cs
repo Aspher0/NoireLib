@@ -127,7 +127,7 @@ public sealed class InteractSelection
         RaiseChanged();
     }
 
-    /// <summary>Drops the oldest nodes until the count is within <see cref="MaxCount"/> (no-op when unlimited).</summary>
+    // Drops the oldest nodes until the count is within MaxCount (no-op when unlimited).
     private void TrimToMax()
     {
         if (MaxCount <= 0)

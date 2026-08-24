@@ -8,9 +8,8 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Builds a minimal but structurally complete .pap (one animation, one C009 timeline entry) entirely in memory and
-/// pushes it through PapFile twice: parse, serialize, parse again. Nothing here touches disk — <see cref="PapFile"/>
-/// is constructed with no hkxTempPath, which is the whole point: a mover/retargeter working on bytes in memory must
-/// not be forced to own a temp file just to read a .pap.
+/// pushes it through PapFile twice: parse, serialize, parse again. Nothing here touches disk: <see cref="PapFile"/>
+/// is constructed with no hkxTempPath.
 /// </summary>
 public class PapRoundTripTests
 {

@@ -5,15 +5,8 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Containers that take their body instead of handing you a scope to close.<br/>
-/// There is no <c>using</c>, no <c>Dispose</c> and no <c>End</c> anywhere here: nesting is the scope, the layout the
-/// container implies comes with it, and a body whose begin failed is simply never called, so there is no
-/// <c>if (child.Success)</c> to get wrong.
+/// Containers that take their body instead of handing you a scope to close.
 /// </summary>
-/// <remarks>
-/// Each container has a state overload taking the value the body needs, so the body can stay a <see langword="static"/>
-/// lambda instead of allocating a delegate per call.
-/// </remarks>
 [NoireFacade]
 public static partial class NoireLayout
 {
@@ -53,7 +46,7 @@ public static partial class NoireLayout
     /// <summary>
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
-    /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
+    /// <param name="amount">The indent in pixels.</param>
     /// <param name="body">The drawing to indent.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
     public static void Indent(float amount, Action body)
@@ -66,7 +59,7 @@ public static partial class NoireLayout
     /// Indents the body by <paramref name="amount"/> pixels, and puts the cursor back where it was afterwards.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
-    /// <param name="amount">The indent in pixels. Zero or less does not indent.</param>
+    /// <param name="amount">The indent in pixels.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to indent.</param>
     public static void Indent<TState>(float amount, TState state, Action<TState> body)
@@ -92,8 +85,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// The current ImGui indent step in pixels, for passing to <see cref="Indent(float, Action)"/> when you want the
-    /// standard amount rather than a measured one.
+    /// The current ImGui indent step in pixels.
     /// </summary>
     public static float DefaultIndent => NoireService.IsInitialized() ? ImGui.GetStyle().IndentSpacing : NoireUI.Scaled(21f);
 
@@ -170,7 +162,7 @@ public static partial class NoireLayout
     /// <summary>
     /// Sizes every widget in the body to <paramref name="width"/>, instead of setting it before each one.
     /// </summary>
-    /// <param name="width">The item width in pixels. A negative value is measured back from the right edge.</param>
+    /// <param name="width">The item width in pixels.</param>
     /// <param name="body">The drawing to size.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
     public static void ItemWidth(float width, Action body)
@@ -183,7 +175,7 @@ public static partial class NoireLayout
     /// Sizes every widget in the body to <paramref name="width"/>, instead of setting it before each one.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
-    /// <param name="width">The item width in pixels. A negative value is measured back from the right edge.</param>
+    /// <param name="width">The item width in pixels.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to size.</param>
     public static void ItemWidth<TState>(float width, TState state, Action<TState> body)
@@ -238,11 +230,10 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Draws the body inside a scrolling, clipped child region.<br/>
-    /// The body is not called when the region is entirely clipped away.
+    /// Draws the body inside a scrolling, clipped child region.
     /// </summary>
     /// <param name="id">A unique id for the region.</param>
-    /// <param name="size">The region size. A zero component fills the available space; a negative one leaves that many pixels.</param>
+    /// <param name="size">The region size.</param>
     /// <param name="body">The drawing to put inside.</param>
     /// <param name="border">Whether to outline the region.</param>
     /// <param name="flags">Extra window flags for the region.</param>
@@ -254,8 +245,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// Draws the body inside a scrolling, clipped child region.<br/>
-    /// The body is not called when the region is entirely clipped away.
+    /// Draws the body inside a scrolling, clipped child region.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="id">A unique id for the region.</param>
@@ -329,9 +319,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// A labelled block: a heading, an optional wrapping description, and the body indented under them.<br/>
-    /// This is the plain visual grouping; a collapsible section that remembers its state ships with the wider layout
-    /// widgets.
+    /// A labelled block: a heading, an optional wrapping description, and the body indented under them.
     /// </summary>
     /// <param name="label">The heading.</param>
     /// <param name="body">The drawing to put under the heading.</param>
@@ -345,9 +333,7 @@ public static partial class NoireLayout
     }
 
     /// <summary>
-    /// A labelled block: a heading, an optional wrapping description, and the body indented under them.<br/>
-    /// This is the plain visual grouping; a collapsible section that remembers its state ships with the wider layout
-    /// widgets.
+    /// A labelled block: a heading, an optional wrapping description, and the body indented under them.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="label">The heading.</param>

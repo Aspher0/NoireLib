@@ -13,7 +13,7 @@ namespace NoireLib.GameWatcher;
 /// </summary>
 public sealed class Scope
 {
-    /// <summary>The root kinds a scope can be built from. Internal - user code uses the static factories.</summary>
+    // The root kinds a scope can be built from. Internal - user code uses the static factories.
     internal enum RootKind
     {
         /// <summary>Only the local player.</summary>
@@ -206,10 +206,8 @@ public sealed class Scope
 
     #region Iteration planning (internal)
 
-    /// <summary>
-    /// The iteration classes a scope can require, ordered by breadth.
-    /// Sources use the widest class among their registrations to decide what to iterate per tick.
-    /// </summary>
+    // The iteration classes a scope can require, ordered by breadth. Sources use the widest class among their
+    // registrations to decide what to iterate per tick.
     internal enum IterationClass
     {
         /// <summary>Only the local player needs to be visited.</summary>
@@ -222,7 +220,6 @@ public sealed class Scope
         AllCharacters = 2,
     }
 
-    /// <summary>Computes the iteration class this scope requires.</summary>
     internal IterationClass GetIterationClass() => kind switch
     {
         RootKind.LocalPlayer => IterationClass.LocalOnly,
@@ -234,13 +231,9 @@ public sealed class Scope
         _ => IterationClass.Players,
     };
 
-    /// <summary>
-    /// Cheap pre-capture root test used during iteration: decides whether a subject is worth diffing at all,
-    /// from data available without materializing a snapshot. Predicates are not applied here - they run at
-    /// dispatch, against real snapshots.
-    /// </summary>
-    /// <param name="probe">The light-weight per-subject probe.</param>
-    /// <returns>True when the subject may match this scope.</returns>
+    // Cheap pre-capture root test used during iteration: decides whether a subject is worth diffing at all, from data
+    // available without materializing a snapshot. Predicates are not applied here - they run at dispatch, against
+    // real snapshots.
     internal bool PreMatches(in SubjectProbe probe)
     {
         switch (kind)
@@ -298,10 +291,8 @@ public sealed class Scope
     }
 }
 
-/// <summary>
-/// A light-weight per-subject view used for pre-capture scope checks during iteration.
-/// Internal to the watcher's diff engines.
-/// </summary>
+// A light-weight per-subject view used for pre-capture scope checks during iteration. Internal to the watcher's diff
+// engines.
 internal readonly struct SubjectProbe
 {
     /// <summary>The subject's entity id.</summary>

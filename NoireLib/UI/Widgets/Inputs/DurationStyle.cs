@@ -4,7 +4,7 @@ using System;
 namespace NoireLib.UI;
 
 /// <summary>
-/// How a duration field behaves and reads. Every value has a default, so an untouched style is the ordinary field.
+/// How a duration field behaves and reads.
 /// </summary>
 /// <seealso cref="NoireInputs.Duration(string, ref TimeSpan, DurationStyle?)"/>
 public sealed class DurationStyle

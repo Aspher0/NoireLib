@@ -85,13 +85,8 @@ public static class TmbAnimationRenamer
         }
     }
 
-    /// <summary>
-    /// Confirms the rewritten bytes re-parse as a valid TMB and that every applied name is present among the
-    /// re-read references, since a broken action tmb crashes the game just as a broken pap does.
-    /// </summary>
-    /// <param name="result">The rewritten bytes.</param>
-    /// <param name="applied">The new names the rewrite wrote.</param>
-    /// <exception cref="InvalidDataException">The bytes do not re-parse, or an applied name is missing.</exception>
+    // Confirms the rewritten bytes re-parse as a valid TMB and that every applied name is present among the re-read
+    // references, since a broken action tmb crashes the game just as a broken pap does.
     private static void Verify(byte[] result, IReadOnlyList<string> applied)
     {
         TmbFile reparsed;

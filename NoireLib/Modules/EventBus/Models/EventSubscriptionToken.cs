@@ -7,9 +7,6 @@ namespace NoireLib.EventBus;
 /// </summary>
 public readonly struct EventSubscriptionToken : IEquatable<EventSubscriptionToken>
 {
-    /// <summary>
-    /// The unique identifier for this subscription token.
-    /// </summary>
     private readonly Guid ID;
 
     internal EventSubscriptionToken(Guid id)

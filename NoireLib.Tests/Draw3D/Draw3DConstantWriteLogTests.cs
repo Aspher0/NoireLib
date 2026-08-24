@@ -83,7 +83,7 @@ public class Draw3DConstantWriteLogTests
     {
         // Switching a lamp off leaves its position and direction alone and rewrites its colour. Reported as an
         // unrelated removal plus an unrelated addition, the one row that actually carries the light would be
-        // buried; paired up, it is the whole answer.
+        // buried.
         var position = new Vector3(2f, 1f, 3f);
         var direction = -Vector3.UnitY;
 

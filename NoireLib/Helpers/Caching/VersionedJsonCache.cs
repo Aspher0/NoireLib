@@ -110,7 +110,6 @@ public sealed class VersionedJsonCache<T>
     private static string DefaultPluginVersion()
         => NoireService.PluginInstance?.GetType().Assembly.GetName().Version?.ToString() ?? "unknown";
 
-    /// <summary> The on-disk stamp and payload. </summary>
     private sealed class CacheFile
     {
         [JsonProperty("gameVersion")]

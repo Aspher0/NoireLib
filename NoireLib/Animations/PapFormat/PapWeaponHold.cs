@@ -17,44 +17,37 @@ public static class PapWeaponHold
 {
     private const string LogPrefix = "[PapWeaponHold] ";
 
-    /// <summary> Weapon Size, which the game sets alongside the position. </summary>
     private const string ScaleMagic = "C015";
 
-    /// <summary> Weapon Position: which attach point of the .atch file the object hangs from. </summary>
+    // Weapon Position: which attach point of the .atch file the object hangs from.
     private const string PositionMagic = "C014";
 
-    /// <summary> Summon Animation: the weapon timeline the object itself plays as it travels. </summary>
+    // Summon Animation: the weapon timeline the object itself plays as it travels.
     private const string SummonMagic = "C031";
 
     private const int Enabled = 1;
     private const int ScaleDuration = 10;
 
-    /// <summary> Object Position and ATCH Object Scale both read 1 in hand and 0 stowed. </summary>
+    // Object Position and ATCH Object Scale both read 1 in hand and 0 stowed.
     private const int InHand = 1;
     private const int Stowed = 0;
 
-    /// <summary> WeaponTimeline rows: weapon/active as the draw animation uses it, and weapon/deactive. </summary>
+    // WeaponTimeline rows: weapon/active as the draw animation uses it, and weapon/deactive.
     private const int DrawTimelineRow = 119;
     private const int SheatheTimelineRow = 7;
 
-    /// <summary> Object Control: which equipped object a command addresses. </summary>
     private const int MainHand = 0;
     private const int OffHand = 1;
 
     private const short HoldFrame = 0;
 
-    /// <summary>
-    /// How often the hold is stated again, in frames. Anything that ends a timeline hands the weapons back, and
-    /// an overlapping play lands that while this one is still running, so stating it once is not enough.
-    /// </summary>
+    // How often the hold is stated again, in frames. Anything that ends a timeline hands the weapons back, and an
+    // overlapping play lands that while this one is still running, so stating it once is not enough.
     private const int ReassertInterval = 10;
 
-    /// <summary>
-    /// The entry magics a rewritten timeline is known to carry safely: those with a model of their own, those
-    /// whose pointing fields <see cref="TmbFile.StringFieldOffsets"/> and
-    /// <see cref="TmbFile.ExtraFloatFieldOffsets"/> describe, and those shown to point nowhere. A magic outside
-    /// this set may name data by an offset nothing here knows to move.
-    /// </summary>
+    // The entry magics a rewritten timeline is known to carry safely: those with a model of their own, those whose
+    // pointing fields StringFieldOffsets and ExtraFloatFieldOffsets describe, and those shown to point nowhere. A
+    // magic outside this set may name data by an offset nothing here knows to move.
     private static readonly HashSet<string> RewritableMagics = new(StringComparer.Ordinal)
     {
         "C009", "C010", "C012", "C042", ScaleMagic, PositionMagic, SummonMagic,
@@ -117,7 +110,7 @@ public static class PapWeaponHold
         return result;
     }
 
-    /// <summary> The first entry magic in a timeline that a rewrite cannot be trusted to carry, or null. </summary>
+    // The first entry magic in a timeline that a rewrite cannot be trusted to carry, or null.
     private static string? UnrewritableMagic(TmbFile timeline)
     {
         foreach (var entry in timeline.AllEntries)
@@ -129,10 +122,8 @@ public static class PapWeaponHold
         return null;
     }
 
-    /// <summary>
-    /// States the hold on every frame of the beat, for each of the character's weapons. Each command gets a
-    /// track of its own, as the game's own draw animation gives it.
-    /// </summary>
+    // States the hold on every frame of the beat, for each of the character's weapons. Each command gets a track of
+    // its own, as the game's own draw animation gives it.
     private static void HoldThrough(TmbFile timeline, Tmac actor, IReadOnlyList<int> objects, bool stowAtEnd,
         bool withTravel)
     {
@@ -175,7 +166,7 @@ public static class PapWeaponHold
         }
     }
 
-    /// <summary> The frames the hold is stated on: the first, then the beat up to the animation's end. </summary>
+    // The frames the hold is stated on: the first, then the beat up to the animation's end.
     private static IEnumerable<short> HoldFrames(short length)
     {
         yield return HoldFrame;

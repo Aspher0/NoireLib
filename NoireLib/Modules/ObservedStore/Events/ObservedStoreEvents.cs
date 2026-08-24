@@ -3,8 +3,7 @@ namespace NoireLib.ObservedStore;
 /// <summary>Raised when an observation is written down, whether it is new or replaces an older sighting.</summary>
 /// <param name="Info">The sighting that was recorded.</param>
 /// <param name="Replaced">
-/// The sighting it replaced, or null when the store had never seen this key before. Comparing the two is how a
-/// consumer tells "this changed" from "this was confirmed unchanged".
+/// The sighting it replaced, or null when the store had never seen this key before.
 /// </param>
 public sealed record ObservationRecordedEvent(ObservationInfo Info, ObservationInfo? Replaced);
 

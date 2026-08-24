@@ -3,7 +3,7 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// How a <see cref="NoireWindowChrome"/> window paints itself, now that ImGui is not painting it.
+/// How a <see cref="NoireWindowChrome"/> window paints itself.
 /// </summary>
 public sealed class WindowChromeStyle
 {
@@ -21,8 +21,8 @@ public sealed class WindowChromeStyle
     public Vector2 Padding { get; set; } = new(2f, 2f);
 
     /// <summary>
-    /// How opaque the whole window is, from 0 to 1.<br/>
-    /// Applied to the surface alone; the text and the controls are not faded with it.
+    /// How opaque the whole window is, from 0 to 1, applied to the surface alone; the text and the controls are not
+    /// faded with it.
     /// </summary>
     public float Opacity { get; set; } = 1f;
 

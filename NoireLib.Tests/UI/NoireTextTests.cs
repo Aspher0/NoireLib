@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Locks the type scale <see cref="NoireText"/> resolves against: an unset step derives from the body size rather than
 /// carrying its own default, so moving the body moves the whole scale, and setting one step opts only that one out.
 /// </summary>
-/// <remarks>
-/// The font building itself needs an ImGui context and a Dalamud font atlas, so what is testable here is the arithmetic
-/// that decides which size is asked for. That is also where the mistakes live: a scale that stops being proportional is
-/// invisible until someone reskins it.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireTextTests : IDisposable
 {
@@ -174,7 +169,7 @@ public class NoireTextTests : IDisposable
     /// <summary>
     /// The bands are real, read off the fonts headless: ProggyClean at 13 px, and a proportional face at 17 and 24.
     /// Each case is the capital band, then the centre it must produce, which is one to one and a half pixels below the
-    /// line's geometric centre. That gap is the whole reason the method exists.
+    /// line's geometric centre.
     /// </summary>
     [Theory]
     [InlineData(3f, 11f, 13f, 7f)]

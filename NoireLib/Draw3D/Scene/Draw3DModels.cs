@@ -89,11 +89,9 @@ public static class Draw3DModels
         return AttachOrFree(scene, model, position, name);
     }
 
-    /// <summary>
-    /// Hands a just-imported model to the scene, freeing it if the scene will not take it: the load owns the model
-    /// until the scene does, and a scene that died while the file was being parsed leaves nobody else to release its
-    /// GPU resources, so the failure path frees them here rather than leaking them.
-    /// </summary>
+    // Hands a just-imported model to the scene, freeing it if the scene will not take it: the load owns the model
+    // until the scene does, and a scene that died while the file was being parsed leaves nobody else to release its
+    // GPU resources, so the failure path frees them here rather than leaking them.
     private static Model3D AttachOrFree(Scene3D scene, Model3D model, Vector3 position, string? name)
     {
         try

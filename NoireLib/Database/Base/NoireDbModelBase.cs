@@ -19,12 +19,9 @@ public abstract class NoireDbModelBase
 {
     private static readonly ConcurrentDictionary<string, IReadOnlyCollection<string>> TableColumnsCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Writes and reads the JSON held inside column values, built via
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> so it resolves settings from the object below
-    /// alone rather than merging in the process-global <see cref="JsonConvert.DefaultSettings"/>. TypeNameHandling
-    /// stays None so a stored value can never name a type into existence when it is read back.
-    /// </summary>
+    // Writes and reads the JSON held inside column values, built via Create(JsonSerializerSettings) so it resolves
+    // settings from the object below alone rather than merging in the process-global DefaultSettings.
+    // TypeNameHandling stays None so a stored value can never name a type into existence when it is read back.
     private static readonly JsonSerializer ColumnSerializer = CreateColumnSerializer();
 
     private static JsonSerializer CreateColumnSerializer()
@@ -39,11 +36,9 @@ public abstract class NoireDbModelBase
         return serializer;
     }
 
-    /// <summary>
-    /// Writes the JSON <see cref="ToJson"/> returns when given no settings. Separate from
-    /// <see cref="ColumnSerializer"/>, which writes the compact form stored in a column; this one produces the
-    /// indented form for a reader, built the same way so the output cannot be reshaped by unrelated code.
-    /// </summary>
+    // Writes the JSON ToJson returns when given no settings. Separate from ColumnSerializer, which writes the compact
+    // form stored in a column; this one produces the indented form for a reader, built the same way so the output
+    // cannot be reshaped by unrelated code.
     private static readonly JsonSerializer DefaultJsonSerializer = JsonSerializer.Create(new JsonSerializerSettings
     {
         Formatting = Formatting.Indented,
@@ -487,11 +482,6 @@ public abstract class NoireDbModelBase
         return builder.ToString();
     }
 
-    /// <summary>
-    /// Builds the serializer <see cref="ToJson"/> uses for caller-supplied settings.
-    /// </summary>
-    /// <param name="settings">The caller-supplied settings.</param>
-    /// <returns>A serializer that honours <paramref name="settings"/> without leaving the output open to the process.</returns>
     private static JsonSerializer CreateToJsonSerializer(JsonSerializerSettings settings)
     {
         // JsonSerializer.Create resolves every setting from the object it is given, unlike the JsonConvert overloads

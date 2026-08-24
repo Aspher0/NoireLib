@@ -22,7 +22,7 @@ public static class IdlePoseData
     /// <summary> The standing cpose-0 base pap, the one pose file whose required names <see cref="IdlePoseRequiredNames"/> filters. </summary>
     public const string ResidentIdleRelativePapPath = "bt_common/resident/idle.pap";
 
-    /// <summary> The idle animation inside <see cref="ResidentIdleRelativePapPath"/>, whose other declared name is an additive damage flinch. </summary>
+    // The idle animation inside ResidentIdleRelativePapPath, whose other declared name is an additive damage flinch.
     private const string ResidentIdleAnimationName = "cbnm_id0";
 
     /// <summary>
@@ -110,10 +110,8 @@ public static class IdlePoseData
         EmoteController.PoseType stance, EmoteController.PoseType reportedStance, byte reportedIndex)
         => reportedStance == stance ? reportedIndex : (byte)0;
 
-    /// <summary>
-    /// The Emote rows that are pose-cycle members rather than emotes of their own, mapped to the stance and
-    /// index they select. No sheet column marks them, so the mapping is fixed here.
-    /// </summary>
+    // The Emote rows that are pose-cycle members rather than emotes of their own, mapped to the stance and index they
+    // select. No sheet column marks them, so the mapping is fixed here.
     private static readonly Dictionary<uint, (EmoteController.PoseType PoseType, byte Index)> PoseFamilyRows = new()
     {
         // Chair sit

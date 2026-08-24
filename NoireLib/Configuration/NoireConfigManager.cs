@@ -18,9 +18,7 @@ public static class NoireConfigManager
 
     private static readonly ConcurrentDictionary<Type, NoireConfigBase> ConfigCache = new();
 
-    /// <summary>
-    /// The loads currently running, keyed by configuration type. Deduplicates concurrent first loads.
-    /// </summary>
+    // The loads currently running, keyed by configuration type. Deduplicates concurrent first loads.
     private static readonly ConcurrentDictionary<Type, Task<NoireConfigBase?>> InFlightLoads = new();
 
     private static int lifecycleHookRegistered;
@@ -34,11 +32,6 @@ public static class NoireConfigManager
     public static T? GetConfig<T>() where T : NoireConfigBase, new()
         => (T?)GetConfig(typeof(T));
 
-    /// <summary>
-    /// Non-generic core of <see cref="GetConfig{T}"/>, shared with the preload.
-    /// </summary>
-    /// <param name="type">The configuration type.</param>
-    /// <returns>The instance, or null when creation or loading threw.</returns>
     internal static NoireConfigBase? GetConfig(Type type)
     {
         if (ConfigCache.TryGetValue(type, out var cached))
@@ -68,11 +61,7 @@ public static class NoireConfigManager
         return config;
     }
 
-    /// <summary>
-    /// Constructs and loads one configuration, caching it when it is fit to share.
-    /// </summary>
-    /// <param name="type">The configuration type.</param>
-    /// <returns>The instance, or null when construction or loading threw.</returns>
+    // Constructs and loads one configuration, caching it when it is fit to share.
     private static NoireConfigBase? LoadNewInstance(Type type)
     {
         try
@@ -227,27 +216,16 @@ public static class NoireConfigManager
         MigrationExecutor.ClearRuntimeMigrations();
     }
 
-    /// <summary>
-    /// Caches an instance for a type when no entry exists yet.
-    /// </summary>
-    /// <param name="configType">The type to key on.</param>
-    /// <param name="config">The instance to cache.</param>
-    /// <returns>True when the entry was added.</returns>
+    // Caches an instance for a type when no entry exists yet.
     internal static bool AddConfigToCache(Type configType, NoireConfigBase config)
     {
         EnsureLifecycleHook();
         return ConfigCache.TryAdd(configType, config);
     }
 
-    /// <summary>
-    /// A snapshot of every cached configuration.
-    /// </summary>
     internal static IReadOnlyList<NoireConfigBase> CachedConfigsSnapshot() => [.. ConfigCache.Values];
 
-    /// <summary>
-    /// Loads every marked configuration of the plugin assembly on a background thread, off the game thread.
-    /// </summary>
-    /// <param name="assembly">The plugin assembly to scan.</param>
+    // Loads every marked configuration of the plugin assembly on a background thread, off the game thread.
     internal static void PreloadMarked(Assembly assembly)
     {
         EnsureLifecycleHook();
@@ -290,9 +268,7 @@ public static class NoireConfigManager
         });
     }
 
-    /// <summary>
-    /// Registers the teardown callback once per initialization, from whichever configuration path runs first.
-    /// </summary>
+    // Registers the teardown callback once per initialization, from whichever configuration path runs first.
     private static void EnsureLifecycleHook()
     {
         if (Interlocked.CompareExchange(ref lifecycleHookRegistered, 1, 0) != 0)
@@ -302,9 +278,7 @@ public static class NoireConfigManager
         NoireLibMain.RegisterOnDispose(LifecycleDisposeKey, OnLibraryDispose);
     }
 
-    /// <summary>
-    /// Captures outstanding changes, flushes the queued writes and resets the static state.
-    /// </summary>
+    // Captures outstanding changes, flushes the queued writes and resets the static state.
     private static void OnLibraryDispose()
     {
         NoireConfigWatch.RunFinalSweep(CachedConfigsSnapshot());

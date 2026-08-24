@@ -1,13 +1,12 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The named steps of the type scale <see cref="NoireTheme"/> owns. Asked for by role rather than by number, so a
-/// skin can re-scale the whole interface from one place.
+/// The named steps of the type scale <see cref="NoireTheme"/> owns, asked for by role rather than by number.
 /// </summary>
 public enum TextSize
 {
     /// <summary>
-    /// A masthead: the one piece of type on a window that is meant to be seen before it is read. Rare by design.
+    /// A masthead: the one piece of type on a window that is meant to be seen before it is read.
     /// </summary>
     Display,
 
@@ -17,8 +16,7 @@ public enum TextSize
     Heading,
 
     /// <summary>
-    /// Running text, and the default. Matches the host's font size unless the theme moves it, so a plugin that never
-    /// touches the type scale looks exactly as it did.
+    /// Running text, and the default, matching the host's font size unless the theme moves it.
     /// </summary>
     Body,
 

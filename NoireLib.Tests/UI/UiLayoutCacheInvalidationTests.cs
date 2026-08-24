@@ -12,14 +12,8 @@ namespace NoireLib.Tests;
 /// generation must be unreachable under the next.
 /// </summary>
 /// <remarks>
-/// This is the failure the spec calls out by name, because of how it presents. A cache that misses an invalidation
-/// input does not throw and does not look like a caching bug: the interface is laid out against the numbers from
-/// before the setting moved, so text is clipped or centred wrongly by a few pixels everywhere, and the obvious suspect
-/// is the drawing code, which is correct.<br/>
-/// Everything here goes through <see cref="NoireText.CalcSizeInCurrentFont"/> rather than
-/// <see cref="NoireText.CalcSize(string, float)"/>. The latter returns zero without an initialized plugin and so
-/// cannot be driven from the harness at all, which is recorded as a limitation in ticket 19 rather than worked around
-/// here.
+/// <see cref="NoireText.CalcSize(string, float)"/> returns zero without an initialized plugin, so everything here goes
+/// through <see cref="NoireText.CalcSizeInCurrentFont"/>.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class UiLayoutCacheInvalidationTests : IClassFixture<UiHarness>, IDisposable

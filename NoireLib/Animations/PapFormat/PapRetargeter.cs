@@ -193,15 +193,12 @@ public static class PapRetargeter
         return result;
     }
 
-    /// <summary> The footstep entry magic, whose payload is four plain values with no string offset. </summary>
+    // The footstep entry magic, whose payload is four plain values with no string offset.
     private const string FootstepMagic = "C042";
 
-    /// <summary>
-    /// Clamps one animation's timeline to a single frame. A channel lives as long as its latest and longest
-    /// content, so every dimension that can stretch it is pulled in: the TMDH length, every C009 and C010 clip
-    /// duration, every entry's start time including unknown magics, and each C010's playback segment.
-    /// </summary>
-    /// <param name="animation">The animation whose timeline is clamped.</param>
+    // Clamps one animation's timeline to a single frame. A channel lives as long as its latest and longest content,
+    // so every dimension that can stretch it is pulled in: the TMDH length, every C009 and C010 clip duration, every
+    // entry's start time including unknown magics, and each C010's playback segment.
     private static void ClampToOneFrame(PapAnimation animation)
     {
         if (animation.Tmb is not { } tmb)
@@ -232,11 +229,7 @@ public static class PapRetargeter
         }
     }
 
-    /// <summary> Renames one animation and the C009 timeline entries that repeat its name, stripping the lock when asked. </summary>
-    /// <param name="animation">The animation to rename.</param>
-    /// <param name="name">The new internal name.</param>
-    /// <param name="removeAnimationLock">Whether to strip the animation's C125 lock.</param>
-    /// <param name="locksRemoved">Running count of removed lock entries, incremented by this call.</param>
+    // Renames one animation and the C009 timeline entries that repeat its name, stripping the lock when asked.
     private static void RenameAnimation(PapAnimation animation, string name, bool removeAnimationLock, ref int locksRemoved)
     {
         animation.SetName(name);
@@ -248,15 +241,8 @@ public static class PapRetargeter
             locksRemoved += PapAnimationLock.Remove(animation);
     }
 
-    /// <summary>
-    /// Chooses the source animation that best answers <paramref name="name"/>, allowing one source to serve
-    /// several names, unlike <see cref="PapSharing.Match"/> which assigns each source at most once.
-    /// </summary>
-    /// <param name="sourceNames">The source file's animation names, in file order.</param>
-    /// <param name="name">The required name to answer.</param>
-    /// <returns>
-    /// The index of the first animation whose suffix matches, otherwise 0, or -1 when the file has no animations.
-    /// </returns>
+    // Chooses the source animation that best answers , allowing one source to serve several names, unlike Match which
+    // assigns each source at most once.
     private static int ChooseSourceForName(IReadOnlyList<string> sourceNames, string name)
     {
         if (sourceNames.Count == 0)
@@ -275,24 +261,16 @@ public static class PapRetargeter
         return 0;
     }
 
-    /// <summary> Reads the part marker a name ends in past its last underscore. </summary>
-    /// <param name="name">The animation name.</param>
-    /// <returns>The suffix, or an empty string when the name carries none.</returns>
+    // Reads the part marker a name ends in past its last underscore.
     private static string Suffix(string name)
     {
         var index = name.LastIndexOf('_');
         return index < 0 || index == name.Length - 1 ? string.Empty : name[(index + 1)..];
     }
 
-    /// <summary>
-    /// Confirms produced bytes are safe to return, first re-parsing them structurally with a fresh
-    /// <see cref="PapFile"/> (headers, havok blob and every embedded TMB timeline, which a header-only name scan
-    /// cannot check) and then confirming through <see cref="PapAnimationNames.Read"/> that every applied name is
-    /// declared.
-    /// </summary>
-    /// <param name="result">The produced .pap bytes.</param>
-    /// <param name="applied">The names that were applied.</param>
-    /// <exception cref="InvalidDataException">The bytes are not a valid .pap, or an applied name is missing.</exception>
+    // Confirms produced bytes are safe to return, first re-parsing them structurally with a fresh PapFile (headers,
+    // havok blob and every embedded TMB timeline, which a header-only name scan cannot check) and then confirming
+    // through Read that every applied name is declared.
     private static void Verify(byte[] result, IReadOnlyList<string> applied)
     {
         try

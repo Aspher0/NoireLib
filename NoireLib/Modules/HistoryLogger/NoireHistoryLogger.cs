@@ -57,13 +57,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         bool allowManualEntryCreation = false)
             : base(moduleId, active, enableLogging, persistLogs, databaseName, allowUserTogglePersistence, allowUserClearInMemory, allowUserClearDatabase, allowManualEntryCreation) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireHistoryLogger(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -118,10 +112,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         set => allowManualEntryCreation = value;
     }
 
-    /// <summary>
-    /// A counter bumped whenever the entries returned by <see cref="GetEntriesSnapshot"/> change.<br/>
-    /// Lets a reader tell that its cached view is still current without taking a snapshot to compare against.
-    /// </summary>
+    // A counter bumped whenever the entries returned by GetEntriesSnapshot change. Lets a reader tell that its cached
+    // view is still current without taking a snapshot to compare against.
     internal int EntriesVersion
     {
         get
@@ -566,12 +558,6 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return (false, category);
     }
 
-    /// <summary>
-    /// Removes the entry matching <paramref name="entry"/> from <paramref name="target"/>.
-    /// </summary>
-    /// <param name="target">The entry list to remove from.</param>
-    /// <param name="entry">The entry to look for.</param>
-    /// <returns><see langword="true"/> if an entry was removed.</returns>
     private static bool RemoveMatchingEntry(List<HistoryLogEntry> target, HistoryLogEntry entry)
     {
         // A persisted entry is matched on its database id, not by value: a timestamp round-trips through text on
@@ -594,12 +580,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return entry with { Category = category, Message = message };
     }
 
-    /// <summary>
-    /// Drops the oldest entries from <paramref name="target"/> until it holds at most <paramref name="maxEntries"/> of them.<br/>
-    /// Entry lists are ordered oldest first, so the excess is removed from the front.
-    /// </summary>
-    /// <param name="target">The entry list to trim in place.</param>
-    /// <param name="maxEntries">The maximum number of entries to retain. Zero or less leaves the list untouched.</param>
+    // Drops the oldest entries from  until it holds at most  of them. Entry lists are ordered oldest first, so the
+    // excess is removed from the front.
     internal static void TrimEntries(List<HistoryLogEntry> target, int maxEntries)
     {
         if (maxEntries <= 0)

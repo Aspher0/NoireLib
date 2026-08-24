@@ -97,9 +97,7 @@ public static class PapSharing
         return matches;
     }
 
-    /// <summary>The part of a name after its last underscore, such as the start or loop of one emote.</summary>
-    /// <param name="name">The animation name.</param>
-    /// <returns>The suffix, or empty when the name has none.</returns>
+    // The part of a name after its last underscore, such as the start or loop of one emote.
     private static string Suffix(string name)
     {
         var index = name.LastIndexOf('_');

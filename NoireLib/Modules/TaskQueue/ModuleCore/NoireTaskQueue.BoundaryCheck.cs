@@ -6,12 +6,7 @@ namespace NoireLib.TaskQueue;
 
 public partial class NoireTaskQueue
 {
-    /// <summary>
-    /// Checks if a target task is in the same context as the currently executing task based on the boundary type.
-    /// </summary>
-    /// <param name="targetTask">The task to check.</param>
-    /// <param name="boundaryType">The boundary type to use for context checking.</param>
-    /// <returns>True if tasks are in the same context; false otherwise.</returns>
+    // Checks if a target task is in the same context as the currently executing task based on the boundary type.
     private bool AreTasksInSameContext(QueuedTask targetTask, ContextDefinition boundaryType)
     {
         return boundaryType switch
@@ -23,9 +18,7 @@ public partial class NoireTaskQueue
         };
     }
 
-    /// <summary>
-    /// Checks if tasks are in the same context with flexible batch boundaries (SameContext).
-    /// </summary>
+    // Checks if tasks are in the same context with flexible batch boundaries (SameContext).
     private bool AreTasksInSameContextFlexible(QueuedTask targetTask)
     {
         if (IsCurrentContextBatch)
@@ -42,9 +35,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Checks if tasks are in the same context with strict boundary checking (SameContextStrict).
-    /// </summary>
+    // Checks if tasks are in the same context with strict boundary checking (SameContextStrict).
     private bool AreTasksInSameContextStrict(QueuedTask targetTask)
     {
         if (IsCurrentContextBatch)
@@ -95,9 +86,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Counts pending tasks based on the specified boundary type.
-    /// </summary>
     private int CountTasksWithBoundary(ContextDefinition boundaryType)
     {
         return boundaryType switch
@@ -109,9 +97,6 @@ public partial class NoireTaskQueue
         };
     }
 
-    /// <summary>
-    /// Counts all pending tasks with no boundary checks.
-    /// </summary>
     private int CountTasksNoBoundary()
     {
         int count = 0;
@@ -131,30 +116,20 @@ public partial class NoireTaskQueue
         return count;
     }
 
-    /// <summary>
-    /// Counts pending tasks with SameContext boundary.
-    /// </summary>
     private int CountTasksSameContext()
     {
         return CountTasksInCurrentContext(stopAtBatch: false);
     }
 
-    /// <summary>
-    /// Counts pending tasks with SameContextStrict.
-    /// </summary>
     private int CountTasksStrictBoundary()
     {
         return CountTasksInCurrentContext(stopAtBatch: true);
     }
 
-    /// <summary>
-    /// Whether the queue's current context is a batch rather than a standalone task.
-    /// </summary>
+    // Whether the queue's current context is a batch rather than a standalone task.
     private bool IsCurrentContextBatch => currentBatch != null && currentTask == null;
 
-    /// <summary>
-    /// The position of the executing standalone task in the unified queue, or -1 when none is executing.
-    /// </summary>
+    // The position of the executing standalone task in the unified queue, or -1 when none is executing.
     private int GetCurrentStandaloneTaskIndex()
     {
         return currentTask != null
@@ -162,22 +137,13 @@ public partial class NoireTaskQueue
             : -1;
     }
 
-    /// <summary>
-    /// Reports whether a batch at the given position ends the strict standalone context.
-    /// </summary>
-    /// <param name="index">The position of the batch in the unified queue.</param>
-    /// <param name="currentTaskIndex">The position of the executing standalone task, or -1 when none is executing.</param>
-    /// <returns>True if the batch ends the strict context; otherwise, false.</returns>
+    // Reports whether a batch at the given position ends the strict standalone context.
     private static bool IsStrictBoundaryBatch(int index, int currentTaskIndex)
     {
         return currentTaskIndex == -1 || index > currentTaskIndex;
     }
 
-    /// <summary>
-    /// Lists the tasks a context-scoped query reaches, in queue order.
-    /// </summary>
-    /// <param name="contextDefinition">The context to scope the listing to.</param>
-    /// <returns>The tasks in that context, in queue order.</returns>
+    // Lists the tasks a context-scoped query reaches, in queue order.
     private List<QueuedTask> ListTasksInContext(ContextDefinition contextDefinition)
     {
         var tasks = new List<QueuedTask>();
@@ -221,9 +187,7 @@ public partial class NoireTaskQueue
         return tasks;
     }
 
-    /// <summary>
-    /// Counts pending tasks in the current context (batch or standalone).
-    /// </summary>
+    // Counts pending tasks in the current context (batch or standalone).
     private int CountTasksInCurrentContext(bool stopAtBatch)
     {
         if (IsCurrentContextBatch)
@@ -250,12 +214,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Calculates the depth (distance in tasks) of a given task from the current executing task.
-    /// </summary>
-    /// <param name="targetTask">The task to calculate depth for.</param>
-    /// <param name="boundaryType">The boundary type to use for context checking.</param>
-    /// <returns>The depth of the task, or null if the task is not found or is before the current task.</returns>
+    // Calculates the depth (distance in tasks) of a given task from the current executing task.
     internal int? GetTaskDepth(QueuedTask targetTask, ContextDefinition boundaryType)
     {
         return boundaryType switch
@@ -267,9 +226,6 @@ public partial class NoireTaskQueue
         };
     }
 
-    /// <summary>
-    /// Calculates task depth with no boundary checks (fully cross-context).
-    /// </summary>
     private int? GetTaskDepthNoBoundary(QueuedTask targetTask)
     {
         int depth = 0;
@@ -408,9 +364,8 @@ public partial class NoireTaskQueue
         return null;
     }
 
-    /// <summary>
-    /// Calculates task depth with SameContext boundary (same batch or both standalone with batches allowed in between).
-    /// </summary>
+    // Calculates task depth with SameContext boundary (same batch or both standalone with batches allowed in
+    // between).
     private int? GetTaskDepthSameContext(QueuedTask targetTask)
     {
         if (IsCurrentContextBatch)
@@ -423,9 +378,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Calculates task depth with SameContextStrict (same batch or standalone with no batch separation).
-    /// </summary>
+    // Calculates task depth with SameContextStrict (same batch or standalone with no batch separation).
     private int? GetTaskDepthStrictBoundary(QueuedTask targetTask)
     {
         if (IsCurrentContextBatch)
@@ -438,9 +391,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Calculates task depth when the current context is inside a batch.
-    /// </summary>
+    // Calculates task depth when the current context is inside a batch.
     private int? GetTaskDepthInBatch(QueuedTask targetTask, TaskBatch batch)
     {
         if (targetTask.ParentBatch != batch)
@@ -474,9 +425,7 @@ public partial class NoireTaskQueue
         return depth;
     }
 
-    /// <summary>
-    /// Calculates task depth when the current context is standalone (not in a batch).
-    /// </summary>
+    // Calculates task depth when the current context is standalone (not in a batch).
     private int? GetTaskDepthStandalone(QueuedTask targetTask, bool stopAtBatch)
     {
         if (targetTask.ParentBatch != null)

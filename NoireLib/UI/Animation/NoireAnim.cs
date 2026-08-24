@@ -4,23 +4,14 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Time-based animation for immediate-mode widgets.<br/>
-/// Nothing is registered, created or disposed: every call is keyed by an id, reads the value for this frame, and stores
-/// what it needs in <see cref="UiFrameState"/>. A widget that stops calling stops animating, and its state is pruned on
-/// its own.<br/>
-/// Everything here degrades under <see cref="NoireUI.ReducedMotion"/>: eased values snap to their target and decorative
-/// motion stops, so a UI built on this stays fully usable with motion turned off.
+/// Time-based animation for immediate-mode widgets. Every call is keyed by an id and stores what it needs in
+/// <see cref="UiFrameState"/>. Everything here degrades under <see cref="NoireUI.ReducedMotion"/>: eased values snap
+/// to their target and decorative motion stops.
 /// </summary>
-/// <example>
-/// <code>
-/// var glow = NoireAnim.Ease("save-button", "hover", ImGui.IsItemHovered() ? 1f : 0f);
-/// var lift = NoireAnim.Spring("panel", "open", expanded ? 220f : 0f);
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireAnim
 {
-    /// <summary>The largest step the spring integrator takes, so a long frame cannot make it explode.</summary>
+    // The largest step the spring integrator takes, so a long frame cannot make it explode.
     private const float MaxSpringStep = 1f / 120f;
 
     private struct EaseState
@@ -51,30 +42,20 @@ public static class NoireAnim
     public static float Time => NoireUI.Time;
 
     /// <summary>
-    /// Moves a value toward <paramref name="target"/> along an easing curve, and returns where it is this frame.<br/>
-    /// Changing the target restarts the curve from wherever the value currently is, so a hover that reverses halfway
-    /// never snaps.
+    /// Moves a value toward <paramref name="target"/> along an easing curve, and returns where it is this frame.
     /// </summary>
     /// <param name="id">The widget id.</param>
-    /// <param name="subKey">Which property of that widget this is, for example "hover".</param>
+    /// <param name="subKey">Which property of that widget this is.</param>
     /// <param name="target">The value to move toward.</param>
     /// <param name="duration">How long the move takes, in seconds.</param>
     /// <param name="easing">The curve to follow.</param>
     /// <returns>The current value.</returns>
-    /// <remarks>
-    /// Keep <paramref name="id"/> and <paramref name="subKey"/> as separate arguments rather than interpolating them
-    /// into one string: two existing strings cost nothing to look up, while <c>$"{id}.hover"</c> allocates on every
-    /// property of every widget, every frame.
-    /// </remarks>
+    /// <remarks>Keep <paramref name="id"/> and <paramref name="subKey"/> separate: <c>$"{id}.hover"</c> allocates every frame.</remarks>
     public static float Ease(string id, string subKey, float target, float duration = 0.15f, UiEasing easing = UiEasing.OutCubic)
         => Ease(id, subKey, target, duration, easing, null);
 
     /// <summary>
-    /// Moves a value toward <paramref name="target"/> along an easing curve, and returns where it is this frame.<br/>
-    /// Changing the target restarts the curve from wherever the value currently is, so a hover that reverses halfway
-    /// never snaps.<br/>
-    /// Animates the widget as a whole. Use <see cref="Ease(string, string, float, float, UiEasing)"/> to animate more
-    /// than one property of the same widget.
+    /// Moves the widget's value toward <paramref name="target"/> along an easing curve, and returns where it is this frame.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="target">The value to move toward.</param>
@@ -138,15 +119,13 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// Moves a value toward <paramref name="target"/> like a damped spring, and returns where it is this frame.<br/>
-    /// Unlike <see cref="Ease(string, string, float, float, UiEasing)"/> a spring has no fixed duration: it carries its
-    /// momentum, so a target that keeps moving is followed smoothly instead of restarting.
+    /// Moves a value toward <paramref name="target"/> like a damped spring, and returns where it is this frame.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="subKey">Which property of that widget this is.</param>
     /// <param name="target">The value to move toward.</param>
-    /// <param name="stiffness">How hard the spring pulls. Higher arrives faster.</param>
-    /// <param name="damping">How much the motion is resisted. Higher overshoots less; around <c>2 * sqrt(stiffness)</c> is the point where it stops overshooting at all.</param>
+    /// <param name="stiffness">How hard the spring pulls.</param>
+    /// <param name="damping">How much the motion is resisted.</param>
     /// <returns>The current value.</returns>
     public static float Spring(string id, string subKey, float target, float stiffness = 180f, float damping = 26f)
     {
@@ -177,23 +156,18 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// Moves a value toward <paramref name="target"/> like a damped spring, and returns where it is this frame.<br/>
-    /// Unlike <see cref="Ease(string, float, float, UiEasing)"/> a spring has no fixed duration: it carries its
-    /// momentum, so a target that keeps moving is followed smoothly instead of restarting.<br/>
-    /// Animates the widget as a whole. Use <see cref="Spring(string, string, float, float, float)"/> to animate more
-    /// than one property of the same widget.
+    /// Moves the widget's value toward <paramref name="target"/> like a damped spring, and returns where it is this frame.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="target">The value to move toward.</param>
-    /// <param name="stiffness">How hard the spring pulls. Higher arrives faster.</param>
-    /// <param name="damping">How much the motion is resisted. Higher overshoots less; around <c>2 * sqrt(stiffness)</c> is the point where it stops overshooting at all.</param>
+    /// <param name="stiffness">How hard the spring pulls.</param>
+    /// <param name="damping">How much the motion is resisted.</param>
     /// <returns>The current value.</returns>
     public static float Spring(string id, float target, float stiffness = 180f, float damping = 26f)
         => Spring(id, string.Empty, target, stiffness, damping);
 
     /// <summary>
-    /// Eases a value between 0 (hidden) and 1 (shown), for fading and sliding something in and out. Reads as
-    /// presence at the call site: a widget draws while the result is above zero, not while a flag is true.
+    /// Eases a value between 0 (hidden) and 1 (shown), for fading and sliding something in and out.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="subKey">Which property of that widget this is.</param>
@@ -205,14 +179,13 @@ public static class NoireAnim
         => Ease(id, subKey, visible ? 1f : 0f, duration, easing);
 
     /// <summary>
-    /// A value oscillating smoothly between <paramref name="min"/> and <paramref name="max"/>, for a breathing highlight
-    /// or a slow glow. Stateless: it reads the shared clock and stores nothing.<br/>
-    /// Returns <paramref name="max"/> unchanged under <see cref="NoireUI.ReducedMotion"/>.
+    /// A value oscillating smoothly between <paramref name="min"/> and <paramref name="max"/>, returning
+    /// <paramref name="max"/> unchanged under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     /// <param name="period">One full cycle, in seconds.</param>
     /// <param name="min">The low end.</param>
     /// <param name="max">The high end.</param>
-    /// <param name="phase">Shifts the cycle, from 0 to 1, so several pulses can be offset from each other.</param>
+    /// <param name="phase">Shifts the cycle, from 0 to 1.</param>
     /// <returns>The current value.</returns>
     public static float Pulse(float period = 1.5f, float min = 0f, float max = 1f, float phase = 0f)
     {
@@ -224,8 +197,7 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// A value sweeping from 0 to 1 and starting over, for a highlight travelling across something. Stateless.<br/>
-    /// Returns 1 under <see cref="NoireUI.ReducedMotion"/>.
+    /// A value sweeping from 0 to 1 and starting over, returning 1 under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     /// <param name="period">One full sweep, in seconds.</param>
     /// <param name="phase">Shifts the sweep, from 0 to 1.</param>
@@ -240,15 +212,10 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// A rotation in turns, running from 0 to 1 and starting over, for something that turns continuously. Stateless.<br/>
-    /// Returns 0 under <see cref="NoireUI.ReducedMotion"/>, so the thing stands still.
+    /// A rotation in turns, running from 0 to 1 and starting over, returning 0 under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
-    /// <remarks>
-    /// The same ramp as <see cref="Sweep"/>, named for rotation and resting at 0 rather than at 1, since a rotation has
-    /// no finished position to park at. Negate the result to turn the other way.
-    /// </remarks>
     /// <param name="secondsPerTurn">How long one full turn takes, in seconds.</param>
-    /// <param name="phase">Shifts the rotation, from 0 to 1, so two turning things can be offset from each other.</param>
+    /// <param name="phase">Shifts the rotation, from 0 to 1.</param>
     /// <returns>The current rotation in turns, from 0 to 1.</returns>
     public static float Spin(float secondsPerTurn, float phase = 0f)
     {
@@ -260,17 +227,14 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// Starts a one-shot animation now. Call it on the frame the thing happened (a save succeeded, a value was rejected);
-    /// <see cref="Progress"/>, <see cref="Flash"/> and <see cref="Shake"/> read from it.
+    /// Starts a one-shot animation now, which <see cref="Progress"/>, <see cref="Flash"/> and <see cref="Shake"/> read from.
     /// </summary>
     /// <param name="id">The widget id.</param>
-    /// <param name="subKey">Which one-shot this is, for example "saved".</param>
+    /// <param name="subKey">Which one-shot this is.</param>
     public static void Trigger(string id, string subKey) => UiFrameState.Set(id, subKey, Time);
 
     /// <summary>
-    /// Starts a one-shot animation now. Call it on the frame the thing happened (a save succeeded, a value was rejected);
-    /// <see cref="Progress"/>, <see cref="Flash"/> and <see cref="Shake"/> read from it.<br/>
-    /// Triggers the widget's only one-shot. Use <see cref="Trigger(string, string)"/> when a widget has more than one.
+    /// Starts the widget's only one-shot animation now.
     /// </summary>
     /// <param name="id">The widget id.</param>
     public static void Trigger(string id) => Trigger(id, string.Empty);
@@ -300,8 +264,7 @@ public static class NoireAnim
     public static bool IsRunning(string id, string subKey, float duration = 0.5f) => Progress(id, subKey, duration) < 1f;
 
     /// <summary>
-    /// A value falling from 1 to 0 after <see cref="Trigger(string, string)"/>, for a confirmation flash behind a control.<br/>
-    /// Returns 0 under <see cref="NoireUI.ReducedMotion"/>, so nothing flashes.
+    /// A value falling from 1 to 0 after <see cref="Trigger(string, string)"/>, returning 0 under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="subKey">Which one-shot this is.</param>
@@ -316,8 +279,7 @@ public static class NoireAnim
     }
 
     /// <summary>
-    /// A horizontal offset oscillating and dying out after <see cref="Trigger(string, string)"/>, for rejecting an invalid entry.<br/>
-    /// Returns 0 under <see cref="NoireUI.ReducedMotion"/>.
+    /// A horizontal offset oscillating and dying out after <see cref="Trigger(string, string)"/>, returning 0 under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     /// <param name="id">The widget id.</param>
     /// <param name="subKey">Which one-shot this is.</param>
@@ -342,7 +304,7 @@ public static class NoireAnim
     /// </summary>
     /// <param name="from">The colour at 0.</param>
     /// <param name="to">The colour at 1.</param>
-    /// <param name="t">The blend, from 0 to 1. Values outside that range are clamped.</param>
+    /// <param name="t">The blend, from 0 to 1.</param>
     /// <returns>The blended colour.</returns>
     public static Vector4 Blend(Vector4 from, Vector4 to, float t) => Vector4.Lerp(from, to, Math.Clamp(t, 0f, 1f));
 

@@ -145,9 +145,7 @@ public partial class NoireTaskQueue
         return this;
     }
 
-    /// <summary>
-    /// Pauses all task timers (timeout, stall tracking, post-delay) in the queue.
-    /// </summary>
+    // Pauses all task timers (timeout, stall tracking, post-delay) in the queue.
     private void PauseAllQueueTimers()
     {
         lock (queueLock)
@@ -167,9 +165,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Resumes all task timers (timeout, stall tracking, post-delay) in the queue.
-    /// </summary>
+    // Resumes all task timers (timeout, stall tracking, post-delay) in the queue.
     private void ResumeAllQueueTimers()
     {
         lock (queueLock)
@@ -189,9 +185,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Pauses timers for a single task.
-    /// </summary>
     private void PauseTaskTimers(QueuedTask task)
     {
         if ((task.Status == TaskStatus.Executing || task.Status == TaskStatus.WaitingForCompletion || task.Status == TaskStatus.WaitingForPostDelay) && task.Timeout.HasValue)
@@ -204,9 +197,6 @@ public partial class NoireTaskQueue
             task.PausePostDelay();
     }
 
-    /// <summary>
-    /// Resumes timers for a single task.
-    /// </summary>
     private void ResumeTaskTimers(QueuedTask task)
     {
         if (task.Status == TaskStatus.WaitingForPostDelay && task.PostCompletionDelay.HasValue)
@@ -219,9 +209,6 @@ public partial class NoireTaskQueue
             task.ResumeStallTracking();
     }
 
-    /// <summary>
-    /// Pauses timers for a batch and all its tasks.
-    /// </summary>
     private void PauseBatchTimers(TaskBatch batch)
     {
         if (batch.Status == BatchStatus.WaitingForPostDelay && batch.PostCompletionDelay.HasValue)
@@ -233,9 +220,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Resumes timers for a batch and all its tasks.
-    /// </summary>
     private void ResumeBatchTimers(TaskBatch batch)
     {
         if (batch.Status == BatchStatus.WaitingForPostDelay && batch.PostCompletionDelay.HasValue)

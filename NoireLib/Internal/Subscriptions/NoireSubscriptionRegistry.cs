@@ -410,13 +410,10 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
         }
     }
 
-    /// <summary>
-    /// Applies the entry's filter, then - for one-shot subscriptions - claims and removes it, and finally invokes
-    /// the handler. The filter is evaluated <b>before</b> the once-claim so a non-matching context never consumes a
-    /// filtered one-shot subscription. Runs on the caller's thread: inline for inline delivery, or on the framework
-    /// thread for marshaled delivery, so a FrameworkThread filter still sees game state from the framework thread.
-    /// </summary>
-    /// <returns>True if the handler was invoked; false if the filter rejected the context or the once-claim was lost.</returns>
+    // Applies the entry's filter, then - for one-shot subscriptions - claims and removes it, and finally invokes the
+    // handler. The filter is evaluated before the once-claim so a non-matching context never consumes a filtered
+    // one-shot subscription. Runs on the caller's thread: inline for inline delivery, or on the framework thread for
+    // marshaled delivery, so a FrameworkThread filter still sees game state from the framework thread.
     private bool Deliver(TKey key, Entry entry, TContext context)
     {
         if (!ShouldDeliver(key, entry, context))
@@ -426,12 +423,9 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
         return true;
     }
 
-    /// <summary>
-    /// The filter-and-once core shared by <see cref="Dispatch"/> and <see cref="DispatchAsync"/>, so the two paths
-    /// decide delivery identically. Applies the filter first, then, for a one-shot subscription, claims and removes
-    /// it, so a non-matching context never consumes a filtered one-shot.
-    /// </summary>
-    /// <returns>True when the handler should be invoked; false when the filter rejected the context or the once-claim was lost.</returns>
+    // The filter-and-once core shared by Dispatch and DispatchAsync, so the two paths decide delivery identically.
+    // Applies the filter first, then, for a one-shot subscription, claims and removes it, so a non-matching context
+    // never consumes a filtered one-shot.
     private bool ShouldDeliver(TKey key, Entry entry, TContext context)
     {
         if (entry.Filter != null && !SafeFilter(entry, context))
@@ -498,11 +492,9 @@ public sealed class NoireSubscriptionRegistry<TKey, TContext> where TKey : notnu
         }
     }
 
-    /// <summary>
-    /// Awaited counterpart to <see cref="InvokeEntry"/>, used by <see cref="DispatchAsync"/>. A synchronous handler
-    /// runs inline (returning a completed task); an async handler is awaited. Under propagation, a fault surfaces to
-    /// the awaiting dispatcher; otherwise it is caught and reported.
-    /// </summary>
+    // Awaited counterpart to InvokeEntry, used by DispatchAsync. A synchronous handler runs inline (returning a
+    // completed task); an async handler is awaited. Under propagation, a fault surfaces to the awaiting dispatcher;
+    // otherwise it is caught and reported.
     private async Task InvokeEntryAsync(Entry entry, TContext context)
     {
         if (propagateHandlerExceptions)

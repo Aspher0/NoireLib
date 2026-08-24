@@ -10,10 +10,8 @@ namespace NoireLib.Tests;
 /// Unit tests for <see cref="NoireShapes.DiamondPath"/>, the mark the deco language is built from.
 /// </summary>
 /// <remarks>
-/// Winding is the property worth locking. <see cref="NoireShapes.Fill"/> needs the path convex and
-/// <see cref="NoireShapes.GlowPath"/> needs it clockwise to know which way an edge faces, and neither fails loudly: a
-/// counter-clockwise diamond fills correctly and then grows its halo inwards, which reads as the glow simply not
-/// working rather than as a winding bug.
+/// <see cref="NoireShapes.Fill"/> needs the path convex and <see cref="NoireShapes.GlowPath"/> needs it clockwise, and
+/// neither fails loudly.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireDiamondPathTests

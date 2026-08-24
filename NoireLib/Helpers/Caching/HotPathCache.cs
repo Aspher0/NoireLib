@@ -24,9 +24,7 @@ public sealed class HotPathCache<TKey, TValue>
 
     private readonly Dictionary<TKey, TValue> entries;
 
-    /// <summary>
-    /// The token the entries were stored under. See <see cref="InvalidateIfChanged"/>.
-    /// </summary>
+    // The token the entries were stored under. See InvalidateIfChanged.
     private int token;
 
     private bool tokenSeen;

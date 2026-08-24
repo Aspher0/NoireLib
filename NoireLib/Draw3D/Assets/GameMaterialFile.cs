@@ -86,10 +86,10 @@ public static class GameShaderNames
 /// </summary>
 public sealed class GameMaterialFile : FileResource
 {
-    /// <summary>Set in the table flags when the material carries a color table.</summary>
+    // Set in the table flags when the material carries a color table.
     private const uint HasTableFlag = 0x4;
 
-    /// <summary>Set in the table flags when a dye table follows the color table.</summary>
+    // Set in the table flags when a dye table follows the color table.
     private const uint HasDyeTableFlag = 0x8;
 
     /// <summary>File format version.</summary>
@@ -260,10 +260,8 @@ public sealed class GameMaterialFile : FileResource
         }
     }
 
-    /// <summary>
-    /// Extracts the color table, and the dye table behind it, from the material's data set; row count and
-    /// width come from the flags rather than being fixed (the current layout vs. the older half-sized one).
-    /// </summary>
+    // Extracts the color table, and the dye table behind it, from the material's data set; row count and width come
+    // from the flags rather than being fixed (the current layout vs. the older half-sized one).
     private void ReadTables(byte[] data, int dataSetStart, uint tableFlags)
     {
         if ((tableFlags & HasTableFlag) == 0)

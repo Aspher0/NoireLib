@@ -8,12 +8,6 @@ namespace NoireLib.Tests;
 /// Holds the foundations every widget sits on at zero allocation per frame: the animation clocks, the style scope,
 /// the two widget memories and the tooltip.
 /// </summary>
-/// <remarks>
-/// These had no allocation coverage at all, which is its own kind of blind spot: the audit that put every widget
-/// under a zero measured the widgets, and a cost in what they all call would have been counted against whichever of
-/// them happened to be measured first. The animation clocks in particular are read by every animated widget on every
-/// frame, so a single allocation here is multiplied by the whole interface.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireFoundationAllocationTests : IClassFixture<UiHarness>
 {
@@ -111,8 +105,7 @@ public sealed class NoireFoundationAllocationTests : IClassFixture<UiHarness>
             static () => NoireTooltip.Show(Tip, null, "alloc_tooltip"),
             warmUpFrames: 4);
 
-        // A tooltip is on screen for as long as the pointer rests, which is exactly when the user is looking at the
-        // frame rate.
+        // A tooltip is on screen for as long as the pointer rests.
         result.AllocatedBytes.Should().Be(0L);
     }
 }

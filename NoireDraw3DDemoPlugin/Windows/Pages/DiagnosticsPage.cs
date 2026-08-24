@@ -12,8 +12,7 @@ namespace NoireDraw3DDemoPlugin.Windows.Pages;
 /// <summary>
 /// A front-end over the render-internal validators that stay in the library (<see cref="NoireDraw3D.Diagnostics"/>):
 /// projection parity, the depth probe, the camera-phase "swim" trace, the live stats and the fault feed. Plus a
-/// world-collision preview rebuilt here on the public API (it owns its own scene). Everything here only reads or
-/// measures - nothing on this page changes what you see in the world.
+/// world-collision preview rebuilt here on the public API (it owns its own scene).
 /// </summary>
 public sealed class DiagnosticsPage : IDisposable
 {
@@ -25,7 +24,6 @@ public sealed class DiagnosticsPage : IDisposable
     private string lastFault = string.Empty;
     private int faultCount;
 
-    /// <summary>Subscribes to the self-disable fault feed so the page can show the last fault.</summary>
     public DiagnosticsPage()
     {
         onFault = fault =>
@@ -37,7 +35,6 @@ public sealed class DiagnosticsPage : IDisposable
         NoireDraw3D.OnFault += onFault;
     }
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         DrawValidators();
@@ -106,7 +103,8 @@ public sealed class DiagnosticsPage : IDisposable
         Ui.Status(worldGeoStatus);
     }
 
-    /// <summary>Toggles a translucent shaded preview of the game's real collision world near the player (framework thread only).</summary>
+    // Toggles a translucent shaded preview of the game's real collision world near the player (framework thread
+    // only).
     private void ToggleWorldGeometry()
     {
         if (worldGeoScene is { IsDisposed: false } existing)
@@ -134,10 +132,6 @@ public sealed class DiagnosticsPage : IDisposable
 
     // ---------------------------------------------------------------- stats
 
-    /// <summary>
-    /// The live stats, broken out field by field rather than dumped as one string, so each number carries its own
-    /// explanation of what it means and when it is a problem.
-    /// </summary>
     private static void DrawStats()
     {
         var s = NoireDraw3D.Stats;
@@ -223,7 +217,6 @@ public sealed class DiagnosticsPage : IDisposable
 
     private static string YesNo(bool value) => value ? "yes" : "no";
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         NoireDraw3D.OnFault -= onFault;

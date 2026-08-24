@@ -5,7 +5,7 @@ namespace NoireLib.UI;
 /// </summary>
 public enum TableSelection
 {
-    /// <summary>Rows cannot be selected. The default.</summary>
+    /// <summary>Rows cannot be selected.</summary>
     None,
 
     /// <summary>One row at a time; picking another releases the first.</summary>

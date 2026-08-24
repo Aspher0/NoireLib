@@ -124,19 +124,18 @@ public sealed class GameModelLod
 /// </summary>
 public sealed class GameModelFile : FileResource
 {
-    /// <summary>Fixed size of the file header, after which the vertex declarations begin.</summary>
+    // Fixed size of the file header, after which the vertex declarations begin.
     private const int HeaderSize = 0x44;
 
-    /// <summary>Every declaration reserves seventeen element slots whether or not it uses them.</summary>
+    // Every declaration reserves seventeen element slots whether or not it uses them.
     private const int ElementsPerDeclaration = 17;
 
-    /// <summary>Size of one vertex element record in bytes.</summary>
     private const int ElementSize = 8;
 
-    /// <summary>A stream index of 255 terminates a declaration's element list.</summary>
+    // A stream index of 255 terminates a declaration's element list.
     private const byte ElementTerminator = 255;
 
-    /// <summary>Files at or above this version store bone tables as an indirection into a pooled array.</summary>
+    // Files at or above this version store bone tables as an indirection into a pooled array.
     private const uint IndirectBoneTableVersion = 0x01000006;
 
     /// <summary>File format version.</summary>
@@ -382,7 +381,7 @@ public sealed class GameModelFile : FileResource
     private static string ReadStringAt(byte[] data, int stringBase, uint offset)
         => BufferHelper.ReadNullTerminatedString(data, stringBase + (int)offset);
 
-    /// <summary>Reads a bounding-box corner, which the file stores as a four-component vector.</summary>
+    // Reads a bounding-box corner, which the file stores as a four-component vector.
     private static Vector3 ReadVector4AsVector3(byte[] data, int at)
         => at + 12 > data.Length ? Vector3.Zero : BufferHelper.ReadVector3(data, at);
 

@@ -17,9 +17,9 @@ public enum ButtonTone
     /// <summary>An action worth a second of thought, but not destructive.</summary>
     Warning,
 
-    /// <summary>A destructive action. Pairs naturally with <see cref="NoireButtons.HoldToConfirm(string, float, ButtonStyle, System.Numerics.Vector2)"/>.</summary>
+    /// <summary>A destructive action, pairing with <see cref="NoireButtons.HoldToConfirm(string, float, ButtonStyle, System.Numerics.Vector2)"/>.</summary>
     Danger,
 
-    /// <summary>A button with no fill until it is hovered, for secondary actions that should not compete for attention.</summary>
+    /// <summary>A button with no fill until it is hovered, for secondary actions.</summary>
     Ghost,
 }

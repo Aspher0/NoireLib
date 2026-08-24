@@ -13,34 +13,28 @@ namespace NoireLib.Animations.PapFormat;
 /// </summary>
 public static class PapFaceLibrary
 {
-    /// <summary> "pap " little-endian, the .pap container magic. </summary>
     private const int PapMagic = 0x20706170;
 
-    /// <summary> Magic, version, count, model id, model type, variant, and three offsets. </summary>
+    // Magic, version, count, model id, model type, variant, and three offsets.
     private const int PapHeaderLength = 26;
 
-    /// <summary> Offset of the animation count inside a .pap header. </summary>
     private const int AnimationCountOffset = 8;
 
-    /// <summary> Offset of the footer field (where the embedded TMB region starts) inside a .pap header. </summary>
+    // Offset of the footer field (where the embedded TMB region starts) inside a .pap header.
     private const int FooterFieldOffset = 22;
 
-    /// <summary> A TMB's own header: magic, total size, item count. </summary>
     private const int TmlbHeaderLength = 12;
 
-    /// <summary> TMDH is always the first item and always this size. </summary>
+    // TMDH is always the first item and always this size.
     private const int TmdhLength = 0x10;
 
-    /// <summary> TMPP is magic, size and one offset string; it carries no id or time. </summary>
+    // TMPP is magic, size and one offset string; it carries no id or time.
     private const int TmppLength = 0x0C;
 
-    /// <summary> Offset of the TMPP inside a TMB, present or injected: right after TMDH. </summary>
+    // Offset of the TMPP inside a TMB, present or injected: right after TMDH.
     private const int TmppInsertOffset = TmlbHeaderLength + TmdhLength;
 
-    /// <summary> One embedded TMB: where it sits in the pap, and the face library it declares. </summary>
-    /// <param name="Start">Offset of the TMB inside the pap.</param>
-    /// <param name="Length">The TMB's total size in bytes.</param>
-    /// <param name="FaceLibrary">The declared face library, or null when the TMB has no TMPP.</param>
+    // One embedded TMB: where it sits in the pap, and the face library it declares.
     private readonly record struct TmbSlice(int Start, int Length, string? FaceLibrary);
 
     /// <summary>
@@ -138,11 +132,9 @@ public static class PapFaceLibrary
         return result;
     }
 
-    /// <summary>
-    /// One TMB with the TMPP spliced in: bytes up to the insertion point, the 12-byte item, the remaining bytes
-    /// shifted as one block, then the name string and its terminator. Only the total size and item count are
-    /// rewritten, since every stored offset is forward-pointing and relative to its own item's start+8.
-    /// </summary>
+    // One TMB with the TMPP spliced in: bytes up to the insertion point, the 12-byte item, the remaining bytes
+    // shifted as one block, then the name string and its terminator. Only the total size and item count are
+    // rewritten, since every stored offset is forward-pointing and relative to its own item's start+8.
     private static byte[] BuildInjectedTmb(byte[] pap, TmbSlice tmb, byte[] nameBytes)
     {
         var newSize = tmb.Length + TmppLength + nameBytes.Length + 1;
@@ -168,10 +160,8 @@ public static class PapFaceLibrary
         return bytes;
     }
 
-    /// <summary>
-    /// Walks the pap's embedded TMB region without parsing the timelines, returning one slice per TMB and the
-    /// region's bounds. Anything that does not match the TMLB, TMDH, then TMPP-or-TMAL shape is refused.
-    /// </summary>
+    // Walks the pap's embedded TMB region without parsing the timelines, returning one slice per TMB and the region's
+    // bounds. Anything that does not match the TMLB, TMDH, then TMPP-or-TMAL shape is refused.
     private static List<TmbSlice> WalkTmbs(byte[] pap, out int footerOffset, out int tmbRegionEnd)
     {
         if (pap.Length < PapHeaderLength)
@@ -241,10 +231,8 @@ public static class PapFaceLibrary
         return tmbs;
     }
 
-    /// <summary>
-    /// Re-parses the spliced bytes with <see cref="PapFile"/>, then re-walks them and checks every TMB declares the
-    /// library it was meant to end up with.
-    /// </summary>
+    // Re-parses the spliced bytes with PapFile, then re-walks them and checks every TMB declares the library it was
+    // meant to end up with.
     private static void Verify(byte[] result, List<string> expectedLibraries)
     {
         try
@@ -269,20 +257,16 @@ public static class PapFaceLibrary
         }
     }
 
-    /// <summary>
-    /// Pads every inter-TMB gap but the last to a 4-byte boundary, measured against the TMB region's own alignment
-    /// rather than absolute zero, matching <see cref="PapFile"/>.
-    /// </summary>
+    // Pads every inter-TMB gap but the last to a 4-byte boundary, measured against the TMB region's own alignment
+    // rather than absolute zero, matching PapFile.
     private static int PaddingBeforeNextTmb(int position, int footerOffset)
     {
         var leftover = (position - footerOffset % 4) % 4;
         return leftover == 0 ? 0 : 4 - leftover;
     }
 
-    /// <summary>
-    /// The string a TMB offset field points at: 0 is the empty string, anything else is relative to the field's own
-    /// position and must land on a NUL-terminated run inside the same TMB.
-    /// </summary>
+    // The string a TMB offset field points at: 0 is the empty string, anything else is relative to the field's own
+    // position and must land on a NUL-terminated run inside the same TMB.
     private static string ReadTmbOffsetString(byte[] pap, int tmbStart, int tmbSize, int fieldPosition, int index, int count)
     {
         var offset = ReadInt32(pap, fieldPosition);

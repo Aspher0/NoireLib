@@ -13,10 +13,6 @@ namespace NoireLib.Tests;
 /// observable: two surfaces drawing in the same frame each get their own buffer, and neither costs the frame any
 /// allocated bytes.
 /// </summary>
-/// <remarks>
-/// <see cref="PooledBufferTests"/> covers the buffer's own contract in isolation. What it cannot show is the thing
-/// the buffer exists for, because "allocates nothing per frame" is a property of a frame. This measures one.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class PooledBufferInAFrameTests : IClassFixture<UiHarness>
 {

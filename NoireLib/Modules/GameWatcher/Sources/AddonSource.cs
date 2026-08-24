@@ -8,12 +8,9 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Addon facts, lifecycle-driven: per-addon listeners registered on demand, shown/hidden transitions, and
-/// node watchers re-evaluated on refresh events plus a low-frequency safety poll
-/// (<see cref="GameWatcherOptions.AddonSafetyPollInterval"/>) for addons that mutate nodes without a refresh.
-/// Lifecycle events themselves are exact.
-/// </summary>
+// Addon facts, lifecycle-driven: per-addon listeners registered on demand, shown/hidden transitions, and node
+// watchers re-evaluated on refresh events plus a low-frequency safety poll (AddonSafetyPollInterval) for addons that
+// mutate nodes without a refresh. Lifecycle events themselves are exact.
 internal sealed class AddonSource : GameWatcherSource
 {
     internal sealed class NodeWatcherRegistration
@@ -41,7 +38,7 @@ internal sealed class AddonSource : GameWatcherSource
 
     public AddonSource(NoireGameWatcher owner) : base(owner, SourceKind.Addons) { }
 
-    /// <summary>Registers interest in an addon name (refcounted) and returns the removal action.</summary>
+    // Registers interest in an addon name (refcounted) and returns the removal action.
     internal Action AddAddonInterest(string addonName)
     {
         lock (nameInterest)
@@ -76,7 +73,7 @@ internal sealed class AddonSource : GameWatcherSource
         };
     }
 
-    /// <summary>Registers a node text watcher and returns the removal action.</summary>
+    // Registers a node text watcher and returns the removal action.
     internal Action AddNodeWatcher(NodeWatcherRegistration registration)
     {
         var releaseName = AddAddonInterest(registration.AddonName);
@@ -250,21 +247,21 @@ internal sealed class AddonSource : GameWatcherSource
         }
     }
 
-    /// <summary>Whether an addon exists and is visible right now (live read).</summary>
+    // Whether an addon exists and is visible right now (live read).
     internal static unsafe bool ReadIsVisible(string addonName)
     {
         var unitBase = (AtkUnitBase*)NoireService.GameGui.GetAddonByName(addonName).Address;
         return unitBase != null && unitBase->IsVisible;
     }
 
-    /// <summary>Whether an addon exists, is visible and fully loaded (live read).</summary>
+    // Whether an addon exists, is visible and fully loaded (live read).
     internal static unsafe bool ReadIsReady(string addonName)
     {
         var unitBase = (AtkUnitBase*)NoireService.GameGui.GetAddonByName(addonName).Address;
         return unitBase != null && unitBase->IsVisible && unitBase->UldManager.LoadedState == AtkLoadState.Loaded;
     }
 
-    /// <summary>Reads the text of a node by id, or null when the addon or node is unavailable (live read).</summary>
+    // Reads the text of a node by id, or null when the addon or node is unavailable (live read).
     internal static unsafe string? ReadNodeText(string addonName, uint nodeId)
     {
         var unitBase = (AtkUnitBase*)NoireService.GameGui.GetAddonByName(addonName).Address;

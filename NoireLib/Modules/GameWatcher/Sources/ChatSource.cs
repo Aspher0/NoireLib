@@ -6,10 +6,8 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Wraps chat messages: SeStrings and payloads preserved, sender resolved (name/world) when payloads allow,
-/// opt-in duplicate suppression with coalescing, and an opt-in bounded history. Event-driven - zero tick cost.
-/// </summary>
+// Wraps chat messages: SeStrings and payloads preserved, sender resolved (name/world) when payloads allow, opt-in
+// duplicate suppression with coalescing, and an opt-in bounded history. Event-driven - zero tick cost.
 internal sealed class ChatSource : GameWatcherSource
 {
     private readonly Dictionary<(Dalamud.Game.Text.XivChatType Type, string Sender, string Text), (DateTimeOffset LastDispatched, int Suppressed)> duplicateTracker = new();
@@ -35,14 +33,12 @@ internal sealed class ChatSource : GameWatcherSource
         duplicateTracker.Clear();
     }
 
-    /// <summary>A snapshot of the retained history, newest first.</summary>
     internal ChatMessageEvent[] GetHistory()
     {
         lock (historyLock)
             return history.ToArray();
     }
 
-    /// <summary>Clears the retained history.</summary>
     internal void ClearHistory()
     {
         lock (historyLock)

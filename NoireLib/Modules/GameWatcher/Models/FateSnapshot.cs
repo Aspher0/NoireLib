@@ -18,7 +18,7 @@ public sealed record FateSnapshot
     /// <summary>The fate state.</summary>
     public required FateState State { get; init; }
 
-    /// <summary>The completion progress (0–100).</summary>
+    /// <summary>The completion progress (0-100).</summary>
     public required byte Progress { get; init; }
 
     /// <summary>The fate's suggested level.</summary>

@@ -69,7 +69,7 @@ public sealed class Draw3DPerformance
     /// </summary>
     public float Supersample { get; set; } = 1f;
 
-    /// <summary>The clamped supersample factor, read once per frame when sizing the scene target.</summary>
+    // The clamped supersample factor, read once per frame when sizing the scene target.
     internal float SupersampleFactor => Math.Clamp(Supersample, 1f, 2f);
 
     /// <summary>
@@ -79,24 +79,13 @@ public sealed class Draw3DPerformance
     /// </summary>
     public bool BatchedObjectConstants { get; set; } = true;
 
-    /// <summary>An immutable copy of the settings for one frame's collection pass.</summary>
-    /// <param name="Lod">Whether LOD selection runs.</param>
-    /// <param name="LodBias">The clamped <see cref="LodBias"/>.</param>
-    /// <param name="MaxDrawDistance">The clamped <see cref="MaxDrawDistance"/>.</param>
-    /// <param name="MinScreenPixels">The clamped <see cref="MinScreenPixels"/>.</param>
-    /// <param name="LodScreenRadii">The descending LOD switch radii.</param>
-    /// <param name="BatchedObjectConstants">Whether single draws go through the instanced pipeline.</param>
+    // An immutable copy of the settings for one frame's collection pass.
     internal readonly record struct Snapshot(bool Lod, float LodBias, float MaxDrawDistance, float MinScreenPixels, float[] LodScreenRadii, bool BatchedObjectConstants);
 
-    /// <summary>Takes a frame snapshot, read once on the render thread so a mid-frame change never tears a pass.</summary>
-    /// <returns>The snapshot.</returns>
+    // Takes a frame snapshot, read once on the render thread so a mid-frame change never tears a pass.
     internal Snapshot Take() => new(Lod, MathF.Max(0.01f, LodBias), MathF.Max(0f, MaxDrawDistance), MathF.Max(0f, MinScreenPixels), lodScreenRadii, BatchedObjectConstants);
 
-    /// <summary>Selects the LOD level to draw at from an object's projected on-screen radius.</summary>
-    /// <param name="radiusPixels">The object's projected screen radius in pixels.</param>
-    /// <param name="lodCount">The mesh's available coarser-level count.</param>
-    /// <param name="s">The frame's settings snapshot.</param>
-    /// <returns>The level, 0 for full detail and also when LOD is off or the mesh has no chain.</returns>
+    // Selects the LOD level to draw at from an object's projected on-screen radius.
     internal static int SelectLevel(float radiusPixels, int lodCount, in Snapshot s)
     {
         if (!s.Lod || lodCount <= 0)

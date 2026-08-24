@@ -63,7 +63,7 @@ public sealed record PerformanceStartedEvent;
 /// <summary>Fired when the local player ends a bard performance (condition-derived).</summary>
 public sealed record PerformanceEndedEvent;
 
-/// <summary>Fired when the local player becomes occupied (talking to an NPC, using an event object, …).</summary>
+/// <summary>Fired when the local player becomes occupied (talking to an NPC, using an event object, ...).</summary>
 public sealed record OccupiedStartedEvent;
 
 /// <summary>Fired when the local player stops being occupied.</summary>

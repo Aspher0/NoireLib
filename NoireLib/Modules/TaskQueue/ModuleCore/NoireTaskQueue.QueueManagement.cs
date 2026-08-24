@@ -156,9 +156,7 @@ public partial class NoireTaskQueue
     public bool InsertTaskAfter(QueuedTask task, string afterTaskCustomId, ContextDefinition contextDefinition = ContextDefinition.CrossContext)
         => InsertTaskAfterInternal(task, t => t.CustomId == afterTaskCustomId, afterTaskCustomId, contextDefinition);
 
-    /// <summary>
-    /// Internal method to insert a task after another item matching a predicate.
-    /// </summary>
+    // Internal method to insert a task after another item matching a predicate.
     private bool InsertTaskAfterInternal(QueuedTask task, Func<QueuedTask, bool> predicate, string targetDescription, ContextDefinition contextDefinition)
     {
         if (!IsActive)
@@ -391,9 +389,7 @@ public partial class NoireTaskQueue
         });
     }
 
-    /// <summary>
-    /// Executes an action with the queue paused, resumed afterwards if it was running before.
-    /// </summary>
+    // Executes an action with the queue paused, resumed afterwards if it was running before.
     private T ExecuteWithPauseResume<T>(Func<T> action)
     {
         var wasRunning = QueueState == QueueState.Running;
@@ -529,9 +525,7 @@ public partial class NoireTaskQueue
             $"{batchCustomId}/{taskCustomId}");
     }
 
-    /// <summary>
-    /// Internal method to jump to a task within a specific batch.
-    /// </summary>
+    // Internal method to jump to a task within a specific batch.
     private bool JumpToTaskInBatchInternal<TId>(TId batchId, Func<TaskBatch, QueuedTask?> taskFinder, string targetDescription)
     {
         var wasRunning = QueueState == QueueState.Running;
@@ -633,9 +627,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Internal method to jump to a task with context boundary checking.
-    /// </summary>
+    // Internal method to jump to a task with context boundary checking.
     private bool JumpToTaskWithBoundaryInternal(Func<QueueItemWrapper, bool> predicate, string targetDescription, ContextDefinition boundaryType)
     {
         var wasRunning = QueueState == QueueState.Running;
@@ -773,9 +765,7 @@ public partial class NoireTaskQueue
     public QueuedTask? GetTaskByCustomId(string customId, ContextDefinition contextDefinition = ContextDefinition.CrossContext)
         => GetTaskInternal(t => t.CustomId == customId, contextDefinition);
 
-    /// <summary>
-    /// Internal method to get a task matching a predicate with context boundary checking.
-    /// </summary>
+    // Internal method to get a task matching a predicate with context boundary checking.
     private QueuedTask? GetTaskInternal(Func<QueuedTask, bool> predicate, ContextDefinition contextDefinition)
     {
         lock (queueLock)
@@ -842,9 +832,6 @@ public partial class NoireTaskQueue
     public TaskBatch? GetBatchByCustomId(string customId)
         => GetBatchInternal(b => b.CustomId == customId);
 
-    /// <summary>
-    /// Internal method to get a batch matching a predicate.
-    /// </summary>
     private TaskBatch? GetBatchInternal(Func<TaskBatch, bool> predicate)
     {
         lock (queueLock)
@@ -933,9 +920,7 @@ public partial class NoireTaskQueue
     public bool CancelTask(string customId, ContextDefinition contextDefinition = ContextDefinition.CrossContext)
         => CancelTaskByIdInternal(t => t.CustomId == customId, contextDefinition);
 
-    /// <summary>
-    /// Internal method to cancel a task found by predicate with context boundary checking.
-    /// </summary>
+    // Internal method to cancel a task found by predicate with context boundary checking.
     private bool CancelTaskByIdInternal(Func<QueuedTask, bool> predicate, ContextDefinition contextDefinition)
     {
         lock (queueLock)
@@ -990,9 +975,6 @@ public partial class NoireTaskQueue
     public bool FailBatch(string customId, Exception exception)
         => FailBatchByIdInternal(b => b.CustomId == customId, exception);
 
-    /// <summary>
-    /// Internal method to fail a batch found by predicate.
-    /// </summary>
     private bool FailBatchByIdInternal(Func<TaskBatch, bool> predicate, Exception exception)
     {
         lock (queueLock)
@@ -1012,9 +994,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Internal method to cancel a batch found by predicate.
-    /// </summary>
     private bool CancelBatchByIdInternal(Func<TaskBatch, bool> predicate)
     {
         lock (queueLock)
@@ -1042,9 +1021,7 @@ public partial class NoireTaskQueue
         );
     }
 
-    /// <summary>
-    /// Internal method to cancel all items matching a predicate with context boundary checking.
-    /// </summary>
+    // Internal method to cancel all items matching a predicate with context boundary checking.
     private int CancelAllItemsInternal(Func<QueueItemWrapper, bool> predicate, Func<QueueItemWrapper, bool> cancelAction, ContextDefinition contextDefinition)
     {
         var wasRunning = QueueState == QueueState.Running;
@@ -1150,9 +1127,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Internal method to cancel a task.
-    /// </summary>
     private bool CancelTaskInternal(QueuedTask task)
     {
         if (task.Status == TaskStatus.Completed || task.Status == TaskStatus.Cancelled || task.Status == TaskStatus.Failed)
@@ -1239,9 +1213,7 @@ public partial class NoireTaskQueue
         return true;
     }
 
-    /// <summary>
-    /// Internal method to cancel a batch and all its tasks.
-    /// </summary>
+    // Internal method to cancel a batch and all its tasks.
     private bool CancelBatchInternal(TaskBatch batch)
     {
         if (batch.Status == BatchStatus.Completed || batch.Status == BatchStatus.Cancelled || batch.Status == BatchStatus.Failed)
@@ -1464,11 +1436,8 @@ public partial class NoireTaskQueue
         return toRemove.Count;
     }
 
-    /// <summary>
-    /// Resolves the task that a skip issued right now treats as the current one: the started task inside the
-    /// current batch when a batch is the current context, and the queue-level current task otherwise.
-    /// </summary>
-    /// <returns>The current task for skip purposes, or null if there is none.</returns>
+    // Resolves the task that a skip issued right now treats as the current one: the started task inside the current
+    // batch when a batch is the current context, and the queue-level current task otherwise.
     private QueuedTask? GetCurrentSkipTarget()
     {
         if (IsCurrentContextBatch && currentBatch != null)
@@ -1480,25 +1449,13 @@ public partial class NoireTaskQueue
         return currentTask;
     }
 
-    /// <summary>
-    /// Determines whether a task is still resolvable by a skip.
-    /// </summary>
-    /// <param name="task">The task to test.</param>
-    /// <returns>true if the task has not reached a terminal status; otherwise, false.</returns>
+    // Determines whether a task is still resolvable by a skip.
     private static bool IsSkippableStatus(QueuedTask task)
         => task.Status is TaskStatus.Queued
             or TaskStatus.Executing
             or TaskStatus.WaitingForCompletion
             or TaskStatus.WaitingForPostDelay;
 
-    /// <summary>
-    /// Skips tasks based on the specified boundary type.
-    /// </summary>
-    /// <param name="count">Maximum number of tasks to skip.</param>
-    /// <param name="isInBatch">Whether we're currently in a batch.</param>
-    /// <param name="boundaryType">The boundary type to use.</param>
-    /// <param name="protectedTask">The current task, which the walks never resolve themselves.</param>
-    /// <returns>Number of tasks skipped.</returns>
     private int SkipTasksWithBoundary(int count, bool isInBatch, ContextDefinition boundaryType, QueuedTask? protectedTask)
     {
         return boundaryType switch
@@ -1510,18 +1467,10 @@ public partial class NoireTaskQueue
         };
     }
 
-    /// <summary>
-    /// Determines whether a skip walk should resolve the given task.
-    /// </summary>
-    /// <param name="task">The candidate task.</param>
-    /// <param name="protectedTask">The current task, which the walks never resolve themselves.</param>
-    /// <returns>true if the walk should skip this task; otherwise, false.</returns>
+    // Determines whether a skip walk should resolve the given task.
     private static bool IsSkipCandidate(QueuedTask task, QueuedTask? protectedTask)
         => IsSkippableStatus(task) && !ReferenceEquals(task, protectedTask);
 
-    /// <summary>
-    /// Skips tasks with no boundary checks (fully cross-context).
-    /// </summary>
     private int SkipTasksNoBoundary(int count, bool isInBatch, QueuedTask? protectedTask)
     {
         int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch, protectedTask);
@@ -1565,9 +1514,7 @@ public partial class NoireTaskQueue
         return skipped;
     }
 
-    /// <summary>
-    /// Skips tasks with SameContext boundary (same batch or both standalone with batches in between allowed).
-    /// </summary>
+    // Skips tasks with SameContext boundary (same batch or both standalone with batches in between allowed).
     private int SkipTasksSameContext(int count, bool isInBatch, QueuedTask? protectedTask)
     {
         int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch, protectedTask);
@@ -1595,9 +1542,7 @@ public partial class NoireTaskQueue
         return skipped;
     }
 
-    /// <summary>
-    /// Skips tasks with SameContextStrict (same batch or standalone with no batch separation).
-    /// </summary>
+    // Skips tasks with SameContextStrict (same batch or standalone with no batch separation).
     private int SkipTasksStrictBoundary(int count, bool isInBatch, QueuedTask? protectedTask)
     {
         int skipped = SkipRemainingTasksInCurrentBatch(count, isInBatch, protectedTask);
@@ -1628,9 +1573,7 @@ public partial class NoireTaskQueue
         return skipped;
     }
 
-    /// <summary>
-    /// Helper method to skip the remaining unfinished tasks in the current batch.
-    /// </summary>
+    // Helper method to skip the remaining unfinished tasks in the current batch.
     private int SkipRemainingTasksInCurrentBatch(int count, bool isInBatch, QueuedTask? protectedTask)
     {
         int skipped = 0;
@@ -1652,10 +1595,7 @@ public partial class NoireTaskQueue
         return skipped;
     }
 
-    /// <summary>
-    /// Gets the global index of the currently executing task across the entire queue.
-    /// </summary>
-    /// <returns>The global index of the currently executing task, or -1 if no task is currently executing.</returns>
+    // Gets the global index of the currently executing task across the entire queue.
     private int GetCurrentTaskGlobalIndex()
     {
         QueuedTask? executingTask = null;
@@ -1678,11 +1618,7 @@ public partial class NoireTaskQueue
         return GetTaskGlobalIndex(executingTask);
     }
 
-    /// <summary>
-    /// Gets the global index of a specific task across the entire queue.
-    /// </summary>
-    /// <param name="targetTask">The task to find the global index for.</param>
-    /// <returns>The global index of the task, or -1 if the task is not found.</returns>
+    // Gets the global index of a specific task across the entire queue.
     private int GetTaskGlobalIndex(QueuedTask targetTask)
     {
         int globalIndex = 0;

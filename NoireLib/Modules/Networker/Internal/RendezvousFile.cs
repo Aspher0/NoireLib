@@ -4,9 +4,7 @@ using System.IO.MemoryMappedFiles;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// The hub's rendezvous data, published through a named memory-mapped file so clients can find its ephemeral port.
-/// </summary>
+// The hub's rendezvous data, published through a named memory-mapped file so clients can find its ephemeral port.
 internal sealed class RendezvousData
 {
     [JsonProperty("n")]
@@ -22,19 +20,15 @@ internal sealed class RendezvousData
     public int ProcessId { get; set; }
 }
 
-/// <summary>
-/// Publishes and reads the hub rendezvous.<br/>
-/// Content is always a hint to be verified by handshake, never truth: surviving client handles can keep a dead
-/// hub's mapped file alive, so a new hub opens-or-creates and overwrites with a bumped generation.
-/// </summary>
+// Publishes and reads the hub rendezvous. Content is always a hint to be verified by handshake, never truth:
+// surviving client handles can keep a dead hub's mapped file alive, so a new hub opens-or-creates and overwrites with
+// a bumped generation.
 internal static class RendezvousFile
 {
     private const int Capacity = 4096;
 
-    /// <summary>
-    /// Publishes rendezvous data, bumping the generation of any previous publication; returns a holder that
-    /// keeps the mapped file alive, to be disposed when the hub stops.
-    /// </summary>
+    // Publishes rendezvous data, bumping the generation of any previous publication; returns a holder that keeps the
+    // mapped file alive, to be disposed when the hub stops.
     public static IDisposable Publish(string mapName, string networkName, int port)
     {
         var previous = TryRead(mapName);

@@ -11,9 +11,7 @@ namespace NoireLib.Helpers;
 /// <typeparam name="T">The element type.</typeparam>
 public ref struct PooledBuffer<T>
 {
-    /// <summary>
-    /// The array the pool handed over, or <see langword="null"/> once it has been given back.
-    /// </summary>
+    // The array the pool handed over, or  once it has been given back.
     private T[]? rented;
 
     private readonly int length;

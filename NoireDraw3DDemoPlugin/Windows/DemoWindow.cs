@@ -11,8 +11,7 @@ using System.Numerics;
 namespace NoireDraw3DDemoPlugin.Windows;
 
 /// <summary>
-/// The demo window: a status strip, an icon rail, and the open page. A rail rather than a tab bar because eight tabs
-/// read as a wall, and the rail keeps every destination one click from any other.
+/// The demo window: a status strip, an icon rail, and the open page.
 /// <para>Owns the pages and the <see cref="DemoShell"/> they share; forwards disposal to the three that hold live scenes.</para>
 /// </summary>
 public sealed class DemoWindow : Window, IDisposable
@@ -35,7 +34,6 @@ public sealed class DemoWindow : Window, IDisposable
     private readonly DebugPage debugPage = new();
 #endif
 
-    /// <summary>Creates the window (hidden until <c>/noire3ddemo</c> or the plugin-list button).</summary>
     public DemoWindow() : base("NoireLib Draw3D Demo###noire3ddemo")
     {
         rendererPage = new RendererPage(shell);
@@ -51,14 +49,13 @@ public sealed class DemoWindow : Window, IDisposable
     }
 
     /// <summary>
-    /// Hides the window while the game UI is hidden, unless asked otherwise on the Renderer page. Decided here rather
-    /// than left to Dalamud: <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/> keeps the layer alive precisely by telling
-    /// Dalamud not to hide this plugin, so the window can only step aside by checking the game's state itself.
+    /// Hides the window while the game UI is hidden, unless asked otherwise on the Renderer page.
+    /// <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/> keeps the layer alive by telling Dalamud not to hide this
+    /// plugin, so the window can only step aside by checking the game's state itself.
     /// </summary>
     public override bool DrawConditions()
         => shell.KeepWindowWhenUiHidden || !NoireDraw3D.IsGameUiHidden;
 
-    /// <inheritdoc/>
     public override void Draw()
     {
         using var style = Ui.Style();
@@ -72,12 +69,6 @@ public sealed class DemoWindow : Window, IDisposable
 
     // ---------------------------------------------------------------- status
 
-    /// <summary>
-    /// Is it running, and what does it cost. Two facts and no more: this strip is on screen on every page and has to fit
-    /// the narrowest window, so draw calls, triangles, depth source and the skip counters live on Diagnostics instead of
-    /// fighting for room here. An abnormal state earns the only other slot, because when it is showing it matters more
-    /// than the timing does.
-    /// </summary>
     private static void DrawStatusStrip()
     {
         var enabled = NoireDraw3D.Enabled;
@@ -159,7 +150,6 @@ public sealed class DemoWindow : Window, IDisposable
 
     // ---------------------------------------------------------------- rail
 
-    /// <summary>The page rail: grouped, glyph per entry, an accent bar down the selected one.</summary>
     private void DrawRail()
     {
         using var child = ImRaii.Child("##rail", new Vector2(RailWidth * Ui.Scale, 0f), true);
@@ -183,10 +173,8 @@ public sealed class DemoWindow : Window, IDisposable
         }
     }
 
-    /// <summary>
-    /// One rail entry. The caption needs the icon font and the text font on one line, which a Selectable label cannot
-    /// carry, so the row is an empty Selectable with its content painted over it.
-    /// </summary>
+    // The caption needs the icon font and the text font on one line, which a Selectable label cannot carry, so the
+    // row is an empty Selectable with its content painted over it.
     private void DrawRailItem(DemoPageInfo info)
     {
         var active = shell.Current == info.Page;
@@ -218,7 +206,7 @@ public sealed class DemoWindow : Window, IDisposable
         }
     }
 
-    /// <summary>The open page: a scroll body for plain pages, a plain frame for the one that pins its own tab bar.</summary>
+    // The open page: a scroll body for plain pages, a plain frame for the one that pins its own tab bar.
     private void DrawPage()
     {
         using var id = ImRaii.PushId((int)shell.Current);
@@ -268,7 +256,6 @@ public sealed class DemoWindow : Window, IDisposable
         }
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         showcasePage.Dispose();

@@ -9,17 +9,12 @@ namespace NoireLib.TaskQueue;
 /// </summary>
 public partial class NoireTaskQueue
 {
-    /// <summary>
-    /// Publishes a queue event to the EventBus if available.
-    /// </summary>
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);
     }
 
-    /// <summary>
-    /// Subscribes to an event for a specific task's completion condition.
-    /// </summary>
+    // Subscribes to an event for a specific task's completion condition.
     private void SubscribeToEventForTask(QueuedTask task)
     {
         if (EventBus == null || task.CompletionCondition?.EventType == null)
@@ -60,9 +55,7 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Creates a wrapper delegate for event handling that captures the task context.
-    /// </summary>
+    // Creates a wrapper delegate for event handling that captures the task context.
     private Delegate CreateEventHandlerWrapper(Type eventType, QueuedTask task)
     {
         var handlerType = typeof(Action<>).MakeGenericType(eventType);
@@ -116,9 +109,6 @@ public partial class NoireTaskQueue
         return Delegate.CreateDelegate(handlerType, wrapper.Target, wrapper.Method);
     }
 
-    /// <summary>
-    /// Unsubscribes a specific task from its EventBus event.
-    /// </summary>
     private void UnsubscribeTask(QueuedTask task)
     {
         if (EventBus == null || task.EventSubscriptionToken == null)
@@ -136,9 +126,6 @@ public partial class NoireTaskQueue
         }
     }
 
-    /// <summary>
-    /// Unsubscribes from all events by unsubscribing all tasks.
-    /// </summary>
     private void UnsubscribeFromAllEvents()
     {
         if (EventBus == null)

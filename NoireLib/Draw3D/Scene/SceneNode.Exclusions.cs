@@ -13,7 +13,8 @@ namespace NoireLib.Draw3D.Scene;
 /// </summary>
 public sealed partial class SceneNode
 {
-    /// <summary>The per-frame exclusion collector set by <c>ExcludeObjects</c> / <c>ExcludeVolumes(collector)</c>, invoked on the framework thread; null when the node has no dynamic exclusions.</summary>
+    // The per-frame exclusion collector set by ExcludeObjects / ExcludeVolumes(collector), invoked on the framework
+    // thread; null when the node has no dynamic exclusions.
     internal Func<IReadOnlyList<ExcludeVolume>>? ExclusionCollector;
 
     /// <summary>
@@ -87,7 +88,8 @@ public sealed partial class SceneNode
         DecalExclusionService.Register(this);
     }
 
-    /// <summary>Stops the per-frame exclusion refresh and drops the collector (called on destroy, and when switching to a static list / clearing).</summary>
+    // Stops the per-frame exclusion refresh and drops the collector (called on destroy, and when switching to a
+    // static list / clearing).
     private void ReleaseExclusions()
     {
         if (ExclusionCollector == null)

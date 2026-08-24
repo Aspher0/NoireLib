@@ -10,22 +10,9 @@ namespace NoireLib.UI;
 /// A field that collects short strings as chips: Enter adds one, a separated run adds all of them, and backspace on
 /// an empty field takes the last chip back for editing.
 /// </summary>
-/// <example>
-/// <code>
-/// var tags = new NoireTagInput("tags", config.Tags)
-/// {
-///     Suggestions = knownTags,
-///     Validate = tag =&gt; tag.Contains(' ') ? "Tags cannot contain spaces." : null,
-/// };
-///
-/// if (tags.Draw())
-///     config.Tags = tags.Tags.ToArray();
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed class NoireTagInput
 {
-    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
     private const string CallbackFault = "A tag chip hook threw.";
 
     private readonly List<string> tags = new();
@@ -38,9 +25,9 @@ public sealed class NoireTagInput
     /// <summary>
     /// Creates a tag field.
     /// </summary>
-    /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
+    /// <param name="id">A stable id for the widget; when <see langword="null"/>, a random one is generated.</param>
     /// <param name="tags">The initial tags.</param>
-    /// <param name="comparer">How two tags are compared for duplicates. Defaults to case-insensitive.</param>
+    /// <param name="comparer">How two tags are compared for duplicates, case-insensitive by default.</param>
     public NoireTagInput(string? id = null, IEnumerable<string>? tags = null, StringComparer? comparer = null)
     {
         Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
@@ -54,7 +41,7 @@ public sealed class NoireTagInput
     public string Id { get; }
 
     /// <summary>
-    /// The width of the field. When <see langword="null"/>, the space available is used. In real pixels, not scaled.
+    /// The width of the field in real pixels, not scaled; when <see langword="null"/>, the space available is used.
     /// </summary>
     public float? Width { get; set; }
 
@@ -75,28 +62,28 @@ public sealed class NoireTagInput
     /// <summary>The characters that split a pasted or typed run into several tags.</summary>
     public char[] Separators { get; set; } = [',', ';', '\n', '\r', '\t'];
 
-    /// <summary>Whether the same tag may appear twice. Off by default.</summary>
+    /// <summary>Whether the same tag may appear twice, off by default.</summary>
     public bool AllowDuplicates { get; set; }
 
-    /// <summary>Whether surrounding whitespace is trimmed off a tag. On by default.</summary>
+    /// <summary>Whether surrounding whitespace is trimmed off a tag, on by default.</summary>
     public bool TrimWhitespace { get; set; } = true;
 
-    /// <summary>The most tags the field accepts. When <see langword="null"/>, there is no limit.</summary>
+    /// <summary>The most tags the field accepts; when <see langword="null"/>, there is no limit.</summary>
     public int? MaxTags { get; set; }
 
     /// <summary>The longest a single tag may be.</summary>
     public int MaxTagLength { get; set; } = 64;
 
     /// <summary>
-    /// Refuses a tag for a reason the field cannot know. Return an error message, or <see langword="null"/> to accept.
+    /// Refuses a tag for a reason the field cannot know, returning an error message or <see langword="null"/> to accept.
     /// </summary>
     public Func<string, string?>? Validate { get; set; }
 
-    /// <summary>Whether a refused tag shakes the field. Honours <see cref="NoireUI.ReducedMotion"/>.</summary>
+    /// <summary>Whether a refused tag shakes the field, honouring <see cref="NoireUI.ReducedMotion"/>.</summary>
     public bool ShakeOnReject { get; set; } = true;
 
     /// <summary>
-    /// How the keyboard focus mark looks on this field. When <see langword="null"/>, <see cref="NoireFocus.Style"/>.
+    /// How the keyboard focus mark looks on this field; when <see langword="null"/>, <see cref="NoireFocus.Style"/>.
     /// </summary>
     public FocusStyle? FocusStyle { get; set; }
 
@@ -117,14 +104,14 @@ public sealed class NoireTagInput
     #region Suggestions
 
     /// <summary>
-    /// The tags offered as suggestions while typing. When <see langword="null"/>, none are.
+    /// The tags offered as suggestions while typing; when <see langword="null"/>, none are.
     /// </summary>
     public IReadOnlyList<string>? Suggestions { get; set; }
 
     /// <summary>How many suggestions are shown at once.</summary>
     public int MaxSuggestions { get; set; } = 6;
 
-    /// <summary>Whether tags already held are still offered as suggestions. Off by default.</summary>
+    /// <summary>Whether tags already held are still offered as suggestions, off by default.</summary>
     public bool SuggestHeldTags { get; set; }
 
     #endregion
@@ -135,7 +122,7 @@ public sealed class NoireTagInput
     public TagRejection LastRejection { get; private set; }
 
     /// <summary>
-    /// The message describing the last refusal, ready to show to a user. Empty when nothing was refused.
+    /// The message describing the last refusal, empty when nothing was refused.
     /// </summary>
     public string LastError { get; private set; } = string.Empty;
 
@@ -200,10 +187,6 @@ public sealed class NoireTagInput
     /// <summary>
     /// Removes the tag at a position.
     /// </summary>
-    /// <remarks>
-    /// With <see cref="AllowDuplicates"/> on, <see cref="Remove(string)"/> takes the first tag that compares equal
-    /// instead of the one at this position.
-    /// </remarks>
     /// <param name="index">The position to remove.</param>
     /// <returns>True when there was a tag there.</returns>
     public bool RemoveAt(int index)
@@ -283,11 +266,7 @@ public sealed class NoireTagInput
 
     #region Rules, as logic
 
-    /// <summary>Splits a run of text into candidate tags.</summary>
-    /// <param name="text">The text to split.</param>
-    /// <param name="separators">The characters to split on.</param>
-    /// <param name="trim">Whether surrounding whitespace is removed from each piece.</param>
-    /// <returns>The candidates, in order, with empty pieces dropped.</returns>
+    // The candidates, in order, with empty pieces dropped.
     internal static List<string> Split(string? text, char[]? separators, bool trim)
     {
         var result = new List<string>();
@@ -310,12 +289,7 @@ public sealed class NoireTagInput
         return result;
     }
 
-    /// <summary>
-    /// Decides whether a candidate can be added.
-    /// </summary>
-    /// <param name="candidate">The normalized tag to test.</param>
-    /// <param name="message">The reason for a refusal, empty when accepted.</param>
-    /// <returns>The refusal reason, or <see cref="TagRejection.None"/>.</returns>
+    // The candidate must already be normalized; message is the reason for a refusal, empty when accepted.
     internal TagRejection Evaluate(string candidate, out string message)
     {
         message = string.Empty;
@@ -460,24 +434,11 @@ public sealed class NoireTagInput
             RemoveAt(removing);
     }
 
-    /// <summary>
-    /// The room a chip takes: its label, the padding around it and the space for the cross.
-    /// </summary>
-    /// <param name="tag">The tag the chip holds.</param>
-    /// <param name="padding">The frame padding already resolved from the theme.</param>
-    /// <returns>The chip's size in real pixels.</returns>
+    // The room a chip takes: its label, the padding around it and the space for the cross, in real pixels.
     private static Vector2 MeasureChip(string tag, Vector2 padding)
         => NoireText.CalcSize(tag) + new Vector2((padding.X * 2f) + NoireUI.Scaled(16f), padding.Y * 2f);
 
-    /// <summary>
-    /// Draws one chip, reporting whether its cross was clicked.
-    /// </summary>
-    /// <param name="tag">The tag the chip holds.</param>
-    /// <param name="index">The chip's position, used to build its id.</param>
-    /// <param name="size">The chip's size, measured by the caller laying the row out.</param>
-    /// <param name="theme">The theme, resolved once for the whole row.</param>
-    /// <param name="padding">The frame padding, resolved once for the whole row.</param>
-    /// <returns>True on the frame the chip's cross is clicked.</returns>
+    // True on the frame the chip's cross is clicked. The theme and padding are resolved once for the whole row.
     private bool DrawChip(string tag, int index, Vector2 size, NoireTheme theme, Vector2 padding)
     {
         var origin = ImGui.GetCursorScreenPos();

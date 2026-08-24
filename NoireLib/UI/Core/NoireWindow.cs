@@ -4,22 +4,9 @@ using Dalamud.Interface.Windowing;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A Dalamud window that decides for itself which game states it stays visible in.<br/>
+/// A Dalamud window that decides for itself which game states it stays visible in.
 /// Overriding <see cref="DrawConditions"/> requires keeping the base call.
 /// </summary>
-/// <example>
-/// <code>
-/// internal sealed class MyWindow : NoireWindow
-/// {
-///     public MyWindow() : base("My window###myWindow")
-///     {
-///         Visibility = UiVisibility.InGpose;   // stays up while posing, hides like anything else otherwise
-///     }
-///
-///     public override void Draw() { }
-/// }
-/// </code>
-/// </example>
 public abstract class NoireWindow : Window
 {
     private UiVisibility visibility = UiVisibility.Default;
@@ -34,11 +21,12 @@ public abstract class NoireWindow : Window
     }
 
     /// <summary>
-    /// Which normally-hidden game states this window keeps drawing in. Defaults to
-    /// <see cref="UiVisibility.Default"/>, which is ordinary plugin behaviour.<br/>
+    /// Which normally-hidden game states this window keeps drawing in; defaults to <see cref="UiVisibility.Default"/>.
+    /// </summary>
+    /// <remarks>
     /// Asking for anything here switches Dalamud's own hiding off for that state across the whole plugin, so every
     /// window of the plugin must then be a <see cref="NoireWindow"/>.
-    /// </summary>
+    /// </remarks>
     public UiVisibility Visibility
     {
         get => visibility;
@@ -50,7 +38,7 @@ public abstract class NoireWindow : Window
     }
 
     /// <summary>
-    /// Whether the window draws this frame, which is where the per-window hiding happens.
+    /// Whether the window draws this frame.
     /// </summary>
     /// <returns>True when the window should draw.</returns>
     public override bool DrawConditions() => !NoireUI.ShouldHide(visibility);

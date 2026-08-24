@@ -5,18 +5,10 @@ using System.Collections.Generic;
 namespace NoireLib.UI;
 
 /// <summary>
-/// One notification: a message, how serious it is, how long it stays, and anything the user can do about it.<br/>
+/// One notification: a message, how serious it is, how long it stays, and anything the user can do about it.
 /// Create one through the static helpers and it appears in <see cref="NoireToastArea.Default"/>; hand one to a
-/// <see cref="NoireToastArea"/> yourself to place it somewhere else.<br/>
-/// Showing a toast is safe from any thread. The toast is queued, and its clock starts on the next frame the area draws.
+/// <see cref="NoireToastArea"/> yourself to place it somewhere else. Showing a toast is safe from any thread.
 /// </summary>
-/// <example>
-/// <code>
-/// NoireToast.Success("Preset saved");
-/// NoireToast.Error("Could not reach the server").WithAction("Retry", _ => Retry());
-/// NoireToast.Undo("3 presets deleted", () => RestoreDeleted());
-/// </code>
-/// </example>
 [NoireFacade]
 public sealed class NoireToast
 {
@@ -43,7 +35,7 @@ public sealed class NoireToast
     public string Id { get; }
 
     /// <summary>
-    /// The message. Rich content is fully supported: text, dynamic text, icons, images, keycaps and arbitrary widgets.
+    /// The message, as rich content: text, dynamic text, icons, images, keycaps and arbitrary widgets.
     /// </summary>
     public NoireContent Content { get; set; }
 
@@ -53,7 +45,7 @@ public sealed class NoireToast
     public string? Title { get; set; }
 
     /// <summary>
-    /// What the toast is telling the user, which decides its stripe, its icon and its default duration.
+    /// What the toast is telling the user, deciding its stripe, its icon and its default duration.
     /// </summary>
     public ToastSeverity Severity { get; set; }
 
@@ -64,10 +56,9 @@ public sealed class NoireToast
     public TimeSpan Duration { get; set; }
 
     /// <summary>
-    /// A live progress reading from 0 to 1, drawn as a bar under the message.<br/>
-    /// Set it for work in flight and give the toast a zero <see cref="Duration"/>, then call <see cref="Dismiss"/> when
-    /// the work finishes. Polled on the draw thread, so it must be cheap and must not touch game objects.
+    /// A live progress reading from 0 to 1, drawn as a bar under the message.
     /// </summary>
+    /// <remarks>Polled on the draw thread, so it must be cheap and must not touch game objects.</remarks>
     public Func<float>? Progress { get; set; }
 
     /// <summary>
@@ -81,8 +72,7 @@ public sealed class NoireToast
     public bool Closable { get; set; } = true;
 
     /// <summary>
-    /// Whether hovering the toast pauses its countdown, so a message cannot expire while it is being read.
-    /// Defaults to <see langword="true"/>.
+    /// Whether hovering the toast pauses its countdown; defaults to <see langword="true"/>.
     /// </summary>
     public bool PauseOnHover { get; set; } = true;
 
@@ -97,7 +87,7 @@ public sealed class NoireToast
     public Action<NoireToast>? OnDismissed { get; set; }
 
     /// <summary>
-    /// Whether the toast has been asked to go away. It stays on screen for the length of its exit animation afterwards.
+    /// Whether the toast has been asked to go away.
     /// </summary>
     public bool IsDismissed { get; private set; }
 
@@ -106,32 +96,19 @@ public sealed class NoireToast
     /// </summary>
     public NoireToastArea? Area { get; internal set; }
 
-    /// <summary>
-    /// How many seconds of the toast's duration are left. Counts down only while the toast is drawn, and pauses while
-    /// it is hovered when <see cref="PauseOnHover"/> is set.
-    /// </summary>
+    // Seconds left, counted down only while the toast is drawn, and paused while it is hovered when PauseOnHover is set.
     internal float Remaining { get; set; } = -1f;
 
-    /// <summary>
-    /// Whether the toast has been drawn at least once, which is when its clock starts.
-    /// </summary>
+    // Set on the first draw, when the toast's clock starts.
     internal bool Started { get; set; }
 
-    /// <summary>
-    /// How present the toast is this frame, from 0 (gone) to 1 (fully arrived). Drives its opacity, its slide and how
-    /// much vertical room it takes in the stack.
-    /// </summary>
+    // From 0 (gone) to 1 (fully arrived); drives opacity, slide and how much vertical room the toast takes.
     internal float Presence { get; set; }
 
-    /// <summary>
-    /// How much vertical room the toast takes in the stack this frame, which is its measured height scaled by
-    /// <see cref="Presence"/> so the stack closes up smoothly behind it.
-    /// </summary>
+    // The measured height scaled by Presence, so the stack closes up smoothly behind the toast.
     internal float Reserved { get; set; }
 
-    /// <summary>
-    /// The height this toast measured last frame, used to paint its background before its contents are laid out.
-    /// </summary>
+    // The height measured last frame, used to paint the background before the contents are laid out.
     internal float LastHeight { get; set; }
 
     #region Building
@@ -187,9 +164,9 @@ public sealed class NoireToast
     #endregion
 
     /// <summary>
-    /// Asks the toast to go away. It plays its exit animation and is then removed.<br/>
-    /// Safe to call from any thread, and safe to call more than once.
+    /// Asks the toast to go away, playing its exit animation before it is removed.
     /// </summary>
+    /// <remarks>Safe to call from any thread, and safe to call more than once.</remarks>
     public void Dismiss() => IsDismissed = true;
 
     /// <summary>
@@ -236,8 +213,7 @@ public sealed class NoireToast
     public static NoireToast Error(string message) => Show(message, ToastSeverity.Error);
 
     /// <summary>
-    /// Shows a toast offering to undo what just happened, in place of a confirmation dialog: do the thing
-    /// immediately, and offer a way back for a few seconds instead of asking first.
+    /// Shows a toast offering to undo what just happened, in place of a confirmation dialog.
     /// </summary>
     /// <param name="message">What happened, phrased in the past tense.</param>
     /// <param name="onUndo">How to put it back.</param>
@@ -256,10 +232,6 @@ public sealed class NoireToast
 
     #endregion
 
-    /// <summary>
-    /// How long a toast of each severity stays by default. An error stays noticeably longer, because it is the one a
-    /// user cannot afford to have already scrolled past.
-    /// </summary>
     private static TimeSpan DefaultDurationFor(ToastSeverity severity) => severity switch
     {
         ToastSeverity.Error => TimeSpan.FromSeconds(10d),
@@ -267,9 +239,7 @@ public sealed class NoireToast
         _ => TimeSpan.FromSeconds(4d),
     };
 
-    /// <summary>
-    /// Runs the dismissal callback once, reporting anything it throws.
-    /// </summary>
+    // Runs the dismissal callback once, reporting anything it throws.
     internal void NotifyDismissed()
     {
         var callback = OnDismissed;

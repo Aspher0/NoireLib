@@ -172,9 +172,7 @@ public partial class NoireNetworker
         return barrier.Completion.Task;
     }
 
-    /// <summary>
-    /// Re-evaluates all pending flag barriers. Runs on the pump thread; evaluation pauses while not <see cref="NetworkerState.Ready"/>.
-    /// </summary>
+    // Re-evaluates all pending flag barriers. Runs on the pump thread; evaluation pauses while not Ready.
     private void EvaluateBarriers()
     {
         if (State != NetworkerState.Ready)
@@ -247,9 +245,7 @@ public partial class NoireNetworker
         pump?.Post(EvaluateBarriers);
     }
 
-    /// <summary>
-    /// Broadcasts the local instance's full presence state. The changed-key hint travels in the envelope's type field.
-    /// </summary>
+    // Broadcasts the local instance's full presence state. The changed-key hint travels in the envelope's type field.
     private void AnnounceSelf(string? changedKey)
     {
         if (State == NetworkerState.Stopped)

@@ -8,16 +8,10 @@ namespace NoireLib.UI;
 /// The look of a button drawn with <see cref="NoireButtons"/>. Every value left <see langword="null"/> resolves
 /// through <see cref="Tone"/> and <see cref="NoireTheme.Current"/>; setting one overrides only that value.
 /// </summary>
-/// <example>
-/// <code>
-/// NoireButtons.Button("Save", ButtonTone.Accent);
-/// NoireButtons.Button("Save", new ButtonStyle { Tone = ButtonTone.Accent, Rounding = 0f, Icon = FontAwesomeIcon.Save });
-/// </code>
-/// </example>
 public sealed class ButtonStyle
 {
     /// <summary>
-    /// What the button means, which decides its colors when they are not set explicitly.
+    /// What the button means, deciding its colors when they are not set explicitly.
     /// </summary>
     public ButtonTone Tone { get; set; } = ButtonTone.Neutral;
 
@@ -112,12 +106,7 @@ public sealed class ButtonStyle
         CustomDraw = CustomDraw,
     };
 
-    /// <summary>
-    /// Copies every field of <paramref name="source"/> into this style, leaving no reference to it.
-    /// </summary>
-    /// <remarks>Keep this field list identical to <see cref="Clone"/>'s.</remarks>
-    /// <param name="source">The style to copy from.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="source"/> is <see langword="null"/>.</exception>
+    // Keep this field list identical to Clone's.
     internal void CopyFrom(ButtonStyle source)
     {
         ArgumentNullException.ThrowIfNull(source);

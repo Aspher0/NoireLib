@@ -7,17 +7,14 @@ using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Walks the game's collision scene and yields world-space triangles for surface-projected geometry. Framework
-/// thread only, since the game's own update mutates the scene under an SRW lock. Fail-soft throughout: a faulted
-/// collider is skipped rather than propagated.
-/// </summary>
+// Walks the game's collision scene and yields world-space triangles for surface-projected geometry. Framework thread
+// only, since the game's own update mutates the scene under an SRW lock. Fail-soft throughout: a faulted collider is
+// skipped rather than propagated.
 internal static unsafe class WorldCollisionSource
 {
-    /// <summary>Hard cap on colliders visited in one collection, so a pathological scene can never hang a frame.</summary>
+    // Hard cap on colliders visited in one collection, so a pathological scene can never hang a frame.
     private const int MaxColliders = 8192;
 
-    /// <summary>Depth of the explicit PCB-tree traversal stack.</summary>
     private const int TreeStackDepth = 512;
 
     /// <summary>
@@ -116,14 +113,6 @@ internal static unsafe class WorldCollisionSource
         return added;
     }
 
-    /// <summary>Dispatches one collider to the reader for its shape.</summary>
-    /// <param name="collider">The collider to read.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="includeAnalytic">Whether the analytic shapes are tessellated too.</param>
-    /// <param name="added">Running count of triangles appended.</param>
     private static void AppendCollider(Collider* collider, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, bool includeAnalytic, ref int added)
     {
         var type = collider->GetColliderType();
@@ -153,13 +142,7 @@ internal static unsafe class WorldCollisionSource
         }
     }
 
-    /// <summary>Walks a mesh collider's PCB tree and appends the triangles overlapping the query box.</summary>
-    /// <param name="collider">The mesh collider to read.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="added">Running count of triangles appended.</param>
+    // Walks a mesh collider's PCB tree and appends the triangles overlapping the query box.
     private static void AppendMesh(ColliderMesh* collider, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {
         var mesh = (MeshPCB*)collider->Mesh;
@@ -216,13 +199,7 @@ internal static unsafe class WorldCollisionSource
         }
     }
 
-    /// <summary>Tessellates a box collider, whose local bounds are the cube from -1 to 1 on every axis.</summary>
-    /// <param name="world">The collider's world matrix.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="added">Running count of triangles appended.</param>
+    // Tessellates a box collider, whose local bounds are the cube from -1 to 1 on every axis.
     private static void AppendUnitBox(Matrix4x4 world, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {
         Span<Vector3> c = stackalloc Vector3[8];
@@ -238,13 +215,7 @@ internal static unsafe class WorldCollisionSource
             AddIfOverlap(c[faces[f]], c[faces[f + 1]], c[faces[f + 2]], boxMin, boxMax, outTriangles, ref added);
     }
 
-    /// <summary>Tessellates a plane collider, whose local bounds span -1 to 1 in X and Y at Z zero, normal along +Z.</summary>
-    /// <param name="world">The collider's world matrix.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="added">Running count of triangles appended.</param>
+    // Tessellates a plane collider, whose local bounds span -1 to 1 in X and Y at Z zero, normal along +Z.
     private static void AppendUnitPlane(Matrix4x4 world, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {
         var a = Vector3.Transform(new Vector3(-1, -1, 0), world);
@@ -256,13 +227,7 @@ internal static unsafe class WorldCollisionSource
             AddIfOverlap(a, cc, d, boxMin, boxMax, outTriangles, ref added);
     }
 
-    /// <summary>Tessellates a cylinder collider of radius 1 and half-height 1 about the local Y axis.</summary>
-    /// <param name="world">The collider's world matrix.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="added">Running count of triangles appended.</param>
+    // Tessellates a cylinder collider of radius 1 and half-height 1 about the local Y axis.
     private static void AppendUnitCylinder(Matrix4x4 world, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {
         const int seg = 12;
@@ -279,13 +244,7 @@ internal static unsafe class WorldCollisionSource
         }
     }
 
-    /// <summary>Tessellates a sphere collider of radius 1 at a low resolution.</summary>
-    /// <param name="world">The collider's world matrix.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="maxTriangles">Cap on triangles appended.</param>
-    /// <param name="added">Running count of triangles appended.</param>
+    // Tessellates a sphere collider of radius 1 at a low resolution.
     private static void AppendUnitSphere(Matrix4x4 world, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, int maxTriangles, ref int added)
     {
         const int rings = 6, sectors = 10;
@@ -307,14 +266,6 @@ internal static unsafe class WorldCollisionSource
         }
     }
 
-    /// <summary>Appends a triangle when it overlaps the query box.</summary>
-    /// <param name="v0">First vertex.</param>
-    /// <param name="v1">Second vertex.</param>
-    /// <param name="v2">Third vertex.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <param name="outTriangles">Destination list.</param>
-    /// <param name="added">Running count of triangles appended.</param>
     private static void AddIfOverlap(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 boxMin, Vector3 boxMax, List<Vector3> outTriangles, ref int added)
     {
         if (!TriangleOverlapsBox(v0, v1, v2, boxMin, boxMax))
@@ -325,13 +276,7 @@ internal static unsafe class WorldCollisionSource
         added++;
     }
 
-    /// <summary>Whether a triangle's own AABB overlaps the query box; a conservative test, not an exact SAT one.</summary>
-    /// <param name="v0">First vertex.</param>
-    /// <param name="v1">Second vertex.</param>
-    /// <param name="v2">Third vertex.</param>
-    /// <param name="boxMin">Query AABB minimum, in world space.</param>
-    /// <param name="boxMax">Query AABB maximum, in world space.</param>
-    /// <returns>True when the two boxes overlap.</returns>
+    // Whether a triangle's own AABB overlaps the query box; a conservative test, not an exact SAT one.
     private static bool TriangleOverlapsBox(Vector3 v0, Vector3 v1, Vector3 v2, Vector3 boxMin, Vector3 boxMax)
     {
         var triMin = Vector3.Min(v0, Vector3.Min(v1, v2));
@@ -339,10 +284,7 @@ internal static unsafe class WorldCollisionSource
         return Geometry3DHelper.AabbOverlap(triMin, triMax, boxMin, boxMax);
     }
 
-    /// <summary>Whether a bounding box is ordered and finite, so a torn read cannot reject the whole model.</summary>
-    /// <param name="min">The box minimum.</param>
-    /// <param name="max">The box maximum.</param>
-    /// <returns>True when the box is usable.</returns>
+    // Whether a bounding box is ordered and finite, so a torn read cannot reject the whole model.
     private static bool IsValidAabb(Vector3 min, Vector3 max)
         => max.X >= min.X && max.Y >= min.Y && max.Z >= min.Z
         && float.IsFinite(min.X) && float.IsFinite(max.X);

@@ -49,12 +49,8 @@ public sealed class Draw3DImportFlips
         FlipV = false;
     }
 
-    /// <summary>
-    /// Applies the selected transforms to a decoded mesh in place; does nothing when none is selected, so an
-    /// import that wants no transform pays nothing for the option existing.
-    /// </summary>
-    /// <param name="vertices">The decoded vertices, modified in place.</param>
-    /// <param name="indices">The decoded indices, modified in place.</param>
+    // Applies the selected transforms to a decoded mesh in place; does nothing when none is selected, so an import
+    // that wants no transform pays nothing for the option existing.
     internal void Apply(Vertex3D[] vertices, ushort[] indices)
     {
         if (!Any)
@@ -69,12 +65,8 @@ public sealed class Draw3DImportFlips
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
     }
 
-    /// <summary>
-    /// The same transforms for a loader that has not yet narrowed its indices to 16 bits, kept beside the
-    /// other overload so the two import paths cannot drift.
-    /// </summary>
-    /// <param name="vertices">The decoded vertices, modified in place.</param>
-    /// <param name="indices">The decoded indices, modified in place.</param>
+    // The same transforms for a loader that has not yet narrowed its indices to 16 bits, kept beside the other
+    // overload so the two import paths cannot drift.
     internal void Apply(Vertex3D[] vertices, System.Collections.Generic.List<uint> indices)
     {
         if (!Any)
@@ -89,14 +81,10 @@ public sealed class Draw3DImportFlips
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
     }
 
-    /// <summary>
-    /// The same mirrors applied to a node's local transform, as a change of basis rather than a multiply.<br/>
-    /// <b>A hierarchical model needs both halves or neither:</b> mirroring only the vertices reflects each mesh
-    /// in its own local space while the transforms that place those meshes stay put, mirroring the parts
-    /// without changing their arrangement (a flat mesh list has no transforms, so it never shows the discrepancy).
-    /// </summary>
-    /// <param name="local">The node's local transform, already in this renderer's convention.</param>
-    /// <returns>The transform with the selected mirrors applied.</returns>
+    // The same mirrors applied to a node's local transform, as a change of basis rather than a multiply. A
+    // hierarchical model needs both halves or neither: mirroring only the vertices reflects each mesh in its own
+    // local space while the transforms that place those meshes stay put, mirroring the parts without changing their
+    // arrangement (a flat mesh list has no transforms, so it never shows the discrepancy).
     internal Matrix4x4 Apply(Matrix4x4 local)
     {
         if (!MirrorX && !MirrorZ)
@@ -115,7 +103,7 @@ public sealed class Draw3DImportFlips
         return result;
     }
 
-    /// <summary>Positions, normals, tangents and texture coordinates - everything that does not depend on the index type.</summary>
+    // Positions, normals, tangents and texture coordinates - everything that does not depend on the index type.
     private void ApplyToVertices(Vertex3D[] vertices)
     {
         var sx = MirrorX ? -1f : 1f;

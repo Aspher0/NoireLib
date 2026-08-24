@@ -4,9 +4,7 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// A thin ID3D11Buffer wrapper: immutable (mesh data), dynamic (rings), or default-usage constant buffers.
-/// </summary>
+// A thin ID3D11Buffer wrapper: immutable (mesh data), dynamic (rings), or default-usage constant buffers.
 internal sealed unsafe class GpuBuffer : IDisposable
 {
     private TerraFX.Interop.Windows.ComPtr<ID3D11Buffer> buffer;
@@ -88,11 +86,9 @@ internal sealed unsafe class GpuBuffer : IDisposable
     }
 }
 
-/// <summary>
-/// A growable dynamic-buffer ring: WRITE_DISCARD on the first map of each frame or on wrap,
-/// WRITE_NO_OVERWRITE for appends within a frame. Growth doubles capacity and is logged, since a resize
-/// after warm-up means a steady-state frame just allocated a GPU resource, which should not happen.
-/// </summary>
+// A growable dynamic-buffer ring: WRITE_DISCARD on the first map of each frame or on wrap, WRITE_NO_OVERWRITE for
+// appends within a frame. Growth doubles capacity and is logged, since a resize after warm-up means a steady-state
+// frame just allocated a GPU resource, which should not happen.
 internal sealed unsafe class DynamicRing : IDisposable
 {
     private readonly D3D11_BIND_FLAG bind;

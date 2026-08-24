@@ -86,9 +86,6 @@ public static class EmoteHelper
     /// <param name="emote">The emote to check.</param>
     public static bool IsEmoteUnlocked(Emote emote) => IsEmoteUnlocked(emote.RowId);
 
-    /// <summary>Resolves a TextCommand row id to its command string.</summary>
-    /// <param name="textCommandId">The TextCommand row id.</param>
-    /// <returns>The command string, or an empty string when the row cannot be read.</returns>
     private static string GetTextCommandString(int textCommandId)
     {
         if (textCommandId <= 0)
@@ -224,11 +221,9 @@ public static class EmoteHelper
     /// <summary>The sentinel an emote option's target id carries when there is no target.</summary>
     public const ulong NoEmoteTargetId = GameObjectHelper.NoTargetId;
 
-    /// <summary>
-    /// The rows the game swaps in when the target is out of reach, transcribed from its own table. It applies these
-    /// in the play path, after <c>Character::ResolveTargetedEmoteId</c> has answered, so the resolver never reports
-    /// them. Distances are hitbox to hitbox, height ignored.
-    /// </summary>
+    // The rows the game swaps in when the target is out of reach, transcribed from its own table. It applies these in
+    // the play path, after Character::ResolveTargetedEmoteId has answered, so the resolver never reports them.
+    // Distances are hitbox to hitbox, height ignored.
     private static readonly (uint Emote, uint OutOfRange, float MaxDistance)[] OutOfRangeEmotes =
     [
         (86u, 87u, 15f),   // Snowball, what /throw becomes
@@ -456,10 +451,8 @@ public static class EmoteHelper
     /// <summary>How long the game holds every emote on a shared cooldown after one is played.</summary>
     public const long EmoteCooldownMs = 500;
 
-    /// <summary>
-    /// The EmoteManager field the game stamps with the QPC-millisecond clock when an emote plays. ClientStructs
-    /// does not declare it, so re-check it after a game patch.
-    /// </summary>
+    // The EmoteManager field the game stamps with the QPC-millisecond clock when an emote plays. ClientStructs does
+    // not declare it, so re-check it after a game patch.
     private const int EmoteManagerLastEmoteMsOffset = 0x18;
 
     /// <summary>
@@ -554,9 +547,7 @@ public static class EmoteHelper
     /// <returns>The unlocked emotes, in sheet order, or an empty list when the sheet cannot be read.</returns>
     public static IReadOnlyList<Emote> GetUnlockedEmotes() => FilterEmotesByUnlock(true);
 
-    /// <summary>Walks the Emote sheet and keeps the rows whose unlock state matches.</summary>
-    /// <param name="unlocked">The unlock state to keep.</param>
-    /// <returns>The matching emotes, in sheet order.</returns>
+    // Walks the Emote sheet and keeps the rows whose unlock state matches.
     private static IReadOnlyList<Emote> FilterEmotesByUnlock(bool unlocked)
     {
         var sheet = ExcelSheetHelper.GetSheet<Emote>();

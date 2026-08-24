@@ -142,9 +142,7 @@ public static class KeybindsHelper
         return (IsCtrlDown(), IsShiftDown(), IsAltDown());
     }
 
-    /// <summary>
-    /// The last async modifier read and the millisecond it was taken; reads within the same millisecond share it.
-    /// </summary>
+    // The last async modifier read and the millisecond it was taken; reads within the same millisecond share it.
     private static long asyncModifierTick = -1;
     private static (bool Ctrl, bool Shift, bool Alt) asyncModifierState;
 

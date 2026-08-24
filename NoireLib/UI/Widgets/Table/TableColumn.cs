@@ -14,8 +14,7 @@ public sealed class TableColumn<T>
     public string Header { get; set; } = string.Empty;
 
     /// <summary>
-    /// What this column reads out of a row. This is what is shown, searched, filtered, sorted and exported unless
-    /// something more specific says otherwise.
+    /// What this column reads out of a row.
     /// </summary>
     public Func<T, string>? Text { get; set; }
 
@@ -30,19 +29,19 @@ public sealed class TableColumn<T>
     public Comparison<T>? Sort { get; set; }
 
     /// <summary>
-    /// A predicate of your own that a row must pass to appear. Applied on top of <see cref="FilterText"/>.
+    /// A predicate of your own that a row must pass to appear, applied on top of <see cref="FilterText"/>.
     /// </summary>
     public Func<T, bool>? Filter { get; set; }
 
     /// <summary>
-    /// The text typed into this column's own filter box. Matched against <see cref="Text"/>.
+    /// The text typed into this column's own filter box, matched against <see cref="Text"/>.
     /// </summary>
     public string FilterText { get; set; } = string.Empty;
 
-    /// <summary>Whether the table's global search reads this column. On by default.</summary>
+    /// <summary>Whether the table's global search reads this column.</summary>
     public bool Searchable { get; set; } = true;
 
-    /// <summary>Whether the header sorts. On by default, and ignored when nothing describes an order.</summary>
+    /// <summary>Whether the header sorts.</summary>
     public bool Sortable { get; set; } = true;
 
     /// <summary>Whether the column is drawn at all.</summary>
@@ -85,10 +84,6 @@ public sealed class TableColumn<T>
     /// <summary>
     /// The ordering this column describes, or <see langword="null"/> when it describes none.
     /// </summary>
-    /// <remarks>
-    /// Resolved in order of how much the caller said: an explicit <see cref="Sort"/>, then a <see cref="SortKey"/>,
-    /// then the text.
-    /// </remarks>
     /// <returns>The comparison, or <see langword="null"/>.</returns>
     public Comparison<T>? ResolveComparison()
     {

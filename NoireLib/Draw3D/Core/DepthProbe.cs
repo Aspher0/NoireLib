@@ -5,14 +5,11 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. D3D
-/// forbids a sub-region copy of a depth-stencil texture, so a naive copy-map-read-destroy pattern per hover
-/// frame would churn GPU memory and stall the pipeline, freezing and eventually crashing the device under
-/// sustained use. This keeps <b>one</b> staging copy, recreated only when size or format changes, and reads it
-/// one cycle late with a non-blocking map, so a probe never allocates and never waits on the GPU; render-thread
-/// only, released with the renderer.
-/// </summary>
+// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. D3D forbids
+// a sub-region copy of a depth-stencil texture, so a naive copy-map-read-destroy pattern per hover frame would churn
+// GPU memory and stall the pipeline, freezing and eventually crashing the device under sustained use. This keeps one
+// staging copy, recreated only when size or format changes, and reads it one cycle late with a non-blocking map, so a
+// probe never allocates and never waits on the GPU; render-thread only, released with the renderer.
 internal sealed unsafe class DepthProbe : IDisposable
 {
     private ComPtr<ID3D11Texture2D> staging;

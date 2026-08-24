@@ -17,13 +17,10 @@ namespace NoireLib.TweakManager;
 [Serializable]
 public abstract class TweakConfigBase : NoireConfigBase
 {
-    /// <summary>
-    /// Reads and writes the JSON a tweak configuration is stored as. Built with
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
-    /// <see cref="NoireConfigBase.JsonSettings"/> alone; the <see cref="JsonConvert"/> overloads and
-    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> would merge in the process-global
-    /// <see cref="JsonConvert.DefaultSettings"/> and let unrelated code decide the stored format.
-    /// </summary>
+    // Reads and writes the JSON a tweak configuration is stored as. Built with Create(JsonSerializerSettings), which
+    // resolves every setting from JsonSettings alone; the JsonConvert overloads and
+    // CreateDefault(JsonSerializerSettings) would merge in the process-global DefaultSettings and let unrelated code
+    // decide the stored format.
     private static readonly JsonSerializer TweakConfigSerializer = CreateTweakConfigSerializer();
 
     private static JsonSerializer CreateTweakConfigSerializer()
@@ -87,15 +84,12 @@ public abstract class TweakConfigBase : NoireConfigBase
         return SerializeTweakConfigToJson();
     }
 
-    /// <summary>Serializes this configuration to the JSON the manager stores.</summary>
-    /// <returns>The JSON representation of the current configuration.</returns>
     internal string SerializeToJson()
     {
         return SerializeTweakConfigToJson();
     }
 
-    /// <summary>Serializes this instance as its concrete type to the JSON a tweak configuration is stored as.</summary>
-    /// <returns>The JSON representation of this instance.</returns>
+    // Serializes this instance as its concrete type to the JSON a tweak configuration is stored as.
     private string SerializeTweakConfigToJson()
     {
         var builder = new StringBuilder(256);
@@ -109,11 +103,7 @@ public abstract class TweakConfigBase : NoireConfigBase
         return builder.ToString();
     }
 
-    /// <summary>Deserializes stored tweak configuration JSON into a new instance of the given type.</summary>
-    /// <typeparam name="T">The concrete tweak configuration type to materialize.</typeparam>
-    /// <param name="json">The stored JSON.</param>
-    /// <returns>The deserialized instance, or null when the JSON holds a bare null.</returns>
-    /// <exception cref="JsonException">The JSON is malformed or carries content after the configuration object.</exception>
+    // Deserializes stored tweak configuration JSON into a new instance of the given type.
     private static T? DeserializeTweakConfigFromJson<T>(string json) where T : TweakConfigBase
     {
         using var stringReader = new StringReader(json);
@@ -122,11 +112,7 @@ public abstract class TweakConfigBase : NoireConfigBase
         return TweakConfigSerializer.Deserialize<T>(jsonReader);
     }
 
-    /// <summary>Deserializes a tweak configuration from JSON, running any migrations the stored version needs first.</summary>
-    /// <typeparam name="T">The tweak configuration type to deserialize.</typeparam>
-    /// <param name="json">The stored JSON, or null or empty for a default instance.</param>
-    /// <param name="storedVersion">The version the stored JSON was written at.</param>
-    /// <returns>The deserialized and migrated instance, or a new default instance when deserialization fails.</returns>
+    // Deserializes a tweak configuration from JSON, running any migrations the stored version needs first.
     internal static T DeserializeFromJson<T>(string? json, int storedVersion) where T : TweakConfigBase, new()
     {
         if (string.IsNullOrEmpty(json))
@@ -153,9 +139,7 @@ public abstract class TweakConfigBase : NoireConfigBase
         }
     }
 
-    /// <summary>Extracts the stored version number from a configuration JSON string.</summary>
-    /// <param name="json">The stored JSON.</param>
-    /// <returns>The version number, or 0 when absent or unreadable.</returns>
+    // Extracts the stored version number from a configuration JSON string.
     internal static int ExtractVersionFromJson(string json)
     {
         try

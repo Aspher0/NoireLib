@@ -6,7 +6,7 @@ namespace NoireLib.UI;
 public enum UiPositionMode
 {
     /// <summary>
-    /// The element is positioned relative to one of the nine screen anchor points. See <see cref="UiAnchor"/>.
+    /// The element is positioned relative to one of the nine screen anchor points (see <see cref="UiAnchor"/>).
     /// </summary>
     Anchor,
 
@@ -21,8 +21,7 @@ public enum UiPositionMode
     Ratio,
 
     /// <summary>
-    /// The element is positioned relative to a native game addon, following it as the player moves or rescales it.
-    /// Resolving fails while the addon is not on screen, so the element exists only alongside it.
+    /// The element is positioned relative to a native game addon, and resolving fails while the addon is not on screen.
     /// </summary>
     Addon,
 }

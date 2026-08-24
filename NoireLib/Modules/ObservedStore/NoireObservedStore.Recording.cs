@@ -259,10 +259,8 @@ public partial class NoireObservedStore
 
     #region Shared plumbing
 
-    /// <summary>
-    /// Whether anything is listening closely enough to justify the extra read that reports what a record replaced.
-    /// Nobody listening means the read is pure cost, and a bulk import would pay it once per row.
-    /// </summary>
+    // Whether anything is listening closely enough to justify the extra read that reports what a record replaced.
+    // Nobody listening means the read is pure cost, and a bulk import would pay it once per row.
     private bool ShouldReportReplacement
         => registry.HasSubscribers(typeof(ObservationRecordedEvent))
            || (ActiveOptions.PublishModuleEvents && ActiveOptions.EventBus != null);
@@ -304,7 +302,7 @@ public partial class NoireObservedStore
         ];
     }
 
-    /// <summary>Runs a unit of database work behind the store's error boundary, returning a default on failure.</summary>
+    // Runs a unit of database work behind the store's error boundary, returning a default on failure.
     private TResult Execute<TResult>(Func<NoireDatabase, TResult> work, TResult fallback = default!)
     {
         var databaseName = ActiveOptions.DatabaseName;
@@ -328,10 +326,8 @@ public partial class NoireObservedStore
     internal static string FormatTimestamp(DateTimeOffset value)
         => value.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture);
 
-    /// <summary>
-    /// Escapes the wildcards SQLite's LIKE would otherwise read as pattern syntax, so a key prefix containing an
-    /// underscore matches that underscore rather than any character.
-    /// </summary>
+    // Escapes the wildcards SQLite's LIKE would otherwise read as pattern syntax, so a key prefix containing an
+    // underscore matches that underscore rather than any character.
     internal static string EscapeLike(string value)
         => value.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_");
 

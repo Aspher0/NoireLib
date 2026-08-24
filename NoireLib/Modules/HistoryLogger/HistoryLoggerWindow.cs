@@ -17,12 +17,10 @@ namespace NoireLib.HistoryLogger;
 /// </summary>
 public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 {
-    /// <summary>
-    /// Identifies a column of the entries table independently of where it sits.<br/>
-    /// The Category and Source columns are only registered when the display preferences show them, so a column's
-    /// positional index shifts with those preferences. These values are handed to ImGui as the column user id and
-    /// come back unchanged in the sort specs, resolving a clicked header to the field it sorts regardless of layout.
-    /// </summary>
+    // Identifies a column of the entries table independently of where it sits. The Category and Source columns are
+    // only registered when the display preferences show them, so a column's positional index shifts with those
+    // preferences. These values are handed to ImGui as the column user id and come back unchanged in the sort specs,
+    // resolving a clicked header to the field it sorts regardless of layout.
     private enum EntryColumn : uint
     {
         Time = 1,
@@ -736,10 +734,8 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.PopFont();
     }
 
-    /// <summary>
-    /// Gets the filtered and sorted entries backing the current view, rebuilding them only when the module's
-    /// entries or the active filters have changed since the last rebuild.
-    /// </summary>
+    // Gets the filtered and sorted entries backing the current view, rebuilding them only when the module's entries
+    // or the active filters have changed since the last rebuild.
     private List<HistoryLogEntry> GetFilteredEntries()
     {
         var entriesVersion = ParentModule.EntriesVersion;
@@ -759,11 +755,8 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         return filteredEntries;
     }
 
-    /// <summary>
-    /// Drops selections that the current filters no longer show, so hidden rows cannot be acted on from the
-    /// context menu.
-    /// </summary>
-    /// <param name="filtered">The entries currently passing the filters.</param>
+    // Drops selections that the current filters no longer show, so hidden rows cannot be acted on from the context
+    // menu.
     private void PruneSelectionsOutsideFilter(List<HistoryLogEntry> filtered)
     {
         if (selectedEntries.Count == 0 && selectedLines.Count == 0)
@@ -802,11 +795,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         return query.ToList();
     }
 
-    /// <summary>
-    /// Orders <paramref name="entries"/> by the field the currently sorted column stands for.
-    /// </summary>
-    /// <param name="entries">The entries to order.</param>
-    /// <returns>The ordered entries, or the input unchanged for a column that carries no ordering.</returns>
+    // Orders  by the field the currently sorted column stands for.
     private IEnumerable<HistoryLogEntry> ApplySorting(IEnumerable<HistoryLogEntry> entries)
     {
         var descending = sortDirection == ImGuiSortDirection.Descending;

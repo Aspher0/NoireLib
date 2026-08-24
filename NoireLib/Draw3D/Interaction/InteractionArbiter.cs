@@ -3,7 +3,7 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Interaction;
 
-/// <summary>Who a mouse-button gesture belongs to, latched at press time for the whole press.</summary>
+// Who a mouse-button gesture belongs to, latched at press time for the whole press.
 internal enum PointerOwner
 {
     /// <summary>No button held for this slot.</summary>
@@ -16,7 +16,6 @@ internal enum PointerOwner
     Foreign,
 }
 
-/// <summary>The immutable per-frame pointer state fed to <see cref="InteractionArbiter"/>.</summary>
 internal readonly struct PointerSample
 {
     /// <summary>Cursor position in screen pixels.</summary>
@@ -50,7 +49,8 @@ internal readonly struct PointerSample
     }
 }
 
-/// <summary>Receives the semantic events the arbiter derives from raw pointer state. Implementations must not throw (the arbiter is pure logic; error containment lives in the dispatcher).</summary>
+// Receives the semantic events the arbiter derives from raw pointer state. Implementations must not throw (the
+// arbiter is pure logic; error containment lives in the dispatcher).
 internal interface IArbiterSink
 {
     /// <summary>The cursor started hovering <paramref name="token"/>.</summary>
@@ -78,20 +78,15 @@ internal interface IArbiterSink
     void DragEnd(object token);
 }
 
-/// <summary>
-/// The pure interaction state machine: turns raw per-frame pointer state into hover / click / drag events and
-/// decides when Draw3D must claim the mouse from the game. It owns the two behaviours the renderer core itself
-/// never touches, since the core reads no input and this interaction layer is the sanctioned exception that does:
-/// <list type="bullet">
-/// <item><b>Click vs. camera-pan.</b> A gesture is latched to its owner at press time. A press that begins over an
-/// interactable is ours; a press that begins over empty world is the game's (its camera pan), and it stays the game's
-/// even if it later drags across an interactable, so a pan is never mistaken for a click, and a click never fires
-/// after a pan. A left press that moves past <see cref="DragThresholdPx"/> is a drag, not a click.</item>
-/// <item><b>Drag takes the lead.</b> Pressing a draggable target (for example a gizmo handle) claims the mouse from the very
-/// first frame, so the game never pans the camera underneath the drag.</item>
-/// </list>
-/// Deliberately free of ImGui / renderer state so the whole decision table is unit-tested headlessly.
-/// </summary>
+// The pure interaction state machine: turns raw per-frame pointer state into hover / click / drag events and decides
+// when Draw3D must claim the mouse from the game. It owns the two behaviours the renderer core itself never touches,
+// since the core reads no input and this interaction layer is the sanctioned exception that does: Click vs.
+// camera-pan. A gesture is latched to its owner at press time. A press that begins over an interactable is ours; a
+// press that begins over empty world is the game's (its camera pan), and it stays the game's even if it later drags
+// across an interactable, so a pan is never mistaken for a click, and a click never fires after a pan. A left press
+// that moves past DragThresholdPx is a drag, not a click. Drag takes the lead. Pressing a draggable target (for
+// example a gizmo handle) claims the mouse from the very first frame, so the game never pans the camera underneath
+// the drag. Deliberately free of ImGui / renderer state so the whole decision table is unit-tested headlessly.
 internal sealed class InteractionArbiter
 {
     /// <summary>Movement past this many screen pixels turns a left press into a drag (and disqualifies it as a click).</summary>

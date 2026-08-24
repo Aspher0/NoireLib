@@ -23,32 +23,25 @@ namespace NoireLib.HotkeyManager;
 /// </summary>
 public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyManagerConfigInstance>
 {
-    /// <summary>
-    /// The rule that decides when two hotkey ids name the same hotkey: case is ignored, matching every lookup,
-    /// comparison and stored binding.
-    /// </summary>
+    // The rule that decides when two hotkey ids name the same hotkey: case is ignored, matching every lookup,
+    // comparison and stored binding.
     private static readonly StringComparer HotkeyIdComparer = StringComparer.OrdinalIgnoreCase;
 
     private readonly Dictionary<string, HotkeyEntry> hotkeys = new(HotkeyIdComparer);
     private readonly object hotkeyLock = new();
 
-    /// <summary>
-    /// A lock-free snapshot of the registered entries, read by the detection tick and the framework input
-    /// blocker without taking <see cref="hotkeyLock"/> or allocating.<br/>
-    /// Rebuilt only when the set of entries changes structurally; it holds live entry references, so an option
-    /// change and a stale read are both safe without one, and a removed entry is skipped by the same disabled
-    /// and unregistered guards that already gate delivery.
-    /// </summary>
+    // A lock-free snapshot of the registered entries, read by the detection tick and the framework input blocker
+    // without taking hotkeyLock or allocating. Rebuilt only when the set of entries changes structurally; it holds
+    // live entry references, so an option change and a stale read are both safe without one, and a removed entry is
+    // skipped by the same disabled and unregistered guards that already gate delivery.
     private volatile HotkeyEntry[] entriesSnapshot = Array.Empty<HotkeyEntry>();
     private readonly HashSet<int> previousKeysDown = new();
     private readonly HashSet<int> currentKeysDown = new();
     private readonly byte[] rawKeyboardState = new byte[256];
     private const int UpdateIntervalMilliseconds = 16;
 
-    /// <summary>
-    /// The most triggers that may wait for the framework thread at once; once reached, the oldest triggers are
-    /// dropped so a frozen frame loop cannot grow the queue without bound.
-    /// </summary>
+    // The most triggers that may wait for the framework thread at once; once reached, the oldest triggers are dropped
+    // so a frozen frame loop cannot grow the queue without bound.
     internal const int MaxPendingTriggers = 256;
 
     private readonly ConcurrentQueue<HotkeyEntry> pendingTriggers = new();
@@ -59,16 +52,12 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     private int updateInProgress;
     private volatile bool disposed;
 
-    /// <summary>
-    /// How long a runtime option change waits before it is written, so a burst of sets on one hotkey coalesces
-    /// into a single disk write rather than one per property.
-    /// </summary>
+    // How long a runtime option change waits before it is written, so a burst of sets on one hotkey coalesces into a
+    // single disk write rather than one per property.
     private static readonly TimeSpan OptionPersistDebounce = TimeSpan.FromMilliseconds(500);
 
-    /// <summary>
-    /// The debounce key prefix for this manager's option-change persists; unique per instance and combined with
-    /// the hotkey id, so pending writes for different hotkeys or different manager instances never collide.
-    /// </summary>
+    // The debounce key prefix for this manager's option-change persists; unique per instance and combined with the
+    // hotkey id, so pending writes for different hotkeys or different manager instances never collide.
     private readonly string optionPersistKeyPrefix = $"NoireLib_HotkeyManager_Persist_{Guid.NewGuid():N}_";
 
     private IReadOnlyList<int> validKeyCodes = Array.Empty<int>();
@@ -83,23 +72,15 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     private GamepadButtons? lastPressedGamepadButton;
     private volatile int postListeningBlockKeyCode;
 
-    /// <summary>
-    /// One rebind capture session, held as a single immutable value.
-    /// </summary>
-    /// <param name="HotkeyId">The identifier of the hotkey being rebound.</param>
-    /// <param name="Mode">The input source being watched for the new binding.</param>
-    /// <param name="ModifierState">The modifiers that were held when the session last saw a modifier only combination, if any.</param>
-    /// <param name="WaitingForModifierRelease">Whether a modifier only combination is waiting to be committed once the modifiers are released.</param>
+    // One rebind capture session, held as a single immutable value.
     internal sealed record ListeningSession(
         string HotkeyId,
         HotkeyListenMode Mode,
         (bool Ctrl, bool Shift, bool Alt)? ModifierState,
         bool WaitingForModifierRelease);
 
-    /// <summary>
-    /// The rebind capture session in progress, or null when not listening; read once, so a session replaced or
-    /// ended mid-read cannot show up as a mixture of the old and new one.
-    /// </summary>
+    // The rebind capture session in progress, or null when not listening; read once, so a session replaced or ended
+    // mid-read cannot show up as a mixture of the old and new one.
     internal ListeningSession? CurrentListeningSession => Volatile.Read(ref listeningSession);
 
     /// <summary>
@@ -123,13 +104,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
     public NoireHotkeyManager(string? moduleId = null, bool active = true, bool enableLogging = true, bool shouldSaveKeybinds = true, NoireEventBus? eventBus = null)
         : base(moduleId, active, enableLogging, shouldSaveKeybinds, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>,
-    /// for internal module management only.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireHotkeyManager(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -569,23 +544,15 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         return TryConsumeBindingChanged(id);
     }
 
-    /// <summary>
-    /// Reports whether the rebind capture in progress, if any, is the given hotkey's.
-    /// </summary>
-    /// <param name="id">The identifier of the hotkey to test.</param>
-    /// <returns>True if a rebind capture is in progress for that hotkey; otherwise, false.</returns>
+    // Reports whether the rebind capture in progress, if any, is the given hotkey's.
     internal bool IsListeningFor(string id)
     {
         var session = CurrentListeningSession;
         return session != null && HotkeyIdComparer.Equals(session.HotkeyId, id);
     }
 
-    /// <summary>
-    /// Reports whether the given hotkey's binding has changed since this was last asked about it, and consumes
-    /// the report so that only the first caller to ask sees it.
-    /// </summary>
-    /// <param name="id">The identifier of the hotkey to report on.</param>
-    /// <returns>True if the hotkey's binding changed since the last call; otherwise, false.</returns>
+    // Reports whether the given hotkey's binding has changed since this was last asked about it, and consumes the
+    // report so that only the first caller to ask sees it.
     internal bool TryConsumeBindingChanged(string id)
     {
         var pendingId = Volatile.Read(ref lastBindingChangedId);
@@ -626,10 +593,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         }
     }
 
-    /// <summary>
-    /// Stops detection and discards whatever it detected but has not delivered yet; blocks until any running
-    /// tick finishes, so no timer thread work can touch the module's state after this returns.
-    /// </summary>
+    // Stops detection and discards whatever it detected but has not delivered yet; blocks until any running tick
+    // finishes, so no timer thread work can touch the module's state after this returns.
     private void StopUpdateTimer()
     {
         Timer? timer;
@@ -657,9 +622,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         ClearPendingTriggers();
     }
 
-    /// <summary>
-    /// Ticks hotkey detection on the system timer, independent of the framework's frame rate.
-    /// </summary>
+    // Ticks hotkey detection on the system timer, independent of the framework's frame rate.
     private void OnSystemUpdate()
     {
         if (Interlocked.Exchange(ref updateInProgress, 1) == 1)
@@ -735,10 +698,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
             previousKeysDown.Add(keyCode);
     }
 
-    /// <summary>
-    /// Advances a rebind capture by one detection tick; called from the detection timer thread.
-    /// </summary>
-    /// <param name="session">The session to advance, as read once by the caller.</param>
+    // Advances a rebind capture by one detection tick; called from the detection timer thread.
     private void ProcessListening(ListeningSession session)
     {
         if (session.Mode == HotkeyListenMode.Keyboard)
@@ -921,16 +881,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         return EvaluateActivation(entry, isDown, isDown, nowMs);
     }
 
-    /// <summary>
-    /// Advances one hotkey's activation state by a single detection tick and reports whether it triggers.<br/>
-    /// The clock is passed in rather than read, so the decision is a pure function of the inputs and the
-    /// entry's current state.
-    /// </summary>
-    /// <param name="entry">The hotkey entry whose state is advanced.</param>
-    /// <param name="combinationActive">Whether the full binding (key plus exact modifiers, no extra keys) is active this tick.</param>
-    /// <param name="mainKeyPhysicallyDown">Whether the binding's main key (or a required modifier, for a modifier-only binding) is physically down this tick.</param>
-    /// <param name="nowMs">The timestamp of this tick, in milliseconds.</param>
-    /// <returns>True if the hotkey should trigger this tick; otherwise, false.</returns>
+    // Advances one hotkey's activation state by a single detection tick and reports whether it triggers. The clock is
+    // passed in rather than read, so the decision is a pure function of the inputs and the entry's current state.
     internal bool EvaluateActivation(HotkeyEntry entry, bool combinationActive, bool mainKeyPhysicallyDown, long nowMs)
     {
         ref var state = ref entry.Activation;
@@ -1067,12 +1019,9 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         entry.Activation.Reset();
     }
 
-    /// <summary>
-    /// Rebuilds and publishes <see cref="entriesSnapshot"/> from the current registered entries; must be called
-    /// while holding <see cref="hotkeyLock"/>.<br/>
-    /// Called on every structural change (register, unregister, teardown); option changes need no rebuild,
-    /// since the snapshot holds live entry references.
-    /// </summary>
+    // Rebuilds and publishes entriesSnapshot from the current registered entries; must be called while holding
+    // hotkeyLock. Called on every structural change (register, unregister, teardown); option changes need no rebuild,
+    // since the snapshot holds live entry references.
     private void RebuildEntriesSnapshot()
     {
         entriesSnapshot = hotkeys.Values.ToArray();
@@ -1083,12 +1032,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         EventBus?.Publish(eventData);
     }
 
-    /// <summary>
-    /// Runs a consumer visible notification on the framework thread.<br/>
-    /// Callers must have released <see cref="hotkeyLock"/> first: the notification runs arbitrary consumer code
-    /// that may call back into this manager.
-    /// </summary>
-    /// <param name="notification">The notification to run.</param>
+    // Runs a consumer visible notification on the framework thread. Callers must have released hotkeyLock first: the
+    // notification runs arbitrary consumer code that may call back into this manager.
     private void PostToFrameworkThread(Action notification)
     {
         if (disposed)
@@ -1111,11 +1056,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         });
     }
 
-    /// <summary>
-    /// Invokes a notification, containing any exception a consumer handler throws so it neither stops the
-    /// notifications behind it nor surfaces in the framework update or detection tick that caused it.
-    /// </summary>
-    /// <param name="notification">The notification to run.</param>
+    // Invokes a notification, containing any exception a consumer handler throws so it neither stops the
+    // notifications behind it nor surfaces in the framework update or detection tick that caused it.
     private void RunNotification(Action notification)
     {
         try
@@ -1166,13 +1108,9 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         HotkeyManagerConfig.Save();
     }
 
-    /// <summary>
-    /// Persists a hotkey whose option a consumer changed at runtime through the live entry; called by
-    /// <see cref="HotkeyEntry"/>'s notifying setters.<br/>
-    /// Behavior takes effect regardless, since the detection loop reads the entry's options directly every
-    /// tick, so this only carries the change to disk.
-    /// </summary>
-    /// <param name="entry">The entry whose option changed.</param>
+    // Persists a hotkey whose option a consumer changed at runtime through the live entry; called by HotkeyEntry's
+    // notifying setters. Behavior takes effect regardless, since the detection loop reads the entry's options
+    // directly every tick, so this only carries the change to disk.
     internal void OnEntryOptionChanged(HotkeyEntry entry)
     {
         if (disposed || !shouldSaveKeybinds)
@@ -1211,9 +1149,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
             HotkeyManagerConfig.Save();
     }
 
-    /// <summary>
-    /// Writes the binding of every hotkey this instance holds to the stored keybinds.
-    /// </summary>
+    // Writes the binding of every hotkey this instance holds to the stored keybinds.
     private void SaveAllHotkeys()
     {
         if (!shouldSaveKeybinds)
@@ -1372,14 +1308,7 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         return showOnlyBinding ? keyboardText : $"{buttonLabel}: {keyboardText}";
     }
 
-    /// <summary>
-    /// Hands a detected trigger to the framework thread; called from the detection timer thread.
-    /// </summary>
-    /// <remarks>
-    /// Triggers are delivered in order and never coalesced; the queue is bounded by
-    /// <see cref="MaxPendingTriggers"/> and drops the oldest when the framework thread stops pumping.
-    /// </remarks>
-    /// <param name="entry">The hotkey entry whose trigger should be delivered.</param>
+    // Hands a detected trigger to the framework thread; called from the detection timer thread.
     internal void QueueTrigger(HotkeyEntry entry)
     {
         if (disposed)
@@ -1396,10 +1325,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         pendingTriggers.Enqueue(entry);
     }
 
-    /// <summary>
-    /// Delivers every trigger that detection queued before this call, except those whose hotkey has since been
-    /// unregistered; framework thread only.
-    /// </summary>
+    // Delivers every trigger that detection queued before this call, except those whose hotkey has since been
+    // unregistered; framework thread only.
     internal void DrainPendingTriggers()
     {
         // Only drains what was already queued; detection keeps running on its own thread while this loop
@@ -1426,11 +1353,8 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         Interlocked.Exchange(ref pendingTriggerCount, 0);
     }
 
-    /// <summary>
-    /// Invokes the consumer visible surfaces of a triggered hotkey; framework thread only, since the callback,
-    /// event handlers and EventBus subscribers may read or write game state.
-    /// </summary>
-    /// <param name="entry">The hotkey entry that was triggered.</param>
+    // Invokes the consumer visible surfaces of a triggered hotkey; framework thread only, since the callback, event
+    // handlers and EventBus subscribers may read or write game state.
     private void TriggerHotkey(HotkeyEntry entry)
     {
         try
@@ -1446,11 +1370,9 @@ public class NoireHotkeyManager : NoireModuleBase<NoireHotkeyManager, HotkeyMana
         }
     }
 
-    /// <summary>
-    /// Discards everything detection was holding and ends any capture in progress; runs on the detection timer
-    /// thread, or during deactivation or teardown on a thread that has already waited for detection to stop, so
-    /// nothing else can be writing the key buffers while this clears them.
-    /// </summary>
+    // Discards everything detection was holding and ends any capture in progress; runs on the detection timer thread,
+    // or during deactivation or teardown on a thread that has already waited for detection to stop, so nothing else
+    // can be writing the key buffers while this clears them.
     private void ResetInputState()
     {
         previousKeysDown.Clear();

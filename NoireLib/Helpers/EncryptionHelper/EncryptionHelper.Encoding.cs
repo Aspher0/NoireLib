@@ -91,11 +91,7 @@ public static partial class EncryptionHelper
         return FromJson<T>(json, jsonSettings);
     }
 
-    /// <summary>
-    /// Encodes raw bytes as URL-safe Base64 (<c>-_</c> instead of <c>+/</c>, padding removed).
-    /// </summary>
-    /// <param name="data">The bytes to encode.</param>
-    /// <returns>The URL-safe Base64 representation of the bytes.</returns>
+    // Encodes raw bytes as URL-safe Base64 (-_ instead of +/, padding removed).
     private static string ToBase64Url(byte[] data)
         => Convert.ToBase64String(data).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 

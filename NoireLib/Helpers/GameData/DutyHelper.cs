@@ -307,11 +307,9 @@ public static unsafe class DutyHelper
         return row.QueueMaxPlayers;
     }
 
-    /// <summary>
-    /// Reads which roulettes draw a duty. <c>ContentFinderCondition</c> opens with one boolean column per roulette in
-    /// <c>ContentRoulette</c> row order, so column n is roulette row n + 1, and the block length is that sheet's row
-    /// count. The reserved unnamed rows hold columns too, so the count cannot come from the named ones.
-    /// </summary>
+    // Reads which roulettes draw a duty. ContentFinderCondition opens with one boolean column per roulette in
+    // ContentRoulette row order, so column n is roulette row n + 1, and the block length is that sheet's row count.
+    // The reserved unnamed rows hold columns too, so the count cannot come from the named ones.
     private static IReadOnlyList<uint> ReadRouletteIds(ContentFinderCondition condition)
     {
         var columns = RouletteColumns();

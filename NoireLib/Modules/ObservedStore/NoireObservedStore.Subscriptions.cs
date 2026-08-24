@@ -7,8 +7,7 @@ namespace NoireLib.ObservedStore;
 public partial class NoireObservedStore
 {
     /// <summary>
-    /// Called whenever an observation is written down. The event carries what it replaced, so a consumer can tell a
-    /// value that changed from one that was merely confirmed.
+    /// Called whenever an observation is written down. The event carries what it replaced.
     /// </summary>
     /// <param name="handler">The handler.</param>
     /// <param name="options">Optional subscription settings.</param>

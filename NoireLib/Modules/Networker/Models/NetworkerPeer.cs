@@ -30,9 +30,7 @@ public class NetworkerPeer
     /// </summary>
     public bool IsSameMachine { get; internal set; } = true;
 
-    /// <summary>
-    /// The peer generation this peer was last confirmed in; used to sweep stale entries after a hub failover.
-    /// </summary>
+    // The peer generation this peer was last confirmed in; used to sweep stale entries after a hub failover.
     internal long SeenGeneration { get; set; }
 
     /// <summary>

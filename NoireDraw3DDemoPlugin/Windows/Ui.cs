@@ -11,37 +11,24 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
-/// <summary>
-/// The demo's widget kit. Pages are built from these so the window reads as one thing instead of nine.
-/// <para>
-/// The unit of layout is the <b>form</b>: a two-column table, captions left, controls stretched right. Captions line up
-/// down the page and controls share an edge, which is the whole reason a settings panel is scannable. Widgets bind
-/// through a getter/setter and write back only on change, so pages keep no mirror state.
-/// </para>
-/// <para>
-/// The controls themselves are NoireUI widgets wherever one exists - toggles, sliders, number fields, colors,
-/// dropdowns and buttons. Free text and multi-component vector fields stay on ImGui, which has the only widgets
-/// of those shapes.
-/// </para>
-/// </summary>
+// The demo's widget kit. Pages are built from these so the window reads as one thing instead of nine. The unit of
+// layout is the form: a two-column table, captions left, controls stretched right. Widgets bind through a
+// getter/setter and write back only on change, so pages keep no mirror state.
 internal static class Ui
 {
-    /// <summary>Caption-column width, before DPI scaling.</summary>
     private const float LabelColumnWidth = 190f;
 
-    /// <summary>Tooltip wrap width in ems. Long help stays a readable column instead of one endless line.</summary>
     private const float TooltipWrapEm = 24f;
 
     /// <summary>The one accent. Nav selection and section rules; everything else is theme default or grey.</summary>
     public static readonly Vector4 Accent = new(0.45f, 0.72f, 0.90f, 1f);
 
-    /// <summary>Derives every NoireUI widget's palette from the demo accent, so the window reads as one design.</summary>
+    /// <summary>Derives every NoireUI widget's palette from the demo accent.</summary>
     static Ui() => NoireTheme.Current = NoireTheme.FromAccent(Accent);
 
     // ---------------------------------------------------------------- widget skin
-    // The demo's deliberate choices on top of the accent theme. Shared instances, so no row can drift.
+    // The demo's choices on top of the accent theme. Shared instances, so no row can drift.
 
-    /// <summary>Sliders: a thin track, a gradient fill running toward the bright accent, a glowing circular handle.</summary>
     private static readonly SliderStyle SliderLook = new()
     {
         TrackThickness = 4f,
@@ -55,7 +42,7 @@ internal static class Ui
         GlowSpread = 6f,
     };
 
-    /// <summary>Toggles: a slim pill, sized independently of the frame height so the roomier frame padding cannot inflate it.</summary>
+    // Toggles: a slim pill, sized independently of the frame height so the roomier frame padding cannot inflate it.
     private static readonly ToggleStyle ToggleLook = new()
     {
         Height = 18f,
@@ -63,14 +50,12 @@ internal static class Ui
         BorderSize = 1f,
     };
 
-    /// <summary>Buttons: softly rounded, hairline border, tone colors from the theme.</summary>
     private static readonly ButtonStyle ButtonLook = new()
     {
         Rounding = 4f,
         BorderSize = 1f,
     };
 
-    /// <summary>Compact buttons for inline actions beside a value.</summary>
     private static readonly ButtonStyle SmallButtonLook = new()
     {
         Rounding = 3f,
@@ -86,23 +71,18 @@ internal static class Ui
     // ---------------------------------------------------------------- chrome
 
     /// <summary>
-    /// The window's style: tighter than stock ImGui, which is loose enough that a dense panel reads as a pile. Pushed once
-    /// per frame around the whole window. The colour skin is what makes the raw ImGui widgets that remain
-    /// (text fields, vector drags, combo internals) sit in the same design as the NoireUI widgets beside
-    /// them: soft white overlays for resting surfaces, the accent for anything hovered, held or selected,
-    /// and one hairline shared by every border and rule.
+    /// The window's style: tighter than stock ImGui, which is loose enough that a dense panel reads as a pile. Pushed
+    /// once per frame around the whole window.
     /// </summary>
     public static IDisposable Style() => new Skin();
 
-    /// <summary>One hairline for every border and rule.</summary>
     private static readonly Vector4 Hairline = new(1f, 1f, 1f, 0.08f);
 
-    /// <summary>The accent at interaction strengths: resting wash, hovered, held.</summary>
     private static readonly Vector4 AccentSoft = new(0.45f, 0.72f, 0.90f, 0.22f);
     private static readonly Vector4 AccentHover = new(0.45f, 0.72f, 0.90f, 0.32f);
     private static readonly Vector4 AccentActive = new(0.45f, 0.72f, 0.90f, 0.45f);
 
-    /// <summary>The accent lifted toward white, for marks that must read at glyph size.</summary>
+    // The accent lifted toward white, for marks that must read at glyph size.
     private static readonly Vector4 AccentBright = new(0.62f, 0.85f, 1f, 1f);
 
     private sealed class Skin : IDisposable
@@ -161,7 +141,6 @@ internal static class Ui
     /// A group heading: a small accent caption with a rule running out to the right margin. Drawn to the draw list rather
     /// than as a full-width separator so the label and the rule sit on one line.
     /// </summary>
-    /// <param name="title">The group name.</param>
     public static void Section(string title)
     {
         ImGui.Spacing();
@@ -179,8 +158,7 @@ internal static class Ui
         ImGui.Spacing();
     }
 
-    /// <summary>Dimmed wrapped prose. For the rare note that carries something the control names cannot.</summary>
-    /// <param name="text">The prose.</param>
+    /// <summary>Dimmed wrapped prose.</summary>
     public static void Note(string text)
     {
         using var color = ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.DalamudGrey3);
@@ -188,7 +166,6 @@ internal static class Ui
     }
 
     /// <summary>A dimmed live status line. Draws nothing when empty.</summary>
-    /// <param name="text">The status text.</param>
     public static void Status(string? text)
     {
         if (string.IsNullOrEmpty(text))
@@ -197,8 +174,7 @@ internal static class Ui
         Note(text);
     }
 
-    /// <summary>A coloured callout for a caveat or prerequisite worth interrupting for.</summary>
-    /// <param name="text">The message.</param>
+    /// <summary>A coloured callout for a caveat or prerequisite.</summary>
     /// <param name="color">Its colour; defaults to Dalamud's warning yellow.</param>
     public static void Callout(string text, Vector4? color = null)
     {
@@ -206,24 +182,18 @@ internal static class Ui
         ImGui.TextWrapped(text);
     }
 
-    /// <summary>Vertical breathing room between blocks.</summary>
     public static void Gap() => ImGui.Dummy(new Vector2(0f, 3f * Scale));
 
     /// <summary>
     /// A scrolling body filling the rest of the current window or child. Anything that can overflow goes in one of these,
-    /// so whatever sits above it stays put: a tab bar or a toolbar inside the scroll region would slide away with the
-    /// content, and a tab strip you have to scroll back up to reach is not a tab strip.
+    /// so whatever sits above it stays put.
     /// </summary>
-    /// <param name="id">A unique id for the child.</param>
     public static ImRaii.ChildDisposable Scroll(string id) => ImRaii.Child(id, Vector2.Zero, false);
 
     /// <summary>A <c>using</c>-scoped block that greys out and blocks everything inside it.</summary>
-    /// <param name="disabled">Whether to disable the contents.</param>
     public static IDisposable Disabled(bool disabled) => ImRaii.Disabled(disabled);
 
     /// <summary>Numbers in the mono font, so columns of them line up and stop jittering as they change.</summary>
-    /// <param name="text">The text to draw.</param>
-    /// <param name="color">Optional colour.</param>
     public static void Mono(string text, Vector4? color = null)
     {
         using var font = ImRaii.PushFont(UiBuilder.MonoFont);
@@ -231,17 +201,12 @@ internal static class Ui
         ImGui.TextUnformatted(text);
     }
 
-    /// <summary>Draws a FontAwesome glyph in the fixed-width icon font.</summary>
-    /// <param name="icon">The icon.</param>
     public static void Icon(FontAwesomeIcon icon)
     {
         using var font = ImRaii.PushFont(UiBuilder.IconFontFixedWidth);
         ImGui.TextUnformatted(icon.ToIconString());
     }
 
-    /// <summary>A button captioned with an icon and a label, in the two fonts that needs.</summary>
-    /// <param name="icon">The leading glyph.</param>
-    /// <param name="label">The caption, also the widget id.</param>
     /// <param name="width">Button width before scaling; 0 fits the content.</param>
     public static bool IconButton(FontAwesomeIcon icon, string label, float width = 0f)
     {
@@ -288,7 +253,6 @@ internal static class Ui
             formDepth++;
         }
 
-        /// <summary>Closes the form table.</summary>
         public void Dispose()
         {
             if (!open)
@@ -300,15 +264,13 @@ internal static class Ui
     }
 
     /// <summary>Opens a caption/control form. Rows drawn outside one still render, stacked, rather than corrupting the enclosing table.</summary>
-    /// <param name="id">A unique id for the underlying table.</param>
     /// <param name="labelWidth">Caption-column width before scaling. Narrow it inside a split pane, where the default would starve the controls.</param>
     public static FormScope Form(string id, float labelWidth = LabelColumnWidth) => new(id, labelWidth);
 
     /// <summary>
     /// Opens one form row: caption (and its help marker) left, cursor left in the control cell with the next item
-    /// stretched to fill. Public so a page can put a button strip or a custom widget in the cell and still line up.
+    /// stretched to fill.
     /// </summary>
-    /// <param name="label">The caption.</param>
     /// <param name="hint">Optional help, shown on hover of the caption or its marker.</param>
     public static void Row(string label, string? hint = null)
     {
@@ -347,12 +309,9 @@ internal static class Ui
 
     /// <summary>
     /// Orientation overrides for imported models, shared by every page that imports one.<br/>
-    /// Off by default and correct that way for the game's own models and for a conforming glTF. The toggles
-    /// live on the library so both loaders run the same code, and the panel is shared so the two pages driving
-    /// it cannot describe it differently.
+    /// Off by default and correct that way for the game's own models and for a conforming glTF.
     /// </summary>
-    /// <param name="id">A unique form id for the page hosting it.</param>
-    /// <returns>Whether a toggle changed this frame, so a caller holding decoded meshes can rebuild them.</returns>
+    /// <returns>Whether a toggle changed this frame.</returns>
     public static bool ImportFlips(string id)
     {
         var flips = NoireDraw3D.Diagnostics.ImportFlips;
@@ -388,7 +347,6 @@ internal static class Ui
     }
 
     /// <summary>Draws a wrapped tooltip. Explicit "\n" still forces a break.</summary>
-    /// <param name="text">The tooltip body.</param>
     public static void Tooltip(string text)
     {
         ImGui.BeginTooltip();
@@ -406,7 +364,6 @@ internal static class Ui
 
     // ---------------------------------------------------------------- bound widgets
 
-    /// <summary>A toggle row bound to a bool getter/setter.</summary>
     public static void Toggle(string label, Func<bool> get, Action<bool> set, string? hint = null)
     {
         Row(label, hint);
@@ -415,7 +372,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A float slider row bound to a getter/setter.</summary>
     public static void Slider(string label, Func<float> get, Action<float> set, float min, float max, string? hint = null)
     {
         Row(label, hint);
@@ -424,7 +380,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A float drag row bound to a getter/setter.</summary>
     public static bool Drag(string label, Func<float> get, Action<float> set, float speed, float min, float max, string? hint = null)
     {
         Row(label, hint);
@@ -435,7 +390,6 @@ internal static class Ui
         return changed;
     }
 
-    /// <summary>An integer input row bound to a getter/setter.</summary>
     public static void Int(string label, Func<int> get, Action<int> set, string? hint = null)
     {
         Row(label, hint);
@@ -444,7 +398,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A text input row bound to a getter/setter.</summary>
     public static void Text(string label, Func<string> get, Action<string> set, string placeholder = "", int maxLength = 512, string? hint = null)
     {
         Row(label, hint);
@@ -453,11 +406,9 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>Colour-field styles shared by every colour row, so the picker and alpha behaviour cannot drift per row.</summary>
     private static readonly HexColorStyle OpaqueColor = new() { ShowAlpha = false };
     private static readonly HexColorStyle AlphaColor = new() { ShowAlpha = true };
 
-    /// <summary>An RGB colour row bound to a <see cref="Vector3"/> getter/setter.</summary>
     public static void Color3(string label, Func<Vector3> get, Action<Vector3> set, string? hint = null)
     {
         Row(label, hint);
@@ -466,7 +417,6 @@ internal static class Ui
             set(new Vector3(v.X, v.Y, v.Z));
     }
 
-    /// <summary>An RGBA colour row bound to a <see cref="Vector4"/> getter/setter.</summary>
     public static void Color4(string label, Func<Vector4> get, Action<Vector4> set, string? hint = null)
     {
         Row(label, hint);
@@ -475,7 +425,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A 3-component slider row bound to a <see cref="Vector3"/> getter/setter.</summary>
     public static void Slider3(string label, Func<Vector3> get, Action<Vector3> set, float min, float max, string? hint = null)
     {
         Row(label, hint);
@@ -484,7 +433,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A 3-component drag row bound to a <see cref="Vector3"/> getter/setter.</summary>
     public static bool Drag3(string label, Func<Vector3> get, Action<Vector3> set, float speed = 0.05f, float min = 0f, float max = 0f, string? hint = null)
     {
         Row(label, hint);
@@ -495,7 +443,6 @@ internal static class Ui
         return changed;
     }
 
-    /// <summary>A 4-component drag row bound to a <see cref="Vector4"/> getter/setter.</summary>
     public static void Drag4(string label, Func<Vector4> get, Action<Vector4> set, float speed, string? hint = null)
     {
         Row(label, hint);
@@ -504,7 +451,6 @@ internal static class Ui
             set(v);
     }
 
-    /// <summary>A read-only "caption: value" row, for live state.</summary>
     public static void Value(string label, string value, string? hint = null)
     {
         Row(label, hint);
@@ -512,7 +458,6 @@ internal static class Ui
         ImGui.TextUnformatted(value);
     }
 
-    /// <summary>A read-only row whose value is coloured.</summary>
     public static void Value(string label, string value, Vector4 color, string? hint = null)
     {
         Row(label, hint);
@@ -521,7 +466,6 @@ internal static class Ui
         ImGui.TextUnformatted(value);
     }
 
-    /// <summary>A read-only counter row: mono digits so a column of them stays aligned.</summary>
     public static void Counter(string label, long value, string? hint = null)
     {
         Row(label, hint);
@@ -531,7 +475,6 @@ internal static class Ui
 
     // ---------------------------------------------------------------- enums
 
-    /// <summary>An enum dropdown row bound to a getter/setter.</summary>
     public static bool Enum<T>(string label, Func<T> get, Action<T> set, string? hint = null) where T : struct, Enum
     {
         Row(label, hint);
@@ -594,15 +537,10 @@ internal static class Ui
             set((T)System.Enum.ToObject(typeof(T), value));
     }
 
-    /// <summary>The dropdown instances behind <see cref="Combo"/>, kept because the widget is stateful, keyed by widget id.</summary>
+    // The dropdown instances behind Combo, kept because the widget is stateful, keyed by widget id.
     private static readonly Dictionary<string, (NoireComboBox<string> Combo, string[] Names)> combos = new();
 
-    /// <summary>
-    /// A dropdown over a name list, mutating <paramref name="index"/> on selection.
-    /// </summary>
     /// <param name="id">The widget id (pass "##..." to suppress a duplicate caption).</param>
-    /// <param name="names">The options, in order.</param>
-    /// <param name="index">The selected index, updated in place.</param>
     public static bool Combo(string id, string[] names, ref int index)
     {
         if (!combos.TryGetValue(id, out var entry))
@@ -650,10 +588,8 @@ internal static class Ui
     public static bool Button(string label, Vector2 size = default)
         => NoireButtons.Button(label, ButtonLook, size);
 
-    /// <summary>A compact themed button, for inline actions beside a value.</summary>
     public static bool SmallButton(string label)
         => NoireButtons.Button(label, SmallButtonLook);
 
-    /// <summary>A bare toggle bound to a ref value, for custom rows the form helpers do not cover.</summary>
     public static bool Check(string label, ref bool value) => NoireButtons.Toggle(label, ref value, ToggleLook);
 }

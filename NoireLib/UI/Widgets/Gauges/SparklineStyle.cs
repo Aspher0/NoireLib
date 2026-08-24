@@ -52,20 +52,15 @@ public sealed class SparklineStyle
     /// <summary>Replaces the painting of the area, line and end mark, while NoireUI keeps the layout, background and baseline.</summary>
     public Action<UiSparklineDraw>? CustomDraw { get; set; }
 
-    /// <summary>The width in scaled pixels, or zero to fill the space available.</summary>
+    // Zero fills the space available.
     internal float ScaledWidth => NoireUI.Scaled(Width);
 
-    /// <summary>The height in scaled pixels.</summary>
     internal float ScaledHeight => NoireUI.Scaled(Height);
 
-    /// <summary>The trace thickness in scaled pixels.</summary>
     internal float ScaledThickness => NoireUI.Scaled(Thickness);
 
-    /// <summary>The end-dot radius in scaled pixels.</summary>
     internal float ScaledMarkSize => NoireUI.Scaled(MarkSize);
 
-    /// <summary>Resolves the baseline rule's colour, falling back to the theme's border colour.</summary>
-    /// <returns>The baseline colour.</returns>
     internal Vector4 ResolveBaselineColor()
         => BaselineColor ?? NoireTheme.Current.Resolve(ThemeColor.Border);
 

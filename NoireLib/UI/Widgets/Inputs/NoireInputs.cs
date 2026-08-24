@@ -14,13 +14,9 @@ namespace NoireLib.UI;
 [NoireFacade]
 public static class NoireInputs
 {
-    /// <summary>
-    /// The style the overloads taking a unit rather than a style draw through, reused rather than allocated per
-    /// call since drawing runs on one thread.
-    /// </summary>
+    // Reused rather than allocated per call since drawing runs on one thread.
     private static readonly NumberStyle Shorthand = new();
 
-    /// <summary>The style the integer overloads draw through, reused like <see cref="Shorthand"/>.</summary>
     private static readonly NumberStyle WholeNumbers = new();
 
     private static readonly NumberStyle NumberDefaults = new();
@@ -31,12 +27,10 @@ public static class NoireInputs
     public static float ErrorSlideSeconds { get; set; } = 0.18f;
 
     /// <summary>
-    /// The minimum width the label column is padded out to, at 100%, so a longer label pushes its own field along
-    /// rather than being clipped. Zero sizes every row to its own label. See <see cref="NoireUI.Scale"/>.
+    /// The minimum width the label column is padded out to, at 100%; zero sizes every row to its own label.
     /// </summary>
     public static float LabelWidth { get; set; } = 110f;
 
-    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
     private const string CallbackFault = "An input hook threw.";
 
     #region Number
@@ -103,7 +97,7 @@ public static class NoireInputs
     }
 
     /// <summary>
-    /// Draws a whole-number field. It shares the decimal field's drawing, so values stay exact only within the
+    /// Draws a whole-number field, sharing the decimal field's drawing, so values stay exact only within the
     /// range a float represents exactly, 16777216 either way.
     /// </summary>
     /// <param name="label">The label shown before the field, which is also the widget's id.</param>
@@ -135,12 +129,7 @@ public static class NoireInputs
         return changed;
     }
 
-    /// <summary>
-    /// Builds the printf format ImGui writes the number with, unit included. A percent sign in the unit is doubled,
-    /// or it would be read as the start of another conversion.
-    /// </summary>
-    /// <param name="style">The style whose decimals and unit are formatted.</param>
-    /// <returns>The format string.</returns>
+    // A percent sign in the unit is doubled, or it would be read as the start of another conversion.
     private static string BuildFormat(NumberStyle style)
     {
         var decimals = Math.Clamp(style.Decimals, 0, 9);
@@ -160,12 +149,8 @@ public static class NoireInputs
         return built;
     }
 
-    /// <summary>The cache key of a built number format.</summary>
-    /// <param name="Decimals">The decimal places asked for.</param>
-    /// <param name="Unit">The unit written after the number.</param>
     private readonly record struct FormatKey(int Decimals, string Unit);
 
-    /// <summary>How many distinct number formats are cached.</summary>
     private const int MaxNumberFormats = 256;
 
     private static readonly HotPathCache<FormatKey, string> NumberFormats = new(MaxNumberFormats);
@@ -175,9 +160,8 @@ public static class NoireInputs
     #region Duration
 
     /// <summary>
-    /// Draws a field accepting a written duration such as <c>90s</c>, <c>1m30s</c>, <c>1h30</c> or <c>1:30</c>.
-    /// The text is parsed when the field loses focus, and a refusal message slides in when it cannot be read.
-    /// See <see cref="DurationHelper"/> for the accepted forms.
+    /// Draws a field accepting a written duration such as <c>90s</c>, <c>1m30s</c>, <c>1h30</c> or <c>1:30</c>,
+    /// parsed when the field loses focus.
     /// </summary>
     /// <param name="label">The label shown before the field, which is also the widget's id.</param>
     /// <param name="value">The duration, updated in place.</param>
@@ -261,11 +245,6 @@ public static class NoireInputs
         return changed;
     }
 
-    /// <summary>Clamps a duration into a range.</summary>
-    /// <param name="value">The duration to clamp.</param>
-    /// <param name="min">The lower bound.</param>
-    /// <param name="max">The upper bound.</param>
-    /// <returns>The clamped duration.</returns>
     private static TimeSpan Clamp(TimeSpan value, TimeSpan min, TimeSpan max)
         => value < min ? min : value > max ? max : value;
 
@@ -274,7 +253,7 @@ public static class NoireInputs
     #region Hex colour
 
     /// <summary>
-    /// Draws a hex colour field with a swatch that opens a picker. Three-digit shorthand is accepted, so
+    /// Draws a hex colour field with a swatch that opens a picker; three-digit shorthand is accepted, so
     /// <c>#f00</c> is red.
     /// </summary>
     /// <param name="label">The label shown before the field, which is also the widget's id.</param>
@@ -406,13 +385,12 @@ public static class NoireInputs
     }
 
     /// <summary>
-    /// Draws the dot marking a setting as changed from its default. It takes the same room whether or not it is
-    /// shown, so a column of settings does not shuffle sideways as values change.
+    /// Draws the dot marking a setting as changed from its default, taking the same room whether or not it is shown.
     /// </summary>
     /// <param name="id">A stable id for the widget.</param>
     /// <param name="modified">Whether the value differs from its default.</param>
     /// <param name="tooltip">The hover text, or null for the default line.</param>
-    /// <param name="customDraw">Replaces the dot's painting. See <see cref="UiResetDotDraw"/>.</param>
+    /// <param name="customDraw">A replacement for the dot's painting. See <see cref="UiResetDotDraw"/>.</param>
     /// <returns>True on the frame it is clicked.</returns>
     public static bool ResetDot(string id, bool modified, string? tooltip = null, Action<UiResetDotDraw>? customDraw = null)
     {
@@ -421,7 +399,7 @@ public static class NoireInputs
         var radius = NoireUI.Scaled(3.5f);
 
         // A field is taller than its text line and SameLine returns the cursor to the line's top, so the row height
-        // is what centres the dot on the field rather than on the line.
+        // centres the dot on the field rather than on the line.
         var rowHeight = MathF.Max(NoireText.LineHeight(), ImGui.GetFrameHeight());
         var size = new Vector2(radius * 4f, rowHeight);
 
@@ -471,17 +449,8 @@ public static class NoireInputs
 
     #region Row plumbing
 
-    /// <summary>
-    /// Draws the label and sizes the field that follows it. The label doubles as the id, with anything after a
-    /// "###" as the stable part, so a renamed or translated label keeps the field's state.
-    /// </summary>
-    /// <param name="label">The label, optionally carrying a "###" id suffix.</param>
-    /// <param name="width">An explicit field width, or zero for the space remaining.</param>
-    /// <param name="id">Receives the stable id parsed out of <paramref name="label"/>.</param>
-    /// <param name="sizeField">Whether to set the next item's width, which a caller drawing several items skips.</param>
-    /// <param name="extraReserve">Extra width to keep clear to the right of the field.</param>
-    /// <param name="labelWidth">A fixed label column width at 100%, or null for the <see cref="LabelWidth"/> minimum.</param>
-    /// <returns>How much of the row the label column took.</returns>
+    // The label doubles as the id, with anything after a "###" as the stable part, so a renamed or translated label
+    // keeps the field's state. Returns how much of the row the label column took.
     internal static float BeginRow(string label, float width, out string id, bool sizeField = true, float extraReserve = 0f, float? labelWidth = null)
     {
         UiLabel.Split(label, out var visible, out id);
@@ -523,17 +492,9 @@ public static class NoireInputs
         return column;
     }
 
-    /// <summary>Closes a row, showing whatever the value was refused for.</summary>
-    /// <param name="id">The row's stable id.</param>
-    /// <param name="error">The refusal message, or null when the value was accepted.</param>
     private static void EndRow(string id, string? error) => DrawError(id, error);
 
-    /// <summary>
-    /// Draws a refusal under a field, sliding it in and back out. The message is held until it finishes sliding
-    /// out, or the row would snap shut instead of closing.
-    /// </summary>
-    /// <param name="id">The row's stable id.</param>
-    /// <param name="error">The refusal message, or null when there is nothing to show.</param>
+    // The message is held until it finishes sliding out, or the row would snap shut instead of closing.
     private static void DrawError(string id, string? error)
     {
         var key = UiIds.For("NoireInputs.Error.", id);
@@ -557,8 +518,8 @@ public static class NoireInputs
 
         var start = ImGui.GetCursorScreenPos();
 
-        // Drawn before its space is reserved, so the reserved height is what the message actually took; a two-line
-        // wrap otherwise gets one line of room and the next field overlaps it.
+        // Drawn before its space is reserved: a two-line wrap otherwise gets one line of room and the next field
+        // overlaps it.
         ImGui.SetCursorScreenPos(new Vector2(start.X, start.Y - ((1f - presence) * NoireUI.Scaled(5f))));
 
         NoireText.Colored(
@@ -573,28 +534,15 @@ public static class NoireInputs
         ImGui.Dummy(new Vector2(1f, height * presence));
     }
 
-    /// <summary>
-    /// Records that a field's text could not be parsed, held until it is typed in again. A parse failure happens
-    /// on the single frame the field loses focus and would otherwise slide straight back out.
-    /// </summary>
-    /// <param name="id">The field's stable id.</param>
-    /// <param name="message">The refusal message.</param>
+    // A parse failure happens on the single frame the field loses focus and would otherwise slide straight back out,
+    // so it is held until the field is typed in again.
     private static void Refuse(string id, string message) => NoireUiSession.Set(UiIds.For("NoireInputs.Refused.", id), message);
 
-    /// <summary>Drops a field's recorded parse failure.</summary>
-    /// <param name="id">The field's stable id.</param>
     private static void ClearRefusal(string id) => NoireUiSession.Remove(UiIds.For("NoireInputs.Refused.", id));
 
-    /// <summary>Reads a field's recorded parse failure.</summary>
-    /// <param name="id">The field's stable id.</param>
-    /// <returns>The refusal message, or null when the last text parsed.</returns>
     private static string? Refusal(string id) => NoireUiSession.Get<string>(UiIds.For("NoireInputs.Refused.", id));
 
-    /// <summary>Runs a caller's validation without letting a throw escape into the frame.</summary>
-    /// <typeparam name="T">The validated value's type.</typeparam>
-    /// <param name="validate">The caller's validation, or null.</param>
-    /// <param name="value">The value to validate.</param>
-    /// <returns>The refusal message, or null when the value is accepted.</returns>
+    // Runs a caller's validation without letting a throw escape into the frame.
     private static string? Describe<T>(Func<T, string?>? validate, T value)
     {
         if (validate == null)
@@ -612,10 +560,6 @@ public static class NoireInputs
         }
     }
 
-    /// <summary>Whether two floats are equal within the tolerance the reset dot compares at.</summary>
-    /// <param name="a">The first value.</param>
-    /// <param name="b">The second value.</param>
-    /// <returns>True when they are within tolerance.</returns>
     private static bool Nearly(float a, float b) => MathF.Abs(a - b) < 0.0001f;
 
     #endregion

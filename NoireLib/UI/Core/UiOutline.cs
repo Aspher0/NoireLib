@@ -4,21 +4,9 @@ using System.Numerics;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// Draws part of a rectangle's outline, for the widgets that show progress by tracing their own edge.
-/// </summary>
 internal static class UiOutline
 {
-    /// <summary>
-    /// Traces the outline of a rectangle clockwise from its top left corner, stopping once
-    /// <paramref name="fraction"/> of the perimeter has been drawn.
-    /// </summary>
-    /// <param name="drawList">The draw list to paint into.</param>
-    /// <param name="min">The top left corner of the rectangle.</param>
-    /// <param name="max">The bottom right corner of the rectangle.</param>
-    /// <param name="color">The outline color, already packed.</param>
-    /// <param name="thickness">The outline thickness in pixels.</param>
-    /// <param name="fraction">How much of the perimeter to draw, from 0 to 1.</param>
+    // Traces clockwise from the top left corner, stopping once fraction (0 to 1) of the perimeter has been drawn.
     internal static void TraceClockwise(ImDrawListPtr drawList, Vector2 min, Vector2 max, uint color, float thickness, float fraction)
     {
         fraction = Math.Clamp(fraction, 0f, 1f);

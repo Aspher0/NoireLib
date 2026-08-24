@@ -12,11 +12,8 @@ namespace NoireLib.Tests;
 /// change what reaches the screen.
 /// </summary>
 /// <remarks>
-/// A surface that opens no scope costs what it costs, but that cost lands in whichever scope encloses it and reads as
-/// a caller's expense. The failure is silent: a row simply stops appearing in a window nobody had open. These are one
-/// assertion per surface, so a surface going quiet is a red test instead.<br/>
-/// Several draws are wrapped in <see cref="NoireShapes.On(ImDrawListPtr, Action)"/> to give a shape somewhere real to
-/// land, which is what a shape drawn outside a window needs.
+/// Several draws are wrapped in <see cref="NoireShapes.On(ImDrawListPtr, Action)"/> to give a shape drawn outside a
+/// window somewhere to land.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class UiDrawCoverageTests : IClassFixture<UiHarness>
@@ -31,7 +28,7 @@ public sealed class UiDrawCoverageTests : IClassFixture<UiHarness>
     private static readonly Vector4 White = new(1f, 1f, 1f, 1f);
 
     /// <summary>
-    /// Runs a draw redirected onto the window's list, which is what a gated surface needs outside a plugin.
+    /// Runs a draw redirected onto the window's list.
     /// </summary>
     private UiHarnessResult Redirected(Action body)
         => harness.Draw(() => NoireShapes.On(ImGui.GetWindowDrawList(), body, static b => b()));
@@ -223,9 +220,7 @@ public sealed class UiDrawCoverageTests : IClassFixture<UiHarness>
     /// The geometry a notched plate and a ticked frame produce at these exact dimensions.
     /// </summary>
     /// <remarks>
-    /// Exact rather than a lower bound, which is the point: measuring a surface must not change what it draws, and
-    /// neither must a change made for speed. A change that legitimately alters the tessellation updates these two
-    /// numbers alongside the case for the new ones.
+    /// A change that legitimately alters the tessellation updates these numbers alongside the case for the new ones.
     /// </remarks>
     private const int PlateAndFrameVertices = 80;
     private const int PlateAndFrameIndices = 186;

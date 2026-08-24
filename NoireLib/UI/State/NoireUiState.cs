@@ -7,18 +7,9 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The small amount of widget memory that has to survive a reload: where a user dragged an overlay, which sections they
-/// left collapsed, which column they last sorted by.<br/>
-/// One JSON file, one flat key space, written on a debounce and on shutdown. Reads are cheap enough to do every frame.
+/// left collapsed, which column they last sorted by. Draw thread only for reads and writes; the file itself is written
+/// on a background task. Nothing here is versioned, migrated, validated or backed up.
 /// </summary>
-/// <remarks>
-/// <b>Not a replacement for your configuration.</b> Nothing here is versioned, migrated, validated or backed up, and
-/// it is deleted without ceremony when a user resets their layout; keep only state a widget would rebuild from
-/// scratch without complaint.<br/>
-/// <br/>
-/// Every <c>Persist</c> switch on a widget defaults to <b>off</b>: nothing is written until a plugin asks for it.<br/>
-/// <br/>
-/// <b>Draw thread only</b> for reads and writes; the file itself is written on a background task.
-/// </remarks>
 [NoireFacade("State")]
 public static class NoireUiState
 {
@@ -34,7 +25,7 @@ public static class NoireUiState
     private static string? filePathOverride;
 
     /// <summary>
-    /// The file name inside the plugin's own configuration directory. Changing it after anything has been read reloads
+    /// The file name inside the plugin's own configuration directory; changing it after anything has been read reloads
     /// from the new file.
     /// </summary>
     public static string FileName
@@ -53,8 +44,8 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// An explicit full path for the state file, overriding <see cref="FileName"/>. Leave it <see langword="null"/> to
-    /// keep the file beside the plugin's configuration.
+    /// An explicit full path for the state file, overriding <see cref="FileName"/>, or <see langword="null"/> to keep
+    /// the file beside the plugin's configuration.
     /// </summary>
     public static string? FilePath
     {
@@ -75,7 +66,7 @@ public static class NoireUiState
     public static TimeSpan SaveDelay { get; set; } = TimeSpan.FromSeconds(2);
 
     /// <summary>
-    /// Whether the file has been read yet. Loading happens lazily, on the first read or write.
+    /// Whether the file has been read yet; loading happens lazily, on the first read or write.
     /// </summary>
     public static bool IsLoaded => loaded;
 
@@ -119,14 +110,13 @@ public static class NoireUiState
     /// shape <typeparamref name="T"/> expects.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
-    /// <param name="key">The entry key. Namespace it with your plugin and your widget.</param>
+    /// <param name="key">The entry key.</param>
     /// <param name="fallback">The value returned when nothing usable is stored.</param>
     /// <returns>The stored value, or <paramref name="fallback"/>.</returns>
     public static T? Get<T>(string key, T? fallback = default) => TryGet<T>(key, out var value) ? value : fallback;
 
     /// <summary>
-    /// Reads a stored value and reports whether it was there and readable.<br/>
-    /// A stored value of the wrong shape reads as absent rather than throwing, since the file is editable by hand.
+    /// Reads a stored value and reports whether it was there and readable.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="key">The entry key.</param>
@@ -164,7 +154,7 @@ public static class NoireUiState
     /// Stores a value and schedules a save.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
-    /// <param name="key">The entry key. Namespace it with your plugin and your widget.</param>
+    /// <param name="key">The entry key.</param>
     /// <param name="value">The value to store.</param>
     /// <exception cref="ArgumentException">Thrown when <paramref name="key"/> is blank.</exception>
     public static void Set<T>(string key, T value)
@@ -209,8 +199,7 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// Drops every entry whose key starts with <paramref name="keyPrefix"/>, for forgetting one widget or one window at
-    /// once.
+    /// Drops every entry whose key starts with <paramref name="keyPrefix"/>.
     /// </summary>
     /// <param name="keyPrefix">The key prefix to match.</param>
     /// <returns>How many entries were removed.</returns>
@@ -247,7 +236,7 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// Drops every entry. Widgets fall back to their defaults on the next frame.
+    /// Drops every entry.
     /// </summary>
     public static void Clear()
     {
@@ -261,7 +250,7 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// Writes the file now rather than waiting out <see cref="SaveDelay"/>. Does nothing when there is nothing to write.
+    /// Writes the file now rather than waiting out <see cref="SaveDelay"/>.
     /// </summary>
     public static void Save()
     {
@@ -290,7 +279,7 @@ public static class NoireUiState
     }
 
     /// <summary>
-    /// Forgets everything held in memory and reads the file again on the next access. Anything unsaved is lost.
+    /// Forgets everything held in memory and reads the file again on the next access; anything unsaved is lost.
     /// </summary>
     public static void Reload()
     {
@@ -347,9 +336,7 @@ public static class NoireUiState
         _ = DebounceHelper.DebounceAsync(SaveDebounceKey, SaveDelay, Save);
     }
 
-    /// <summary>
-    /// Resolves the state file path, or null when there is no plugin directory to put it in (unit tests).
-    /// </summary>
+    // Null when there is no plugin directory to put the state file in (unit tests).
     private static string? ResolvePath()
         => !string.IsNullOrWhiteSpace(filePathOverride) ? filePathOverride : FileHelper.GetPluginConfigFilePath(fileName);
 }

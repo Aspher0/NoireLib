@@ -10,19 +10,7 @@ namespace NoireLib.UI;
 /// A list whose rows can be dragged into a different order, with a grip to take hold of, a gap showing where a row
 /// will land, per-row actions, keyboard reordering and an empty state.
 /// </summary>
-/// <remarks>Flat lists only. The widget reorders your list in place and never holds a copy.</remarks>
-/// <example>
-/// <code>
-/// var list = new NoireReorderableList&lt;string&gt;("steps", config.Steps)
-/// {
-///     Label = step =&gt; step,
-///     AllowDelete = true,
-/// };
-///
-/// if (list.Draw())
-///     config.Save();
-/// </code>
-/// </example>
+/// <remarks>Flat lists only; the widget reorders your list in place and never holds a copy.</remarks>
 /// <typeparam name="T">The row type.</typeparam>
 [NoireFacadeFactory]
 public sealed partial class NoireReorderableList<T>
@@ -32,7 +20,7 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Creates a reorderable list.
     /// </summary>
-    /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
+    /// <param name="id">A stable id for the widget; a random one is generated when <see langword="null"/>.</param>
     /// <param name="items">The list to reorder, in place.</param>
     public NoireReorderableList(string? id = null, IList<T>? items = null)
     {
@@ -46,7 +34,7 @@ public sealed partial class NoireReorderableList<T>
     public string Id { get; }
 
     /// <summary>
-    /// The list being reordered. Held rather than copied, so a reorder is a reorder of yours.
+    /// The list being reordered, held rather than copied.
     /// </summary>
     public IList<T> Items
     {
@@ -54,7 +42,7 @@ public sealed partial class NoireReorderableList<T>
         set => items = value ?? new List<T>();
     }
 
-    /// <summary>What each row is called. When <see langword="null"/>, the row's own <c>ToString</c>.</summary>
+    /// <summary>What each row is called; the row's own <c>ToString</c> when <see langword="null"/>.</summary>
     public Func<T, string>? Label { get; set; }
 
     /// <summary>Paints a row instead of its label.</summary>
@@ -62,39 +50,30 @@ public sealed partial class NoireReorderableList<T>
 
     #region Behaviour
 
-    /// <summary>Whether each row carries a button that removes it. Off by default.</summary>
+    /// <summary>Whether each row carries a button that removes it.</summary>
     public bool AllowDelete { get; set; }
 
-    /// <summary>Whether each row carries a button that copies it in below itself. Off by default.</summary>
+    /// <summary>Whether each row carries a button that copies it in below itself.</summary>
     public bool AllowDuplicate { get; set; }
 
     /// <summary>
-    /// Copies a row for <see cref="AllowDuplicate"/>. When <see langword="null"/>, the row itself is added again.
+    /// Copies a row for <see cref="AllowDuplicate"/>; the row itself is added again when <see langword="null"/>.
     /// </summary>
-    /// <remarks>
-    /// For anything mutable, give this, or the duplicate and the original are one object and editing either edits both.
-    /// </remarks>
     public Func<T, T>? Duplicate { get; set; }
 
-    /// <summary>Whether the focused row moves with the arrow keys while a modifier is held. On by default.</summary>
+    /// <summary>Whether the focused row moves with the arrow keys while a modifier is held.</summary>
     public bool AllowKeyboard { get; set; } = true;
 
     /// <summary>
-    /// The binding that moves the focused row up. The up arrow by default.
+    /// The binding that moves the focused row up.
     /// </summary>
-    /// <remarks>
-    /// Modifiers are matched exactly. Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>; read
-    /// <see cref="ResolvedMoveUpBinding"/> for the one actually in force.
-    /// </remarks>
+    /// <remarks>Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>.</remarks>
     public HotkeyBinding MoveUpBinding { get; set; } = VirtualKey.UP;
 
     /// <summary>
-    /// The binding that moves the focused row down. The down arrow by default.
+    /// The binding that moves the focused row down.
     /// </summary>
-    /// <remarks>
-    /// Modifiers are matched exactly. Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>; read
-    /// <see cref="ResolvedMoveDownBinding"/> for the one actually in force.
-    /// </remarks>
+    /// <remarks>Ignored while a hotkey is attached through <see cref="BindReorderHotkeys"/>.</remarks>
     public HotkeyBinding MoveDownBinding { get; set; } = VirtualKey.DOWN;
 
     /// <summary>The binding actually moving a row up: the attached hotkey's when there is one.</summary>
@@ -131,7 +110,6 @@ public sealed partial class NoireReorderableList<T>
 
     /// <summary>
     /// Detaches the hotkeys, so the keys fall back to <see cref="MoveUpBinding"/> and <see cref="MoveDownBinding"/>.
-    /// Safe to call when none are attached.
     /// </summary>
     /// <returns>This instance, for chaining.</returns>
     public NoireReorderableList<T> UnbindReorderHotkeys()
@@ -149,10 +127,7 @@ public sealed partial class NoireReorderableList<T>
     /// <summary>
     /// Whether an attached hotkey swallows the key from the game while the shortcut is actually live.
     /// </summary>
-    /// <remarks>
-    /// Only applies with hotkeys attached through <see cref="BindReorderHotkeys"/>. A local binding has no entry to
-    /// block with.
-    /// </remarks>
+    /// <remarks>Only applies with hotkeys attached through <see cref="BindReorderHotkeys"/>.</remarks>
     public bool BlockGameInputWhileActive { get; set; } = true;
 
     private NoireHotkeyManager? hotkeys;
@@ -162,10 +137,6 @@ public sealed partial class NoireReorderableList<T>
     private int blockRenewedOnFrame = -1;
     private bool watchdogAttached;
 
-    /// <summary>
-    /// Raises or restores the game-input blocking on the attached hotkeys.
-    /// </summary>
-    /// <param name="live">Whether the shortcut can currently do anything.</param>
     internal void ApplyInputBlocking(bool live)
     {
         if (live && BlockGameInputWhileActive && hotkeys != null)
@@ -179,9 +150,6 @@ public sealed partial class NoireReorderableList<T>
         ReleaseInputBlocking();
     }
 
-    /// <summary>
-    /// Raises the block if it is not already up, and marks it as wanted for this frame.
-    /// </summary>
     private void RenewInputBlocking()
     {
         blockRenewedOnFrame = NoireUI.FrameCount;
@@ -195,9 +163,7 @@ public sealed partial class NoireReorderableList<T>
         AttachWatchdog();
     }
 
-    /// <summary>
-    /// Puts the keys back, leaving the hotkeys' own settings exactly as they were found.
-    /// </summary>
+    // Puts the keys back, leaving the hotkeys' own settings exactly as they were found.
     private void ReleaseInputBlocking()
     {
         DetachWatchdog();
@@ -210,9 +176,7 @@ public sealed partial class NoireReorderableList<T>
         ApplyBlockingTo(downHotkeyId, false);
     }
 
-    /// <summary>
-    /// Watches for the list going quiet while it still holds the keys, and hands them back when it does.
-    /// </summary>
+    // Watches for the list going quiet while it still holds the keys, and hands them back when it does.
     private void OnBlockWatchdog(Dalamud.Plugin.Services.IFramework framework)
     {
         if (blockRaised && NoireUI.FrameCount - blockRenewedOnFrame > 1)
@@ -244,9 +208,6 @@ public sealed partial class NoireReorderableList<T>
             NoireService.Framework.Update -= OnBlockWatchdog;
     }
 
-    /// <summary>
-    /// Takes one hotkey's key from the game while the shortcut is live, and gives it back otherwise.
-    /// </summary>
     private void ApplyBlockingTo(string? hotkeyId, bool live)
     {
         if (hotkeyId == null || hotkeys == null || !hotkeys.TryGetHotkey(hotkeyId, out var entry))
@@ -258,9 +219,7 @@ public sealed partial class NoireReorderableList<T>
             entry.ReleaseGameInputSuppression();
     }
 
-    /// <summary>
-    /// The binding in force for one of the two directions, preferring an attached hotkey over the local one.
-    /// </summary>
+    // The binding in force, preferring an attached hotkey over the local one.
     private HotkeyBinding Resolve(string? hotkeyId, HotkeyBinding local)
     {
         if (hotkeys == null || hotkeyId == null)
@@ -272,11 +231,11 @@ public sealed partial class NoireReorderableList<T>
     }
 
     /// <summary>
-    /// Whether a drag can start anywhere on a row rather than on its grip alone. Off by default.
+    /// Whether a drag can start anywhere on a row rather than on its grip alone.
     /// </summary>
     public bool DragAnywhere { get; set; }
 
-    /// <summary>The height of a row in real pixels. Zero measures it from the text.</summary>
+    /// <summary>The height of a row in real pixels; zero measures it from the text.</summary>
     public float RowHeight { get; set; }
 
     /// <summary>What is shown when the list is empty.</summary>
@@ -289,11 +248,7 @@ public sealed partial class NoireReorderableList<T>
 
     #region Reordering, as logic
 
-    /// <summary>Moves a row to another position, shifting everything between them along.</summary>
-    /// <param name="list">The list to reorder in place.</param>
-    /// <param name="from">Where the row is now.</param>
-    /// <param name="to">Where it should end up, as a position in the list after the move.</param>
-    /// <returns>True when anything moved.</returns>
+    // The target is a position in the list after the move.
     internal static bool MoveItem(IList<T> list, int from, int to)
     {
         if (list == null || from == to)
@@ -315,15 +270,7 @@ public sealed partial class NoireReorderableList<T>
         return true;
     }
 
-    /// <summary>
-    /// Which row a pointer position falls on.
-    /// </summary>
-    /// <remarks>A pointer above or below the list clamps to its ends.</remarks>
-    /// <param name="pointerY">Where the pointer is.</param>
-    /// <param name="listTop">Where the first row starts.</param>
-    /// <param name="rowStep">How far apart two rows start, height and spacing together.</param>
-    /// <param name="count">How many rows there are.</param>
-    /// <returns>The row the pointer is over.</returns>
+    // A pointer above or below the list clamps to its ends.
     internal static int ResolveSlot(float pointerY, float listTop, float rowStep, int count)
     {
         if (count <= 0)
@@ -336,11 +283,7 @@ public sealed partial class NoireReorderableList<T>
         return Math.Clamp(slot, 0, count - 1);
     }
 
-    /// <summary>Moves a row up or down by one.</summary>
-    /// <param name="list">The list to reorder in place.</param>
-    /// <param name="index">The row to move.</param>
-    /// <param name="offset">How far, usually -1 or 1.</param>
-    /// <returns>The row's new index, or the old one when it did not move.</returns>
+    // Returns the row's new index, or the old one when it did not move.
     internal static int Nudge(IList<T> list, int index, int offset)
     {
         if (list == null || index < 0 || index >= list.Count)
@@ -429,9 +372,6 @@ public sealed partial class NoireReorderableList<T>
 
     #endregion
 
-    /// <summary>
-    /// The text a row shows, falling back to its own <c>ToString</c>.
-    /// </summary>
     private string LabelOf(T item)
     {
         if (Label == null)

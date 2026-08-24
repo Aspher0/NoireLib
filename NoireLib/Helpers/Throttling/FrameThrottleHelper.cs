@@ -22,12 +22,7 @@ public static class FrameThrottleHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_FrameThrottleHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a frame throttler for the specified key with the given interval.
-    /// </summary>
-    /// <param name="key">The key to identify this throttle instance.</param>
-    /// <param name="interval">The interval in game frames between executions for this key.</param>
-    /// <returns>The throttler instance for the specified key.</returns>
+    // Gets or creates a frame throttler for the specified key with the given interval.
     private static FrameThrottler GetOrCreateThrottler(string key, long interval)
     {
         if (string.IsNullOrEmpty(key))
@@ -175,9 +170,6 @@ public static class FrameThrottleHelper
         _throttlers.Clear();
     }
 
-    /// <summary>
-    /// Disposes the FrameThrottleHelper by clearing all throttler states.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

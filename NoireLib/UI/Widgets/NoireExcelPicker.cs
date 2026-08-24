@@ -13,26 +13,11 @@ namespace NoireLib.UI;
 /// <summary>
 /// A searchable, icon-rich picker over any sheet of game data, filtered fuzzily and drawn with icons.
 /// </summary>
-/// <remarks>The sheet is read once on a background thread; nothing here needs the framework thread.</remarks>
 /// <typeparam name="TRow">The Excel row type, for example <c>Lumina.Excel.Sheets.Item</c>.</typeparam>
-/// <example>
-/// <code>
-/// var items = new NoireExcelPicker&lt;Item&gt;("itemPicker", row =&gt; row.Name.ExtractText())
-/// {
-///     Icon = row =&gt; row.Icon,
-///     Include = row =&gt; row.ItemSearchCategory.RowId != 0,   // things a player can actually hold
-/// };
-///
-/// if (items.Draw())
-///     config.ItemId = items.SelectedRowId;
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
 {
-    /// <summary>
-    /// Serializes sheet reads across every picker in the plugin.
-    /// </summary>
+    // Serializes sheet reads across every picker in the plugin.
     private static readonly SemaphoreSlim SheetGate = new(1, 1);
 
     private readonly Dictionary<uint, UiImageSource> icons = new();
@@ -45,11 +30,8 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Creates a picker.
     /// </summary>
-    /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
-    /// <param name="display">
-    /// How a row's name is read. When <see langword="null"/>, the row's <c>ToString()</c> is used, which is almost
-    /// never what you want: a sheet row usually needs something like <c>row.Name.ExtractText()</c>.
-    /// </param>
+    /// <param name="id">A stable id for the widget; a random one is generated when <see langword="null"/>.</param>
+    /// <param name="display">How a row's name is read; the row's <c>ToString()</c> when <see langword="null"/>.</param>
     public NoireExcelPicker(string? id = null, Func<TRow, string>? display = null)
     {
         Display = display ?? (row => row.ToString() ?? string.Empty);
@@ -72,31 +54,30 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     public NoireComboBox<ExcelPickerEntry<TRow>> Combo { get; }
 
     /// <summary>
-    /// How a row's name is read. Changing it takes effect on the next <see cref="Reload"/>.
+    /// How a row's name is read; changing it takes effect on the next <see cref="Reload"/>.
     /// </summary>
     public Func<TRow, string> Display { get; set; }
 
     /// <summary>
-    /// How a row's icon id is read. When <see langword="null"/>, no icons are drawn.
+    /// How a row's icon id is read; no icons are drawn when <see langword="null"/>.
     /// </summary>
     public Func<TRow, uint>? Icon { get; set; }
 
     /// <summary>
-    /// Which rows the picker offers. When <see langword="null"/>, all of them.
+    /// Which rows the picker offers; all of them when <see langword="null"/>.
     /// </summary>
     public Func<TRow, bool>? Include { get; set; }
 
-    /// <summary>Whether rows whose name is empty are dropped. On by default.</summary>
+    /// <summary>Whether rows whose name is empty are dropped.</summary>
     public bool SkipEmptyNames { get; set; } = true;
 
     /// <summary>
-    /// The language the sheet is read in. When <see langword="null"/>, the client's own.<br/>
-    /// Changing it reloads the picker, because the names are what changed.
+    /// The language the sheet is read in; the client's own when <see langword="null"/>.
     /// </summary>
     public ClientLanguage? Language { get; set; }
 
     /// <summary>
-    /// The size of the icon beside each row, at 100%. See <see cref="NoireUI.Scale"/>.
+    /// The size of the icon beside each row, at 100%.
     /// </summary>
     public float IconSize { get; set; } = 20f;
 
@@ -106,7 +87,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     public string LoadingText { get; set; } = "Loading...";
 
     /// <summary>
-    /// The hint shown in the search box. Forwarded to <see cref="Combo"/>.
+    /// The hint shown in the search box.
     /// </summary>
     public string FilterHint
     {
@@ -115,7 +96,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     }
 
     /// <summary>
-    /// The text shown when nothing is selected. Forwarded to <see cref="Combo"/>.
+    /// The text shown when nothing is selected.
     /// </summary>
     public string PreviewPlaceholder
     {
@@ -144,7 +125,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>The selected row, or <see langword="null"/> when nothing is selected.</summary>
     public TRow? Selected => Combo.SelectedIndex >= 0 ? Combo.SelectedItem.Row : null;
 
-    /// <summary>The selected row's id. <see langword="null"/> when nothing is selected.</summary>
+    /// <summary>The selected row's id; <see langword="null"/> when nothing is selected.</summary>
     public uint? SelectedRowId => Combo.SelectedIndex >= 0 ? Combo.SelectedItem.RowId : null;
 
     #endregion
@@ -172,10 +153,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
         return Combo.Draw();
     }
 
-    /// <summary>
-    /// Draws a disabled stand-in in the picker's place while the sheet is being read, so the layout does not jump when
-    /// it arrives.
-    /// </summary>
+    // A disabled stand-in while the sheet is being read, so the layout does not jump when it arrives.
     private void DrawLoadingPlaceholder()
     {
         using var disabled = UiPush.Disabled();
@@ -187,9 +165,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
             ImGui.EndCombo();
     }
 
-    /// <summary>
-    /// Draws one row: its icon, then the combo's own label so the filter highlighting still applies.
-    /// </summary>
+    // Draws the icon, then the combo's own label so the filter highlighting still applies.
     private void DrawRow(UiComboItemDraw<ExcelPickerEntry<TRow>> option)
     {
         var size = NoireUI.Scaled(IconSize);
@@ -237,9 +213,6 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     #region Selection
 
     /// <summary>Selects a row by its id.</summary>
-    /// <remarks>
-    /// Safe to call before the sheet has been read: the request is remembered and applied when the rows arrive.
-    /// </remarks>
     /// <param name="rowId">The row id to select.</param>
     /// <returns>True when the row was found and selected.</returns>
     public bool Select(uint rowId)
@@ -286,16 +259,12 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
     /// <summary>
     /// Reads the sheet again, for when <see cref="Display"/>, <see cref="Include"/> or <see cref="Icon"/> has changed.
     /// </summary>
-    /// <remarks>A language change reloads on its own.</remarks>
     public void Reload()
     {
         loadedLanguage = null;
         loadRequested = false;
     }
 
-    /// <summary>
-    /// Starts reading the sheet if it has not been read for the current language.
-    /// </summary>
     private void EnsureLoaded()
     {
         var language = Language ?? (NoireService.IsInitialized() ? NoireService.ClientState.ClientLanguage : ClientLanguage.English);
@@ -312,9 +281,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
         _ = LoadAsync(language);
     }
 
-    /// <summary>
-    /// Reads the sheet off the draw thread and hands the rows back on it.
-    /// </summary>
+    // Reads the sheet off the draw thread and hands the rows back on it.
     private async Task LoadAsync(ClientLanguage language)
     {
         List<ExcelPickerEntry<TRow>>? built = null;
@@ -345,10 +312,7 @@ public sealed class NoireExcelPicker<TRow> where TRow : struct, IExcelRow<TRow>
         });
     }
 
-    /// <summary>
-    /// Materializes the sheet into entries: the display text built once, the icon id read once, the rows the consumer
-    /// does not want dropped.
-    /// </summary>
+    // The display text is built once and the icon id read once.
     private List<ExcelPickerEntry<TRow>> BuildEntries(ClientLanguage language)
     {
         var built = new List<ExcelPickerEntry<TRow>>();

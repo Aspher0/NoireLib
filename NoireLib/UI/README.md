@@ -1885,7 +1885,7 @@ new BadgeStyle
 }
 ```
 
-**A badge is never moved to fit.** It straddles the corner it is anchored to and stays there, wherever the element goes. Somewhere it may not overflow, clip rather than reposition: a badge belongs to its element, so it should leave with it. `NoireTabBar` clips to the ends of its bar, which is why a tab scrolled halfway off has half a badge and one scrolled off entirely has none, the same thing the tab itself does. Pushing the badge back inside instead would strand it at the edge, still showing a count for a tab that is no longer there.
+**A badge is never moved to fit.** It straddles the corner it is anchored to and stays there, wherever the element goes. Somewhere it may not overflow, clip rather than reposition: a badge belongs to its element, so it should leave with it. `NoireTabBar` clips to the ends of its bar: a tab scrolled halfway off has half a badge, one scrolled off entirely has none, the same as the tab itself. Pushing the badge back inside would strand it at the edge, still counting for a tab that is no longer there.
 
 **`Scale` is the size knob.** Every measurement below it is also settable on its own, but growing a badge that way means keeping five numbers in proportion by hand:
 

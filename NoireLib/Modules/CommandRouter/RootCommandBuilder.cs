@@ -11,9 +11,6 @@ public sealed class RootCommandBuilder
     private readonly NoireCommandRouter router;
     private readonly RootCommandRegistration registration;
 
-    /// <summary>Creates a root command builder for a registration.</summary>
-    /// <param name="router">The router owning the registration.</param>
-    /// <param name="registration">The underlying registration to configure.</param>
     internal RootCommandBuilder(NoireCommandRouter router, RootCommandRegistration registration)
     {
         this.router = router;

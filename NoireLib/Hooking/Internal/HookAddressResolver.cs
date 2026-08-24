@@ -4,10 +4,8 @@ using System.Reflection;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// Turns a <see cref="HookTarget"/> into a function address. Symbol and import targets have no address until
-/// Dalamud resolves them, so they come back as zero and are verified after creation.
-/// </summary>
+// Turns a HookTarget into a function address. Symbol and import targets have no address until Dalamud resolves them,
+// so they come back as zero and are verified after creation.
 internal static class HookAddressResolver
 {
     private const BindingFlags StaticMembers = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
@@ -15,11 +13,7 @@ internal static class HookAddressResolver
 
     private static readonly ConcurrentDictionary<Type, FieldInfo> AddressFields = new();
 
-    /// <summary>
-    /// Resolves the address a target points at, or zero when it cannot be resolved yet.
-    /// </summary>
-    /// <param name="target">The target to resolve.</param>
-    /// <returns>The address, or zero.</returns>
+    // Resolves the address a target points at, or zero when it cannot be resolved yet.
     public static unsafe nint Resolve(HookTarget target)
     {
         ArgumentNullException.ThrowIfNull(target);
@@ -49,11 +43,7 @@ internal static class HookAddressResolver
         }
     }
 
-    /// <summary>
-    /// Scans the game module for a signature, following a leading relative call or jump to the function it targets.
-    /// </summary>
-    /// <param name="signature">The byte signature.</param>
-    /// <returns>The address, or zero when the bytes are not present.</returns>
+    // Scans the game module for a signature, following a leading relative call or jump to the function it targets.
     public static nint ScanSignature(string signature)
     {
         if (!NoireService.IsInitialized())
@@ -71,12 +61,7 @@ internal static class HookAddressResolver
         }
     }
 
-    /// <summary>
-    /// Reads the address XIVClientStructs holds for the function the delegate describes.
-    /// </summary>
-    /// <param name="delegateType">A delegate nested in a XIVClientStructs <c>Delegates</c> container.</param>
-    /// <returns>The address.</returns>
-    /// <exception cref="InvalidOperationException">The delegate is not shaped like a XIVClientStructs delegate, or its address is unresolved.</exception>
+    // Reads the address XIVClientStructs holds for the function the delegate describes.
     public static nint ResolveClientStructs(Type delegateType)
     {
         ArgumentNullException.ThrowIfNull(delegateType);
@@ -92,11 +77,7 @@ internal static class HookAddressResolver
         return address;
     }
 
-    /// <summary>
-    /// Finds the XIVClientStructs type that declares the function a delegate describes.
-    /// </summary>
-    /// <param name="delegateType">The delegate type.</param>
-    /// <returns>The declaring type, or null when the delegate is not a XIVClientStructs delegate.</returns>
+    // Finds the XIVClientStructs type that declares the function a delegate describes.
     public static Type? FindOwnerType(Type delegateType)
     {
         var container = delegateType.DeclaringType;
@@ -115,11 +96,7 @@ internal static class HookAddressResolver
             ?? throw new InvalidOperationException($"'{addressesType.FullName}' declares no address field named '{delegateType.Name}'.");
     }
 
-    /// <summary>
-    /// Reads the pointer out of a XIVClientStructs address entry, whichever shape it takes.
-    /// </summary>
-    /// <param name="addressValue">The address entry.</param>
-    /// <returns>The pointer, or zero when it holds none.</returns>
+    // Reads the pointer out of a XIVClientStructs address entry, whichever shape it takes.
     public static nint ExtractPointer(object addressValue)
     {
         switch (addressValue)

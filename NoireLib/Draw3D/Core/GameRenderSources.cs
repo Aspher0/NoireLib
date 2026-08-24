@@ -13,22 +13,17 @@ using RenderTargetManager = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Rend
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Draw3D's render sources: the game's D3D11 device, backbuffer, scene depth and camera, plus the composite's
-/// nameplate and HUD policy rects and the decal actor exclusions. Every read goes through named fields on
-/// <c>Instance()</c> singletons: no signatures, no offsets, no hooks.<br/>
-/// Addon geometry is not read here; it comes from <see cref="AddonHelper"/>.<br/>
-/// All methods return raw values only; COM lifetime management happens in the callers.
-/// </summary>
+// Draw3D's render sources: the game's D3D11 device, backbuffer, scene depth and camera, plus the composite's
+// nameplate and HUD policy rects and the decal actor exclusions. Every read goes through named fields on Instance()
+// singletons: no signatures, no offsets, no hooks. Addon geometry is not read here; it comes from AddonHelper. All
+// methods return raw values only; COM lifetime management happens in the callers.
 internal static unsafe class GameRenderSources
 {
-    /// <summary>Raw backbuffer information for the current frame.</summary>
     internal readonly record struct BackBufferInfo(nint Texture, uint Width, uint Height);
 
-    /// <summary>Raw scene-depth texture information for the current frame. Value-equality is used for change detection.</summary>
+    // Raw scene-depth texture information for the current frame. Value-equality is used for change detection.
     internal readonly record struct DepthTextureInfo(nint Texture, nint GameSrv, uint ActualWidth, uint ActualHeight, uint AllocatedWidth, uint AllocatedHeight);
 
-    /// <summary>Raw camera state for the current frame.</summary>
     internal struct CameraData
     {
         /// <summary>Render camera view matrix (valid when <see cref="HasRenderCamera"/>).</summary>
@@ -187,10 +182,10 @@ internal static unsafe class GameRenderSources
         return data.HasRenderCamera || data.HasControlViewProj;
     }
 
-    /// <summary>Slack (framebuffer pixels) added around each nameplate policy rect - see the padding note at its use.</summary>
+    // Slack (framebuffer pixels) added around each nameplate policy rect - see the padding note at its use.
     private const float PlateRectPadding = 6f;
 
-    /// <summary>The smallest rect containing both (xy = min, zw = max).</summary>
+    // The smallest rect containing both (xy = min, zw = max).
     private static Vector4 Union(in Vector4 a, in Vector4 b)
         => new(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Max(a.Z, b.Z), MathF.Max(a.W, b.W));
 
@@ -389,7 +384,8 @@ internal static unsafe class GameRenderSources
         }
     }
 
-    /// <summary>Default <see cref="CollectActorExclusions(List{ExcludeVolume}, int, Func{IGameObject, bool}, float)"/> filter: characters (players), monsters and NPCs.</summary>
+    // Default CollectActorExclusions(List{ExcludeVolume}, int, Func{IGameObject, bool}, float) filter: characters
+    // (players), monsters and NPCs.
     private static bool DefaultActorInclude(IGameObject o)
         => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 }

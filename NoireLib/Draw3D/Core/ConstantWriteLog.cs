@@ -6,24 +6,19 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Records every payload written to the game's small constant buffers during a few frames, rather than only
-/// the last one. A deferred renderer draws one light at a time through the same buffer, rewriting it per
-/// light, so a tracker that keeps only the final contents sees a single value that changes constantly and
-/// discards the lights precisely because there are many of them.
-/// </summary>
+// Records every payload written to the game's small constant buffers during a few frames, rather than only the last
+// one. A deferred renderer draws one light at a time through the same buffer, rewriting it per light, so a tracker
+// that keeps only the final contents sees a single value that changes constantly and discards the lights precisely
+// because there are many of them.
 internal sealed class ConstantWriteLog
 {
-    /// <summary>Payloads kept per armed run.</summary>
     private const int MaxRecords = 4096;
 
-    /// <summary>
-    /// Bytes kept per payload. Must cover a whole buffer, not a guessed-at prefix: a repeating layout is only
-    /// recognised when the rows after the first few are present too.
-    /// </summary>
+    // Bytes kept per payload. Must cover a whole buffer, not a guessed-at prefix: a repeating layout is only
+    // recognised when the rows after the first few are present too.
     private const int MaxRecordBytes = 512;
 
-    /// <summary>Rows printed on one line before a payload is broken out one row per line.</summary>
+    // Rows printed on one line before a payload is broken out one row per line.
     private const int InlineRowLimit = 6;
 
     private readonly List<WriteRecord> records = new(256);
@@ -302,7 +297,7 @@ internal sealed class ConstantWriteLog
         return sb.ToString();
     }
 
-    /// <summary>Prints two paired payloads row by row, marking the rows that differ.</summary>
+    // Prints two paired payloads row by row, marking the rows that differ.
     private static void AppendRowDiff(StringBuilder sb, byte[] before, byte[] after)
     {
         var rows = Math.Min(before.Length, after.Length) / 16;
@@ -323,7 +318,7 @@ internal sealed class ConstantWriteLog
         }
     }
 
-    /// <summary>How many 16-byte rows two payloads share at the same offset.</summary>
+    // How many 16-byte rows two payloads share at the same offset.
     private static int SharedRows(byte[] a, byte[] b)
     {
         var rows = Math.Min(a.Length, b.Length) / 16;
@@ -338,7 +333,6 @@ internal sealed class ConstantWriteLog
         return shared;
     }
 
-    /// <summary>Whether a payload set already holds these exact bytes.</summary>
     private static bool Contains(IReadOnlyList<byte[]> payloads, byte[] candidate)
     {
         foreach (var payload in payloads)
@@ -350,11 +344,9 @@ internal sealed class ConstantWriteLog
         return false;
     }
 
-    /// <summary>
-    /// Writes one payload out as rows, flagging the ones shaped like a colour or a position.<br/>
-    /// Anything past a handful of rows goes one row per line with its index: a repeating record is spotted by
-    /// seeing the same kind of row recur at a fixed spacing, and a single wrapped line hides exactly that.
-    /// </summary>
+    // Writes one payload out as rows, flagging the ones shaped like a colour or a position. Anything past a handful
+    // of rows goes one row per line with its index: a repeating record is spotted by seeing the same kind of row
+    // recur at a fixed spacing, and a single wrapped line hides exactly that.
     private static void AppendPayload(StringBuilder sb, int index, byte[] payload)
     {
         var rows = payload.Length / 16;
@@ -383,11 +375,10 @@ internal sealed class ConstantWriteLog
         }
     }
 
-    /// <summary>Reads one 16-byte row of a payload as a vector.</summary>
+    // Reads one 16-byte row of a payload as a vector.
     private static Vector4 Row(byte[] payload, int index)
         => BufferHelper.ReadVector4(payload, index * 16);
 
-    /// <summary>Appends one row with a shape hint.</summary>
     private static void AppendRow(StringBuilder sb, Vector4 v)
     {
         sb.Append($"({v.X,10:F3},{v.Y,10:F3},{v.Z,10:F3},{v.W,10:F3})");

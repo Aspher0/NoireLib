@@ -9,12 +9,10 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Captures the camera constants the GPU rasterizes the world with by tapping the cbuffer upload paths
-/// (<c>UpdateSubresource</c>, <c>Map</c>/<c>Unmap</c>). The lock identity is an (offset, layout) family across a
-/// size class of buffers, never a single pointer, and matching compares the X/Y/W columns only. Any failure falls
-/// back to the CPU camera struct snapshot.
-/// </summary>
+// Captures the camera constants the GPU rasterizes the world with by tapping the cbuffer upload paths
+// (UpdateSubresource, Map/Unmap). The lock identity is an (offset, layout) family across a size class of buffers,
+// never a single pointer, and matching compares the X/Y/W columns only. Any failure falls back to the CPU camera
+// struct snapshot.
 internal sealed unsafe class CameraConstantCapture : IDisposable
 {
     // ID3D11DeviceContext vtable slots (base interface numbering).
@@ -47,7 +45,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private const int LockStreak = 12;
     private const int UnlockAfterInvalidCommits = 90;
 
-    /// <summary>Window layouts the matcher can lock on.</summary>
     internal enum MatrixForm : byte
     {
         /// <summary>Row-major bytes match the row-vector View*Proj directly.</summary>
@@ -67,7 +64,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void CopySubresourceRegionFn(nint context, nint dstResource, uint dstSubresource, uint dstX, uint dstY, uint dstZ, nint srcResource, uint srcSubresource, nint srcBox);
 
-    /// <summary>A cbuffer observed during discovery: identity, payload, per-frame best match, probe bookkeeping.</summary>
+    // A cbuffer observed during discovery: identity, payload, per-frame best match, probe bookkeeping.
     private struct TrackedBuffer
     {
         public nint Ptr;
@@ -96,10 +93,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         public nint Data;
     }
 
-    /// <summary>
-    /// A candidate lock target: an (offset, layout) window family and the member buffers it has been seen in.
-    /// Streaks are per family, never per buffer, since the camera write rotates across the member buffers.
-    /// </summary>
+    // A candidate lock target: an (offset, layout) window family and the member buffers it has been seen in. Streaks
+    // are per family, never per buffer, since the camera write rotates across the member buffers.
     private struct Family
     {
         public int Offset;
@@ -244,7 +239,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private int probeFramesRemaining;
     private int fullCaptureFramesRemaining;
 
-    /// <summary>Records every payload rather than only the last one per buffer. Idle unless armed.</summary>
+    // Records every payload rather than only the last one per buffer. Idle unless armed.
     private readonly ConstantWriteLog writeLog = new();
     private bool probeArmed;
 
@@ -423,7 +418,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     /// <summary>Whether the tap should keep its draw hooks enabled: the commit runs at the main pass's first draw.</summary>
     public bool WantsDrawSignal => active;
 
-    /// <summary>Draws a locked commit may retry across while the frame's fresh main-view upload has not landed.</summary>
+    // Draws a locked commit may retry across while the frame's fresh main-view upload has not landed.
     private const int CommitRetryDraws = 96;
     private int commitRetriesLeft;
 
@@ -551,8 +546,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    /// <summary>Stores the phase reference for the next frame's scoring and validation, and advances the probe clock.</summary>
-    /// <param name="refVp">This frame's struct-composed view-projection.</param>
+    // Stores the phase reference for the next frame's scoring and validation, and advances the probe clock.
     private void FinishCommitFrame(in Matrix4x4 refVp)
     {
         lastCommitRefVp = refVp;
@@ -743,9 +737,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return 0;
     }
 
-    /// <summary>Whether the pointer is already a tracked buffer, without learning it.</summary>
-    /// <param name="ptr">The resource pointer.</param>
-    /// <returns>True when the pointer occupies a tracked slot.</returns>
+    // Whether the pointer is already a tracked buffer, without learning it.
     private bool IsObservedBuffer(nint ptr)
     {
         for (var i = 0; i < trackedCount; i++)
@@ -776,12 +768,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             ignoredCount++;
     }
 
-    /// <summary>
-    /// Finds the tracked slot for a buffer, learning it on first sight with a budgeted QI and GetDesc. Only
-    /// constant buffers within the size bounds enter the table.
-    /// </summary>
-    /// <param name="ptr">The resource pointer.</param>
-    /// <returns>The tracked slot index, or -1 for an unknown, over-budget or ignored pointer.</returns>
+    // Finds the tracked slot for a buffer, learning it on first sight with a budgeted QI and GetDesc. Only constant
+    // buffers within the size bounds enter the table.
     private int FindOrLearn(nint ptr)
     {
         for (var i = 0; i < trackedCount; i++)
@@ -834,11 +822,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return Learn(slotIdx, ptr, (int)desc.ByteWidth);
     }
 
-    /// <summary>
-    /// Takes a tracked slot for a new buffer, appending while capacity remains and otherwise evicting round-robin
-    /// an entry with no update this discovery (a freed buffer's stale pointer).
-    /// </summary>
-    /// <returns>The slot index, or -1 when every slot is live.</returns>
+    // Takes a tracked slot for a new buffer, appending while capacity remains and otherwise evicting round-robin an
+    // entry with no update this discovery (a freed buffer's stale pointer).
     private int AcquireTrackedSlot()
     {
         if (trackedCount < MaxTrackedBuffers)
@@ -875,14 +860,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return slotIdx;
     }
 
-    /// <summary>
-    /// Copies an upload payload into the tracker while discovering, or extracts the locked window once locked.
-    /// </summary>
-    /// <param name="resource">The destination buffer pointer.</param>
-    /// <param name="data">The source bytes.</param>
-    /// <param name="sourceOffset">Byte offset into the destination buffer the source starts at.</param>
-    /// <param name="sourceLength">Valid bytes at <paramref name="data"/>, <see cref="int.MaxValue"/> for a whole-buffer source.</param>
-    /// <param name="mechanism">Bit 1 for UpdateSubresource, bit 2 for Map/Unmap.</param>
+    // Copies an upload payload into the tracker while discovering, or extracts the locked window once locked.
     private void CapturePayload(nint resource, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
         // Recorded first and independently of the tracking table, which holds only the final write and so cannot
@@ -954,13 +932,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    /// <summary>Copies an upload payload into a tracked buffer's byte store.</summary>
-    /// <param name="slot">The tracked buffer to copy into.</param>
-    /// <param name="data">The source bytes.</param>
-    /// <param name="sourceOffset">Byte offset into the destination buffer the source starts at.</param>
-    /// <param name="sourceLength">Valid bytes at <paramref name="data"/>.</param>
-    /// <param name="mechanism">Bit 1 for UpdateSubresource, bit 2 for Map/Unmap.</param>
-    /// <returns>False when there was nothing to copy.</returns>
+    // Copies an upload payload into a tracked buffer's byte store.
     private bool CopyPayloadBytes(ref TrackedBuffer slot, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
         if (slot.Bytes == null || sourceOffset < 0 || sourceOffset >= TrackedBytes)
@@ -980,11 +952,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Scores every window of a freshly captured small-buffer payload against the struct camera read now, keeping
-    /// the buffer's best match since the last commit. Budgeted per frame, and skipped when no struct camera is available.
-    /// </summary>
-    /// <param name="slot">The tracked buffer whose captured bytes are scored.</param>
+    // Scores every window of a freshly captured small-buffer payload against the struct camera read now, keeping the
+    // buffer's best match since the last commit. Budgeted per frame, and skipped when no struct camera is available.
     private void ScoreBufferNow(ref TrackedBuffer slot)
     {
         var windows = (Math.Min(slot.ValidBytes, slot.ByteWidth) - 64) / 16 + 1;
@@ -1070,11 +1039,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         commitFrames = 0;
     }
 
-    /// <summary>
-    /// Learns and marks the buffers bound to the VS at the main pass's first draw. Sampled at the first draw
-    /// rather than the OM bind, where the VS slots still hold the previous pass's buffers.
-    /// </summary>
-    /// <param name="ctx">The game's immediate context.</param>
+    // Learns and marks the buffers bound to the VS at the main pass's first draw. Sampled at the first draw rather
+    // than the OM bind, where the VS slots still hold the previous pass's buffers.
     private void LearnBoundBuffers(ID3D11DeviceContext* ctx)
     {
         var bound = stackalloc ID3D11Buffer*[VsSlotCount];
@@ -1120,11 +1086,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    /// <summary>
-    /// Runs one discovery step: merges the capture-time best matches and the larger buffers' last-write scan into
-    /// the family table, advances the winning family's streak, and locks when a stable strong winner emerges.
-    /// </summary>
-    /// <param name="refVp">This frame's struct-composed view-projection.</param>
+    // Runs one discovery step: merges the capture-time best matches and the larger buffers' last-write scan into the
+    // family table, advances the winning family's streak, and locks when a stable strong winner emerges.
     private void AdvanceDiscovery(in Matrix4x4 refVp)
     {
         var bestIdx = -1;
@@ -1367,14 +1330,9 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     // ---------------------------------------------------------------- locked commit
 
-    /// <summary>
-    /// Promotes the newest fresh pending upload that validates against the struct camera to this frame's commit.
-    /// Validation runs against both the draw-moment reference and the previous commit's reference, since uploads
-    /// carry the previous frame's camera phase. An upload already committed once is never re-committed.
-    /// </summary>
-    /// <param name="refVp">This frame's struct-composed view-projection.</param>
-    /// <param name="firstAttempt">Whether this is the frame's first commit attempt, for the counters.</param>
-    /// <returns>False when no fresh valid upload exists yet, in which case the caller retries on the next draw.</returns>
+    // Promotes the newest fresh pending upload that validates against the struct camera to this frame's commit.
+    // Validation runs against both the draw-moment reference and the previous commit's reference, since uploads carry
+    // the previous frame's camera phase. An upload already committed once is never re-committed.
     private bool TryCommitLocked(in Matrix4x4 refVp, bool firstAttempt)
     {
         var bestSeq = -1L;
@@ -1439,15 +1397,11 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     // ---------------------------------------------------------------- extrapolated commit (miss frames)
 
-    /// <summary>How many presents past the last real commit a prediction may reach, beyond which the struct fallback stands.</summary>
+    // How many presents past the last real commit a prediction may reach, beyond which the struct fallback stands.
     private const int MaxExtrapolateGap = 3;
 
-    /// <summary>
-    /// Predicts this frame's camera from the last two real commits at constant velocity and promotes it as the
-    /// commit when it validates against the same dual reference a real commit uses. A camera cut fails validation.
-    /// </summary>
-    /// <param name="refVp">This frame's struct-composed view-projection.</param>
-    /// <returns>True when a prediction was committed.</returns>
+    // Predicts this frame's camera from the last two real commits at constant velocity and promotes it as the commit
+    // when it validates against the same dual reference a real commit uses. A camera cut fails validation.
     private bool TryExtrapolateCommit(in Matrix4x4 refVp)
     {
         if (lastRealPresent < 0 || prevRealPresent < 0)
@@ -1478,15 +1432,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Advances the last real commit by the per-present delta between the last two, scaled to the presents being
-    /// bridged. Per-element linear extrapolation, exact for translation and a small-angle approximation for rotation.
-    /// </summary>
-    /// <param name="prev">The older of the two real commits.</param>
-    /// <param name="last">The newer of the two real commits.</param>
-    /// <param name="lastGap">Presents between the two commits, at least one.</param>
-    /// <param name="gap">Presents between the newer commit and the frame being predicted, at least one.</param>
-    /// <returns>The predicted view-projection.</returns>
+    // Advances the last real commit by the per-present delta between the last two, scaled to the presents being
+    // bridged. Per-element linear extrapolation, exact for translation and a small-angle approximation for rotation.
     internal static Matrix4x4 ExtrapolateCamera(in Matrix4x4 prev, in Matrix4x4 last, long lastGap, long gap)
     {
         var t = (float)gap / lastGap;
@@ -1495,15 +1442,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
     // ---------------------------------------------------------------- pure logic (unit-tested)
 
-    /// <summary>
-    /// Measures the normalized RMS error between a 16-float cbuffer window and a reference row-vector matrix.
-    /// The uploaded Z column legitimately differs from the struct-composed one, so it is normally skipped.
-    /// </summary>
-    /// <param name="window">The 16 floats read from the cbuffer payload.</param>
-    /// <param name="reference">The reference row-vector matrix.</param>
-    /// <param name="transposed">Whether the window holds the transpose of the reference layout.</param>
-    /// <param name="skipZColumn">Whether to exclude the third column from the comparison.</param>
-    /// <returns>The normalized RMS error, or NaN when the window holds non-finite values.</returns>
+    // Measures the normalized RMS error between a 16-float cbuffer window and a reference row-vector matrix. The
+    // uploaded Z column legitimately differs from the struct-composed one, so it is normally skipped.
     internal static float WindowError(ReadOnlySpan<float> window, in Matrix4x4 reference, bool transposed, bool skipZColumn)
     {
         Span<float> r = stackalloc float[16]
@@ -1541,11 +1481,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return (float)(Math.Sqrt(sumSq / n) / (Math.Sqrt(refSq / n) + 1e-6));
     }
 
-    /// <summary>Measures the <see cref="WindowError"/> metric between two matrices.</summary>
-    /// <param name="a">The candidate matrix.</param>
-    /// <param name="b">The reference matrix.</param>
-    /// <param name="skipZColumn">Whether to exclude the third column from the comparison.</param>
-    /// <returns>The normalized RMS error, or NaN when <paramref name="a"/> holds non-finite values.</returns>
     internal static float MatrixError(in Matrix4x4 a, in Matrix4x4 b, bool skipZColumn)
     {
         Span<float> av = stackalloc float[16]
@@ -1556,10 +1491,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return WindowError(av, in b, transposed: false, skipZColumn);
     }
 
-    /// <summary>Reads a 16-float window as a row-vector matrix, transposing when the window holds the transpose.</summary>
-    /// <param name="window">The 16 floats read from the cbuffer payload.</param>
-    /// <param name="transposed">Whether the window holds the transpose.</param>
-    /// <returns>The row-vector matrix.</returns>
+    // Reads a 16-float window as a row-vector matrix, transposing when the window holds the transpose.
     internal static Matrix4x4 ExtractMatrix(ReadOnlySpan<float> window, bool transposed)
     {
         var m = new Matrix4x4(
@@ -1570,14 +1502,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return transposed ? Matrix4x4.Transpose(m) : m;
     }
 
-    /// <summary>
-    /// Whether a commit belongs to the frame the caller is compositing. The inject path runs before its frame's
-    /// present boundary and the present-time path runs after it, so they expect different indices.
-    /// </summary>
-    /// <param name="commitIndex">Present index the commit was made at.</param>
-    /// <param name="presentIndex">Current present index.</param>
-    /// <param name="presentTimePath">True for the present-time composite, false for the pre-UI inject path.</param>
-    /// <returns>True when the commit is fresh for the caller's frame.</returns>
+    // Whether a commit belongs to the frame the caller is compositing. The inject path runs before its frame's
+    // present boundary and the present-time path runs after it, so they expect different indices.
     internal static bool IsCommitFresh(long commitIndex, long presentIndex, bool presentTimePath)
         => commitIndex >= 0 && commitIndex == (presentTimePath ? presentIndex - 1 : presentIndex);
 
@@ -1593,7 +1519,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         _ => "none observed",
     };
 
-    /// <summary>Logs the full discovery observation table (armed by <c>/noire3d cbprobe</c>).</summary>
+    // Logs the full discovery observation table (armed by /noire3d cbprobe).
     private void ReportProbe()
     {
         var sb = new StringBuilder();
@@ -1656,12 +1582,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         tap = null;
     }
 
-    /// <summary>
-    /// Builds the options for a hook on a device vtable slot: no guard, no counters and no verification, since
-    /// these run thousands of times per frame and the addresses are slots no symbol source describes.
-    /// </summary>
-    /// <param name="name">The hook name.</param>
-    /// <returns>The options.</returns>
+    // Builds the options for a hook on a device vtable slot: no guard, no counters and no verification, since these
+    // run thousands of times per frame and the addresses are slots no symbol source describes.
     private static HookOptions DeviceHookOptions(string name) => new()
     {
         Name = name,

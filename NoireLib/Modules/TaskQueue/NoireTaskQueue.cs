@@ -88,12 +88,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         NoireEventBus? eventBus = null)
         : base(moduleId, active, enableLogging, shouldProcessQueueAutomatically, shouldStopQueueOnComplete, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>, for internal module management only.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireTaskQueue(ModuleId? moduleId, bool active = true, bool enableLogging = true)
     : base(moduleId, active, enableLogging) { }
 
@@ -167,9 +162,6 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         return this;
     }
 
-    /// <summary>
-    /// Used to process the queue every frame.
-    /// </summary>
     private void OnFrameworkUpdate(IFramework framework)
     {
         if (!IsActive)
@@ -178,9 +170,7 @@ public partial class NoireTaskQueue : NoireModuleBase<NoireTaskQueue>
         TickOnce();
     }
 
-    /// <summary>
-    /// Runs a single queue processing pass, the same one a framework frame runs.
-    /// </summary>
+    // Runs a single queue processing pass, the same one a framework frame runs.
     internal void TickOnce()
     {
         if (QueueState != QueueState.Running)

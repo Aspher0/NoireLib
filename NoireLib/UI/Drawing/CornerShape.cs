@@ -11,6 +11,6 @@ public enum CornerShape
     /// <summary>An arc, the ordinary rounded corner.</summary>
     Rounded,
 
-    /// <summary>A straight cut across the corner at forty-five degrees, the chamfer art deco is built on.</summary>
+    /// <summary>A straight cut across the corner at forty-five degrees.</summary>
     Notched,
 }

@@ -7,10 +7,10 @@ namespace NoireLib.UI;
 /// <seealso cref="NoireInputs.HexColor(string, ref Vector4, HexColorStyle?)"/>
 public sealed class HexColorStyle
 {
-    /// <summary>Whether the alpha channel is part of the colour, giving eight digits instead of six. Off by default.</summary>
+    /// <summary>Whether the alpha channel is part of the colour, giving eight digits instead of six.</summary>
     public bool ShowAlpha { get; set; }
 
-    /// <summary>Whether clicking the swatch opens a picker. On by default.</summary>
+    /// <summary>Whether clicking the swatch opens a picker.</summary>
     public bool ShowPicker { get; set; } = true;
 
     /// <summary>
@@ -38,7 +38,7 @@ public sealed class HexColorStyle
     /// </summary>
     public Action<UiResetDotDraw>? ResetDotDraw { get; set; }
 
-    /// <summary>Copies the style, for tweaking one call site without touching the shared object.</summary>
+    /// <summary>Returns a copy of the style.</summary>
     /// <returns>A copy.</returns>
     public HexColorStyle Clone() => new()
     {

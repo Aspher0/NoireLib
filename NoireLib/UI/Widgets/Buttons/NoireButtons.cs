@@ -16,32 +16,18 @@ namespace NoireLib.UI;
 [NoireFacade]
 public static class NoireButtons
 {
-    /// <summary>
-    /// The smallest a button is allowed to be, at 100%, which keeps a fill-minus size or an over-divided segmented
-    /// control from collapsing.
-    /// </summary>
+    // The smallest a button is allowed to be, at 100%.
     private const float MinimumSize = 4f;
 
-    /// <summary>
-    /// The style a segmented control's segments are drawn from, reused across segments and across frames.
-    /// </summary>
+    // The style a segmented control's segments are drawn from, reused across segments and across frames.
     [ThreadStatic]
     private static ButtonStyle? segmentScratch;
 
-    /// <summary>
-    /// The scratch style for a segment, created on first use for this thread.
-    /// </summary>
     private static ButtonStyle SegmentScratch => segmentScratch ??= new ButtonStyle();
 
-    /// <summary>
-    /// The scratch style a split button's caret is drawn from.
-    /// </summary>
     [ThreadStatic]
     private static ButtonStyle? caretScratch;
 
-    /// <summary>
-    /// The scratch style for a split button's caret, created on first use for this thread.
-    /// </summary>
     private static ButtonStyle CaretScratch => caretScratch ??= new ButtonStyle();
 
     /// <summary>
@@ -50,8 +36,8 @@ public static class NoireButtons
     public static float DefaultHoldSeconds { get; set; } = 1.2f;
 
     /// <summary>
-    /// The text shown on an asynchronous button while its task is running, replacing the label; empty or
-    /// <see langword="null"/> shows only the spinner.
+    /// The text shown on an asynchronous button while its task is running; empty or <see langword="null"/> shows only
+    /// the spinner.
     /// </summary>
     public static string? BusyText { get; set; } = null;
 
@@ -60,10 +46,10 @@ public static class NoireButtons
     /// <summary>
     /// Draws a button colored by what it means.
     /// </summary>
-    /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="tone">What the button means, which decides its colors. See <see cref="ButtonTone"/>.</param>
-    /// <param name="size">The button size. A zero component is measured from the label; a negative one fills the
-    /// available space, leaving that many pixels.</param>
+    /// <param name="label">The button label.</param>
+    /// <param name="tone">What the button means, which decides its colors.</param>
+    /// <param name="size">The button size; a zero component is measured from the label, a negative one fills the
+    /// available space.</param>
     /// <returns>True on the frame the button was clicked.</returns>
     public static bool Button(string label, ButtonTone tone = ButtonTone.Neutral, Vector2 size = default)
         => Button(label, ToneStyles.For(tone), size);
@@ -71,10 +57,10 @@ public static class NoireButtons
     /// <summary>
     /// Draws a button.
     /// </summary>
-    /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="style">The button's look. When <see langword="null"/>, a neutral themed button is drawn.</param>
-    /// <param name="size">The button size. A zero component is measured from the label; a negative one fills the
-    /// available space, leaving that many pixels.</param>
+    /// <param name="label">The button label.</param>
+    /// <param name="style">The button's look; a neutral themed button when <see langword="null"/>.</param>
+    /// <param name="size">The button size; a zero component is measured from the label, a negative one fills the
+    /// available space.</param>
     /// <returns>True on the frame the button was clicked.</returns>
     public static bool Button(string label, ButtonStyle? style, Vector2 size = default)
     {
@@ -98,10 +84,9 @@ public static class NoireButtons
     /// <summary>
     /// Draws a button that only fires once it has been held down for long enough, filling as it goes.
     /// </summary>
-    /// <remarks>The fill runs off wall-clock time, not frames, and ignores <see cref="NoireUI.ReducedMotion"/>.</remarks>
-    /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="holdSeconds">How long the button must be held. Defaults to <see cref="DefaultHoldSeconds"/>.</param>
-    /// <param name="style">The button's look. When <see langword="null"/>, a danger-toned button is drawn.</param>
+    /// <param name="label">The button label.</param>
+    /// <param name="holdSeconds">How long the button must be held.</param>
+    /// <param name="style">The button's look; a danger-toned button when <see langword="null"/>.</param>
     /// <param name="size">The button size, measured from the label when zero.</param>
     /// <returns>True on the single frame the hold completed.</returns>
     public static bool HoldToConfirm(string label, float holdSeconds = 0f, ButtonStyle? style = null, Vector2 size = default)
@@ -154,17 +139,12 @@ public static class NoireButtons
     /// Draws a button that runs a task, disabling itself and showing a spinner until the task finishes, and reporting
     /// a failed task through <see cref="UiDiagnostics"/>.
     /// </summary>
-    /// <remarks>
-    /// Closing the window mid-task does not cancel it: the task runs to completion and the button goes idle the next
-    /// time it appears.
-    /// </remarks>
-    /// <param name="label">The button label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="action">The work to start. Invoked on the draw thread, so it should return quickly and do its work
-    /// asynchronously.</param>
-    /// <param name="style">The button's look. When <see langword="null"/>, a neutral themed button is drawn.</param>
+    /// <param name="label">The button label.</param>
+    /// <param name="action">The work to start, invoked on the draw thread.</param>
+    /// <param name="style">The button's look; a neutral themed button when <see langword="null"/>.</param>
     /// <param name="size">The button size, measured from the label when zero.</param>
-    /// <param name="onCompleted">Invoked on the draw thread when the task finishes, with the exception that failed it or
-    /// <see langword="null"/> when it succeeded.</param>
+    /// <param name="onCompleted">Invoked on the draw thread when the task finishes, with the exception that failed it
+    /// or <see langword="null"/> when it succeeded.</param>
     /// <returns>True on the frame the task was started.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     public static bool Async(string label, Func<Task> action, ButtonStyle? style = null, Vector2 size = default, Action<Exception?>? onCompleted = null)
@@ -236,11 +216,11 @@ public static class NoireButtons
     #region Split
 
     /// <summary>Draws a button with a caret beside it that opens a menu of variant actions.</summary>
-    /// <param name="label">The main button's label. Anything after "##" is used as the id and not displayed.</param>
-    /// <param name="menuBody">The menu contents, drawn inside the popup and not called while the menu is closed.</param>
-    /// <param name="style">The button's look. When <see langword="null"/>, a neutral themed button is drawn.</param>
-    /// <param name="size">The size of the main button, measured from the label when zero. The caret is added beside it.</param>
-    /// <returns>True on the frame the main button was clicked. Opening the menu does not count as a click.</returns>
+    /// <param name="label">The main button's label.</param>
+    /// <param name="menuBody">The menu contents, drawn inside the popup.</param>
+    /// <param name="style">The button's look; a neutral themed button when <see langword="null"/>.</param>
+    /// <param name="size">The size of the main button, measured from the label when zero.</param>
+    /// <returns>True on the frame the main button was clicked.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="menuBody"/> is <see langword="null"/>.</exception>
     public static bool Split(string label, Action menuBody, ButtonStyle? style = null, Vector2 size = default)
     {
@@ -302,9 +282,9 @@ public static class NoireButtons
     /// <summary>
     /// Draws an animated on/off switch.
     /// </summary>
-    /// <param name="label">The label beside the switch. Anything after "##" is used as the id and not displayed.</param>
+    /// <param name="label">The label beside the switch.</param>
     /// <param name="value">The value to read and write.</param>
-    /// <param name="style">The switch's look. When <see langword="null"/>, a themed switch is drawn.</param>
+    /// <param name="style">The switch's look; a themed switch when <see langword="null"/>.</param>
     /// <returns>True on the frame the value changed.</returns>
     public static bool Toggle(string label, ref bool value, ToggleStyle? style = null)
     {
@@ -394,9 +374,9 @@ public static class NoireButtons
     /// <param name="id">A unique id for the control.</param>
     /// <param name="selected">The index of the selected option, read and written.</param>
     /// <param name="options">The option labels.</param>
-    /// <param name="style">The look of the segments. When <see langword="null"/>, a themed control is drawn.</param>
-    /// <param name="width">The total width in pixels. Zero measures from the labels; a negative value fills the
-    /// available space, leaving that many pixels.</param>
+    /// <param name="style">The look of the segments; a themed control when <see langword="null"/>.</param>
+    /// <param name="width">The total width in pixels; zero measures from the labels, a negative value fills the
+    /// available space.</param>
     /// <returns>True on the frame the selection changed.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="options"/> is <see langword="null"/>.</exception>
     public static bool Segmented(string id, ref int selected, IReadOnlyList<string> options, ButtonStyle? style = null, float width = 0f)
@@ -470,11 +450,8 @@ public static class NoireButtons
     #region Spinner
 
     /// <summary>Draws a spinning busy indicator as an ordinary item that takes part in layout.</summary>
-    /// <remarks>
-    /// Under <see cref="NoireUI.ReducedMotion"/>, the dots stop rotating and are drawn at an even opacity.
-    /// </remarks>
-    /// <param name="radius">The radius in pixels. Zero uses a size that matches the current line height.</param>
-    /// <param name="color">The dot color. When <see langword="null"/>, the theme accent is used.</param>
+    /// <param name="radius">The radius in pixels; zero matches the current line height.</param>
+    /// <param name="color">The dot color; the theme accent when <see langword="null"/>.</param>
     public static void Spinner(float radius = 0f, Vector4? color = null)
     {
         if (radius <= 0f)
@@ -496,9 +473,7 @@ public static class NoireButtons
 
     private static readonly ToggleStyle DefaultToggleStyle = new();
 
-    /// <summary>
-    /// Computes the button's size and returns it, without submitting anything.
-    /// </summary>
+    // Computes the button's size without submitting anything.
     private static Vector2 Measure(string label, ButtonStyle style, Vector2 size)
     {
         var theme = NoireTheme.Current;
@@ -527,13 +502,7 @@ public static class NoireButtons
         return new Vector2(MathF.Max(NoireUI.Scaled(MinimumSize), width), MathF.Max(NoireUI.Scaled(MinimumSize), height));
     }
 
-    /// <summary>
-    /// Paints the button that was just submitted, using the item rectangle and hover state ImGui recorded for it.
-    /// </summary>
-    /// <param name="label">The label, including any id suffix.</param>
-    /// <param name="style">The resolved style.</param>
-    /// <param name="progress">How far a progressive fill has advanced, or 1 for an ordinary button.</param>
-    /// <param name="progressive">Whether to paint the fill overlay at all.</param>
+    // Paints the button that was just submitted, using the item rectangle and hover state ImGui recorded for it.
     private static void Paint(string label, ButtonStyle style, float progress, bool progressive)
     {
         var theme = NoireTheme.Current;
@@ -581,9 +550,6 @@ public static class NoireButtons
         DrawContent(drawList, min, max, VisibleLabel(label), style, textColor);
     }
 
-    /// <summary>
-    /// Paints the progress of a hold-to-confirm button, in whichever shape the style asked for.
-    /// </summary>
     private static void PaintHoldProgress(ImDrawListPtr drawList, Vector2 min, Vector2 max, ButtonStyle style, Vector4 baseColor, float rounding, float progress)
     {
         var color = ColorHelper.Vector4ToUint(style.HoldFillColor ?? ColorHelper.Lighten(baseColor, 0.5f));
@@ -616,9 +582,6 @@ public static class NoireButtons
         }
     }
 
-    /// <summary>
-    /// Paints an asynchronous button in its running state: the frame, a spinner, and the busy text if there is one.
-    /// </summary>
     private static void PaintBusy(ButtonStyle style)
     {
         var theme = NoireTheme.Current;
@@ -658,9 +621,6 @@ public static class NoireButtons
         drawList.AddText(new Vector2(spinnerCenter.X + radius + gap, center.Y - textSize.Y * 0.5f), ColorHelper.Vector4ToUint(textColor), busyText);
     }
 
-    /// <summary>
-    /// Draws the icon and label inside a painted button.
-    /// </summary>
     private static void DrawContent(ImDrawListPtr drawList, Vector2 min, Vector2 max, string text, ButtonStyle style, Vector4 textColor)
     {
         var theme = NoireTheme.Current;
@@ -690,7 +650,6 @@ public static class NoireButtons
             drawList.AddText(new Vector2(x, centerY - textSize.Y * 0.5f), color, text);
     }
 
-    /// <summary>Draws the busy indicator: eight dots around a circle whose opacity rotates.</summary>
     private static void DrawSpinner(ImDrawListPtr drawList, Vector2 center, float radius, Vector4 color)
     {
         const int Dots = 8;
@@ -728,12 +687,8 @@ public static class NoireButtons
         _ => theme.Resolve(ThemeColor.SurfaceRaised),
     };
 
-    /// <summary>
-    /// The part of a label that is displayed, dropping the "##" id suffix ImGui uses.
-    /// </summary>
     private static string VisibleLabel(string label) => UiLabel.Visible(label);
 
-    /// <summary>The fault message reported when a consumer callback or draw hook throws.</summary>
     private const string CallbackFault = "A button callback threw.";
 
     private static Task StartTask(Func<Task> action, string label)
@@ -749,9 +704,6 @@ public static class NoireButtons
         }
     }
 
-    /// <summary>
-    /// The progress of a hold, plus whether a new hold may start.
-    /// </summary>
     private struct HoldState
     {
         public float Progress;
@@ -760,10 +712,8 @@ public static class NoireButtons
         public static HoldState Ready => new() { Armed = true };
     }
 
-    /// <summary>
-    /// One reusable style per tone, so the common <c>Button(label, tone)</c> call allocates nothing per frame.
-    /// </summary>
-    /// <remarks>Handed out by reference; drawing code only reads them and clones when it needs a variant.</remarks>
+    // One reusable style per tone, so the common Button(label, tone) call allocates nothing per frame. Handed out by
+    // reference; drawing code only reads them and clones when it needs a variant.
     private static class ToneStyles
     {
         private static readonly ButtonStyle Neutral = new() { Tone = ButtonTone.Neutral };

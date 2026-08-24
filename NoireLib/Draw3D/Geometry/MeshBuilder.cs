@@ -536,7 +536,8 @@ public class MeshBuilder
         return new MeshData(v.ToArray(), i.ToArray());
     }
 
-    /// <summary>Miter-to-bevel switch: when the miter would extend beyond this factor of the half-width (turn sharper than ~150°), a bevel joint is emitted instead.</summary>
+    // Miter-to-bevel switch: when the miter would extend beyond this factor of the half-width (turn sharper than
+    // ~150°), a bevel joint is emitted instead.
     internal const float MiterLimit = 3.8637f; // 1/sin(15°) - miter length at a 150° turn
 
     internal static void WriteExtrudePath(List<Vertex3D> verts, List<ushort> indices, IReadOnlyList<Vector3> points, float width, bool closed)

@@ -41,7 +41,7 @@ public readonly record struct UiRingDraw(
         => NoireShapes.Wedge(Centre, InnerRadius, OuterRadius, StartTurns, StartTurns + SweepTurns, TrackColor);
 
     /// <summary>
-    /// Draws the ring's own fill: the swept fraction in <see cref="FillColor"/>. Nothing at zero.
+    /// Draws the ring's own fill: the swept fraction in <see cref="FillColor"/>.
     /// </summary>
     public void DrawFill()
     {
@@ -50,7 +50,7 @@ public readonly record struct UiRingDraw(
     }
 
     /// <summary>
-    /// Draws the ring's own label, centred, in <see cref="LabelColor"/>. Nothing when there is no label.
+    /// Draws the ring's own label, centred, in <see cref="LabelColor"/>.
     /// </summary>
     public void DrawLabel()
     {
@@ -58,10 +58,7 @@ public readonly record struct UiRingDraw(
             NoireGauges.DrawCentredLabel(Label, LabelSize, LabelColor, Centre, FitWidth);
     }
 
-    /// <summary>
-    /// The width the centre label is shrunk to fit, which is the hole the ring leaves, or the whole disc when it has
-    /// no hole.
-    /// </summary>
+    // The width the centre label is shrunk to fit: the hole the ring leaves, or the whole disc when it has no hole.
     private float FitWidth
         => InnerRadius > 0f ? MathF.Max(0f, (InnerRadius * 2f) - NoireUI.Scaled(4f)) : OuterRadius * 2f;
 }

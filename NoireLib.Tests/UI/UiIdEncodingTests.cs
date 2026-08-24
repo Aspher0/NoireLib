@@ -10,14 +10,7 @@ namespace NoireLib.Tests;
 /// Locks how an id hashes through the bindings' UTF-8 overloads against how it hashes through their string ones.
 /// </summary>
 /// <remarks>
-/// This is the question ADR 0002 held ids back on, and it is settled here by measurement rather than by reading the
-/// bindings. Getting UTF-8 wrong for display text is a visible glitch; getting it wrong for an id is silent, because a
-/// widget id that hashes differently orphans every value a user saved under it and nothing about that looks like an
-/// encoding fault.<br/>
-/// The finding is that the overloads measure their span rather than reading to a terminator: an unterminated span is
-/// the same id as the equivalent string, and a trailing null is content that changes it. Both halves are asserted,
-/// because the second is what makes the first easy to break by being helpful.<br/>
-/// Run inside a real frame, because <c>GetID</c> hashes against the current id stack and there is no stack outside one.
+/// An unterminated span is the same id as the equivalent string, and a trailing null is content that changes it.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class UiIdEncodingTests : IClassFixture<UiHarness>
@@ -31,7 +24,6 @@ public sealed class UiIdEncodingTests : IClassFixture<UiHarness>
     /// </summary>
     /// <remarks>
     /// <c>##</c> hides the part after it from the label but keeps it in the id; <c>###</c> replaces the id outright.
-    /// Both change how ImGui splits a string, so an encoding difference could land on one and not the others.
     /// </remarks>
     private static readonly string[] Cases =
     [
@@ -116,8 +108,8 @@ public sealed class UiIdEncodingTests : IClassFixture<UiHarness>
             fromSplitLiteral = ImGui.GetID("Label###replaced"u8);
         });
 
-        // The form the library would actually write. A u8 literal's span excludes the null the compiler places after
-        // it, which is what puts it on the safe side of the two tests above rather than the unsafe one.
+        // The form the library would actually write. A u8 literal's span excludes the null the compiler places
+        // after it.
         fromLiteral.Should().Be(fromString);
         fromSplitLiteral.Should().Be(fromSplitString);
     }

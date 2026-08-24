@@ -3,14 +3,11 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Draws the opt-in decal overlays on the render thread: nodes that turned on a painted-shape outline
-/// (<see cref="SceneNode.ShowDecalShape"/>) or a projection-box wireframe (<see cref="SceneNode.ShowDecalVolume"/>) are
-/// traced here each frame off <see cref="NoireDraw3D.OnRenderOverlay"/> - the same zero-latency point the native gizmo
-/// uses - so an overlay tracks the live camera and lands this frame; a node registers once and keeps the slot while
-/// either overlay is on. Fail-soft: a destroyed or fully turned-off node auto-unregisters; a node that throws while
-/// emitting is logged and skipped.
-/// </summary>
+// Draws the opt-in decal overlays on the render thread: nodes that turned on a painted-shape outline (ShowDecalShape)
+// or a projection-box wireframe (ShowDecalVolume) are traced here each frame off OnRenderOverlay - the same
+// zero-latency point the native gizmo uses - so an overlay tracks the live camera and lands this frame; a node
+// registers once and keeps the slot while either overlay is on. Fail-soft: a destroyed or fully turned-off node
+// auto-unregisters; a node that throws while emitting is logged and skipped.
 internal static class DecalOverlayService
 {
     private const string DisposeKey = "NoireLib.Draw3D.DecalOverlayService";

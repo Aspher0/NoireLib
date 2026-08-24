@@ -5,22 +5,13 @@ using System.Reflection.Emit;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// Builds the delegate a hook installs: the consumer detour wrapped in a try/catch and optionally timed, emitted
-/// as IL because detour signatures routinely carry pointer parameters that expression trees cannot express.
-/// </summary>
+// Builds the delegate a hook installs: the consumer detour wrapped in a try/catch and optionally timed, emitted as IL
+// because detour signatures routinely carry pointer parameters that expression trees cannot express.
 internal static class DetourGuardFactory
 {
     private static readonly MethodInfo GetTimestampMethod = typeof(Stopwatch).GetMethod(nameof(Stopwatch.GetTimestamp))!;
 
-    /// <summary>
-    /// Wraps a detour according to the guard mode, or returns it unchanged when no wrapper is needed.
-    /// </summary>
-    /// <typeparam name="TDelegate">The delegate type of the hooked function.</typeparam>
-    /// <param name="context">The state the wrapper reads at runtime.</param>
-    /// <param name="mode">What the wrapper does when the detour throws.</param>
-    /// <param name="guarded">Whether a wrapper was actually installed.</param>
-    /// <returns>The delegate to install.</returns>
+    // Wraps a detour according to the guard mode, or returns it unchanged when no wrapper is needed.
     public static TDelegate Wrap<TDelegate>(HookGuardContext<TDelegate> context, HookGuardMode mode, out bool guarded)
         where TDelegate : Delegate
     {
@@ -42,12 +33,7 @@ internal static class DetourGuardFactory
         }
     }
 
-    /// <summary>
-    /// Builds a detour that only calls the original function, counting the call on the way through.
-    /// </summary>
-    /// <typeparam name="TDelegate">The delegate type of the hooked function.</typeparam>
-    /// <param name="context">The state the detour reads at runtime.</param>
-    /// <returns>The passthrough detour.</returns>
+    // Builds a detour that only calls the original function, counting the call on the way through.
     public static TDelegate CreatePassthrough<TDelegate>(HookGuardContext<TDelegate> context)
         where TDelegate : Delegate
     {

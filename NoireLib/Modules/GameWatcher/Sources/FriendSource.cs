@@ -4,13 +4,10 @@ using System.Collections.Generic;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Observes the friend list through the game's social data (info proxy) - remote presence beyond the object
-/// table: online state and location changes for friends anywhere.<br/>
-/// The proxy is refreshed in the background (<c>RequestData</c>) so friend facts stay current without the
-/// friend list being open - skipped while the friend-list window is open, since refreshing then re-sorts
-/// and scrolls the addon. Values are seconds-grained and can lag reality.
-/// </summary>
+// Observes the friend list through the game's social data (info proxy) - remote presence beyond the object table:
+// online state and location changes for friends anywhere. The proxy is refreshed in the background (RequestData) so
+// friend facts stay current without the friend list being open - skipped while the friend-list window is open, since
+// refreshing then re-sorts and scrolls the addon. Values are seconds-grained and can lag reality.
 internal sealed class FriendSource : GameWatcherSource
 {
     private const string FriendListAddonName = "FriendList";
@@ -134,10 +131,8 @@ internal sealed class FriendSource : GameWatcherSource
             friends[contentId] = friend;
     }
 
-    /// <summary>
-    /// Refreshes the social proxy on the configured interval while the friend-list window is closed. The timer
-    /// is held (not advanced) while the window is open, so the first refresh fires as soon as it closes.
-    /// </summary>
+    // Refreshes the social proxy on the configured interval while the friend-list window is closed. The timer is held
+    // (not advanced) while the window is open, so the first refresh fires as soon as it closes.
     private void MaybeRequestRefresh(DateTimeOffset now)
     {
         if (now < nextRefreshRequest)
@@ -158,10 +153,8 @@ internal sealed class FriendSource : GameWatcherSource
             proxy->RequestData();
     }
 
-    /// <summary>
-    /// An order-independent signature of the friend set: a reordered-but-identical list hashes the same, and
-    /// any membership / online / territory / world change alters it. Used only to detect a settled snapshot.
-    /// </summary>
+    // An order-independent signature of the friend set: a reordered-but-identical list hashes the same, and any
+    // membership / online / territory / world change alters it. Used only to detect a settled snapshot.
     private static ulong ComputeSignature(Dictionary<ulong, FriendSnapshot> current)
     {
         ulong signature = (ulong)current.Count * 0x9E3779B97F4A7C15UL;
@@ -182,7 +175,6 @@ internal sealed class FriendSource : GameWatcherSource
         return signature;
     }
 
-    /// <summary>The current friend snapshots, for facade queries.</summary>
     internal IReadOnlyCollection<FriendSnapshot> CurrentFriends => friends.Values;
 
     private static unsafe Dictionary<ulong, FriendSnapshot>? ReadFriends(DateTimeOffset now)

@@ -29,10 +29,8 @@ public ref struct NoireLogHandler
         inner = IsEnabled ? new DefaultInterpolatedStringHandler(literalLength, formattedCount) : default;
     }
 
-    /// <summary>
-    /// Whether the message is being built, mirroring the module's <see cref="INoireModule.EnableLogging"/> at
-    /// construction time. When <see langword="false"/>, no append ran and <see cref="ToStringAndClear"/> must not be called.
-    /// </summary>
+    // Whether the message is being built, mirroring the module's EnableLogging at construction time. When , no append
+    // ran and ToStringAndClear must not be called.
     internal bool IsEnabled { get; }
 
     /// <summary>
@@ -101,10 +99,7 @@ public ref struct NoireLogHandler
     /// <param name="format">The format string.</param>
     public void AppendFormatted(ReadOnlySpan<char> value, int alignment = 0, string? format = null) => inner.AppendFormatted(value, alignment, format);
 
-    /// <summary>
-    /// Returns the built message and releases the pooled buffer. Only valid when <see cref="IsEnabled"/> is
-    /// <see langword="true"/>; the gated helpers check that first.
-    /// </summary>
-    /// <returns>The formatted log message.</returns>
+    // Returns the built message and releases the pooled buffer. Only valid when IsEnabled is ; the gated helpers
+    // check that first.
     internal string ToStringAndClear() => inner.ToStringAndClear();
 }

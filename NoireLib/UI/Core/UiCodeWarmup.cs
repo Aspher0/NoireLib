@@ -8,22 +8,13 @@ using System.Threading.Tasks;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// Compiles the drawing methods ahead of the frame that would otherwise compile them.<br/>
-/// Runs on a background thread.
-/// </summary>
+// Compiles the drawing methods ahead of the frame that would otherwise compile them, on a background thread.
 internal static class UiCodeWarmup
 {
     private static int started;
 
-    /// <summary>Whether a warmup has run to completion.</summary>
     internal static bool Finished { get; private set; }
 
-    /// <summary>
-    /// Starts the warmup, or hands back the one already running.
-    /// </summary>
-    /// <param name="alsoWarm">Consumer types to compile as well as NoireUI's own.</param>
-    /// <returns>The work.</returns>
     internal static Task Start(IReadOnlyList<Type>? alsoWarm)
     {
         if (Interlocked.Exchange(ref started, 1) != 0)
@@ -36,7 +27,6 @@ internal static class UiCodeWarmup
         return Task.Run(() => Run(extra));
     }
 
-    /// <summary>Takes an independent copy of the caller's list, or an empty one.</summary>
     private static Type[] Copy(IReadOnlyList<Type>? types)
     {
         if (types == null || types.Count == 0)
@@ -50,9 +40,6 @@ internal static class UiCodeWarmup
         return copy;
     }
 
-    /// <summary>
-    /// Compiles every method of NoireUI's own drawing surfaces and of whatever the caller added.
-    /// </summary>
     private static void Run(Type[] extra)
     {
         var started = Stopwatch.GetTimestamp();
@@ -72,16 +59,12 @@ internal static class UiCodeWarmup
         }
         catch (Exception ex)
         {
-            // Reported rather than thrown: a warmup that fails costs a slow first frame, which is what the plugin had
-            // before it asked for one, and is never worth taking the plugin down for. This runs on a background
-            // thread, where an escaping exception has nothing to catch it.
+            // Reported rather than thrown: a failed warmup costs a slow first frame, no more. This runs on a
+            // background thread, where an escaping exception has nothing to catch it.
             NoireLogger.LogError(ex, "Could not finish compiling the drawing methods.", nameof(NoireUI));
         }
     }
 
-    /// <summary>
-    /// The types whose methods are worth compiling: everything NoireUI draws with, plus the caller's own.
-    /// </summary>
     private static IEnumerable<Type> DrawingTypes(Type[] extra)
     {
         foreach (var type in extra)
@@ -97,14 +80,8 @@ internal static class UiCodeWarmup
         }
     }
 
-    /// <summary>The namespace every NoireUI drawing surface lives in.</summary>
     private const string UiNamespace = "NoireLib.UI";
 
-    /// <summary>
-    /// Compiles every method of one type that can be compiled ahead of time.
-    /// </summary>
-    /// <param name="type">The type to compile.</param>
-    /// <returns>How many methods were compiled.</returns>
     private static int Prepare(Type type)
     {
         if (type.IsGenericTypeDefinition || type.ContainsGenericParameters)
@@ -138,7 +115,7 @@ internal static class UiCodeWarmup
             }
             catch (Exception)
             {
-                // Skipped deliberately, see the remarks.
+                // A method that will not compile early still compiles when it is called.
             }
         }
 

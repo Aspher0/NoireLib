@@ -10,11 +10,8 @@ namespace NoireLib.Tests;
 /// Holds every icon-bearing surface at zero allocation per frame.
 /// </summary>
 /// <remarks>
-/// None of these could be measured before. Asking Dalamud for the icon font with no plugin behind the library does not
-/// return an empty font, it blocks, so any widget drawing an icon hung the headless frame and was quietly left out of
-/// the audit that put everything else under a zero. <see cref="UiIconFont"/> now degrades instead, which is what makes
-/// this file possible: the glyph is drawn in whatever font is current, and everything around it, which is the part
-/// that allocates, still runs.
+/// Asking Dalamud for the icon font with no plugin behind the library blocks rather than returning an empty font; <see
+/// cref="UiIconFont"/> degrades instead.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireIconAllocationTests : IClassFixture<UiHarness>

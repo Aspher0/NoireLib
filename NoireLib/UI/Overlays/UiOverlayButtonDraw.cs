@@ -7,8 +7,7 @@ namespace NoireLib.UI;
 /// <summary>
 /// Everything an <see cref="OverlayButtonStyle.CustomDraw"/> hook needs to paint an overlay button itself: where it
 /// is, what state it is in, and the colours NoireUI would have used. The hook runs with the hitbox already submitted
-/// and the drag already applied, but nothing painted, so <see cref="DrawContent"/> is the only route to the button's
-/// configured icon, image and text.
+/// and the drag already applied, but nothing painted.
 /// </summary>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Button">The button being painted, for its content and identity.</param>

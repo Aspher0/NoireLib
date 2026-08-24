@@ -8,23 +8,6 @@ namespace NoireLib.UI;
 /// A tab bar you can open from code. <c>tabs.SwitchTab("filters")</c> works from another window, a hotkey, a command
 /// or a toast action, and each tab carries its own body so nothing is drawn for the ones that are closed.
 /// </summary>
-/// <example>
-/// <code>
-/// var tabs = new NoireTabBar("Settings")
-/// {
-///     Tabs =
-///     {
-///         new UiTab("general", "General", () =&gt; DrawGeneral()),
-///         new UiTab("filters", "Filters", () =&gt; DrawFilters()) { Badge = () =&gt; activeFilters },
-///         new UiTab("about",   "About",   () =&gt; DrawAbout())   { Enabled = () =&gt; hasData },
-///     },
-///     OnTabChanged = id =&gt; NoireLogger.LogInformation($"now on {id}"),
-/// };
-///
-/// tabs.Draw();
-/// tabs.SwitchTab("filters");
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed partial class NoireTabBar
 {
@@ -35,7 +18,7 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// Creates a tab bar.
     /// </summary>
-    /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
+    /// <param name="id">A stable id for the widget, or <see langword="null"/> for a generated one.</param>
     public NoireTabBar(string? id = null)
         => Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
 
@@ -43,7 +26,7 @@ public sealed partial class NoireTabBar
     public string Id { get; }
 
     /// <summary>
-    /// The tabs, in the order they are drawn. Add to it, remove from it, or replace its contents at any time.
+    /// The tabs, in the order they are drawn.
     /// </summary>
     public List<UiTab> Tabs { get; } = [];
 
@@ -59,34 +42,32 @@ public sealed partial class NoireTabBar
     public Action<string>? OnTabChanged { get; set; }
 
     /// <summary>
-    /// Raised when a <see cref="UiTab.Closeable"/> tab's close button is used. The tab has already been removed from
-    /// <see cref="Tabs"/> when this runs.
+    /// Raised when a <see cref="UiTab.Closeable"/> tab's close button is used.
     /// </summary>
+    /// <remarks>The tab has already been removed from <see cref="Tabs"/> when this runs.</remarks>
     public Action<UiTab>? OnTabClosed { get; set; }
 
-    /// <summary>Whether the user may drag the tabs into a different order. Off by default.</summary>
-    /// <remarks>
-    /// <see cref="Tabs"/> is left as the caller wrote it; a reordering made here is for this session only.
-    /// </remarks>
+    /// <summary>Whether the user may drag the tabs into a different order.</summary>
+    /// <remarks><see cref="Tabs"/> is left as the caller wrote it; a reordering is for this session only.</remarks>
     public bool Reorderable { get; set; }
 
     /// <summary>
-    /// Whether tabs that do not fit scroll rather than shrinking. Off by default, which shrinks them.
+    /// Whether tabs that do not fit scroll rather than shrinking.
     /// </summary>
     public bool ScrollWhenCrowded { get; set; }
 
     /// <summary>
-    /// Whether the mouse wheel scrolls the tab strip while the pointer is over it. On by default.
+    /// Whether the mouse wheel scrolls the tab strip while the pointer is over it.
     /// </summary>
     public bool WheelScrolls { get; set; } = true;
 
     /// <summary>
-    /// How far one notch of the wheel moves the tab strip, in pixels at 100%. Defaults to 80, about one tab.
+    /// How far one notch of the wheel moves the tab strip, in pixels at 100%.
     /// </summary>
     public float WheelScrollStep { get; set; } = 80f;
 
     /// <summary>
-    /// How wide the bar is allowed to be, in pixels at 100%. Zero, the default, fits the column it is drawn in.
+    /// How wide the bar is allowed to be, in pixels at 100%, or zero to fit the column it is drawn in.
     /// </summary>
     /// <remarks>Only ever narrows: a bar cannot be given more room than the window it is in.</remarks>
     public float Width { get; set; }
@@ -97,10 +78,7 @@ public sealed partial class NoireTabBar
     /// <summary>
     /// Opens a tab from code, from anywhere.
     /// </summary>
-    /// <remarks>
-    /// Safe from any thread and before the bar has ever drawn; calling it twice before a frame runs keeps the last
-    /// request.
-    /// </remarks>
+    /// <remarks>Safe from any thread and before the bar has ever drawn.</remarks>
     /// <param name="id">The <see cref="UiTab.Id"/> to open.</param>
     public void SwitchTab(string id)
     {
@@ -115,10 +93,7 @@ public sealed partial class NoireTabBar
     /// </summary>
     public void CancelSwitch() => pendingTab = null;
 
-    /// <summary>
-    /// Records a switch request, on the draw thread, once it has been checked against the tabs as they stand.
-    /// </summary>
-    /// <param name="id">The tab to open.</param>
+    // Runs on the draw thread, once the request has been checked against the tabs as they stand.
     private void RequestTab(string id)
     {
         switch (ResolveSwitch(Tabs, Current, id))
@@ -141,13 +116,6 @@ public sealed partial class NoireTabBar
         }
     }
 
-    /// <summary>
-    /// What a switch request should do, given the tabs and the tab currently open.
-    /// </summary>
-    /// <param name="tabs">The tabs as they stand.</param>
-    /// <param name="current">The tab open as of the last draw, if any.</param>
-    /// <param name="requested">The tab being asked for.</param>
-    /// <returns>What to do about it.</returns>
     internal static TabSwitch ResolveSwitch(IReadOnlyList<UiTab> tabs, string? current, string requested)
     {
         if (tabs == null || tabs.Count == 0 || string.IsNullOrEmpty(requested))
@@ -177,11 +145,7 @@ public sealed partial class NoireTabBar
             : TabSwitch.Accepted;
     }
 
-    /// <summary>
-    /// Reports a refused switch once per id, so a typo is visible without a log entry every frame something retries.
-    /// </summary>
-    /// <param name="id">The refused id.</param>
-    /// <param name="reason">Why it was refused.</param>
+    // Reports once per id, so a typo is visible without a log entry every frame something retries.
     private void LogRefusalOnce(string id, string reason)
     {
         if (!refusalsLogged.Add(id))

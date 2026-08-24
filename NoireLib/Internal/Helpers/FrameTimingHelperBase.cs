@@ -83,8 +83,7 @@ public abstract class FrameTimingHelperBase : TimingHelperBase
         var target = FrameClock.Current + _frames;
 
         // Reading Current above attaches the clock, so this answers whether a game update is behind it. Without
-        // one the count never moves, and waiting on it would never return; the wait resolves inline instead,
-        // which is what lets a frame helper be driven from a test.
+        // one the count never moves, and waiting on it would never return; the wait resolves inline instead.
         if (!FrameClock.IsRunning)
             return !cts.IsCancellationRequested;
 

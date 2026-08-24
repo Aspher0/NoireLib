@@ -25,7 +25,7 @@ public sealed class SplitterOptions
 
     /// <summary>
     /// How long the divider is, across the panes it separates, in real pixels. Zero fills the space remaining in the
-    /// current region; pass an explicit length when the panes are a fixed size.
+    /// current region.
     /// </summary>
     public float Length { get; set; }
 
@@ -41,12 +41,11 @@ public sealed class SplitterOptions
     /// <summary>The divider's color while being dragged. When <see langword="null"/>, the theme's accent.</summary>
     public Vector4? ActiveColor { get; set; }
 
-    /// <summary>Whether hovering or dragging sets the resize cursor. On by default.</summary>
+    /// <summary>Whether hovering or dragging sets the resize cursor.</summary>
     public bool ShowResizeCursor { get; set; } = true;
 
     /// <summary>
-    /// Paints the divider yourself, in place of the line NoireUI would draw.<br/>
-    /// The splitter still owns the handle, the drag and the clamping whatever this draws. See
+    /// Paints the divider yourself, in place of the line NoireUI would draw. See
     /// <see cref="UiSplitterDraw.DrawLine()"/> for the shipped line.
     /// </summary>
     public Action<UiSplitterDraw>? CustomDraw { get; set; }

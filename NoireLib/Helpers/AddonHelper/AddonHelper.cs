@@ -47,7 +47,6 @@ public static partial class AddonHelper
         addonPtr = (AtkUnitBase*)addonFromName.Address;
         return addonPtr != null;
     }
-
     /// <summary>
     /// Tries to get an addon by name, and checks if it's loaded and ready to be interacted with.
     /// </summary>

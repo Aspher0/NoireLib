@@ -85,9 +85,7 @@ internal sealed class NoireIpcEventConsumerProxy
     }
 }
 
-/// <summary>
-/// Internal proxy used to wrap consumer delegate invocations with availability tracking.
-/// </summary>
+// Internal proxy used to wrap consumer delegate invocations with availability tracking.
 internal sealed class NoireIpcConsumerProxy
 {
     private readonly string _fullName;

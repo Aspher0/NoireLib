@@ -29,7 +29,7 @@ public static partial class NoireShapes
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left of the box to keep drawing inside, in screen space.</param>
     /// <param name="max">The bottom right.</param>
-    /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to contain.</param>
     public static void Clipped<TState>(Vector2 min, Vector2 max, TState state, Action<TState> body)
     {
@@ -123,9 +123,6 @@ public static partial class NoireShapes
         }
     }
 
-    /// <summary>
-    /// Draws one side of a sweep's band, ramping between two alphas along the line.
-    /// </summary>
     private static void DrawBandHalf(Vector2 from, Vector2 span, float top, float bottom, float startAt, float endAt, Vector4 startColor, Vector4 endColor)
     {
         if (endAt - startAt <= 0.0001f)
@@ -146,15 +143,13 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Draws a square stood on its corner, the mark a deco interface is built from.
+    /// Writes the four corners of a diamond, clockwise from the top.
     /// </summary>
-    /// <remarks>
-    /// The four points must be in clockwise order for <see cref="Fill"/> and <see cref="GlowPath"/> to behave.
-    /// </remarks>
+    /// <remarks>The order is clockwise because <see cref="Fill"/> and <see cref="GlowPath"/> require it.</remarks>
     /// <param name="centre">The middle of the diamond, in screen space.</param>
     /// <param name="radius">How far each point sits from the middle, in real pixels.</param>
     /// <param name="points">Receives the four corners, clockwise from the top.</param>
-    /// <returns>How many points were written, which is always four.</returns>
+    /// <returns>How many points were written.</returns>
     public static int DiamondPath(Vector2 centre, float radius, Span<Vector2> points)
     {
         if (points.Length < 4)
@@ -207,7 +202,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Draws a line that fades out at one or both ends, for a divider that stops rather than being cut off.
+    /// Draws a line that fades out at one end.
     /// </summary>
     /// <param name="from">The end that fades, in screen space.</param>
     /// <param name="to">The end at full strength.</param>

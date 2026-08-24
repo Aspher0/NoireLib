@@ -192,12 +192,6 @@ public static class SafeExecutor
         }
     }
 
-    /// <summary>
-    /// Handles an exception according to the specified behavior.
-    /// </summary>
-    /// <param name="ex">The exception to handle.</param>
-    /// <param name="behavior">The behavior to apply.</param>
-    /// <param name="message">The message to log if logging is enabled.</param>
     private static void HandleException(Exception ex, ExceptionBehavior behavior, string message)
     {
         switch (behavior)

@@ -3,10 +3,8 @@ using System;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Polls <see cref="Dalamud.Plugin.Services.ITargetManager"/> for target, focus target, soft target and
-/// mouse-over target changes, with previous and current <see cref="ObjectSnapshot"/>s attached.
-/// </summary>
+// Polls ITargetManager for target, focus target, soft target and mouse-over target changes, with previous and current
+// ObjectSnapshots attached.
 internal sealed class TargetSource : GameWatcherSource
 {
     private ulong lastTargetId;

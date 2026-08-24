@@ -5,13 +5,10 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Geometry;
 
-/// <summary>
-/// Traces a ground decal as world-space lines, re-derived from <see cref="Materials.Material.Shape"/> /
-/// <see cref="Materials.Material.ShapeParams"/> and the world matrix since a decal has no geometry of its own.
-/// <see cref="BuildLoop"/> traces the painted shape (the SDF outline, shared by <see cref="Scene.SceneNode.ShowDecalShape"/>
-/// and wireframe mode); <see cref="BuildVolumeCorners"/> traces the projection box (the SDF's bounding square, swept
-/// above and below the surface, drawn by <see cref="Scene.SceneNode.ShowDecalVolume"/>).
-/// </summary>
+// Traces a ground decal as world-space lines, re-derived from Shape / ShapeParams and the world matrix since a decal
+// has no geometry of its own. BuildLoop traces the painted shape (the SDF outline, shared by ShowDecalShape and
+// wireframe mode); BuildVolumeCorners traces the projection box (the SDF's bounding square, swept above and below the
+// surface, drawn by ShowDecalVolume).
 internal static class DecalOutline
 {
     /// <summary>Corner count of a decal's projection box (<see cref="BuildVolumeCorners"/>).</summary>
@@ -102,7 +99,7 @@ internal static class DecalOutline
         }
     }
 
-    /// <summary>The outer arc, then the inner arc back (or the apex), which the caller's closing segment joins into a wedge.</summary>
+    // The outer arc, then the inner arc back (or the apex), which the caller's closing segment joins into a wedge.
     private static void Sector(float halfAngle, float inner, in Matrix4x4 world, List<Vector3> points)
     {
         var arc = Math.Max(2, (int)MathF.Ceiling(Segments * halfAngle / MathF.PI));
@@ -125,11 +122,9 @@ internal static class DecalOutline
         }
     }
 
-    /// <summary>
-    /// Footprint space to world: the shader evaluates its SDF on <c>p = local.xz * 2</c> (outer edge at |p| = 1), so a
-    /// footprint point maps back to local <c>(p.x / 2, 0, p.y / 2)</c> (Y 0 = the decal's own plane), with the angle
-    /// running from local +Z to match the shader's <c>atan2(p.x, p.y)</c>.
-    /// </summary>
+    // Footprint space to world: the shader evaluates its SDF on p = local.xz * 2 (outer edge at |p| = 1), so a
+    // footprint point maps back to local (p.x / 2, 0, p.y / 2) (Y 0 = the decal's own plane), with the angle running
+    // from local +Z to match the shader's atan2(p.x, p.y).
     private static Vector3 ToWorld(float px, float pz, in Matrix4x4 world)
         => Vector3.Transform(new Vector3(px * 0.5f, 0f, pz * 0.5f), world);
 }

@@ -10,16 +10,6 @@ namespace NoireLib.UI;
 /// A container that paints chrome around whatever is drawn inside it: a bordered frame, a filled plate, an optional
 /// header, and the room to hold them apart.
 /// </summary>
-/// <example>
-/// <code>
-/// NoirePanel.Frame(() =>
-/// {
-///     NoireText.Draw("Selected index");
-///     NoireText.Draw("14");
-/// },
-/// new FrameStyle { TickLength = 11f });
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoirePanel
 {
@@ -40,7 +30,7 @@ public static class NoirePanel
     /// Draws a bordered frame around a body.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
-    /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to put inside.</param>
     /// <param name="style">The frame's look. When <see langword="null"/>, the theme's.</param>
     /// <param name="options">How the panel holds its body. When <see langword="null"/>, the defaults.</param>
@@ -67,7 +57,7 @@ public static class NoirePanel
     /// Draws a filled plate under a body.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
-    /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to put inside.</param>
     /// <param name="style">The plate's look. When <see langword="null"/>, the theme's.</param>
     /// <param name="options">How the panel holds its body. When <see langword="null"/>, the defaults.</param>
@@ -77,9 +67,6 @@ public static class NoirePanel
         Draw(state, body, style, static (min, max, s) => NoireShapes.Plate(min, max, s), options);
     }
 
-    /// <summary>
-    /// Runs a body inside a measured box and paints the chrome behind it.
-    /// </summary>
     private static void Draw<TState, TStyle>(
         TState state,
         Action<TState> body,
@@ -137,9 +124,6 @@ public static class NoirePanel
         ImGui.Dummy(new Vector2(width, height));
     }
 
-    /// <summary>
-    /// Draws the header and the hairline under it, when there is one.
-    /// </summary>
     private static void DrawHeader(PanelOptions options, float inner)
     {
         if (string.IsNullOrEmpty(options.Header))
@@ -167,9 +151,7 @@ public static class NoirePanel
 
     private static readonly PanelOptions DefaultOptions = new();
 
-    /// <summary>
-    /// The draw lists this call is nested inside, and whether each entry is the one that split its list.
-    /// </summary>
+    // The draw lists this call is nested inside, and whether each entry is the one that split its list.
     private static readonly List<(nint List, bool Split)> ChromeStack = [];
 
     private static unsafe bool BeginChrome()
@@ -219,9 +201,6 @@ public static class NoirePanel
 
     private static void ToContent() => SetChannel(ContentChannel);
 
-    /// <summary>
-    /// Points the window's list at one of the two channels <see cref="BeginChrome"/> split it into.
-    /// </summary>
     private static void SetChannel(int channel)
     {
         using var draw = UiDraw.BeginWindow();

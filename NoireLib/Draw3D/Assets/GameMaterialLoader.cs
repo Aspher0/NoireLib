@@ -200,13 +200,13 @@ public sealed class GameMaterial : IDisposable
 /// </summary>
 public static class GameMaterialLoader
 {
-    /// <summary>Sampler names that carry base color, in the order they are preferred.</summary>
+    // Sampler names that carry base color, in the order they are preferred.
     private static readonly string[] BaseColorSamplers = ["g_SamplerDiffuse", "g_SamplerColorMap0"];
 
-    /// <summary>Sampler names that carry the normal map, in the order they are preferred.</summary>
+    // Sampler names that carry the normal map, in the order they are preferred.
     private static readonly string[] NormalSamplers = ["g_SamplerNormal", "g_SamplerNormalMap0"];
 
-    /// <summary>Sampler names that carry the specular map, in the order they are preferred.</summary>
+    // Sampler names that carry the specular map, in the order they are preferred.
     private static readonly string[] SpecularSamplers = ["g_SamplerSpecular", "g_SamplerSpecularMap0"];
 
     /// <summary>Loads a material and its base color, normal and specular textures.</summary>
@@ -240,7 +240,7 @@ public static class GameMaterialLoader
     /// <param name="file">The parsed material.</param>
     public static string? SpecularPath(GameMaterialFile file) => SlotPath(file, SpecularSamplers);
 
-    /// <summary>The archive path behind the first of these samplers the material actually binds.</summary>
+    // The archive path behind the first of these samplers the material actually binds.
     private static string? SlotPath(GameMaterialFile file, string[] samplers)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -255,7 +255,7 @@ public static class GameMaterialLoader
         return null;
     }
 
-    /// <summary>Loads the texture behind the first of these samplers the material binds, if any.</summary>
+    // Loads the texture behind the first of these samplers the material binds, if any.
     private static async Task<GpuTexture?> LoadSlotAsync(GameMaterialFile file, string[] samplers, CancellationToken ct)
     {
         var path = SlotPath(file, samplers);

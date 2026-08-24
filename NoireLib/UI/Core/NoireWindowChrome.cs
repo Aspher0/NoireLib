@@ -9,15 +9,6 @@ namespace NoireLib.UI;
 /// Turns a Dalamud window into one the plugin draws every pixel of: no ImGui title bar, no ImGui background, no ImGui
 /// border, and a title bar, drag and close of your own.
 /// </summary>
-/// <example>
-/// <code>
-/// // On the window:
-/// Flags = NoireWindowChrome.Flags;
-///
-/// // In Draw():
-/// NoireWindowChrome.Draw(chrome, () => DrawMyContents());
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireWindowChrome
 {
@@ -45,10 +36,9 @@ public static class NoireWindowChrome
     public const ImGuiWindowFlags FixedBodyFlags = Flags | ImGuiWindowFlags.NoScrollWithMouse;
 
     /// <summary>
-    /// Keeps the window in front of every other, for the frame being drawn. Call it once per frame from inside the
-    /// window, and again from inside any popup it opens.<br/>
-    /// Among the windows kept in front, the last caller each frame wins.
+    /// Keeps the window in front of every other, for the frame being drawn.
     /// </summary>
+    /// <remarks>Call it once per frame from inside the window, and again from inside any popup it opens.</remarks>
     public static void KeepInFront() => UiWindowOrder.KeepInFront();
 
     /// <summary>
@@ -67,7 +57,7 @@ public static class NoireWindowChrome
     /// Paints the window's own surface and border, then runs the body inside it.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
-    /// <param name="state">Passed to <paramref name="body"/>, so the body can stay a static lambda.</param>
+    /// <param name="state">Passed to <paramref name="body"/>.</param>
     /// <param name="body">The window's contents.</param>
     /// <param name="style">How the window is painted. When <see langword="null"/>, the theme's surface and border.</param>
     public static void Draw<TState>(TState state, Action<TState> body, WindowChromeStyle? style = null)
@@ -101,7 +91,7 @@ public static class NoireWindowChrome
         // Advanced from wherever the cursor already is rather than placed at the window's corner: the two agree on the
         // first frame but diverge once the window scrolls, since the corner stays fixed while the content moves past
         // it. An absolute position would pin the contents in place and make the wheel appear to do nothing. The chrome
-        // itself is painted at the corner deliberately, so the border stays with the window.
+        // itself is painted at the corner, so the border stays with the window.
         ImGui.Indent(padding.X);
         ImGui.Dummy(new Vector2(0f, padding.Y));
 
@@ -121,17 +111,16 @@ public static class NoireWindowChrome
     }
 
     /// <summary>
-    /// The style variables a custom window has to be begun with, pushed before <c>Begin</c> and popped after.<br/>
-    /// A Dalamud window pushes these from <c>PreDraw</c> and releases them in <c>PostDraw</c>.
+    /// The style variables a custom window has to be begun with, pushed before <c>Begin</c> and popped after.
     /// </summary>
-    /// <returns>How many style variables were pushed, to pop in <c>PostDraw</c>.</returns>
+    /// <returns>How many style variables were pushed.</returns>
     public static int PushWindowStyle() => PushWindowStyle(null);
 
     /// <summary>
     /// The style variables a custom window has to be begun with.
     /// </summary>
-    /// <param name="style">Kept for symmetry with the chrome's own style. Opacity is applied when painting, not here.</param>
-    /// <returns>How many style variables were pushed, to pop in <c>PostDraw</c>.</returns>
+    /// <param name="style">Kept for symmetry with the chrome's own style.</param>
+    /// <returns>How many style variables were pushed.</returns>
     public static int PushWindowStyle(WindowChromeStyle? style)
     {
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, Vector2.Zero);
@@ -203,7 +192,7 @@ public static class NoireWindowChrome
     /// <summary>
     /// Draws one of the window's own chrome buttons, needing no icon font.
     /// </summary>
-    /// <param name="id">A unique id, so a row of buttons does not share one hit box.</param>
+    /// <param name="id">A unique id.</param>
     /// <param name="centre">The middle of the button, in screen space.</param>
     /// <param name="size">How wide the button's hit box is, in real pixels.</param>
     /// <param name="glyph">Which mark to draw.</param>
@@ -261,7 +250,7 @@ public static class NoireWindowChrome
     }
 
     /// <summary>
-    /// Draws a close button. Sugar over <see cref="ChromeButton"/>.
+    /// Draws a close button.
     /// </summary>
     /// <param name="centre">The middle of the button, in screen space.</param>
     /// <param name="size">How wide the button's hit box is, in real pixels.</param>
@@ -270,9 +259,6 @@ public static class NoireWindowChrome
     public static bool CloseButton(Vector2 centre, float size, ChromeButtonStyle? style = null)
         => ChromeButton("close", centre, size, ChromeGlyph.Close, style);
 
-    /// <summary>
-    /// Paints one of the marks, from strokes rather than from an icon font.
-    /// </summary>
     private static void PaintGlyph(ChromeGlyph glyph, Vector2 centre, float reach, Vector4 color, float thickness)
     {
         switch (glyph)
@@ -329,9 +315,6 @@ public static class NoireWindowChrome
         }
     }
 
-    /// <summary>
-    /// A copy of a plate with its fills faded, for a window drawn at less than full opacity.
-    /// </summary>
     private static PlateStyle Faded(PlateStyle plate, float opacity)
     {
         // Written into a scratch rather than cloned. A window below full opacity takes this branch on every frame it
@@ -349,14 +332,12 @@ public static class NoireWindowChrome
         return FadedScratch;
     }
 
-    /// <summary>The faded copy of the caller's plate, reused rather than allocated per frame.</summary>
+    // The faded copy of the caller's plate, reused rather than allocated per frame.
     private static readonly PlateStyle FadedScratch = new();
 
     private static readonly ChromeButtonStyle DefaultChromeStyle = new();
 
-    /// <summary>
-    /// Which window is being dragged, so a drag survives the pointer leaving the handle.
-    /// </summary>
+    // Which window is being dragged, so a drag survives the pointer leaving the handle.
     private static uint draggingWindow;
 
     private static readonly WindowChromeStyle DefaultStyle = new();

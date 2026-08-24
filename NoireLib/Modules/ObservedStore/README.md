@@ -205,7 +205,7 @@ store.Shared.RecordMany(shopStock.Select(s => new KeyValuePair<string, ShopEntry
 ```
 
 Recording a key that already exists **replaces** it: the store holds the latest sighting per key, not a history.
-The `ObservationRecordedEvent` carries what was replaced, so a consumer that wants a history can keep one.
+The `ObservationRecordedEvent` carries what was replaced, so you can keep a history yourself.
 
 `RecordOptions.Scope` and `RecordOptions.CharacterId`, when set, override the view's own binding. Explicit beats
 implicit.

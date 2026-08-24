@@ -7,32 +7,22 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Draws tooltips as their own windows on the topmost layer, independent of the ImGui tooltip system. One can be
-/// shown alongside a regular <c>ImGui.SetTooltip()</c> and holds any <see cref="NoireContent"/>, styled through
-/// <see cref="TooltipStyle"/>.
+/// Draws tooltips as their own windows on the topmost layer, independent of the ImGui tooltip system.
 /// </summary>
 [NoireFacade]
 public static class NoireTooltip
 {
     private static readonly TooltipStyle DefaultStyle = new();
 
-    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
     private const string CallbackFault = "A tooltip hook threw.";
 
-    /// <summary>
-    /// The size each tooltip measured, by window id, so a reappearing tooltip is placed on its first frame.
-    /// </summary>
-    /// <remarks>
-    /// Keyed by reference: ids come from <see cref="UiIds"/> and arrive as the same instance every frame, so a
-    /// rebuilt id is pruned as stale and its tooltip re-measured once.
-    /// </remarks>
+    // The size each tooltip measured, by window id, so a reappearing tooltip is placed on its first frame.
+    // Keyed by reference: ids come from UiIds and arrive as the same instance every frame.
     private static readonly Dictionary<string, (Vector2 Size, int Frame)> SizeCache = new(StringInstanceComparer.Instance);
 
-    /// <summary>
-    /// Where a tooltip is parked while it is measured, far outside any viewport since ImGui does not clamp an
-    /// explicitly positioned window back into view. A zero style alpha cannot be used instead, as ImGui skips such a
-    /// window entirely and it would never be measured.
-    /// </summary>
+    // Where a tooltip is parked while it is measured, far outside any viewport since ImGui does not clamp an explicitly
+    // positioned window back into view. A zero style alpha cannot be used instead, as ImGui skips such a window
+    // entirely and it would never be measured.
     private static readonly Vector2 MeasuringPosition = new(-10000f, -10000f);
 
     private const ImGuiWindowFlags TooltipWindowFlags =
@@ -55,10 +45,7 @@ public static class NoireTooltip
     /// <param name="content">The tooltip's content; a plain <see cref="string"/> converts implicitly.</param>
     /// <param name="style">Optional visual and placement options.</param>
     /// <param name="hoveredFlags">Optional hover detection flags passed to <c>ImGui.IsItemHovered()</c>.</param>
-    /// <param name="id">
-    /// Optional stable id, needed only when tooltips are shown in a varying order: a null id is assigned from the
-    /// order of the frame, and an id landing on a differently sized tooltip misplaces it until it is re-measured.
-    /// </param>
+    /// <param name="id">Optional stable id, needed only when tooltips are shown in a varying order.</param>
     public static void ShowOnItemHover(NoireContent content, TooltipStyle? style = null, ImGuiHoveredFlags hoveredFlags = ImGuiHoveredFlags.None, string? id = null)
     {
         if (ImGui.IsItemHovered(hoveredFlags))
@@ -70,10 +57,7 @@ public static class NoireTooltip
     /// </summary>
     /// <param name="content">The tooltip's content; a plain <see cref="string"/> converts implicitly.</param>
     /// <param name="style">Optional visual and placement options.</param>
-    /// <param name="id">
-    /// Optional stable id, needed only when tooltips are shown in a varying order: a null id is assigned from the
-    /// order of the frame, and an id landing on a differently sized tooltip misplaces it until it is re-measured.
-    /// </param>
+    /// <param name="id">Optional stable id, needed only when tooltips are shown in a varying order.</param>
     public static void Show(NoireContent content, TooltipStyle? style = null, string? id = null)
     {
         if (content == null || content.IsEmpty)
@@ -148,11 +132,7 @@ public static class NoireTooltip
         PruneSizeCache();
     }
 
-    /// <summary>
-    /// Hands the chrome to a custom-draw hook, with every value resolved the way the skipped pushes would have.
-    /// </summary>
-    /// <param name="customDraw">The hook to run.</param>
-    /// <param name="style">The style being drawn with.</param>
+    // Hands the chrome to a custom-draw hook, with every value resolved the way the skipped pushes would have.
     private static void InvokeCustomDraw(Action<UiTooltipDraw> customDraw, TooltipStyle style)
     {
         using var draw = UiDraw.BeginWindow();
@@ -181,11 +161,7 @@ public static class NoireTooltip
         UiHook.Invoke(customDraw, args, nameof(NoireTooltip), CallbackFault);
     }
 
-    /// <summary>
-    /// Resolves the anchor point the tooltip hangs from, and which of its own corners hangs there.
-    /// </summary>
-    /// <param name="style">The style carrying the placement, the gap and the offsets.</param>
-    /// <returns>The anchor position in screen coordinates, and the normalized pivot of the tooltip pinned to it.</returns>
+    // Returns the anchor position in screen coordinates, and the normalized pivot of the tooltip pinned to it.
     private static (Vector2 Position, Vector2 Pivot) ResolveAnchor(TooltipStyle style)
     {
         if (style.Placement == TooltipPlacement.Mouse)
@@ -208,19 +184,8 @@ public static class NoireTooltip
         return (position + style.ScaledItemOffset, pivot);
     }
 
-    /// <summary>
-    /// Turns an anchor and a pivot into the top left corner of a tooltip of the given size, clamping it into the viewport
-    /// when the style asks for it.
-    /// </summary>
-    /// <remarks>
-    /// The pivot is applied here rather than passed to <c>ImGui.SetNextWindowPos</c>, which defers a non-zero pivot
-    /// until the window size is known and would place an auto-resizing tooltip at the raw anchor on its first frame.
-    /// </remarks>
-    /// <param name="anchorPosition">The anchor position in screen coordinates.</param>
-    /// <param name="pivot">The normalized point of the tooltip pinned to the anchor.</param>
-    /// <param name="size">The size of the tooltip.</param>
-    /// <param name="style">The style carrying the clamping preference.</param>
-    /// <returns>The top left corner of the tooltip in screen coordinates.</returns>
+    // Turns an anchor and a pivot into the top left corner in screen coordinates, clamped into the viewport when the
+    // style asks for it.
     private static Vector2 ResolveTopLeft(Vector2 anchorPosition, Vector2 pivot, Vector2 size, TooltipStyle style)
     {
         var topLeft = anchorPosition - (pivot * size);
@@ -237,14 +202,7 @@ public static class NoireTooltip
     }
 
 
-    /// <summary>
-    /// Drops remembered sizes of tooltips that have not been drawn for a while, once the cache is large enough to be
-    /// worth bounding.
-    /// </summary>
-    /// <remarks>
-    /// Keys are gathered into a pooled buffer before any is removed, since the dictionary cannot be written to while
-    /// it is enumerated and this runs on every frame a tooltip draws.
-    /// </remarks>
+    // Drops remembered sizes of tooltips that have not been drawn for a while.
     private static void PruneSizeCache()
     {
         if (SizeCache.Count < 64)

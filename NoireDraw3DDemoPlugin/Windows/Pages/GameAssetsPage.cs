@@ -14,16 +14,14 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>
-/// Loads models and their materials straight out of the game's archives and draws them with this renderer. The files
-/// are read and decoded here; nothing is spawned in the game and no game function is called, so what appears is inert
-/// geometry that only this layer knows about.
-/// </summary>
+// Loads models and their materials straight out of the game's archives and draws them with this renderer. The files
+// are read and decoded here; nothing is spawned in the game and no game function is called, so what appears is inert
+// geometry that only this layer knows about.
 internal sealed class GameAssetsPage : IDisposable
 {
     private const string DefaultPath = "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl";
 
-    /// <summary>Paths verified to exist, covering both vertex layouts, both material shader packages, and a multi-part scene.</summary>
+    // Paths verified to exist, covering both vertex layouts, both material shader packages, and a multi-part scene.
     private static readonly (string Label, string Path)[] Presets =
     [
         ("Furniture", "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl"),
@@ -33,13 +31,10 @@ internal sealed class GameAssetsPage : IDisposable
         ("Monster", "chara/monster/m0001/obj/body/b0001/model/m0001b0001.mdl"),
     ];
 
-    /// <summary>
-    /// One spawned model and everything that belongs to it.<br/>
-    /// Grouped rather than flattened into one list of nodes because each model owns its own materials, and a
-    /// material is only safe to dispose once nothing is still drawing with it. Sharing one dictionary across
-    /// spawns meant loading a second model disposed the first one's textures while its nodes were still on
-    /// screen, which showed up as the first model vanishing or the game crashing outright.
-    /// </summary>
+    // Grouped rather than flattened into one list of nodes because each model owns its own materials, and a material
+    // is only safe to dispose once nothing is still drawing with it. Sharing one dictionary across spawns meant
+    // loading a second model disposed the first one's textures while its nodes were still on screen, which showed up
+    // as the first model vanishing or the game crashing outright.
     private sealed class SpawnedModel
     {
         /// <summary>The decoded meshes of every part, flattened in spawn order and index-aligned with <see cref="Nodes"/>.</summary>
@@ -51,7 +46,6 @@ internal sealed class GameAssetsPage : IDisposable
         /// <summary>The materials this model resolved, keyed by material path. Owned here and disposed with it.</summary>
         public required Dictionary<string, GameMaterial> Materials { get; init; }
 
-        /// <summary>Where it was loaded from, for the status line.</summary>
         public required string Path { get; init; }
 
         /// <summary>Which slot along the row this model stands in, so a second one lands beside the first rather than inside it.</summary>
@@ -71,8 +65,7 @@ internal sealed class GameAssetsPage : IDisposable
 
         /// <summary>
         /// Points every part's selection at <see cref="Root"/>, or back at itself. Joined is how the game
-        /// treats the object - one click selects all of it; unjoined exposes the individual meshes, which is
-        /// what inspecting a single part wants.
+        /// treats the object - one click selects all of it; unjoined exposes the individual meshes.
         /// </summary>
         public void SetJoined(bool joined)
         {
@@ -114,24 +107,18 @@ internal sealed class GameAssetsPage : IDisposable
 
     private readonly List<SpawnedModel> models = [];
 
-    /// <summary>The next sideways slot to spawn into. Only reset by Clear, so removing one model never shuffles the others.</summary>
+    // The next sideways slot to spawn into. Only reset by Clear, so removing one model never shuffles the others.
     private int nextSlot;
 
-    /// <summary>
-    /// Draw the spawned meshes into the game's own G-buffer instead of Draw3D's layer, so the game's deferred
-    /// lighting pass lights them with every lamp, the sun and the ambient term, and walls occlude them at pixel
-    /// precision. Off by default: this is the one path that draws inside the game's frame.
-    /// </summary>
+    // Draw the spawned meshes into the game's own G-buffer instead of Draw3D's layer, so the game's deferred lighting
+    // pass lights them with every lamp, the sun and the ambient term, and walls occlude them at pixel precision. Off
+    // by default: this is the one path that draws inside the game's frame.
     private bool gameLit;
 
-    /// <summary>The materials of the load that has finished but not yet been spawned. Handed to the model it produces.</summary>
+    // The materials of the load that has finished but not yet been spawned. Handed to the model it produces.
     private Dictionary<string, GameMaterial> pendingMaterials = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// How a loaded material is turned into something this renderer draws. One choice rather than several
-    /// toggles, because the paths are alternatives: the mask path and the whole-surface diffuse path apply
-    /// color in incompatible ways, and offering both as switches makes one silently outrank the other.
-    /// </summary>
+    // How a loaded material is turned into something this renderer draws.
     private enum Shading
     {
         /// <summary>Opaque and lit, with the dye confined to the area the color map's alpha marks as dyeable. What the game does.</summary>
@@ -166,10 +153,10 @@ internal sealed class GameAssetsPage : IDisposable
     private bool importVertexColors;
     private bool keepCpuData = true;
 
-    /// <summary>Off spawns each model as one selectable object; on exposes its individual meshes to the click.</summary>
+    // Off spawns each model as one selectable object; on exposes its individual meshes to the click.
     private bool unjoinMeshes;
 
-    /// <summary>What <see cref="unjoinMeshes"/> was when the proxies were last pointed, so a toggle applies exactly once.</summary>
+    // What unjoinMeshes was when the proxies were last pointed, so a toggle applies exactly once.
     private bool appliedUnjoinMeshes;
     private Vector4 tint = Vector4.One;
     private float distance = 4f;
@@ -178,7 +165,7 @@ internal sealed class GameAssetsPage : IDisposable
     private bool loading;
     private GameScenePart[]? loaded;
 
-    /// <summary>The default stain of the load that has finished but not yet been spawned, read with it off the draw thread.</summary>
+    // The default stain of the load that has finished but not yet been spawned, read with it off the draw thread.
     private ushort pendingStain;
     private Shading appliedShading;
     private bool appliedOverrideDye;
@@ -191,12 +178,11 @@ internal sealed class GameAssetsPage : IDisposable
     private bool appliedUseGameMaterials = true;
     private float appliedDistance = 4f;
 
-    /// <summary>Whether the game-material pipeline was registered when the nodes on screen were built.</summary>
+    // Whether the game-material pipeline was registered when the nodes on screen were built.
     private bool appliedPipelineReady;
 
     private string loadedFrom = string.Empty;
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         ConsumeLoaded();
@@ -278,7 +264,6 @@ internal sealed class GameAssetsPage : IDisposable
         DrawDecoded();
     }
 
-    /// <summary>Picks one of the game's housing dyes and sets the dye color to its exact table value.</summary>
     private void DrawStainPicker()
     {
         if (stainCombo is null)
@@ -332,7 +317,8 @@ internal sealed class GameAssetsPage : IDisposable
         }
     }
 
-    /// <summary>Describes the most recently spawned model. Loading another leaves the earlier ones standing, so this follows the newest rather than the only one.</summary>
+    // Describes the most recently spawned model. Loading another leaves the earlier ones standing, so this follows
+    // the newest rather than the only one.
     private void DrawDecoded()
     {
         if (models.Count == 0)
@@ -379,11 +365,9 @@ internal sealed class GameAssetsPage : IDisposable
         }
     }
 
-    /// <summary>Names the item's default stain, read from its sgb.</summary>
     private static string DefaultStainName(ushort stainId)
         => StainHelper.TryGet(stainId, out var stain) ? $"default dye '{stain.Name}' ({stain.Id})" : $"default dye {stainId}";
 
-    /// <summary>Which of the material's texture slots resolved, so an absent map reads as a fact rather than a shading bug.</summary>
     private static string Maps(GameMaterial material)
     {
         var present = new List<string>(3);
@@ -478,10 +462,9 @@ internal sealed class GameAssetsPage : IDisposable
         }
     }
 
-    /// <summary>
-    /// Spawns whatever the last load produced. Done from the draw loop rather than the load continuation so the scene is
-    /// only ever touched from one thread, and so a load that finishes after this page is disposed has nothing to spawn into.
-    /// </summary>
+    // Spawns whatever the last load produced. Done from the draw loop rather than the load continuation so the scene
+    // is only ever touched from one thread, and so a load that finishes after this page is disposed has nothing to
+    // spawn into.
     private void ConsumeLoaded()
     {
         if (loaded is null)
@@ -561,17 +544,14 @@ internal sealed class GameAssetsPage : IDisposable
             : $"Spawned {model.Nodes.Count} mesh(es){partsSuffix} from '{model.Path}' with the flat tint. {models.Count} model(s) on screen.";
     }
 
-    /// <summary>
-    /// Re-applies the material settings to nodes that are already on screen. Without this the toggles above
-    /// would only take effect on the next load, which reads as them doing nothing at all.
-    /// </summary>
+    // Re-applies the material settings to nodes that are already on screen. Without this the toggles above would only
+    // take effect on the next load.
     private void RefreshMaterialsIfChanged()
     {
         if (models.Count == 0)
             return;
 
-        // Distance moves what is already on screen instead of waiting for a respawn, which is what made the
-        // slider read as doing nothing.
+        // Distance moves what is already on screen instead of waiting for a respawn.
         if (distance != appliedDistance)
         {
             appliedDistance = distance;
@@ -621,7 +601,7 @@ internal sealed class GameAssetsPage : IDisposable
         }
     }
 
-    /// <summary>Records the settings the nodes on screen were built with, so a later change is detected exactly once.</summary>
+    // Records the settings the nodes on screen were built with, so a later change is detected exactly once.
     private void MarkApplied()
     {
         appliedShading = shading;
@@ -637,7 +617,7 @@ internal sealed class GameAssetsPage : IDisposable
         appliedPipelineReady = GameMaterialPipeline.Ready;
     }
 
-    /// <summary>The material for a mesh whose own material could not be resolved.</summary>
+    // The material for a mesh whose own material could not be resolved.
     private Material Flat()
         => shading is Shading.Unlit or Shading.UnlitDiffuse ? Material.Unlit(tint) : Material.Lit(tint);
 
@@ -650,10 +630,8 @@ internal sealed class GameAssetsPage : IDisposable
         _ => game.ToGameShaded(EffectiveDye(defaultStain), tint, normalStrength, specularStrength, dyeReference, ignoreSceneLight),
     };
 
-    /// <summary>
-    /// The dye a build applies: the picked color, or the item's own default stain so an untouched spawn
-    /// matches an undyed placement in game. Null falls to the undyed fallback.
-    /// </summary>
+    // The dye a build applies: the picked color, or the item's own default stain so an untouched spawn matches an
+    // undyed placement in game. Null falls to the undyed fallback.
     private Vector3? EffectiveDye(ushort defaultStain)
     {
         if (overrideDye)
@@ -695,7 +673,7 @@ internal sealed class GameAssetsPage : IDisposable
         failed = false;
     }
 
-    /// <summary>Releases materials from a load that never reached a model, so an abandoned load leaks nothing.</summary>
+    // Releases materials from a load that never reached a model.
     private void DisposePending()
     {
         foreach (var material in pendingMaterials.Values)
@@ -704,13 +682,10 @@ internal sealed class GameAssetsPage : IDisposable
         pendingMaterials.Clear();
     }
 
-    /// <summary>Sideways gap between two spawned models, in world units.</summary>
     private const float SlotSpacing = 1.5f;
 
-    /// <summary>
-    /// Where a model in a given slot stands: in front of the player at the chosen distance, stepped sideways so
-    /// a second model lands beside the first instead of inside it.
-    /// </summary>
+    // Where a model in a given slot stands: in front of the player at the chosen distance, stepped sideways so a
+    // second model lands beside the first instead of inside it.
     private Vector3 OriginFor(int slot)
     {
         var forward = Forward();
@@ -726,7 +701,6 @@ internal sealed class GameAssetsPage : IDisposable
         return new Vector3(MathF.Sin(rotation), 0f, MathF.Cos(rotation));
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         var target = scene;
@@ -741,9 +715,7 @@ internal sealed class GameAssetsPage : IDisposable
     }
 
     /// <summary>
-    /// Submits the spawned meshes to the G-buffer injection, every frame it is switched on. Submitting is all
-    /// that is needed: the renderer suppresses the node's own draw for that frame, so nothing has to be hidden
-    /// and the nodes stay clickable.<br/>
+    /// Submits the spawned meshes to the G-buffer injection, every frame it is switched on.<br/>
     /// Driven from the scene's per-frame event rather than from <see cref="Draw"/>, because the injection queue
     /// is rebuilt every frame and a UI page only draws while its window is open - submitting from there makes
     /// the object vanish the moment the window is closed.

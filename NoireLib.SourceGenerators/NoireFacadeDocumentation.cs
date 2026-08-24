@@ -14,11 +14,8 @@ namespace NoireLib.SourceGenerators;
 /// inherited-documentation tags against the member they point at.
 /// </summary>
 /// <remarks>
-/// Kept apart from the rendering of signatures because the two change for unrelated reasons: this half moves when a
-/// documentation tag needs different treatment, the other when a C# construct does.<br/>
-/// It exists at all because the compiler leaves inherited-documentation tags unexpanded when it writes the XML
-/// documentation file, and that file is the whole of what a consumer's IntelliSense reads from a package. A forward
-/// that carried such a tag through, or that pointed back at its target, would reach consumers as a blank tooltip.
+/// The compiler leaves inherited-documentation tags unexpanded in the XML documentation file a package ships, so a
+/// forward carrying one reaches consumers as a blank tooltip.
 /// </remarks>
 internal static class NoireFacadeDocumentation
 {
@@ -122,10 +119,8 @@ internal static class NoireFacadeDocumentation
     /// Drops the parts of inherited documentation that describe something the member it landed on does not have.
     /// </summary>
     /// <remarks>
-    /// An overload commonly inherits from the fuller overload beside it, which documents parameters the shorter one
-    /// never takes. Left in place those become build warnings on the generated file and a tooltip describing an
-    /// argument that is not in the signature. Prose referring to such a parameter keeps the word and loses the link,
-    /// since the sentence around it usually still reads correctly.
+    /// An overload inheriting from a fuller one carries parameters it never takes: left in place they become build
+    /// warnings. Prose referring to such a parameter keeps the word and loses the link.
     /// </remarks>
     private static void Sanitize(XElement member, HashSet<string> parameters, HashSet<string> typeParameters)
     {

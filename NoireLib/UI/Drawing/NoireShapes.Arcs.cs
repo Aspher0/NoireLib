@@ -6,14 +6,12 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// The round shapes: arcs, rings, wedges, and the two pattern fills a bespoke panel is decorated with.<br/>
+/// The round shapes: arcs, rings, wedges, and the two pattern fills a bespoke panel is decorated with.
 /// Angles here are turns rather than radians: 0 is twelve o'clock and a quarter is three o'clock.
 /// </summary>
 public static partial class NoireShapes
 {
-    /// <summary>
-    /// The most points a curve is drawn with. Past this the segments are already shorter than a pixel.
-    /// </summary>
+    // The most points a curve is drawn with; past this the segments are already shorter than a pixel.
     private const int MaxCurvePoints = 512;
 
     private static readonly SunburstStyle DefaultSunburstStyle = new();
@@ -27,9 +25,8 @@ public static partial class NoireShapes
     public const int MaxArcPathPoints = 257;
 
     /// <summary>
-    /// How far, in real pixels, a curve's straight segments may sit inside the true curve. Defaults to 0.15.
+    /// How far, in real pixels, a curve's straight segments may sit inside the true curve; defaults to 0.15.
     /// </summary>
-    /// <remarks>Lower is smoother and costs more points.</remarks>
     public static float ArcError { get; set; } = 0.15f;
 
     /// <summary>
@@ -41,25 +38,14 @@ public static partial class NoireShapes
     /// <param name="fromTurns">Where the arc starts, in turns clockwise from twelve o'clock.</param>
     /// <param name="toTurns">Where it ends.</param>
     /// <param name="closed">
-    /// Whether the path is a closed loop, which it is once the sweep is a full turn. Pass it on to
-    /// <see cref="Stroke"/>: the path deliberately does not repeat its first point, so stroking it open leaves the
-    /// loop with a gap.
+    /// Whether the path is a closed loop, which it is once the sweep is a full turn; pass it on to
+    /// <see cref="Stroke"/>.
     /// </param>
     /// <returns>How many points were written, or zero when the sweep is empty or the buffer is too small.</returns>
     public static int ArcPath(Span<Vector2> points, Vector2 centre, float radius, float fromTurns, float toTurns, out bool closed)
         => ArcPath(points, centre, radius, fromTurns, toTurns, radius, out closed);
 
-    /// <summary>
-    /// Writes the points along an arc, tessellated for a radius other than its own.
-    /// </summary>
-    /// <param name="points">Receives the path. At least <see cref="MaxArcPathPoints"/> long is always enough.</param>
-    /// <param name="centre">The centre of the circle, in screen space.</param>
-    /// <param name="radius">The radius the points are written at, in real pixels.</param>
-    /// <param name="fromTurns">Where the arc starts, in turns clockwise from twelve o'clock.</param>
-    /// <param name="toTurns">Where it ends.</param>
-    /// <param name="errorRadius">The radius the segment count is solved for.</param>
-    /// <param name="closed">Whether the path is a closed loop, which it is once the sweep is a full turn.</param>
-    /// <returns>How many points were written, or zero when the sweep is empty or the buffer is too small.</returns>
+    // Points are written at radius, while the segment count is solved for errorRadius.
     internal static int ArcPath(Span<Vector2> points, Vector2 centre, float radius, float fromTurns, float toTurns, float errorRadius, out bool closed)
     {
         closed = false;
@@ -165,9 +151,7 @@ public static partial class NoireShapes
         }
     }
 
-    /// <summary>
-    /// Fills one convex slice of a disc.
-    /// </summary>
+    // Fills one convex slice of a disc.
     private static void Pie(Vector2 centre, float radius, float fromTurns, float toTurns, Vector4 color)
     {
         // One past the arc's own limit, for the centre vertex a partial slice needs in front of it.
@@ -190,9 +174,7 @@ public static partial class NoireShapes
         Fill(points[..(count + 1)], color);
     }
 
-    /// <summary>
-    /// How many segments a curve of a given sweep and radius needs before the facets stop being visible.
-    /// </summary>
+    // How many segments a curve of a given sweep and radius needs before the facets stop being visible.
     private static int SegmentsFor(float sweepTurns, float radius)
     {
         var sweep = MathF.Abs(sweepTurns);
@@ -207,9 +189,7 @@ public static partial class NoireShapes
         return Math.Clamp((int)MathF.Ceiling(wholeTurn * sweep) + 1, 3, MaxArcPathPoints - 1);
     }
 
-    /// <summary>
-    /// Turns clockwise from twelve o'clock, as an angle in the draw list's coordinate space.
-    /// </summary>
+    // Takes turns clockwise from twelve o'clock and returns an angle in the draw list's coordinate space.
     private static float Radians(float turns) => (turns - 0.25f) * MathF.Tau;
 
     #endregion
@@ -286,11 +266,11 @@ public static partial class NoireShapes
         // shape. The general path below draws a filled polygon per ray per layer plus a shading pass over every
         // vertex: for the shipped default of sixty soft rays that was a hundred and eighty calls a frame, almost all
         // of what a burst cost.
-        // The results match: the fade is linear between the radii, exactly what interpolating full-alpha inner
-        // vertices towards zero-alpha rim vertices produces. The rim carries no alpha, so the antialiased fringe the
-        // polygon path would add there has nothing to smooth; the ray sides are softened by the layers, as on the
-        // general path; and an inner edge, when the rays start off the centre, sits at the burst's faint working
-        // alpha where the missing single pixel of fringe does not read.
+        // The results match: interpolating full-alpha inner vertices towards zero-alpha rim vertices gives the same
+        // linear fade between the radii. The rim carries no alpha, so the antialiased fringe the polygon path would
+        // add there has nothing to smooth; the ray sides are softened by the layers, as on the general path; and an
+        // inner edge, when the rays start off the centre, sits at the burst's faint working alpha where the missing
+        // single pixel of fringe does not read.
         if (shading && style.Rays * layers * 4 <= 60000)
         {
             FillFadedBurst(drawList, centre, inner, tipped, radius, color, style.Rays, layers, layerAlphas, directions, stride, burstCos, burstSin);
@@ -340,23 +320,8 @@ public static partial class NoireShapes
             ShadeRadial(drawList, firstVertex, drawList.VtxBuffer.Size, centre, inner, radius);
     }
 
-    /// <summary>
-    /// Writes a fading sunburst as one batch of raw geometry, with the radial fade carried in the vertex colors
-    /// instead of applied in a pass afterwards.
-    /// </summary>
-    /// <param name="drawList">The list to write into.</param>
-    /// <param name="centre">Where the rays converge, in screen space.</param>
-    /// <param name="inner">The radius the rays start at, in real pixels.</param>
-    /// <param name="tipped">Whether the rays converge to the centre point.</param>
-    /// <param name="radius">How far they reach, in real pixels.</param>
-    /// <param name="color">The ray color at the centre.</param>
-    /// <param name="rays">How many rays radiate from the centre.</param>
-    /// <param name="layers">How many layers build one soft ray.</param>
-    /// <param name="layerAlphas">The alpha each layer carries.</param>
-    /// <param name="directions">The unit ray directions, as <see cref="ResolveSunburstDirections"/> lays them out.</param>
-    /// <param name="stride">How many directions one ray occupies.</param>
-    /// <param name="burstCos">The cosine of the burst's rotation.</param>
-    /// <param name="burstSin">The sine of the burst's rotation.</param>
+    // Writes a fading sunburst as one batch of raw geometry, with the radial fade carried in the vertex colors
+    // instead of applied in a pass afterwards. The directions arrive laid out by ResolveSunburstDirections.
     private static void FillFadedBurst(ImDrawListPtr drawList, Vector2 centre, float inner, bool tipped, float radius, Vector4 color, int rays, int layers, ReadOnlySpan<float> layerAlphas, Vector2[] directions, int stride, float burstCos, float burstSin)
     {
         var wedges = rays * layers;
@@ -490,23 +455,14 @@ public static partial class NoireShapes
         }
     }
 
-    /// <summary>
-    /// How long a curve's straight segments are allowed to be, in real pixels.
-    /// </summary>
+    // How long a curve's straight segments are allowed to be, in real pixels.
     private const float CurveSegmentPx = 3f;
 
-    /// <summary>
-    /// The fewest points a single lobe is ever drawn with, whatever the radius, so a small rosette still reads as
-    /// having the petals it was asked for rather than as a polygon.
-    /// </summary>
+    // The fewest points a single lobe is ever drawn with, whatever the radius, so a small rosette still reads as
+    // having the petals it was asked for rather than as a polygon.
     private const int MinPointsPerLobe = 12;
 
-    /// <summary>
-    /// How many points a guilloche ring of a given radius is drawn with.
-    /// </summary>
-    /// <param name="radius">The ring's radius, in real pixels.</param>
-    /// <param name="lobes">How many petals the rosette has.</param>
-    /// <returns>The number of points to draw the ring with.</returns>
+    // The radius arrives in real pixels.
     internal static int GuillocheSegments(float radius, int lobes)
     {
         var byLength = (int)MathF.Ceiling(MathF.Tau * radius / CurveSegmentPx);
@@ -515,41 +471,21 @@ public static partial class NoireShapes
         return Math.Clamp(Math.Max(byLength, byLobes), 32, MaxCurvePoints);
     }
 
-    /// <summary>
-    /// What a sunburst's ray directions are decided by, and nothing else.
-    /// </summary>
-    /// <param name="Rays">How many rays radiate from the centre.</param>
-    /// <param name="HalfWidth">Half the angular width of a ray, in radians.</param>
-    /// <param name="Softness">How much the layers narrow inwards.</param>
-    /// <param name="Layers">How many layers build one soft ray.</param>
+    // HalfWidth is half the angular width of a ray, in radians.
     private readonly record struct SunburstKey(int Rays, float HalfWidth, float Softness, int Layers);
 
-    /// <summary>
-    /// Sunburst ray directions already worked out, so the same burst is not re-tessellated every frame.
-    /// </summary>
+    // Sunburst ray directions already worked out, so the same burst is not re-tessellated every frame.
     private static readonly HotPathCache<SunburstKey, Vector2[]> SunburstCache = new();
 
-    /// <summary>
-    /// How many directions one ray needs: the one down its middle, and an edge pair for each layer.
-    /// </summary>
+    // How many directions one ray needs: the one down its middle, and an edge pair for each layer.
     private static int SunburstStride(int layers) => 1 + (layers * 2);
 
-    /// <summary>
-    /// Turns a unit direction by an angle already reduced to its cosine and sine.
-    /// </summary>
+    // The angle arrives already reduced to its cosine and sine.
     private static Vector2 Turn(Vector2 direction, float cos, float sin)
         => new((direction.X * cos) - (direction.Y * sin), (direction.X * sin) + (direction.Y * cos));
 
-    /// <summary>
-    /// Writes the unrotated unit directions for every ray of a sunburst: down the middle of each ray, then the two
-    /// edges of each of its layers.
-    /// </summary>
-    /// <param name="directions">Receives the directions. Must be at least rays by stride long.</param>
-    /// <param name="rays">How many rays radiate from the centre.</param>
-    /// <param name="halfWidth">Half the angular width of a ray, in radians.</param>
-    /// <param name="softness">How much the layers narrow inwards.</param>
-    /// <param name="layers">How many layers build one soft ray.</param>
-    /// <returns>How many directions were written.</returns>
+    // Writes the unrotated unit directions for every ray: down the middle of each ray, then the two edges of each of
+    // its layers. The buffer must be at least rays by stride long.
     internal static int SunburstDirections(Span<Vector2> directions, int rays, float halfWidth, float softness, int layers)
     {
         var slot = MathF.Tau / rays;
@@ -574,9 +510,6 @@ public static partial class NoireShapes
         return rays * stride;
     }
 
-    /// <summary>
-    /// The unit ray directions for a burst, from the cache when they are already there and computed into it when not.
-    /// </summary>
     private static Vector2[] ResolveSunburstDirections(int rays, float halfWidth, float softness, int layers)
     {
         var key = new SunburstKey(rays, halfWidth, softness, layers);
@@ -591,27 +524,13 @@ public static partial class NoireShapes
         return directions;
     }
 
-    /// <summary>
-    /// What a guilloche ring's shape is decided by, and nothing else.
-    /// </summary>
-    /// <param name="Lobes">How many petals.</param>
-    /// <param name="Depth">How far the tracing point sits from the rolling circle's centre.</param>
-    /// <param name="Segments">How many points the ring is drawn with.</param>
+    // Depth is how far the tracing point sits from the rolling circle's centre.
     private readonly record struct GuillocheKey(int Lobes, float Depth, int Segments);
 
-    /// <summary>
-    /// Guilloche rings already worked out, so the same rosette is not re-tessellated every frame.
-    /// </summary>
+    // Guilloche rings already worked out, so the same rosette is not re-tessellated every frame.
     private static readonly HotPathCache<GuillocheKey, Vector2[]> GuillocheCache = new();
 
-    /// <summary>
-    /// Writes one guilloche ring of radius one, centred on the origin and unrotated.
-    /// </summary>
-    /// <param name="points">Receives the curve. Must be at least <paramref name="segments"/> long.</param>
-    /// <param name="lobes">How many petals the rosette has.</param>
-    /// <param name="depth">How pronounced the petals are, from 0 to 1.</param>
-    /// <param name="segments">How many points to write.</param>
-    /// <returns>How many points were written.</returns>
+    // Writes one ring of radius one, centred on the origin and unrotated; the buffer must be at least segments long.
     internal static int GuillochePath(Span<Vector2> points, int lobes, float depth, int segments)
     {
         var rolling = 1f / lobes;
@@ -631,9 +550,6 @@ public static partial class NoireShapes
         return segments;
     }
 
-    /// <summary>
-    /// The unit ring for a shape, from the cache when it is already there and computed into it when it is not.
-    /// </summary>
     private static Vector2[] ResolveGuillochePath(int lobes, float depth, int segments)
     {
         var key = new GuillocheKey(lobes, depth, segments);

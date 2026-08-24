@@ -20,20 +20,21 @@ namespace NoireLib.Draw3D.Scene;
 /// </summary>
 public sealed partial class SceneNode
 {
-    /// <summary>Default shape-outline width, in world units.</summary>
     private const float DefaultDecalShapeWidth = 0.03f;
 
-    /// <summary>The immediate-layer style for the outline: a world-depth-tested line, so it reads as a real marking on the surface.</summary>
+    // The immediate-layer style for the outline: a world-depth-tested line, so it reads as a real marking on the
+    // surface.
     private static readonly ImShapeStyle DecalShapeEdgeStyle = new();
 
-    /// <summary>Reusable point buffer for the outline loops; render-thread only (see <see cref="DecalOverlayService"/>), so one per thread costs nothing and keeps the per-frame trace allocation-free.</summary>
+    // Reusable point buffer for the outline loops; render-thread only (see DecalOverlayService), so one per thread
+    // costs nothing and keeps the per-frame trace allocation-free.
     [System.ThreadStatic]
     private static List<Vector3>? decalShapePath;
 
-    /// <summary>The outline color (straight alpha); alpha 0 = the opt-in outline is off, driven by <see cref="ShowDecalShape"/> / <see cref="HideDecalShape"/>.</summary>
+    // The outline color (straight alpha); alpha 0 = the opt-in outline is off, driven by ShowDecalShape /
+    // HideDecalShape.
     private Vector4 decalShapeColor;
 
-    /// <summary>The outline width, in world units.</summary>
     private float decalShapeWidth = DefaultDecalShapeWidth;
 
     /// <summary>Whether the decal-shape outline is currently shown (its color's alpha &gt; 0).</summary>
@@ -75,7 +76,8 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Stops the decal-shape outline and drops the node from the service when nothing else needs it (called on destroy).</summary>
+    // Stops the decal-shape outline and drops the node from the service when nothing else needs it (called on
+    // destroy).
     private void ReleaseDecalShape()
     {
         if (decalShapeColor.W <= 0f)
@@ -86,18 +88,9 @@ public sealed partial class SceneNode
             DecalOverlayService.Unregister(this);
     }
 
-    /// <summary>
-    /// Emits this node's decal-shape outline into the immediate layer for this frame; render-thread only, driven off
-    /// <see cref="NoireDraw3D.OnRenderOverlay"/> by <see cref="DecalOverlayService"/> (the opt-in path) or by
-    /// <see cref="Scene3D.TraceDecalShapes"/> (wireframe mode), reading the shape and world matrix under the graph
-    /// lock and skipping a destroyed, hidden, or no-longer-decal node.
-    /// </summary>
-    /// <param name="im">The immediate layer to draw into.</param>
-    /// <param name="force">
-    /// Trace even when this node never opted in, using the decal's own color - what wireframe mode needs, since it
-    /// must show every decal rather than only the ones an author flagged; an explicit <see cref="ShowDecalShape"/>
-    /// color still wins.
-    /// </param>
+    // Emits this node's decal-shape outline into the immediate layer for this frame; render-thread only, driven off
+    // OnRenderOverlay by DecalOverlayService (the opt-in path) or by TraceDecalShapes (wireframe mode), reading the
+    // shape and world matrix under the graph lock and skipping a destroyed, hidden, or no-longer-decal node.
     internal void DrawDecalShapeEdges(ImDraw3D im, bool force = false)
     {
         Vector4 color;
@@ -132,10 +125,10 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>A decal color at full alpha - the outline's default, so it reads as the decal it traces.</summary>
+    // A decal color at full alpha - the outline's default, so it reads as the decal it traces.
     private static Vector4 OpaqueOf(Vector4 color) => new(color.X, color.Y, color.Z, 1f);
 
-    /// <summary>Effective visibility: this node and every ancestor is visible; caller holds <see cref="Scene3D.GraphLock"/>.</summary>
+    // Effective visibility: this node and every ancestor is visible; caller holds GraphLock.
     private bool IsEffectivelyVisibleNoLock()
     {
         for (var n = this; n != null; n = n.parent)

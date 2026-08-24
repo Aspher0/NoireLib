@@ -24,7 +24,7 @@ public readonly record struct UiTableCellDraw<T>(
     public string Text => Column.Read(Row);
 
     /// <summary>
-    /// Draws the cell the way the table would have, for a renderer that only wants to add something beside it.
+    /// Draws the cell the way the table would have.
     /// </summary>
     public void DrawText()
     {

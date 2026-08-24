@@ -31,10 +31,10 @@ public class Tmtr : TmbItemWithTime
     /// <param name="condition">The block's bytes.</param>
     public void SetCondition(byte[] condition) => Condition = condition;
 
-    /// <summary> The header of a condition block: a word of its own, then the number of steps that follow. </summary>
+    // The header of a condition block: a word of its own, then the number of steps that follow.
     private const int ConditionHeaderLength = 8;
 
-    /// <summary> Every step of a condition block is the same length. </summary>
+    // Every step of a condition block is the same length.
     private const int ConditionStepLength = 12;
 
     /// <summary>

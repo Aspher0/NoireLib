@@ -6,41 +6,20 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Draws meshes into the GAME's G-buffer, inside the game's own geometry pass, so the game's deferred lighting
-/// pass lights them.<br/>
-/// <b>What this buys.</b> Deferred lighting runs over pixels rather than objects: the lighting shader reads
-/// albedo, normal and depth out of the G-buffer and cannot tell which object wrote any given pixel. Geometry
-/// placed there is therefore lit by every lamp, the sun and the ambient term, receives shadow-map lookups, is
-/// occluded by walls at pixel precision, and passes through the game's tonemapping and exposure - all of it
-/// identical to the wall beside it by construction rather than by approximation.<br/>
-/// <b>What it costs.</b> Everything that lives in Draw3D's own pass is unavailable here: outlines and rims,
-/// transparency, ground decals, and drawing above everything. Deferred geometry is opaque. An object needing
-/// any of those stays on the normal path.<br/>
-/// <b>What it does not do.</b> Cast shadows. Shadow maps are rendered in earlier depth-only passes this pass
-/// never sees; casting is its own injection (<see cref="ShadowInject"/>, opted into per frame through
-/// <see cref="Draw3DGameLit.CastShadows"/>).
-/// </summary>
-/// <remarks>
-/// Every pipeline slot touched goes through <see cref="StateGuard"/>, and the render targets are never
-/// re-bound: the callback runs with the game's own targets already bound and must leave them that way.
-/// </remarks>
+// Draws meshes into the GAME's G-buffer, inside the game's own geometry pass, so the game's deferred lighting pass
+// lights them. What this buys. Deferred lighting runs over pixels rather than objects: the lighting shader reads
+// albedo, normal and depth out of the G-buffer and cannot tell which object wrote any given pixel. Geometry placed
+// there is therefore lit by every lamp, the sun and the ambient term, receives shadow-map lookups, is occluded by
+// walls at pixel precision, and passes through the game's tonemapping and exposure - all of it identical to the wall
+// beside it by construction rather than by approximation. What it costs. Everything that lives in Draw3D's own pass
+// is unavailable here: outlines and rims, transparency, ground decals, and drawing above everything. Deferred
+// geometry is opaque. An object needing any of those stays on the normal path. What it does not do. Cast shadows.
+// Shadow maps are rendered in earlier depth-only passes this pass never sees; casting is its own injection
+// (ShadowInject, opted into per frame through CastShadows).
 internal sealed unsafe class GBufferInject : IDisposable
 {
-    /// <summary>
-    /// One mesh queued for injection this frame. Everything here is per mesh; what gets written into the
-    /// channels the game authored is per frame and lives on <see cref="Draw3DGameLit"/>.
-    /// </summary>
-    /// <param name="Mesh">The geometry.</param>
-    /// <param name="World">Its world transform.</param>
-    /// <param name="Color">Albedo tint, multiplied into the vertex colour.</param>
-    /// <param name="Textured">Whether the mesh samples a base texture into its albedo.</param>
-    /// <param name="Srv">The base texture, when textured.</param>
-    /// <param name="NormalSrv">The material's normal map, or 0. Supplies the relief the game's own normal buffer shows.</param>
-    /// <param name="SpecularSrv">The material's specular map, or 0. Supplies rtv1's per-pixel material response.</param>
-    /// <param name="NormalStrength">How strongly the normal map perturbs the surface normal.</param>
-    /// <param name="DyeColorStrength">The dye applied to the colour map's maskable area: rgb the colour, w how strongly (0 = undyed).</param>
-    /// <param name="DyeReference">The authored value the dyeable area is divided by, or 0 to multiply the authored colour instead.</param>
+    // One mesh queued for injection this frame. Everything here is per mesh; what gets written into the channels the
+    // game authored is per frame and lives on Draw3DGameLit.
     internal readonly record struct Item(
         Mesh Mesh,
         Matrix4x4 World,
@@ -53,10 +32,10 @@ internal sealed unsafe class GBufferInject : IDisposable
         Vector4 DyeColorStrength,
         float DyeReference);
 
-    /// <summary>Depth-state variants, indexed by <see cref="DepthStateIndex"/>: depth write on or off, stencil stamp on or off.</summary>
+    // Depth-state variants, indexed by DepthStateIndex: depth write on or off, stencil stamp on or off.
     private const int DepthStateCount = 4;
 
-    /// <summary>Blend-state variants: writing the five targets, or writing none of them.</summary>
+    // Blend-state variants: writing the five targets, or writing none of them.
     private const int BlendStateCount = 2;
 
     private readonly List<Item> queue = new(16);
@@ -70,7 +49,7 @@ internal sealed unsafe class GBufferInject : IDisposable
     private ID3D11SamplerState* sampler;
     private bool statesReady;
 
-    /// <summary>Which depth state a given combination of depth write and stencil stamp needs.</summary>
+    // Which depth state a given combination of depth write and stencil stamp needs.
     private static int DepthStateIndex(bool writeDepth, bool writeStencil) => (writeDepth ? 1 : 0) | (writeStencil ? 2 : 0);
 
     /// <summary>How many meshes were injected on the last frame that ran, for diagnostics.</summary>
@@ -152,7 +131,6 @@ internal sealed unsafe class GBufferInject : IDisposable
         }
     }
 
-    /// <summary>Draws one queued mesh. Returns whether it was drawn.</summary>
     private bool Draw(ID3D11DeviceContext* ctx, ShaderLibrary shaders, RenderDevice device, in Item item, Draw3DGameLit options)
     {
         if (item.Mesh is not { IndexCount: > 0 } mesh || mesh.Vb == null || mesh.Ib == null)
@@ -209,7 +187,7 @@ internal sealed unsafe class GBufferInject : IDisposable
         return true;
     }
 
-    /// <summary>Creates the constant buffers and pipeline states once. Returns whether they are usable.</summary>
+    // Creates the constant buffers and pipeline states once. Returns whether they are usable.
     private bool EnsureResources(RenderDevice device)
     {
         if (statesReady)

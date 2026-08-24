@@ -14,7 +14,8 @@ public sealed partial class Scene3D : IDisposable
     private readonly List<IDisposable> ownedDisposables = new();
     private bool disposed;
 
-    /// <summary>The always-there <see cref="NoireDraw3D.MainScene"/> is owned by the library (disposed at shutdown, never by the consumer); extra scenes are yours.</summary>
+    // The always-there MainScene is owned by the library (disposed at shutdown, never by the consumer); extra scenes
+    // are yours.
     internal bool IsHubOwned { get; set; }
 
     /// <summary>True once <see cref="Dispose"/> has run; a disposed scene rejects new node creation.</summary>
@@ -77,10 +78,8 @@ public sealed partial class Scene3D : IDisposable
         NoireDraw3D.RemoveScene(this);
     }
 
-    /// <summary>
-    /// Frees the scene's contents (owned disposables + all nodes) without touching the hub registration, shared by
-    /// <see cref="Dispose"/> and the hub's own shutdown; returns false when it was already disposed (idempotent).
-    /// </summary>
+    // Frees the scene's contents (owned disposables + all nodes) without touching the hub registration, shared by
+    // Dispose and the hub's own shutdown; returns false when it was already disposed (idempotent).
     internal bool DisposeContentsInternal()
     {
         IDisposable[] toDispose;

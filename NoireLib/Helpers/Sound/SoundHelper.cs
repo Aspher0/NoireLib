@@ -22,26 +22,22 @@ public static unsafe class SoundHelper
     private static readonly StringBuilder ReturnBuffer = new(256);
     private static int nextAlias;
 
-    /// <summary>
-    /// The longest path the multimedia interface accepts when opening a file. The limit belongs to the command string
-    /// the file name is pasted into, so a longer path is refused outright and no audio is ever read. A plugin's own
-    /// configuration folder already spends more than half of this budget, so the short form of the path is what makes
-    /// a normal layout fit.
-    /// </summary>
+    // The longest path the multimedia interface accepts when opening a file. The limit belongs to the command string
+    // the file name is pasted into, so a longer path is refused outright and no audio is ever read. A plugin's own
+    // configuration folder already spends more than half of this budget, so the short form of the path is what makes
+    // a normal layout fit.
     private const int MaxOpenPathLength = 126;
 
-    /// <summary>Marks a path as extended-length, which is what lets Windows read one past 260 characters.</summary>
+    // Marks a path as extended-length, which is what lets Windows read one past 260 characters.
     private const string ExtendedLengthPrefix = @"\\?\";
 
-    /// <summary>
-    /// How far into an mp3 Windows will look for the first audio frame. A tag longer than this hides the audio from
-    /// it completely, and the error it gives back names the driver rather than the tag that caused it. Measured
-    /// against files whose tag was grown a few kilobytes at a time: the last size that plays puts the first frame at
-    /// 129,034 bytes and the first that fails puts it at 131,082.
-    /// </summary>
+    // How far into an mp3 Windows will look for the first audio frame. A tag longer than this hides the audio from it
+    // completely, and the error it gives back names the driver rather than the tag that caused it. Measured against
+    // files whose tag was grown a few kilobytes at a time: the last size that plays puts the first frame at 129,034
+    // bytes and the first that fails puts it at 131,082.
     private const int Mp3FirstFrameWindow = 131072;
 
-    /// <summary>How long a tag-stripped copy is kept before it is treated as rubbish and deleted.</summary>
+    // How long a tag-stripped copy is kept before it is treated as rubbish and deleted.
     private static readonly TimeSpan StrippedLifetime = TimeSpan.FromDays(7);
 
     #region Game sounds
@@ -190,7 +186,7 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>Closes devices whose sound has ended. MCI holds one open until told otherwise.</summary>
+    // Closes devices whose sound has ended. MCI holds one open until told otherwise.
     private static void PruneFinished()
     {
         List<string>? finished = null;
@@ -213,13 +209,8 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>
-    /// Chooses which form of the path to open with. Windows keeps a short 8.3 form of most paths, and that form is
-    /// what brings a file living under a normal user folder back inside the length the interface accepts.
-    /// </summary>
-    /// <param name="path">The path the caller asked for.</param>
-    /// <param name="openPath">The form to open, which is the caller's path whenever it already fits.</param>
-    /// <returns>Whether a usable form was found.</returns>
+    // Chooses which form of the path to open with. Windows keeps a short 8.3 form of most paths, and that form is
+    // what brings a file living under a normal user folder back inside the length the interface accepts.
     private static bool TryResolveOpenPath(string path, out string openPath)
     {
         openPath = path;
@@ -244,7 +235,7 @@ public static unsafe class SoundHelper
         return false;
     }
 
-    /// <summary>Asks Windows for the short 8.3 form of a path, falling back to the path when there is none.</summary>
+    // Asks Windows for the short 8.3 form of a path, falling back to the path when there is none.
     private static string GetShortPath(string path)
     {
         if (TryGetShortPath(path, out var shortPath))
@@ -278,18 +269,14 @@ public static unsafe class SoundHelper
         return true;
     }
 
-    /// <summary>
-    /// Whether the extended-length prefix can be put in front of a path. It accepts a plain drive letter and
-    /// backslashes only, so a network path or one written with forward slashes is left alone.
-    /// </summary>
+    // Whether the extended-length prefix can be put in front of a path. It accepts a plain drive letter and
+    // backslashes only, so a network path or one written with forward slashes is left alone.
     private static bool IsExtendedLengthEligible(string path)
         => path.Length > 2 && char.IsLetter(path[0]) && path[1] == ':' && path[2] == '\\';
 
-    /// <summary>
-    /// Applies the requested volume. Only some of the devices Windows picks by extension carry a volume control: the
-    /// wave device behind .wav has none, so those files play at the system volume and the refusal is logged rather
-    /// than swallowed.
-    /// </summary>
+    // Applies the requested volume. Only some of the devices Windows picks by extension carry a volume control: the
+    // wave device behind .wav has none, so those files play at the system volume and the refusal is logged rather
+    // than swallowed.
     private static void ApplyVolume(string alias, int volumePercent)
     {
         // The device scale runs to 1000 rather than 100.
@@ -303,13 +290,8 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>
-    /// Copies an mp3 without the tag that hides its audio, and answers where the copy is. Everything else is turned
-    /// away, so an ordinary failure to open a file never turns into a file copy.
-    /// </summary>
-    /// <param name="path">The file the caller asked to play.</param>
-    /// <param name="strippedPath">The copy, which is the same audio starting at its first frame.</param>
-    /// <returns>Whether a copy is available to play.</returns>
+    // Copies an mp3 without the tag that hides its audio, and answers where the copy is. Everything else is turned
+    // away, so an ordinary failure to open a file never turns into a file copy.
     internal static bool TryStripTag(string path, out string strippedPath)
     {
         strippedPath = string.Empty;
@@ -348,16 +330,12 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>
-    /// Where the copies live. The folder name is kept short because the copy has to be opened through the same
-    /// interface that refuses a long path, and it is shared so one file is only ever copied once.
-    /// </summary>
+    // Where the copies live. The folder name is kept short because the copy has to be opened through the same
+    // interface that refuses a long path, and it is shared so one file is only ever copied once.
     private static string StrippedDirectory => Path.Combine(Path.GetTempPath(), "NoireLib", "Sound");
 
-    /// <summary>
-    /// Names a copy after what it was made from. The write time and length are part of the name, so editing the
-    /// original produces a different name rather than a stale copy that plays the old audio.
-    /// </summary>
+    // Names a copy after what it was made from. The write time and length are part of the name, so editing the
+    // original produces a different name rather than a stale copy that plays the old audio.
     private static string StrippedName(string path)
     {
         var file = new FileInfo(path);
@@ -367,7 +345,7 @@ public static unsafe class SoundHelper
         return Convert.ToHexString(hash, 0, 8);
     }
 
-    /// <summary>Writes the audio without the tag in front of it.</summary>
+    // Writes the audio without the tag in front of it.
     private static void WriteWithoutTag(string path, int tagLength, string target)
     {
         using var source = File.OpenRead(path);
@@ -383,10 +361,8 @@ public static unsafe class SoundHelper
         File.Move(partial, target, true);
     }
 
-    /// <summary>
-    /// Finds where the audio starts. The tag length already points at it in a well-formed file, and the scan that
-    /// follows covers the ones that pad past the length they declare.
-    /// </summary>
+    // Finds where the audio starts. The tag length already points at it in a well-formed file, and the scan that
+    // follows covers the ones that pad past the length they declare.
     private static long FindFirstFrame(FileStream stream, int tagLength)
     {
         const int scanLength = 8192;
@@ -408,10 +384,8 @@ public static unsafe class SoundHelper
         return tagLength;
     }
 
-    /// <summary>
-    /// Whether four bytes open an audio frame. The sync bits alone appear inside cover art often enough to be worth
-    /// checking the fields behind them, none of which may hold the value reserved as meaningless.
-    /// </summary>
+    // Whether four bytes open an audio frame. The sync bits alone appear inside cover art often enough to be worth
+    // checking the fields behind them, none of which may hold the value reserved as meaningless.
     private static bool IsFrameHeader(byte[] window, int offset)
     {
         if (window[offset] != 0xFF || (window[offset + 1] & 0xE0) != 0xE0)
@@ -425,7 +399,7 @@ public static unsafe class SoundHelper
         return version != 1 && layer != 0 && bitrate is not (0 or 15) && sampleRate != 3;
     }
 
-    /// <summary>Drops copies old enough that nothing is likely to want them, so the folder does not grow forever.</summary>
+    // Drops copies old enough that nothing is likely to want them, so the folder does not grow forever.
     private static void PruneStripped(string directory)
     {
         var cutoff = DateTime.UtcNow - StrippedLifetime;
@@ -444,11 +418,9 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>
-    /// Adds what Windows leaves out. The error it returns for an mp3 whose audio begins too late in the file names
-    /// the driver rather than the cause, which sends the reader looking in the wrong place entirely, so the one shape
-    /// of file that produces it is measured here and named.
-    /// </summary>
+    // Adds what Windows leaves out. The error it returns for an mp3 whose audio begins too late in the file names the
+    // driver rather than the cause, which sends the reader looking in the wrong place entirely, so the one shape of
+    // file that produces it is measured here and named.
     private static string Diagnose(string path)
     {
         if (path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
@@ -476,7 +448,7 @@ public static unsafe class SoundHelper
               "usually makes a tag this big, and saving the file with a smaller image makes it playable.";
     }
 
-    /// <summary>Reads the length of the ID3 tag a file opens with, or zero when it does not open with one.</summary>
+    // Reads the length of the ID3 tag a file opens with, or zero when it does not open with one.
     internal static int ReadId3Length(string path)
     {
         try
@@ -506,7 +478,7 @@ public static unsafe class SoundHelper
         }
     }
 
-    /// <summary>Turns a multimedia error code into the sentence Windows has for it.</summary>
+    // Turns a multimedia error code into the sentence Windows has for it.
     private static string Describe(int error)
     {
         var buffer = new StringBuilder(256);

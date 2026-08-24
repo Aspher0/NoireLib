@@ -4,10 +4,8 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// COM reference-count helpers. The one place the "QueryInterface already AddRef'd" rule is encoded,
-/// so it is never hand-rolled (and hand-rolled wrong) anywhere else.
-/// </summary>
+// COM reference-count helpers. The one place the "QueryInterface already AddRef'd" rule is encoded, so it is never
+// hand-rolled (and hand-rolled wrong) anywhere else.
 internal static unsafe class ComPtrUtil
 {
     /// <summary>

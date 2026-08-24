@@ -273,14 +273,14 @@ public class Draw3DGameModelTests
 
         // The constant is parsed data: it is a slot the stain system writes into, and its file value is not
         // what an undyed item renders as (that is the default stain - see UndyedStain_IsTheGamesSnowWhite).
-        // Reading it still has to work, which is what this locks.
+        // Reading it still has to work.
         diffuse.Should().NotBeNull(because: "a dyeable material carries the constant its stain is written into");
         diffuse!.Length.Should().Be(3);
         foreach (var channel in diffuse)
             channel.Should().BeInRange(0f, 1f);
 
         // Most materials leave this white, where it changes nothing. This one is a dyeable piece and sets a
-        // real color, which is what makes it a useful sample: an all-white read would mean the value was missed.
+        // real color: an all-white read would mean the value was missed.
         diffuse.Should().NotBeEquivalentTo(new[] { 1f, 1f, 1f });
     }
 
@@ -558,8 +558,8 @@ public class Draw3DGameModelTests
         }
 
         // The robe references its own material AND its wearer's skin material. The skin one does not resolve
-        // beside the model - its file lives under the human tree - which is exactly what left a garment's
-        // body parts drawing with no material until the owner-name fallback existed.
+        // beside the model - its file lives under the human tree - which left a garment's body parts
+        // drawing with no material until the owner-name fallback existed.
         var model = game.GetFile<GameModelFile>(ModelPath)!;
         model.MaterialPaths.Should().NotBeEmpty();
 

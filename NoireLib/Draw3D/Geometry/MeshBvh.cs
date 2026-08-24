@@ -5,18 +5,16 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Geometry;
 
-/// <summary>
-/// A bounding-volume hierarchy over a mesh's triangles for fast ray picking, built once per mesh (lazily, on the
-/// first pick) and reused, turning a per-triangle O(triangles) scan into an O(log triangles) traversal.
-/// Model-space: the caller brings the ray into mesh space so a moving node never invalidates the tree.
-/// Median-split build, stack traversal, no per-query allocation, two-sided triangle test matching the picker's own.
-/// </summary>
+// A bounding-volume hierarchy over a mesh's triangles for fast ray picking, built once per mesh (lazily, on the first
+// pick) and reused, turning a per-triangle O(triangles) scan into an O(log triangles) traversal. Model-space: the
+// caller brings the ray into mesh space so a moving node never invalidates the tree. Median-split build, stack
+// traversal, no per-query allocation, two-sided triangle test matching the picker's own.
 internal sealed class MeshBvh
 {
     private const int LeafTriangles = 4;   // stop splitting at this many triangles per leaf
     private const int MaxDepth = 48;       // traversal stack bound (a well-balanced tree is far shallower)
 
-    /// <summary>A flat node: a leaf holds a triangle range; an internal node holds two child indices (Left &gt;= 0).</summary>
+    // A flat node: a leaf holds a triangle range; an internal node holds two child indices (Left &gt;= 0).
     private struct Node
     {
         public Vector3 Min;
@@ -86,7 +84,7 @@ internal sealed class MeshBvh
         return new MeshBvh(list.ToArray(), tri, v0, v1, v2);
     }
 
-    /// <summary>Recursively builds a node covering triangles <c>[lo, hi)</c> of the permuted order and returns its index.</summary>
+    // Recursively builds a node covering triangles [lo, hi) of the permuted order and returns its index.
     private static int BuildRange(List<Node> nodes, int[] tri, Vector3[] centroid, Vector3[] v0, Vector3[] v1, Vector3[] v2, int lo, int hi)
     {
         var self = nodes.Count;
@@ -132,7 +130,7 @@ internal sealed class MeshBvh
         return self;
     }
 
-    /// <summary>Hoare-style partition of <c>tri[lo,hi)</c> by centroid on <paramref name="axis"/> around <paramref name="split"/>.</summary>
+    // Hoare-style partition of tri[lo,hi) by centroid on  around .
     private static int Partition(int[] tri, Vector3[] centroid, int lo, int hi, int axis, float split)
     {
         var i = lo;

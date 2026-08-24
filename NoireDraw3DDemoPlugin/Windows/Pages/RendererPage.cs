@@ -2,16 +2,13 @@ using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>Layer-wide render switches: whether Draw3D draws, how opaque, what it does while the game hides its UI.</summary>
+// Layer-wide render switches: whether Draw3D draws, how opaque, what it does while the game hides its UI.
 internal sealed class RendererPage
 {
     private readonly DemoShell shell;
 
-    /// <summary>Creates the page.</summary>
-    /// <param name="shell">Carries the window's own "keep me open" flag, which pairs with the layer's.</param>
     public RendererPage(DemoShell shell) => this.shell = shell;
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         Ui.Section("Layer");

@@ -24,14 +24,11 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 {
     #region Private Properties and Fields
 
-    /// <summary>
-    /// Writes and reads the translation snapshot exchanged by the JSON import/export methods. Built via
-    /// <see cref="JsonSerializer.Create(JsonSerializerSettings)"/> rather than <see cref="JsonConvert"/> or
-    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/>, so no process-global
-    /// <see cref="JsonConvert.DefaultSettings"/> is merged into how an export or import is handled.<br/>
-    /// Formatting is left unset so each export chooses it on its own writer. TypeNameHandling stays None so an
-    /// imported file can never name a type into existence.
-    /// </summary>
+    // Writes and reads the translation snapshot exchanged by the JSON import/export methods. Built via
+    // Create(JsonSerializerSettings) rather than JsonConvert or CreateDefault(JsonSerializerSettings), so no
+    // process-global DefaultSettings is merged into how an export or import is handled. Formatting is left unset so
+    // each export chooses it on its own writer. TypeNameHandling stays None so an imported file can never name a type
+    // into existence.
     private static readonly JsonSerializer TranslationSerializer = CreateTranslationSerializer();
 
     private static JsonSerializer CreateTranslationSerializer()
@@ -52,23 +49,17 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
     private readonly Dictionary<string, int> missingTranslationByKey = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string> localeDisplayNames = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Resolved lookup orders keyed by the normalized requested locale. Every translation lookup needs the order for
-    /// its locale, so recomputing it per call would walk the whole fallback graph on a path that UI code hits once per
-    /// localized string per frame.<br/>
-    /// The order depends only on the requested locale, the explicit fallback chains, <see cref="DefaultLocale"/> and
-    /// the two fallback toggles, so it is not affected by translations being added or removed. Every path that changes
-    /// one of those calls <see cref="InvalidateLookupOrderCache"/>. Guarded by <see cref="localizationLock"/>; the
-    /// stored lists are built once and never mutated afterwards.
-    /// </summary>
+    // Resolved lookup orders keyed by the normalized requested locale. Every translation lookup needs the order for
+    // its locale, so recomputing it per call would walk the whole fallback graph on a path that UI code hits once per
+    // localized string per frame. The order depends only on the requested locale, the explicit fallback chains,
+    // DefaultLocale and the two fallback toggles, so it is not affected by translations being added or removed. Every
+    // path that changes one of those calls InvalidateLookupOrderCache. Guarded by localizationLock; the stored lists
+    // are built once and never mutated afterwards.
     private readonly Dictionary<string, IReadOnlyList<string>> lookupOrderCache = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// The requested locales a key has already been reported missing for, keyed by translation key. Backs the
-    /// deduplication described on <see cref="MissingTranslation"/>, which keeps a key missing from per-frame UI text
-    /// from raising an event on every frame.<br/>
-    /// Guarded by <see cref="localizationLock"/>.
-    /// </summary>
+    // The requested locales a key has already been reported missing for, keyed by translation key. Backs the
+    // deduplication described on MissingTranslation, which keeps a key missing from per-frame UI text from raising an
+    // event on every frame. Guarded by localizationLock.
     private readonly Dictionary<string, HashSet<string>> announcedMissingLocalesByKey = new(StringComparer.OrdinalIgnoreCase);
 
     private long totalTranslationsAdded;
@@ -130,13 +121,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         NoireEventBus? eventBus = null)
         : base(moduleId, active, enableLogging, defaultLocale, currentLocale, returnKeyWhenMissing, allowParentCultureFallback, allowDefaultLocaleFallback, defaultLocaleSource, allowCustomLocales, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>.<br/>
-    /// Only used for internal module management.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireLocalizer(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -1281,25 +1266,18 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             .ToList();
     }
 
-    /// <summary>
-    /// Discards every cached lookup order.<br/>
-    /// Called from each path that changes what <see cref="BuildLookupOrderLocked"/> would produce: the explicit
-    /// fallback chains, <see cref="DefaultLocale"/>, and the <see cref="AllowParentCultureFallback"/> and
-    /// <see cref="AllowDefaultLocaleFallback"/> toggles. Paths that only add or remove translations do not need it,
-    /// because an order is a list of locales to try and does not depend on what any of them contain.
-    /// </summary>
+    // Discards every cached lookup order. Called from each path that changes what BuildLookupOrderLocked would
+    // produce: the explicit fallback chains, DefaultLocale, and the AllowParentCultureFallback and
+    // AllowDefaultLocaleFallback toggles. Paths that only add or remove translations do not need it, because an order
+    // is a list of locales to try and does not depend on what any of them contain.
     private void InvalidateLookupOrderCache()
     {
         lock (localizationLock)
             lookupOrderCache.Clear();
     }
 
-    /// <summary>
-    /// Returns the lookup order for a normalized locale, computing it on first use.<br/>
-    /// The caller must hold <see cref="localizationLock"/>.
-    /// </summary>
-    /// <param name="locale">The normalized locale a lookup was requested for.</param>
-    /// <returns>The ordered locales to try, which the caller must not mutate.</returns>
+    // Returns the lookup order for a normalized locale, computing it on first use. The caller must hold
+    // localizationLock.
     private IReadOnlyList<string> GetLookupOrderLocked(string locale)
     {
         if (lookupOrderCache.TryGetValue(locale, out var cachedOrder))
@@ -1310,14 +1288,10 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
         return order;
     }
 
-    /// <summary>
-    /// Computes the ordered list of locales a lookup walks for <paramref name="locale"/>, from the requested locale
-    /// through its parent cultures and explicit fallbacks to <see cref="DefaultLocale"/> and its parents.<br/>
-    /// The caller must hold <see cref="localizationLock"/>: this reads the explicit fallback chains directly instead of
-    /// copying them, and it invokes nothing that could call back into the module.
-    /// </summary>
-    /// <param name="locale">The normalized locale a lookup was requested for.</param>
-    /// <returns>The ordered locales to try, with duplicates and cycles already removed.</returns>
+    // Computes the ordered list of locales a lookup walks for , from the requested locale through its parent cultures
+    // and explicit fallbacks to DefaultLocale and its parents. The caller must hold localizationLock: this reads the
+    // explicit fallback chains directly instead of copying them, and it invokes nothing that could call back into the
+    // module.
     private IReadOnlyList<string> BuildLookupOrderLocked(string locale)
     {
         var currentDefaultLocale = DefaultLocale;
@@ -1459,11 +1433,7 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
             CurrentLocale = NormalizeLocaleOrThrow(LocalizerConfig.SelectedLocale, nameof(LocalizerConfig.SelectedLocale));
     }
 
-    /// <summary>
-    /// Writes the persisted locale settings and saves them as one change.
-    /// </summary>
-    /// <param name="recordDefaultLocaleSelection">Whether the caller is selecting a custom default locale, rather than
-    /// changing something that merely has one in effect.</param>
+    // Writes the persisted locale settings and saves them as one change.
     private void PersistConfiguration(bool recordDefaultLocaleSelection = false)
     {
         // Written through the instance rather than through the generated static accessor, whose [AutoSave] setters save

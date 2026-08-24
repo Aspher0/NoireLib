@@ -31,7 +31,6 @@ public sealed class NumberStyle
     /// <summary>
     /// The value the field considers unmodified, which draws a reset dot beside the field once the value differs.
     /// </summary>
-    /// <remarks>No dot is drawn while this is unset.</remarks>
     public float? Default { get; set; }
 
     /// <summary>

@@ -9,10 +9,9 @@ using NoireLib.Draw3D;
 namespace NoireDraw3DDemoPlugin;
 
 /// <summary>
-/// A demonstration plugin for the NoireLib Draw3D renderer. Everything it does goes through the public Draw3D API, so it
-/// doubles as a worked reference - spawning the showcase scene, tweaking every global knob, building scenes and decals,
-/// and running the render diagnostics. The validators themselves stay in the library; this plugin opts their
-/// <c>/noire3d</c> command in.
+/// A demonstration plugin for the NoireLib Draw3D renderer. Everything it does goes through the public Draw3D API -
+/// spawning the showcase scene, tweaking every global knob, building scenes and decals, and running the render
+/// diagnostics.
 /// </summary>
 public sealed class Plugin : IDalamudPlugin
 {
@@ -23,8 +22,6 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WindowSystem windowSystem = new("NoireDraw3DDemoPlugin");
     private readonly DemoWindow demoWindow;
 
-    /// <summary>Initializes NoireLib, wires the demo window and command.</summary>
-    /// <param name="pluginInterface">The Dalamud plugin interface (the only service the demo injects; the rest come from <see cref="NoireService"/>).</param>
     public Plugin()
     {
         NoireLibMain.Initialize(PluginInterface, this);
@@ -45,7 +42,6 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += OpenUi;
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;

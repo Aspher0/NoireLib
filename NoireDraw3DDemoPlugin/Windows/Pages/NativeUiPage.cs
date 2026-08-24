@@ -3,10 +3,9 @@ using NoireLib.Draw3D.Enums;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>Where the layer lands in the game's frame, and what it does about the HUD and plates it finds there.</summary>
+// Where the layer lands in the game's frame, and what it does about the HUD and plates it finds there.
 internal sealed class NativeUiPage
 {
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         var over = NoireDraw3D.NativeUi.Layering == Draw3DLayering.OverEverything;

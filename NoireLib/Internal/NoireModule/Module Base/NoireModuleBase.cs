@@ -38,10 +38,9 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     }
 
     /// <summary>
-    /// Whether <see cref="Dispose"/> has run on this module. Disposal is terminal: guard anything that must not
-    /// outlive it (a timer callback, a queued delivery, a public entry point) on this.<br/>
-    /// Reads <see langword="true"/> as soon as disposal is claimed, so a guard here also turns away work racing a
-    /// teardown still in progress.
+    /// Whether Dispose has run on this module. Disposal is terminal: guard anything that must not outlive it (a timer
+    /// callback, a queued delivery, a public entry point) on this. Reads as soon as disposal is claimed, so a guard
+    /// here also turns away work racing a teardown still in progress.
     /// </summary>
     protected internal bool IsDisposed => Volatile.Read(ref disposeState) != 0;
 
@@ -109,11 +108,8 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     /// </summary>
     protected abstract void OnDeactivated();
 
-    /// <summary>
-    /// Gets the next instance counter for this specific module type and ID combination, so multiple instances with
-    /// the same ID get unique counters.
-    /// </summary>
-    /// <returns>The next instance counter.</returns>
+    // Gets the next instance counter for this specific module type and ID combination, so multiple instances with the
+    // same ID get unique counters.
     private int GetNextInstanceCounter()
     {
         var moduleType = GetType();
@@ -221,11 +217,9 @@ public abstract partial class NoireModuleBase<TModule> : INoireModule
     /// </summary>
     protected abstract void DisposeInternal();
 
-    /// <summary>
-    /// Runs the module's teardown. Called by <see cref="Dispose"/> exactly once, after disposal is claimed and
-    /// before <see cref="IsActive"/> is cleared. Overridden by bases that own their own resources, so every
-    /// module keeps <see cref="Dispose"/>'s guarantees regardless of base.
-    /// </summary>
+    // Runs the module's teardown. Called by Dispose exactly once, after disposal is claimed and before IsActive is
+    // cleared. Overridden by bases that own their own resources, so every module keeps Dispose's guarantees
+    // regardless of base.
     private protected virtual void DisposeCore() => DisposeInternal();
 
     /// <summary>

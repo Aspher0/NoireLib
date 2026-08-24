@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// Correlates outbound requests with inbound responses. Completions are posted through the
-/// <see cref="DeliveryPump"/> so awaiting code resumes on the framework thread.
-/// </summary>
+// Correlates outbound requests with inbound responses. Completions are posted through the DeliveryPump so awaiting
+// code resumes on the framework thread.
 internal sealed class RequestBroker
 {
     private sealed class Pending
@@ -66,9 +64,7 @@ internal sealed class RequestBroker
         pump.Post(() => pending.Completion.TrySetResult(response));
     }
 
-    /// <summary>
-    /// Fails every pending request addressed to a peer that left the network.
-    /// </summary>
+    // Fails every pending request addressed to a peer that left the network.
     public void FailPeer(Guid peerId)
     {
         foreach (var pair in pendingRequests)

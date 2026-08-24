@@ -9,26 +9,18 @@ public static partial class NoireUI
 {
     /// <summary>
     /// What NoireUI knows about itself: live counts, recent faults, the fault ladder and the stack-leak net.
-    /// See <see cref="UiDiagnostics"/>.
     /// </summary>
     public static UiDiagnostics Diagnostics { get; } = new();
 
     /// <summary>
-    /// What each part of the interface costs to build, per frame, by name. Off by default.
-    /// See <see cref="UiProfiler"/>.
+    /// What each part of the interface costs to build, per frame, by name, off by default.
     /// </summary>
     public static UiProfiler Profiler { get; } = new();
 
     /// <summary>
     /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
-    /// widgets in <see cref="UiProfiler.Snapshot()"/>.<br/>
-    /// Free while <see cref="UiProfiler.Enabled"/> is off.
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
     /// </summary>
-    /// <example>
-    /// <code>
-    /// NoireUI.Profile("inventory grid", () => DrawInventoryGrid());
-    /// </code>
-    /// </example>
     /// <param name="name">The name to record the cost under.</param>
     /// <param name="body">The drawing to measure.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
@@ -40,17 +32,11 @@ public static partial class NoireUI
 
     /// <summary>
     /// Runs a block of drawing with its cost recorded against <paramref name="name"/>, alongside the library's own
-    /// widgets in <see cref="UiProfiler.Snapshot()"/>.<br/>
-    /// Free while <see cref="UiProfiler.Enabled"/> is off.
+    /// widgets in <see cref="UiProfiler.Snapshot()"/>.
     /// </summary>
-    /// <example>
-    /// <code>
-    /// NoireUI.Profile("inventory grid", inventory, static i => DrawInventoryGrid(i));
-    /// </code>
-    /// </example>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="name">The name to record the cost under.</param>
-    /// <param name="state">Passed to <paramref name="body"/> so it can stay a static lambda.</param>
+    /// <param name="state">The value passed to <paramref name="body"/>.</param>
     /// <param name="body">The drawing to measure.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
     public static void Profile<TState>(string name, TState state, Action<TState> body)

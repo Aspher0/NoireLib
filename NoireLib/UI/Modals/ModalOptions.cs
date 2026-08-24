@@ -11,8 +11,8 @@ public class ModalOptions
     public string? ConfirmLabel { get; set; }
 
     /// <summary>
-    /// The label of the button that declines. When <see langword="null"/>, a sensible default is used.<br/>
-    /// Set it to an empty string to remove the button entirely, for a dialog that only acknowledges something.
+    /// The label of the button that declines, an empty string removing the button entirely and
+    /// <see langword="null"/> using a sensible default.
     /// </summary>
     public string? CancelLabel { get; set; }
 
@@ -23,30 +23,20 @@ public class ModalOptions
     public bool Danger { get; set; }
 
     /// <summary>
-    /// How long the confirming button must be held, in seconds. Zero makes it an ordinary button.<br/>
-    /// Pair it with <see cref="Danger"/> for an irreversible action: the pause is what stops a reflex click.
+    /// How long the confirming button must be held, in seconds, zero making it an ordinary button.
     /// </summary>
     public float HoldSeconds { get; set; }
 
     /// <summary>
-    /// How long the confirming button stays disabled after the dialog appears, in seconds.
-    /// Zero, the default, enables it straight away.<br/>
-    /// The remaining whole seconds are appended to its label.
+    /// How long the confirming button stays disabled after the dialog appears, in seconds, with the remaining whole
+    /// seconds appended to its label.
     /// </summary>
     public float EnableAfterSeconds { get; set; }
 
     /// <summary>
-    /// A key under which the user's answer is remembered, so the dialog offers "don't ask again" and skips itself next
-    /// time.<br/>
-    /// When <see langword="null"/> the dialog always appears, which is the default.
+    /// A key stable across sessions under which the user's answer is remembered in <see cref="NoireUiState"/> and
+    /// cleared by <see cref="NoireModal.Forget(string)"/>, <see langword="null"/> always showing the dialog.
     /// </summary>
-    /// <remarks>
-    /// Only for confirmations whose answer is genuinely stable, such as "close to tray". Never offer it for a
-    /// destructive action or for anything that applies content from outside the plugin: a remembered yes turns the
-    /// confirmation into no confirmation at all, which is precisely what those dialogs exist to prevent.<br/>
-    /// The key has to be stable across sessions, since it is what the answer is stored against in
-    /// <see cref="NoireUiState"/>. Clear a remembered answer with <see cref="NoireModal.Forget(string)"/>.
-    /// </remarks>
     public string? RememberKey { get; set; }
 
     /// <summary>
@@ -59,9 +49,6 @@ public class ModalOptions
     /// </summary>
     public float Width { get; set; } = 420f;
 
-    /// <summary>
-    /// The width the dialog is actually laid out at.
-    /// </summary>
     internal float ScaledWidth => NoireUI.Scaled(Width);
 }
 
@@ -82,7 +69,7 @@ public sealed class PromptOptions : ModalOptions
     public int MaxLength { get; set; } = 260;
 
     /// <summary>
-    /// Whether an empty value may be confirmed. Off by default, so a prompt cannot return an empty string by accident.
+    /// Whether an empty value may be confirmed.
     /// </summary>
     public bool AllowEmpty { get; set; }
 }

@@ -10,13 +10,7 @@ namespace NoireLib.Tests;
 /// Holds the everyday interactive widgets at zero allocation per frame.
 /// </summary>
 /// <remarks>
-/// Every figure here was non-zero before wave 2's audit, and none of the causes were visible by reading the widget:
-/// two were lambdas capturing a parameter, which Roslyn allocates on entry to the method rather than at the point of
-/// use, so a custom-draw hook nobody had set still cost every button and every slider in the frame. One was a style
-/// cloned per segment per frame, and one a value formatted to a string that had not changed.<br/>
-/// Bytes rather than milliseconds, because bytes are the same number on every machine. Each surface is warmed first:
-/// the first draw of a path in a process pays jitting and the first entry into each cache, and what a plugin actually
-/// pays is the steady state.
+/// Each surface is warmed first: the first draw of a path in a process pays jitting and the first entry into each cache.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireWidgetAllocationTests : IClassFixture<UiHarness>
@@ -27,9 +21,8 @@ public sealed class NoireWidgetAllocationTests : IClassFixture<UiHarness>
     /// The series the sparkline is drawn from, held in a field rather than written inside the measured delegate.
     /// </summary>
     /// <remarks>
-    /// The harness measures everything the delegate does, so a test's own fixture data is charged to the surface under
-    /// test. A collection expression assigned to a <see cref="System.ReadOnlySpan{T}"/> of a multi-byte element type
-    /// allocates, and written inline it read as 72 bytes a frame that the sparkline never spent.
+    /// A collection expression assigned to a <see cref="System.ReadOnlySpan{T}"/> of a multi-byte element type
+    /// allocates, and the harness charges it to the surface under test.
     /// </remarks>
     private static readonly float[] Series = [1f, 4f, 2f, 8f, 3f, 9f, 5f, 7f];
 

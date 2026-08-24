@@ -2,12 +2,9 @@ using System;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// 64-bit draw ordering key: [bucket:2][layer:8][depthQ:16][pipeline:8][material:16][seq:14].<br/>
-/// Depth is quantized eye distance (VP-only contract - no view matrix required): ascending for opaque
-/// (front-to-back), bit-inverted for transparent (back-to-front). One array sort per frame orders and
-/// groups everything.
-/// </summary>
+// 64-bit draw ordering key: [bucket:2][layer:8][depthQ:16][pipeline:8][material:16][seq:14]. Depth is quantized eye
+// distance (VP-only contract - no view matrix required): ascending for opaque (front-to-back), bit-inverted for
+// transparent (back-to-front). One array sort per frame orders and groups everything.
 internal static class SortKey
 {
     /// <summary>Quantizes an eye distance into 16 bits (0.1-yalm steps up to ~6.5 km).</summary>

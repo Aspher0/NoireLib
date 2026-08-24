@@ -11,7 +11,7 @@ namespace NoireLib.Tests;
 /// <see cref="NoireLogHandler"/> they use.<br/>
 /// The property that matters is that a gated interpolated log call
 /// (<c>LogInfo</c>/<c>LogDebug</c>/<c>LogVerbose</c>) neither evaluates its interpolation holes nor allocates a
-/// string while the module is not logging, which is the whole reason the helpers take an interpolated string
+/// string while the module is not logging, which is why the helpers take an interpolated string
 /// handler rather than a plain <see cref="string"/>. The warning, error and fatal helpers are ungated and always
 /// report.
 /// </summary>

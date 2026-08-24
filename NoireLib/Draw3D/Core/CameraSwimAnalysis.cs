@@ -2,15 +2,13 @@ using System;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Frame-time band classification for the camera-phase trace's load analysis, free of rendering state.
-/// </summary>
+// Frame-time band classification for the camera-phase trace's load analysis, free of rendering state.
 internal static class CameraSwimAnalysis
 {
-    /// <summary>Upper bound of each frame-time band in milliseconds; the last band is open-ended.</summary>
+    // Upper bound of each frame-time band in milliseconds; the last band is open-ended.
     private static readonly float[] bandUpperMs = { 8.5f, 17f, 25f, 40f, 66f, float.MaxValue };
 
-    /// <summary>Labels matching <see cref="bandUpperMs"/>, expressed as the frame-rate range the band covers.</summary>
+    // Labels matching bandUpperMs, expressed as the frame-rate range the band covers.
     private static readonly string[] bandLabels = { "<8.5ms (118+fps)", "8.5-17ms (60-118)", "17-25ms (40-60)", "25-40ms (25-40)", "40-66ms (15-25)", ">66ms (<15fps)" };
 
     /// <summary>How many frame-time bands the trace accumulates into.</summary>
@@ -40,7 +38,7 @@ internal static class CameraSwimAnalysis
         => band >= 0 && band < bandLabels.Length ? bandLabels[band] : band.ToString();
 }
 
-/// <summary>What a traced frame classified as, from the camera's motion and the overlay's residual.</summary>
+// What a traced frame classified as, from the camera's motion and the overlay's residual.
 internal enum SettleFrame
 {
     /// <summary>The camera moved this frame; any residual is ordinary under-motion error.</summary>
@@ -56,12 +54,9 @@ internal enum SettleFrame
     LateDrift,
 }
 
-/// <summary>
-/// Classifies traced frames into <see cref="SettleFrame"/> and accumulates the settle statistics: how often the
-/// overlay keeps drifting after the camera stops, and for how long. A settle event is a maximal run of drifting
-/// frames beginning within <see cref="WindowFrames"/> frames of the last camera motion; drift beyond the window
-/// counts separately as late drift.
-/// </summary>
+// Classifies traced frames into SettleFrame and accumulates the settle statistics: how often the overlay keeps
+// drifting after the camera stops, and for how long. A settle event is a maximal run of drifting frames beginning
+// within WindowFrames frames of the last camera motion; drift beyond the window counts separately as late drift.
 internal sealed class SettleTracker
 {
     /// <summary>How many quiet frames after motion still count toward a settle rather than a persistent offset.</summary>

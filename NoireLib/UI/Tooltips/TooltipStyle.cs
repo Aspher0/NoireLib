@@ -13,8 +13,8 @@ public sealed class TooltipStyle
     public Vector4? BackgroundColor { get; set; } = null;
 
     /// <summary>
-    /// The background opacity of the tooltip, from 0 to 1. When <see langword="null"/>, the alpha of
-    /// <see cref="BackgroundColor"/> or of the current style is used.
+    /// The background opacity of the tooltip from 0 to 1, or <see langword="null"/> for the alpha of
+    /// <see cref="BackgroundColor"/> or of the current style.
     /// </summary>
     public float? BackgroundOpacity { get; set; } = null;
 
@@ -40,8 +40,7 @@ public sealed class TooltipStyle
     public Vector2 MouseOffset { get; set; } = new(16f, 16f);
 
     /// <summary>
-    /// The gap at 100% between the tooltip and the item under any item-relative <see cref="Placement"/>, applied along
-    /// the placement axis so it reads the same whichever side the tooltip lands on.
+    /// The gap at 100% between the tooltip and the item under any item-relative <see cref="Placement"/>.
     /// </summary>
     public float ItemGap { get; set; } = 6f;
 
@@ -56,8 +55,7 @@ public sealed class TooltipStyle
 
     /// <summary>
     /// Replaces the tooltip's background and border with custom painting, while NoireUI keeps placement, measuring and
-    /// the content. The window is begun with no chrome of its own and the hook paints from its draw list, before the
-    /// content.
+    /// the content.
     /// </summary>
     public Action<UiTooltipDraw>? CustomDraw { get; set; }
 

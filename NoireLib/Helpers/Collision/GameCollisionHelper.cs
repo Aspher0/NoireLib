@@ -17,9 +17,7 @@ public static class GameCollisionHelper
     /// </summary>
     public static bool Available => OnFrameworkThread && WorldCollisionInspect.Available;
 
-    /// <summary>
-    /// Whether the caller is on the thread that owns the collision scene, false when the library is uninitialized.
-    /// </summary>
+    // Whether the caller is on the thread that owns the collision scene, false when the library is uninitialized.
     private static bool OnFrameworkThread
         => NoireService.IsInitialized() && NoireService.Framework.IsInFrameworkUpdateThread;
 

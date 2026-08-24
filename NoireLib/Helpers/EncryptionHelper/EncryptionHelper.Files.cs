@@ -7,22 +7,17 @@ namespace NoireLib.Helpers;
 
 public static partial class EncryptionHelper
 {
-    /// <summary>Magic bytes identifying a NoireLib encrypted file ("NLE1").</summary>
     private static readonly byte[] FileMagic = { 0x4E, 0x4C, 0x45, 0x31 };
 
-    /// <summary>The encrypted file format version.</summary>
     private const byte FileFormatVersion = 1;
 
-    /// <summary>The size, in bytes, of the AES-CBC initialization vector.</summary>
     private const int CbcIvSize = 16;
 
-    /// <summary>The size, in bytes, of the HMAC-SHA256 authentication tag.</summary>
     private const int FileMacSize = 32;
 
-    /// <summary>The size, in bytes, of the fixed file header (magic + version + iterations + salt + iv).</summary>
+    // The size, in bytes, of the fixed file header (magic + version + iterations + salt + iv).
     private const int FileHeaderSize = 4 + 1 + 4 + SaltSize + CbcIvSize;
 
-    /// <summary>The buffer size used for streaming file operations.</summary>
     private const int FileBufferSize = 81920;
 
     /// <summary>
@@ -224,9 +219,7 @@ public static partial class EncryptionHelper
 
     #region Internals
 
-    /// <summary>
-    /// Derives independent 256-bit encryption and MAC keys from a password and salt.
-    /// </summary>
+    // Derives independent 256-bit encryption and MAC keys from a password and salt.
     private static (byte[] EncKey, byte[] MacKey) DeriveFileKeys(string password, byte[] salt, int iterations)
     {
         var keyMaterial = DeriveKey(password, salt, iterations, AesKeySize * 2);
@@ -236,9 +229,7 @@ public static partial class EncryptionHelper
         return (encKey, macKey);
     }
 
-    /// <summary>
-    /// Recomputes the HMAC over the header and ciphertext region and compares it against the stored tag.
-    /// </summary>
+    // Recomputes the HMAC over the header and ciphertext region and compares it against the stored tag.
     private static bool VerifyFileMac(string sourcePath, byte[] header, long cipherLength, byte[] macKey)
     {
         using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read)
@@ -269,9 +260,7 @@ public static partial class EncryptionHelper
         return CryptographicOperations.FixedTimeEquals(computedMac, storedMac);
     }
 
-    /// <summary>
-    /// Reads exactly <paramref name="count"/> bytes from a stream, throwing if the stream ends early.
-    /// </summary>
+    // Reads exactly  bytes from a stream, throwing if the stream ends early.
     private static void ReadExactly(Stream stream, byte[] buffer, int count)
     {
         var total = 0;
@@ -285,9 +274,7 @@ public static partial class EncryptionHelper
         }
     }
 
-    /// <summary>
-    /// Attempts to delete a file, swallowing any error (used to clean up partial output on failure).
-    /// </summary>
+    // Attempts to delete a file, swallowing any error (used to clean up partial output on failure).
     private static void TryDeleteFile(string path)
     {
         try
@@ -301,10 +288,8 @@ public static partial class EncryptionHelper
         }
     }
 
-    /// <summary>
-    /// A write-only stream that forwards writes to an inner stream while feeding them into an HMAC.
-    /// The inner stream is intentionally left open on dispose.
-    /// </summary>
+    // A write-only stream that forwards writes to an inner stream while feeding them into an HMAC. The inner stream
+    // is intentionally left open on dispose.
     private sealed class MacTeeStream : Stream
     {
         private readonly Stream inner;
@@ -334,10 +319,8 @@ public static partial class EncryptionHelper
         public override void SetLength(long value) => throw new NotSupportedException();
     }
 
-    /// <summary>
-    /// A read-only stream that exposes at most a fixed number of bytes from an inner stream.
-    /// The inner stream is intentionally left open on dispose.
-    /// </summary>
+    // A read-only stream that exposes at most a fixed number of bytes from an inner stream. The inner stream is
+    // intentionally left open on dispose.
     private sealed class BoundedReadStream : Stream
     {
         private readonly Stream inner;

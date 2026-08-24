@@ -6,7 +6,6 @@ namespace NoireLib.UI;
 /// <summary>
 /// The look of the toasts drawn by a <see cref="NoireToastArea"/>. Every color left <see langword="null"/> resolves
 /// through <see cref="NoireTheme.Current"/>, and every pixel value is written at 100% and scaled when drawn.
-/// See <see cref="NoireUI.Scale"/>.
 /// </summary>
 public sealed class ToastStyle
 {
@@ -82,7 +81,7 @@ public sealed class ToastStyle
 
     /// <summary>
     /// Replaces the chrome's own painting (background, stripe, border and countdown), while the body and its layout
-    /// stay NoireUI's. The body is still drawn either way, since its measured height drives the stack.
+    /// stay NoireUI's.
     /// </summary>
     public Action<UiToastDraw>? CustomDraw { get; set; }
 
@@ -97,33 +96,25 @@ public sealed class ToastStyle
 
     // Scaled here and nowhere else, so a value is never scaled twice or left unscaled.
 
-    /// <summary><see cref="BorderSize"/> at the current scale.</summary>
     internal float ScaledBorderSize => NoireUI.Scaled(BorderSize);
 
-    /// <summary><see cref="Padding"/> at the current scale.</summary>
     internal Vector2 ScaledPadding => NoireUI.Scaled(Padding);
 
-    /// <summary><see cref="Gap"/> at the current scale.</summary>
     internal float ScaledGap => NoireUI.Scaled(Gap);
 
-    /// <summary><see cref="StripeWidth"/> at the current scale.</summary>
     internal float ScaledStripeWidth => NoireUI.Scaled(StripeWidth);
 
-    /// <summary><see cref="TimerThickness"/> at the current scale.</summary>
     internal float ScaledTimerThickness => NoireUI.Scaled(TimerThickness);
 
-    /// <summary><see cref="ProgressHeight"/> at the current scale.</summary>
     internal float ScaledProgressHeight => NoireUI.Scaled(ProgressHeight);
 
-    /// <summary><see cref="SlideDistance"/> at the current scale.</summary>
     internal float ScaledSlideDistance => NoireUI.Scaled(SlideDistance);
 
-    /// <summary>Resolves the corner radius a toast is drawn with, falling back to the theme's surface rounding.</summary>
-    /// <returns>The scaled corner radius.</returns>
+    // Falls back to the theme's surface rounding.
     internal float ResolveRounding()
         => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : NoireTheme.Current.ResolveSurfaceRounding();
 
-    /// <summary>Creates an independent copy, so a variant can be adjusted without touching the original.</summary>
+    /// <summary>Creates an independent copy.</summary>
     /// <returns>The copy.</returns>
     public ToastStyle Clone() => new()
     {

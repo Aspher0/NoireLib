@@ -11,12 +11,8 @@ namespace NoireLib.Tests;
 /// content.
 /// </summary>
 /// <remarks>
-/// The widget tests hold what a consumer calls by name. These hold what those widgets are built out of, which is the
-/// half a regression actually lands in: a shape or a layout scope is entered dozens of times in a frame by widgets that
-/// never mention it, so a few bytes added here arrive multiplied and attributed to something else entirely.<br/>
-/// Every delegate handed to a scope is <see langword="static"/> with its state passed alongside. A lambda that captures
-/// anything is allocated on entry to the enclosing method rather than at the point of use, so a capturing test delegate
-/// would read as the surface's own cost and pass or fail for the wrong reason.
+/// Every delegate handed to a scope is <see langword="static"/> with its state passed alongside: a capturing lambda is
+/// allocated on entry to the enclosing method.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>

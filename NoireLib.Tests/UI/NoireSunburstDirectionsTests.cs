@@ -9,12 +9,6 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Unit tests for a sunburst's ray directions, asserted through the pure function rather than by drawing.
 /// </summary>
-/// <remarks>
-/// The directions are now computed once unrotated and turned as a whole on the way out. What has to hold is that
-/// turning a cached direction lands where computing it at the rotated angle would have, and that the layout the
-/// drawing indexes into is the layout the function writes. Getting the second wrong swaps a ray's edges for its
-/// neighbour's, which draws a burst that is subtly wrong rather than obviously broken.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireSunburstDirectionsTests
 {

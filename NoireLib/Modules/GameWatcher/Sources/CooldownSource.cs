@@ -6,11 +6,9 @@ using System.Linq;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Cooldown facts. Local player: exact recast/charge/GCD state read from the game's action manager, diffed
-/// per watched action id. Other characters: <b>estimates</b> inferred from observed action usage (via the
-/// ActionEffect source) plus sheet recast data, always <see cref="CooldownSnapshot.IsEstimate"/>.
-/// </summary>
+// Cooldown facts. Local player: exact recast/charge/GCD state read from the game's action manager, diffed per watched
+// action id. Other characters: estimates inferred from observed action usage (via the ActionEffect source) plus sheet
+// recast data, always IsEstimate.
 internal sealed class CooldownSource : GameWatcherSource
 {
     private sealed class WatchedAction
@@ -29,7 +27,7 @@ internal sealed class CooldownSource : GameWatcherSource
 
     public CooldownSource(NoireGameWatcher owner) : base(owner, SourceKind.Cooldowns) { }
 
-    /// <summary>Registers a local action id to watch and returns the removal action.</summary>
+    // Registers a local action id to watch and returns the removal action.
     internal Action AddWatchedAction(uint actionId)
     {
         lock (watchedActions)
@@ -45,7 +43,7 @@ internal sealed class CooldownSource : GameWatcherSource
         };
     }
 
-    /// <summary>Registers estimate interest (other characters' cooldowns) and returns the removal action.</summary>
+    // Registers estimate interest (other characters' cooldowns) and returns the removal action.
     internal Action AddEstimateInterest()
     {
         System.Threading.Interlocked.Increment(ref estimateInterest);
@@ -176,10 +174,8 @@ internal sealed class CooldownSource : GameWatcherSource
         }
     }
 
-    /// <summary>
-    /// Feeds an observed action into the estimation store (called by the ActionEffect source).
-    /// No-ops unless this source runs and estimate interest exists.
-    /// </summary>
+    // Feeds an observed action into the estimation store (called by the ActionEffect source). No-ops unless this
+    // source runs and estimate interest exists.
     internal void ObserveAction(ActionEffectEntry entry)
     {
         if (!IsRunning || System.Threading.Volatile.Read(ref estimateInterest) <= 0)
@@ -219,7 +215,7 @@ internal sealed class CooldownSource : GameWatcherSource
         }));
     }
 
-    /// <summary>The current estimate for another character's action, or null when never observed / elapsed.</summary>
+    // The current estimate for another character's action, or null when never observed / elapsed.
     internal CooldownSnapshot? GetEstimate(uint entityId, uint actionId, DateTimeOffset now)
     {
         if (!estimates.TryGetValue((entityId, actionId), out var estimate))
@@ -241,7 +237,7 @@ internal sealed class CooldownSource : GameWatcherSource
         };
     }
 
-    /// <summary>Reads the exact local recast state for an action, or null when unavailable.</summary>
+    // Reads the exact local recast state for an action, or null when unavailable.
     internal static unsafe CooldownSnapshot? ReadLocalCooldown(uint actionId, DateTimeOffset now)
     {
         var manager = ActionManager.Instance();
@@ -271,7 +267,6 @@ internal sealed class CooldownSource : GameWatcherSource
         };
     }
 
-    /// <summary>Reads the local GCD state from <see cref="GcdRecastGroupIndex"/>.</summary>
     internal static unsafe bool ReadGcdReady(out float remaining)
     {
         remaining = 0;

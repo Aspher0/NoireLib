@@ -10,22 +10,21 @@ namespace NoireLib.Animations.AvfxFormat;
 /// </summary>
 public static class AvfxSound
 {
-    /// <summary> The chunk the file opens with, whose body holds every other chunk. </summary>
+    // The chunk the file opens with, whose body holds every other chunk.
     private const string FileTag = "AVFX";
 
-    /// <summary> A chunk header is its four-character tag and the length of its body. </summary>
+    // A chunk header is its four-character tag and the length of its body.
     private const int HeaderLength = 8;
 
-    /// <summary> Chunks start on a four-byte boundary, so a body of an odd length is followed by padding. </summary>
+    // Chunks start on a four-byte boundary, so a body of an odd length is followed by padding.
     private const int Alignment = 4;
 
-    /// <summary> How deep the walk follows nested chunks before it stops. </summary>
+    // How deep the walk follows nested chunks before it stops.
     private const int MaxDepth = 10;
 
-    /// <summary> The extension every sound file the format names carries. </summary>
     private const string SoundExtension = ".scd";
 
-    /// <summary> The shortest body that can hold a readable path and its terminator. </summary>
+    // The shortest body that can hold a readable path and its terminator.
     private const int MinTextLength = 4;
 
     /// <summary>
@@ -88,7 +87,7 @@ public static class AvfxSound
         }
     }
 
-    /// <summary> Whether a body reads end to end as chunks of its own, rather than as a value. </summary>
+    // Whether a body reads end to end as chunks of its own, rather than as a value.
     private static bool HoldsChunks(byte[] data, int start, int end)
     {
         if (end - start < HeaderLength)
@@ -115,7 +114,7 @@ public static class AvfxSound
         return chunks > 0 && end - position < HeaderLength;
     }
 
-    /// <summary> A chunk's tag, stored back to front and padded with spaces or nulls. </summary>
+    // A chunk's tag, stored back to front and padded with spaces or nulls.
     private static string TagAt(byte[] data, int offset)
     {
         var characters = new char[4];
@@ -137,7 +136,7 @@ public static class AvfxSound
         return new string(characters, 0, length);
     }
 
-    /// <summary> A body read as a null-terminated ASCII string, or null when it is not one. </summary>
+    // A body read as a null-terminated ASCII string, or null when it is not one.
     private static string? TextAt(byte[] data, int offset, int length)
     {
         if (length < MinTextLength)

@@ -77,7 +77,7 @@ public class NoireTaskQueueProcessingTests : IDisposable
     /// <summary>
     /// Steps the queue until the predicate holds or the wall-clock budget runs out, yielding between passes so a
     /// configured delay, timeout or stall window can elapse.<br/>
-    /// The budget is generous on purpose: the queue only advances inside a pass, so a loaded machine makes a
+    /// The budget is generous: the queue only advances inside a pass, so a loaded machine makes a
     /// scenario take more passes rather than producing a different outcome.
     /// </summary>
     private static bool StepUntilElapsed(NoireTaskQueue queue, Func<bool> settled, int budgetMs = 10000)
@@ -116,7 +116,7 @@ public class NoireTaskQueueProcessingTests : IDisposable
     }
 
     /// <summary>
-    /// Builds a batch that owns its tasks, which is what wires up the parent batch policies.
+    /// Builds a batch that owns its tasks, which wires up the parent batch policies.
     /// </summary>
     private static TaskBatch MakeBatch(string customId, params QueuedTask[] tasks)
     {
@@ -1142,7 +1142,7 @@ public class NoireTaskQueueProcessingTests : IDisposable
 
         // The mode used to be reachable only from the post-cancellation-delay finalizer, so whether a batch
         // reacted to one of its tasks being cancelled depended on whether that task happened to carry a delay.
-        // Both routes now consult it, which is what makes this test the delay-free twin of
+        // Both routes now consult it, which makes this test the delay-free twin of
         // Batch_CancelBatchMode_CancelsTheBatchThroughThePostCancellationDelay below.
         batch.Status.Should().Be(BatchStatus.Cancelled, "CancelBatch applies however the task was cancelled");
         follower.Status.Should().Be(TaskStatus.Cancelled, "cancelling the batch cancels its remaining tasks");

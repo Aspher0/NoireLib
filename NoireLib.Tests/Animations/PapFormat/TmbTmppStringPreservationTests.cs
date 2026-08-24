@@ -15,7 +15,7 @@ namespace NoireLib.Tests;
 /// file - the re-read then died in Tmpp with an EndOfStreamException and the whole rename was refused
 /// (slump/conduct in the 05:38 log). The vanilla files happened to store the TMPP string FIRST, before any
 /// C009/C010 string, which is the only reason every earlier rename survived: the truncation point always fell
-/// after it. This builder deliberately writes the C009 string BEFORE the TMPP string, so the truncation
+/// after it. This builder writes the C009 string BEFORE the TMPP string, so the truncation
 /// orphans TMPP exactly as the failing paps did.
 /// </summary>
 public class TmbTmppStringPreservationTests

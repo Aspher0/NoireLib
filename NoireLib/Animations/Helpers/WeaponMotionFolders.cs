@@ -25,7 +25,7 @@ public static class WeaponMotionFolders
     /// </summary>
     public const string ReferenceFolder = "bt_swd_sld";
 
-    /// <summary> The value the game's tables use for an empty slot. </summary>
+    // The value the game's tables use for an empty slot.
     private const string EmptyMarker = "*";
 
     private const int CodeLength = 3;

@@ -6,10 +6,8 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// LAN hub discovery through UDP broadcast beacons. Only hubs run this, so the beacon port is bound
-/// at most once per machine per network. Beacons carry a salted network hash, never the plaintext name.
-/// </summary>
+// LAN hub discovery through UDP broadcast beacons. Only hubs run this, so the beacon port is bound at most once per
+// machine per network. Beacons carry a salted network hash, never the plaintext name.
 internal sealed class LanDiscovery : IDisposable
 {
     private readonly HubServer hub;

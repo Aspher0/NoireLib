@@ -95,9 +95,6 @@ public class TweakManagerWindow : NoireModuleWindowBase<NoireTweakManager>
         }
     }
 
-    /// <summary>
-    /// Clears the currently selected tweak.
-    /// </summary>
     internal void ClearSelection()
     {
         selectedTweakKey = null;

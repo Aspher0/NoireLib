@@ -19,15 +19,11 @@ public static class NoireIPC
     private static readonly object SyncRoot = new();
     private static readonly List<NoireIpcHandle> OwnedHandles = [];
 
-    /// <summary>
-    /// Resolved Dalamud call gates, keyed by side, name and exact generic arguments.
-    /// Cleared when the owned handles are disposed.
-    /// </summary>
+    // Resolved Dalamud call gates, keyed by side, name and exact generic arguments. Cleared when the owned handles
+    // are disposed.
     private static readonly ConcurrentDictionary<CallGateKey, object> CallGateCache = new();
 
-    /// <summary>
-    /// The scored method per call-gate type, member name and argument count.
-    /// </summary>
+    // The scored method per call-gate type, member name and argument count.
     private static readonly ConcurrentDictionary<(Type TargetType, string MethodName, int ArgumentCount), MethodInfo> InstanceMethodCache = new();
     private static readonly IReadOnlyDictionary<int, MethodInfo> ProviderFactoryMethods = typeof(IDalamudPluginInterface)
         .GetMethods(BindingFlags.Instance | BindingFlags.Public)
@@ -1190,9 +1186,6 @@ public static class NoireIPC
         return gate;
     }
 
-    /// <summary>
-    /// Identifies a resolved call gate.
-    /// </summary>
     private readonly struct CallGateKey : IEquatable<CallGateKey>
     {
         private readonly bool provider;

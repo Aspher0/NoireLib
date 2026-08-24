@@ -5,16 +5,11 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>One 16-byte row of a game constant buffer, with what its contents could plausibly be.</summary>
-/// <param name="Offset">Byte offset of the row within its buffer.</param>
-/// <param name="Value">The four floats at that offset.</param>
-/// <param name="Kind">What the row's shape allows it to be.</param>
+// One 16-byte row of a game constant buffer, with what its contents could plausibly be.
 internal readonly record struct ConstantRow(int Offset, Vector4 Value, RowKind Kind);
 
-/// <summary>
-/// What a constant-buffer row's shape allows it to be. A classification narrows the candidates; it never
-/// identifies a row on its own, because many unrelated values share a shape.
-/// </summary>
+// What a constant-buffer row's shape allows it to be. A classification narrows the candidates; it never identifies a
+// row on its own, because many unrelated values share a shape.
 [Flags]
 internal enum RowKind
 {
@@ -44,34 +39,25 @@ internal enum RowKind
     MatrixRow = 32,
 }
 
-/// <summary>A buffer's rows at one moment, kept so two moments can be compared.</summary>
-/// <param name="Pointer">The buffer's resource pointer, which identifies it across snapshots.</param>
-/// <param name="ByteWidth">The buffer's declared size.</param>
-/// <param name="Rows">Its rows, classified.</param>
-/// <param name="Captures">
-/// How many whole payloads had been copied into this buffer at snapshot time. Two snapshots with the same count
-/// are the same bytes by construction, so a stalled tracker would falsely report every row as unchanged.
-/// </param>
+// A buffer's rows at one moment, kept so two moments can be compared.
 internal sealed record ConstantSnapshot(nint Pointer, int ByteWidth, ConstantRow[] Rows, long Captures);
 
-/// <summary>
-/// Reads the game's tracked constant buffers and reports what is in them, so the values that drive its
-/// lighting can be found rather than guessed at. A single dump cannot say which bytes they are - too many rows
-/// share a shape - so this also diffs two moments: a row that moves when the light moves and holds still
-/// otherwise is a candidate, and one that never moves is not a light at all.
-/// </summary>
+// Reads the game's tracked constant buffers and reports what is in them, so the values that drive its lighting can be
+// found rather than guessed at. A single dump cannot say which bytes they are - too many rows share a shape - so this
+// also diffs two moments: a row that moves when the light moves and holds still otherwise is a candidate, and one
+// that never moves is not a light at all.
 internal static class LightConstantProbe
 {
-    /// <summary>A direction's length may drift this far from 1 and still count as normalized.</summary>
+    // A direction's length may drift this far from 1 and still count as normalized.
     private const float UnitTolerance = 0.02f;
 
-    /// <summary>Above this, a component is a position or a matrix entry rather than a color or a direction.</summary>
+    // Above this, a component is a position or a matrix entry rather than a color or a direction.
     private const float LargeThreshold = 8f;
 
-    /// <summary>Components differing by less than this are treated as unchanged between two snapshots.</summary>
+    // Components differing by less than this are treated as unchanged between two snapshots.
     private const float ChangeEpsilon = 1e-4f;
 
-    /// <summary>Two unit vectors whose dot product is under this are treated as perpendicular.</summary>
+    // Two unit vectors whose dot product is under this are treated as perpendicular.
     private const float OrthogonalTolerance = 0.03f;
 
     /// <summary>Classifies every row of one buffer.</summary>
@@ -101,11 +87,9 @@ internal static class LightConstantProbe
         return new ConstantSnapshot(pointer, usable, rows, captures);
     }
 
-    /// <summary>
-    /// Flags every run of three consecutive rows whose xyz form an orthonormal basis. A rotation matrix is three
-    /// mutually perpendicular unit vectors: both a view-matrix row and a light direction are unit vectors, but
-    /// only the matrix row comes with two perpendicular partners.
-    /// </summary>
+    // Flags every run of three consecutive rows whose xyz form an orthonormal basis. A rotation matrix is three
+    // mutually perpendicular unit vectors: both a view-matrix row and a light direction are unit vectors, but only
+    // the matrix row comes with two perpendicular partners.
     private static void MarkMatrixRows(ConstantRow[] rows)
     {
         for (var i = 0; i + 2 < rows.Length; i++)
@@ -265,12 +249,7 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    /// <summary>A row that could be a light value, paired with the reason it is a candidate.</summary>
-    /// <param name="Pointer">Buffer it was found in.</param>
-    /// <param name="Row">The row itself.</param>
-    /// <param name="Reason">What makes it a candidate.</param>
-    /// <param name="Corroboration">How many other buffers hold the same xyz; a shared value is a stronger signal than one seen once.</param>
-    /// <param name="Responded">Whether this row changed when the lighting was changed.</param>
+    // A row that could be a light value, paired with the reason it is a candidate.
     internal readonly record struct LightCandidate(nint Pointer, ConstantRow Row, string Reason, int Corroboration, bool Responded);
 
     /// <summary>
@@ -447,11 +426,9 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Whether every component is 0 or plus/minus 1: a canonical axis, an identity row, or a flag. These must be
-    /// excluded before ranking by corroboration, because they appear in many buffers precisely by being generic -
-    /// ranking on how widely a value is shared otherwise puts every default axis above the real measurement.
-    /// </summary>
+    // Whether every component is 0 or plus/minus 1: a canonical axis, an identity row, or a flag. These must be
+    // excluded before ranking by corroboration, because they appear in many buffers precisely by being generic -
+    // ranking on how widely a value is shared otherwise puts every default axis above the real measurement.
     private static bool IsTrivial(Vector4 v)
     {
         return Trivial(v.X) && Trivial(v.Y) && Trivial(v.Z);
@@ -463,12 +440,10 @@ internal static class LightConstantProbe
         }
     }
 
-    /// <summary>
-    /// Whether a row is the depth pair of a projection matrix: <c>(0, 0, m22, m32)</c>.<br/>
-    /// A perspective projection puts <c>far/(near-far)</c> and <c>near*far/(near-far)</c> in those two slots, so
-    /// their ratio is exactly <c>1/near</c> and the third component sits near 1. Such a row is a unit vector by
-    /// shape and moves whenever a shadow frustum is refitted, which makes it a convincing false positive.
-    /// </summary>
+    // Whether a row is the depth pair of a projection matrix: (0, 0, m22, m32). A perspective projection puts
+    // far/(near-far) and near*far/(near-far) in those two slots, so their ratio is exactly 1/near and the third
+    // component sits near 1. Such a row is a unit vector by shape and moves whenever a shadow frustum is refitted,
+    // which makes it a convincing false positive.
     private static bool IsProjectionDepthRow(Vector4 v)
     {
         if (Math.Abs(v.X) > 1e-4f || Math.Abs(v.Y) > 1e-4f)
@@ -482,7 +457,7 @@ internal static class LightConstantProbe
         return near is > 0.1f and < 1000f;
     }
 
-    /// <summary>Why a row is worth looking at, or null when it is not.</summary>
+    // Why a row is worth looking at, or null when it is not.
     private static string? Reason(ConstantRow row)
     {
         var v = row.Value;
@@ -508,7 +483,7 @@ internal static class LightConstantProbe
         return null;
     }
 
-    /// <summary>Buckets an xyz so the same value written by two passes compares equal despite float noise.</summary>
+    // Buckets an xyz so the same value written by two passes compares equal despite float noise.
     private static (int, int, int) Quantize(Vector4 v)
         => ((int)MathF.Round(v.X * 2048f), (int)MathF.Round(v.Y * 2048f), (int)MathF.Round(v.Z * 2048f));
 

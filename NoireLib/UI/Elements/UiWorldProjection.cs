@@ -9,17 +9,15 @@ namespace NoireLib.UI;
 /// </summary>
 public static class UiWorldProjection
 {
-    /// <summary>
-    /// How far from the centre a projected point has to be, in pixels, before its direction counts.
-    /// </summary>
+    // How far from the centre a projected point has to be, in pixels, before its direction counts.
     private const float DirectionThreshold = 1f;
 
     /// <summary>
     /// How visible an element is at a given distance, fading out between the fade distance and the maximum.
     /// </summary>
     /// <param name="distance">The distance to the element, in yalms.</param>
-    /// <param name="fadeStart">Where fading begins. At or below it the element is fully opaque.</param>
-    /// <param name="maxDistance">Where the element is gone entirely. Zero or less means no limit and no fade.</param>
+    /// <param name="fadeStart">Where fading begins.</param>
+    /// <param name="maxDistance">Where the element is gone entirely, or zero or less for no limit and no fade.</param>
     /// <returns>An alpha multiplier from 0 to 1.</returns>
     public static float DistanceAlpha(float distance, float fadeStart, float maxDistance)
     {
@@ -55,12 +53,11 @@ public static class UiWorldProjection
     }
 
     /// <summary>
-    /// How large an element is at a given distance, ramping between two distances the way the distance fade does.<br/>
-    /// A range that does not run forwards is treated as a hard change at <paramref name="from"/> rather than as an error.
+    /// How large an element is at a given distance, ramping between two distances the way the distance fade does.
     /// </summary>
     /// <param name="distance">The distance to the element, in yalms.</param>
-    /// <param name="from">Where shrinking begins. At or below it the element is at <paramref name="maxScale"/>.</param>
-    /// <param name="to">Where shrinking ends. At or beyond it the element is at <paramref name="minScale"/>.</param>
+    /// <param name="from">Where shrinking begins.</param>
+    /// <param name="to">Where shrinking ends.</param>
     /// <param name="minScale">The smallest it may become.</param>
     /// <param name="maxScale">The largest it may become.</param>
     /// <returns>A scale multiplier.</returns>
@@ -79,11 +76,10 @@ public static class UiWorldProjection
     }
 
     /// <summary>
-    /// Rounds a scale to a multiple of a step, so a value that varies continuously takes a small number of distinct
-    /// values instead.
+    /// Rounds a scale to a multiple of a step.
     /// </summary>
     /// <param name="scale">The scale to round.</param>
-    /// <param name="step">The step to round to. Zero or less leaves the scale untouched.</param>
+    /// <param name="step">The step to round to, or zero or less to leave the scale untouched.</param>
     /// <returns>The stepped scale, never zero or negative.</returns>
     public static float QuantizeScale(float scale, float step)
     {
@@ -94,12 +90,11 @@ public static class UiWorldProjection
     }
 
     /// <summary>
-    /// The direction from the centre of the viewport toward a projected point, for placing a marker that has to sit on
-    /// an edge rather than on the point itself.
+    /// The direction from the centre of the viewport toward a projected point.
     /// </summary>
     /// <param name="screen">The projected point.</param>
     /// <param name="viewport">The viewport it was projected into.</param>
-    /// <returns>The direction, which is not normalized.</returns>
+    /// <returns>The direction, not normalized.</returns>
     public static Vector2 OffScreenDirection(Vector2 screen, UiRect viewport)
     {
         var delta = screen - viewport.Center;
@@ -111,7 +106,7 @@ public static class UiWorldProjection
     /// Places an element against the edge of the viewport, along a direction from the centre.
     /// </summary>
     /// <param name="viewport">The viewport to stay inside.</param>
-    /// <param name="direction">The direction from the centre, from <see cref="OffScreenDirection"/>. Need not be normalized.</param>
+    /// <param name="direction">The direction from the centre, from <see cref="OffScreenDirection"/>.</param>
     /// <param name="size">The size of the element being placed.</param>
     /// <param name="margin">How far to stay clear of the edges.</param>
     /// <returns>Where the centre of the element goes.</returns>
@@ -137,7 +132,7 @@ public static class UiWorldProjection
     /// How far it is from the centre of a box to its edge along a direction, measured in multiples of that direction.
     /// </summary>
     /// <param name="size">The size of the box.</param>
-    /// <param name="direction">The direction from the centre. Need not be normalized.</param>
+    /// <param name="direction">The direction from the centre.</param>
     /// <returns>The multiple of <paramref name="direction"/> that reaches the edge, or infinity when there is no edge to reach.</returns>
     public static float EdgeDistance(Vector2 size, Vector2 direction)
     {
@@ -156,7 +151,7 @@ public static class UiWorldProjection
     /// <summary>
     /// The angle an edge arrow points at, in radians, with zero pointing right.
     /// </summary>
-    /// <param name="direction">The direction to point. Need not be normalized.</param>
+    /// <param name="direction">The direction to point.</param>
     /// <returns>The angle in radians, or zero when the direction is empty.</returns>
     public static float ArrowAngle(Vector2 direction)
         => direction.LengthSquared() <= float.Epsilon ? 0f : MathF.Atan2(direction.Y, direction.X);

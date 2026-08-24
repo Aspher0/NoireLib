@@ -13,10 +13,7 @@ namespace NoireLib.Tests;
 [Collection(NoireUiTestCollection.Name)]
 public class NoireAnimTests : IDisposable
 {
-    /// <remarks>
-    /// Nullable because an unset reduced motion is not the same as a false one: it follows the host. Assigning the
-    /// value read back would leave an override behind where there had been none.
-    /// </remarks>
+    /// <remarks>Assigning the value read back would leave an override behind where there had been none.</remarks>
     private readonly bool? originalReducedMotion = NoireUI.HasReducedMotionOverride ? NoireUI.ReducedMotion : null;
 
     private float time;

@@ -20,22 +20,12 @@ public sealed class ParsedCommandArguments
     /// </summary>
     public string[] RawTokens { get; }
 
-    /// <summary>
-    /// Creates a new parsed arguments container.
-    /// </summary>
-    /// <param name="rawArgs">The raw argument string.</param>
-    /// <param name="rawTokens">The tokenized argument values.</param>
     internal ParsedCommandArguments(string rawArgs, string[] rawTokens)
     {
         RawArgs = rawArgs;
         RawTokens = rawTokens;
     }
 
-    /// <summary>
-    /// Sets an argument value.
-    /// </summary>
-    /// <param name="name">The argument name.</param>
-    /// <param name="value">The argument value.</param>
     internal void Set(string name, object? value) => values[name] = value;
 
     /// <summary>

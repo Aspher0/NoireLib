@@ -123,8 +123,8 @@ public class DurationHelperTests
     [InlineData("::")]
     public void TryParse_RefusesAClockThatIsNotOne(string text)
     {
-        // Only the leading part may run past its own unit, which is what makes "90:00" ninety minutes and "1:90"
-        // nothing at all.
+        // Only the leading part may run past its own unit, which makes "90:00" ninety minutes and "1:90" nothing
+        // at all.
         DurationHelper.TryParse(text, out var value).Should().BeFalse();
 
         value.Should().Be(TimeSpan.Zero);

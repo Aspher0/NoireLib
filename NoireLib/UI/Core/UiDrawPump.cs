@@ -4,12 +4,8 @@ using System.Threading;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// The queue behind <see cref="NoireUI.RunOnDraw"/>: work posted from any thread, run on the draw thread at the start of
-/// the next frame.<br/>
-/// Bounded with drop-oldest, so a UI that has stopped drawing costs a bounded amount of memory instead of growing until
-/// the game dies. When NoireLib is not initialized there is no draw thread to marshal onto and actions run inline.
-/// </summary>
+// The queue behind NoireUI.RunOnDraw: work posted from any thread, run on the draw thread at the start of the next
+// frame. Bounded with drop-oldest; when NoireLib is not initialized there is no draw thread and actions run inline.
 internal sealed class UiDrawPump
 {
     private readonly ConcurrentQueue<Action> queue = new();
@@ -17,41 +13,26 @@ internal sealed class UiDrawPump
     private int queuedCount;
     private int capacity = 512;
 
-    /// <summary>
-    /// How many actions the queue holds before the oldest are dropped. Values below one are raised to one.
-    /// </summary>
+    // How many actions the queue holds before the oldest are dropped. Values below one are raised to one.
     public int Capacity
     {
         get => capacity;
         set => capacity = Math.Max(1, value);
     }
 
-    /// <summary>
-    /// How many actions are waiting to run.
-    /// </summary>
     public int Count => Volatile.Read(ref queuedCount);
 
-    /// <summary>
-    /// How many actions have been dropped because the queue was full, since startup.
-    /// </summary>
+    // Counted since startup, never reset.
     public int DroppedCount { get; private set; }
 
-    /// <summary>
-    /// Forces posts through the queue even when NoireLib is not initialized, leaving <see cref="Drain"/> as the only way
-    /// to run them.<br/>
-    /// This is the seam for exercising queueing, ordering and the drop-oldest policy without a running game.
-    /// </summary>
+    // Test seam: forces posts through the queue even when NoireLib is not initialized, leaving Drain as the only way
+    // to run them.
     internal bool ForceQueuedDelivery { get; init; }
 
-    /// <summary>
-    /// Whether actions run on the posting thread because there is no draw thread to marshal onto.
-    /// </summary>
+    // Actions run on the posting thread because there is no draw thread to marshal onto.
     public bool InlineMode => !NoireService.IsInitialized() && !ForceQueuedDelivery;
 
-    /// <summary>
-    /// Queues an action for the next frame, or runs it inline when there is no draw thread.
-    /// </summary>
-    /// <param name="action">The action to run.</param>
+    // Queues an action for the next frame, or runs it inline when there is no draw thread.
     public void Post(Action action)
     {
         if (InlineMode)
@@ -77,10 +58,7 @@ internal sealed class UiDrawPump
         queue.Enqueue(action);
     }
 
-    /// <summary>
-    /// Runs the actions queued as of entry, on the calling thread.
-    /// </summary>
-    /// <returns>How many actions ran.</returns>
+    // Runs the actions queued as of entry, on the calling thread.
     public int Drain()
     {
         // Drain only what was queued at entry, so an action that posts more work cannot stretch the frame indefinitely.
@@ -97,9 +75,6 @@ internal sealed class UiDrawPump
         return ran;
     }
 
-    /// <summary>
-    /// Drops every queued action.
-    /// </summary>
     public void Clear()
     {
         queue.Clear();

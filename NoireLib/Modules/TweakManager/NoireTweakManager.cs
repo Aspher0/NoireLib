@@ -23,11 +23,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     private bool batchingConfigSaves;
     private bool deferredSavePending;
 
-    /// <summary>
-    /// Gets the <see cref="TweakManagerConfigInstance"/> used by this module; deliberately shadows the generated
-    /// static accessor of the same name, whose members write the configuration file on every call, so this module
-    /// can gate every save on <see cref="AutomaticPersistence"/> instead.
-    /// </summary>
+    // Gets the TweakManagerConfigInstance used by this module; deliberately shadows the generated static accessor of
+    // the same name, whose members write the configuration file on every call, so this module can gate every save on
+    // AutomaticPersistence instead.
     private static TweakManagerConfigInstance TweakManagerConfig
         => NoireConfigManager.GetConfig<TweakManagerConfigInstance>()!;
 
@@ -59,12 +57,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         NoireEventBus? eventBus = null)
             : base(moduleId, active, enableLogging, automaticPersistence, additionalTweaks, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>, for internal module management only.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireTweakManager(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -223,26 +216,19 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
     public override NoireTweakManager ShowWindow()
         => ShowWindow(null);
 
-    /// <summary>
-    /// Internal method called by TweakManagerWindow when the window is opened.
-    /// </summary>
+    // Internal method called by TweakManagerWindow when the window is opened.
     internal void OnWindowOpened()
     {
         PublishEvent(new TweakWindowOpenedEvent());
     }
 
-    /// <summary>
-    /// Internal method called by TweakManagerWindow when the window is closed.
-    /// </summary>
+    // Internal method called by TweakManagerWindow when the window is closed.
     internal void OnWindowClosed()
     {
         PublishEvent(new TweakWindowClosedEvent());
     }
 
-    /// <summary>
-    /// Internal method called by TweakManagerWindow when a tweak is selected.
-    /// </summary>
-    /// <param name="tweak">The selected tweak.</param>
+    // Internal method called by TweakManagerWindow when a tweak is selected.
     internal void OnTweakSelected(TweakBase tweak)
     {
         PublishEvent(new TweakSelectedEvent(tweak.InternalKey, tweak.Name));
@@ -580,13 +566,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return ToggleTweak(tweak.InternalKey);
     }
 
-    /// <summary>
-    /// Applies a tweak's enabled effect and reports the outcome, without touching the configuration; restoring a
-    /// tweak on activation uses this, since the configuration already says the tweak is on, and an enable that
-    /// fails must not be mistaken for the user turning the tweak off.
-    /// </summary>
-    /// <param name="tweak">The tweak to hook up.</param>
-    /// <returns><see langword="true"/> if the tweak was enabled successfully; otherwise, <see langword="false"/>.</returns>
+    // Applies a tweak's enabled effect and reports the outcome, without touching the configuration; restoring a tweak
+    // on activation uses this, since the configuration already says the tweak is on, and an enable that fails must
+    // not be mistaken for the user turning the tweak off.
     private bool ApplyTweakEnable(TweakBase tweak)
     {
         var success = tweak.Enable();
@@ -609,13 +591,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return success;
     }
 
-    /// <summary>
-    /// Applies a tweak's disabled effect and reports the outcome, without touching the configuration; teardown
-    /// uses this, since unhooking a tweak because the module is going away or the tweak is being removed is not
-    /// the user turning it off, and must not overwrite the enabled set the next activation reads back.
-    /// </summary>
-    /// <param name="tweak">The tweak to unhook.</param>
-    /// <returns><see langword="true"/> if the tweak was disabled successfully; otherwise, <see langword="false"/>.</returns>
+    // Applies a tweak's disabled effect and reports the outcome, without touching the configuration; teardown uses
+    // this, since unhooking a tweak because the module is going away or the tweak is being removed is not the user
+    // turning it off, and must not overwrite the enabled set the next activation reads back.
     private bool ApplyTweakDisable(TweakBase tweak)
     {
         var success = tweak.Disable();
@@ -638,11 +616,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return success;
     }
 
-    /// <summary>
-    /// Enables a tweak on the user's behalf, applying the effect and recording the intent.
-    /// </summary>
-    /// <param name="tweak">The tweak to enable.</param>
-    /// <returns><see langword="true"/> if the tweak was enabled successfully; otherwise, <see langword="false"/>.</returns>
+    // Enables a tweak on the user's behalf, applying the effect and recording the intent.
     private bool EnableTweakInternal(TweakBase tweak)
     {
         var success = ApplyTweakEnable(tweak);
@@ -650,11 +624,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return success;
     }
 
-    /// <summary>
-    /// Disables a tweak on the user's behalf, applying the effect and recording the intent.
-    /// </summary>
-    /// <param name="tweak">The tweak to disable.</param>
-    /// <returns><see langword="true"/> if the tweak was disabled successfully; otherwise, <see langword="false"/>.</returns>
+    // Disables a tweak on the user's behalf, applying the effect and recording the intent.
     private bool DisableTweakInternal(TweakBase tweak)
     {
         var success = ApplyTweakDisable(tweak);
@@ -932,39 +902,27 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         return count;
     }
 
-    /// <summary>
-    /// Records a tweak's current state because the tweak reported that its configuration changed, via
-    /// <see cref="TweakBase.MarkConfigDirty"/>; the module is recording a change it was told about rather than a
-    /// write the consumer asked for, so it obeys <see cref="AutomaticPersistence"/>, unlike <see cref="SaveTweakConfig"/>.
-    /// </summary>
-    /// <param name="internalKey">The internal key of the tweak whose configuration changed.</param>
+    // Records a tweak's current state because the tweak reported that its configuration changed, via MarkConfigDirty;
+    // the module is recording a change it was told about rather than a write the consumer asked for, so it obeys
+    // AutomaticPersistence, unlike SaveTweakConfig.
     internal void RecordTweakConfig(string internalKey)
     {
         if (tweaks.TryGetValue(internalKey, out var tweak))
             SaveTweakConfigInternal(tweak);
     }
 
-    /// <summary>
-    /// Records a tweak's current state in the configuration store and persists it.
-    /// </summary>
-    /// <param name="tweak">The tweak whose state should be recorded.</param>
-    /// <param name="explicitRequest">Whether the consumer asked for this write, rather than the module making it on its own.</param>
+    // Records a tweak's current state in the configuration store and persists it.
     private void SaveTweakConfigInternal(TweakBase tweak, bool explicitRequest = false)
     {
         SaveTweakConfigToStore(tweak);
         PersistConfigStore(tweak.InternalKey, explicitRequest);
     }
 
-    /// <summary>
-    /// Writes the configuration store to disk, deciding both whether a write is allowed and when it happens;
-    /// every write the module makes is requested here, so no path can escape either decision. A write the module
-    /// makes on its own obeys <see cref="AutomaticPersistence"/>, while a write the consumer asked for by name
-    /// (through <see cref="SaveTweakConfig"/> or <see cref="SaveAllTweakConfigs"/>) is carried out regardless.
-    /// Inside a batch the write is deferred either way, so an operation covering many tweaks costs one write
-    /// instead of one per tweak.
-    /// </summary>
-    /// <param name="reportedKey">The tweak key to announce with <see cref="TweakConfigSavedEvent"/>, or <see langword="null"/> to announce none.</param>
-    /// <param name="explicitRequest">Whether the consumer asked for this write, rather than the module making it on its own.</param>
+    // Writes the configuration store to disk, deciding both whether a write is allowed and when it happens; every
+    // write the module makes is requested here, so no path can escape either decision. A write the module makes on
+    // its own obeys AutomaticPersistence, while a write the consumer asked for by name (through SaveTweakConfig or
+    // SaveAllTweakConfigs) is carried out regardless. Inside a batch the write is deferred either way, so an
+    // operation covering many tweaks costs one write instead of one per tweak.
     private void PersistConfigStore(string? reportedKey, bool explicitRequest = false)
     {
         if (!explicitRequest && !automaticPersistence)
@@ -986,12 +944,9 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
             PublishEvent(new TweakConfigSavedEvent(reportedKey));
     }
 
-    /// <summary>
-    /// Runs an operation that records several tweaks, collapsing the writes it produces into a single one; every
-    /// tweak still announces its own <see cref="TweakConfigSavedEvent"/> once the write lands. Batches nest: an
-    /// operation already running inside one contributes to it rather than opening its own.
-    /// </summary>
-    /// <param name="operation">The operation to run.</param>
+    // Runs an operation that records several tweaks, collapsing the writes it produces into a single one; every tweak
+    // still announces its own TweakConfigSavedEvent once the write lands. Batches nest: an operation already running
+    // inside one contributes to it rather than opening its own.
     internal void RunAsBatch(Action operation)
     {
         if (batchingConfigSaves)
@@ -1013,9 +968,7 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         }
     }
 
-    /// <summary>
-    /// Performs the single write a batch accumulated, if any, and announces the tweaks it covered.
-    /// </summary>
+    // Performs the single write a batch accumulated, if any, and announces the tweaks it covered.
     private void FlushDeferredConfigSaves()
     {
         var reportedKeys = deferredSaveReportedKeys.ToList();
@@ -1038,11 +991,6 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
         TweakManagerConfig.SetTweakConfig(tweak.InternalKey, BuildTweakConfigEntry(tweak));
     }
 
-    /// <summary>
-    /// Builds the configuration entry describing a tweak's current state.
-    /// </summary>
-    /// <param name="tweak">The tweak to describe.</param>
-    /// <returns>The entry for the tweak.</returns>
     private TweakConfigEntry BuildTweakConfigEntry(TweakBase tweak)
     {
         string? configJson = null;
@@ -1179,11 +1127,6 @@ public class NoireTweakManager : NoireModuleWithWindowBase<NoireTweakManager, Tw
 
     #region EventBus Integration
 
-    /// <summary>
-    /// Publishes an event to the EventBus if available.
-    /// </summary>
-    /// <typeparam name="TEvent">The event type.</typeparam>
-    /// <param name="eventData">The event data.</param>
     private void PublishEvent<TEvent>(TEvent eventData)
     {
         EventBus?.Publish(eventData);

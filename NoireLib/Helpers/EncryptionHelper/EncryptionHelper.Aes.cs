@@ -7,14 +7,8 @@ namespace NoireLib.Helpers;
 
 public static partial class EncryptionHelper
 {
-    /// <summary>
-    /// The format version byte for password-based AES-GCM payloads.
-    /// </summary>
     private const byte AesGcmPasswordVersion = 1;
 
-    /// <summary>
-    /// The format version byte for raw-key AES-GCM payloads.
-    /// </summary>
     private const byte AesGcmKeyVersion = 2;
 
     #region Password-based AES-GCM
@@ -243,9 +237,6 @@ public static partial class EncryptionHelper
     /// <returns>A 32-byte key.</returns>
     public static byte[] GenerateAesKey() => RandomBytes(AesKeySize);
 
-    /// <summary>
-    /// Validates that a key is exactly 32 bytes (256-bit).
-    /// </summary>
     private static void ValidateKey(byte[] key)
     {
         if (key is null || key.Length != AesKeySize)

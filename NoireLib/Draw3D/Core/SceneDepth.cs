@@ -5,14 +5,12 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the game's
-/// depth buffer is never written by Draw3D. Creates its own SRV over the typeless texture first, and only falls
-/// back to borrowing the game's pre-made one (QI-validated) when that fails, since the game's view can legally be
-/// a stencil view of the same resource and sampling stencil as depth inverts occlusion. Re-derives itself whenever
-/// the underlying texture changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on
-/// anything unknown.
-/// </summary>
+// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the game's depth
+// buffer is never written by Draw3D. Creates its own SRV over the typeless texture first, and only falls back to
+// borrowing the game's pre-made one (QI-validated) when that fails, since the game's view can legally be a stencil
+// view of the same resource and sampling stencil as depth inverts occlusion. Re-derives itself whenever the
+// underlying texture changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on anything
+// unknown.
 internal sealed unsafe class SceneDepth : IDisposable
 {
     private ComPtr<ID3D11ShaderResourceView> srv;
@@ -116,7 +114,7 @@ internal sealed unsafe class SceneDepth : IDisposable
         }
     }
 
-    /// <summary>Maps a depth texture's (typeless) format to the SRV format that reads its <i>depth</i> plane.</summary>
+    // Maps a depth texture's (typeless) format to the SRV format that reads its depth plane.
     internal static DXGI_FORMAT DepthSrvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS => DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS,

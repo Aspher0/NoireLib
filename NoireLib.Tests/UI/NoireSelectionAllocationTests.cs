@@ -9,10 +9,6 @@ namespace NoireLib.Tests;
 /// Holds the combo family at zero allocation per frame, in the state they spend nearly all of their life in: closed.
 /// </summary>
 /// <remarks>
-/// A dropdown is open for as long as it takes to pick something and closed for every other frame of a session, so the
-/// closed draw is the one that runs for every combo on a page sixty times a second. It is also the one nothing was
-/// watching: the open path was built with a clipper and a reused scoring list from the start, and measured 0 before
-/// this audit, while the closed path quietly rebuilt its preview text every frame.<br/>
 /// The widgets are constructed once, in fields, because the harness charges everything the measured delegate does to
 /// the surface under test.
 /// </remarks>

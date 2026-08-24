@@ -8,11 +8,9 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Render-thread hook on the game's D3D11 immediate context, serving the bind-sequence diagnostic, the pre-UI
-/// and G-buffer injection points, and the main-scene-pass camera phase. Installed on first use only, and each
-/// hook stays disabled until a capture is armed or an injection is enabled.
-/// </summary>
+// Render-thread hook on the game's D3D11 immediate context, serving the bind-sequence diagnostic, the pre-UI and
+// G-buffer injection points, and the main-scene-pass camera phase. Installed on first use only, and each hook stays
+// disabled until a capture is armed or an injection is enabled.
 internal sealed unsafe class RenderTargetTap : IDisposable
 {
     // ID3D11DeviceContext vtable slots.
@@ -44,10 +42,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void RsSetViewportsFn(nint context, uint numViewports, nint pViewports);
 
-    /// <summary>One render-target bind, whose <see cref="Format"/> is the view's format rather than the texture's.</summary>
+    // One render-target bind, whose Format is the view's format rather than the texture's.
     private readonly record struct Bind(uint NumViews, nint Rtv0Resource, DXGI_FORMAT Format, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
 
-    /// <summary>One target of a multi-target bind, for reading a G-buffer's layout.</summary>
+    // One target of a multi-target bind, for reading a G-buffer's layout.
     private readonly record struct TargetInfo(nint Resource, DXGI_FORMAT Format, uint Width, uint Height);
 
     private NoireHook<OmSetRenderTargetsFn>? omHook;
@@ -89,7 +87,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private int dumpsWritten;
     private string dumpFolder = string.Empty;
 
-    /// <summary>Bind count of the last captured frame; a frame is not a fixed length, so bind indices do not carry across runs.</summary>
+    // Bind count of the last captured frame; a frame is not a fixed length, so bind indices do not carry across runs.
     private int lastFrameBindCount;
 
     // A bind counts as a backbuffer bind if its target matches any of the flip-model buffers seen at present.
@@ -336,10 +334,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return dumpStride;
     }
 
-    /// <summary>
-    /// Writes out the target that has just finished being drawn into, when it falls in the armed span. Runs before
-    /// the game's new bind is applied, the only moment the previous target's contents are final.
-    /// </summary>
+    // Writes out the target that has just finished being drawn into, when it falls in the armed span. Runs before the
+    // game's new bind is applied, the only moment the previous target's contents are final.
     private void DumpFinishedBind()
     {
         var finished = bindCount - 1;
@@ -442,7 +438,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         RefreshDrawHookState();
     }
 
-    /// <summary>Enables the draw hooks for whichever consumer wants them: the one-frame capture, an injection, or the camera-constant commit.</summary>
+    // Enables the draw hooks for whichever consumer wants them: the one-frame capture, an injection, or the
+    // camera-constant commit.
     private void RefreshDrawHookState()
         => SetDrawHooksEnabled(state == 2 || GBufferInjectionEnabled || shadowInjectionEnabled || (Capture?.WantsDrawSignal ?? false));
 
@@ -575,11 +572,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    /// <summary>
-    /// Runs at every game draw, taking the camera commit before the G-buffer injection so injected geometry is
-    /// projected with the camera the commit establishes.
-    /// </summary>
-    /// <param name="context">The device context the draw was issued on.</param>
+    // Runs at every game draw, taking the camera commit before the G-buffer injection so injected geometry is
+    // projected with the camera the commit establishes.
     private void OnDraw(nint context)
     {
         Capture?.OnGameDraw(context); // a no-op except at the main pass's first draw
@@ -613,12 +607,9 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    /// <summary>
-    /// Injects the queued shadow geometry if a shadow draw group with draws behind it is ending right now. Called
-    /// before the state change that ends the group, which is a new target bind or a viewport change inside the same
-    /// bind, since an atlas map renders each slice as its own viewport group with its own constants.
-    /// </summary>
-    /// <param name="context">The device context the state change was issued on.</param>
+    // Injects the queued shadow geometry if a shadow draw group with draws behind it is ending right now. Called
+    // before the state change that ends the group, which is a new target bind or a viewport change inside the same
+    // bind, since an atlas map renders each slice as its own viewport group with its own constants.
     private void TryInjectShadowAtGroupEnd(nint context)
     {
         if (!shadowBindActive || !shadowBindSawDraw || !shadowInjectionEnabled || injecting || SuppressSelf
@@ -707,12 +698,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return res;
     }
 
-    /// <summary>
-    /// Whether a bound depth-stencil view targets the main scene depth, distinguishing the main world pass from the
-    /// shadow-map passes that render first. False when the per-frame scene-depth cache is unset.
-    /// </summary>
-    /// <param name="pDsv">The bound depth-stencil view.</param>
-    /// <returns>True when the view's resource is the cached scene-depth texture.</returns>
+    // Whether a bound depth-stencil view targets the main scene depth, distinguishing the main world pass from the
+    // shadow-map passes that render first. False when the per-frame scene-depth cache is unset.
     private bool IsMainSceneDepth(nint pDsv)
     {
         if (frameSceneDepthTex == 0 || pDsv == 0)
@@ -807,10 +794,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return result;
     }
 
-    /// <summary>
-    /// Reports the target set of every multi-target bind, whose formats an injected draw must match exactly.
-    /// </summary>
-    /// <param name="sb">The report being built.</param>
+    // Reports the target set of every multi-target bind, whose formats an injected draw must match exactly.
     private void AppendMultiTargets(StringBuilder sb)
     {
         if (multiBindCount == 0)
@@ -839,9 +823,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    /// <summary>Names a DXGI format, falling back to its numeric value so an unlisted one is still reportable.</summary>
-    /// <param name="format">The format to name.</param>
-    /// <returns>The format's name, or its numeric value.</returns>
+    // Names a DXGI format, falling back to its numeric value so an unlisted one is still reportable.
     private static string FormatName(DXGI_FORMAT format) => format switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => "R8G8B8A8_UNORM",
@@ -862,9 +844,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         _ => $"format {(int)format}",
     };
 
-    /// <summary>Records every target of a multi-target bind, so a G-buffer's channel layout is readable.</summary>
-    /// <param name="numViews">The bind's view count.</param>
-    /// <param name="ppRtvs">The bind's render-target view array.</param>
+    // Records every target of a multi-target bind, so a G-buffer's channel layout is readable.
     private void RecordMultiTarget(uint numViews, nint ppRtvs)
     {
         if (multiBindCount >= MaxMultiBinds || ppRtvs == 0)
@@ -979,12 +959,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         rsSetViewportsDetour = null;
     }
 
-    /// <summary>
-    /// Options for a hook on a graphics device call: no fault guard, no counters and no verification, because these
-    /// run thousands of times per frame and the addresses are vtable slots XIVClientStructs never describes.
-    /// </summary>
-    /// <param name="name">The hook name.</param>
-    /// <returns>The hook options.</returns>
+    // Options for a hook on a graphics device call: no fault guard, no counters and no verification, because these
+    // run thousands of times per frame and the addresses are vtable slots XIVClientStructs never describes.
     private static HookOptions DeviceHookOptions(string name) => new()
     {
         Name = name,

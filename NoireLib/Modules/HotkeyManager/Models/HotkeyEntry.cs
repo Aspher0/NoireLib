@@ -285,25 +285,19 @@ public sealed class HotkeyEntry
         }
     }
 
-    /// <summary>
-    /// The runtime state of the activation state machine for this entry, written only on the detection thread.
-    /// </summary>
+    // The runtime state of the activation state machine for this entry, written only on the detection thread.
     internal HotkeyActivationState Activation;
 
-    /// <summary>
-    /// Whether this hotkey is suppressed until its key is released, set when a rebind capture or a game text
-    /// input claims the key while it is down, tracked apart from <see cref="Activation"/>.
-    /// </summary>
+    // Whether this hotkey is suppressed until its key is released, set when a rebind capture or a game text input
+    // claims the key while it is down, tracked apart from Activation.
     internal bool BlockedWhileDown { get; set; }
 
     private volatile NoireHotkeyManager? owner;
 
-    /// <summary>
-    /// The manager currently holding this entry, or null when not registered; set on registration, cleared on
-    /// unregister or teardown. The notifying option setters route a runtime change back through it to persist,
-    /// falling back to a plain field write when there is no owner; volatile since the registering thread need
-    /// not be the one that later reconfigures the entry.
-    /// </summary>
+    // The manager currently holding this entry, or null when not registered; set on registration, cleared on
+    // unregister or teardown. The notifying option setters route a runtime change back through it to persist, falling
+    // back to a plain field write when there is no owner; volatile since the registering thread need not be the one
+    // that later reconfigures the entry.
     internal NoireHotkeyManager? Owner
     {
         get => owner;
@@ -312,22 +306,17 @@ public sealed class HotkeyEntry
 
     private volatile bool unregistered;
 
-    /// <summary>
-    /// Whether the manager has stopped holding this entry; delivery reads it to discard a trigger queued before
-    /// an unregister rather than invoke a retired callback. Volatile, since removal and delivery need not run
-    /// on the same thread and delivery reads it without the manager's lock.
-    /// </summary>
+    // Whether the manager has stopped holding this entry; delivery reads it to discard a trigger queued before an
+    // unregister rather than invoke a retired callback. Volatile, since removal and delivery need not run on the same
+    // thread and delivery reads it without the manager's lock.
     internal bool Unregistered
     {
         get => unregistered;
         set => unregistered = value;
     }
 
-    /// <summary>
-    /// Writes the binding field directly, bypassing the <see cref="Binding"/> setter's routing; used by
-    /// <see cref="NoireHotkeyManager.SetHotkeyBinding"/> itself, to avoid recursing into its own call.
-    /// </summary>
-    /// <param name="value">The binding to store.</param>
+    // Writes the binding field directly, bypassing the Binding setter's routing; used by SetHotkeyBinding itself, to
+    // avoid recursing into its own call.
     internal void SetBindingStorage(HotkeyBinding value) => binding = value;
 
     /// <summary>

@@ -6,9 +6,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Diffs the fate table at a slow cadence: spawned/expired/progress/state changes.
-/// </summary>
+// Diffs the fate table at a slow cadence: spawned/expired/progress/state changes.
 internal sealed class FateSource : GameWatcherSource
 {
     private readonly Dictionary<ushort, FateSnapshot> baseline = new();
@@ -87,7 +85,6 @@ internal sealed class FateSource : GameWatcherSource
         }
     }
 
-    /// <summary>Captures a fate snapshot, also used by facade queries.</summary>
     internal static FateSnapshot Capture(Dalamud.Game.ClientState.Fates.IFate fate, DateTimeOffset now) => new()
     {
         FateId = fate.FateId,
@@ -103,9 +100,6 @@ internal sealed class FateSource : GameWatcherSource
     };
 }
 
-/// <summary>
-/// Polls the current zone weather at a slow cadence.
-/// </summary>
 internal sealed class WeatherSource : GameWatcherSource
 {
     private byte lastWeatherId;
@@ -137,14 +131,12 @@ internal sealed class WeatherSource : GameWatcherSource
             Owner.DispatchEvent(new WeatherChangedEvent(previous, weatherId));
     }
 
-    /// <summary>Reads the current weather row id from game memory (live read).</summary>
+    // Reads the current weather row id from game memory (live read).
     internal static byte ReadCurrentWeather() => WeatherHelper.Active();
 }
 
-/// <summary>
-/// The Eorzea clock, computed deterministically from real time (1 Eorzea day = 70 real minutes):
-/// hour changes and day/night transitions.
-/// </summary>
+// The Eorzea clock, computed deterministically from real time (1 Eorzea day = 70 real minutes): hour changes and
+// day/night transitions.
 internal sealed class EorzeaTimeSource : GameWatcherSource
 {
     private int lastHour = -1;
@@ -185,20 +177,15 @@ internal sealed class EorzeaTimeSource : GameWatcherSource
         }
     }
 
-    /// <inheritdoc cref="EorzeaTimeHelper.TimeOfDayAt"/>
     internal static TimeSpan ComputeEorzeaTimeOfDay(DateTimeOffset realTime)
         => EorzeaTimeHelper.TimeOfDayAt(realTime);
 
-    /// <inheritdoc cref="EorzeaTimeHelper.HourAt"/>
     internal static int ComputeEorzeaHour(DateTimeOffset realTime) => EorzeaTimeHelper.HourAt(realTime);
 
-    /// <inheritdoc cref="EorzeaTimeHelper.IsNightHour"/>
     internal static bool IsNight(int hour) => EorzeaTimeHelper.IsNightHour(hour);
 }
 
-/// <summary>
-/// Wraps the native toast events. Event-driven - zero tick cost.
-/// </summary>
+// Wraps the native toast events. Event-driven - zero tick cost.
 internal sealed class ToastSource : GameWatcherSource
 {
     public ToastSource(NoireGameWatcher owner) : base(owner, SourceKind.Toast) { }

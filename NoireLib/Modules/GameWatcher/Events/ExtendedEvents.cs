@@ -18,11 +18,11 @@ public sealed record FateExpiredEvent(FateSnapshot Fate);
 /// Fired when a fate's completion progress changes.
 /// </summary>
 /// <param name="Fate">The fate's current snapshot.</param>
-/// <param name="PreviousProgress">The previous progress (0–100).</param>
+/// <param name="PreviousProgress">The previous progress (0-100).</param>
 public sealed record FateProgressChangedEvent(FateSnapshot Fate, byte PreviousProgress);
 
 /// <summary>
-/// Fired when a fate's state changes (preparing, running, ending, …).
+/// Fired when a fate's state changes (preparing, running, ending, ...).
 /// </summary>
 /// <param name="Fate">The fate's current snapshot.</param>
 /// <param name="PreviousState">The previous state.</param>
@@ -38,11 +38,11 @@ public sealed record WeatherChangedEvent(byte PreviousWeatherId, byte WeatherId)
 /// <summary>
 /// Fired when the Eorzea hour changes.
 /// </summary>
-/// <param name="Hour">The new Eorzea hour (0–23).</param>
+/// <param name="Hour">The new Eorzea hour (0-23).</param>
 public sealed record EorzeaHourChangedEvent(int Hour);
 
 /// <summary>
-/// Fired when Eorzea transitions between day (6:00–17:59 ET) and night.
+/// Fired when Eorzea transitions between day (6:00-17:59 ET) and night.
 /// </summary>
 /// <param name="IsNight">Whether it is now night.</param>
 public sealed record EorzeaDayNightChangedEvent(bool IsNight);

@@ -12,11 +12,6 @@ public sealed partial class NoireTabBar
 {
     private readonly List<UiTab> drawOrder = [];
 
-    /// <summary>
-    /// Scrolls the tab strip with the wheel while the pointer is over it, and keeps the surrounding windows from
-    /// scrolling with the same notch.
-    /// </summary>
-    /// <returns>True when the strip took the wheel.</returns>
     private bool HandleWheelScroll()
     {
         if (!WheelScrolls)
@@ -54,11 +49,8 @@ public sealed partial class NoireTabBar
         return true;
     }
 
-    /// <summary>
-    /// Pulls the window's work rectangle in to the width the bar is allowed, so ImGui builds the strip to that edge
-    /// rather than to the window's own.
-    /// </summary>
-    /// <param name="window">The window being drawn into.</param>
+    // Pulls the window's work rectangle in to the width the bar is allowed, so ImGui builds the strip to that edge
+    // rather than to the window's own.
     private void ConstrainWorkRect(ImGuiWindowPtr window)
     {
         if (window.IsNull)
@@ -79,10 +71,6 @@ public sealed partial class NoireTabBar
         window.WorkRect = rect;
     }
 
-    /// <summary>
-    /// Tells ImGui that no window under the pointer may scroll on the wheel, for as long as the pointer is over the
-    /// tab strip.
-    /// </summary>
     private static void ClaimWheelForNextFrame()
     {
         for (var window = ImGuiP.GetCurrentWindow(); !window.IsNull; window = window.ParentWindow)
@@ -118,8 +106,7 @@ public sealed partial class NoireTabBar
             flags |= ImGuiTabBarFlags.FittingPolicyScroll;
 
         // Narrowed around the bar and put back after it, because ImGui builds a tab bar out to the window's work
-        // rectangle and nothing in its public surface takes a width. That is the usual right-edge trap: a bar inside a
-        // page that centres its content in a narrower column runs straight past the column and out the other side.
+        // rectangle and nothing in its public surface takes a width.
         var window = ImGuiP.GetCurrentWindow();
         var workRect = window.WorkRect;
         ConstrainWorkRect(window);
@@ -164,12 +151,6 @@ public sealed partial class NoireTabBar
         return ApplyOpened(opened);
     }
 
-    /// <summary>
-    /// Draws one tab header, its badge and its body.
-    /// </summary>
-    /// <param name="tab">The tab to draw.</param>
-    /// <param name="opened">Receives this tab's id when it is the open one.</param>
-    /// <param name="closed">Receives this tab when its close button was used.</param>
     private void DrawTab(UiTab tab, ref string? opened, ref UiTab? closed)
     {
         var enabled = tab.IsEnabled();
@@ -212,9 +193,6 @@ public sealed partial class NoireTabBar
             closed = tab;
     }
 
-    /// <summary>
-    /// Draws the tab's badge over its header, if it has one to draw.
-    /// </summary>
     private static void DrawBadge(UiTab tab, UiRect header)
     {
         var count = tab.BadgeCount();
@@ -247,10 +225,7 @@ public sealed partial class NoireTabBar
         }
     }
 
-    /// <summary>
-    /// Shows whichever of the tooltip and the disabled reason applies.
-    /// </summary>
-    /// <remarks>The reason wins while the tab is disabled.</remarks>
+    // The disabled reason wins while the tab is disabled.
     private static void DrawTabTooltip(UiTab tab, bool enabled, bool hovered)
     {
         if (!hovered)
@@ -266,9 +241,6 @@ public sealed partial class NoireTabBar
             NoireTooltip.Show(tab.Tooltip);
     }
 
-    /// <summary>
-    /// Runs the open tab's body, keeping a throwing body from taking the bar and every other tab down with it.
-    /// </summary>
     private static void DrawBody(UiTab tab)
     {
         if (tab.Body == null)
@@ -284,9 +256,7 @@ public sealed partial class NoireTabBar
         }
     }
 
-    /// <summary>
-    /// Removes a closed tab and reports it, after the bar has ended so the list is not edited mid-draw.
-    /// </summary>
+    // Called after the bar has ended so the list is not edited mid-draw.
     private void CloseTab(UiTab tab)
     {
         Tabs.Remove(tab);
@@ -308,11 +278,6 @@ public sealed partial class NoireTabBar
         }
     }
 
-    /// <summary>
-    /// Records which tab ImGui actually drew as open, and reports the change once.
-    /// </summary>
-    /// <param name="opened">The tab drawn open this frame, if any.</param>
-    /// <returns>True when it differs from the tab open before.</returns>
     private bool ApplyOpened(string? opened)
     {
         if (opened == null || string.Equals(Current, opened, StringComparison.Ordinal))

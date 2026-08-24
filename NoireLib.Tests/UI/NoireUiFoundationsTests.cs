@@ -43,10 +43,6 @@ public class NoireUiFoundationsTests : IDisposable
     /// <summary>
     /// Puts reduced motion back exactly as it was, which for an unset one means unset rather than false.
     /// </summary>
-    /// <remarks>
-    /// Assigning the value read back would leave an override behind where there had been none, and the difference is
-    /// the whole of what these tests are about.
-    /// </remarks>
     private void RestoreReducedMotion()
     {
         if (originalReducedMotion is { } value)

@@ -85,7 +85,7 @@ public class TmbEntryRaw : TmbEntry
         SetTime(time);
     }
 
-    /// <summary> A block of floats the payload names by offset and count, read from wherever it points. </summary>
+    // A block of floats the payload names by offset and count, read from wherever it points.
     private static float[] ReadFloatBlock(TmbReader reader)
     {
         var offset = reader.ReadInt32();
@@ -106,7 +106,7 @@ public class TmbEntryRaw : TmbEntry
         return floats;
     }
 
-    /// <summary> Where this magic's pointing fields sit inside the payload, in wire order. </summary>
+    // Where this magic's pointing fields sit inside the payload, in wire order.
     private static List<(int Index, bool IsPath)> FieldsOf(string magic, int size)
     {
         var fields = new List<(int Index, bool IsPath)>();

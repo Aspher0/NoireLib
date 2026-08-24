@@ -17,11 +17,9 @@ namespace NoireLib.SourceGenerators;
 /// NoireUI carrying a forward, with copied documentation, for each of that type's public static members.
 /// </summary>
 /// <remarks>
-/// Generated rather than hand-written for two reasons, both of which produce failures that still compile. C# bakes an
-/// optional parameter's default into the caller, so a forward whose default fell behind its target would silently
-/// produce a different result; and the compiler does not expand inherited-documentation tags into the XML file the
-/// package ships, which is a consumer's whole IntelliSense channel, so the documentation has to be copied in full
-/// rather than referenced. See docs/adr/0003-noireui-facade-is-generated.md.
+/// Generated because both hand-written failures still compile: C# bakes an optional parameter's default into the
+/// caller, and the compiler does not expand inherited-documentation tags into the shipped XML file.
+/// See docs/adr/0003-noireui-facade-is-generated.md.
 /// </remarks>
 [Generator]
 public sealed class NoireFacadeGenerator : IIncrementalGenerator
@@ -182,9 +180,7 @@ public sealed class NoireFacadeGenerator : IIncrementalGenerator
     /// removed.
     /// </summary>
     /// <remarks>
-    /// The override exists for the surfaces whose mechanical name would repeat the root and stutter at the call site.
-    /// Existing plurality is mirrored as it stands: a plural name marks a family of interchangeable widgets and a
-    /// singular one marks a single subsystem, and normalizing that away would give a surface two names.
+    /// Plurality is mirrored as it stands. Normalizing it would give a surface two names.
     /// </remarks>
     private static string GroupedName(INamedTypeSymbol surface, IReadOnlyList<AttributeData> markers)
     {

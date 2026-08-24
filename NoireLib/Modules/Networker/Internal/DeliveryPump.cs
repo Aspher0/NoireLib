@@ -5,12 +5,10 @@ using System.Threading;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// The single ordered delivery queue of a networker: peer mutations, handler invocations, and request completions
-/// all pass through it, giving the "everything user-visible happens on the framework thread" guarantee.<br/>
-/// Bounded - a long-frozen instance drops its oldest deliveries with an error report instead of growing memory.<br/>
-/// When NoireLib is not initialized (unit tests), actions run inline on the posting thread.
-/// </summary>
+// The single ordered delivery queue of a networker: peer mutations, handler invocations, and request completions all
+// pass through it, giving the "everything user-visible happens on the framework thread" guarantee. Bounded - a
+// long-frozen instance drops its oldest deliveries with an error report instead of growing memory. When NoireLib is
+// not initialized (unit tests), actions run inline on the posting thread.
 internal sealed class DeliveryPump : IDisposable
 {
     private readonly ConcurrentQueue<Action> queue = new();
@@ -26,23 +24,17 @@ internal sealed class DeliveryPump : IDisposable
         this.onError = onError;
     }
 
-    /// <summary>
-    /// Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving
-    /// <see cref="Drain"/> as the only way to run them; the seam for exercising queueing, ordering and the
-    /// discard-on-disposal policy without a running game.
-    /// </summary>
+    // Forces deliveries through the framework thread queue even when NoireLib is not initialized, leaving Drain as
+    // the only way to run them; the seam for exercising queueing, ordering and the discard-on-disposal policy without
+    // a running game.
     internal bool ForceQueuedDelivery { get; init; }
 
-    /// <summary>
-    /// Whether deliveries run on the posting thread; without an initialized NoireLib there is no framework thread to marshal onto.
-    /// </summary>
+    // Whether deliveries run on the posting thread; without an initialized NoireLib there is no framework thread to
+    // marshal onto.
     public bool InlineMode => !NoireService.IsInitialized() && !ForceQueuedDelivery;
 
-    /// <summary>
-    /// Queues a delivery for the framework thread, or runs it inline when there is no framework thread to marshal
-    /// onto; deliveries posted after disposal are discarded, and so is anything still queued when disposal runs.
-    /// </summary>
-    /// <param name="action">The delivery to run.</param>
+    // Queues a delivery for the framework thread, or runs it inline when there is no framework thread to marshal
+    // onto; deliveries posted after disposal are discarded, and so is anything still queued when disposal runs.
     public void Post(Action action)
     {
         if (Volatile.Read(ref disposed) != 0)
@@ -71,9 +63,7 @@ internal sealed class DeliveryPump : IDisposable
 
     private void OnFrameworkUpdate(IFramework framework) => Drain();
 
-    /// <summary>
-    /// Runs the deliveries queued as of entry, on the calling thread.
-    /// </summary>
+    // Runs the deliveries queued as of entry, on the calling thread.
     internal void Drain()
     {
         // Drain only what was queued at entry so a handler that posts new work cannot starve the frame.
@@ -98,11 +88,9 @@ internal sealed class DeliveryPump : IDisposable
         }
     }
 
-    /// <summary>
-    /// Detaches from the framework update and discards every delivery still queued (dropped, not drained, since
-    /// they describe a network already left); anything that must reach a consumer must run before the pump is
-    /// disposed, not be posted here.
-    /// </summary>
+    // Detaches from the framework update and discards every delivery still queued (dropped, not drained, since they
+    // describe a network already left); anything that must reach a consumer must run before the pump is disposed, not
+    // be posted here.
     public void Dispose()
     {
         if (Interlocked.Exchange(ref disposed, 1) != 0)

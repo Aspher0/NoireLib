@@ -35,7 +35,6 @@ public static class Draw3DWorld
 
         return scene.Spawn(geo.Vertices, geo.Indices, material, geo.Center, name, keepCpuData);
     }
-
     /// <summary>
     /// Projects a decal footprint onto the real world surface near <paramref name="center"/> and spawns it as a node
     /// the scene owns - it conforms to terrain, walls and furniture (unlike the screen-space <see cref="Material.Decal"/>)

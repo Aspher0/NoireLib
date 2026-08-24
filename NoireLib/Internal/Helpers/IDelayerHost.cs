@@ -2,9 +2,7 @@ using System;
 
 namespace NoireLib.Internal.Helpers;
 
-/// <summary>
-/// What a trigger asks about itself, so a trigger can answer without knowing which clock its delayer counts on.
-/// </summary>
+// What a trigger asks about itself, so a trigger can answer without knowing which clock its delayer counts on.
 internal interface IDelayerHost
 {
     /// <summary>Cancels the trigger with this id.</summary>

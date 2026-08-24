@@ -240,9 +240,7 @@ public static class ShareCodeHelper
         return serializer.Deserialize<T>(jsonReader);
     }
 
-    /// <summary>
-    /// Builds the serializer both directions use, with the two settings that are not the caller's to choose.
-    /// </summary>
+    // Builds the serializer both directions use, with the two settings that are not the caller's to choose.
     private static JsonSerializer CreateSerializer(JsonSerializerSettings? jsonSettings)
     {
         // Create rather than CreateDefault, which merges the mutable process-global JsonConvert.DefaultSettings and
@@ -269,9 +267,7 @@ public static class ShareCodeHelper
         return output.ToArray();
     }
 
-    /// <summary>
-    /// Decompresses a payload, giving up the moment it grows past the ceiling.
-    /// </summary>
+    // Decompresses a payload, giving up the moment it grows past the ceiling.
     private static bool TryInflate(byte[] compressed, int maxBytes, out byte[] result, out ShareCodeError error)
     {
         result = Array.Empty<byte>();

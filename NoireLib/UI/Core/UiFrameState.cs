@@ -4,8 +4,7 @@ using System.Collections.Generic;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Mutates a stored value in place. The value is handed over as a copy and written back afterwards, so the delegate never
-/// holds a reference into the backing store.
+/// Mutates a stored value in place.
 /// </summary>
 /// <typeparam name="T">The stored value type.</typeparam>
 /// <param name="value">The current value, to be updated in place.</param>
@@ -13,26 +12,15 @@ public delegate void UiStateUpdater<T>(ref T value);
 
 /// <summary>
 /// Id-keyed transient state for immediate-mode helpers: the small amount of memory a stateless-looking widget needs
-/// between frames (a hold progress, a drag origin, an animation phase).<br/>
-/// Entries are keyed by a caller id plus an optional sub key, typed per value, and pruned automatically once they have
-/// gone untouched for <see cref="PruneAfterFrames"/> frames, so a widget that stops drawing leaves nothing behind.<br/>
-/// This is deliberately not a configuration store: nothing here is persisted, and everything is lost on reload. See
-/// <see cref="NoireAnim"/> for the animation layer built on top of it.<br/>
-/// <b>Draw thread only.</b> The entries are unsynchronised, matching the thread the UI is drawn from.<br/>
-/// No member returns a reference into the store; change a value in place through
-/// <see cref="Update{T}(string, string, UiStateUpdater{T})"/>.
+/// between frames. Entries are keyed by a caller id plus an optional sub key, typed per value, and pruned automatically
+/// once they have gone untouched for <see cref="PruneAfterFrames"/> frames.<br/>
+/// <b>Draw thread only.</b> The entries are unsynchronised, matching the thread the UI is drawn from.
 /// </summary>
 public static class UiFrameState
 {
-    /// <summary>
-    /// The composite key of an entry. Both parts are kept separate rather than concatenated so that a lookup with two
-    /// existing strings allocates nothing.
-    /// </summary>
+    // Both parts are kept separate rather than concatenated so that a lookup with two existing strings allocates nothing.
     private readonly record struct StateKey(string Id, string SubKey);
 
-    /// <summary>
-    /// The per-type operations the shared maintenance pass needs, registered by each typed store on first use.
-    /// </summary>
     private sealed class StoreHandle
     {
         public required Func<int> Count { get; init; }
@@ -48,20 +36,17 @@ public static class UiFrameState
     private static int lastPruneFrame;
 
     /// <summary>
-    /// How many frames an entry survives without being read or written before the maintenance pass drops it.<br/>
-    /// The default is roughly ten seconds at 60 FPS. Raise it for state that must survive a widget being scrolled out of
-    /// view for a long time.
+    /// How many frames an entry survives without being read or written before the maintenance pass drops it.
     /// </summary>
     public static int PruneAfterFrames { get; set; } = 600;
 
     /// <summary>
-    /// How often the maintenance pass runs, in frames. Pruning walks every entry, so it is spread out rather than done
-    /// every frame.
+    /// How often the maintenance pass runs, in frames.
     /// </summary>
     public static int PruneIntervalFrames { get; set; } = 300;
 
     /// <summary>
-    /// The frame the state is currently keyed against. See <see cref="NoireUI.FrameCount"/>.
+    /// The frame the state is currently keyed against.
     /// </summary>
     public static int Frame => NoireUI.FrameCount;
 
@@ -85,12 +70,11 @@ public static class UiFrameState
     }
 
     /// <summary>
-    /// Reads an entry, returning <paramref name="fallback"/> when it does not exist yet.<br/>
-    /// Reading marks the entry as still in use, so a value read every frame is never pruned.
+    /// Reads an entry, returning <paramref name="fallback"/> when it does not exist yet.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="id">The caller id, unique per widget.</param>
-    /// <param name="subKey">The sub key, naming which piece of state this is (for example "hover").</param>
+    /// <param name="subKey">The sub key, naming which piece of state this is.</param>
     /// <param name="fallback">The value returned when the entry does not exist.</param>
     /// <returns>The stored value, or <paramref name="fallback"/>.</returns>
     public static T Get<T>(string id, string subKey, T fallback = default!)
@@ -106,8 +90,7 @@ public static class UiFrameState
     }
 
     /// <summary>
-    /// Reads an entry, returning <paramref name="fallback"/> when it does not exist yet.<br/>
-    /// Reading marks the entry as still in use, so a value read every frame is never pruned.
+    /// Reads an entry, returning <paramref name="fallback"/> when it does not exist yet.
     /// </summary>
     public static T Get<T>(string id, T fallback = default!) => Get(id, string.Empty, fallback);
 
@@ -160,7 +143,7 @@ public static class UiFrameState
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="id">The caller id, unique per widget.</param>
     /// <param name="subKey">The sub key, naming which piece of state this is.</param>
-    /// <param name="factory">Produces the initial value. Invoked at most once per entry.</param>
+    /// <param name="factory">Produces the initial value.</param>
     /// <returns>The stored value.</returns>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="factory"/> is <see langword="null"/>.</exception>
     public static T GetOrAdd<T>(string id, string subKey, Func<T> factory)
@@ -176,9 +159,7 @@ public static class UiFrameState
     }
 
     /// <summary>
-    /// Reads an entry, mutates it in place and writes it back.<br/>
-    /// The value is copied out before <paramref name="updater"/> runs and copied back afterwards, so the delegate is free
-    /// to touch other entries without corrupting this one.
+    /// Reads an entry, mutates it in place and writes it back.
     /// </summary>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="id">The caller id, unique per widget.</param>
@@ -211,7 +192,7 @@ public static class UiFrameState
     public static bool Remove<T>(string id) => Remove<T>(id, string.Empty);
 
     /// <summary>
-    /// Drops every entry of every type. Widgets rebuild their state from scratch on the next frame.
+    /// Drops every entry of every type.
     /// </summary>
     public static void Clear()
     {
@@ -222,10 +203,7 @@ public static class UiFrameState
         }
     }
 
-    /// <summary>
-    /// Runs the maintenance pass if enough frames have passed since the last one. Called once per frame by the hub.
-    /// </summary>
-    /// <param name="frame">The current frame.</param>
+    // Called once per frame by the hub.
     internal static void Tick(int frame)
     {
         if (PruneIntervalFrames > 0 && frame - lastPruneFrame < PruneIntervalFrames)
@@ -246,10 +224,7 @@ public static class UiFrameState
             Stores.Add(handle);
     }
 
-    /// <summary>
-    /// Returns a reference to the slot of an entry so that a read can refresh its frame stamp without a second lookup.
-    /// The reference never leaves this class and is not used across an operation that could insert.
-    /// </summary>
+    // The returned reference never leaves this class and is not used across an operation that could insert.
     private static ref Store<T>.Slot GetSlotOrNull<T>(string id, string subKey, out bool found)
     {
         ref var slot = ref System.Runtime.InteropServices.CollectionsMarshal.GetValueRefOrNullRef(Store<T>.Entries, new StateKey(id, subKey));
@@ -257,10 +232,7 @@ public static class UiFrameState
         return ref slot;
     }
 
-    /// <summary>
-    /// The entries of one value type. Segregating by type keeps values unboxed, so a per-frame write of a float or a
-    /// small struct is allocation-free.
-    /// </summary>
+    // Segregating by type keeps values unboxed, so a per-frame write of a float or a small struct is allocation-free.
     private static class Store<T>
     {
         internal static readonly Dictionary<StateKey, Slot> Entries = new();

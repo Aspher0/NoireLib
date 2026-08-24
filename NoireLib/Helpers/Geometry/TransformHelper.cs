@@ -62,7 +62,7 @@ public static class TransformHelper
     /// <summary>
     /// Decomposes a transform, substituting unit scale and an identity rotation when the matrix cannot be decomposed.
     /// <see cref="Matrix4x4.Decompose"/> refuses a matrix with no orthonormal basis to recover and does not specify
-    /// what it leaves in its outputs, so a caller reading them regardless collapses the object it was editing.
+    /// what it leaves in its outputs.
     /// </summary>
     /// <param name="world">The matrix to decompose.</param>
     /// <param name="scale">Scale, or one on every axis when the decomposition fails.</param>

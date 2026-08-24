@@ -11,7 +11,6 @@ namespace NoireLib.TweakManager;
 /// </typeparam>
 public abstract class TweakBase<TConfig> : TweakBase where TConfig : TweakConfigBase, new()
 {
-    /// <summary>The typed configuration instance for this tweak.</summary>
     private TConfig config = new();
 
     /// <summary>
@@ -42,19 +41,15 @@ public abstract class TweakBase<TConfig> : TweakBase where TConfig : TweakConfig
     /// <inheritdoc/>
     public sealed override bool HasConfig => true;
 
-    /// <inheritdoc/>
     internal sealed override Type? GetConfigType() => typeof(TConfig);
 
-    /// <inheritdoc/>
     internal sealed override TweakConfigBase? GetConfigInstance() => Config;
 
-    /// <inheritdoc/>
     internal sealed override string? SerializeConfig()
     {
         return Config.SerializeToJson();
     }
 
-    /// <inheritdoc/>
     internal sealed override void DeserializeConfig(string? json, int storedVersion)
     {
         Config = TweakConfigBase.DeserializeFromJson<TConfig>(json, storedVersion);

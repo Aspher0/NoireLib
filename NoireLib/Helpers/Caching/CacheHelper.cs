@@ -363,9 +363,7 @@ public static class CacheHelper
             throw new ArgumentOutOfRangeException(nameof(ttl), "TTL must not be negative.");
     }
 
-    /// <summary>
-    /// Internal cache entry storing a boxed value, expiration time, and optional group.
-    /// </summary>
+    // Internal cache entry storing a boxed value, expiration time, and optional group.
     private sealed class CacheEntry
     {
         public object? Value { get; }

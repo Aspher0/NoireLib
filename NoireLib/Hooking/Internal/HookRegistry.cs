@@ -4,32 +4,23 @@ using System.Collections.Generic;
 
 namespace NoireLib.Hooking;
 
-/// <summary>
-/// Holds every live hook, detects two hooks landing on one address, and drives the retry pump that
-/// installs deferred hooks once their address exists.
-/// </summary>
+// Holds every live hook, detects two hooks landing on one address, and drives the retry pump that installs deferred
+// hooks once their address exists.
 internal static class HookRegistry
 {
     private static readonly object Gate = new();
     private static readonly List<INoireHook> Hooks = [];
     private static readonly List<PendingHook> Pending = [];
 
-    /// <summary>
-    /// Filled and walked only by the framework thread inside the pump, so it needs no lock of its own, and kept
-    /// between frames so a waiting hook costs no allocation per frame.
-    /// </summary>
+    // Filled and walked only by the framework thread inside the pump, so it needs no lock of its own, and kept
+    // between frames so a waiting hook costs no allocation per frame.
     private static readonly List<PendingHook> PendingScratch = [];
 
     private static bool pumpAttached;
 
-    /// <summary>
-    /// Gets a counter incremented whenever the set of hooks or their states change, so a view can cache against it.
-    /// </summary>
+    // Gets a counter incremented whenever the set of hooks or their states change, so a view can cache against it.
     public static int Version { get; private set; }
 
-    /// <summary>
-    /// Gets the number of live hooks.
-    /// </summary>
     public static int Count
     {
         get
@@ -39,20 +30,13 @@ internal static class HookRegistry
         }
     }
 
-    /// <summary>
-    /// Returns a snapshot of every live hook.
-    /// </summary>
-    /// <returns>The snapshot.</returns>
     public static IReadOnlyList<INoireHook> Snapshot()
     {
         lock (Gate)
             return Hooks.ToArray();
     }
 
-    /// <summary>
-    /// Adds a hook and warns when another live hook already occupies its address.
-    /// </summary>
-    /// <param name="hook">The hook to add.</param>
+    // Adds a hook and warns when another live hook already occupies its address.
     public static void Register(INoireHook hook)
     {
         INoireHook? conflict = null;
@@ -83,10 +67,6 @@ internal static class HookRegistry
         }
     }
 
-    /// <summary>
-    /// Removes a hook.
-    /// </summary>
-    /// <param name="hook">The hook to remove.</param>
     public static void Unregister(INoireHook hook)
     {
         lock (Gate)
@@ -96,18 +76,14 @@ internal static class HookRegistry
         }
     }
 
-    /// <summary>
-    /// Records that a hook changed state, so cached views rebuild.
-    /// </summary>
+    // Records that a hook changed state, so cached views rebuild.
     public static void NotifyChanged()
     {
         lock (Gate)
             Version++;
     }
 
-    /// <summary>
-    /// Gets the number of hooks still waiting for their address.
-    /// </summary>
+    // Gets the number of hooks still waiting for their address.
     public static int PendingCount
     {
         get
@@ -117,11 +93,7 @@ internal static class HookRegistry
         }
     }
 
-    /// <summary>
-    /// Adds a retry callback that runs on every framework update until it removes itself.
-    /// </summary>
-    /// <param name="hook">The hook the callback belongs to, so a failure can name it.</param>
-    /// <param name="retry">The callback.</param>
+    // Adds a retry callback that runs on every framework update until it removes itself.
     public static void AddPending(INoireHook hook, Action retry)
     {
         lock (Gate)
@@ -131,10 +103,6 @@ internal static class HookRegistry
         }
     }
 
-    /// <summary>
-    /// Removes a retry callback.
-    /// </summary>
-    /// <param name="retry">The callback.</param>
     public static void RemovePending(Action retry)
     {
         lock (Gate)

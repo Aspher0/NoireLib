@@ -167,7 +167,7 @@ public sealed record CharacterTargetableChangedEvent(CharacterSnapshot Previous,
 }
 
 /// <summary>
-/// Fired when a character's mode changes (mount, crafting stance, looping emote, …).
+/// Fired when a character's mode changes (mount, crafting stance, looping emote, ...).
 /// </summary>
 /// <param name="Previous">The snapshot before the change (see <see cref="CharacterSnapshot.Mode"/>).</param>
 /// <param name="Current">The snapshot after the change.</param>
@@ -215,7 +215,7 @@ public sealed record CharacterEmotePlayedEvent(CharacterSnapshot Character, uint
 }
 
 /// <summary>
-/// Fired when a character's online status changes (AFK, busy, looking for party, …).
+/// Fired when a character's online status changes (AFK, busy, looking for party, ...).
 /// </summary>
 /// <param name="Previous">The snapshot before the change.</param>
 /// <param name="Current">The snapshot after the change.</param>

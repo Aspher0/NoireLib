@@ -18,10 +18,8 @@ using System.Threading.Tasks;
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
 /// <summary>
-/// The build-your-own workspace. One scene is always open (the permanent <c>MainScene</c> until you make another), and
-/// the work is split into tabs so that spawning, editing the gizmo, and inspecting an object never compete for the same
-/// column: <b>Objects</b> is a list beside a full inspector, and the rest are ordinary settings panels. Owns the demo
-/// scenes and frees them on <see cref="Dispose"/>.
+/// The build-your-own workspace. One scene is always open (the permanent <c>MainScene</c> until you make another).
+/// Owns the demo scenes and frees them on <see cref="Dispose"/>.
 /// </summary>
 public sealed class ScenesPage : IDisposable
 {
@@ -65,7 +63,6 @@ public sealed class ScenesPage : IDisposable
     private bool worldAnalytic = true;
     private string spawnStatus = string.Empty;
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         EnsureMainScene();
@@ -123,10 +120,6 @@ public sealed class ScenesPage : IDisposable
 
     // ---------------------------------------------------------------- scene bar
 
-    /// <summary>
-    /// The always-visible scene strip: which scene the tabs below act on, and the lifecycle buttons. A picker rather than
-    /// a list-then-detail navigation, so switching scenes never costs the place you were in.
-    /// </summary>
     private void DrawSceneBar(DemoScene demo)
     {
         var names = new string[scenes.Count];
@@ -187,10 +180,6 @@ public sealed class ScenesPage : IDisposable
 
     // ---------------------------------------------------------------- objects
 
-    /// <summary>
-    /// The object list beside the inspector. This is the pairing the old single-column layout could not express: pick on
-    /// the left, edit on the right, with the world selection kept in sync both ways.
-    /// </summary>
     private void DrawObjects(DemoScene demo)
     {
         demo.PruneDestroyed();
@@ -385,10 +374,8 @@ public sealed class ScenesPage : IDisposable
 
     // ---------------------------------------------------------------- world & models
 
-    /// <summary>
-    /// The world-collision and imported-model spawns: <see cref="Draw3DWorld.SpawnWorldGeometry"/> /
-    /// <see cref="Draw3DWorld.SpawnWorldDecal"/> (framework-thread only) and the glTF importer.
-    /// </summary>
+    // The world-collision and imported-model spawns: SpawnWorldGeometry / SpawnWorldDecal (framework-thread only) and
+    // the glTF importer.
     private void DrawWorldAndModels(DemoScene demo)
     {
         Ui.Section("Model");
@@ -482,7 +469,7 @@ public sealed class ScenesPage : IDisposable
         inspected = node;
     }
 
-    /// <summary>Imports a glTF/glb off-thread; the scene owns the result, and the model root joins the object list.</summary>
+    // Imports a glTF/glb off-thread; the scene owns the result, and the model root joins the object list.
     private void LoadModel(DemoScene demo)
     {
         var path = modelPath.Trim().Trim('"');
@@ -514,7 +501,7 @@ public sealed class ScenesPage : IDisposable
             }, TaskScheduler.Default);
     }
 
-    /// <summary>Spawns the game's real collision around the player as a translucent mesh. Framework thread only.</summary>
+    // Spawns the game's real collision around the player as a translucent mesh. Framework thread only.
     private void SpawnWorldGeometry(DemoScene demo)
     {
         if (demo.Scene.IsDisposed)
@@ -532,7 +519,7 @@ public sealed class ScenesPage : IDisposable
         spawnStatus = "Spawned the real collision around you, translucent blue.";
     }
 
-    /// <summary>Projects a decal footprint onto the real collision surface under the player. Framework thread only.</summary>
+    // Projects a decal footprint onto the real collision surface under the player. Framework thread only.
     private void SpawnWorldDecal(DemoScene demo)
     {
         if (demo.Scene.IsDisposed)
@@ -603,7 +590,6 @@ public sealed class ScenesPage : IDisposable
         }
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         foreach (var demo in scenes)

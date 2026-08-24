@@ -9,33 +9,12 @@ namespace NoireLib.UI;
 /// Draws the eye to something: a steady pulse on the thing the user has not noticed yet, a glow around what just
 /// became important, a shake or a bounce when something happened to it.
 /// </summary>
-/// <remarks>
-/// Two kinds of motion. <see cref="Pulse"/> and <see cref="Glow"/> are <em>states</em>: they run for as long as
-/// the condition holds, passed every frame. <see cref="Shake"/> and <see cref="Bounce"/> are <em>events</em>: fired
-/// once by id, and play themselves out.<br/>
-/// All of it is decoration and stops under <see cref="NoireUI.ReducedMotion"/>: a pulsing button is still a
-/// button, a shaken field still holds its text, and nothing moves position in a way that could put a control
-/// somewhere the mouse is not.
-/// </remarks>
-/// <example>
-/// <code>
-/// ImGui.Button("Apply");
-/// NoireAttention.Glow(hasUnsavedChanges);           // around the button just drawn
-///
-/// NoireAttention.Shake("password");                  // fired from the failure path, once
-/// NoireAttention.Offset("password", out var nudge);  // read where it should be drawn this frame
-/// </code>
-/// </example>
 [NoireFacade]
 public static class NoireAttention
 {
     /// <summary>
     /// How much a pulse dims at its lowest, from 0 for fully transparent to 1 for no dimming at all.
     /// </summary>
-    /// <remarks>
-    /// Shallow on purpose. A pulse that reaches zero reads as something broken rather than something waiting, and it
-    /// is impossible to read text through.
-    /// </remarks>
     public static float PulseFloor { get; set; } = 0.55f;
 
     /// <summary>
@@ -43,14 +22,14 @@ public static class NoireAttention
     /// </summary>
     /// <param name="active">Whether the thing still wants attention.</param>
     /// <param name="period">How long one pulse takes, in seconds.</param>
-    /// <returns>A multiplier from <see cref="PulseFloor"/> to 1, and exactly 1 when nothing is pulsing.</returns>
+    /// <returns>A multiplier from <see cref="PulseFloor"/> to 1.</returns>
     public static float Pulse(bool active = true, float period = 1.5f)
         => active && !NoireUI.ReducedMotion ? NoireAnim.Pulse(period, PulseFloor, 1f) : 1f;
 
     /// <summary>
     /// Draws a soft glow around the widget that was just submitted, for as long as a condition holds.
     /// </summary>
-    /// <param name="active">Whether to draw it at all, so this can be called unconditionally.</param>
+    /// <param name="active">Whether to draw it at all.</param>
     /// <param name="color">The glow colour. When <see langword="null"/>, the theme's accent.</param>
     /// <param name="spread">How far the glow reaches beyond the element, at 100%.</param>
     /// <param name="period">How long one pulse of the glow takes, in seconds.</param>
@@ -94,10 +73,6 @@ public static class NoireAttention
     /// <summary>
     /// Starts a shake on something, for a rejection: a wrong value, a refused action, a field that has to be fixed.
     /// </summary>
-    /// <remarks>
-    /// Fire this from the thing that failed, once. Read it back with <see cref="Offset(string, out Vector2)"/> on the
-    /// frames that follow.
-    /// </remarks>
     /// <param name="id">A stable id for the thing being shaken.</param>
     public static void Shake(string id) => NoireAnim.Trigger(id, ShakeKey);
 
@@ -110,11 +85,6 @@ public static class NoireAttention
     /// <summary>
     /// Reads where something being shaken or bounced should be drawn this frame.
     /// </summary>
-    /// <remarks>
-    /// Apply it to the cursor before drawing, and the widget moves without knowing it did. The offset returns to zero
-    /// on its own when the motion finishes, and is always zero under <see cref="NoireUI.ReducedMotion"/>, so the branch
-    /// on the return value is about skipping work rather than about correctness.
-    /// </remarks>
     /// <param name="id">The id passed to <see cref="Shake"/> or <see cref="Bounce"/>.</param>
     /// <param name="offset">Where to draw, relative to where it would otherwise go, in real pixels.</param>
     /// <returns>True while something is moving.</returns>
@@ -135,11 +105,7 @@ public static class NoireAttention
     /// <summary>
     /// Moves the cursor by whatever a shake or bounce asks for, for the widget about to be drawn.
     /// </summary>
-    /// <remarks>
-    /// The convenience over <see cref="Offset(string, out Vector2)"/>, and what most callers want: one line before the
-    /// widget, nothing after it. The cursor is not put back, because the widget is drawn at the moved position and
-    /// whatever follows it is laid out from there anyway.
-    /// </remarks>
+    /// <remarks>The cursor is not put back.</remarks>
     /// <param name="id">The id passed to <see cref="Shake"/> or <see cref="Bounce"/>.</param>
     /// <returns>True while something is moving.</returns>
     public static bool ApplyOffset(string id)
@@ -182,13 +148,7 @@ public static class NoireAttention
         NoireAnim.Reset(id, FlashKey);
     }
 
-    /// <summary>
-    /// The vertical offset of a bounce: up quickly, then settling back with a smaller rebound.
-    /// </summary>
-    /// <remarks>
-    /// Built on the shared progress clock rather than on a spring, so a bounce costs no state of its own beyond the
-    /// moment it started. Negative is upward, because screen y grows downward.
-    /// </remarks>
+    // Negative is upward.
     private static float BounceOffset(string id)
     {
         const float duration = 0.45f;
@@ -204,21 +164,14 @@ public static class NoireAttention
         return -MathF.Abs(MathF.Sin(progress * MathF.PI * 2f)) * decay * decay * NoireUI.Scaled(height);
     }
 
-    /// <summary>
-    /// The sub keys the three event motions store themselves under.
-    /// </summary>
-    /// <remarks>
-    /// The caller's id is the entry's id, and these name which motion it is: the split <see cref="UiFrameState"/>
-    /// keys on. Composed into one string instead, the caller's id would be re-interpolated on every frame every
-    /// shaken or flashing widget is read back.
-    /// </remarks>
+    // The sub keys the three event motions store themselves under. Composed into one string instead, the caller's id
+    // would be re-interpolated on every frame.
     private const string ShakeKey = "attention.shake";
 
     private const string BounceKey = "attention.bounce";
 
     private const string FlashKey = "attention.flash";
 
-    /// <summary>The rectangle of the widget just submitted.</summary>
     private static UiRect LastItemRect()
         => UiRect.FromBounds(ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
 }

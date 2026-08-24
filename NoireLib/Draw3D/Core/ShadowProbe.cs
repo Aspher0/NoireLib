@@ -5,17 +5,14 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// One-frame diagnostic for the game's shadow passes: which depth-only binds the frame runs, what each one
-/// renders into, and what sits in the VS constant buffers at each one's first draw.<br/>
-/// Shadow casting needs the LIGHT's view-projection, per cascade, and nothing on the CPU side hands it over -
-/// it has to be found in the constants the game's own shadow draws consume. The camera capture cannot be reused
-/// as-is: its matching strategy validates candidates against a same-instant struct camera read, and no such
-/// reference exists for a light. This probe reads what is actually there and classifies the matrix-shaped
-/// windows (an orthographic projection reads very differently from an object's rigid world transform).<br/>
-/// Armed for exactly one frame; every capture is a CopyResource plus a synchronous map, so the frame it runs
-/// on stalls - a one-shot diagnostic, never a resident cost.
-/// </summary>
+// One-frame diagnostic for the game's shadow passes: which depth-only binds the frame runs, what each one renders
+// into, and what sits in the VS constant buffers at each one's first draw. Shadow casting needs the LIGHT's
+// view-projection, per cascade, and nothing on the CPU side hands it over - it has to be found in the constants the
+// game's own shadow draws consume. The camera capture cannot be reused as-is: its matching strategy validates
+// candidates against a same-instant struct camera read, and no such reference exists for a light. This probe reads
+// what is actually there and classifies the matrix-shaped windows (an orthographic projection reads very differently
+// from an object's rigid world transform). Armed for exactly one frame; every capture is a CopyResource plus a
+// synchronous map, so the frame it runs on stalls - a one-shot diagnostic, never a resident cost.
 internal sealed unsafe class ShadowProbe : IDisposable
 {
     private const int MaxBinds = 12;
@@ -136,12 +133,10 @@ internal sealed unsafe class ShadowProbe : IDisposable
         report.Clear();
     }
 
-    /// <summary>
-    /// Copies one bound constant buffer to the CPU and reports every window that reads as a matrix. The
-    /// classification is deliberately shallow - the probe's job is to make the candidates visible, not to
-    /// decide. Row norms distinguish an orthographic projection (small, axis-dependent scales) from an object's
-    /// rigid world transform (unit rows); the reader makes that call from the numbers in the report.
-    /// </summary>
+    // Copies one bound constant buffer to the CPU and reports every window that reads as a matrix. The classification
+    // is deliberately shallow - the probe's job is to make the candidates visible, not to decide. Row norms
+    // distinguish an orthographic projection (small, axis-dependent scales) from an object's rigid world transform
+    // (unit rows); the reader makes that call from the numbers in the report.
     private void ScanBuffer(ID3D11DeviceContext* ctx, ID3D11Buffer* buffer, int slot, int byteWidth)
     {
         var staging = AcquireStaging(ctx, byteWidth);
@@ -173,7 +168,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
         }
     }
 
-    /// <summary>Reports one 16-float window when it is matrix-shaped, in both layouts it could be stored in.</summary>
+    // Reports one 16-float window when it is matrix-shaped, in both layouts it could be stored in.
     private void DescribeWindow(ReadOnlySpan<float> window, int slot, int byteOffset)
     {
         // Copied out because a span cannot be captured by the accessor below; sixteen floats.
@@ -220,7 +215,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
         }
     }
 
-    /// <summary>A CPU-readable staging buffer of the given size, pooled per distinct size.</summary>
+    // A CPU-readable staging buffer of the given size, pooled per distinct size.
     private ID3D11Buffer* AcquireStaging(ID3D11DeviceContext* ctx, int byteWidth)
     {
         for (var i = 0; i < stagingCount; i++)

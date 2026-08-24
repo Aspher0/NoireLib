@@ -12,7 +12,7 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>One item to draw this frame: a mesh (or dynamic-geometry range) with resolved material data and world transform.</summary>
+// One item to draw this frame: a mesh (or dynamic-geometry range) with resolved material data and world transform.
 internal struct DrawItem
 {
     public Mesh? Mesh;
@@ -30,7 +30,6 @@ internal struct DrawItem
     public float OutlineWidth;   // outline thickness in screen pixels
 }
 
-/// <summary>Per-frame constants, matching FrameCB in Common.hlsli exactly (240 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct FrameCBData
 {
@@ -46,7 +45,6 @@ internal struct FrameCBData
     public Vector4 WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
 }
 
-/// <summary>Per-object constants, matching ObjectCB in Common.hlsli exactly (224 bytes).</summary>
 [StructLayout(LayoutKind.Sequential)]
 internal struct ObjectCBData
 {
@@ -61,10 +59,9 @@ internal struct ObjectCBData
     public Vector4 Params3;      // spare per-shader slot; G-buffer injection puts dye colour in rgb and strength in w
 }
 
-/// <summary>
-/// A ground decal's per-actor exclusion volumes, matching ActorCB in Common.hlsli exactly. Each actor packs as
-/// (worldX, worldZ, radius, unused): a horizontal gate the stencil silhouette then cuts, so the fourth slot is padding.
-/// </summary>
+// A ground decal's per-actor exclusion volumes, matching ActorCB in Common.hlsli exactly. Each actor packs as
+// (worldX, worldZ, radius, unused): a horizontal gate the stencil silhouette then cuts, so the fourth slot is
+// padding.
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct ActorCBData
 {
@@ -74,16 +71,14 @@ internal unsafe struct ActorCBData
     public fixed float Actors[ScenePass.MaxActorVolumes * 4];
 }
 
-/// <summary>
-/// The world pass: collects visible items from retained scenes and the immediate layer, sorts them into opaque, decal
-/// and transparent buckets, batches identical runs into instanced draws, and renders into the offscreen premultiplied
-/// scene target.
-/// </summary>
+// The world pass: collects visible items from retained scenes and the immediate layer, sorts them into opaque, decal
+// and transparent buckets, batches identical runs into instanced draws, and renders into the offscreen premultiplied
+// scene target.
 internal sealed unsafe class ScenePass : IDisposable
 {
     private const int MaxDynamicVertices = 65535; // 16-bit dynamic index budget per frame
 
-    /// <summary>Max excluded-actor volumes carried to the decal shader per frame (matches MAX_DECAL_ACTORS in Common.hlsli).</summary>
+    // Max excluded-actor volumes carried to the decal shader per frame (matches MAX_DECAL_ACTORS in Common.hlsli).
     internal const int MaxActorVolumes = 64;
 
     private GpuBuffer? frameCb;
@@ -145,15 +140,12 @@ internal sealed unsafe class ScenePass : IDisposable
         return top;
     }
 
-    /// <summary>Whether an item is a ground decal that paints only its column's topmost surface, and so reads the collision height-map.</summary>
-    /// <param name="item">The collected item.</param>
-    /// <returns>True when the item is a top-surface ground decal.</returns>
+    // Whether an item is a ground decal that paints only its column's topmost surface, and so reads the collision
+    // height-map.
     private static bool IsTopSurfaceDecal(in DrawItem item)
         => item.Mat.Domain == MaterialDomain.GroundDecal && item.Mat.ProjectionMode > 0.5f;
 
-    /// <summary>Computes the AABB-max Y of a decal's unit box under <paramref name="world"/> (row-vector convention).</summary>
-    /// <param name="world">The decal's world matrix.</param>
-    /// <returns>The world-space top Y of the transformed box.</returns>
+    // Computes the AABB-max Y of a decal's unit box under  (row-vector convention).
     private static float BoxTopY(in Matrix4x4 world)
         => world.M42 + 0.5f * (MathF.Abs(world.M12) + MathF.Abs(world.M22) + MathF.Abs(world.M32));
 
@@ -1291,9 +1283,8 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->PSSetShaderResources(0, 1, &nullSrv);
     }
 
-    /// <summary>Uploads a ground decal's per-actor exclusion cylinders into the decal shader's ActorCB at b2, clearing the previous decal's list when empty.</summary>
-    /// <param name="ctx">The immediate device context.</param>
-    /// <param name="vols">The exclusion cylinders, or null for none.</param>
+    // Uploads a ground decal's per-actor exclusion cylinders into the decal shader's ActorCB at b2, clearing the
+    // previous decal's list when empty.
     private void UploadActorVolumes(ID3D11DeviceContext* ctx, IReadOnlyList<ExcludeVolume>? vols)
     {
         var actorData = new ActorCBData();

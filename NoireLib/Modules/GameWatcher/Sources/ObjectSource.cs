@@ -6,11 +6,8 @@ using System.Numerics;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// The kind-agnostic object-table diff source: spawn/despawn/changed for every
-/// <see cref="Dalamud.Game.ClientState.Objects.Enums.ObjectKind"/>, plus distance-threshold and
-/// territory-bound region watchers with per-registration hysteresis.
-/// </summary>
+// The kind-agnostic object-table diff source: spawn/despawn/changed for every ObjectKind, plus distance-threshold and
+// territory-bound region watchers with per-registration hysteresis.
 internal sealed class ObjectSource : GameWatcherSource
 {
     internal sealed class DistanceWatcherRegistration
@@ -42,7 +39,6 @@ internal sealed class ObjectSource : GameWatcherSource
 
     public ObjectSource(NoireGameWatcher owner) : base(owner, SourceKind.Objects) { }
 
-    /// <summary>Adds a distance watcher and returns its removal action.</summary>
     internal Action AddDistanceWatcher(DistanceWatcherRegistration registration)
     {
         lock (distanceWatchers)
@@ -55,7 +51,6 @@ internal sealed class ObjectSource : GameWatcherSource
         };
     }
 
-    /// <summary>Adds a region watcher and returns its removal action.</summary>
     internal Action AddRegionWatcher(RegionWatcherRegistration registration)
     {
         lock (regionWatchers)
@@ -330,7 +325,7 @@ internal sealed class ObjectSource : GameWatcherSource
         }
     }
 
-    /// <summary>Captures an object snapshot. Also used by the Targets source and facade queries.</summary>
+    // Captures an object snapshot. Also used by the Targets source and facade queries.
     internal static ObjectSnapshot CaptureObject(IGameObject obj, DateTimeOffset now) => new()
     {
         EntityId = obj.EntityId,

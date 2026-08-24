@@ -22,12 +22,7 @@ public static class ThrottleHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_ThrottleHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a throttler for the specified key with the given interval.
-    /// </summary>
-    /// <param name="key">The key to identify this throttle instance.</param>
-    /// <param name="interval">The interval between executions for this key.</param>
-    /// <returns>The throttler instance for the specified key.</returns>
+    // Gets or creates a throttler for the specified key with the given interval.
     private static Throttler GetOrCreateThrottler(string key, TimeSpan interval)
     {
         if (string.IsNullOrEmpty(key))
@@ -175,9 +170,6 @@ public static class ThrottleHelper
         _throttlers.Clear();
     }
 
-    /// <summary>
-    /// Disposes the ThrottleHelper by clearing all throttler states.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Locks the borrowed working buffer: that it is the length asked for, that it goes back exactly once however it
 /// leaves scope, and that two buffers held at the same time are genuinely separate.
 /// </summary>
-/// <remarks>
-/// The last two matter more than they look. Returning one array twice puts it in the pool twice, and the next two
-/// renters then share it: the symptom is one surface's data appearing inside another's, far from the cause and
-/// looking nothing like a pooling problem.
-/// </remarks>
 public class PooledBufferTests
 {
     [Fact]

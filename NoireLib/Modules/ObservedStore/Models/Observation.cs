@@ -13,8 +13,7 @@ namespace NoireLib.ObservedStore;
 /// The content id of the character the observation is about, or zero for a <see cref="ObservationScope.Shared"/> one.
 /// </param>
 /// <param name="Source">
-/// Where the sighting came from, as the recorder named it. Free text, so a consumer can tell an observation made by
-/// opening a window from one imported out of a file and decide which it trusts.
+/// Where the sighting came from, as the recorder named it. Free text.
 /// </param>
 /// <param name="ObservedAt">When the sighting happened, which is not necessarily when it was written down.</param>
 /// <param name="ExpiresAfter">

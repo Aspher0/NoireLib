@@ -13,18 +13,8 @@ namespace NoireLib.UI;
 /// A dropdown that selects several things at once and does not close when you pick one. Every option is a checkbox,
 /// the preview summarises what is chosen, and the popup stays open until you are finished.
 /// </summary>
-/// <remarks>
-/// Selection is by value rather than by index. Hand a comparer to the constructor when the items need one.
-/// </remarks>
+/// <remarks>Selection is by value rather than by index.</remarks>
 /// <typeparam name="T">The type of the items.</typeparam>
-/// <example>
-/// <code>
-/// var categories = new NoireMultiCombo&lt;string&gt;("categories", allCategories);
-///
-/// if (categories.Draw())
-///     config.Enabled = categories.Selected.ToArray();
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed class NoireMultiCombo<T>
 {
@@ -33,9 +23,7 @@ public sealed class NoireMultiCombo<T>
     private readonly List<(int Index, int Score)> scored = new();
     private readonly HashSet<T> selected;
 
-    /// <summary>
-    /// Where the preview text is composed, kept between frames so that composing it costs nothing once it has grown.
-    /// </summary>
+    // Kept between frames so that composing the preview costs nothing once it has grown.
     private readonly StringBuilder previewBuilder = new(64);
 
     private string filterText = string.Empty;
@@ -48,10 +36,10 @@ public sealed class NoireMultiCombo<T>
     /// <summary>
     /// Creates a multi-select combo.
     /// </summary>
-    /// <param name="id">A stable id for the widget. When <see langword="null"/>, a random one is generated.</param>
+    /// <param name="id">A stable id for the widget, or <see langword="null"/> for a generated one.</param>
     /// <param name="items">The initial options.</param>
-    /// <param name="displayFunc">How an item is converted to its display text. Defaults to <c>ToString()</c>.</param>
-    /// <param name="comparer">How two items are compared for selection. Defaults to the type's own equality.</param>
+    /// <param name="displayFunc">How an item is converted to its display text.</param>
+    /// <param name="comparer">How two items are compared for selection.</param>
     public NoireMultiCombo(string? id = null, IEnumerable<T>? items = null, Func<T, string>? displayFunc = null, IEqualityComparer<T>? comparer = null)
     {
         Id = string.IsNullOrWhiteSpace(id) ? RandomGenerator.GenerateGuidString() : id;
@@ -69,8 +57,7 @@ public sealed class NoireMultiCombo<T>
     public string? Label { get; set; }
 
     /// <summary>
-    /// The width of the widget. When <see langword="null"/>, the default ImGui item width is used. In real pixels,
-    /// not scaled.
+    /// The width of the widget, in real pixels. When <see langword="null"/>, the default ImGui item width is used.
     /// </summary>
     public float? Width { get; set; }
 
@@ -94,7 +81,8 @@ public sealed class NoireMultiCombo<T>
     public int PreviewMaxItems { get; set; } = 3;
 
     /// <summary>
-    /// The summary appended once more than <see cref="PreviewMaxItems"/> are selected. <c>{0}</c> is how many more.
+    /// The summary appended once more than <see cref="PreviewMaxItems"/> are selected, where <c>{0}</c> is how many
+    /// more.
     /// </summary>
     public string PreviewOverflowFormat { get; set; } = "+{0} more";
 
@@ -108,7 +96,7 @@ public sealed class NoireMultiCombo<T>
 
     #region Options
 
-    /// <summary>Whether the dropdown shows a filter text input at the top. Defaults to <see langword="true"/>.</summary>
+    /// <summary>Whether the dropdown shows a filter text input at the top.</summary>
     public bool FilterEnabled { get; set; } = true;
 
     /// <summary>The hint text of the filter input.</summary>
@@ -121,7 +109,7 @@ public sealed class NoireMultiCombo<T>
     public bool ClearFilterOnOpen { get; set; } = true;
 
     /// <summary>
-    /// Whether the filter matches fuzzily and orders the options by how well they matched. See <see cref="FuzzyMatcher"/>.
+    /// Whether the filter matches fuzzily and orders the options by how well they matched.
     /// </summary>
     public bool FilterFuzzy { get; set; } = true;
 
@@ -143,7 +131,7 @@ public sealed class NoireMultiCombo<T>
     /// <summary>The label of the shortcut clearing the selection.</summary>
     public string SelectNoneText { get; set; } = "None";
 
-    /// <summary>Whether picking an option closes the dropdown. Defaults to <see langword="false"/>.</summary>
+    /// <summary>Whether picking an option closes the dropdown.</summary>
     public bool CloseOnSelect { get; set; }
 
     /// <summary>How many options the dropdown is sized to hold.</summary>
@@ -151,7 +139,7 @@ public sealed class NoireMultiCombo<T>
 
     /// <summary>
     /// Whether the option list is drawn through a clipper. When <see langword="null"/>, past
-    /// <see cref="VirtualizeThreshold"/> options. See <see cref="NoireComboBox{T}.Virtualize"/>.
+    /// <see cref="VirtualizeThreshold"/> options.
     /// </summary>
     public bool? Virtualize { get; set; }
 
@@ -240,7 +228,7 @@ public sealed class NoireMultiCombo<T>
     /// <summary>
     /// Replaces the selection outright, for restoring a persisted set.
     /// </summary>
-    /// <param name="values">The items to select. Items not among the options are ignored.</param>
+    /// <param name="values">The items to select.</param>
     public void SetSelection(IEnumerable<T>? values)
     {
         selected.Clear();
@@ -507,9 +495,6 @@ public sealed class NoireMultiCombo<T>
         ImGui.SetCursorPos(after);
     }
 
-    /// <summary>
-    /// Draws the tick box at the start of a row.
-    /// </summary>
     private static void DrawCheckbox(bool isSelected)
     {
         var theme = NoireTheme.Current;
@@ -555,10 +540,6 @@ public sealed class NoireMultiCombo<T>
             NoireText.Draw(display);
     }
 
-    /// <summary>
-    /// Builds the text shown on the closed box, naming the selected items and summarising the rest.
-    /// </summary>
-    /// <returns>The preview text.</returns>
     internal string BuildPreview()
     {
         if (selected.Count == 0)
@@ -611,12 +592,6 @@ public sealed class NoireMultiCombo<T>
         return previewText;
     }
 
-    /// <summary>
-    /// The summary of everything the preview did not name, for example <c>+2 more</c>.
-    /// </summary>
-    /// <param name="format">The format to compose with. <c>{0}</c> is the count.</param>
-    /// <param name="remaining">How many items were not named.</param>
-    /// <returns>The summary text.</returns>
     private static string OverflowText(string format, int remaining)
     {
         var key = new OverflowKey(format, remaining);
@@ -630,15 +605,12 @@ public sealed class NoireMultiCombo<T>
         return text;
     }
 
-    /// <summary>A summary format and the count it was composed with.</summary>
     private readonly record struct OverflowKey(string Format, int Remaining);
 
     private static readonly HotPathCache<OverflowKey, string> Overflows = new(256);
 
-    /// <summary>
-    /// The height the dropdown is capped at: the filter row and the shortcuts, when shown, plus exactly
-    /// <see cref="VisibleItemCount"/> options.
-    /// </summary>
+    // The height the dropdown is capped at: the filter row and the shortcuts, when shown, plus exactly
+    // VisibleItemCount options.
     private float MeasureMaxPopupHeight()
     {
         var visibleCount = Math.Max(1, VisibleItemCount);
@@ -662,7 +634,7 @@ public sealed class NoireMultiCombo<T>
         }
 
         // A hair of slack, because the popup is being asked to fit content into a budget equal to that content and a
-        // rounding difference either way is the whole distance between no scrollbar and one.
+        // rounding difference either way decides whether a scrollbar appears.
         return height + style.ItemSpacing.Y;
     }
 
@@ -676,9 +648,6 @@ public sealed class NoireMultiCombo<T>
 
     #region Internal logic
 
-    /// <summary>
-    /// Rebuilds the list of option indices matching the current filter text.
-    /// </summary>
     internal void RebuildFilteredIndices()
     {
         filteredIndices.Clear();

@@ -6,21 +6,18 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Draws count and dot badges over a rectangle. Stateless, and submits no ImGui item and no cursor movement,
-/// so a badge can follow any widget without changing the layout around it.
+/// Draws count and dot badges over a rectangle. Stateless, and submits no ImGui item and no cursor movement.
 /// </summary>
 [NoireFacade]
 public static class NoireBadge
 {
     private static readonly BadgeStyle Default = new();
 
-    /// <summary>The fault message reported when a consumer draw hook throws.</summary>
     private const string CallbackFault = "A badge hook threw.";
 
     /// <summary>
     /// Draws a count badge on the widget that was just submitted.
     /// </summary>
-    /// <remarks>Nothing is drawn for a count of zero or less.</remarks>
     /// <param name="count">The count to show.</param>
     /// <param name="style">The badge style, or <see langword="null"/> for the defaults.</param>
     public static void OnLast(int count, BadgeStyle? style = null)
@@ -40,7 +37,6 @@ public static class NoireBadge
     /// <summary>
     /// Draws a count badge on a rectangle.
     /// </summary>
-    /// <remarks>Nothing is drawn for a count of zero or less.</remarks>
     /// <param name="target">The element being marked, in screen pixels.</param>
     /// <param name="count">The count to show.</param>
     /// <param name="style">The badge style, or <see langword="null"/> for the defaults.</param>
@@ -119,12 +115,6 @@ public static class NoireBadge
         return Measure(resolved, NoireText.CalcSize(resolved.FormatCount(count), resolved.ResolveTextSize()));
     }
 
-    /// <summary>
-    /// Sizes a counted badge around its text, never below the style's minimum.
-    /// </summary>
-    /// <param name="style">The style being drawn with.</param>
-    /// <param name="textSize">The measured text, in real pixels.</param>
-    /// <returns>The badge size in real pixels.</returns>
     private static Vector2 Measure(BadgeStyle style, Vector2 textSize)
     {
         var minSize = style.Sized(style.MinSize);
@@ -134,14 +124,7 @@ public static class NoireBadge
             MathF.Max(minSize, textSize.Y));
     }
 
-    /// <summary>
-    /// Works out where a badge of a given size sits against the element it marks.
-    /// </summary>
-    /// <remarks>A badge is never nudged to fit; overflow is left to the caller's clipping.</remarks>
-    /// <param name="target">The element being marked.</param>
-    /// <param name="size">The size of the badge, in real pixels.</param>
-    /// <param name="style">The style carrying the anchor and the offset.</param>
-    /// <returns>The badge's own rectangle.</returns>
+    // A badge is never nudged to fit; overflow is left to the caller's clipping.
     internal static UiRect Place(UiRect target, Vector2 size, BadgeStyle style)
     {
         // The badge is centred on the anchor point, so a corner anchor straddles the corner rather than sitting
@@ -151,16 +134,7 @@ public static class NoireBadge
         return new UiRect(anchor - (size * 0.5f), size);
     }
 
-    /// <summary>
-    /// Hands the painting to a custom-draw hook, with every colour resolved and the pulse applied.
-    /// </summary>
-    /// <param name="customDraw">The hook to run.</param>
-    /// <param name="style">The style being drawn with.</param>
-    /// <param name="bounds">The badge's own rectangle.</param>
-    /// <param name="text">The count as it would be shown, or <see langword="null"/> for a dot badge.</param>
-    /// <param name="textSizePx">The logical text size, the badge's own scale applied.</param>
-    /// <param name="alpha">The pulse multiplier.</param>
-    /// <param name="source">What to blame in the fault report.</param>
+    // A null text means a dot badge.
     private static void InvokeCustomDraw(
         Action<UiBadgeDraw> customDraw,
         BadgeStyle style,
@@ -191,10 +165,6 @@ public static class NoireBadge
         UiHook.Invoke(customDraw, args, source, CallbackFault);
     }
 
-    /// <summary>Draws the badge plate and its outline ring.</summary>
-    /// <param name="bounds">The badge's own rectangle.</param>
-    /// <param name="style">The style being drawn with.</param>
-    /// <param name="alpha">The pulse multiplier.</param>
     private static void DrawPlate(UiRect bounds, BadgeStyle style, float alpha)
     {
         var theme = NoireTheme.Current;
@@ -226,14 +196,9 @@ public static class NoireBadge
         });
     }
 
-    /// <summary>Gets the alpha a badge draws at, which only varies while it pulses.</summary>
-    /// <param name="style">The style being drawn with.</param>
-    /// <returns>The alpha multiplier.</returns>
     private static float Alpha(BadgeStyle style)
         => style.Pulse && !NoireUI.ReducedMotion ? NoireAnim.Pulse(style.PulsePeriod, 0.55f, 1f) : 1f;
 
-    /// <summary>Gets the rectangle of the widget just submitted.</summary>
-    /// <returns>The rectangle in screen pixels.</returns>
     private static UiRect LastItemRect()
         => UiRect.FromBounds(ImGui.GetItemRectMin(), ImGui.GetItemRectMax());
 }

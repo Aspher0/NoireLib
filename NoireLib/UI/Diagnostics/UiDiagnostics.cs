@@ -4,8 +4,7 @@ using System.Collections.Generic;
 namespace NoireLib.UI;
 
 /// <summary>
-/// What NoireUI knows about itself: live counts, recent faults, and the fault ladder that disables the narrowest
-/// broken thing rather than repeating the same exception every frame. Reached through
+/// What NoireUI knows about itself: live counts, recent faults, and the fault ladder. Reached through
 /// <see cref="NoireUI.Diagnostics"/>.
 /// </summary>
 public sealed class UiDiagnostics
@@ -21,19 +20,17 @@ public sealed class UiDiagnostics
     private int currentFrame = -1;
 
     /// <summary>
-    /// Invoked once per fault, on the thread it happened on. Already logged by the time this runs; an exception
-    /// thrown by the handler is swallowed.
+    /// Invoked once per fault, on the thread it happened on.
     /// </summary>
     public Action<UiFault>? OnFault { get; set; }
 
     /// <summary>
-    /// Whether NoireUI unwinds ImGui style stacks that were pushed and never popped. On by default.
+    /// Whether NoireUI unwinds ImGui style stacks that were pushed and never popped.
     /// </summary>
     public bool RepairStackLeaks { get; set; } = true;
 
     /// <summary>
-    /// How many frames in a row a drawable may throw before the hub stops drawing it automatically. Disables that one
-    /// drawable only. Set to 0 to never disable anything.
+    /// How many frames in a row a drawable may throw before the hub stops drawing it automatically.
     /// </summary>
     public int FaultTolerance { get; set; } = 10;
 
@@ -55,7 +52,6 @@ public sealed class UiDiagnostics
     /// <summary>
     /// The most recent faults, oldest first, capped at 32.
     /// </summary>
-    /// <returns>A snapshot of the recent faults.</returns>
     public IReadOnlyList<UiFault> RecentFaults
     {
         get
@@ -120,10 +116,7 @@ public sealed class UiDiagnostics
         }
     }
 
-    /// <summary>
-    /// Starts a new frame of counting. Called once per frame by the hub.
-    /// </summary>
-    /// <param name="frame">The frame being started.</param>
+    // Called once per frame by the hub.
     internal void BeginFrame(int frame)
     {
         if (frame == currentFrame)
@@ -134,22 +127,14 @@ public sealed class UiDiagnostics
         autoDrawnThisFrame = 0;
     }
 
-    /// <summary>
-    /// Records that a drawable drew itself, and clears its fault streak.
-    /// </summary>
-    /// <param name="drawable">The drawable that drew.</param>
+    // Records that a drawable drew itself, and clears its fault streak.
     internal void NoteDrawn(NoireDrawable drawable)
     {
         autoDrawnThisFrame++;
         drawable.ConsecutiveDrawFaults = 0;
     }
 
-    /// <summary>
-    /// Records that a drawable threw while drawing, and switches it off once it has thrown
-    /// <see cref="FaultTolerance"/> frames in a row.
-    /// </summary>
-    /// <param name="drawable">The drawable that threw.</param>
-    /// <param name="exception">The exception it threw.</param>
+    // Switches the drawable off once it has thrown FaultTolerance frames in a row.
     internal void NoteDrawFault(NoireDrawable drawable, Exception exception)
     {
         drawable.ConsecutiveDrawFaults++;
@@ -172,11 +157,7 @@ public sealed class UiDiagnostics
         ReportFault($"{drawable.Kind}:{drawable.Id}", "Threw while drawing.", exception);
     }
 
-    /// <summary>
-    /// Records an ImGui style-stack leak that was unwound, logging the first one per container.
-    /// </summary>
-    /// <param name="containerName">The container whose body leaked.</param>
-    /// <param name="entries">How many stack entries were unwound.</param>
+    // Logs only the first unwound leak per container.
     internal void NoteStackRepair(string containerName, int entries)
     {
         StackRepairCount += entries;

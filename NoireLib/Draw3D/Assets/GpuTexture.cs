@@ -41,7 +41,7 @@ public sealed unsafe class GpuTexture : IDisposable
         Height = height;
     }
 
-    /// <summary>Wraps an existing SRV; when <paramref name="addRef"/> is true the SRV is borrowed (one AddRef now, one Release on dispose).</summary>
+    // Wraps an existing SRV; when  is true the SRV is borrowed (one AddRef now, one Release on dispose).
     internal static GpuTexture FromSrv(ID3D11ShaderResourceView* srvPtr, int width, int height, bool addRef, IDisposable? ownedWrap = null)
     {
         var tex = new GpuTexture(width, height) { ownedWrap = ownedWrap };
@@ -51,7 +51,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    /// <summary>Creates an owned RGBA8 texture from raw pixels; safe from any thread.</summary>
+    // Creates an owned RGBA8 texture from raw pixels; safe from any thread.
     internal static GpuTexture CreateFromPixels(RenderDevice device, ReadOnlySpan<byte> rgbaPixels, int width, int height)
     {
         if (rgbaPixels.Length < width * height * 4)
@@ -91,7 +91,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    /// <summary>Wraps a shared-handle resource (external producer); internal, see <see cref="ExternalTexture"/>.</summary>
+    // Wraps a shared-handle resource (external producer); internal, see ExternalTexture.
     internal static GpuTexture FromSharedResource(ID3D11Resource* sharedResource, ID3D11ShaderResourceView* srvPtr, int width, int height)
     {
         var tex = new GpuTexture(width, height);
@@ -105,7 +105,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    /// <summary>Acquires the producer's keyed mutex (key 0, non-blocking); no-op without a mutex.</summary>
+    // Acquires the producer's keyed mutex (key 0, non-blocking); no-op without a mutex.
     internal void AcquireSync()
     {
         var m = keyedMutex.Get();
@@ -113,7 +113,7 @@ public sealed unsafe class GpuTexture : IDisposable
             m->AcquireSync(0, 0);
     }
 
-    /// <summary>Releases the producer's keyed mutex (key 0); no-op without a mutex.</summary>
+    // Releases the producer's keyed mutex (key 0); no-op without a mutex.
     internal void ReleaseSync()
     {
         var m = keyedMutex.Get();

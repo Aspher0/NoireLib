@@ -44,64 +44,38 @@ public sealed class RootCommandRegistration
     /// </summary>
     public Func<bool>? Condition { get; internal set; }
 
-    /// <summary>
-    /// The alias slash commands mapped to this root command, each registered with Dalamud as its own command and
-    /// dispatching to this same registration.
-    /// </summary>
+    // The alias slash commands mapped to this root command, each registered with Dalamud as its own command and
+    // dispatching to this same registration.
     internal List<string> Aliases { get; } = [];
 
-    /// <summary>
-    /// The live Dalamud <see cref="CommandInfo"/> for each registered alias, keyed by alias command string; an alias
-    /// missing here is not currently registered with Dalamud.
-    /// </summary>
+    // The live Dalamud CommandInfo for each registered alias, keyed by alias command string; an alias missing here is
+    // not currently registered with Dalamud.
     internal Dictionary<string, CommandInfo> AliasCommandInfos { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// The registered subcommands for this root command.
-    /// </summary>
     internal List<SubCommandDefinition> SubCommands { get; } = [];
 
-    /// <summary>
-    /// An optional handler invoked when the root command is used without any subcommand.
-    /// </summary>
+    // An optional handler invoked when the root command is used without any subcommand.
     internal Action? DefaultHandler { get; set; }
 
-    /// <summary>
-    /// An optional handler invoked with every token of the invocation when the first argument token matches no
-    /// subcommand, taking precedence over <see cref="DefaultHandler"/> for that case.
-    /// </summary>
+    // An optional handler invoked with every token of the invocation when the first argument token matches no
+    // subcommand, taking precedence over DefaultHandler for that case.
     internal Action<ParsedCommandArguments>? FallbackHandler { get; set; }
 
-    /// <summary>
-    /// How the fallback is presented in help listings, or null when the fallback is undocumented and listed nowhere.
-    /// </summary>
+    // How the fallback is presented in help listings, or null when the fallback is undocumented and listed nowhere.
     internal FallbackCommandDefinition? FallbackDefinition { get; set; }
 
-    /// <summary>
-    /// An optional handler that receives the full command and raw argument string, bypassing subcommand dispatch.
-    /// </summary>
+    // An optional handler that receives the full command and raw argument string, bypassing subcommand dispatch.
     internal Action<string, string>? RawHandler { get; set; }
 
-    /// <summary>
-    /// The Dalamud <see cref="CommandInfo"/> reference for this registration, or null if not currently registered.
-    /// </summary>
+    // The Dalamud CommandInfo reference for this registration, or null if not currently registered.
     internal CommandInfo? DalamudCommandInfo { get; set; }
 
-    /// <summary>
-    /// Creates a new root command registration.
-    /// </summary>
-    /// <param name="command">The root slash command string.</param>
     internal RootCommandRegistration(string command)
     {
         Command = command;
     }
 
-    /// <summary>
-    /// Builds the generated help text shown by Dalamud for the root command.
-    /// </summary>
-    /// <param name="includeBuiltInHelp">Whether the router's auto-help is enabled, which decides if the built-in
-    /// "help" line is advertised.</param>
-    /// <returns>The generated help text.</returns>
+    // Builds the generated help text shown by Dalamud for the root command.
     internal string BuildDalamudHelpMessage(bool includeBuiltInHelp)
     {
         var lines = new List<string>();

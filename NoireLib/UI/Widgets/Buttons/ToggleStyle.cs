@@ -29,19 +29,17 @@ public sealed class ToggleStyle
     public float? Height { get; set; }
 
     /// <summary>
-    /// The track width as a multiple of its height. Defaults to a shape wide enough for the knob to visibly travel.
+    /// The track width as a multiple of its height, defaulting to a shape wide enough for the knob to visibly travel.
     /// </summary>
     public float WidthRatio { get; set; } = 1.85f;
 
     /// <summary>
-    /// The track corner radius at 100%. When <see langword="null"/>, the track is a full pill. Set it to 0 for a square
-    /// switch.
+    /// The track corner radius at 100%; when <see langword="null"/>, the track is a full pill, and 0 a square switch.
     /// </summary>
     public float? Rounding { get; set; }
 
     /// <summary>
-    /// How long the knob takes to travel, in seconds. Ignored under <see cref="NoireUI.ReducedMotion"/>, where the knob
-    /// simply appears at its destination.
+    /// How long the knob takes to travel, in seconds; ignored under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     public float AnimationDuration { get; set; } = 0.14f;
 
@@ -64,9 +62,6 @@ public sealed class ToggleStyle
     internal float ResolveBorderSize()
         => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : NoireTheme.Current.ResolveBorderSize();
 
-    /// <summary>
-    /// The track corner radius, defaulting to a full pill at whatever height the track resolved to.
-    /// </summary>
     internal float ResolveRounding(float trackHeight)
         => Rounding.HasValue ? NoireUI.Scaled(Rounding.Value) : trackHeight * 0.5f;
 
@@ -95,7 +90,7 @@ public sealed class ToggleStyle
 /// <param name="Min">The top left corner of the track.</param>
 /// <param name="Max">The bottom right corner of the track.</param>
 /// <param name="On">Whether the toggle is currently on.</param>
-/// <param name="Travel">How far the knob has travelled, from 0 (off) to 1 (on). Animated, so it is fractional mid-flight.</param>
+/// <param name="Travel">How far the knob has travelled, from 0 (off) to 1 (on).</param>
 /// <param name="Hovered">Whether the mouse is over the toggle.</param>
 /// <param name="TrackColor">The track color for the current state, already blended between the on and off colors.</param>
 /// <param name="KnobCenter">Where the knob sits this frame.</param>

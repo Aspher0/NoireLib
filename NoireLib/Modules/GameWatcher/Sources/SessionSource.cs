@@ -3,11 +3,9 @@ using System;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Wraps the native <see cref="Dalamud.Plugin.Services.IClientState"/> events (login, logout, territory, map,
-/// instance, class/job, level, PvP, content-finder pop) and polls the two session facts without native events:
-/// housing-interior presence and group pose.
-/// </summary>
+// Wraps the native IClientState events (login, logout, territory, map, instance, class/job, level, PvP,
+// content-finder pop) and polls the two session facts without native events: housing-interior presence and group
+// pose.
 internal sealed class SessionSource : GameWatcherSource
 {
     private uint lastTerritoryId;
@@ -77,7 +75,6 @@ internal sealed class SessionSource : GameWatcherSource
         }
     }
 
-    /// <summary>Reads housing-interior presence from game memory.</summary>
     internal static unsafe bool ReadIsInside()
     {
         var housingManager = FFXIVClientStructs.FFXIV.Client.Game.HousingManager.Instance();

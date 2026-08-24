@@ -98,13 +98,12 @@ public static class StainHelper
         ((packed >> 8) & 0xFF) / 255f,
         (packed & 0xFF) / 255f);
 
-    /// <summary>Scene file magic, then the scene-layer magic that follows it.</summary>
+    // Scene file magic, then the scene-layer magic that follows it.
     private const uint SceneMagic = 0x31424753, SceneLayerMagic = 0x314E4353;
 
-    /// <summary>Pointers inside a scene are relative to this offset rather than to the file.</summary>
+    // Pointers inside a scene are relative to this offset rather than to the file.
     private const int ScenePointerBase = 0x14;
 
-    /// <summary>Offset of the pointer to the scene's default stain.</summary>
     private const int SceneStainPointerOffset = 0x40;
 
     /// <summary>
@@ -132,13 +131,8 @@ public static class StainHelper
         }, null);
     }
 
-    /// <summary>
-    /// Reads a scene's default stain out of its raw bytes. Only the two fields the stain needs are read; the scene's
-    /// placements are not parsed.
-    /// </summary>
-    /// <param name="data">The scene file's bytes.</param>
-    /// <param name="stain">The stain id, zero when the scene states none.</param>
-    /// <returns>False when the bytes are not a scene this layout can read.</returns>
+    // Reads a scene's default stain out of its raw bytes. Only the two fields the stain needs are read; the scene's
+    // placements are not parsed.
     internal static bool TryReadSceneDefaultStain(ReadOnlySpan<byte> data, out ushort stain)
     {
         stain = 0;

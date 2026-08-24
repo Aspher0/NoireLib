@@ -84,16 +84,9 @@ public sealed unsafe class Mesh : IDisposable
         return chain[Math.Min(level - 1, chain.Length - 1)];
     }
 
-    /// <summary>
-    /// Casts a <b>model-space</b> ray against this mesh's triangles via a lazily-built BVH and returns the nearest
-    /// hit, with <paramref name="t"/> in the units of <paramref name="localDirection"/>; returns false when the mesh
-    /// kept no CPU geometry (created without <c>keepCpuData</c>), is disposed, or the ray misses, and is safe to
-    /// call from any thread.
-    /// </summary>
-    /// <param name="localOrigin">Ray origin in model space.</param>
-    /// <param name="localDirection">Ray direction in model space.</param>
-    /// <param name="t">Receives the hit distance along <paramref name="localDirection"/>.</param>
-    /// <param name="triangle">Receives the hit triangle index.</param>
+    // Casts a model-space ray against this mesh's triangles via a lazily-built BVH and returns the nearest hit, with 
+    // in the units of ; returns false when the mesh kept no CPU geometry (created without keepCpuData), is disposed,
+    // or the ray misses, and is safe to call from any thread.
     internal bool RayCastLocal(Vector3 localOrigin, Vector3 localDirection, out float t, out int triangle)
     {
         t = 0f;

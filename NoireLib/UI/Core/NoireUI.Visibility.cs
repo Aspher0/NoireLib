@@ -8,10 +8,9 @@ public static partial class NoireUI
 
     /// <summary>
     /// The union of everything this plugin's windows need to stay visible through, handed to Dalamud so it stops
-    /// hiding them.<br/>
-    /// Every window must then consult <see cref="ShouldHide"/>; one that does not is no longer hidden by anyone.
-    /// <see cref="NoireWindow"/> does it for you.
+    /// hiding them.
     /// </summary>
+    /// <remarks>Every window must then consult <see cref="ShouldHide"/>; <see cref="NoireWindow"/> does it for you.</remarks>
     public static UiVisibility RequiredVisibility
     {
         get => requiredVisibility;
@@ -73,9 +72,6 @@ public static partial class NoireUI
         return false;
     }
 
-    /// <summary>
-    /// Tells Dalamud to stop hiding this plugin for whatever any window has asked about.
-    /// </summary>
     private static void ApplyRequiredVisibility()
     {
         if (!NoireService.IsInitialized())
@@ -93,7 +89,7 @@ public static partial class NoireUI
             builder.DisableUserUiHide = true;
     }
 
-    /// <summary>Puts Dalamud's hiding back the way it was, on teardown.</summary>
+    // Puts Dalamud's hiding back the way it was, on teardown.
     internal static void ReleaseRequiredVisibility()
     {
         if (requiredVisibility == UiVisibility.Default || !NoireService.IsInitialized())

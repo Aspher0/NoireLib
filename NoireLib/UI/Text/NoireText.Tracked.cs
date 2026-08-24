@@ -16,11 +16,7 @@ public static partial class NoireText
     /// Draws text with extra space between its characters, at a named size.
     /// </summary>
     /// <param name="text">The text to draw.</param>
-    /// <param name="tracking">
-    /// Extra space per character, in ems: a fraction of the size the text is drawn at, the way CSS letter-spacing
-    /// works. A fraction rather than a pixel count, so one value is right at every step of the type scale and every
-    /// UI scale.
-    /// </param>
+    /// <param name="tracking">Extra space per character, in ems.</param>
     /// <param name="size">The step of the type scale to draw it at.</param>
     /// <returns>The size the run occupies.</returns>
     public static Vector2 Tracked(string text, float tracking = CapsTracking, TextSize size = TextSize.Body)
@@ -30,12 +26,9 @@ public static partial class NoireText
     /// Draws text with extra space between its characters, at an explicit size.
     /// </summary>
     /// <param name="text">The text to draw.</param>
-    /// <param name="tracking">Extra space per character, in ems. See <see cref="Tracked(string, float, TextSize)"/>.</param>
-    /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
-    /// <returns>
-    /// The size the run occupies, so a caller placing something beside the run needs no second call. The measurement
-    /// is also remembered, so a <see cref="TrackedSize(string, float, float)"/> for the same run answers from it.
-    /// </returns>
+    /// <param name="tracking">Extra space per character, in ems.</param>
+    /// <param name="sizePx">The size at 100%.</param>
+    /// <returns>The size the run occupies.</returns>
     public static Vector2 Tracked(string text, float tracking, float sizePx)
     {
         if (string.IsNullOrEmpty(text))
@@ -70,7 +63,7 @@ public static partial class NoireText
     /// </summary>
     /// <param name="text">The text to measure.</param>
     /// <param name="tracking">Extra space per character, in ems.</param>
-    /// <param name="sizePx">The size at 100%. See <see cref="NoireUI.Scale"/>.</param>
+    /// <param name="sizePx">The size at 100%.</param>
     /// <returns>The size the text would occupy, in real pixels.</returns>
     public static Vector2 TrackedSize(string text, float tracking, float sizePx)
     {
@@ -91,14 +84,7 @@ public static partial class NoireText
         return size;
     }
 
-    /// <summary>
-    /// Places a run with the font for a size pushed, falling back to the stretched stand-in while that size builds.
-    /// </summary>
-    /// <param name="sizePx">The size at 100%.</param>
-    /// <param name="text">The text to place.</param>
-    /// <param name="tracking">Extra space per character, in ems.</param>
-    /// <param name="paint">Whether to actually paint, as opposed to only measuring.</param>
-    /// <returns>The size the run occupies.</returns>
+    // Falls back to the stretched stand-in while the font for the size builds.
     private static Vector2 InFont(float sizePx, string text, float tracking, bool paint)
     {
         var handle = UiFontCache.Get(sizePx);
@@ -122,13 +108,6 @@ public static partial class NoireText
         }
     }
 
-    /// <summary>
-    /// Places each character in turn, and reports the run's size.
-    /// </summary>
-    /// <param name="text">The text to place.</param>
-    /// <param name="tracking">Extra space per character, in ems.</param>
-    /// <param name="paint">Whether to actually paint, as opposed to only measuring.</param>
-    /// <returns>The size the run occupies.</returns>
     private static Vector2 PlaceGlyphs(string text, float tracking, bool paint)
     {
         // Named for the type rather than for this method, so a tracked label lands in the same row as every other piece
@@ -199,12 +178,7 @@ public static partial class NoireText
         return size;
     }
 
-    /// <summary>
-    /// Reads a glyph's advance and visibility out of the font in hand, scaled to the size it is being drawn at.
-    /// </summary>
-    /// <param name="codepoint">The character, as a full codepoint.</param>
-    /// <param name="fontSize">The size the run is drawn at, in real pixels.</param>
-    /// <returns>The glyph's metrics at the drawn size.</returns>
+    // Reads out of the font currently in hand, scaled to the size it is being drawn at.
     private static unsafe UiTextMeasureCache.GlyphMetrics BuildGlyphMetrics(int codepoint, float fontSize)
     {
         var font = ImGui.GetFont();

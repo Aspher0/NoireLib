@@ -30,9 +30,7 @@ public class TaskBatch
     /// </summary>
     public bool IsBlocking { get; set; }
 
-    /// <summary>
-    /// Whether the queue has already run its finalization for this batch.
-    /// </summary>
+    // Whether the queue has already run its finalization for this batch.
     internal bool QueueFinalized { get; set; }
 
     /// <summary>
@@ -125,19 +123,12 @@ public class TaskBatch
     /// </summary>
     public bool ApplyPostDelayOnCancellation { get; set; }
 
-    /// <summary>
-    /// The tick count when the post-completion delay started.
-    /// </summary>
     internal long? PostDelayStartTicks { get; set; }
 
-    /// <summary>
-    /// Accumulated elapsed time in milliseconds for post-completion delay, excluding paused time.
-    /// </summary>
+    // Accumulated elapsed time in milliseconds for post-completion delay, excluding paused time.
     internal long AccumulatedPostDelayMillis { get; set; }
 
-    /// <summary>
-    /// The tick count when the post-completion delay was last paused.
-    /// </summary>
+    // The tick count when the post-completion delay was last paused.
     internal long? PostDelayPausedAtTicks { get; set; }
 
     /// <summary>
@@ -225,10 +216,6 @@ public class TaskBatch
         return (double)finishedTasks / Tasks.Count;
     }
 
-    /// <summary>
-    /// Checks if the post-completion delay has finished.
-    /// </summary>
-    /// <returns>True if the delay has elapsed, false otherwise.</returns>
     internal bool HasPostDelayCompleted()
     {
         if (!PostDelayStartTicks.HasValue || !PostCompletionDelay.HasValue)
@@ -241,9 +228,6 @@ public class TaskBatch
         return totalElapsed >= PostCompletionDelay.Value.TotalMilliseconds;
     }
 
-    /// <summary>
-    /// Pauses the post-completion delay timer.
-    /// </summary>
     internal void PausePostDelay()
     {
         if (!PostDelayStartTicks.HasValue || PostDelayPausedAtTicks.HasValue)
@@ -253,9 +237,6 @@ public class TaskBatch
         PostDelayPausedAtTicks = Environment.TickCount64;
     }
 
-    /// <summary>
-    /// Resumes the post-completion delay timer.
-    /// </summary>
     internal void ResumePostDelay()
     {
         if (!PostDelayPausedAtTicks.HasValue)

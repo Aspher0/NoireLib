@@ -28,7 +28,7 @@ public readonly record struct GameScenePart(
 /// </summary>
 public static class GameSceneLoader
 {
-    /// <summary>How deep nested scenes are followed; the archives nest one level, the cap only breaks reference cycles.</summary>
+    // How deep nested scenes are followed; the archives nest one level, the cap only breaks reference cycles.
     private const int MaxDepth = 4;
 
     /// <summary>Loads a scene and decodes every model it places, including models placed by nested scenes.</summary>
@@ -97,7 +97,7 @@ public static class GameSceneLoader
         }
     }
 
-    /// <summary>A placement's local matrix: scale, then rotation X-Y-Z, then translation.</summary>
+    // A placement's local matrix: scale, then rotation X-Y-Z, then translation.
     private static Matrix4x4 Compose(in GameSgbPlacement placement) =>
         Matrix4x4.CreateScale(placement.Scale)
         * Matrix4x4.CreateRotationX(placement.Rotation.X)

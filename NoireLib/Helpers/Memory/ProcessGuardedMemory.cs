@@ -9,7 +9,6 @@ public sealed unsafe class ProcessGuardedMemory : IGuardedMemory
     /// <summary>The shared stateless instance.</summary>
     public static readonly ProcessGuardedMemory Instance = new();
 
-    /// <summary>Prevents external construction, since the type is stateless.</summary>
     private ProcessGuardedMemory()
     {
     }

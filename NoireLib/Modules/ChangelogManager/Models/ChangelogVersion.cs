@@ -45,9 +45,7 @@ public record ChangelogVersion
     /// </summary>
     public string? Description { get; init; }
 
-    /// <summary>
-    /// Normalizes a Version object to always have 4 components (Major.Minor.Build.Revision).
-    /// </summary>
+    // Normalizes a Version object to always have 4 components (Major.Minor.Build.Revision).
     private static Version NormalizeVersion(Version v)
     {
         return new Version(

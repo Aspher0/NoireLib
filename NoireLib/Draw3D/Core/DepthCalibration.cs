@@ -5,14 +5,11 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Runtime self-calibration of the game's depth-buffer value convention. Every perspective depth mapping is
-/// affine in 1/w (w = clip-space w after <c>v*ViewProj</c>): reversed-Z infinite far is <c>z = near/w</c>,
-/// reversed finite and standard finite are <c>z = a + b/w</c> with other constants. Rather than trusting any
-/// camera field, this fits (a, b) from ground truth (the game's own collision raycasts vs. actual depth
-/// texels), so a wrong near plane, a swapped projection matrix or an engine convention change degrade to one
-/// recalibration rather than a visual bug.
-/// </summary>
+// Runtime self-calibration of the game's depth-buffer value convention. Every perspective depth mapping is affine in
+// 1/w (w = clip-space w after v*ViewProj): reversed-Z infinite far is z = near/w, reversed finite and standard finite
+// are z = a + b/w with other constants. Rather than trusting any camera field, this fits (a, b) from ground truth
+// (the game's own collision raycasts vs. actual depth texels), so a wrong near plane, a swapped projection matrix or
+// an engine convention change degrade to one recalibration rather than a visual bug.
 internal sealed class DepthCalibration
 {
     private const int GridN = 5;                 // 5x5 sample grid across the screen interior
@@ -149,20 +146,12 @@ internal sealed class DepthCalibration
         return true;
     }
 
-    /// <summary>
-    /// The depth-buffer value mapping (<c>sample = A + B/clipW</c>) computed directly from the camera's own
-    /// convention flags, returned in the shader-facing <see cref="ShaderParams"/> layout (x = A, y = B, z = 1
-    /// valid). FFXIV is reversed-Z infinite-far (StandardZ=false, FiniteFarPlane=false), which gives
-    /// <c>sample = near/clipW</c>.<br/>
-    /// Preferred over the raycast fit (<see cref="Update"/>) for rendering: it needs no readback, is available
-    /// on the first frame, tracks a per-frame near-plane change, cannot be "lost", and carries no fit bias -
-    /// the raycast surface and the rendered depth texel are frequently DIFFERENT surfaces, which biased the fit
-    /// and made ground decals slide under camera motion.
-    /// </summary>
-    /// <param name="near">Camera near-plane distance.</param>
-    /// <param name="far">Camera far-plane distance (ignored unless <paramref name="finiteFar"/>).</param>
-    /// <param name="standardZ">True when the projection maps near to 0 and far to 1; false = reversed-Z (near to 1, far to 0).</param>
-    /// <param name="finiteFar">True when the projection has a finite far plane; false = infinite far.</param>
+    // The depth-buffer value mapping (sample = A + B/clipW) computed directly from the camera's own convention flags,
+    // returned in the shader-facing ShaderParams layout (x = A, y = B, z = 1 valid). FFXIV is reversed-Z infinite-far
+    // (StandardZ=false, FiniteFarPlane=false), which gives sample = near/clipW. Preferred over the raycast fit
+    // (Update) for rendering: it needs no readback, is available on the first frame, tracks a per-frame near-plane
+    // change, cannot be "lost", and carries no fit bias - the raycast surface and the rendered depth texel are
+    // frequently DIFFERENT surfaces, which biased the fit and made ground decals slide under camera motion.
     internal static Vector4 AnalyticMap(float near, float far, bool standardZ, bool finiteFar)
     {
         near = near > 1e-6f ? near : 0.1f;
@@ -195,11 +184,8 @@ internal sealed class DepthCalibration
         return false;
     }
 
-    /// <summary>
-    /// Robust least squares of <c>y = a + b*x</c>: one plain fit, one outlier-rejected refit
-    /// (collision raycasts can hit invisible walls the depth buffer never saw).
-    /// Exposed for unit tests.
-    /// </summary>
+    // Robust least squares of y = a + b*x: one plain fit, one outlier-rejected refit (collision raycasts can hit
+    // invisible walls the depth buffer never saw). Exposed for unit tests.
     internal static bool TrySolve(IReadOnlyList<float> xs, IReadOnlyList<float> ys, out float a, out float b, out float medianResidual, out int inliers)
     {
         a = b = 0f;

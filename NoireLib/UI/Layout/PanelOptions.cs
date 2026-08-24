@@ -33,7 +33,7 @@ public sealed class PanelOptions
     /// <summary>The gap between the header and the body, at 100%.</summary>
     public float HeaderGap { get; set; } = 10f;
 
-    /// <summary>Returns a copy, for handing a panel its own options without sharing them.</summary>
+    /// <summary>Returns a copy.</summary>
     /// <returns>A shallow copy.</returns>
     public PanelOptions Clone() => (PanelOptions)MemberwiseClone();
 }

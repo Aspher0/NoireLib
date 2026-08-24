@@ -23,12 +23,7 @@ public static class FrameDebounceHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_FrameDebounceHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a frame debouncer for the specified key with the given delay.
-    /// </summary>
-    /// <param name="key">The key to identify this debounce instance.</param>
-    /// <param name="frames">The number of game frames to wait before executing the action.</param>
-    /// <returns>The debouncer instance for the specified key.</returns>
+    // Gets or creates a frame debouncer for the specified key with the given delay.
     private static FrameDebouncer GetOrCreateDebouncer(string key, long frames)
     {
         if (string.IsNullOrEmpty(key))
@@ -162,9 +157,6 @@ public static class FrameDebounceHelper
         _debouncers.Clear();
     }
 
-    /// <summary>
-    /// Disposes all frame debouncer states and clears them.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

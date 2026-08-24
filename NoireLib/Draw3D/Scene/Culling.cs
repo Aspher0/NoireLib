@@ -3,10 +3,8 @@ using NoireLib.Helpers;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Scene-side sugar over <see cref="FrustumPlanes"/>: the renderer culls against <see cref="BoundingSphere"/>, which
-/// is a Draw3D shape, while the planes themselves take loose values.
-/// </summary>
+// Scene-side sugar over FrustumPlanes: the renderer culls against BoundingSphere, which is a Draw3D shape, while the
+// planes themselves take loose values.
 internal static class Culling
 {
     /// <summary>Sphere-vs-frustum test: true when the sphere touches the view volume.</summary>

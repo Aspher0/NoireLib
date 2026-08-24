@@ -1,8 +1,5 @@
 namespace NoireLib.TaskQueue;
 
-/// <summary>
-/// Internal metadata for tracking retry delays.
-/// </summary>
 internal class RetryDelayMetadata
 {
     /// <summary>

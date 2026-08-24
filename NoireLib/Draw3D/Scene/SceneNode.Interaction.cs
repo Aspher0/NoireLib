@@ -64,10 +64,8 @@ public sealed partial class SceneNode
     /// </summary>
     public SceneNode? SelectionProxy { get; set; }
 
-    /// <summary>
-    /// The node a selection pick of this node lands on: the end of the <see cref="SelectionProxy"/> chain, or the
-    /// node itself; bounded so a proxy cycle resolves to somewhere instead of hanging.
-    /// </summary>
+    // The node a selection pick of this node lands on: the end of the SelectionProxy chain, or the node itself;
+    // bounded so a proxy cycle resolves to somewhere instead of hanging.
     internal SceneNode ResolveSelectionTarget()
     {
         var target = this;
@@ -115,13 +113,15 @@ public sealed partial class SceneNode
     /// <summary>The default hover highlight: brightens the renderer tint by x1.2 (RGB), alpha unchanged.</summary>
     public static readonly Func<Vector4, Vector4> DefaultHoverHighlight = static t => new Vector4(t.X * 1.2f, t.Y * 1.2f, t.Z * 1.2f, t.W);
 
-    /// <summary>The active hover-tint transform (null = no built-in highlight). Applied around, never composed into, the user's <see cref="OnHoverEnter"/> / <see cref="OnHoverExit"/>.</summary>
+    // The active hover-tint transform (null = no built-in highlight). Applied around, never composed into, the user's
+    // OnHoverEnter / OnHoverExit.
     private Func<Vector4, Vector4>? hoverHighlight;
 
-    /// <summary>The renderer tint captured when the current hover began, restored on exit.</summary>
+    // The renderer tint captured when the current hover began, restored on exit.
     private Vector4 hoverRestTint;
 
-    /// <summary>Whether the built-in hover highlight is currently applied (guards against a double apply that would compound the tint).</summary>
+    // Whether the built-in hover highlight is currently applied (guards against a double apply that would compound
+    // the tint).
     private bool hoverHighlightActive;
 
     /// <summary>
@@ -164,7 +164,8 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Applies the built-in hover tint, capturing the resting tint to restore on exit; idempotent (a second call while active is a no-op, so the tint never compounds), called by <see cref="NoireInteract"/> on hover-enter.</summary>
+    // Applies the built-in hover tint, capturing the resting tint to restore on exit; idempotent (a second call while
+    // active is a no-op, so the tint never compounds), called by NoireInteract on hover-enter.
     internal void ApplyHoverHighlight()
     {
         if (hoverHighlight is not { } transform || hoverHighlightActive || Renderer is not { } renderer)
@@ -175,7 +176,7 @@ public sealed partial class SceneNode
         renderer.Tint = transform(hoverRestTint);
     }
 
-    /// <summary>Restores the resting tint captured by <see cref="ApplyHoverHighlight"/>; idempotent, called by <see cref="NoireInteract"/> on hover-exit.</summary>
+    // Restores the resting tint captured by ApplyHoverHighlight; idempotent, called by NoireInteract on hover-exit.
     internal void RemoveHoverHighlight()
     {
         if (!hoverHighlightActive)
@@ -186,7 +187,7 @@ public sealed partial class SceneNode
             renderer.Tint = hoverRestTint;
     }
 
-    /// <summary>Drops this node from the interaction bookkeeping when it is destroyed while still interactable.</summary>
+    // Drops this node from the interaction bookkeeping when it is destroyed while still interactable.
     private void ReleaseInteraction()
     {
         RemoveHoverHighlight(); // restore the resting tint if we were mid-hover

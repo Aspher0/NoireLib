@@ -9,16 +9,8 @@ namespace NoireLib.Tests;
 /// batch builds to the exact bytes the interpolation it replaced produced.
 /// </summary>
 /// <remarks>
-/// The modal host and the toast area cannot be driven from the harness at all, because both are drawables that need an
-/// initialized plugin service to exist. Their ids are therefore held by asserting the builder against the literal,
-/// which is the part a mistake would silently change; the drawing around them is unaltered.<br/>
-/// Placement is the fact worth holding here, and it is what makes the id change safe rather than merely cheap. A
-/// tooltip is an auto-resizing window, so it only learns its size by being drawn once, and until then it is parked off
-/// screen rather than shown somewhere wrong and moved. The size it was measured at is remembered <b>under its window
-/// id</b>. An id that changed from frame to frame would therefore never find a measurement, and the tooltip would sit
-/// off screen forever while looking perfectly correct in the code.<br/>
-/// This surface is also where the flag-dependent style fields caused two separate bugs, so a change here is held to
-/// showing that a tooltip still reaches the screen at all.
+/// A tooltip is measured by being drawn once and that size is remembered under its window id, so an id that changed per
+/// frame would leave it parked off screen.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireFeedbackDrawTests : IClassFixture<UiHarness>

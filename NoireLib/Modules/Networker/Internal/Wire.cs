@@ -8,9 +8,6 @@ using System.Text;
 
 namespace NoireLib.Networker.Internal;
 
-/// <summary>
-/// The kind of a wire envelope.
-/// </summary>
 internal enum EnvelopeKind
 {
     Challenge = 0,
@@ -31,10 +28,8 @@ internal enum EnvelopeKind
     Event = 15,
 }
 
-/// <summary>
-/// The single JSON wire model. Unknown fields are ignored on read, keeping minor protocol revisions forward-compatible.<br/>
-/// For <see cref="EnvelopeKind.PeerState"/>, <see cref="TypeName"/> carries the changed key hint ("m:key" / "f:flag") when applicable.
-/// </summary>
+// The single JSON wire model. Unknown fields are ignored on read, keeping minor protocol revisions
+// forward-compatible. For PeerState, TypeName carries the changed key hint ("m:key" / "f:flag") when applicable.
 internal sealed class Envelope
 {
     [JsonProperty("v")]
@@ -65,9 +60,7 @@ internal sealed class Envelope
     public string? Error { get; set; }
 }
 
-/// <summary>
-/// The serialized state of one peer, exchanged in handshakes and presence updates.
-/// </summary>
+// The serialized state of one peer, exchanged in handshakes and presence updates.
 internal sealed class PeerStateModel
 {
     [JsonProperty("id")]
@@ -79,9 +72,7 @@ internal sealed class PeerStateModel
     [JsonProperty("f")]
     public string[] Flags { get; set; } = Array.Empty<string>();
 
-    /// <summary>
-    /// True when the peer lives on another machine, relative to the receiver. Rewritten by the forwarding hub.
-    /// </summary>
+    // True when the peer lives on another machine, relative to the receiver. Rewritten by the forwarding hub.
     [JsonProperty("r")]
     public bool Remote { get; set; }
 }
@@ -149,43 +140,33 @@ internal sealed class BeaconModel
     public int Port { get; set; }
 }
 
-/// <summary>
-/// Wire-level serialization. Deserialization is never type-driven by payload content
-/// (<see cref="TypeNameHandling.None"/>); payloads only materialize into locally registered types.<br/>
-/// Every operation here goes through a serializer built from <see cref="SerializerSettings"/>, so the protocol
-/// is defined entirely by this file.
-/// </summary>
+// Wire-level serialization. Deserialization is never type-driven by payload content (None); payloads only materialize
+// into locally registered types. Every operation here goes through a serializer built from SerializerSettings, so the
+// protocol is defined entirely by this file.
 internal static class Wire
 {
     public const int ProtocolVersion = 1;
 
-    /// <summary>
-    /// The single source of truth for how anything on the wire is serialized. TypeNameHandling stays None - never change this.
-    /// </summary>
+    // The single source of truth for how anything on the wire is serialized. TypeNameHandling stays None - never
+    // change this.
     private static readonly JsonSerializerSettings SerializerSettings = new()
     {
         TypeNameHandling = TypeNameHandling.None,
         NullValueHandling = NullValueHandling.Ignore,
     };
 
-    /// <summary>
-    /// The serializer used for payload conversion. TypeNameHandling stays None - never change this.<br/>
-    /// It is built with <see cref="JsonSerializer.Create(JsonSerializerSettings)"/>, which resolves every setting from
-    /// <see cref="SerializerSettings"/> alone. The parameterless <see cref="JsonConvert"/> overloads and
-    /// <see cref="JsonSerializer.CreateDefault(JsonSerializerSettings)"/> instead merge in
-    /// <see cref="JsonConvert.DefaultSettings"/>, a process-global that any other code loaded into this process can
-    /// assign, which would let unrelated code reshape the protocol at runtime. Nothing here may use those overloads.
-    /// </summary>
+    // The serializer used for payload conversion. TypeNameHandling stays None - never change this. It is built with
+    // Create(JsonSerializerSettings), which resolves every setting from SerializerSettings alone. The parameterless
+    // JsonConvert overloads and CreateDefault(JsonSerializerSettings) instead merge in DefaultSettings, a
+    // process-global that any other code loaded into this process can assign, which would let unrelated code reshape
+    // the protocol at runtime. Nothing here may use those overloads.
     public static readonly JsonSerializer Serializer = JsonSerializer.Create(SerializerSettings);
 
-    /// <summary>
-    /// The serializer used for whole documents: a framed envelope, a discovery beacon, a rendezvous record. It matches
-    /// <see cref="Serializer"/> and additionally rejects input carrying anything after its top-level value, since each
-    /// of those holds exactly one JSON document.<br/>
-    /// It is a separate instance because <see cref="JToken.ToObject(Type, JsonSerializer)"/> toggles
-    /// <see cref="JsonSerializer.CheckAdditionalContent"/> on the instance it is handed, which would let a payload
-    /// conversion transiently relax the check for a concurrent <see cref="DecodeModel{T}"/>.
-    /// </summary>
+    // The serializer used for whole documents: a framed envelope, a discovery beacon, a rendezvous record. It matches
+    // Serializer and additionally rejects input carrying anything after its top-level value, since each of those
+    // holds exactly one JSON document. It is a separate instance because ToObject(Type, JsonSerializer) toggles
+    // CheckAdditionalContent on the instance it is handed, which would let a payload conversion transiently relax the
+    // check for a concurrent DecodeModel{T}.
     private static readonly JsonSerializer DocumentSerializer = CreateDocumentSerializer();
 
     private static JsonSerializer CreateDocumentSerializer()
@@ -195,9 +176,6 @@ internal static class Wire
         return serializer;
     }
 
-    /// <summary>
-    /// Serializes a standalone wire model to compact UTF-8 JSON.
-    /// </summary>
     public static byte[] EncodeModel(object model)
     {
         var builder = new StringBuilder(256);
@@ -211,11 +189,9 @@ internal static class Wire
         return Encoding.UTF8.GetBytes(builder.ToString());
     }
 
-    /// <summary>
-    /// Reads a standalone wire model from UTF-8 JSON, returning null when the bytes are malformed; callers are
-    /// handed bytes they do not control (a socket, a broadcast datagram, a shared mapped file), so a failure is
-    /// reported rather than thrown.
-    /// </summary>
+    // Reads a standalone wire model from UTF-8 JSON, returning null when the bytes are malformed; callers are handed
+    // bytes they do not control (a socket, a broadcast datagram, a shared mapped file), so a failure is reported
+    // rather than thrown.
     public static T? DecodeModel<T>(byte[] bytes) where T : class
     {
         try

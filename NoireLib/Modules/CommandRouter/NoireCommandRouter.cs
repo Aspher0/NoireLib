@@ -79,13 +79,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         NoireEventBus? eventBus = null)
         : base(moduleId, active, enableLogging, enableAutoHelp, maxHistorySize, eventBus) { }
 
-    /// <summary>
-    /// Constructor for use with <see cref="NoireLibMain.AddModule{T}(string?)"/> with <paramref name="moduleId"/>,
-    /// for internal module management only.
-    /// </summary>
-    /// <param name="moduleId">The module ID.</param>
-    /// <param name="active">Whether to activate the module on creation.</param>
-    /// <param name="enableLogging">Whether to enable logging for this module.</param>
+    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireCommandRouter(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -465,14 +459,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Adds a normalized alias to a registration and registers it with Dalamud if the module is active; called by
-    /// <see cref="RootCommandBuilder.AddAlias(string)"/>. A collision with an existing command or alias is logged
-    /// and ignored.
-    /// </summary>
-    /// <param name="registration">The registration the alias dispatches to.</param>
-    /// <param name="alias">The alias slash command.</param>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="alias"/> is null or whitespace.</exception>
+    // Adds a normalized alias to a registration and registers it with Dalamud if the module is active; called by
+    // AddAlias(string). A collision with an existing command or alias is logged and ignored.
     internal void AddAliasToRegistration(RootCommandRegistration registration, string alias)
     {
         if (string.IsNullOrWhiteSpace(alias))
@@ -507,20 +495,16 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         RefreshAllRegistrations();
     }
 
-    /// <summary>
-    /// Drops a registration's aliases from the alias lookup, called under <see cref="registrationLock"/> when the
-    /// registration is being removed or replaced.
-    /// </summary>
+    // Drops a registration's aliases from the alias lookup, called under registrationLock when the registration is
+    // being removed or replaced.
     private void RemoveAliasEntries(RootCommandRegistration registration)
     {
         foreach (var alias in registration.Aliases)
             aliasRegistrations.Remove(alias);
     }
 
-    /// <summary>
-    /// Removes a single alias from its owning registration and unregisters it from Dalamud, called under
-    /// <see cref="registrationLock"/> when a new root command claims the alias's name.
-    /// </summary>
+    // Removes a single alias from its owning registration and unregisters it from Dalamud, called under
+    // registrationLock when a new root command claims the alias's name.
     private void RemoveAliasFromRegistration(RootCommandRegistration registration, string alias)
     {
         UnregisterAliasFromDalamud(registration, alias);
@@ -531,10 +515,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             NoireLogger.LogDebug(this, $"Removed alias '{alias}' from command '{registration.Command}'; the name was claimed by a new root command.");
     }
 
-    /// <summary>
-    /// Applies a registration's current metadata to its live Dalamud command info and alias infos, if registered.
-    /// </summary>
-    /// <param name="registration">The registration to refresh.</param>
+    // Applies a registration's current metadata to its live Dalamud command info and alias infos, if registered.
     internal void RefreshRegistration(RootCommandRegistration registration)
     {
         if (registration.DalamudCommandInfo != null)
@@ -552,10 +533,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Refreshes every live registration, needed whenever the command set, a display order or a visibility changes,
-    /// since the blank-line separation depends on which visible entry sorts last.
-    /// </summary>
+    // Refreshes every live registration, needed whenever the command set, a display order or a visibility changes,
+    // since the blank-line separation depends on which visible entry sorts last.
     internal void RefreshAllRegistrations()
     {
         lock (registrationLock)
@@ -576,13 +555,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             ? message + Environment.NewLine
             : message;
 
-    /// <summary>
-    /// Whether the given entry sorts last among all visible entries, roots and aliases, by display order then
-    /// command name.
-    /// </summary>
-    /// <param name="command">The command or alias being tested.</param>
-    /// <param name="displayOrder">The entry's display order.</param>
-    /// <returns>True when no visible entry sorts after it.</returns>
+    // Whether the given entry sorts last among all visible entries, roots and aliases, by display order then command
+    // name.
     internal bool IsLastDalamudHelpEntry(string command, int displayOrder)
     {
         lock (registrationLock)
@@ -610,12 +584,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                (otherOrder == displayOrder && string.Compare(otherCommand, command, StringComparison.OrdinalIgnoreCase) > 0);
     }
 
-    /// <summary>
-    /// The entry point Dalamud invokes for every mapped command, on the framework thread; resolves the registration
-    /// for <paramref name="command"/> and dispatches it through the router.
-    /// </summary>
-    /// <param name="command">The root slash command that was typed.</param>
-    /// <param name="rawArgs">The raw argument string as received from Dalamud.</param>
+    // The entry point Dalamud invokes for every mapped command, on the framework thread; resolves the registration
+    // for  and dispatches it through the router.
     internal void OnCommandDispatched(string command, string rawArgs)
     {
         if (!IsActive)
@@ -854,16 +824,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return null;
     }
 
-    /// <summary>
-    /// Converts the tokens of an invocation into the arguments its handler expects, returning a rejection through
-    /// <paramref name="error"/> rather than printing it.
-    /// </summary>
-    /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
-    /// <param name="argTokens">The tokens left over once the subcommand path was consumed.</param>
-    /// <param name="rawArgs">The raw argument string, carried through to the parsed result.</param>
-    /// <param name="qualifiedCommandPath">The full command path, used to point the user at its help.</param>
-    /// <param name="error">The message explaining the rejection, or <see langword="null"/> when parsing succeeded.</param>
-    /// <returns>The parsed arguments, or <see langword="null"/> when the invocation was rejected.</returns>
+    // Converts the tokens of an invocation into the arguments its handler expects, returning a rejection through 
+    // rather than printing it.
     private ParsedCommandArguments? ParseArguments(SubCommandDefinition subCommand, string[] argTokens, string rawArgs, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
         error = null;
@@ -927,16 +889,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return parsed;
     }
 
-    /// <summary>
-    /// Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to
-    /// the first optional argument whose type accepts it.
-    /// </summary>
-    /// <param name="subCommand">The subcommand whose arguments are being filled.</param>
-    /// <param name="parsed">The result being filled in.</param>
-    /// <param name="argTokens">The tokens left over once the subcommand path was consumed.</param>
-    /// <param name="qualifiedCommandPath">The full command path, used to point the user at its help.</param>
-    /// <param name="error">The message explaining the rejection, or <see langword="null"/> when parsing succeeded.</param>
-    /// <returns>The parsed arguments, or <see langword="null"/> when the invocation was rejected.</returns>
+    // Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to
+    // the first optional argument whose type accepts it.
     private ParsedCommandArguments? ParseArgumentsWithUnorderedOptionals(SubCommandDefinition subCommand, ParsedCommandArguments parsed, string[] argTokens, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
         error = null;
@@ -1057,10 +1011,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    /// <summary>
-    /// Records exactly one outcome for a settled async handler task: success when the task ran to completion,
-    /// failure when it faulted or was cancelled.
-    /// </summary>
+    // Records exactly one outcome for a settled async handler task: success when the task ran to completion, failure
+    // when it faulted or was cancelled.
     private void ReportAsyncOutcome(Task completedTask, string command, string rawArgs, string subCommandPath)
     {
         if (completedTask.IsCompletedSuccessfully)
@@ -1087,10 +1039,8 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         });
     }
 
-    /// <summary>
-    /// Runs outcome reporting on the framework thread, since publishing invokes consumer handlers inline and those
-    /// routinely touch game state; runs inline instead when NoireLib is not initialized.
-    /// </summary>
+    // Runs outcome reporting on the framework thread, since publishing invokes consumer handlers inline and those
+    // routinely touch game state; runs inline instead when NoireLib is not initialized.
     private static void ReportOnFrameworkThread(Action report)
     {
         if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)
@@ -1263,11 +1213,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return string.IsNullOrWhiteSpace(subCommandPath) ? command : $"{command} {subCommandPath}";
     }
 
-    /// <summary>
-    /// Splits a raw argument string into tokens, respecting quoted strings.
-    /// </summary>
-    /// <param name="input">The raw argument string.</param>
-    /// <returns>The tokens, with the quotes stripped.</returns>
+    // Splits a raw argument string into tokens, respecting quoted strings.
     internal static string[] Tokenize(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -1314,13 +1260,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return [.. tokens];
     }
 
-    /// <summary>
-    /// Attempts to convert a string token to the specified target type.
-    /// </summary>
-    /// <param name="token">The token to convert.</param>
-    /// <param name="targetType">The type to convert into, nullable types included.</param>
-    /// <param name="result">The converted value, or <see langword="null"/> when conversion failed.</param>
-    /// <returns>True when the token converted.</returns>
+    // Attempts to convert a string token to the specified target type.
     internal static bool TryConvertArgument(string token, Type targetType, out object? result)
     {
         result = null;

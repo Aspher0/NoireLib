@@ -10,9 +10,7 @@ public static partial class EncryptionHelper
 {
     #region Argon2id
 
-    /// <summary>
-    /// The Argon2 version encoded into the PHC hash string (0x13 = 19).
-    /// </summary>
+    // The Argon2 version encoded into the PHC hash string (0x13 = 19).
     private const int Argon2Version = 0x13;
 
     /// <summary>
@@ -80,9 +78,6 @@ public static partial class EncryptionHelper
         }
     }
 
-    /// <summary>
-    /// Runs the Argon2id key derivation with the given parameters.
-    /// </summary>
     private static byte[] ComputeArgon2(string password, byte[] salt, int memoryKb, int iterations, int parallelism, int hashLength)
     {
         using var argon2 = new Argon2id(Encoding.UTF8.GetBytes(password ?? string.Empty))
@@ -96,9 +91,6 @@ public static partial class EncryptionHelper
         return argon2.GetBytes(hashLength);
     }
 
-    /// <summary>
-    /// Decodes an unpadded (PHC-style) Base64 string into raw bytes.
-    /// </summary>
     private static byte[] DecodeUnpaddedBase64(string value)
     {
         switch (value.Length % 4)

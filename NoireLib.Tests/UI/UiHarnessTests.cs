@@ -9,10 +9,6 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Proves the harness runs a real ImGui frame and can tell drawing from nothing.
 /// </summary>
-/// <remarks>
-/// These assert the harness itself rather than any widget. A widget test that fails is a widget problem; one of these
-/// failing means no drawing test anywhere can be trusted.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class UiHarnessTests : IClassFixture<UiHarness>
 {

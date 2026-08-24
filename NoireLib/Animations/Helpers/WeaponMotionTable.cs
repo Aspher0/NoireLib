@@ -18,7 +18,6 @@ public sealed class WeaponMotionTable
     /// <summary> The code a hand with no weapon animates with. </summary>
     public const string EmptyCode = "emp";
 
-    /// <summary> The only file layout this reader understands. </summary>
     private const ushort SupportedVersion = 1;
 
     private const int HeaderLength = 4;

@@ -5,7 +5,7 @@ namespace NoireLib.UI;
 /// </summary>
 public enum TickFallback
 {
-    /// <summary>Nothing. The frame keeps its rules and loses its corner marks.</summary>
+    /// <summary>Nothing; the frame keeps its rules and loses its corner marks.</summary>
     None,
 
     /// <summary>A square bracket at each end, spanning the short axis.</summary>

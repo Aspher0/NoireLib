@@ -57,10 +57,8 @@ public partial class NoireGameWatcher
         return GameCondition.FromPredicateInternal(predicate).WaitAsync(timeout, ct);
     }
 
-    /// <summary>
-    /// Wires timeout and cancellation handling for an event wait: the deadline is checked on the shared
-    /// condition pump so completions stay on the framework thread.
-    /// </summary>
+    // Wires timeout and cancellation handling for an event wait: the deadline is checked on the shared condition pump
+    // so completions stay on the framework thread.
     private static void WireWaiter<TResult>(
         TaskCompletionSource<TResult> tcs,
         NoireSubscriptionToken subscription,

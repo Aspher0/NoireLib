@@ -32,9 +32,7 @@ public readonly record struct UiPipDraw(
     /// <summary>The centre of the pip in screen coordinates.</summary>
     public Vector2 Center => (Min + Max) * 0.5f;
 
-    /// <summary>
-    /// Draws the pip NoireUI would have drawn: filled, or an outline for an empty pip when the style asks for one.
-    /// </summary>
+    /// <summary>Draws the pip NoireUI would have drawn.</summary>
     public void DrawPip()
     {
         if (Outlined)

@@ -6,10 +6,8 @@ using static TerraFX.Interop.DirectX.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// D3DCompile wrapper: compiles HLSL text (with defines) to bytecode, surfacing the compiler's own
-/// error text verbatim so shader authors see real diagnostics, not HRESULTs.
-/// </summary>
+// D3DCompile wrapper: compiles HLSL text (with defines) to bytecode, surfacing the compiler's own error text verbatim
+// so shader authors see real diagnostics, not HRESULTs.
 internal static unsafe class ShaderCompiler
 {
     private const uint D3DCompileDebug = 1u << 0;              // D3DCOMPILE_DEBUG

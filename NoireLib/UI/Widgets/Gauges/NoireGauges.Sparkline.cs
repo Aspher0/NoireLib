@@ -11,11 +11,7 @@ public static partial class NoireGauges
     private static readonly SparklineStyle DefaultSparklineStyle = new();
 
     /// <summary>Draws a sparkline over a series of values, oldest first.</summary>
-    /// <remarks>
-    /// The vertical range comes from the data unless <see cref="SparklineStyle.Min"/> and <see
-    /// cref="SparklineStyle.Max"/> pin it.
-    /// </remarks>
-    /// <param name="values">The series, oldest first. Fewer than two values draws nothing but still reserves the space.</param>
+    /// <param name="values">The series, oldest first.</param>
     /// <param name="style">How to draw it, or <see langword="null"/> for the default sparkline.</param>
     public static void Sparkline(ReadOnlySpan<float> values, SparklineStyle? style = null)
     {
@@ -51,14 +47,6 @@ public static partial class NoireGauges
         ImGui.Dummy(new Vector2(width, height));
     }
 
-    /// <summary>Draws the filled area and the line over it, or hands both to the style's custom-draw hook.</summary>
-    /// <param name="list">The draw list a custom-draw hook paints into.</param>
-    /// <param name="values">The series, oldest first.</param>
-    /// <param name="style">The sparkline style.</param>
-    /// <param name="plot">The area to draw into, in screen pixels.</param>
-    /// <param name="min">The value at the bottom of the plot.</param>
-    /// <param name="max">The value at the top of the plot.</param>
-    /// <param name="color">The colour of the trace.</param>
     private static void DrawTrace(
         ImDrawListPtr list,
         ReadOnlySpan<float> values,
@@ -103,10 +91,6 @@ public static partial class NoireGauges
             DrawTraceMark(line, MathF.Max(style.ScaledMarkSize, 1f), color);
     }
 
-    /// <summary>Draws the filled area under a projected trace, down to the bottom of the plot.</summary>
-    /// <param name="line">The projected points, oldest first.</param>
-    /// <param name="plot">The area being drawn into.</param>
-    /// <param name="fill">The area colour. Nothing is drawn when it is transparent.</param>
     internal static void DrawTraceArea(ReadOnlySpan<Vector2> line, UiRect plot, Vector4 fill)
     {
         if (fill.W <= 0f || line.Length < 2)
@@ -115,10 +99,6 @@ public static partial class NoireGauges
         NoireShapes.FillUnder(line, plot.Bottom, fill);
     }
 
-    /// <summary>Draws the line through a projected trace.</summary>
-    /// <param name="line">The projected points, oldest first.</param>
-    /// <param name="color">The trace colour.</param>
-    /// <param name="thickness">The trace thickness in real pixels.</param>
     internal static void DrawTraceLine(ReadOnlySpan<Vector2> line, Vector4 color, float thickness)
     {
         if (line.Length < 2)
@@ -127,10 +107,6 @@ public static partial class NoireGauges
         NoireShapes.Stroke(line, color, thickness, closed: false);
     }
 
-    /// <summary>Draws the dot marking the last point of a projected trace.</summary>
-    /// <param name="line">The projected points, oldest first.</param>
-    /// <param name="radius">The dot radius in real pixels.</param>
-    /// <param name="color">The dot colour.</param>
     internal static void DrawTraceMark(ReadOnlySpan<Vector2> line, float radius, Vector4 color)
     {
         if (line.Length == 0)
@@ -140,11 +116,10 @@ public static partial class NoireGauges
         NoireShapes.Rect(last - new Vector2(radius), last + new Vector2(radius), color, CornerShape.Rounded, radius);
     }
 
-    /// <summary>The most points a sparkline is drawn from, past which segments fall below a pixel.</summary>
+    // The most points a sparkline is drawn from, past which segments fall below a pixel.
     private const int MaxSparklinePoints = 512;
 
     /// <summary>The vertical range a sparkline is plotted against.</summary>
-    /// <remarks>A flat series is widened around its value.</remarks>
     /// <param name="values">The series.</param>
     /// <param name="explicitMin">A pinned lower bound, or <see langword="null"/> to take it from the data.</param>
     /// <param name="explicitMax">A pinned upper bound, or <see langword="null"/> to take it from the data.</param>
@@ -185,12 +160,6 @@ public static partial class NoireGauges
         return (min, max);
     }
 
-    /// <summary>Where a value sits vertically in the plot, with the maximum at the top.</summary>
-    /// <param name="value">The value to place.</param>
-    /// <param name="min">The value at the bottom.</param>
-    /// <param name="max">The value at the top.</param>
-    /// <param name="plot">The area being drawn into.</param>
-    /// <returns>The screen y coordinate.</returns>
     private static float PlotY(float value, float min, float max, UiRect plot)
     {
         var normalized = Math.Clamp((value - min) / (max - min), 0f, 1f);

@@ -25,9 +25,7 @@ public class QueuedTask
     /// </summary>
     public TaskBatch? ParentBatch { get; internal set; }
 
-    /// <summary>
-    /// Whether the queue has already run its finalization for this task.
-    /// </summary>
+    // Whether the queue has already run its finalization for this task.
     internal bool QueueFinalized { get; set; }
 
     /// <summary>
@@ -70,19 +68,12 @@ public class QueuedTask
     /// </summary>
     public TaskStatus Status { get; set; }
 
-    /// <summary>
-    /// The tick count when this task was added to the queue.
-    /// </summary>
+    // The tick count when this task was added to the queue.
     internal long QueuedAtTicks { get; }
 
-    /// <summary>
-    /// The tick count when this task started executing.
-    /// </summary>
     internal long? StartedAtTicks { get; set; }
 
-    /// <summary>
-    /// The tick count when this task completed, cancelled, or failed.
-    /// </summary>
+    // The tick count when this task completed, cancelled, or failed.
     internal long? FinishedAtTicks { get; set; }
 
     /// <summary>
@@ -90,14 +81,10 @@ public class QueuedTask
     /// </summary>
     public TimeSpan? Timeout { get; set; }
 
-    /// <summary>
-    /// Accumulated elapsed time in milliseconds for timeout tracking, excluding paused time.
-    /// </summary>
+    // Accumulated elapsed time in milliseconds for timeout tracking, excluding paused time.
     internal long AccumulatedTimeoutMillis { get; set; }
 
-    /// <summary>
-    /// The tick count when the timeout tracking was last paused.
-    /// </summary>
+    // The tick count when the timeout tracking was last paused.
     internal long? TimeoutPausedAtTicks { get; set; }
 
     /// <summary>
@@ -150,9 +137,8 @@ public class QueuedTask
     /// </summary>
     public bool CancelParentBatchOnMaxRetries { get; set; }
 
-    /// <summary>
-    /// Internal token for unsubscribing from EventBus events when the task completes or is cancelled or failed if applicable.
-    /// </summary>
+    // Internal token for unsubscribing from EventBus events when the task completes or is cancelled or failed if
+    // applicable.
     internal EventSubscriptionToken? EventSubscriptionToken { get; set; }
 
     /// <summary>
@@ -160,25 +146,16 @@ public class QueuedTask
     /// </summary>
     public TaskRetryConfiguration? RetryConfiguration { get; set; }
 
-    /// <summary>
-    /// The current retry attempt number (0-based). 0 means first execution, 1 means first retry, etc.
-    /// </summary>
+    // The current retry attempt number (0-based). 0 means first execution, 1 means first retry, etc.
     internal int CurrentRetryAttempt { get; set; }
 
-    /// <summary>
-    /// The tick count when the condition was last checked and found to be false.
-    /// Used for detecting stalled conditions.
-    /// </summary>
+    // The tick count when the condition was last checked and found to be false. Used for detecting stalled
+    // conditions.
     internal long? LastConditionCheckTicks { get; set; }
 
-    /// <summary>
-    /// Accumulated elapsed time in milliseconds that the condition has been false (stalled), excluding paused time.
-    /// </summary>
+    // Accumulated elapsed time in milliseconds that the condition has been false (stalled), excluding paused time.
     internal long AccumulatedStallMillis { get; set; }
 
-    /// <summary>
-    /// The tick count when stall tracking was last paused.
-    /// </summary>
     internal long? StallPausedAtTicks { get; set; }
 
     /// <summary>
@@ -191,19 +168,12 @@ public class QueuedTask
     /// </summary>
     public Func<QueuedTask, TimeSpan?>? PostCompletionDelayProvider { get; set; }
 
-    /// <summary>
-    /// The tick count when the post-completion delay started.
-    /// </summary>
     internal long? PostDelayStartTicks { get; set; }
 
-    /// <summary>
-    /// Accumulated elapsed time in milliseconds for post-completion delay, excluding paused time.
-    /// </summary>
+    // Accumulated elapsed time in milliseconds for post-completion delay, excluding paused time.
     internal long AccumulatedPostDelayMillis { get; set; }
 
-    /// <summary>
-    /// The tick count when the post-completion delay was last paused.
-    /// </summary>
+    // The tick count when the post-completion delay was last paused.
     internal long? PostDelayPausedAtTicks { get; set; }
 
     /// <summary>
@@ -299,9 +269,6 @@ public class QueuedTask
         return elapsedMs > Timeout.Value.TotalMilliseconds;
     }
 
-    /// <summary>
-    /// Pauses the timeout tracking for this task.
-    /// </summary>
     internal void PauseTimeout()
     {
         if (Timeout == null || StartedAtTicks == null || TimeoutPausedAtTicks.HasValue)
@@ -311,9 +278,6 @@ public class QueuedTask
         TimeoutPausedAtTicks = Environment.TickCount64;
     }
 
-    /// <summary>
-    /// Resumes the timeout tracking for this task.
-    /// </summary>
     internal void ResumeTimeout()
     {
         if (Timeout == null || !TimeoutPausedAtTicks.HasValue)
@@ -323,10 +287,7 @@ public class QueuedTask
         TimeoutPausedAtTicks = null;
     }
 
-    /// <summary>
-    /// Checks if the completion condition has stalled (been false for too long).
-    /// </summary>
-    /// <returns>True if the condition has stalled beyond the configured threshold.</returns>
+    // Checks if the completion condition has stalled (been false for too long).
     internal bool HasConditionStalled()
     {
         if (RetryConfiguration == null || !RetryConfiguration.StallTimeout.HasValue)
@@ -349,9 +310,6 @@ public class QueuedTask
         return elapsedMs > stallThreshold.TotalMilliseconds;
     }
 
-    /// <summary>
-    /// Resets the stall tracking for this task.
-    /// </summary>
     internal void ResetStallTracking()
     {
         LastConditionCheckTicks = Environment.TickCount64;
@@ -359,9 +317,6 @@ public class QueuedTask
         StallPausedAtTicks = null;
     }
 
-    /// <summary>
-    /// Pauses the stall tracking for this task.
-    /// </summary>
     internal void PauseStallTracking()
     {
         if (!LastConditionCheckTicks.HasValue || StallPausedAtTicks.HasValue)
@@ -371,9 +326,6 @@ public class QueuedTask
         StallPausedAtTicks = Environment.TickCount64;
     }
 
-    /// <summary>
-    /// Resumes the stall tracking for this task.
-    /// </summary>
     internal void ResumeStallTracking()
     {
         if (!StallPausedAtTicks.HasValue)
@@ -383,10 +335,6 @@ public class QueuedTask
         StallPausedAtTicks = null;
     }
 
-    /// <summary>
-    /// Checks if the post-completion delay has elapsed.
-    /// </summary>
-    /// <returns>True if the delay has completed; otherwise, false.</returns>
     internal bool HasPostDelayCompleted()
     {
         if (PostCompletionDelay == null || !PostDelayStartTicks.HasValue)
@@ -402,9 +350,6 @@ public class QueuedTask
         return elapsedMs >= PostCompletionDelay.Value.TotalMilliseconds;
     }
 
-    /// <summary>
-    /// Pauses the post-completion delay tracking for this task.
-    /// </summary>
     internal void PausePostDelay()
     {
         if (PostCompletionDelay == null || !PostDelayStartTicks.HasValue || PostDelayPausedAtTicks.HasValue)
@@ -414,9 +359,6 @@ public class QueuedTask
         PostDelayPausedAtTicks = Environment.TickCount64;
     }
 
-    /// <summary>
-    /// Resumes the post-completion delay tracking for this task.
-    /// </summary>
     internal void ResumePostDelay()
     {
         if (PostCompletionDelay == null || !PostDelayPausedAtTicks.HasValue)

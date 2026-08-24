@@ -146,16 +146,12 @@ public static class GameModelLoader
         return new MeshData(vertices, indices);
     }
 
-    /// <summary>
-    /// Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry: the
-    /// game stores the <b>bitangent</b> packed into normalized bytes (<c>xyz</c> as <c>v*2-1</c>) with the
-    /// handedness flag in <c>w</c>, and the tangent is reconstructed as <c>cross(bitangent, normal) * h</c>
-    /// (the inversion of the standard frame relation <c>bitangent = cross(normal, tangent) * h</c>, which the
-    /// shader rebuilds so the round trip lands on the authored frame); a degenerate stored vector returns
-    /// zero, which the shaders treat as "no authored frame" and answer with the derivative fallback.
-    /// </summary>
-    /// <param name="packed">The element as read: bytes already normalized to 0..1.</param>
-    /// <param name="normal">The vertex normal, already normalized.</param>
+    // Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry: the game stores
+    // the bitangent packed into normalized bytes (xyz as v*2-1) with the handedness flag in w, and the tangent is
+    // reconstructed as cross(bitangent, normal) * h (the inversion of the standard frame relation bitangent =
+    // cross(normal, tangent) * h, which the shader rebuilds so the round trip lands on the authored frame); a
+    // degenerate stored vector returns zero, which the shaders treat as "no authored frame" and answer with the
+    // derivative fallback.
     internal static Vector4 DecodeTangentFrame(Vector4 packed, Vector3 normal)
     {
         var stored = new Vector3((packed.X * 2f) - 1f, (packed.Y * 2f) - 1f, (packed.Z * 2f) - 1f);
@@ -174,11 +170,9 @@ public static class GameModelLoader
         return new Vector4(tangent.X, tangent.Y, tangent.Z, handedness);
     }
 
-    /// <summary>
-    /// The baked occlusion a position element carries in its fourth component, or 1 (fully open) for a
-    /// format that stores no fourth component - the input assembler pads those to 1 for the game's own
-    /// shaders too, so both readings match what the game renders.
-    /// </summary>
+    // The baked occlusion a position element carries in its fourth component, or 1 (fully open) for a format that
+    // stores no fourth component - the input assembler pads those to 1 for the game's own shaders too, so both
+    // readings match what the game renders.
     private static float OcclusionFrom(GameVertexType type, float w) => type switch
     {
         GameVertexType.Single4 or GameVertexType.Half4 => Math.Clamp(w, 0f, 1f),

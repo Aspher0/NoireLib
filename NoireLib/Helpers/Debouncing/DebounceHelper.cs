@@ -23,12 +23,7 @@ public static class DebounceHelper
         NoireLibMain.RegisterOnDispose("NoireLib_Internal_DebounceHelper", Dispose);
     }
 
-    /// <summary>
-    /// Gets or creates a debouncer for the specified key with the given delay.
-    /// </summary>
-    /// <param name="key">The key to identify this debounce instance.</param>
-    /// <param name="delay">The delay to wait before executing the action.</param>
-    /// <returns>The debouncer instance for the specified key.</returns>
+    // Gets or creates a debouncer for the specified key with the given delay.
     private static Debouncer GetOrCreateDebouncer(string key, TimeSpan delay)
     {
         if (string.IsNullOrEmpty(key))
@@ -162,9 +157,6 @@ public static class DebounceHelper
         _debouncers.Clear();
     }
 
-    /// <summary>
-    /// Disposes all debouncer states and clears them.
-    /// </summary>
     internal static void Dispose()
     {
         Clear();

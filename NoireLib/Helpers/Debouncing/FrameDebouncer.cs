@@ -120,10 +120,7 @@ public class FrameDebouncer : FrameTimingHelperBase
         }
     }
 
-    /// <summary>
-    /// Schedules this call, waits the interval out, and reports whether it is still the call that should run.
-    /// </summary>
-    /// <returns>True when no later call superseded this one.</returns>
+    // Schedules this call, waits the interval out, and reports whether it is still the call that should run.
     private async Task<bool> WaitOutAsync()
     {
         CancellationTokenSource currentCts;

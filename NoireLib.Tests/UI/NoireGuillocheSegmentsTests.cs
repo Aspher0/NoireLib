@@ -8,9 +8,7 @@ namespace NoireLib.Tests;
 /// Locks how many points a guilloche ring is drawn with.
 /// </summary>
 /// <remarks>
-/// The count used to come from the lobe count alone, so a rosette an inch across was drawn with the same hundreds of
-/// points as one filling the window. It now follows the radius, which is both cheaper and the reason the rings share
-/// one buffer: every ring inside the outermost has to fit in the outermost ring's allocation.
+/// The count follows the radius, and every ring inside the outermost has to fit in the outermost ring's allocation.
 /// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireGuillocheSegmentsTests

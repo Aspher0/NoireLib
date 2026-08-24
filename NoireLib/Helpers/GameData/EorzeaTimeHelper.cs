@@ -185,7 +185,7 @@ public static unsafe class EorzeaTimeHelper
         }, null);
     }
 
-    /// <summary>A modulo that stays non-negative for moments before the Unix epoch.</summary>
+    // A modulo that stays non-negative for moments before the Unix epoch.
     private static long Modulo(long value, long divisor)
     {
         var remainder = value % divisor;

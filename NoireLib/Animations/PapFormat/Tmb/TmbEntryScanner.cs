@@ -17,19 +17,18 @@ public readonly record struct TmbEntryInfo(string Magic, string? Path);
 /// </summary>
 public static class TmbEntryScanner
 {
-    /// <summary> "pap " little-endian. </summary>
     private const int PapMagic = 0x20706170;
 
-    /// <summary> Magic, version, count, model id, model type, variant, and three offsets. </summary>
+    // Magic, version, count, model id, model type, variant, and three offsets.
     private const int PapHeaderLength = 26;
 
-    /// <summary> A TMB stream opens with its magic, its size and its item count. </summary>
+    // A TMB stream opens with its magic, its size and its item count.
     private const int TmbHeaderLength = 12;
 
-    /// <summary> Sanity ceiling on the animation count in a pap header. </summary>
+    // Sanity ceiling on the animation count in a pap header.
     private const int MaxAnimations = 256;
 
-    /// <summary> Every item carries at least its magic and its size. </summary>
+    // Every item carries at least its magic and its size.
     private const int MinItemLength = 8;
 
     /// <summary>
@@ -173,7 +172,7 @@ public static class TmbEntryScanner
         }
     }
 
-    /// <summary> The field holds an offset relative to (item start + 8), or 0 for "no string set". </summary>
+    // The field holds an offset relative to (item start + 8), or 0 for "no string set".
     private static string? ReadOffsetString(byte[] data, int itemStart, int itemSize, int fieldOffset)
     {
         if (fieldOffset + 4 > itemSize || itemStart + fieldOffset + 4 > data.Length)

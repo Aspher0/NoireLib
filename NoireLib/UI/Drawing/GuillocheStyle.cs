@@ -1,7 +1,7 @@
 namespace NoireLib.UI;
 
 /// <summary>
-/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials.<br/>
+/// The shape of a guilloche: the interlaced rosette engraved on banknotes and watch dials.
 /// Everything here is scale free except <see cref="Thickness"/>, which is a logical pixel value at 100%.
 /// </summary>
 public sealed class GuillocheStyle
@@ -10,8 +10,7 @@ public sealed class GuillocheStyle
     public int Lobes { get; set; } = 7;
 
     /// <summary>
-    /// How pronounced the petals are, from 0 to 1. Towards zero the curve relaxes into a circle; at one the petals
-    /// come to points.
+    /// How pronounced the petals are, from 0 to 1.
     /// </summary>
     public float Depth { get; set; } = 0.6f;
 
@@ -36,10 +35,8 @@ public sealed class GuillocheStyle
     public float RotationTurns { get; set; }
 
     /// <summary>
-    /// How many line segments each ring is drawn with. Zero, the default, scales the count to each ring's own radius,
-    /// so a small rosette is not over-tessellated and an inner ring costs less than the one around it.
+    /// How many line segments each ring is drawn with; zero, the default, scales the count to each ring's own radius.
     /// </summary>
-    /// <remarks>Setting this fixes the count for every ring regardless of size.</remarks>
     public int Segments { get; set; }
 
     /// <summary>

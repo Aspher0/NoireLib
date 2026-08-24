@@ -9,10 +9,8 @@ namespace NoireLib.Animations.Helpers;
 /// </summary>
 public static class EmotePathHelper
 {
-    /// <summary>
-    /// Which other skeletons' animations a skeleton without its own copy can borrow, closest first, with most
-    /// chains ending in c0101, the skeleton every human animation exists for.
-    /// </summary>
+    // Which other skeletons' animations a skeleton without its own copy can borrow, closest first, with most chains
+    // ending in c0101, the skeleton every human animation exists for.
     private static readonly Dictionary<string, string[]> HumanSkeletonFallbacks = new(StringComparer.OrdinalIgnoreCase)
     {
         ["c0101"] = ["c0101"],

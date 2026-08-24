@@ -31,9 +31,7 @@ public abstract class GameWatcherFacade
         return Watcher.SubscribeCore(handler, asyncHandler, options, NoireGameWatcher.LookupSource(typeof(TEvent)), null, null, description);
     }
 
-    /// <summary>
-    /// Copies user options and injects an additional filter in front of the user's own.
-    /// </summary>
+    // Copies user options and injects an additional filter in front of the user's own.
     private protected static NoireSubscriptionOptions<TEvent> WithFilter<TEvent>(
         NoireSubscriptionOptions<TEvent>? options,
         Func<TEvent, bool> injectedFilter)

@@ -12,7 +12,7 @@ namespace NoireLib.Animations.Helpers;
 /// </summary>
 public static class ActionTimelineHelper
 {
-    /// <summary> The folder every shared, skeleton-relative combat and emote animation lives under. </summary>
+    // The folder every shared, skeleton-relative combat and emote animation lives under.
     private const string SharedAnimationFolder = "bt_common";
 
     private static Dictionary<ushort, ushort>? replacements;

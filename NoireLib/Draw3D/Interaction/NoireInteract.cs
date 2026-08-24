@@ -390,10 +390,8 @@ public static class NoireInteract
         DrawCaptureWindow(wantCapture || captureRequested);
     }
 
-    /// <summary>
-    /// Whether the cursor is over the game viewport and the game window is the foreground window; anything outside
-    /// the framebuffer, or a click while another application is in front, is not the game's to act on.
-    /// </summary>
+    // Whether the cursor is over the game viewport and the game window is the foreground window; anything outside the
+    // framebuffer, or a click while another application is in front, is not the game's to act on.
     private static bool CursorWithinGameWindow(Vector2 mouse, Vector2 displaySize)
     {
         if (displaySize.X <= 0f || displaySize.Y <= 0f)
@@ -405,7 +403,8 @@ public static class NoireInteract
         return WindowHelper.IsGameWindowFocused();
     }
 
-    /// <summary>Determines the topmost grabbable target under the cursor: registered interactors first (by priority), then interactable nodes.</summary>
+    // Determines the topmost grabbable target under the cursor: registered interactors first (by priority), then
+    // interactable nodes.
     private static void ResolveHover()
     {
         hoverToken = null;
@@ -492,12 +491,10 @@ public static class NoireInteract
         }
     }
 
-    /// <summary>
-    /// The nearest game surface under the cursor, for obstacle occlusion: prefers the game depth buffer (every
-    /// rendered surface - static meshes, fences, furniture, decorations, characters, not only the collision meshes
-    /// the raycast alone misses), reconstructing the world point and caching it since the readback copies the whole
-    /// depth texture, falling back to the game's collision raycast only on frames where the depth buffer is unreadable.
-    /// </summary>
+    // The nearest game surface under the cursor, for obstacle occlusion: prefers the game depth buffer (every
+    // rendered surface - static meshes, fences, furniture, decorations, characters, not only the collision meshes the
+    // raycast alone misses), reconstructing the world point and caching it since the readback copies the whole depth
+    // texture, falling back to the game's collision raycast only on frames where the depth buffer is unreadable.
     private static bool TryGetOccluderSurface(out Vector3 world)
     {
         if (frame.HasDepth && !frame.UsedFallbackCamera)
@@ -506,7 +503,8 @@ public static class NoireInteract
         return NoireService.GameGui.ScreenToWorld(mousePos, out world);
     }
 
-    /// <summary>Throttled depth-buffer surface probe: re-reads at most every few frames, or when the cursor moves, and reuses the cached surface between reads.</summary>
+    // Throttled depth-buffer surface probe: re-reads at most every few frames, or when the cursor moves, and reuses
+    // the cached surface between reads.
     private static bool TryGetDepthOccluder(out Vector3 world)
     {
         var fid = frame.FrameId;
@@ -526,7 +524,7 @@ public static class NoireInteract
         return depthProbeValid;
     }
 
-    /// <summary>Invokes a consumer-supplied gesture predicate, containing a throw so one bad predicate cannot kill the frame.</summary>
+    // Invokes a consumer-supplied gesture predicate, containing a throw so one bad predicate cannot kill the frame.
     private static bool SafePredicate(Func<bool>? predicate, string name)
     {
         try
@@ -562,10 +560,8 @@ public static class NoireInteract
         }
     }
 
-    /// <summary>
-    /// The self-driven pre-pass: runs each self-driven interactor's own input and draw (the ImGuizmo gizmo host window)
-    /// before scene hover resolution, and returns whether any of them owns the mouse right now.
-    /// </summary>
+    // The self-driven pre-pass: runs each self-driven interactor's own input and draw (the ImGuizmo gizmo host
+    // window) before scene hover resolution, and returns whether any of them owns the mouse right now.
     private static bool DrawSelfDrivenInteractors()
     {
         IPointerInteractor[] snapshot;
@@ -591,12 +587,10 @@ public static class NoireInteract
         return owns;
     }
 
-    /// <summary>
-    /// Render-thread overlay (fired by <see cref="NoireDraw3D.OnRenderOverlay"/> with the live frame): draws each
-    /// ray-driven interactor's zero-latency geometry (the native gizmo handles) so their screen-constant sizing tracks
-    /// the camera instead of lagging a frame during zoom; self-driven interactors (ImGuizmo) draw themselves on the
-    /// UI thread and are skipped. Runs on the render thread; it only reads hover/drag state and emits geometry, no input.
-    /// </summary>
+    // Render-thread overlay (fired by OnRenderOverlay with the live frame): draws each ray-driven interactor's
+    // zero-latency geometry (the native gizmo handles) so their screen-constant sizing tracks the camera instead of
+    // lagging a frame during zoom; self-driven interactors (ImGuizmo) draw themselves on the UI thread and are
+    // skipped. Runs on the render thread; it only reads hover/drag state and emits geometry, no input.
     private static void DrawOverlayInteractors(FrameContext overlayFrame)
     {
         if (!enabled)
@@ -626,16 +620,13 @@ public static class NoireInteract
 
     // ---------------------------------------------------------------- capture window
 
-    /// <summary>
-    /// The single mouse-capture authority: when NoireInteract wants the mouse, it shows a fullscreen, invisible ImGui
-    /// window under the cursor, and hovering it makes ImGui set <c>WantCaptureMouse</c>, which tells Dalamud to
-    /// withhold the input from the game so the camera cannot pan and nothing is targeted. The window is only shown
-    /// while interacting (and only when no foreign window already owns the cursor), so the game keeps the mouse the
-    /// rest of the time, and the InvisibleButton's active-id holds the capture through a fast drag even if the
-    /// cursor outruns hover. The self-driven ImGuizmo backend does not use this: it blocks the camera with
-    /// <c>SetNextFrameWantCaptureMouse</c> (no window) instead.
-    /// </summary>
-    /// <param name="want">Whether the window should be shown this frame.</param>
+    // The single mouse-capture authority: when NoireInteract wants the mouse, it shows a fullscreen, invisible ImGui
+    // window under the cursor, and hovering it makes ImGui set WantCaptureMouse, which tells Dalamud to withhold the
+    // input from the game so the camera cannot pan and nothing is targeted. The window is only shown while
+    // interacting (and only when no foreign window already owns the cursor), so the game keeps the mouse the rest of
+    // the time, and the InvisibleButton's active-id holds the capture through a fast drag even if the cursor outruns
+    // hover. The self-driven ImGuizmo backend does not use this: it blocks the camera with
+    // SetNextFrameWantCaptureMouse (no window) instead.
     private static void DrawCaptureWindow(bool want)
     {
         if (!want)
@@ -874,7 +865,7 @@ public static class NoireInteract
         NoireDraw3D.PickInputGate = null;
     }
 
-    /// <summary>Routes arbiter events to the owning node or interactor, with per-callback error containment.</summary>
+    // Routes arbiter events to the owning node or interactor, with per-callback error containment.
     private sealed class Dispatcher : IArbiterSink
     {
         public void HoverEnter(object token)

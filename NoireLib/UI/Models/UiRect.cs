@@ -4,13 +4,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// An axis-aligned rectangle in screen pixels, used wherever the library has to talk about a region rather than a
-/// point: the bounds of a game addon, the area an element occupies, the box a label is projected into.
+/// An axis-aligned rectangle in screen pixels. Coordinates are real pixels, never logical ones.
+/// See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <remarks>
-/// Coordinates are real pixels, never logical ones. A rectangle here is measured or read from the game rather than
-/// written by hand, so it is already at the scale the screen is at. See <see cref="NoireUI.Scale"/>.
-/// </remarks>
 /// <param name="Position">The top left corner.</param>
 /// <param name="Size">The width and height.</param>
 public readonly record struct UiRect(Vector2 Position, Vector2 Size)
@@ -48,7 +44,7 @@ public readonly record struct UiRect(Vector2 Position, Vector2 Size)
     /// <summary>The centre point.</summary>
     public Vector2 Center => Position + (Size * 0.5f);
 
-    /// <summary>Whether the rectangle has no area. An unresolved target reads as empty.</summary>
+    /// <summary>Whether the rectangle has no area.</summary>
     public bool IsEmpty => Size.X <= 0f || Size.Y <= 0f;
 
     /// <summary>
@@ -104,10 +100,6 @@ public readonly record struct UiRect(Vector2 Position, Vector2 Size)
     /// <summary>
     /// Clamps a rectangle of the given size so it stays fully inside this one.
     /// </summary>
-    /// <remarks>
-    /// An element larger than the bounds is pinned to the top left rather than pushed off the other side, keeping
-    /// the part a user reads first on screen.
-    /// </remarks>
     /// <param name="position">The top left corner of the element.</param>
     /// <param name="size">The size of the element.</param>
     /// <returns>The clamped top left corner.</returns>

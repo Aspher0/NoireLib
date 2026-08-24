@@ -10,12 +10,6 @@ namespace NoireLib.Tests;
 /// Locks the key the text measurement cache stores under: every input that can change a measurement is part of it, and
 /// a measurement taken under one of them is unreachable once it moves.
 /// </summary>
-/// <remarks>
-/// The font generation is the field this exists for. A size that has not finished building is measured with a
-/// stretched stand-in, and the frame the real font arrives the same text measures differently. A cache that answered
-/// with the stand-in's numbers after that would leave the interface wrong everywhere by a few pixels, in a way that
-/// reads as a layout bug rather than a caching one.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public class UiTextMeasureCacheTests : IDisposable
 {
@@ -62,7 +56,7 @@ public class UiTextMeasureCacheTests : IDisposable
         UiTextMeasureCache.StoreSize("Heading", 24f, 14f, new Vector2(80f, 28f));
         UiTextMeasureCache.TryGetSize("Heading", 24f, 14f, out _).Should().BeTrue();
 
-        // The atlas rebuilds and the real font at 24px arrives, which is what moves the generation.
+        // The atlas rebuilds and the real font at 24px arrives, which moves the generation.
         generation++;
 
         UiTextMeasureCache.TryGetSize("Heading", 24f, 14f, out _).Should()

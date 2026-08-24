@@ -5,10 +5,7 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The base of everything the NoireUI hub can draw on your behalf: a screen-anchored element that exists on its own
-/// rather than inside one of your windows.<br/>
-/// A drawable registers with <see cref="NoireUI"/> when it is created and is disposed automatically with NoireLib, so
-/// nothing has to be tracked in parallel. Whether it draws itself is decided by <see cref="AutoDraw"/> against the
-/// <see cref="NoireUI.AutoDraw"/> master default; <see cref="Draw"/> always works regardless.
+/// rather than inside one of your windows.
 /// </summary>
 public abstract class NoireDrawable : IDisposable
 {
@@ -19,12 +16,10 @@ public abstract class NoireDrawable : IDisposable
     private int lastDrawnFrame = -1;
 
     /// <summary>
-    /// Initializes the identity of a drawable. The derived constructor calls <see cref="Register"/> once it is ready to
-    /// be drawn.
+    /// Initializes the identity of a drawable.
     /// </summary>
-    /// <param name="id">An optional unique identifier. When <see langword="null"/> or blank, a random one is generated
-    /// and <see cref="HasGeneratedId"/> becomes true.</param>
-    /// <param name="kind">The short type name used in the emitted ImGui id and in log messages, for example "OverlayButton".</param>
+    /// <param name="id">An optional unique identifier; when <see langword="null"/> or blank, a random one is generated.</param>
+    /// <param name="kind">The short type name used in the emitted ImGui id and in log messages.</param>
     protected NoireDrawable(string? id, string kind)
     {
         Kind = kind;
@@ -44,10 +39,9 @@ public abstract class NoireDrawable : IDisposable
     public string Kind { get; }
 
     /// <summary>
-    /// Whether <see cref="Id"/> was generated rather than supplied.<br/>
-    /// A generated id is different on every session, so nothing keyed on it may be persisted: a settings file keyed that
-    /// way grows forever and restores nothing.
+    /// Whether <see cref="Id"/> was generated rather than supplied.
     /// </summary>
+    /// <remarks>A generated id is different on every session, so nothing keyed on it may be persisted.</remarks>
     public bool HasGeneratedId { get; }
 
     /// <summary>
@@ -56,9 +50,8 @@ public abstract class NoireDrawable : IDisposable
     public bool IsDisposed { get; private set; }
 
     /// <summary>
-    /// Whether NoireLib draws this object automatically every frame.<br/>
-    /// <see langword="null"/> (the usual default) follows the <see cref="NoireUI.AutoDraw"/> master default; setting it
-    /// explicitly wins in either direction, including over a master that is off. See <see cref="EffectiveAutoDraw"/>.
+    /// Whether NoireLib draws this object automatically every frame, <see langword="null"/> to follow the
+    /// <see cref="NoireUI.AutoDraw"/> master default.
     /// </summary>
     public bool? AutoDraw { get; set; }
 
@@ -72,16 +65,11 @@ public abstract class NoireDrawable : IDisposable
     /// </summary>
     protected string ImGuiId => UiIds.For("###Noire", Kind, Id);
 
-    /// <summary>
-    /// How many frames in a row this drawable has thrown while the hub drew it. Drives the fault ladder in
-    /// <see cref="UiDiagnostics.FaultTolerance"/>, and resets as soon as a draw succeeds.
-    /// </summary>
+    // Drives the fault ladder in UiDiagnostics.FaultTolerance, and resets as soon as a draw succeeds.
     internal int ConsecutiveDrawFaults { get; set; }
 
     /// <summary>
-    /// Draws this object for the current frame.<br/>
-    /// Always available, whether or not the object also draws itself: call it from your own ImGui code to place it
-    /// exactly where you want it in your draw order. The hub skips anything already drawn manually on the same frame.
+    /// Draws this object for the current frame.
     /// </summary>
     public void Draw()
     {
@@ -93,7 +81,7 @@ public abstract class NoireDrawable : IDisposable
     }
 
     /// <summary>
-    /// Draws the object. Implemented by each drawable; never called directly, <see cref="Draw"/> is the entry point.
+    /// Draws the object, never called directly since <see cref="Draw"/> is the entry point.
     /// </summary>
     protected abstract void DrawCore();
 
@@ -101,15 +89,14 @@ public abstract class NoireDrawable : IDisposable
     /// Builds the <see cref="NoireUiState"/> key this drawable stores a piece of remembered state under, and refuses to
     /// build one when the id was generated rather than given.
     /// </summary>
-    /// <param name="subKey">What is being remembered, for example "position".</param>
+    /// <param name="subKey">What is being remembered.</param>
     /// <param name="key">The state key, or an empty string when persisting is refused.</param>
     /// <returns>True when the state may be persisted.</returns>
     protected bool TryGetPersistKey(string subKey, out string key)
         => UiPersistKey.TryBuild(Kind, Id, HasGeneratedId, subKey, ref persistRefusalLogged, out key);
 
     /// <summary>
-    /// Registers this drawable with the hub and for automatic disposal. Called by the derived constructor once the
-    /// object is ready to be drawn.
+    /// Registers this drawable with the hub and for automatic disposal.
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     protected void Register()
@@ -122,10 +109,7 @@ public abstract class NoireDrawable : IDisposable
         NoireLibMain.RegisterOnDispose(disposeKey, Dispose);
     }
 
-    /// <summary>
-    /// Draws this object from the hub's per-frame pass, unless it has already been drawn manually this frame.
-    /// </summary>
-    /// <returns>True when the object was drawn.</returns>
+    // Skips anything already drawn manually this frame.
     internal bool TryAutoDraw()
     {
         if (IsDisposed || !EffectiveAutoDraw || lastDrawnFrame == NoireUI.FrameCount)
@@ -136,8 +120,7 @@ public abstract class NoireDrawable : IDisposable
     }
 
     /// <summary>
-    /// Unregisters the object so it stops being drawn. Safe to call multiple times.<br/>
-    /// Called automatically when NoireLib is disposed; call it earlier to remove the object yourself.
+    /// Unregisters the object so it stops being drawn.
     /// </summary>
     public void Dispose()
     {
@@ -157,7 +140,7 @@ public abstract class NoireDrawable : IDisposable
     }
 
     /// <summary>
-    /// Releases what the derived drawable owns. Runs before it is unregistered from the hub.
+    /// Releases what the derived drawable owns, before it is unregistered from the hub.
     /// </summary>
     protected virtual void DisposeCore()
     {

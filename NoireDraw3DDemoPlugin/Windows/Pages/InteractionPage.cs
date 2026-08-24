@@ -8,7 +8,7 @@ using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-/// <summary>Pointer input: hover, click, drag, selection keys, and a live readout of who owns the mouse.</summary>
+// Pointer input: hover, click, drag, selection keys, and a live readout of who owns the mouse.
 internal sealed class InteractionPage
 {
     private enum ModifierChoice { Ctrl, Shift, Alt, None }
@@ -21,7 +21,6 @@ internal sealed class InteractionPage
     private int clickThroughModIdx = (int)ModifierChoice.Alt;
     private int deselectKeyIdx = (int)DeselectKeyChoice.Escape;
 
-    /// <inheritdoc cref="DemoWindow.Draw"/>
     public void Draw()
     {
         var it = NoireDraw3D.Interaction;
@@ -104,7 +103,7 @@ internal sealed class InteractionPage
 
     private static string YesNo(bool value) => value ? "yes" : "no";
 
-    /// <summary>Maps a modifier choice to the held-key predicate the interaction layer polls each frame.</summary>
+    // Maps a modifier choice to the held-key predicate the interaction layer polls each frame.
     private static Func<bool> ModifierFunc(ModifierChoice choice) => choice switch
     {
         ModifierChoice.Ctrl => static () => ImGui.GetIO().KeyCtrl,
@@ -113,11 +112,9 @@ internal sealed class InteractionPage
         _ => static () => false,
     };
 
-    /// <summary>
-    /// Maps a deselect-key choice to the held-key predicate (the library takes the press edge). Read from the OS through
-    /// <see cref="KeybindsHelper.IsAsyncKeyDown"/>: Dalamud only forwards a key to ImGui while a text field is focused,
-    /// so <c>ImGui.IsKeyPressed</c> is dead during play. Modifiers are exempt, hence <see cref="ModifierFunc"/>.
-    /// </summary>
+    // Maps a deselect-key choice to the held-key predicate (the library takes the press edge). Read from the OS
+    // through IsAsyncKeyDown: Dalamud only forwards a key to ImGui while a text field is focused, so
+    // ImGui.IsKeyPressed is dead during play. Modifiers are exempt, hence ModifierFunc.
     private static Func<bool> DeselectKeyFunc(DeselectKeyChoice choice) => choice switch
     {
         DeselectKeyChoice.Escape => static () => KeybindsHelper.IsAsyncKeyDown((int)VirtualKey.ESCAPE),

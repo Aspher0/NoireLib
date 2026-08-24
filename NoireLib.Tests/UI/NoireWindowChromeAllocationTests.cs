@@ -7,12 +7,6 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Holds the window chrome at zero allocation per frame, including the path a window below full opacity takes.
 /// </summary>
-/// <remarks>
-/// The faded path is the one that rotted, and it rotted invisibly: fading copied the caller's plate so a window
-/// fading itself out could not fade every other thing drawn from the same shared style, and the copy was made on every
-/// frame. Nothing caught it because the default opacity is 1 and that branch never runs, so every earlier measurement
-/// of the chrome was of the path that does not allocate.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireWindowChromeAllocationTests : IClassFixture<UiHarness>
 {

@@ -113,15 +113,10 @@ public class TmbFile
         }
     }
 
-    /// <summary>
-    /// Hands each track the bytes its condition offset points at. The blocks sit end to end between the last
-    /// item and the id blocks, and each says its own length; the room up to whatever comes next is only the
-    /// ceiling that length must fit under. Taking the ceiling instead swallows the curve data a C012 names and
-    /// copies it into every rebuild.
-    /// </summary>
-    /// <param name="startPos">Where this timeline starts in the stream, which its own offsets are relative to.</param>
-    /// <param name="size">The timeline's length in bytes.</param>
-    /// <param name="timelinePositions">Where every id block begins, the first of which ends the section.</param>
+    // Hands each track the bytes its condition offset points at. The blocks sit end to end between the last item and
+    // the id blocks, and each says its own length; the room up to whatever comes next is only the ceiling that length
+    // must fit under. Taking the ceiling instead swallows the curve data a C012 names and copies it into every
+    // rebuild.
     private void CaptureTrackConditions(long startPos, int size, IReadOnlyList<long> timelinePositions)
     {
         var withCondition = AllTracks.Where(track => track.ConditionOffset != 0)

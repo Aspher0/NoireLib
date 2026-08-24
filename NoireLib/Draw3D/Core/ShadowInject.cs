@@ -7,20 +7,15 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Draws meshes depth-only into the GAME's shadow maps, inside the game's own shadow passes, so injected
-/// geometry casts shadows. Runs at the END of each shadow bind, with the last caster draw's constants still
-/// bound; a bind's first draw does not reliably carry the pass that owns the map. Depth compare, depth bias,
-/// viewport and culling stay as the game configured them; only the shaders, input assembly and this pass's own
-/// constant slots change, and are restored after. The game re-renders a light's map only when its own
-/// bookkeeping detects a change near that light, and injected geometry is invisible to that bookkeeping, so a
-/// cached map shows the shadow only once the game next refreshes it.
-/// </summary>
+// Draws meshes depth-only into the GAME's shadow maps, inside the game's own shadow passes, so injected geometry
+// casts shadows. Runs at the END of each shadow bind, with the last caster draw's constants still bound; a bind's
+// first draw does not reliably carry the pass that owns the map. Depth compare, depth bias, viewport and culling stay
+// as the game configured them; only the shaders, input assembly and this pass's own constant slots change, and are
+// restored after. The game re-renders a light's map only when its own bookkeeping detects a change near that light,
+// and injected geometry is invisible to that bookkeeping, so a cached map shows the shadow only once the game next
+// refreshes it.
 internal sealed unsafe class ShadowInject : IDisposable
 {
-    /// <summary>One mesh queued for the shadow passes.</summary>
-    /// <param name="Mesh">The geometry.</param>
-    /// <param name="World">Its world transform.</param>
     internal readonly record struct Item(Mesh Mesh, Matrix4x4 World);
 
     // The g_CameraParameter block, named by the game's own shader reflection: m_ViewMatrix (world to the
@@ -32,10 +27,10 @@ internal sealed unsafe class ShadowInject : IDisposable
     private const int ClipOffset = 288;
     private const int ClipSize = 64;
 
-    /// <summary>The near-field map binds a constant buffer of exactly one matrix, applied whole.</summary>
+    // The near-field map binds a constant buffer of exactly one matrix, applied whole.
     private const int DirectVpSize = 64;
 
-    /// <summary>The copied rows the vertex shader reads: three view rows, then four clip rows.</summary>
+    // The copied rows the vertex shader reads: three view rows, then four clip rows.
     private const int MatrixBufferSize = ViewSize + ClipSize;
 
     private const int MaxScratchPool = 8;
@@ -280,7 +275,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         }
     }
 
-    /// <summary>Draws every active mesh with the pipeline already bound, returning how many drew.</summary>
+    // Draws every active mesh with the pipeline already bound, returning how many drew.
     private int DrawActive(ID3D11DeviceContext* ctx, float mode)
     {
         var drawn = 0;
@@ -309,7 +304,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         return drawn;
     }
 
-    /// <summary>Creates the matrix buffer, its view and the object constants once. Returns whether they are usable.</summary>
+    // Creates the matrix buffer, its view and the object constants once. Returns whether they are usable.
     private bool EnsureResources(RenderDevice device)
     {
         if (matrixSrv != null && objectCb != null)
@@ -355,10 +350,8 @@ internal sealed unsafe class ShadowInject : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Logs the copied rows and a queued mesh's world position pushed through them the way the vertex
-    /// shader does it. Once per casting session, on the render thread; the copy-and-map stalls that frame.
-    /// </summary>
+    // Logs the copied rows and a queued mesh's world position pushed through them the way the vertex shader does it.
+    // Once per casting session, on the render thread; the copy-and-map stalls that frame.
     private void TraceOnce(RenderDevice device, ID3D11DeviceContext* ctx, float mode)
     {
         if (traceStaging == null)
@@ -422,7 +415,7 @@ internal sealed unsafe class ShadowInject : IDisposable
 
     private static float Dot(Vector4 a, Vector4 b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z) + (a.W * b.W);
 
-    /// <summary>Lifts one matrix window out of the scratch clone into the row buffer the vertex shader reads.</summary>
+    // Lifts one matrix window out of the scratch clone into the row buffer the vertex shader reads.
     private void CopyWindow(ID3D11DeviceContext* ctx, ID3D11Buffer* scratch, int sourceOffset, int destinationOffset, int size)
     {
         var box = new D3D11_BOX
@@ -437,7 +430,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         ctx->CopySubresourceRegion((ID3D11Resource*)matrixBuffer, 0, (uint)destinationOffset, 0, 0, (ID3D11Resource*)scratch, 0, &box);
     }
 
-    /// <summary>The no-cull clone of a game raster state, created once per distinct source state.</summary>
+    // The no-cull clone of a game raster state, created once per distinct source state.
     private ID3D11RasterizerState* CullNoneVariant(RenderDevice device, ID3D11RasterizerState* source)
     {
         for (var i = 0; i < cullCount; i++)
@@ -477,7 +470,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         return created;
     }
 
-    /// <summary>A plain copy-target buffer of the given size, pooled per distinct size like the probe's staging pool.</summary>
+    // A plain copy-target buffer of the given size, pooled per distinct size like the probe's staging pool.
     private ID3D11Buffer* AcquireScratch(RenderDevice device, int byteWidth)
     {
         for (var i = 0; i < scratchCount; i++)

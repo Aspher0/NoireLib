@@ -20,7 +20,7 @@ public static partial class MeshSimplifier
     /// <param name="Indices">The reduced index set (triangle list, winding preserved).</param>
     public readonly record struct Result(Vertex3D[] Vertices, uint[] Indices);
 
-    /// <summary>Running attribute sum for one cluster cell; averaged into a single representative vertex.</summary>
+    // Running attribute sum for one cluster cell; averaged into a single representative vertex.
     private struct Accum
     {
         public Vector3 PositionSum;
@@ -142,7 +142,7 @@ public static partial class MeshSimplifier
         return new Result(outVertices.ToArray(), newIndices.ToArray());
     }
 
-    /// <summary>Lattice resolutions for the clustering backstop, used only when the quadric pass cannot reduce a mesh.</summary>
+    // Lattice resolutions for the clustering backstop, used only when the quadric pass cannot reduce a mesh.
     private static readonly int[] FallbackClusterCells = { 48, 24, 12 };
 
     /// <summary>
@@ -199,7 +199,7 @@ public static partial class MeshSimplifier
         return lods.ToArray();
     }
 
-    /// <summary>Creates a GPU mesh from decimated data, narrowing to a 16-bit index buffer when the vertex count allows.</summary>
+    // Creates a GPU mesh from decimated data, narrowing to a 16-bit index buffer when the vertex count allows.
     private static Mesh MakeMesh(Vertex3D[] vertices, uint[] indices, string? name)
     {
         if (vertices.Length <= ushort.MaxValue)

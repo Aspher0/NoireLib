@@ -90,10 +90,8 @@ public partial class NoireGameWatcher
 
     private readonly List<ValueWatcherRegistration> valueWatchers = new();
 
-    /// <summary>
-    /// Registers a raw per-tick callback on the value-watcher pump - the plumbing behind scoped value
-    /// watchers. Internal.
-    /// </summary>
+    // Registers a raw per-tick callback on the value-watcher pump - the plumbing behind scoped value watchers.
+    // Internal.
     internal NoireSubscriptionToken WatchTick(Action onTick, TimeSpan? interval, object? owner, string description)
     {
         ArgumentNullException.ThrowIfNull(onTick);
@@ -205,7 +203,6 @@ public partial class NoireGameWatcher
         }
     }
 
-    /// <summary>The number of live value watchers, for diagnostics.</summary>
     internal int ValueWatcherCount
     {
         get

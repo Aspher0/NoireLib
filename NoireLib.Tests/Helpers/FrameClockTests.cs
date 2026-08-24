@@ -6,8 +6,7 @@ namespace NoireLib.Tests;
 
 /// <summary>
 /// Locks the frame clock's headless behaviour: with no game update behind it the count stands still unless a test
-/// advances it, which is what lets the frame-based helpers be driven without a game. The count is process-global,
-/// so every assertion here is relative rather than absolute.
+/// advances it. The count is process-global, so every assertion here is relative rather than absolute.
 /// </summary>
 public class FrameClockTests
 {

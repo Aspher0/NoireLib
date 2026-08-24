@@ -4,27 +4,10 @@ using System.Collections.Generic;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Widget memory that lasts exactly as long as the plugin does. The same idea as <see cref="NoireUiState"/>, with the
-/// file taken away: nothing is written to disk, and everything is gone on reload.
+/// Widget memory that lasts exactly as long as the plugin does: nothing is written to disk, and everything is gone on
+/// reload. Any type may be stored, including ones that do not serialize, and a generated widget id is safe to key on.
+/// Static per plugin, not per process.
 /// </summary>
-/// <remarks>
-/// <list type="bullet">
-/// <item><b>Any type may be stored</b>, including ones that do not serialize: values are held as-is rather than
-/// round-tripped through JSON.</item>
-/// <item><b>A generated widget id is safe to key on</b>, unlike in <see cref="NoireUiState"/>, since this store's
-/// lifetime is the session too, so the key and the value expire together.</item>
-/// </list>
-/// Static per plugin, not per process: NoireLib is compiled into each plugin, so one plugin's session state cannot
-/// collide with another's.
-/// </remarks>
-/// <example>
-/// <code>
-/// NoireUiSession.Set("myplugin.roster.search", search);
-///
-/// // ...somewhere else, or after the window was closed and reopened
-/// var search = NoireUiSession.Get("myplugin.roster.search", string.Empty);
-/// </code>
-/// </example>
 [NoireFacade("Session")]
 public static class NoireUiSession
 {
@@ -68,10 +51,6 @@ public static class NoireUiSession
     /// <summary>
     /// Reads a stored value and reports whether it was there and of the expected type.
     /// </summary>
-    /// <remarks>
-    /// A value stored under the same key as a different type reads as absent rather than throwing, matching
-    /// <see cref="NoireUiState"/>.
-    /// </remarks>
     /// <typeparam name="T">The stored value type.</typeparam>
     /// <param name="key">The entry key.</param>
     /// <param name="value">The stored value, or the default.</param>

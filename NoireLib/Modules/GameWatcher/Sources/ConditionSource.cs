@@ -3,11 +3,8 @@ using System.Collections.Generic;
 
 namespace NoireLib.GameWatcher;
 
-/// <summary>
-/// Wraps <see cref="Dalamud.Plugin.Services.ICondition.ConditionChange"/>: dispatches the raw
-/// <see cref="ConditionChangedEvent"/> and the derived enter/leave pairs generated from the declarative
-/// <see cref="ConditionPairTable"/>. Event-driven - zero tick cost.
-/// </summary>
+// Wraps ConditionChange: dispatches the raw ConditionChangedEvent and the derived enter/leave pairs generated from
+// the declarative ConditionPairTable. Event-driven - zero tick cost.
 internal sealed class ConditionSource : GameWatcherSource
 {
     private readonly Dictionary<string, bool> derivedStates = new();

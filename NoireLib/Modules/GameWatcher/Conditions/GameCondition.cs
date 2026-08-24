@@ -128,9 +128,6 @@ public abstract class GameCondition
         => new PredicateGameCondition(name ?? "Predicate", predicate);
 }
 
-/// <summary>
-/// A <see cref="GameCondition"/> backed by a plain predicate.
-/// </summary>
 internal sealed class PredicateGameCondition : GameCondition
 {
     private readonly string name;

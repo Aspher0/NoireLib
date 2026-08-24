@@ -11,12 +11,6 @@ namespace NoireLib.UI;
 /// One palette the whole library follows. Every NoireUI widget resolves colors it was not given through
 /// <see cref="Current"/>. Nothing is required: an untouched theme resolves everything to the host's ImGui style.
 /// </summary>
-/// <example>
-/// <code>
-/// NoireTheme.Current = NoireTheme.FromAccent(ColorHelper.HexToVector4("#C8A96A"));
-/// NoireTheme.Current.Danger = ColorHelper.HexToVector4("#B4443A");   // override one token, keep the rest
-/// </code>
-/// </example>
 public sealed class NoireTheme
 {
     private static NoireTheme current = new();
@@ -39,9 +33,7 @@ public sealed class NoireTheme
     };
 
     /// <summary>
-    /// The theme every widget resolves against. Never <see langword="null"/>: assigning <see langword="null"/> restores
-    /// an empty theme, which resolves everything to the ImGui style.<br/>
-    /// Static per plugin, not per process: NoireLib is compiled into each plugin.
+    /// The theme every widget resolves against; assigning <see langword="null"/> restores an empty theme.
     /// </summary>
     public static NoireTheme Current
     {
@@ -50,20 +42,18 @@ public sealed class NoireTheme
     }
 
     /// <summary>
-    /// Every color this theme overrides. The named color properties read and write here, and a color left out is
-    /// resolved from the ImGui style instead.
+    /// Every color this theme overrides; a color left out is resolved from the ImGui style instead.
     /// </summary>
     public Dictionary<ThemeColor, Vector4> Colors { get; } = new();
 
     /// <summary>
-    /// Extra named colors this theme carries, for tokens a bespoke skin needs and the library does not define.<br/>
-    /// Read them back with <see cref="Resolve(string, Vector4)"/>. Nothing in NoireUI reads these directly.
+    /// Extra named colors this theme carries, for tokens a bespoke skin needs and the library does not define.
     /// </summary>
     public Dictionary<string, Vector4> CustomColors { get; } = new();
 
     #region Palette
 
-    /// <summary>The one color the interface is built around. See <see cref="ThemeColor.Accent"/>.</summary>
+    /// <summary>The one color the interface is built around.</summary>
     public Vector4? Accent { get => Get(ThemeColor.Accent); set => Set(ThemeColor.Accent, value); }
 
     /// <summary>The color a completed or healthy state is shown in.</summary>
@@ -109,30 +99,28 @@ public sealed class NoireTheme
     // Values in this region are pixel measurements at 100%, scaled by NoireUI.Scale when resolved.
 
     /// <summary>
-    /// The corner radius of buttons, toggles and framed widgets, at 100%. When <see langword="null"/>, the ImGui frame
+    /// The corner radius of buttons, toggles and framed widgets, at 100%; when <see langword="null"/>, the ImGui frame
     /// rounding is used.
     /// </summary>
     public float? Rounding { get; set; }
 
     /// <summary>
-    /// The corner radius of raised surfaces at 100%: toasts, modals, cards. When <see langword="null"/>, the ImGui
-    /// window rounding is used.
+    /// The corner radius of raised surfaces at 100%; when <see langword="null"/>, the ImGui window rounding is used.
     /// </summary>
     public float? SurfaceRounding { get; set; }
 
     /// <summary>
-    /// The thickness of widget borders at 100%. When <see langword="null"/>, the ImGui frame border size is used.<br/>
-    /// Zero is a real value here, and the way to ask for a flat, borderless look.
+    /// The thickness of widget borders at 100%; when <see langword="null"/>, the ImGui frame border size is used.
     /// </summary>
     public float? BorderSize { get; set; }
 
     /// <summary>
-    /// The padding inside widgets at 100%. When <see langword="null"/>, the ImGui frame padding is used.
+    /// The padding inside widgets at 100%; when <see langword="null"/>, the ImGui frame padding is used.
     /// </summary>
     public Vector2? FramePadding { get; set; }
 
     /// <summary>
-    /// The spacing between consecutive items at 100%. When <see langword="null"/>, the ImGui item spacing is used.
+    /// The spacing between consecutive items at 100%; when <see langword="null"/>, the ImGui item spacing is used.
     /// </summary>
     public Vector2? ItemSpacing { get; set; }
 
@@ -142,9 +130,7 @@ public sealed class NoireTheme
 
     // Sizes here are logical pixels at 100%; NoireText scales them when it builds the font.
 
-    /// <summary>
-    /// The shipped proportions of the type scale, as multiples of <see cref="BodySize"/>.
-    /// </summary>
+    // The shipped proportions of the type scale, as multiples of BodySize.
     private static readonly Dictionary<TextSize, float> SizeRatios = new()
     {
         [TextSize.Display] = 2.2f,
@@ -154,24 +140,22 @@ public sealed class NoireTheme
     };
 
     /// <summary>
-    /// Every text size this theme overrides. The named size properties read and write here, and a size left out is
-    /// derived from <see cref="BodySize"/> instead.
+    /// Every text size this theme overrides; a size left out is derived from <see cref="BodySize"/> instead.
     /// </summary>
     public Dictionary<TextSize, float> TextSizes { get; } = new();
 
-    /// <summary>The masthead size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The masthead size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
     public float? DisplaySize { get => GetSize(TextSize.Display); set => SetSize(TextSize.Display, value); }
 
-    /// <summary>The section-heading size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The section-heading size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
     public float? HeadingSize { get => GetSize(TextSize.Heading); set => SetSize(TextSize.Heading, value); }
 
     /// <summary>
-    /// The running-text size at 100%, and the root of the scale. When <see langword="null"/>, the host's own default
-    /// font size is used.
+    /// The running-text size at 100%; when <see langword="null"/>, the host's own default font size is used.
     /// </summary>
     public float? BodySize { get => GetSize(TextSize.Body); set => SetSize(TextSize.Body, value); }
 
-    /// <summary>The supporting-text size at 100%. When <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The supporting-text size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
     public float? CaptionSize { get => GetSize(TextSize.Caption); set => SetSize(TextSize.Caption, value); }
 
     /// <summary>
@@ -201,13 +185,12 @@ public sealed class NoireTheme
     #region Derivation
 
     /// <summary>
-    /// How far <see cref="Hover"/> moves a color, from 0 (no change) to 1. Defaults to a light touch.
+    /// How far <see cref="Hover"/> moves a color, from 0 (no change) to 1.
     /// </summary>
     public float HoverShift { get; set; } = 0.12f;
 
     /// <summary>
-    /// How far <see cref="Active"/> moves a color, from 0 (no change) to 1. Larger than <see cref="HoverShift"/> by
-    /// default.
+    /// How far <see cref="Active"/> moves a color, from 0 (no change) to 1.
     /// </summary>
     public float ActiveShift { get; set; } = 0.22f;
 
@@ -222,9 +205,7 @@ public sealed class NoireTheme
     public float DisabledAlpha { get; set; } = 0.45f;
 
     /// <summary>
-    /// What decides which way <see cref="Hover"/> and <see cref="Active"/> move a color.<br/>
-    /// Defaults to <see cref="ThemeTintSource.Item"/>: each color decides for itself, a dark button brightens and a
-    /// pale accent one darkens. See <see cref="ThemeTintSource"/> for the alternatives.
+    /// What decides which way <see cref="Hover"/> and <see cref="Active"/> move a color.
     /// </summary>
     public ThemeTintSource TintSource { get; set; } = ThemeTintSource.Item;
 
@@ -441,12 +422,10 @@ public sealed class NoireTheme
     #region Building
 
     /// <summary>
-    /// Builds a complete palette from a single accent color.<br/>
-    /// The surface neutrals are tinted slightly towards the accent rather than left pure grey, and text colors are
-    /// picked for legibility against the resulting surface.
+    /// Builds a complete palette from a single accent color.
     /// </summary>
     /// <param name="accent">The color to build around.</param>
-    /// <param name="dark">Whether to build a dark palette. Defaults to dark, matching the game.</param>
+    /// <param name="dark">Whether to build a dark palette.</param>
     /// <returns>The built theme.</returns>
     public static NoireTheme FromAccent(Vector4 accent, bool dark = true)
     {
@@ -493,7 +472,7 @@ public sealed class NoireTheme
     #region Sharing
 
     /// <summary>
-    /// The share-code kind themes are tagged with. See <see cref="ShareCodeHelper"/>.
+    /// The share-code kind themes are tagged with.
     /// </summary>
     public const string ShareCodeKind = "noire.theme";
 
@@ -504,9 +483,7 @@ public sealed class NoireTheme
     public string ToShareCode() => ShareCodeHelper.Encode(ShareCodeKind, ThemeSnapshot.From(this));
 
     /// <summary>
-    /// Reads a theme back from a share code written by <see cref="ToShareCode"/>.<br/>
-    /// Never throws on a bad paste: a code that is damaged, truncated, meant for something else or simply not a share
-    /// code comes back as a failed result carrying a message you can show the user.
+    /// Reads a theme back from a share code written by <see cref="ToShareCode"/>.
     /// </summary>
     /// <param name="code">The pasted code.</param>
     /// <returns>The decoded theme, or a failure describing what was wrong with the code.</returns>
@@ -542,10 +519,8 @@ public sealed class NoireTheme
             Colors.Remove(token);
     }
 
-    /// <summary>
-    /// Maps a theme color onto the ImGui style color it falls back to, or <see langword="null"/> for the tokens ImGui
-    /// has no equivalent for (the semantic colors and the shadow), which fall back to shipped defaults instead.
-    /// </summary>
+    // Null for the tokens ImGui has no equivalent for (the semantic colors and the shadow), which fall back to shipped
+    // defaults instead.
     private static ImGuiCol? MapToImGui(ThemeColor token) => token switch
     {
         ThemeColor.Accent => ImGuiCol.CheckMark,

@@ -7,19 +7,16 @@ using CSFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace NoireLib.Draw3D.Core;
 
-/// <summary>
-/// Walks the game's collision scene keeping each collider's identity rather than only the triangles it
-/// contributes, the counterpart to <see cref="WorldCollisionSource"/>. Reads struct fields directly and calls
-/// no game code, so a torn or mid-load collider is skipped rather than faulting. Framework thread only.
-/// </summary>
+// Walks the game's collision scene keeping each collider's identity rather than only the triangles it contributes,
+// the counterpart to WorldCollisionSource. Reads struct fields directly and calls no game code, so a torn or mid-load
+// collider is skipped rather than faulting. Framework thread only.
 internal static unsafe class WorldCollisionInspect
 {
-    /// <summary>Hard cap on colliders visited in one walk, so a pathological scene can never hang a frame.</summary>
+    // Hard cap on colliders visited in one walk, so a pathological scene can never hang a frame.
     private const int MaxColliders = 8192;
 
-    /// <summary>Depth of the explicit PCB-tree traversal stack.</summary>
     private const int TreeStackDepth = 512;
-
+    // Hard cap on colliders visited in one walk, so a pathological scene can never hang a frame.
     /// <summary>Gets a value indicating whether the collision scene can be reached right now.</summary>
     public static bool Available
     {

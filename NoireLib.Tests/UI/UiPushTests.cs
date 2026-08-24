@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Drives <see cref="UiPush"/> through a real ImGui frame. Two properties matter and both are frame properties: a scope
 /// costs the frame nothing, and it leaves the ImGui style stacks exactly as deep as it found them.
 /// </summary>
-/// <remarks>
-/// The stack depths are read from the live context rather than inferred, which is the same source
-/// <c>UiStackSnapshot</c> reads. An unbalanced scope does not fail where it happens; it changes the colour of
-/// everything drawn afterwards, in an unrelated widget, for the rest of the frame.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class UiPushTests : IClassFixture<UiHarness>
 {
@@ -127,10 +122,6 @@ public sealed class UiPushTests : IClassFixture<UiHarness>
     /// opens and writes the displaced value straight back when it closes. A style variable that straddles that, in
     /// either direction, is what these two cover.
     /// </summary>
-    /// <remarks>
-    /// The symptom of getting it wrong is not a failure where it happens. The alpha stays at the disabled value, so
-    /// every window drawn afterwards is faded, for the rest of the frame and every frame after it.
-    /// </remarks>
     [Fact]
     public void Dispose_StyleVarPushedInsideADisabledScope_RestoresTheAlpha()
     {

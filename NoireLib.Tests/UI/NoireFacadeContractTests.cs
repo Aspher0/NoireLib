@@ -18,10 +18,6 @@ namespace NoireLib.Tests;
 /// file beside it are exactly what a consumer plugin compiles against and reads IntelliSense from. Nothing here knows
 /// how the generator produced any of it.
 /// </summary>
-/// <remarks>
-/// Driven by <see cref="NoireFacadeAttribute"/> rather than by a list, so a surface marked later is covered without
-/// either test being edited.
-/// </remarks>
 public class NoireFacadeContractTests
 {
     /// <summary>
@@ -259,13 +255,9 @@ public class NoireFacadeContractTests
 
     /// <summary>
     /// The compiler copies an inherited-documentation tag into the XML file verbatim instead of expanding it, and that
-    /// file is the whole of what a consumer's IntelliSense reads from a package. Every tag reaching it is a member
+    /// file is what a consumer's IntelliSense reads from a package. Every tag reaching it is a member
     /// that documents itself in source and reaches consumers blank.
     /// </summary>
-    /// <remarks>
-    /// Public members only. A member a consumer cannot see costs them nothing, and the tag is genuinely useful in
-    /// source, so the gate is drawn at the package boundary rather than at the syntax.
-    /// </remarks>
     [Fact]
     public void ShippedDocumentation_CarriesNoInheritedDocumentationTags_OnPublicUiMembers()
     {
@@ -366,10 +358,6 @@ public class NoireFacadeContractTests
     /// A member rendered down to everything a caller can observe: return type, generic arity, and for each parameter
     /// its type, name, by-reference direction and default value.
     /// </summary>
-    /// <remarks>
-    /// Defaults are part of the signature on purpose. C# bakes an optional parameter's default into the caller, so a
-    /// forward whose default has drifted compiles clean and produces a different result from the same library.
-    /// </remarks>
     private static string Signature(MemberInfo member) => member switch
     {
         MethodInfo method =>

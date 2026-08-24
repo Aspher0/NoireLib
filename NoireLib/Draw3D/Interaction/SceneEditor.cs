@@ -97,7 +97,7 @@ public sealed class SceneEditor : IDisposable
         UpdateOutlines();
     }
 
-    /// <summary>Applies / removes selection outlines to match the current selection and <see cref="SelectionOutline"/>.</summary>
+    // Applies / removes selection outlines to match the current selection and SelectionOutline.
     private void UpdateOutlines()
     {
         // The outline covers each selected node's SUBTREE, not just the node: selecting a group node - the
@@ -135,7 +135,7 @@ public sealed class SceneEditor : IDisposable
         }
     }
 
-    /// <summary>A node and all its live descendants, once each, cycle-safe by the visited check.</summary>
+    // A node and all its live descendants, once each, cycle-safe by the visited check.
     private static void CollectSubtree(SceneNode node, List<SceneNode> into)
     {
         if (node.Destroyed || into.Contains(node))

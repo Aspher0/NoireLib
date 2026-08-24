@@ -7,38 +7,22 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// The shapes a bespoke interface is built out of, and that ImGui's draw list does not have: gradients at any angle,
-/// notched and rounded plates, beveled edges, glows, hairline frames with corner ticks, arcs, and pattern fills.<br/>
+/// notched and rounded plates, beveled edges, glows, hairline frames with corner ticks, arcs, and pattern fills.
 /// Coordinates are screen space, in real pixels. The values NoireUI ships a default for are logical and scaled for
 /// you. See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <example>
-/// <code>
-/// var min = ImGui.GetCursorScreenPos();
-/// var max = min + new Vector2(320f, 90f) * NoireUI.Scale;
-///
-/// NoireShapes.Plate(min, max, new PlateStyle { CornerShape = CornerShape.Notched, CornerSize = 12f, BevelSize = 2f });
-/// NoireShapes.Frame(min, max, new FrameStyle { TickLength = 14f });
-/// </code>
-/// </example>
 [NoireFacade]
 public static partial class NoireShapes
 {
-    /// <summary>
-    /// The most points <see cref="RectPath"/> can ever write.
-    /// </summary>
+    /// <summary>The most points <see cref="RectPath"/> can ever write.</summary>
     public const int MaxRectPathPoints = 128;
 
     private static ImDrawListPtr target = ImDrawListPtr.Null;
 
-    /// <summary>
-    /// Whether the shapes drawn here are antialiased. On by default.
-    /// </summary>
+    /// <summary>Whether the shapes drawn here are antialiased.</summary>
     public static bool AntiAlias { get; set; } = true;
 
-    /// <summary>
-    /// Forces a draw list's antialiasing to match <see cref="AntiAlias"/>, returning what it was so the caller can put
-    /// it back.
-    /// </summary>
+    // Returns what the flags were, for the caller to put back.
     private static ImDrawListFlags PushAntiAlias(ImDrawListPtr drawList)
     {
         var previous = drawList.Flags;
@@ -50,8 +34,8 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// The draw list everything here paints into: the one <see cref="On(ImDrawListPtr, Action)"/> is currently
-    /// redirecting to, and the current window's otherwise.
+    /// The draw list everything here paints into: the one <see cref="On(ImDrawListPtr, Action)"/> is redirecting to,
+    /// and the current window's otherwise.
     /// </summary>
     public static ImDrawListPtr DrawList
     {
@@ -70,18 +54,10 @@ public static partial class NoireShapes
     /// Runs a block of drawing against a different draw list: the background or foreground list, or one belonging to
     /// another window.
     /// </summary>
-    /// <remarks>
-    /// Nests, and restores the previous target on the way out even if the body throws.
-    /// </remarks>
+    /// <remarks>Nests, and restores the previous target on the way out even if the body throws.</remarks>
     /// <param name="drawList">The list to paint into.</param>
     /// <param name="body">The drawing to run.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
-    /// <example>
-    /// <code>
-    /// // Behind every window, across the whole screen.
-    /// NoireShapes.On(ImGui.GetBackgroundDrawList(), () => NoireShapes.Sunburst(centre, 400f, glow));
-    /// </code>
-    /// </example>
     public static void On(ImDrawListPtr drawList, Action body)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -92,9 +68,7 @@ public static partial class NoireShapes
     /// Runs a block of drawing against a different draw list: the background or foreground list, or one belonging to
     /// another window.
     /// </summary>
-    /// <remarks>
-    /// Nests, and restores the previous target on the way out even if the body throws.
-    /// </remarks>
+    /// <remarks>Nests, and restores the previous target on the way out even if the body throws.</remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="drawList">The list to paint into.</param>
     /// <param name="state">Passed to <paramref name="body"/>.</param>
@@ -122,26 +96,15 @@ public static partial class NoireShapes
     #region Gradient
 
     /// <summary>
-    /// Runs a block of drawing and shades everything it drew along a line: a rounded plate, a notched one, an arc, a
-    /// run of text.
+    /// Runs a block of drawing and shades everything it drew along a line.
     /// </summary>
-    /// <remarks>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn: a body drawn in white takes the
-    /// gradient exactly, and a gradient fading to zero alpha fades the shape out. Nests.
-    /// </remarks>
+    /// <remarks>Color is replaced and <b>alpha is multiplied</b> into whatever was drawn. Nests.</remarks>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
     /// <param name="to">Where <paramref name="toColor"/> is at full strength, in screen space.</param>
     /// <param name="fromColor">The color at <paramref name="from"/>.</param>
     /// <param name="toColor">The color at <paramref name="to"/>.</param>
     /// <param name="body">The drawing to shade.</param>
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="body"/> is <see langword="null"/>.</exception>
-    /// <example>
-    /// <code>
-    /// // A notched plate that fades out towards its bottom edge.
-    /// NoireShapes.Gradient(min, new Vector2(min.X, max.Y), Vector4.One, new Vector4(1f, 1f, 1f, 0f), () =>
-    ///     NoireShapes.Rect(min, max, accent, CornerShape.Notched, 12f));
-    /// </code>
-    /// </example>
     public static void Gradient(Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor, Action body)
     {
         ArgumentNullException.ThrowIfNull(body);
@@ -149,13 +112,9 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Runs a block of drawing and shades everything it drew along a line: a rounded plate, a notched one, an arc, a
-    /// run of text.
+    /// Runs a block of drawing and shades everything it drew along a line.
     /// </summary>
-    /// <remarks>
-    /// Color is replaced and <b>alpha is multiplied</b> into whatever was drawn: a body drawn in white takes the
-    /// gradient exactly, and a gradient fading to zero alpha fades the shape out. Nests.
-    /// </remarks>
+    /// <remarks>Color is replaced and <b>alpha is multiplied</b> into whatever was drawn. Nests.</remarks>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="from">Where <paramref name="fromColor"/> is at full strength, in screen space.</param>
     /// <param name="to">Where <paramref name="toColor"/> is at full strength, in screen space.</param>
@@ -185,8 +144,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Runs a block of drawing and shades it across a rectangle, for the ordinary case where the gradient runs along
-    /// one of the rectangle's own axes.
+    /// Runs a block of drawing and shades it along one of a rectangle's own axes.
     /// </summary>
     /// <param name="min">The top left corner the axis is measured across.</param>
     /// <param name="max">The bottom right corner the axis is measured across.</param>
@@ -202,8 +160,7 @@ public static partial class NoireShapes
     }
 
     /// <summary>
-    /// Runs a block of drawing and shades it across a rectangle, for the ordinary case where the gradient runs along
-    /// one of the rectangle's own axes.
+    /// Runs a block of drawing and shades it along one of a rectangle's own axes.
     /// </summary>
     /// <typeparam name="TState">The type carried into the body.</typeparam>
     /// <param name="min">The top left corner the axis is measured across.</param>
@@ -219,9 +176,6 @@ public static partial class NoireShapes
         Gradient(from, to, fromColor, toColor, state, body);
     }
 
-    /// <summary>
-    /// The two points a named axis runs between across a rectangle.
-    /// </summary>
     private static (Vector2 From, Vector2 To) AxisPoints(Vector2 min, Vector2 max, GradientAxis axis) => axis switch
     {
         GradientAxis.Horizontal => (min, new Vector2(max.X, min.Y)),
@@ -230,12 +184,7 @@ public static partial class NoireShapes
         _ => (min, new Vector2(min.X, max.Y)),
     };
 
-    /// <summary>
-    /// Moves a reservation's write positions past vertices and indices written directly into the buffers.
-    /// </summary>
-    /// <param name="drawList">The list whose reservation was written by hand.</param>
-    /// <param name="vertexCount">How many vertices were written.</param>
-    /// <param name="indexCount">How many indices were written.</param>
+    // Moves a reservation's write positions past vertices and indices written directly into the buffers.
     internal static unsafe void AdvancePrimWrite(ImDrawListPtr drawList, int vertexCount, int indexCount)
     {
         var native = drawList.Handle;
@@ -245,15 +194,8 @@ public static partial class NoireShapes
         native->IdxWritePtr += indexCount;
     }
 
-    /// <summary>
-    /// Shades a run of vertices by how far each one sits from a centre, rather than by where it falls along a line.
-    /// </summary>
-    /// <param name="drawList">The list holding the vertices.</param>
-    /// <param name="start">The first vertex to shade.</param>
-    /// <param name="end">One past the last vertex to shade.</param>
-    /// <param name="centre">Where the shape radiates from.</param>
-    /// <param name="innerRadius">The distance at which the shape is left at full strength.</param>
-    /// <param name="outerRadius">The distance at which it has faded away entirely.</param>
+    // Shades vertices start to end-exclusive by distance from the centre: full strength at innerRadius, gone at
+    // outerRadius.
     private static void ShadeRadial(ImDrawListPtr drawList, int start, int end, Vector2 centre, float innerRadius, float outerRadius)
     {
         if (end <= start)
@@ -287,9 +229,6 @@ public static partial class NoireShapes
         }
     }
 
-    /// <summary>
-    /// Recolors a run of vertices by where each one falls along a line.
-    /// </summary>
     private static void Shade(ImDrawListPtr drawList, int start, int end, Vector2 from, Vector2 to, Vector4 fromColor, Vector4 toColor)
     {
         if (end <= start)
@@ -411,12 +350,7 @@ public static partial class NoireShapes
         return Compact(points, count);
     }
 
-    /// <summary>
-    /// Removes points that repeat the one before them, and the last point when it repeats the first.
-    /// </summary>
-    /// <param name="points">The path to compact, in place.</param>
-    /// <param name="count">How many points it holds.</param>
-    /// <returns>How many points remain.</returns>
+    // Removes points that repeat the one before them, and the last point when it repeats the first.
     private static int Compact(Span<Vector2> points, int count)
     {
         if (count < 2)
@@ -506,13 +440,8 @@ public static partial class NoireShapes
         AdvancePrimWrite(drawList, vertexCount, indexCount);
     }
 
-    /// <summary>
-    /// Writes the triangles of a band whose vertices alternate upper, lower, upper, lower.
-    /// </summary>
-    /// <param name="indices">Receives the triangles. Must hold <c>6 * (points - 1)</c>.</param>
-    /// <param name="points">How many samples the band spans.</param>
-    /// <param name="baseVertex">The index the band's first vertex was written at.</param>
-    /// <returns>How many indices were written.</returns>
+    // Writes the triangles of a band whose vertices alternate upper, lower, upper, lower. The span must hold
+    // 6 * (points - 1) indices.
     internal static int WriteBandIndices(Span<ushort> indices, int points, ushort baseVertex)
     {
         if (points < 2)
@@ -608,9 +537,6 @@ public static partial class NoireShapes
             drawList.AddLine(from, to, ColorHelper.Vector4ToUint(color), thickness);
     }
 
-    /// <summary>
-    /// The unit vector at an angle, in the draw list's coordinate space.
-    /// </summary>
     private static Vector2 Direction(float radians) => new(MathF.Cos(radians), MathF.Sin(radians));
 
     #endregion

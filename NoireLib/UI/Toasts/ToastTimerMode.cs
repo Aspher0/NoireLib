@@ -1,7 +1,7 @@
 ﻿namespace NoireLib.UI;
 
 /// <summary>
-/// How a toast shows the time it has left before it dismisses itself.<br/>
+/// How a toast shows the time it has left before it dismisses itself.
 /// Every mode is inert on a toast with no duration.
 /// </summary>
 public enum ToastTimerMode

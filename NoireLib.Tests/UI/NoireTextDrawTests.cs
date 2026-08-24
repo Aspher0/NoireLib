@@ -10,11 +10,6 @@ namespace NoireLib.Tests;
 /// Drives the text surfaces through a real ImGui frame, for the two properties a draw path is held to: it produces no
 /// garbage, and caching a measurement did not change the answer.
 /// </summary>
-/// <remarks>
-/// The arithmetic of the type scale is covered by <see cref="NoireTextTests"/>, which needs no frame. What needs one is
-/// everything below: allocation is only observable across a drawn frame, and a tracked run's width is only real once a
-/// font is pushed.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireTextDrawTests : IClassFixture<UiHarness>
 {

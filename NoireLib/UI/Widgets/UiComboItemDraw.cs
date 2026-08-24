@@ -10,16 +10,6 @@ namespace NoireLib.UI;
 /// <param name="Display">The option's display text, as the combo would draw it.</param>
 /// <param name="Selected">Whether this option is the current selection.</param>
 /// <param name="Highlighted">Whether this option is the one the arrow keys are on.</param>
-/// <example>
-/// <code>
-/// combo.ItemRenderer = option =&gt;
-/// {
-///     UiKit.Icon(IconFor(option.Item));
-///     ImGui.SameLine();
-///     option.DrawLabel();
-/// };
-/// </code>
-/// </example>
 public readonly record struct UiComboItemDraw<T>(
     NoireComboBox<T> Combo,
     T Item,

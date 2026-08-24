@@ -4,11 +4,9 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Materials;
 
-/// <summary>
-/// The flattened, GPU-facing form of a <see cref="Material"/> resolved once at snapshot time. Value equality
-/// (texture by SRV pointer) is the batching key: the immediate layer produces batchable draws without allocating
-/// Material records per call, keeping the steady-state path allocation-free.
-/// </summary>
+// The flattened, GPU-facing form of a Material resolved once at snapshot time. Value equality (texture by SRV
+// pointer) is the batching key: the immediate layer produces batchable draws without allocating Material records per
+// call, keeping the steady-state path allocation-free.
 internal struct MaterialData : IEquatable<MaterialData>
 {
     public MaterialDomain Domain;
@@ -73,7 +71,7 @@ internal struct MaterialData : IEquatable<MaterialData>
         return true;
     }
 
-    /// <summary>Resolves an optional auxiliary texture; returns false when it exists but has been disposed.</summary>
+    // Resolves an optional auxiliary texture; returns false when it exists but has been disposed.
     private static bool TryResolveAux(Assets.GpuTexture? texture, out nint srv)
     {
         srv = 0;

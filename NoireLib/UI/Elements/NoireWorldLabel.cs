@@ -10,17 +10,6 @@ namespace NoireLib.UI;
 /// A label pinned to a place in the world rather than to the screen. It is projected every frame, fades and
 /// shrinks with distance, and behaves like a quest marker once the point it follows leaves the screen.
 /// </summary>
-/// <example>
-/// <code>
-/// new NoireWorldLabel("target")
-/// {
-///     Text = "Target",
-///     WorldOffset = new Vector3(0f, 2.2f, 0f),
-///     OffScreen = WorldLabelOffScreen.EdgeArrow,
-/// }
-/// .Follow(() => NoireService.TargetManager.Target);
-/// </code>
-/// </example>
 [NoireFacadeFactory]
 public sealed class NoireWorldLabel : NoireDrawable
 {
@@ -47,7 +36,7 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>
     /// Creates a world label and starts tracking immediately.
     /// </summary>
-    /// <param name="id">An optional unique identifier. Required to persist anything about the label.</param>
+    /// <param name="id">An optional unique identifier.</param>
     public NoireWorldLabel(string? id = null) : base(id, "WorldLabel")
     {
         if (NoireService.IsInitialized())
@@ -71,25 +60,24 @@ public sealed class NoireWorldLabel : NoireDrawable
     public Vector3 WorldPosition { get; set; }
 
     /// <summary>
-    /// An offset added to the world position, in yalms. <c>(0, 2.2, 0)</c> is roughly head height on a player.
+    /// An offset added to the world position, in yalms.
     /// </summary>
     public Vector3 WorldOffset { get; set; }
 
     /// <summary>
     /// Where to read the world position from each tick, or <see langword="null"/> to use <see cref="WorldPosition"/>.
-    /// Returning <see langword="null"/> hides the label.<br/>
-    /// Invoked on the framework thread, so it may read game state freely.
     /// </summary>
+    /// <remarks>Invoked on the framework thread.</remarks>
     public Func<Vector3?>? PositionSource { get; set; }
 
     /// <summary>
-    /// Which game object to follow, resolved each tick. Returning <see langword="null"/> hides the label.<br/>
-    /// Invoked on the framework thread, and reduced to a position immediately.
+    /// Which game object to follow, resolved each tick.
     /// </summary>
+    /// <remarks>Invoked on the framework thread.</remarks>
     public Func<IGameObject?>? ObjectSource { get; set; }
 
     /// <summary>
-    /// Follows a game object, for example <c>() =&gt; NoireService.TargetManager.Target</c>.
+    /// Follows a game object.
     /// </summary>
     /// <param name="source">Where to find the object each tick.</param>
     /// <returns>This <see cref="NoireWorldLabel"/> instance, for chaining.</returns>
@@ -122,15 +110,14 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// <summary>The text on the label, used when no <see cref="Content"/> or <see cref="Renderer"/> is set.</summary>
     public string Text { get; set; } = string.Empty;
 
-    /// <summary>The size the text is drawn at. Defaults to <see cref="TextSize.Caption"/>.</summary>
+    /// <summary>The size the text is drawn at.</summary>
     public TextSize TextSize { get; set; } = TextSize.Caption;
 
     /// <summary>Rich content to draw instead of plain text: icons, key caps, images, live values.</summary>
     public NoireContent? Content { get; set; }
 
     /// <summary>
-    /// Draws the body of the label yourself, which is how a gauge, a bar or a button ends up on a world marker.
-    /// Takes precedence over <see cref="Content"/> and <see cref="Text"/>.
+    /// Draws the body of the label yourself, taking precedence over <see cref="Content"/> and <see cref="Text"/>.
     /// </summary>
     public Action? Renderer { get; set; }
 
@@ -138,13 +125,12 @@ public sealed class NoireWorldLabel : NoireDrawable
     public Vector4? TextColor { get; set; }
 
     /// <summary>
-    /// The plate colour behind the label. When <see langword="null"/>, the theme's surface.<br/>
-    /// Its alpha is scaled by <see cref="BackgroundOpacity"/>.
+    /// The plate colour behind the label. When <see langword="null"/>, the theme's surface.
     /// </summary>
     public Vector4? Background { get; set; }
 
     /// <summary>
-    /// How opaque the plate behind the label is, from 0 for none at all to 1 for the colour as given. Defaults to 0.8.
+    /// How opaque the plate behind the label is, from 0 for none at all to 1 for the colour as given.
     /// </summary>
     public float BackgroundOpacity { get; set; } = 0.8f;
 
@@ -155,7 +141,7 @@ public sealed class NoireWorldLabel : NoireDrawable
     public float Rounding { get; set; } = 3f;
 
     /// <summary>
-    /// Which point of the label sits on the world point. Defaults to the bottom centre, so the label stands above it.
+    /// Which point of the label sits on the world point.
     /// </summary>
     public Vector2 Pivot { get; set; } = new(0.5f, 1f);
 
@@ -171,39 +157,35 @@ public sealed class NoireWorldLabel : NoireDrawable
     /// </summary>
     public float MaxDistance { get; set; }
 
-    /// <summary>How far away the label starts fading out, in yalms. See <see cref="MaxDistance"/>.</summary>
+    /// <summary>How far away the label starts fading out, in yalms.</summary>
     public float FadeDistance { get; set; }
 
     /// <summary>
-    /// A fixed multiplier on the whole label: the text, the padding, the rounding and the arrow together. Defaults to 1.<br/>
-    /// Text is drawn with a font built at the size this works out to, so each distinct value a plugin uses is a distinct
-    /// font size. A few are free; a value that varies per label across dozens of labels is not.
+    /// A fixed multiplier on the whole label: the text, the padding, the rounding and the arrow together.
     /// </summary>
     public float BaseScale { get; set; } = 1f;
 
-    /// <summary>Whether the label shrinks with distance. Off by default. See <see cref="Scaling"/>.</summary>
+    /// <summary>Whether the label shrinks with distance.</summary>
     public bool ScaleWithDistance { get; set; }
 
     /// <summary>
-    /// How the distance is turned into a size. Defaults to <see cref="WorldLabelScaling.Perspective"/>.
+    /// How the distance is turned into a size.
     /// </summary>
     public WorldLabelScaling Scaling { get; set; } = WorldLabelScaling.Perspective;
 
     /// <summary>
-    /// The distance at which a scaling label is drawn at its authored size, in yalms.
-    /// Used by <see cref="WorldLabelScaling.Perspective"/>.
+    /// The distance at which a scaling label is drawn at its authored size, in yalms, used by
+    /// <see cref="WorldLabelScaling.Perspective"/>.
     /// </summary>
     public float ScaleReferenceDistance { get; set; } = 20f;
 
     /// <summary>
-    /// How far away the label starts shrinking, in yalms. At or below it the label is at <see cref="MaxScale"/>.
-    /// Used by <see cref="WorldLabelScaling.Ramp"/>.
+    /// How far away the label starts shrinking, in yalms, used by <see cref="WorldLabelScaling.Ramp"/>.
     /// </summary>
     public float ShrinkFromDistance { get; set; } = 10f;
 
     /// <summary>
-    /// How far away the label has finished shrinking, in yalms. At or beyond it the label is at <see cref="MinScale"/>.
-    /// Used by <see cref="WorldLabelScaling.Ramp"/>.
+    /// How far away the label has finished shrinking, in yalms, used by <see cref="WorldLabelScaling.Ramp"/>.
     /// </summary>
     public float ShrinkToDistance { get; set; } = 60f;
 
@@ -215,9 +197,7 @@ public sealed class NoireWorldLabel : NoireDrawable
 
     /// <summary>
     /// The steps the distance scale is rounded to, so the label takes a few sharp sizes rather than every size between
-    /// its bounds. Zero scales smoothly instead.<br/>
-    /// Each step costs a distinct font size. The default spans <see cref="MinScale"/> to <see cref="MaxScale"/> in
-    /// four steps.
+    /// its bounds. Zero scales smoothly instead.
     /// </summary>
     public float ScaleStep { get; set; } = 0.25f;
 
@@ -225,12 +205,11 @@ public sealed class NoireWorldLabel : NoireDrawable
 
     #region Off screen
 
-    /// <summary>What the label does once its world point leaves the screen. Defaults to hiding.</summary>
+    /// <summary>What the label does once its world point leaves the screen.</summary>
     public WorldLabelOffScreen OffScreen { get; set; } = WorldLabelOffScreen.Hide;
 
     /// <summary>
-    /// How far a pinned label stays clear of the screen edges, in pixels at 100%. An edge arrow is given its own room
-    /// on top of this, so turning it on never pushes it off the edge the label was kept clear of.
+    /// How far a pinned label stays clear of the screen edges, in pixels at 100%.
     /// </summary>
     public float EdgeMargin { get; set; } = 24f;
 
@@ -248,16 +227,15 @@ public sealed class NoireWorldLabel : NoireDrawable
     #region Interaction and state
 
     /// <summary>
-    /// What to do when the label is clicked. While it is <see langword="null"/> the label takes no input at all and
-    /// clicks pass straight through to the game.
+    /// What to do when the label is clicked. While it is <see langword="null"/> the label takes no input at all.
     /// </summary>
     public Action? OnClick { get; set; }
 
-    /// <summary>A tooltip shown on hover. Setting one makes the label take the mouse, like <see cref="OnClick"/>.</summary>
+    /// <summary>A tooltip shown on hover. Setting one makes the label take the mouse.</summary>
     public string? Tooltip { get; set; }
 
     /// <summary>
-    /// Whether the label is kept in front of every other window, for clicks as well as for drawing. Off by default.
+    /// Whether the label is kept in front of every other window, for clicks as well as for drawing.
     /// </summary>
     public bool AlwaysOnTop { get; set; }
 
@@ -282,10 +260,6 @@ public sealed class NoireWorldLabel : NoireDrawable
 
     #endregion
 
-    /// <summary>
-    /// Reads what the label follows and reduces it to a position and a distance, once per game tick.
-    /// </summary>
-    /// <param name="framework">The framework raising the update.</param>
     private void OnFrameworkUpdate(Dalamud.Plugin.Services.IFramework framework)
     {
         if (IsDisposed)
@@ -314,10 +288,7 @@ public sealed class NoireWorldLabel : NoireDrawable
         }
     }
 
-    /// <summary>
-    /// Works out the world position from whichever source was configured.
-    /// </summary>
-    /// <returns>The position, or <see langword="null"/> when there is nothing to follow.</returns>
+    // Returns null when there is nothing to follow.
     private Vector3? ResolveTrackedPosition()
     {
         if (ObjectSource != null)
@@ -398,13 +369,7 @@ public sealed class NoireWorldLabel : NoireDrawable
             DrawEdgeArrow(pinned, direction, alpha);
     }
 
-    /// <summary>
-    /// Draws the label itself, as an auto-sized window so the plate is exactly as wide as what is on it.
-    /// </summary>
-    /// <param name="position">Where the label goes, in screen pixels.</param>
-    /// <param name="pivot">Which point of the label sits on that position.</param>
-    /// <param name="alpha">The distance fade to draw at.</param>
-    /// <param name="distance">The distance to the world point, for scaling.</param>
+    // Drawn as an auto-sized window so the plate is exactly as wide as what is on it.
     private void DrawPlate(Vector2 position, Vector2 pivot, float alpha, float distance)
     {
         var theme = NoireTheme.Current;
@@ -463,11 +428,6 @@ public sealed class NoireWorldLabel : NoireDrawable
         ImGui.End();
     }
 
-    /// <summary>
-    /// Works out how large the label is drawn, from its fixed size and the distance to what it follows.
-    /// </summary>
-    /// <param name="distance">The distance to the world point, in yalms.</param>
-    /// <returns>The multiplier the whole label is drawn at.</returns>
     private float ResolveScale(float distance)
     {
         if (!ScaleWithDistance)
@@ -480,10 +440,6 @@ public sealed class NoireWorldLabel : NoireDrawable
         return BaseScale * UiWorldProjection.QuantizeScale(withDistance, ScaleStep);
     }
 
-    /// <summary>
-    /// Draws whatever the label carries: a custom body, rich content, or the plain text.
-    /// </summary>
-    /// <param name="theme">The palette in force.</param>
     private void DrawBody(NoireTheme theme)
     {
         if (Renderer != null)
@@ -502,9 +458,6 @@ public sealed class NoireWorldLabel : NoireDrawable
         ImGui.TextUnformatted(Text);
     }
 
-    /// <summary>
-    /// Handles hovering and clicking for a label that has been given a reason to take the mouse.
-    /// </summary>
     private void HandleInput()
     {
         if (!ImGui.IsWindowHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem))
@@ -517,12 +470,6 @@ public sealed class NoireWorldLabel : NoireDrawable
             OnClick();
     }
 
-    /// <summary>
-    /// Draws the arrow that points off screen toward the world point, the way a quest marker does.
-    /// </summary>
-    /// <param name="pinned">Where the label ended up, at its centre.</param>
-    /// <param name="direction">The direction the label was pinned along.</param>
-    /// <param name="alpha">The distance fade to draw at.</param>
     private void DrawEdgeArrow(Vector2 pinned, Vector2 direction, float alpha)
     {
         var angle = UiWorldProjection.ArrowAngle(direction);

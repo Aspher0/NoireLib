@@ -5,20 +5,15 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// How a badge looks: its colour, its size, where it sits on the element it marks, and how it caps a large count.
+/// Every measurement is a logical pixel at 100%. See <see cref="NoireUI.Scale"/>.
 /// </summary>
-/// <remarks>
-/// Every measurement is a logical pixel at 100%, like the rest of NoireUI. See <see cref="NoireUI.Scale"/>.
-/// </remarks>
 public sealed class BadgeStyle
 {
     /// <summary>
     /// A multiplier on the whole badge: its text, its padding, its minimum size, its dot, its outline and its offset
-    /// from the anchor. Defaults to 1.
+    /// from the anchor; defaults to 1.
     /// </summary>
-    /// <remarks>
-    /// Multiplies with <see cref="NoireUI.Scale"/> rather than replacing it. Each distinct value in use costs a
-    /// distinct font size, so a value that varies per badge across dozens of them is expensive.
-    /// </remarks>
+    /// <remarks>Each distinct value in use costs a distinct font size.</remarks>
     public float Scale { get; set; } = 1f;
 
     /// <summary>The badge colour. When <see langword="null"/>, the theme's danger colour.</summary>
@@ -40,13 +35,12 @@ public sealed class BadgeStyle
     public float MinSize { get; set; } = 15f;
 
     /// <summary>
-    /// The largest count shown as itself. Anything above is drawn as that number and a plus. Defaults to 99.
+    /// The largest count shown as itself, anything above drawn as that number and a plus; defaults to 99.
     /// </summary>
-    /// <remarks>Zero or less shows every count in full, however wide it makes the badge.</remarks>
     public int MaxCount { get; set; } = 99;
 
     /// <summary>
-    /// Where the badge sits relative to the element, as a fraction of it. Defaults to the top right corner.
+    /// Where the badge sits relative to the element, as a fraction of it; defaults to the top right corner.
     /// </summary>
     public Vector2 Anchor { get; set; } = new(1f, 0f);
 
@@ -54,8 +48,7 @@ public sealed class BadgeStyle
     public Vector2 Offset { get; set; } = new(-2f, 2f);
 
     /// <summary>
-    /// A ring drawn around the badge in the surrounding colour, at 100%, so it reads against a busy element.
-    /// Defaults to 1.5. Zero draws no ring.
+    /// A ring drawn around the badge in the surrounding colour, at 100%; defaults to 1.5, and zero draws no ring.
     /// </summary>
     public float OutlineThickness { get; set; } = 1.5f;
 
@@ -63,8 +56,7 @@ public sealed class BadgeStyle
     public Vector4? OutlineColor { get; set; }
 
     /// <summary>
-    /// Whether the badge pulses gently to catch the eye. Off by default, and ignored under
-    /// <see cref="NoireUI.ReducedMotion"/>.
+    /// Whether the badge pulses gently, off by default and ignored under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     public bool Pulse { get; set; }
 
@@ -75,10 +67,7 @@ public sealed class BadgeStyle
     /// Replaces the badge's own painting entirely, for the count and the dot both, while NoireUI keeps the placement
     /// and the measurement.
     /// </summary>
-    /// <remarks>
-    /// The count is not drawn when this is set; the parts are on <see cref="UiBadgeDraw"/>, and
-    /// <see cref="NoireBadge.CountSize"/> still answers for the space.
-    /// </remarks>
+    /// <remarks>The count is not drawn when this is set; the parts are on <see cref="UiBadgeDraw"/>.</remarks>
     public Action<UiBadgeDraw>? CustomDraw { get; set; }
 
     /// <summary>Renders a count the way it will be shown, applying <see cref="MaxCount"/>.</summary>
@@ -86,19 +75,9 @@ public sealed class BadgeStyle
     /// <returns>The text on the badge.</returns>
     public string FormatCount(int count) => UiValueText.Count(count, MaxCount);
 
-    /// <summary>
-    /// The size the badge's text is asked for, in logical pixels, once <see cref="Scale"/> is applied.
-    /// </summary>
-    /// <remarks>Left logical because <see cref="NoireText"/> applies the interface scale itself.</remarks>
-    /// <returns>The text size to draw at.</returns>
     internal float ResolveTextSize() => MathF.Max(1f, TextSizePx * Scale);
 
-    /// <summary>
-    /// Converts one of this style's logical measurements into real pixels, applying <see cref="Scale"/> and the user's
-    /// interface scale together.
-    /// </summary>
-    /// <param name="logical">The value at 100%, before <see cref="Scale"/>.</param>
-    /// <returns>The value in real pixels.</returns>
+    // Takes a value at 100%, before Scale, and returns real pixels.
     internal float Sized(float logical) => NoireUI.Scaled(logical * Scale);
 
     /// <summary>Creates a copy of this style.</summary>

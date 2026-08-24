@@ -6,8 +6,8 @@ namespace NoireLib.UI;
 
 /// <summary>
 /// Everything a <see cref="SplitterOptions.CustomDraw"/> hook needs to paint a splitter's divider itself: where the
-/// handle is, what state it is in, and the color NoireUI would have used.<br/>
-/// The hook is called with the handle already submitted and the drag already applied.
+/// handle is, what state it is in, and the color NoireUI would have used. The hook is called with the handle already
+/// submitted and the drag already applied.
 /// </summary>
 /// <param name="DrawList">The draw list to paint into.</param>
 /// <param name="Min">The top left corner of the grab handle.</param>
@@ -30,14 +30,10 @@ public readonly record struct UiSplitterDraw(
     /// <summary>The centre of the grab handle, in screen coordinates.</summary>
     public Vector2 Center => (Min + Max) * 0.5f;
 
-    /// <summary>
-    /// Draws the divider NoireUI would have drawn: a line down the middle of the handle, in <see cref="Color"/>.
-    /// </summary>
+    /// <summary>Draws a line down the middle of the handle, in <see cref="Color"/>.</summary>
     public void DrawLine() => DrawLine(Color);
 
-    /// <summary>
-    /// Draws the divider NoireUI would have drawn, in a color of your choosing.
-    /// </summary>
+    /// <summary>Draws the divider NoireUI would have drawn, in a color of your choosing.</summary>
     /// <param name="color">The color to draw it in.</param>
     public void DrawLine(Vector4 color)
     {
