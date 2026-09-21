@@ -1,4 +1,5 @@
 using NoireLib.Draw3D.Geometry;
+using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -9,26 +10,19 @@ namespace NoireLib.Draw3D.Assets;
 
 /// <summary>One drawable piece of a game model: its geometry and the material path it asks for.</summary>
 /// <param name="Geometry">Decoded vertices and indices, ready for <see cref="Scene.Scene3D.Spawn(MeshData, Materials.Material, Vector3, string, bool)"/>.</param>
-/// <param name="MaterialPath">The material this piece references; character models store this relative, beginning with a slash.</param>
+/// <param name="MaterialPath">The material this piece references. Character models store this relative, beginning with a slash.</param>
 public readonly record struct GameModelMesh(MeshData Geometry, string MaterialPath);
 
 /// <summary>
-/// Loads models out of the game's own archives and decodes them into renderer geometry, by game path (for
-/// example <c>bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl</c>); nothing is spawned in the game
-/// and no game function is called, so a loaded model is inert geometry that exists only in this renderer.<br/>
-/// <b>Vertex colors are not imported by default</b>: the game stores shader data there (blend and wetness
-/// masks) rather than albedo, so applying it as a tint paints models in false colors - pass
-/// <c>importVertexColors: true</c> only for assets known to author real colors.<br/>
-/// Materials are not resolved yet - each piece reports the path it wants and is drawn with whatever material
-/// the caller supplies; use <see cref="GameModelFile"/> directly for full access to levels of detail, vertex
-/// declarations and per-mesh buffer layout.
+/// Loads models from the game's archives into renderer-only geometry.<br/>
+/// Vertex colors hold shader data and are not imported by default. Materials are not resolved. See <see cref="GameMaterialLoader"/>.
 /// </summary>
 public static class GameModelLoader
 {
     /// <summary>Loads and decodes a model from the game archives.</summary>
     /// <param name="gamePath">Archive path of the model, such as <c>bgcommon/.../fun_b0_m0001.mdl</c>.</param>
     /// <param name="lod">Level of detail to decode, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply the model's vertex color channel; off by default, since it holds shader data rather than albedo.</param>
+    /// <param name="importVertexColors">Whether to apply the vertex color channel.</param>
     /// <returns>One entry per mesh in the requested level of detail, or an empty array if the file does not exist.</returns>
     public static GameModelMesh[] Load(string gamePath, int lod = 0, bool importVertexColors = false)
     {
@@ -38,15 +32,19 @@ public static class GameModelLoader
         return file is null ? [] : Decode(file, lod, importVertexColors);
     }
 
-    /// <inheritdoc cref="Load"/>
+    /// <summary>Loads and decodes a model from the game archives off the calling thread.</summary>
+    /// <param name="gamePath">Archive path of the model.</param>
+    /// <param name="lod">Level of detail to decode, 0 being the most detailed.</param>
+    /// <param name="importVertexColors">Whether to apply the model's vertex color channel.</param>
     /// <param name="ct">Optional cancellation token.</param>
+    /// <returns>One entry per mesh, or an empty array if the file does not exist.</returns>
     public static Task<GameModelMesh[]> LoadAsync(string gamePath, int lod = 0, bool importVertexColors = false, CancellationToken ct = default)
         => Task.Run(() => Load(gamePath, lod, importVertexColors), ct);
 
     /// <summary>Decodes one level of detail of an already-parsed model.</summary>
     /// <param name="file">The parsed model.</param>
     /// <param name="lod">Level of detail to decode, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply the model's vertex color channel; off by default, since it holds shader data rather than albedo.</param>
+    /// <param name="importVertexColors">Whether to apply the vertex color channel.</param>
     public static GameModelMesh[] Decode(GameModelFile file, int lod = 0, bool importVertexColors = false)
     {
         ArgumentNullException.ThrowIfNull(file);
@@ -84,7 +82,6 @@ public static class GameModelLoader
         GameVertexElement[] declaration,
         bool importVertexColors)
     {
-        var data = file.Data;
         var vertices = new Vertex3D[mesh.VertexCount];
 
         GameVertexElement? position = null, normal = null, uv = null, color = null, tangentFrame = null;
@@ -105,19 +102,15 @@ public static class GameModelLoader
 
         for (var v = 0; v < mesh.VertexCount; v++)
         {
-            var p = ReadElement(data, level, mesh, position.Value, v);
-            var n = normal is null ? new Vector4(0f, 1f, 0f, 0f) : ReadElement(data, level, mesh, normal.Value, v);
-            var t = uv is null ? Vector4.Zero : ReadElement(data, level, mesh, uv.Value, v);
+            var p = file.ReadVertexElement(level, mesh, position.Value, v);
+            var n = normal is null ? new Vector4(0f, 1f, 0f, 0f) : file.ReadVertexElement(level, mesh, normal.Value, v);
+            var t = uv is null ? Vector4.Zero : file.ReadVertexElement(level, mesh, uv.Value, v);
 
-            // The position's fourth component is baked per-vertex occlusion: the game's own background
-            // shaders write it into the G-buffer's occlusion channel (multiplied by per-instance sky
-            // visibility), darkening carved recesses. It rides in the color's alpha, which background
-            // models leave free since they declare no color element.
+            // Position w is baked occlusion. It rides in color alpha, which background models leave free.
             var c = importVertexColors && color is not null
-                ? ReadElement(data, level, mesh, color.Value, v)
+                ? file.ReadVertexElement(level, mesh, color.Value, v)
                 : new Vector4(1f, 1f, 1f, OcclusionFrom(position.Value.Type, p.W));
 
-            // Positions and normals are taken as authored; the winding is handled separately below.
             var vertexNormal = Vector3.Normalize(new Vector3(n.X, n.Y, n.Z));
 
             vertices[v] = new Vertex3D(
@@ -127,31 +120,20 @@ public static class GameModelLoader
                 c,
                 tangentFrame is null
                     ? default
-                    : DecodeTangentFrame(ReadElement(data, level, mesh, tangentFrame.Value, v), vertexNormal));
+                    : DecodeTangentFrame(file.ReadVertexElement(level, mesh, tangentFrame.Value, v), vertexNormal));
         }
 
-        var indexBase = (int)level.IndexDataOffset + ((int)mesh.StartIndex * sizeof(ushort));
-        var indices = new ushort[mesh.IndexCount];
-        for (var i = 0; i < mesh.IndexCount; i++)
-            indices[i] = BitConverter.ToUInt16(data, indexBase + (i * sizeof(ushort)));
+        var indices = file.ReadIndices(level, mesh);
 
-        // The game authors its triangles counter-clockwise-front and this renderer is clockwise-front, so the
-        // winding is reversed here. Without it the model renders inside out and its near faces are culled away.
+        // The game is counter-clockwise-front and this renderer clockwise-front.
         for (var i = 0; i + 2 < indices.Length; i += 3)
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
 
-        // Applied last, and does nothing unless a caller has asked for it. Both loaders run the same options
-        // so a file authored in an unusual convention is corrected the same way whichever path imports it.
         NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, indices);
         return new MeshData(vertices, indices);
     }
 
-    // Turns the model's stored tangent-frame element into the tangent this renderer's vertices carry: the game stores
-    // the bitangent packed into normalized bytes (xyz as v*2-1) with the handedness flag in w, and the tangent is
-    // reconstructed as cross(bitangent, normal) * h (the inversion of the standard frame relation bitangent =
-    // cross(normal, tangent) * h, which the shader rebuilds so the round trip lands on the authored frame); a
-    // degenerate stored vector returns zero, which the shaders treat as "no authored frame" and answer with the
-    // derivative fallback.
+    // Bitangent as normalized bytes (v*2-1) with handedness in w. Tangent = cross(bitangent, normal) * h. Zero means "no authored frame".
     internal static Vector4 DecodeTangentFrame(Vector4 packed, Vector3 normal)
     {
         var stored = new Vector3((packed.X * 2f) - 1f, (packed.Y * 2f) - 1f, (packed.Z * 2f) - 1f);
@@ -170,45 +152,10 @@ public static class GameModelLoader
         return new Vector4(tangent.X, tangent.Y, tangent.Z, handedness);
     }
 
-    // The baked occlusion a position element carries in its fourth component, or 1 (fully open) for a format that
-    // stores no fourth component - the input assembler pads those to 1 for the game's own shaders too, so both
-    // readings match what the game renders.
+    // The input assembler pads a missing fourth component to 1.
     private static float OcclusionFrom(GameVertexType type, float w) => type switch
     {
         GameVertexType.Single4 or GameVertexType.Half4 => Math.Clamp(w, 0f, 1f),
         _ => 1f,
     };
-
-    private static Vector4 ReadElement(byte[] data, GameModelLod level, GameModelMeshInfo mesh, GameVertexElement element, int vertex)
-    {
-        var stream = element.Stream;
-        var at = (int)level.VertexDataOffset
-                 + (int)mesh.VertexBufferOffset[stream]
-                 + (vertex * mesh.VertexBufferStride[stream])
-                 + element.Offset;
-
-        return element.Type switch
-        {
-            GameVertexType.Single1 => new Vector4(F(data, at), 0f, 0f, 0f),
-            GameVertexType.Single2 => new Vector4(F(data, at), F(data, at + 4), 0f, 0f),
-            GameVertexType.Single3 => new Vector4(F(data, at), F(data, at + 4), F(data, at + 8), 0f),
-            GameVertexType.Single4 => new Vector4(F(data, at), F(data, at + 4), F(data, at + 8), F(data, at + 12)),
-            GameVertexType.Half2 => new Vector4(H(data, at), H(data, at + 2), 0f, 0f),
-            GameVertexType.Half4 => new Vector4(H(data, at), H(data, at + 2), H(data, at + 4), H(data, at + 6)),
-            GameVertexType.UByte4 => new Vector4(data[at], data[at + 1], data[at + 2], data[at + 3]),
-            GameVertexType.NByte4 => new Vector4(data[at] / 255f, data[at + 1] / 255f, data[at + 2] / 255f, data[at + 3] / 255f),
-            GameVertexType.Short2 => new Vector4(S(data, at), S(data, at + 2), 0f, 0f),
-            GameVertexType.Short4 => new Vector4(S(data, at), S(data, at + 2), S(data, at + 4), S(data, at + 6)),
-            GameVertexType.NShort2 => new Vector4(S(data, at) / 32767f, S(data, at + 2) / 32767f, 0f, 0f),
-            GameVertexType.NShort4 => new Vector4(S(data, at) / 32767f, S(data, at + 2) / 32767f, S(data, at + 4) / 32767f, S(data, at + 6) / 32767f),
-            GameVertexType.UShort2 => new Vector4(U(data, at), U(data, at + 2), 0f, 0f),
-            GameVertexType.UShort4 => new Vector4(U(data, at), U(data, at + 2), U(data, at + 4), U(data, at + 6)),
-            _ => Vector4.Zero,
-        };
-
-        static float F(byte[] d, int at) => BitConverter.ToSingle(d, at);
-        static float H(byte[] d, int at) => (float)BitConverter.ToHalf(d, at);
-        static float S(byte[] d, int at) => BitConverter.ToInt16(d, at);
-        static float U(byte[] d, int at) => BitConverter.ToUInt16(d, at);
-    }
 }

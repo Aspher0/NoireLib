@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
     <PropertyGroup>
         <Version>2.0.1.0</Version>
@@ -21,12 +21,10 @@
         <Configurations>Debug;Release;PublicRelease</Configurations>
     </PropertyGroup>
     
-    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-      <DebugType>none</DebugType>
-
+    <PropertyGroup Condition="'$(Configuration)'=='Debug'">
       <Optimize>true</Optimize>
     </PropertyGroup>
-    
+
     <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
       <DebugType>none</DebugType>
     </PropertyGroup>
@@ -50,8 +48,16 @@
         
         <None Include="README.md" />
         <None Include="Automation\Actions\README.md" />
+        <None Include="Automation\Movement\README.md" />
+        <None Include="Automation\Movement\Navmesh\README.md" />
+        <None Include="Automation\Navigation\README.md" />
+        <None Include="Automation\Scenario\README.md" />
+        <None Include="Hooking\README.md" />
         <None Include="database\README.md" />
         <None Include="ipc\README.md" />
+        <None Include="Remote\README.md" />
+        <None Include="Remote\PROTOCOL.md" />
+        <None Include="Websocket\README.md" />
         <None Include="Configuration\README.md" />
         <None Include="Helpers\AddonHelper\README.md" />
         <None Include="Helpers\ShareCode\README.md" />
@@ -59,6 +65,12 @@
         <None Include="Helpers\GameData\README.md" />
         <None Include="Helpers\FuzzyMatcher\README.md" />
         <None Include="Helpers\Geometry\README.md" />
+        <None Include="Helpers\ContextMenu\README.md" />
+        <None Include="Helpers\DalamudPlugins\README.md" />
+        <None Include="Helpers\DevBar\README.md" />
+        <None Include="Helpers\Dtr\README.md" />
+        <None Include="Helpers\PluginInterop\README.md" />
+        <None Include="Helpers\TitleScreen\README.md" />
         <None Include="Modules\ChangelogManager\README.md" />
         <None Include="Modules\EventBus\README.md" />
         <None Include="Modules\ObservedStore\README.md" />
@@ -79,6 +91,8 @@
 
     <ItemGroup>
         <EmbeddedResource Include="Draw3D\Shaders\*.hlsl*" />
+        <EmbeddedResource Include="UI\Icons\Assets\*.png" LogicalName="NoireLib.UI.Icons.%(Filename)%(Extension)" />
+        <None Include="UI\Icons\Assets\ATTRIBUTION.md" />
         <EmbeddedResource Include="Automation\Navigation\Data\navdata.json" />
     </ItemGroup>
 
@@ -101,6 +115,7 @@
 
     <ItemGroup>
         <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+        <ProjectReference Include="..\NoireLib.Client\NoireLib.Client.csproj" />
     </ItemGroup>
 
     <ItemGroup>
@@ -110,6 +125,7 @@
     <ItemGroup>
         <PackageReference Include="BCrypt.Net-Next" Version="4.2.0" />
         <PackageReference Include="Castle.Core" Version="5.2.1" />
+        <PackageReference Include="Clipper2" Version="2.0.0" />
         <PackageReference Include="Konscious.Security.Cryptography.Argon2" Version="1.3.1" />
         <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
         <PackageReference Include="SharpGLTF.Core" Version="1.0.6" />
@@ -118,6 +134,17 @@
 
     <ItemGroup>
       <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.5" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavCompactField.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavContourBuilder.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavDropLinks.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavGapBridge.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavHeightfield.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavHeightfieldFilters.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavRegionBuilder.cs" />
+      <Compile Remove="Automation\Movement\Navmesh\Build\Internal\NavSolidVolumes.cs" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(NoireExcludeAutomation)'=='true'">

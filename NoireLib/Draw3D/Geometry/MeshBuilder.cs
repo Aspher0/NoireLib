@@ -5,23 +5,17 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Geometry;
 
 /// <summary>
-/// Procedural mesh catalog: every static builder returns CPU data that is unit-sized around the origin, +Y up,
-/// clockwise-front winding, outward normals, UVs in [0,1] - scale and orient via the scene node. Vertex order is
-/// deterministic per shape so tests can assert exact counts and windings.<br/>
-/// The <b>instance form</b> (<c>new MeshBuilder()</c>) is an appendable buffer: mix primitives and hand-built
-/// geometry into a single mesh with <see cref="AddBox(Vector3?, Vector3)"/> / <see cref="Add(Vertex3D[], ushort[], Vector3)"/>
-/// etc., then read <see cref="ToMeshData"/> (or hand the builder straight to <c>scene.Spawn</c>).
+/// Procedural meshes, plus an instance form that merges primitives into one mesh.<br/>
+/// Centered on the origin, +Y up, clockwise-front, outward normals, UVs in [0,1].
 /// </summary>
 public class MeshBuilder
 {
     private static readonly Vector4 White = new(1f, 1f, 1f, 1f);
 
-    // ---------------------------------------------------------------- appendable instance form
-
     private readonly List<Vertex3D> instanceVerts = new();
     private readonly List<ushort> instanceIndices = new();
 
-    /// <summary>Creates an empty appendable builder; add primitives / raw geometry, then read <see cref="ToMeshData"/>.</summary>
+    /// <summary>Creates an empty appendable builder.</summary>
     public MeshBuilder() { }
 
     /// <summary>Number of vertices accumulated so far in the instance buffer.</summary>
@@ -30,13 +24,13 @@ public class MeshBuilder
     /// <summary>Number of indices accumulated so far in the instance buffer.</summary>
     public int IndexCount => instanceIndices.Count;
 
-    /// <summary>Appends a box centered on <paramref name="offset"/>; fluent.</summary>
-    /// <param name="size">Full extents per axis; null = unit cube.</param>
+    /// <summary>Appends a box centered on <paramref name="offset"/>. Fluent.</summary>
+    /// <param name="size">Full extents per axis, or null for a unit cube.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     public MeshBuilder AddBox(Vector3? size = null, Vector3 offset = default)
         => Append(offset, (v, i) => WriteBox(v, i, size ?? Vector3.One));
 
-    /// <summary>Appends a UV sphere centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a UV sphere centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Sphere radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     /// <param name="slices">Longitudinal segments (>= 3).</param>
@@ -44,21 +38,21 @@ public class MeshBuilder
     public MeshBuilder AddSphere(float radius = 0.5f, Vector3 offset = default, int slices = 24, int stacks = 16)
         => Append(offset, (v, i) => WriteSphere(v, i, radius, slices, stacks));
 
-    /// <summary>Appends a flat quad on the XZ plane centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a flat quad on the XZ plane centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="width">Extent along X.</param>
     /// <param name="depth">Extent along Z.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     public MeshBuilder AddQuad(float width = 1f, float depth = 1f, Vector3 offset = default)
         => Append(offset, (v, i) => WriteQuad(v, i, width, depth));
 
-    /// <summary>Appends a disc on the XZ plane centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a disc on the XZ plane centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Disc radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     /// <param name="segments">Number of outer segments (>= 3).</param>
     public MeshBuilder AddDisc(float radius = 0.5f, Vector3 offset = default, int segments = 48)
         => Append(offset, (v, i) => WriteDisc(v, i, radius, segments));
 
-    /// <summary>Appends a cylinder along Y centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a cylinder along Y centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Cylinder radius.</param>
     /// <param name="height">Cylinder height.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
@@ -67,7 +61,7 @@ public class MeshBuilder
     public MeshBuilder AddCylinder(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool caps = true)
         => Append(offset, (v, i) => WriteCylinder(v, i, radius, height, segments, caps));
 
-    /// <summary>Appends a cone along Y centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a cone along Y centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="radius">Base radius.</param>
     /// <param name="height">Cone height.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
@@ -76,7 +70,7 @@ public class MeshBuilder
     public MeshBuilder AddCone(float radius = 0.5f, float height = 1f, Vector3 offset = default, int segments = 24, bool cap = true)
         => Append(offset, (v, i) => WriteCone(v, i, radius, height, segments, cap));
 
-    /// <summary>Appends a torus around the Y axis centered on <paramref name="offset"/>; fluent.</summary>
+    /// <summary>Appends a torus around the Y axis centered on <paramref name="offset"/>. Fluent.</summary>
     /// <param name="majorRadius">Distance from the origin to the tube center.</param>
     /// <param name="minorRadius">Tube radius.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
@@ -85,9 +79,9 @@ public class MeshBuilder
     public MeshBuilder AddTorus(float majorRadius, float minorRadius, Vector3 offset = default, int segMajor = 48, int segMinor = 16)
         => Append(offset, (v, i) => WriteTorus(v, i, majorRadius, minorRadius, segMajor, segMinor));
 
-    /// <summary>Appends arbitrary triangle-list geometry, rebasing its indices onto the current buffer; fluent.</summary>
+    /// <summary>Appends arbitrary triangle-list geometry, rebasing its indices onto the current buffer. Fluent.</summary>
     /// <param name="vertices">Vertex array.</param>
-    /// <param name="indices">Index array (triangle list, clockwise front), relative to <paramref name="vertices"/>.</param>
+    /// <param name="indices">Clockwise-front triangle-list indices relative to <paramref name="vertices"/>.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     public MeshBuilder Add(Vertex3D[] vertices, ushort[] indices, Vector3 offset = default)
     {
@@ -108,15 +102,16 @@ public class MeshBuilder
         return this;
     }
 
-    /// <summary>Appends the output of a static builder (any <see cref="MeshData"/>), rebasing its indices; fluent.</summary>
+    /// <summary>Appends any <see cref="MeshData"/>, rebasing its indices. Fluent.</summary>
     /// <param name="data">Mesh data to append.</param>
     /// <param name="offset">World-local translation applied to the appended vertices.</param>
     public MeshBuilder Add(MeshData data, Vector3 offset = default) => Add(data.Vertices, data.Indices, offset);
 
-    /// <summary>Snapshots the accumulated geometry into an immutable <see cref="MeshData"/> (safe to keep appending afterward).</summary>
+    /// <summary>Copies the accumulated geometry into a <see cref="MeshData"/>, leaving the builder appendable.</summary>
+    /// <returns>The accumulated geometry.</returns>
     public MeshData ToMeshData() => new(instanceVerts.ToArray(), instanceIndices.ToArray());
 
-    /// <summary>Empties the instance buffer so the builder can be reused; fluent.</summary>
+    /// <summary>Empties the instance buffer so the builder can be reused. Fluent.</summary>
     public MeshBuilder Clear()
     {
         instanceVerts.Clear();
@@ -166,7 +161,7 @@ public class MeshBuilder
     }
 
     /// <summary>Builds an axis-aligned box centered on the origin (24 vertices with per-face normals / 36 indices).</summary>
-    /// <param name="size">Full extents per axis; null = unit cube.</param>
+    /// <param name="size">Full extents per axis, or null for a unit cube.</param>
     public static MeshData Box(Vector3? size = null)
     {
         var v = new List<Vertex3D>(24);
@@ -178,7 +173,7 @@ public class MeshBuilder
     internal static void WriteBox(List<Vertex3D> verts, List<ushort> indices, Vector3 size)
     {
         var h = size * 0.5f;
-        // (normal, right, up) triplets chosen so cross(right, up) == normal, which yields clockwise-front quads.
+        // cross(right, up) == normal yields clockwise-front quads.
         WriteBoxFace(verts, indices, new Vector3(+1, 0, 0), new Vector3(0, 0, -1), new Vector3(0, +1, 0), h);
         WriteBoxFace(verts, indices, new Vector3(-1, 0, 0), new Vector3(0, 0, +1), new Vector3(0, +1, 0), h);
         WriteBoxFace(verts, indices, new Vector3(0, +1, 0), new Vector3(+1, 0, 0), new Vector3(0, 0, -1), h);
@@ -201,7 +196,7 @@ public class MeshBuilder
         AddTri(indices, b, 0, 2, 3);
     }
 
-    /// <summary>Builds a flat disc on the XZ plane (triangle fan around a center vertex; segments+2 vertices / segments*3 indices).</summary>
+    /// <summary>Builds a flat disc on the XZ plane as a triangle fan (segments+2 vertices, segments*3 indices).</summary>
     /// <param name="radius">Disc radius.</param>
     /// <param name="segments">Number of outer segments (>= 3).</param>
     public static MeshData Disc(float radius = 0.5f, int segments = 48)
@@ -228,7 +223,7 @@ public class MeshBuilder
             AddTri(indices, b, 0, 1 + k, 2 + k);
     }
 
-    /// <summary>Builds a flat ring (donut) on the XZ plane (2*(segments+1) vertices / segments*6 indices).</summary>
+    /// <summary>Builds a flat ring on the XZ plane (2*(segments+1) vertices, segments*6 indices).</summary>
     /// <param name="innerRadius">Inner radius.</param>
     /// <param name="outerRadius">Outer radius.</param>
     /// <param name="segments">Number of segments (>= 3).</param>
@@ -261,7 +256,7 @@ public class MeshBuilder
         }
     }
 
-    /// <summary>Builds a flat ring slice on the XZ plane, centered on local +Z (matching the decal SDF orientation; 2*(segments+1) vertices / segments*6 indices).</summary>
+    /// <summary>Builds a flat ring slice on the XZ plane centered on local +Z like the decal SDF (2*(segments+1) vertices, segments*6 indices).</summary>
     /// <param name="halfAngleRad">Half of the slice's opening angle, in radians.</param>
     /// <param name="innerRadius">Inner radius (0 for a full pie slice).</param>
     /// <param name="outerRadius">Outer radius.</param>
@@ -281,7 +276,7 @@ public class MeshBuilder
         var n = Vector3.UnitY;
         for (int k = 0; k <= segments; k++)
         {
-            float phi = -halfAngleRad + k * (2f * halfAngleRad / segments);   // angle from +Z, increasing toward +X
+            float phi = -halfAngleRad + k * (2f * halfAngleRad / segments);   // from +Z toward +X
             var (sin, cos) = MathF.SinCos(phi);
             float u = (float)k / segments;
             verts.Add(new Vertex3D(new Vector3(sin * outerRadius, 0, cos * outerRadius), n, new Vector2(u, 0), White));
@@ -290,15 +285,14 @@ public class MeshBuilder
 
         for (int k = 0; k < segments; k++)
         {
-            // The (sin, cos) parametrization runs the opposite angular direction to Disc's (cos, sin),
-            // so the strip triangles flip to keep clockwise-front with normal +Y.
+            // Opposite to Disc's (cos, sin). The triangles flip to stay clockwise-front.
             int o0 = k * 2, i0 = k * 2 + 1, o1 = k * 2 + 2, i1 = k * 2 + 3;
             AddTri(indices, b, o1, o0, i0);
             AddTri(indices, b, o1, i0, i1);
         }
     }
 
-    /// <summary>Builds a UV sphere ((stacks+1)*(slices+1) vertices / stacks*slices*6 indices; pole quads degenerate harmlessly).</summary>
+    /// <summary>Builds a UV sphere ((stacks+1)*(slices+1) vertices, stacks*slices*6 indices, with degenerate pole quads).</summary>
     /// <param name="radius">Sphere radius.</param>
     /// <param name="slices">Longitudinal segments (>= 3).</param>
     /// <param name="stacks">Latitudinal segments (>= 2).</param>
@@ -317,7 +311,7 @@ public class MeshBuilder
         int b = verts.Count;
         for (int i = 0; i <= stacks; i++)
         {
-            float theta = MathF.PI * i / stacks;            // 0 at +Y pole
+            float theta = MathF.PI * i / stacks;            // 0 at the +Y pole
             var (st, ct) = MathF.SinCos(theta);
             for (int j = 0; j <= slices; j++)
             {
@@ -418,7 +412,7 @@ public class MeshBuilder
         int b = verts.Count;
         float hy = height * 0.5f;
         float slant = MathF.Sqrt(height * height + radius * radius);
-        // Per-segment apex vertices keep smooth radial normals around the rim.
+        // Per-segment apex vertices keep smooth rim normals.
         for (int k = 0; k <= segments; k++)
         {
             var (sin, cos) = MathF.SinCos(k * MathF.Tau / segments);
@@ -438,7 +432,7 @@ public class MeshBuilder
             WriteCap(verts, indices, radius, -hy, segments, up: false);
     }
 
-    /// <summary>Builds a 3D torus (donut) around the Y axis ((segMajor+1)*(segMinor+1) vertices / segMajor*segMinor*6 indices).</summary>
+    /// <summary>Builds a torus around the Y axis ((segMajor+1)*(segMinor+1) vertices, segMajor*segMinor*6 indices).</summary>
     /// <param name="majorRadius">Distance from the origin to the tube center.</param>
     /// <param name="minorRadius">Tube radius.</param>
     /// <param name="segMajor">Segments around the main ring (>= 3).</param>
@@ -482,7 +476,7 @@ public class MeshBuilder
         }
     }
 
-    /// <summary>Builds an arrow along +Y: shaft cylinder + cone head, base at the origin, tip at +length.</summary>
+    /// <summary>Builds an arrow along +Y from a cylinder shaft and cone head, with its base at the origin.</summary>
     /// <param name="length">Total arrow length.</param>
     /// <param name="shaftRadius">Shaft radius.</param>
     /// <param name="headRadius">Head base radius.</param>
@@ -501,7 +495,6 @@ public class MeshBuilder
         headLength = MathF.Min(headLength, length * 0.9f);
         float shaftLen = length - headLength;
 
-        // Shaft: cylinder is Y-centered, so offset vertices up by half the shaft length after writing.
         int shaftStart = verts.Count;
         WriteCylinder(verts, indices, shaftRadius, shaftLen, segments, caps: true);
         for (int k = shaftStart; k < verts.Count; k++)
@@ -521,10 +514,7 @@ public class MeshBuilder
         }
     }
 
-    /// <summary>
-    /// Builds a flat ribbon along a polyline (mitered corners, beveled above a ~150° turn to avoid spikes); lies
-    /// flat (+Y normal), with point Y coordinates honored and the width applied horizontally.
-    /// </summary>
+    /// <summary>Builds a flat +Y-facing ribbon along a polyline, mitered at corners and beveled past a 150 degree turn.</summary>
     /// <param name="points">Polyline points (>= 2).</param>
     /// <param name="width">Ribbon width.</param>
     /// <param name="closed">Whether the last point connects back to the first.</param>
@@ -536,9 +526,8 @@ public class MeshBuilder
         return new MeshData(v.ToArray(), i.ToArray());
     }
 
-    // Miter-to-bevel switch: when the miter would extend beyond this factor of the half-width (turn sharper than
-    // ~150°), a bevel joint is emitted instead.
-    internal const float MiterLimit = 3.8637f; // 1/sin(15°) - miter length at a 150° turn
+    // Past this factor of the half-width (a turn past 150 degrees) a miter becomes a bevel.
+    internal const float MiterLimit = 3.8637f; // 1/sin(15 degrees)
 
     internal static void WriteExtrudePath(List<Vertex3D> verts, List<ushort> indices, IReadOnlyList<Vector3> points, float width, bool closed)
     {
@@ -551,7 +540,7 @@ public class MeshBuilder
         var n = Vector3.UnitY;
         int segLimit = closed ? count : count - 1;
 
-        // Left/right pair per emitted station; bevel joints emit two stations at the same point.
+        // Bevel joints emit two stations at the same point.
         float pathLen = 0f;
         for (int k = 0; k < segLimit; k++)
             pathLen += HorizontalDistance(points[k], points[(k + 1) % count]);
@@ -579,7 +568,7 @@ public class MeshBuilder
             Vector3 offset = default;
             if (miterLen < 1e-4f)
             {
-                bevel = true; // 180° turn - no miter direction exists
+                bevel = true; // a 180 degree turn has no miter direction
             }
             else
             {
@@ -592,7 +581,6 @@ public class MeshBuilder
 
             if (bevel && hasPrev && hasNext)
             {
-                // Two stations: one aligned to the incoming segment, one to the outgoing.
                 int s0 = AddStation(verts, p, perpPrev * hw, n, u);
                 if (prevStation >= 0) AddStrip(indices, b, prevStation, s0);
                 int s1 = AddStation(verts, p, perpNext * hw, n, u);
@@ -620,15 +608,14 @@ public class MeshBuilder
         static int AddStation(List<Vertex3D> verts, Vector3 p, Vector3 halfOffset, Vector3 n, float u)
         {
             int station = verts.Count;
-            verts.Add(new Vertex3D(p - halfOffset, n, new Vector2(u, 0), White)); // left
-            verts.Add(new Vertex3D(p + halfOffset, n, new Vector2(u, 1), White)); // right
+            verts.Add(new Vertex3D(p - halfOffset, n, new Vector2(u, 0), White));
+            verts.Add(new Vertex3D(p + halfOffset, n, new Vector2(u, 1), White));
             return station;
         }
 
         static void AddStrip(List<ushort> indices, int b, int s0, int s1)
         {
-            // Station vertex 0 sits at p - perp*hw (the +X side on a +Z path), so clockwise-front
-            // with normal +Y is (v0, r1, r0) / (v0, v0', r1).
+            // Vertex 0 sits at p - perp*hw. Clockwise-front with normal +Y is (v0, r1, r0) / (v0, v0', r1).
             int l0 = s0 - b, r0 = s0 - b + 1, l1 = s1 - b, r1 = s1 - b + 1;
             AddTri(indices, b, l0, r1, r0);
             AddTri(indices, b, l0, l1, r1);

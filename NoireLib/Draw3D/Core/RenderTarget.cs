@@ -4,7 +4,6 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// The offscreen premultiplied scene color target (R8G8B8A8, RTV + SRV), recreated on resize.
 internal sealed unsafe class RenderTarget : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;
@@ -12,22 +11,16 @@ internal sealed unsafe class RenderTarget : IDisposable
     private ComPtr<ID3D11ShaderResourceView> srv;
     private readonly DXGI_FORMAT format;
 
-    /// <summary>Creates a render target of the given format (default RGBA8 - the scene color target).</summary>
     public RenderTarget(DXGI_FORMAT format = DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM) => this.format = format;
 
-    /// <summary>Current width in pixels (0 before first creation).</summary>
     public uint Width { get; private set; }
 
-    /// <summary>Current height in pixels (0 before first creation).</summary>
     public uint Height { get; private set; }
 
-    /// <summary>The render target view (null before first creation).</summary>
     public ID3D11RenderTargetView* Rtv => rtv.Get();
 
-    /// <summary>The shader resource view for compositing (null before first creation).</summary>
     public ID3D11ShaderResourceView* Srv => srv.Get();
 
-    /// <summary>Recreates the target when the requested size differs. Returns false when creation failed.</summary>
     public bool EnsureSize(RenderDevice device, uint width, uint height)
     {
         if (width == 0 || height == 0)
@@ -69,7 +62,6 @@ internal sealed unsafe class RenderTarget : IDisposable
         return true;
     }
 
-    /// <summary>Releases GPU objects (recreated by the next EnsureSize).</summary>
     public void Release()
     {
         srv.Dispose();
@@ -81,27 +73,24 @@ internal sealed unsafe class RenderTarget : IDisposable
         Width = Height = 0;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Release();
 }
 
-// The private D32_FLOAT depth buffer for depth testing among Draw3D's own objects, kept separate from the game's
-// depth buffer, which Draw3D never writes. Cleared to 0.0 (reversed-Z "far").
+// Draw3D never writes the game's depth. Cleared to 0.0 (reversed-Z far).
 internal sealed unsafe class DepthTarget : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;
     private ComPtr<ID3D11DepthStencilView> dsv;
+    private ComPtr<ID3D11ShaderResourceView> srv;
 
-    /// <summary>Current width in pixels (0 before first creation).</summary>
     public uint Width { get; private set; }
 
-    /// <summary>Current height in pixels (0 before first creation).</summary>
     public uint Height { get; private set; }
 
-    /// <summary>The depth-stencil view (null before first creation).</summary>
     public ID3D11DepthStencilView* Dsv => dsv.Get();
 
-    /// <summary>Recreates the buffer when the requested size differs. Returns false when creation failed.</summary>
+    public ID3D11ShaderResourceView* Srv => srv.Get();
+
     public bool EnsureSize(RenderDevice device, uint width, uint height)
     {
         if (width == 0 || height == 0)
@@ -118,15 +107,33 @@ internal sealed unsafe class DepthTarget : IDisposable
             Height = height,
             MipLevels = 1,
             ArraySize = 1,
-            Format = DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT,
+            Format = DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS,
             SampleDesc = new DXGI_SAMPLE_DESC { Count = 1 },
             Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
-            BindFlags = (uint)D3D11_BIND_FLAG.D3D11_BIND_DEPTH_STENCIL,
+            BindFlags = (uint)(D3D11_BIND_FLAG.D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE),
         };
 
         if (device.Device->CreateTexture2D(&desc, null, texture.GetAddressOf()) < 0)
             return false;
-        if (device.Device->CreateDepthStencilView((ID3D11Resource*)texture.Get(), null, dsv.GetAddressOf()) < 0)
+
+        var dsvDesc = new D3D11_DEPTH_STENCIL_VIEW_DESC
+        {
+            Format = DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT,
+            ViewDimension = D3D11_DSV_DIMENSION.D3D11_DSV_DIMENSION_TEXTURE2D,
+        };
+        if (device.Device->CreateDepthStencilView((ID3D11Resource*)texture.Get(), &dsvDesc, dsv.GetAddressOf()) < 0)
+        {
+            Release();
+            return false;
+        }
+
+        var srvDesc = new D3D11_SHADER_RESOURCE_VIEW_DESC
+        {
+            Format = DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT,
+            ViewDimension = D3D_SRV_DIMENSION.D3D_SRV_DIMENSION_TEXTURE2D,
+        };
+        srvDesc.Anonymous.Texture2D.MipLevels = 1;
+        if (device.Device->CreateShaderResourceView((ID3D11Resource*)texture.Get(), &srvDesc, srv.GetAddressOf()) < 0)
         {
             Release();
             return false;
@@ -137,9 +144,10 @@ internal sealed unsafe class DepthTarget : IDisposable
         return true;
     }
 
-    /// <summary>Releases GPU objects (recreated by the next EnsureSize).</summary>
     public void Release()
     {
+        srv.Dispose();
+        srv = default;
         dsv.Dispose();
         dsv = default;
         texture.Dispose();
@@ -147,32 +155,24 @@ internal sealed unsafe class DepthTarget : IDisposable
         Width = Height = 0;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Release();
 }
 
-// A depth buffer that is ALSO shader-readable (R32_TYPELESS texture, D32_FLOAT DSV + R32_FLOAT SRV), used to render
-// the collision world's device-z so the ground decal can skip anything standing in front of it. Cleared to 0.0
-// (reversed-Z "far" = no collision).
+// The collision world's device-z. Cleared to 0.0 (reversed-Z far: no collision).
 internal sealed unsafe class DepthTargetSrv : IDisposable
 {
     private ComPtr<ID3D11Texture2D> texture;
     private ComPtr<ID3D11DepthStencilView> dsv;
     private ComPtr<ID3D11ShaderResourceView> srv;
 
-    /// <summary>Current width in pixels (0 before first creation).</summary>
     public uint Width { get; private set; }
 
-    /// <summary>Current height in pixels (0 before first creation).</summary>
     public uint Height { get; private set; }
 
-    /// <summary>The depth-stencil view (null before first creation).</summary>
     public ID3D11DepthStencilView* Dsv => dsv.Get();
 
-    /// <summary>The shader resource view over the depth (null before first creation).</summary>
     public ID3D11ShaderResourceView* Srv => srv.Get();
 
-    /// <summary>Recreates the buffer when the requested size differs. Returns false when creation failed.</summary>
     public bool EnsureSize(RenderDevice device, uint width, uint height)
     {
         if (width == 0 || height == 0)
@@ -189,7 +189,7 @@ internal sealed unsafe class DepthTargetSrv : IDisposable
             Height = height,
             MipLevels = 1,
             ArraySize = 1,
-            Format = DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS, // typeless so we can view it as both depth (DSV) and float (SRV)
+            Format = DXGI_FORMAT.DXGI_FORMAT_R32_TYPELESS,
             SampleDesc = new DXGI_SAMPLE_DESC { Count = 1 },
             Usage = D3D11_USAGE.D3D11_USAGE_DEFAULT,
             BindFlags = (uint)(D3D11_BIND_FLAG.D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_FLAG.D3D11_BIND_SHADER_RESOURCE),
@@ -225,7 +225,6 @@ internal sealed unsafe class DepthTargetSrv : IDisposable
         return true;
     }
 
-    /// <summary>Releases GPU objects (recreated by the next EnsureSize).</summary>
     public void Release()
     {
         srv.Dispose();
@@ -237,6 +236,5 @@ internal sealed unsafe class DepthTargetSrv : IDisposable
         Width = Height = 0;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Release();
 }

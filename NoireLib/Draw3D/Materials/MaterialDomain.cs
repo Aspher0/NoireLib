@@ -1,16 +1,14 @@
 namespace NoireLib.Draw3D.Materials;
 
-/// <summary>
-/// Selects which shader family a <see cref="Material"/> renders with.
-/// </summary>
+/// <summary>Selects which shader family a <see cref="Material"/> renders with.</summary>
 public enum MaterialDomain
 {
-    /// <summary>Flat, unshaded color/texture. The default for markers and shapes.</summary>
+    /// <summary>Flat, unshaded color or texture (the default).</summary>
     Unlit = 0,
 
     /// <summary>Half-Lambert stylized shading driven by <see cref="NoireDraw3D.Lighting"/>.</summary>
     Lit = 1,
 
-    /// <summary>Terrain-hugging projected ground decal. Renders as a unit-box volume that projects its shape onto world geometry.</summary>
+    /// <summary>Unit-box volume that projects its shape onto world geometry.</summary>
     GroundDecal = 2,
 }

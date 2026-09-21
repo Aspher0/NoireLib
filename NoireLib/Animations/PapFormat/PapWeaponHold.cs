@@ -8,31 +8,29 @@ namespace NoireLib.Animations.PapFormat;
 
 /// <summary>
 /// Adds the timeline commands that bring a character's weapons into their hands for the length of an animation
-/// and send them back to their stowed point at its end.
+/// and send them back to their stowed point at its end. These commands drive the equipped object's attach point
+/// and its own animation, never the character's stance.
 /// </summary>
-/// <remarks>
-/// These commands drive the equipped object's attach point and its own animation, never the character's stance.
-/// </remarks>
 public static class PapWeaponHold
 {
     private const string LogPrefix = "[PapWeaponHold] ";
 
     private const string ScaleMagic = "C015";
 
-    // Weapon Position: which attach point of the .atch file the object hangs from.
+    // Weapon Position: the .atch attach point the object hangs from.
     private const string PositionMagic = "C014";
 
-    // Summon Animation: the weapon timeline the object itself plays as it travels.
+    // Summon Animation: the weapon timeline the object plays as it travels.
     private const string SummonMagic = "C031";
 
     private const int Enabled = 1;
     private const int ScaleDuration = 10;
 
-    // Object Position and ATCH Object Scale both read 1 in hand and 0 stowed.
+    // Object Position and ATCH Object Scale read 1 in hand and 0 stowed.
     private const int InHand = 1;
     private const int Stowed = 0;
 
-    // WeaponTimeline rows: weapon/active as the draw animation uses it, and weapon/deactive.
+    // WeaponTimeline rows: weapon/active and weapon/deactive.
     private const int DrawTimelineRow = 119;
     private const int SheatheTimelineRow = 7;
 
@@ -41,38 +39,25 @@ public static class PapWeaponHold
 
     private const short HoldFrame = 0;
 
-    // How often the hold is stated again, in frames. Anything that ends a timeline hands the weapons back, and an
-    // overlapping play lands that while this one is still running, so stating it once is not enough.
+    // Anything that ends a timeline hands the weapons back, including an overlapping play.
     private const int ReassertInterval = 10;
 
-    // The entry magics a rewritten timeline is known to carry safely: those with a model of their own, those whose
-    // pointing fields StringFieldOffsets and ExtraFloatFieldOffsets describe, and those shown to point nowhere. A
-    // magic outside this set may name data by an offset nothing here knows to move.
+    // A magic outside this set may point at data by an offset nothing here knows to move.
     private static readonly HashSet<string> RewritableMagics = new(StringComparer.Ordinal)
     {
         "C009", "C010", "C012", "C042", ScaleMagic, PositionMagic, SummonMagic,
     };
 
-    /// <summary>
-    /// Returns a copy of a .pap whose every animation brings the character's weapons into their hands.
-    /// </summary>
+    /// <summary>Returns a copy of a .pap whose every animation brings the character's weapons into their hands.</summary>
     /// <param name="papBytes">The .pap's bytes, never modified.</param>
-    /// <param name="offHand">Whether the character carries a second weapon. A two-handed weapon has none.</param>
-    /// <param name="stowAtEnd">
-    /// Whether each animation sends the weapons back on its last frame. The game hands them back on its own when
-    /// a timeline ends, so leaving this off costs nothing.
-    /// </param>
-    /// <param name="withTravel">
-    /// Whether the weapon plays its own travel animation rather than appearing where it belongs. The command
-    /// driving it summons the object it animates, and an effect already in the file can bind itself to a summon,
-    /// which shows as a copy of that effect per summon.
-    /// </param>
-    /// <returns>The rewritten .pap's bytes, verified to read back.</returns>
+    /// <param name="offHand">Whether the character carries a second weapon.</param>
+    /// <param name="stowAtEnd">Whether each animation stows the weapons on its last frame.</param>
+    /// <param name="withTravel">Whether the weapon plays its own travel animation. An effect bound to a summon shows once per summon.</param>
+    /// <returns>The rewritten .pap's bytes.</returns>
     /// <exception cref="InvalidDataException">The produced bytes do not read back as a valid .pap.</exception>
     public static byte[] Apply(byte[] papBytes, bool offHand, bool stowAtEnd = true, bool withTravel = false)
     {
-        using var reader = new BinaryReader(new MemoryStream(papBytes));
-        var pap = new PapFile(reader);
+        var pap = PapFile.FromBytes(papBytes);
 
         var objects = new List<int> { MainHand };
         if (offHand)
@@ -85,7 +70,7 @@ public static class PapWeaponHold
             if (animation.Tmb is not { } timeline || timeline.Actors.Count == 0)
                 continue;
 
-            // One animation this cannot rewrite leaves the others held rather than the whole file untouched.
+            // An unrewritable animation leaves the others rewritten.
             if (UnrewritableMagic(timeline) is { } blocker)
             {
                 NoireLogger.LogDebug($"'{animation.GetName()}' carries a {blocker} entry, which a rewritten "
@@ -110,7 +95,6 @@ public static class PapWeaponHold
         return result;
     }
 
-    // The first entry magic in a timeline that a rewrite cannot be trusted to carry, or null.
     private static string? UnrewritableMagic(TmbFile timeline)
     {
         foreach (var entry in timeline.AllEntries)
@@ -122,8 +106,7 @@ public static class PapWeaponHold
         return null;
     }
 
-    // States the hold on every frame of the beat, for each of the character's weapons. Each command gets a track of
-    // its own, as the game's own draw animation gives it.
+    // Each command gets its own track, like the game's own draw animation.
     private static void HoldThrough(TmbFile timeline, Tmac actor, IReadOnlyList<int> objects, bool stowAtEnd,
         bool withTravel)
     {
@@ -148,8 +131,7 @@ public static class PapWeaponHold
                 AddCommand(timeline, position, PositionMagic, lastFrame, [Enabled, 0, Stowed, objectControl]);
             }
 
-            // The travel plays once on the way out and once on the way back: repeating it on the beat would
-            // show as the weapon drawing itself over and over.
+            // Repeating the travel on the beat would draw the weapon over and over.
             if (!withTravel)
                 continue;
 
@@ -166,7 +148,6 @@ public static class PapWeaponHold
         }
     }
 
-    // The frames the hold is stated on: the first, then the beat up to the animation's end.
     private static IEnumerable<short> HoldFrames(short length)
     {
         yield return HoldFrame;
@@ -197,8 +178,7 @@ public static class PapWeaponHold
     {
         try
         {
-            using var reader = new BinaryReader(new MemoryStream(papBytes));
-            var reread = new PapFile(reader);
+            var reread = PapFile.FromBytes(papBytes);
 
             if (reread.Animations.Count == 0)
                 throw new InvalidDataException("the rewritten .pap declares no animation.");

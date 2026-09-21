@@ -5,12 +5,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// The per-pixel "game UI on top" source for the over-everything composite, built by difference rather than by reading
-// a coverage channel: the game's present-composition buffer is copied once at the pre-UI injection point (world
-// image, no UI) and once at present time (the same buffer, now with the UI drawn into it). Any pixel whose colour
-// changed between the two is a pixel the native UI painted, so the difference IS the UI - letter-exact, antialiased
-// edges included, with no rectangles anywhere. Both snapshots are of the same texture, so they always agree on format
-// and resolution and the difference needs no rescaling.
+// The game writes no UI coverage alpha. The present buffer is copied before and after the native UI, and every changed pixel is UI.
 internal sealed unsafe class UiDiffMask : IDisposable
 {
     private ComPtr<ID3D11Texture2D> beforeTex, afterTex;
@@ -19,31 +14,20 @@ internal sealed unsafe class UiDiffMask : IDisposable
     private DXGI_FORMAT format;
     private bool beforeCaptured;
 
-    /// <summary>The pre-UI snapshot's SRV, or null when unavailable.</summary>
     public ID3D11ShaderResourceView* BeforeSrv => beforeSrv.Get();
 
-    /// <summary>The post-UI snapshot's SRV, or null when unavailable.</summary>
     public ID3D11ShaderResourceView* AfterSrv => afterSrv.Get();
 
-    /// <summary>The pre-UI snapshot texture (health probe readback source).</summary>
     public ID3D11Texture2D* BeforeTexture => beforeTex.Get();
 
-    /// <inheritdoc cref="BeforeTexture"/>
     public ID3D11Texture2D* AfterTexture => afterTex.Get();
 
-    /// <summary>Snapshot format (health probe decoding).</summary>
     public DXGI_FORMAT Format => format;
 
-    /// <summary>Snapshot width/height in pixels.</summary>
     public uint Width => width;
 
-    /// <inheritdoc cref="Width"/>
     public uint Height => height;
 
-    /// <summary>
-    /// Copies the present buffer as it stands before the native UI is drawn. Called from the render thread at the
-    /// injection point. Returns false (no mask this frame) when anything is incompatible - never throws.
-    /// </summary>
     public bool CaptureBefore(RenderDevice device, ID3D11DeviceContext* ctx, nint presentBufferResource)
     {
         beforeCaptured = false;
@@ -61,11 +45,6 @@ internal sealed unsafe class UiDiffMask : IDisposable
         }
     }
 
-    /// <summary>
-    /// Copies the same present buffer at present time, with the native UI now drawn into it. Only meaningful when
-    /// <see cref="CaptureBefore"/> succeeded on this same frame - without a "before" there is nothing to difference
-    /// against, so this reports false and the layer composites unmasked.
-    /// </summary>
     public bool CaptureAfter(RenderDevice device, ID3D11DeviceContext* ctx, nint presentBufferResource)
     {
         if (!beforeCaptured)
@@ -76,8 +55,6 @@ internal sealed unsafe class UiDiffMask : IDisposable
 
         using (source)
         {
-            // A resize between the two snapshots would leave them describing different viewports; EnsureTargets
-            // reallocates and drops the stale "before", so the frame goes unmasked rather than differencing garbage.
             if (!EnsureTargets(device, source.Get()) || !beforeCaptured)
                 return false;
 
@@ -86,7 +63,6 @@ internal sealed unsafe class UiDiffMask : IDisposable
         }
     }
 
-    /// <summary>Clears the per-frame "before" flag: a frame whose injection point never fired must not mask.</summary>
     public void EndFrame() => beforeCaptured = false;
 
     private bool EnsureTargets(RenderDevice device, ID3D11Texture2D* source)
@@ -126,7 +102,6 @@ internal sealed unsafe class UiDiffMask : IDisposable
         return true;
     }
 
-    /// <summary>Releases GPU objects (recreated by the next capture).</summary>
     public void Release()
     {
         beforeSrv.Dispose();
@@ -142,32 +117,19 @@ internal sealed unsafe class UiDiffMask : IDisposable
         beforeCaptured = false;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Release();
 }
 
-// Self-check for the difference mask, and the answer to "is UI protection actually doing anything". Samples a sparse
-// screen grid from both snapshots every ~2 seconds (stall-free: the staging copies are mapped one check-cycle later)
-// and reports what fraction of samples the UI changed. Two failure modes matter, and they are opposites. If virtually
-// every sample differs, the two snapshots are not the same image - the present buffer is being transformed on its way
-// to the screen - and differencing them would read as "UI everywhere" and erase the whole layer; the mask disables
-// itself. If no sample ever differs across many checks, the injection point is not landing where the UI is drawn and
-// the mask is inert; that is reported rather than disabled, because "no UI on screen right now" looks identical and
-// is perfectly normal.
+// If nearly every sample differs, the present buffer is transformed after the injection point and the mask disables itself.
 internal sealed unsafe class UiDiffMaskHealth : IDisposable
 {
     private const int GridX = 6, GridY = 4;
     private const int SampleCount = GridX * GridY;
     private const int CheckIntervalFrames = 120;
-    // "The UI touched this sample": one 8-bit step. Untouched pixels are bit-identical between the snapshots, so
-    // anything above zero is the UI; this only guards float-format rounding. Raising it risks reading faint UI
-    // (semi-transparent HUD panels) as untouched, letting the layer bleed through it.
+    // Raising it would read semi-transparent HUD panels as untouched.
     private const float TouchedThreshold = 1f / 255f;
 
-    // "This sample changed grossly": the bar for deciding the two snapshots are not the same image at all. Kept
-    // deliberately coarse and separate from TouchedThreshold: the failure it guards against is the present buffer
-    // being transformed (tonemapped, rescaled) after the injection point, which moves pixels far more than a HUD
-    // panel does. Judging that at one 8-bit step would let any faint full-screen effect disable masking entirely.
+    // A one-step bar would let any faint full-screen effect disable masking.
     private const float TransformThreshold = 0.02f;
     private const int SuspiciousChecksToDisable = 3;
 
@@ -178,16 +140,12 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
     private int consecutiveSuspicious;
     private bool disabledLogged;
 
-    /// <summary>False when the difference was judged unusable (mask must not be applied).</summary>
     public bool DiffUsable { get; private set; } = true;
 
-    /// <summary>Human-readable state for stats/probe.</summary>
     public string Description { get; private set; } = "unchecked";
 
-    /// <summary>Latest per-sample difference magnitudes (probe output), or null before the first completed check.</summary>
     public float[]? LastSamples { get; private set; }
 
-    /// <summary>Runs one throttled check step: read the previous cycle's texels, then queue this frame's.</summary>
     public void Update(RenderDevice device, ID3D11DeviceContext* ctx, UiDiffMask mask, long frameId)
     {
         if (mask.BeforeTexture == null || mask.AfterTexture == null || mask.Width == 0 || mask.Height == 0)
@@ -230,11 +188,10 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
             copyPending = false;
         }
 
-        // 1. Read the texels queued on the previous check - long done by now, so DO_NOT_WAIT never stalls.
+        // The texels queued on the previous check are done. DO_NOT_WAIT never stalls.
         if (copyPending)
             TryEvaluate(ctx);
 
-        // 2. Queue this check's texels from both snapshots at identical points.
         var box = new D3D11_BOX { front = 0, back = 1 };
         for (var i = 0; i < SampleCount; i++)
         {
@@ -258,7 +215,7 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         const uint DoNotWait = (uint)D3D11_MAP_FLAG.D3D11_MAP_FLAG_DO_NOT_WAIT;
         D3D11_MAPPED_SUBRESOURCE mappedBefore, mappedAfter;
         if (ctx->Map((ID3D11Resource*)beforeStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, DoNotWait, &mappedBefore) < 0)
-            return; // still in flight (rare) - evaluate on the next cycle
+            return;
 
         if (ctx->Map((ID3D11Resource*)afterStaging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, DoNotWait, &mappedAfter) < 0)
         {
@@ -300,9 +257,6 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
             return;
         }
 
-        // Every sample moving grossly means the two snapshots are not the same image, not that the UI covers the
-        // screen: a HUD dense enough to cover the whole sample grid is possible, but it would have to do so for
-        // several seconds running, and it still would not shift every one of them this far.
         var suspicious = transformed >= readable - 1;
         consecutiveSuspicious = suspicious ? consecutiveSuspicious + 1 : 0;
 
@@ -315,9 +269,8 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
                 {
                     disabledLogged = true;
                     NoireLogger.LogError(
-                        "Draw3D: the pre-UI and post-UI snapshots of the present buffer differ everywhere, so their difference cannot " +
-                        "identify the game UI - keeping the UI on top is disabled and the layer now draws over it. This means the present " +
-                        "buffer is being transformed after the injection point. Run '/noire3d uimask' and report the log.", "Draw3D");
+                        "Draw3D: the pre-UI and post-UI snapshots of the present buffer differ everywhere. The present buffer is " +
+                        "transformed after the injection point. Keeping the UI on top is disabled. Run '/noire3d uimask' and report the log.", "Draw3D");
                 }
             }
 
@@ -337,8 +290,6 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         }
     }
 
-    // Largest per-channel colour difference between the two snapshots at one sample, or NaN for an undecodable
-    // format.
     private static float Difference(in D3D11_MAPPED_SUBRESOURCE before, in D3D11_MAPPED_SUBRESOURCE after, DXGI_FORMAT format, int index)
     {
         var b = (byte*)before.pData;
@@ -385,7 +336,6 @@ internal sealed unsafe class UiDiffMaskHealth : IDisposable
         }
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         beforeStaging.Dispose();

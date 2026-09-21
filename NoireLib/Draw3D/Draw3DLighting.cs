@@ -3,24 +3,23 @@ using System.Numerics;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// Stylized lighting parameters consumed by <see cref="Materials.MaterialDomain.Lit"/> materials
-/// (half-Lambert). Deliberately independent of the game's lighting - a clean stylized look beats an
-/// uncanny mismatch we have no authority over.
+/// The stylized half-Lambert lighting parameters of <see cref="Materials.MaterialDomain.Lit"/> materials, independent
+/// of the game's lighting.
 /// </summary>
 public sealed class Draw3DLighting
 {
-    /// <summary>Ambient light color.</summary>
+    /// <summary>Gets or sets the ambient light color.</summary>
     public Vector3 AmbientColor { get; set; } = new(1f, 1f, 1f);
 
-    /// <summary>Ambient light intensity (0..1 typical).</summary>
+    /// <summary>Gets or sets the ambient light intensity, typically 0 to 1.</summary>
     public float AmbientIntensity { get; set; } = 0.45f;
 
-    /// <summary>Direction <b>toward</b> the light source (normalized at upload).</summary>
+    /// <summary>Gets or sets the direction <b>toward</b> the light source, normalized at upload.</summary>
     public Vector3 LightDirection { get; set; } = new(0.35f, 0.8f, 0.25f);
 
-    /// <summary>Directional light color.</summary>
+    /// <summary>Gets or sets the directional light color.</summary>
     public Vector3 LightColor { get; set; } = new(1f, 1f, 1f);
 
-    /// <summary>Directional light intensity (0..1 typical).</summary>
+    /// <summary>Gets or sets the directional light intensity, typically 0 to 1.</summary>
     public float LightIntensity { get; set; } = 0.75f;
 }

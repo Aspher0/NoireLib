@@ -3,23 +3,18 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// A retained 3D scene: long-lived nodes, hierarchies, imported models.<br/>
-/// Mutation is thread-safe (one shared graph lock, uncontended in practice); the render thread applies
-/// a snapshot once per frame. Get the main scene via <see cref="NoireDraw3D.MainScene"/> or create extra
-/// ones with <see cref="NoireDraw3D.CreateScene"/>.
-/// </summary>
+/// <summary>A retained 3D scene of long-lived nodes, hierarchies and imported models. Mutation is thread-safe.</summary>
 public sealed partial class Scene3D
 {
-    // The single scene-graph mutation lock shared by all scenes (kept coarse on purpose - held only briefly).
+    // Shared by all scenes, held briefly.
     internal static readonly object GraphLock = new();
 
     internal readonly List<SceneNode> Roots = new();
     internal readonly List<ISceneFeature> FeatureList = new();
-    private readonly List<ISceneFeature> featureScratch = new(); // reused per-frame snapshot of FeatureList (see FirePrepare)
+    private readonly List<ISceneFeature> featureScratch = new();
     private int nodeCount;
 
-    /// <summary>Optional scene name (diagnostics).</summary>
+    /// <summary>Optional scene name for diagnostics.</summary>
     public string? Name { get; set; }
 
     /// <summary>Whole-scene kill switch.</summary>
@@ -29,20 +24,16 @@ public sealed partial class Scene3D
     public int NodeCount => nodeCount;
 
     /// <summary>
-    /// Fires once per frame on the render thread before culling - the place for per-frame procedural
-    /// updates (billboards, pulses) without touching Framework events. Mutations made here render this frame.
-    /// <br/>
-    /// This is stricter than "not the framework thread": on the default under-UI path the callback fires <b>mid-frame,
-    /// from inside one of the game's own D3D calls</b>, with the game part-way through composing the frame. Touch only
-    /// the scene graph, <see cref="NoireDraw3D.Im"/>, and your own state. Do not read or write game state, print to
-    /// chat, or call any Dalamud game service from here; hand that work to the framework thread instead.
+    /// Fires once per frame on the render thread before culling. Mutations made here render this frame.<br/>
+    /// It can fire inside a game D3D call. Touch only the scene graph, <see cref="NoireDraw3D.Im"/> and your own state.
     /// </summary>
     public event Action<FrameContext>? OnPrepareFrame;
 
     internal Scene3D(string? name) => Name = name;
 
-    /// <summary>Creates a node parented to the scene root; thread-safe.</summary>
+    /// <summary>Creates a node parented to the scene root. Thread-safe.</summary>
     /// <param name="name">Optional debug/lookup name.</param>
+    /// <returns>The new node.</returns>
     public SceneNode CreateNode(string? name = null)
     {
         lock (GraphLock)
@@ -55,8 +46,9 @@ public sealed partial class Scene3D
         }
     }
 
-    /// <summary>Removes a node (and its subtree) from the scene; returns false when the node is not part of it.</summary>
+    /// <summary>Removes a node and its subtree from the scene.</summary>
     /// <param name="node">The node to remove.</param>
+    /// <returns>False when the node is not part of this scene.</returns>
     public bool Remove(SceneNode node)
     {
         ArgumentNullException.ThrowIfNull(node);
@@ -96,6 +88,7 @@ public sealed partial class Scene3D
 
     /// <summary>Unregisters a per-frame feature.</summary>
     /// <param name="feature">The feature to remove.</param>
+    /// <returns>Whether the feature was registered.</returns>
     public bool RemoveFeature(ISceneFeature feature)
     {
         lock (GraphLock)
@@ -106,9 +99,7 @@ public sealed partial class Scene3D
 
     internal void OnNodeRemoved() => nodeCount--;
 
-    // Adopts a detached node subtree (e.g. an imported model's root) as a scene root: O(1) reparent, any thread,
-    // throwing when the scene is disposed (matching CreateNode) since a disposed scene has already run its teardown
-    // and a root added afterwards would never be freed by it.
+    // A disposed scene would never free the adopted root.
     internal void AdoptRoot(SceneNode node)
     {
         lock (GraphLock)
@@ -121,10 +112,7 @@ public sealed partial class Scene3D
         }
     }
 
-    // Traces every visible ground decal in this scene as its painted shape (wireframe mode); render-thread only,
-    // called before the immediate layer is consumed so the outlines land this frame. Wireframe mode has nothing to
-    // rasterize for a decal - the box carries no shape, only the volume the SDF runs in - so the pass drops decals
-    // and this draws what they actually paint instead.
+    // Render thread. Wireframe drops decals, whose box carries no shape.
     internal void TraceDecalShapes(Im.ImDraw3D im)
     {
         if (IsDisposed || !Visible)
@@ -137,11 +125,10 @@ public sealed partial class Scene3D
         }
     }
 
-    // Walks a subtree emitting decal outlines; each node re-checks its own visibility and material.
     private static void TraceDecalShapesRecursive(SceneNode node, Im.ImDraw3D im)
     {
         if (!node.Visible)
-            return; // the whole subtree is hidden
+            return;
 
         try
         {
@@ -156,10 +143,7 @@ public sealed partial class Scene3D
             TraceDecalShapesRecursive(child, im);
     }
 
-    // Traces every visible ground decal in this scene as its projection box - the volume the SDF is evaluated in -
-    // for DecalVolumeOutlines; render-thread only, called before the immediate layer is consumed so the boxes land
-    // this frame, independent of TraceDecalShapes (turn both on to see the painted shape sitting inside the volume
-    // that produced it).
+    // Render thread.
     internal void TraceDecalVolumes(Im.ImDraw3D im)
     {
         if (IsDisposed || !Visible)
@@ -172,11 +156,10 @@ public sealed partial class Scene3D
         }
     }
 
-    // Walks a subtree emitting decal projection boxes; each node re-checks its own visibility and material.
     private static void TraceDecalVolumesRecursive(SceneNode node, Im.ImDraw3D im)
     {
         if (!node.Visible)
-            return; // the whole subtree is hidden
+            return;
 
         try
         {
@@ -191,8 +174,7 @@ public sealed partial class Scene3D
             TraceDecalVolumesRecursive(child, im);
     }
 
-    // Runs OnPrepareFrame + features on the render thread; a feature that throws is detached and logged once,
-    // everything else keeps running.
+    // Render thread. A throwing feature is detached and logged once.
     internal void FirePrepare(in FrameContext frame)
     {
         try
@@ -204,10 +186,7 @@ public sealed partial class Scene3D
             NoireLogger.LogError<Scene3D>(ex, $"Scene '{Name}': OnPrepareFrame handler threw. Handlers must not throw; continuing.", "Draw3D");
         }
 
-        // Snapshot the features under the lock, then run them outside it: a feature is free to add or remove features
-        // (and a throwing one is detached below, mid-loop). The buffer is reused across frames because a fresh array
-        // per frame would allocate in the steady state, which this path must not do; it is per-scene and only ever
-        // touched from the render thread.
+        // Features may add or remove features.
         lock (GraphLock)
         {
             if (FeatureList.Count == 0)

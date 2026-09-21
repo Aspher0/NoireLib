@@ -4,20 +4,14 @@ using System;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Renders a scene through a virtual camera into a texture, once per frame before the main pass:
-/// minimap portals, mirrors, model-viewer thumbnails, picture-in-picture.<br/>
-/// World-depth occlusion is force-disabled per view (a virtual camera has no matching game Z-buffer); feeding
-/// <see cref="Texture"/> back into materials is legal (one-frame latency; views render in registration order).<br/>
-/// Dispose the view to release its GPU target; the scene it renders is not owned.
-/// </summary>
+/// <summary>Renders a scene through a virtual camera into a texture before the main pass. No world-depth occlusion. <see cref="Texture"/> lags one frame.</summary>
 public sealed class RenderView : IDisposable
 {
     internal readonly RenderTarget Target = new();
     internal readonly DepthTarget Depth = new();
     private GpuTexture? texture;
 
-    /// <summary>The scene this view renders; referenced, never owned.</summary>
+    /// <summary>The scene this view renders. Referenced, never owned.</summary>
     public Scene3D Scene { get; set; }
 
     /// <summary>The virtual camera.</summary>
@@ -35,10 +29,7 @@ public sealed class RenderView : IDisposable
     /// <summary>True once disposed.</summary>
     public bool IsDisposed { get; private set; }
 
-    /// <summary>
-    /// The rendered output as a material-ready texture; null until the first frame rendered, owned by the view,
-    /// do not dispose it separately.
-    /// </summary>
+    /// <summary>The rendered output as a view-owned texture, null until the first frame renders.</summary>
     public GpuTexture? Texture => texture;
 
     internal RenderView(Scene3D scene, Camera3D camera, int width, int height)
@@ -49,7 +40,7 @@ public sealed class RenderView : IDisposable
         Height = Math.Max(1, height);
     }
 
-    // Ensures the GPU target exists (render thread) and returns whether the view can render.
+    // Render thread.
     internal unsafe bool EnsureTarget(RenderDevice device)
     {
         if (IsDisposed)

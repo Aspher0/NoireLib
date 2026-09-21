@@ -2,7 +2,7 @@ using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// The stylized light Material.Lit shades against. Unlit, textured and decal materials ignore all of it.
+// Unlit, textured and decal materials ignore all of it.
 internal sealed class LightingPage
 {
     public void Draw()
@@ -25,7 +25,7 @@ internal sealed class LightingPage
         using (Ui.Form("lighting.directional"))
         {
             Ui.Slider3("Direction", () => light.LightDirection, v => light.LightDirection = v, -1f, 1f,
-                "Direction TOWARD the source, normalized on upload. +Y is lit from above.");
+                "Direction toward the source, normalized on upload. +Y is lit from above.");
             Ui.Color3("Color", () => light.LightColor, v => light.LightColor = v);
             Ui.Slider("Intensity", () => light.LightIntensity, v => light.LightIntensity = v, 0f, 2f,
                 "Above 1 over-brightens the facing side deliberately.");

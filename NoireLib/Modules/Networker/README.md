@@ -21,18 +21,18 @@ You are reading the documentation for the `NoireNetworker` module.
 
 ## Overview
 
-The `NoireNetworker` is a module that lets several running instances of your plugin talk to each other: multiple game clients on the same PC, and optionally on the same LAN. It provides:
-- **Zero-configuration setup** on the same PC, only a network name is required
-- **Automatic hub election** through a named kernel mutex, with no well-known ports and no server to run
+`NoireNetworker` lets running instances of your plugin talk to each other: several game clients on one PC, and optionally on the LAN. It provides:
+- **Zero configuration** on one PC. Only a network name is required
+- **Automatic hub election** through a named kernel mutex, with no well-known ports and no server
 - **Automatic failover** when the instance acting as hub goes away
 - **Typed messaging** with broadcast and targeted sends
 - **Request and response** exchanges with typed replies, timeouts, and fan-out to every peer
 - **Peer presence** with synchronized metadata and coordination flags
 - **Barriers** to wait until every instance reaches the same point
-- **EventBus bridging**, so one event type can be published across every instance
+- **EventBus bridging** publishes one event type across every instance
 - **Framework-thread delivery** for every handler, callback, and awaited continuation
 
-One instance per machine is elected hub; every other instance on that machine connects to it over loopback TCP. Which instance holds the role never changes how you use the API. When LAN is enabled, each machine's hub links to the other machines' hubs, and remote peers appear in the same peer list as local ones.
+One instance per machine is elected hub. The others connect to it over loopback TCP. The role never changes the API. With LAN enabled, each machine's hub links to the other hubs, and remote peers join the same peer list.
 
 ---
 
@@ -43,7 +43,7 @@ If not, please refer to the [NoireLib documentation](https://github.com/Aspher0/
 
 ### 1. Create the Networker
 
-Every instance that passes the same network name joins the same network:
+Every instance using the same network name joins the same network:
 
 ```csharp
 using NoireLib;
@@ -52,7 +52,7 @@ using NoireLib.Networker;
 var networker = NoireLibMain.AddModule(new NoireNetworker("MyPlugin.Sync"));
 ```
 
-That is all the setup needed for same-PC operation. The module elects a hub, joins the network, and reaches `NetworkerState.Ready` on its own.
+That is all the setup same-PC operation needs. The module elects a hub, joins, and reaches `NetworkerState.Ready`.
 
 ### 2. Define a Message and Exchange It
 
@@ -65,7 +65,7 @@ public class PingMessage
 }
 ```
 
-Subscribe to the type to receive it, then send it. The local instance never receives its own broadcasts:
+Subscribe to the type, then send it. An instance never receives its own broadcasts:
 
 ```csharp
 networker.On<PingMessage>((peer, message) =>
@@ -76,11 +76,11 @@ networker.On<PingMessage>((peer, message) =>
 networker.Send(new PingMessage { Text = "Hello from another instance!" });
 ```
 
-Handlers run on the framework thread, so it is safe to touch game state directly inside them.
+Handlers run on the framework thread.
 
 ### 3. Identify Your Instances
 
-Peer ids are session-scoped and change on every relaunch. Durable identity belongs in metadata, which synchronizes to every peer automatically:
+Peer ids change on every relaunch. Durable identity belongs in metadata. It synchronizes to every peer:
 
 ```csharp
 networker.Self.Set("character", "Character Name");
@@ -89,32 +89,30 @@ foreach (var peer in networker.OtherPeers)
     NoireLogger.LogInfo($"Peer {peer.Id} is {peer["character"]}");
 ```
 
-That's it! Your instances can now see and talk to each other.
-
 ---
 
 ## Configuration
 
 ### Module Parameters
 
-You can configure the most important options of the module with the module's constructor:
+The main options go through the constructor:
 
 ```csharp
 var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Networker"); // Optional
 
 var networker = NoireLibMain.AddModule(new NoireNetworker(
-    networkName: "MyPlugin.Sync",       // Required: instances only see peers using the same name
-    moduleId: "Sync",                   // Optional identifier
-    active: true,                       // Whether to join the network on creation
-    enableLogging: true,                // Enable/disable logging for this module
-    options: new NetworkerOptions       // Optional settings, same-PC operation needs none
+    networkName: "MyPlugin.Sync",       // instances only see peers using the same name
+    moduleId: "Sync",
+    active: true,
+    enableLogging: true,
+    options: new NetworkerOptions       // same-PC operation needs no options set
     {
         EventBus = eventBus,
     }
 ));
 ```
 
-A parameterless constructor also exists for deferred configuration. It creates the module inactive and without a network name, so set both before activating:
+The parameterless constructor creates the module inactive and without a network name. Set both before activating:
 
 ```csharp
 var networker = new NoireNetworker();
@@ -126,7 +124,7 @@ networker.SetActive(true);
 NoireLibMain.AddModule(networker);
 ```
 
-`NoireLibMain.AddModule<NoireNetworker>()` lands in that same deferred state. A network name cannot be passed through it, and a networker without one cannot join anything, so it creates the module inactive instead of activating it. The same two steps finish the job:
+`NoireLibMain.AddModule<NoireNetworker>()` creates the same deferred state. Finish it the same way:
 
 ```csharp
 var networker = NoireLibMain.AddModule<NoireNetworker>();
@@ -136,27 +134,25 @@ networker.SetNetworkName("MyPlugin.Sync");
 networker.SetActive(true);
 ```
 
-Activating with no network name set is refused: the module logs an error and returns itself to the inactive state. That only happens when you activate it yourself before naming a network, never as a consequence of how the module was created.
+Activating without a network name logs an error and leaves the module inactive.
 
 ### Property Configuration
 
-You can also configure the module after creation:
+Or configure it after creation:
 
 ```csharp
 var networker = NoireLibMain.GetModule<NoireNetworker>();
 
-// Move to another network (leaves the current one and joins the new one when active)
+// Leaves the current network and joins the new one when active.
 networker?.SetNetworkName("MyPlugin.OtherNetwork");
 
-// Enable or disable logging
 networker?.SetEnableLogging(false);
 
-// Leave the network, then join it again
 networker?.SetActive(false);
 networker?.SetActive(true);
 ```
 
-You can also chain these methods for convenience:
+The methods chain:
 ```csharp
 var networker = NoireLibMain.GetModule<NoireNetworker>();
 
@@ -168,41 +164,41 @@ networker?
 
 `Activate()` and `Deactivate()` are available as alternatives to `SetActive(bool)`.
 
-Additionally, you can read the following properties after having created the module:
+Read-only properties:
 
-- `SelfId`: The unique, session-scoped identifier of the local instance. A relaunched instance gets a new one.
+- `SelfId`: The local instance's session-scoped id. A relaunch gets a new one.
 - `NetworkName`: The name of the network this instance belongs to. Default: `null` until set.
 - `State`: The current `NetworkerState`. Default: `Stopped` until activated.
-- `IsHub`: Whether this instance currently is the machine's hub. Informational only, usage never differs.
+- `IsHub`: Whether this instance is the machine's hub. Informational only.
 - `Self`: The local instance's own presence, a `NetworkerSelf`.
-- `OtherPeers`: Every other peer on the network, same-PC and LAN alike, excluding `Self`.
+- `OtherPeers`: Every other peer, same-PC and LAN alike.
 - `Options`: The `NetworkerOptions` of this networker.
-- `IsActive`: Whether the module is active. Default: set by the `active` constructor argument, and false whenever the module was created without a network name.
+- `IsActive`: Whether the module is active. Set by the `active` constructor argument. False without a network name.
 - `EnableLogging`: Whether this module logs its actions. Default: `true`.
 - `ModuleId`: The optional module identifier. Default: `null`.
 
 ### Networker Options
 
-Every setting below is public and has a default that works for same-PC operation. Options are snapshotted when the module activates, so **changes made while the networker is active require a restart (deactivate, then activate) to apply**.
+Every setting has a working default for same-PC operation. Options are snapshotted on activation. **Changes need a restart (deactivate, then activate).**
 
 - `EnableLan`: Whether this network participates on the LAN. Default: `false` (same-PC only).
-- `LanSecret`: An optional pre-shared secret gating LAN peers. The handshake proves knowledge of it without sending it over the wire. Default: `null` (open to any LAN peer, which is logged as a warning).
-- `EventBus`: An optional `NoireEventBus` to integrate with. Required by `ShareEvent<TEvent>` and by the publication of the module's own events. Default: `null`.
+- `LanSecret`: A pre-shared secret gating LAN peers. The handshake proves it without sending it. Default: `null` (open to any LAN peer, logged as a warning).
+- `EventBus`: A `NoireEventBus` to integrate with, required by `ShareEvent<TEvent>` and the module's own events. Default: `null`.
 - `PublishModuleEvents`: Whether networker lifecycle events are published to the attached `EventBus`. Default: `true`.
-- `BeaconPort`: Overrides the UDP port used for LAN discovery beacons. When null, the port is derived from the network name. Default: `null`.
+- `BeaconPort`: Overrides the UDP port for LAN beacons. Null derives it from the network name. Default: `null`.
 - `DefaultRequestTimeout`: The default timeout for `Request` when none is provided. Default: `10 seconds`.
-- `DeliveryQueueCapacity`: The maximum number of inbound deliveries queued for the framework thread before the oldest are dropped with an error log. Default: `4096`.
-- `OutboundBufferCapacity`: The maximum number of outbound messages buffered while the network is starting or re-electing. Default: `4096`. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations).
-- `MaxFrameBytes`: The maximum size of a single wire frame in bytes. Oversized frames are rejected and logged. Default: `1 MB`.
+- `DeliveryQueueCapacity`: The most inbound deliveries queued for the framework thread. The oldest are dropped with an error log past it. Default: `4096`.
+- `OutboundBufferCapacity`: The most outbound messages buffered while the network starts or re-elects. Default: `4096`. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations).
+- `MaxFrameBytes`: The largest wire frame. Larger frames are rejected and logged. Default: `1 MB`.
 - `BeaconInterval`: The interval between LAN discovery beacons. Default: `3 seconds`.
 - `PingInterval`: The interval between keep-alive pings on network links. Default: `2 seconds`.
-- `LanLinkTimeout`: How long a LAN hub link may stay silent before it is considered dead. Default: `8 seconds`.
+- `LanLinkTimeout`: How long a LAN hub link may stay silent before it counts as dead. Default: `8 seconds`.
 
 `Clone()` returns a shallow copy of an options object.
 
 ### The Network Name
 
-The network name is the only thing that decides who sees whom. Instances using different names never meet: the name derives the kernel mutex and rendezvous names, so a different name elects an entirely separate hub, and it is verified again during every handshake. A connection whose network name does not match is rejected outright. Two plugins can therefore safely coexist on one machine by picking distinct names, and a typo in the name presents as an instance that is `Ready` but permanently alone.
+The network name decides who sees whom. It derives the kernel mutex and rendezvous names and is checked in every handshake. Two plugins coexist on one machine with distinct names. A typo shows as an instance that is `Ready` but alone.
 
 ---
 
@@ -210,7 +206,7 @@ The network name is the only thing that decides who sees whom. Instances using d
 
 ### 1. Subscribing to a Message Type
 
-A message type must be subscribed with `On<TMessage>` to be received. Inbound messages of a type nobody subscribed to are dropped and logged:
+A message type must be subscribed with `On<TMessage>`. Messages of an unsubscribed type are dropped and logged:
 
 ```csharp
 var token = networker.On<PingMessage>((peer, message) =>
@@ -221,13 +217,12 @@ var token = networker.On<PingMessage>((peer, message) =>
 // Optionally, use a key. Subscribing again with the same key replaces the previous subscription.
 networker.On<PingMessage>((peer, message) => { /* ... */ }, key: "my-handler");
 
-// Dispose the token to unsubscribe.
 token.Dispose();
 ```
 
 ### 2. Broadcasting
 
-`Send` reaches every other peer on the network. The sender never receives its own broadcast:
+`Send` reaches every other peer. The sender never receives its own broadcast:
 
 ```csharp
 networker.Send(new PingMessage { Text = "Everyone gets this" });
@@ -244,17 +239,17 @@ if (peer != null)
     networker.SendTo(peer, new PingMessage { Text = "Only you get this" });
 ```
 
-Targeting the local instance is ignored and logged as a warning.
+Targeting the local instance is ignored with a warning.
 
 ---
 
 ## Requests and Responses
 
-Where `Send` is fire-and-forget, a request expects a typed answer back.
+A request expects a typed answer.
 
 ### 1. Answering Requests
 
-One handler per request type; registering the same request type again replaces the previous handler and logs a warning. Handlers run on the framework thread:
+One handler per request type. Registering the type again replaces the handler with a warning. Handlers run on the framework thread:
 
 ```csharp
 public class StatusRequest { public int Value { get; set; } }
@@ -263,7 +258,7 @@ public class StatusReply { public int Echo { get; set; } }
 networker.OnRequest<StatusRequest, StatusReply>((peer, request) => new StatusReply { Echo = request.Value * 2 });
 ```
 
-An asynchronous overload is available for handlers that need to await:
+An asynchronous overload:
 
 ```csharp
 networker.OnRequest<StatusRequest, StatusReply>(async (peer, request) =>
@@ -275,7 +270,7 @@ networker.OnRequest<StatusRequest, StatusReply>(async (peer, request) =>
 
 ### 2. Asking One Peer
 
-The await resumes on the framework thread. **Never sync-block (`.Wait()` or `.Result`) on the returned task from the framework thread, always await it**, since the completion is posted onto that same thread and blocking it self-deadlocks:
+The await resumes on the framework thread. **Never `.Wait()` or `.Result` on the task from the framework thread.** The completion is posted onto that thread:
 
 ```csharp
 var reply = await networker.Request<StatusRequest, StatusReply>(peer, new StatusRequest { Value = 21 });
@@ -288,11 +283,11 @@ var reply2 = await networker.Request<StatusRequest, StatusReply>(peer, new Statu
 `Request` throws:
 - `TimeoutException` when the peer did not answer in time.
 - `PeerLeftException` (carrying `PeerId`) when the peer left the network before answering.
-- `InvalidOperationException` when the remote handler failed, when the remote registered no handler for the type, when the networker is not active, or when the target is the local instance.
+- `InvalidOperationException` when the remote handler failed or is missing, when the networker is inactive, or when the target is the local instance.
 
 ### 3. Asking Every Peer
 
-`RequestAll` fans the request out and collects the answers. It completes when every peer answered or the timeout elapsed, and contains **only the successful answers**; failures are logged and omitted rather than thrown:
+`RequestAll` fans the request out. It completes when every peer answered or the timeout elapsed and holds **only the successful answers**. Failures are logged, never thrown:
 
 ```csharp
 var answers = await networker.RequestAll<StatusRequest, StatusReply>(new StatusRequest { Value = 0 });
@@ -309,20 +304,20 @@ An empty network returns an empty dictionary.
 
 ### 1. The Peer List
 
-`OtherPeers` is one flat list of every other instance, same-PC and LAN alike, excluding the local instance. Each entry is a `NetworkerPeer`:
+`OtherPeers` lists every other instance, same-PC and LAN alike. Each is a `NetworkerPeer`:
 
-- `Id`: The unique, session-scoped identifier of the peer.
-- `IsSameMachine`: Whether the peer runs on this machine. Diagnostic only, the API never behaves differently for LAN peers.
+- `Id`: The peer's session-scoped id.
+- `IsSameMachine`: Whether the peer runs on this machine. Diagnostic only.
 - `Metadata`: A snapshot of the peer's metadata.
 - `Flags`: A snapshot of the peer's coordination flags.
 - `this[string key]`: Reads one metadata value, or null when the key is not set.
 - `HasFlag(string flag)`: Whether the peer carries a coordination flag.
 
-Peer state is only ever mutated on the delivery thread, so anything read from inside a handler is coherent.
+Peer state is only mutated on the delivery thread. Reads inside a handler are coherent.
 
 ### 2. Your Own Presence
 
-`Self` is a `NetworkerSelf`, which extends `NetworkerPeer` with writes. Metadata set here is announced to every peer automatically:
+`Self` is a `NetworkerSelf`, a `NetworkerPeer` with writes. Its metadata is announced to every peer:
 
 ```csharp
 networker.Self
@@ -332,11 +327,11 @@ networker.Self
 networker.Self.Remove("world");
 ```
 
-Because peer ids are session-scoped, metadata is where durable identity belongs.
+Durable identity belongs in metadata.
 
 ### 3. Presence Callbacks
 
-All of these run on the framework thread, and all accept an optional `key` that replaces a previous subscription with the same key:
+All run on the framework thread. An optional `key` replaces a previous subscription with the same key:
 
 ```csharp
 networker.OnPeerJoined(peer => NoireLogger.LogInfo($"{peer} joined"));
@@ -350,13 +345,13 @@ networker.OnPeerUpdated((peer, key) =>
 });
 ```
 
-Each returns a `NoireSubscriptionToken`; dispose it to unsubscribe.
+Each returns a `NoireSubscriptionToken`. Dispose it to unsubscribe.
 
 ---
 
 ## Coordination Flags and Barriers
 
-Flags are named booleans on an instance, visible to every peer. They clear automatically when the instance that set them leaves the network, so a departing instance can never hold a barrier open.
+Flags are named booleans on an instance, visible to every peer. They clear when their instance leaves. A departed instance never holds a barrier open.
 
 ```csharp
 networker.SetFlag("ready");
@@ -364,7 +359,6 @@ networker.ClearFlag("ready");
 
 if (networker.HasFlag("ready")) { /* ... */ }
 
-// Read a peer's flags.
 var peerIsReady = peer.HasFlag("ready");
 ```
 
@@ -378,20 +372,20 @@ if (!everyoneReady)
     NoireLogger.LogWarning("Not everyone got ready in time.");
 ```
 
-- `minimumOthers` (default `1`) is the minimum number of other peers that must be connected, which guards against a barrier that is trivially true on an empty network. Passing a negative value throws `ArgumentOutOfRangeException`.
-- `timeout` is optional. When it elapses, the task completes with `false` rather than throwing. Without a timeout, the task only completes when the condition is met or the networker stops.
-- Membership is evaluated live, so a peer joining or leaving re-evaluates the barrier.
-- Evaluation pauses while the networker is not `Ready`, which keeps a barrier from completing on a partial view during a hub re-election.
+- `minimumOthers` (default `1`): the minimum number of other connected peers, against a barrier trivially true on an empty network. Negative throws `ArgumentOutOfRangeException`.
+- `timeout` is optional. On expiry the task completes with `false`. Without one it only completes when the condition holds or the networker stops.
+- Membership is live. A peer joining or leaving re-evaluates the barrier.
+- Evaluation pauses while the networker is not `Ready`.
 - Stopping the networker completes every pending barrier with `false`.
-- Calling it while the networker is not active returns a task faulted with `InvalidOperationException`.
+- Calling it while inactive returns a task faulted with `InvalidOperationException`.
 
-The await resumes on the framework thread, so the same rule applies: always await, never sync-block.
+The await resumes on the framework thread. Always await.
 
 ---
 
 ## Connection State
 
-`State` reports one of four `NetworkerState` values, and `OnStateChanged` observes the transitions:
+`State` is one of four `NetworkerState` values. `OnStateChanged` observes the transitions:
 
 ```csharp
 networker.OnStateChanged(state =>
@@ -401,33 +395,33 @@ networker.OnStateChanged(state =>
 });
 ```
 
-- `Stopped`: The networker is not running. This is the state before activation and after deactivation or disposal.
-- `Starting`: Joining the network for the first time after activation.
-- `Ready`: Connected and fully operational. Messages route immediately.
-- `Reelecting`: The hub was lost and a new one is being elected. Outbound messages are buffered until `Ready`.
+- `Stopped`: Not running, before activation and after deactivation or disposal.
+- `Starting`: Joining the network after activation.
+- `Ready`: Connected. Messages route immediately.
+- `Reelecting`: The hub was lost and a new one is being elected. Outbound messages are buffered.
 
-The transitions a consumer can observe are `Stopped` to `Starting` on activation, `Starting` to `Ready` once the instance has joined, `Ready` to `Reelecting` when the hub disappears, `Reelecting` to `Ready` once a new hub is elected, and any state to `Stopped` on deactivation or disposal.
+Transitions: `Stopped` to `Starting` on activation, `Starting` to `Ready` once joined, `Ready` to `Reelecting` when the hub disappears, `Reelecting` to `Ready` once a new hub is elected, and any state to `Stopped` on deactivation or disposal.
 
-`Stopped` is always the last transition a handler sees, delivered before `SetActive(false)` or `Dispose()` returns rather than on a later frame, so a handler that mirrors `State` into your own UI never gets stranded showing `Ready` after the networker has gone. By the time it runs, the peer list is empty, `IsHub` is false, and sends are refused. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations) for the threading detail.
+`Stopped` is always the last transition, delivered synchronously before `SetActive(false)` or `Dispose()` returns. By then the peer list is empty, `IsHub` is false, and sends are refused. See [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations).
 
 ### How Election Looks From Here
 
-Election needs nothing from you; understanding it only helps make sense of the logs:
+Election needs nothing from you:
 
-- Any instance may become the hub. The first one to acquire the network's named kernel mutex takes the role, and `IsHub` reports it.
-- Nothing about the API changes based on the role. A hub and a client send, receive, and request identically.
-- When the hub disappears (a clean exit or a crash), the survivors move to `Reelecting`, one of them acquires the mutex, and the network returns to `Ready` on its own. Peers, metadata, and flags reconverge automatically. Peers that do not reappear within a five second grace period after a failover are reported as departed.
-- A failover is contended for immediately. An instance that is connected holds its hub connection for as long as the hub lives, and re-elects the moment that connection ends, so nothing delays a survivor from taking the vacant role.
-- An instance that cannot join at all (the hub is still starting, or is unreachable) retries on its own, backing off from 100 milliseconds up to a couple of seconds between attempts. A network that never forms therefore settles into a quiet retry rather than re-electing continuously, and a hub that is merely slow to start is still joined within a few hundred milliseconds.
-- Pending requests addressed to an instance that left fail with `PeerLeftException` instead of hanging until their timeout.
+- The first instance to acquire the network's named kernel mutex becomes hub. `IsHub` reports it.
+- A hub and a client send, receive and request identically.
+- When the hub disappears, the survivors move to `Reelecting`, one acquires the mutex, and the network returns to `Ready`. Peers, metadata and flags reconverge. Peers missing five seconds after a failover are reported as departed.
+- A connected instance re-elects the moment its hub connection ends.
+- An instance that cannot join retries, backing off from 100 milliseconds to a couple of seconds. A hub slow to start is still joined within a few hundred milliseconds.
+- Requests to an instance that left fail immediately with `PeerLeftException`.
 
 ---
 
 ## EventBus Integration
 
-The `NoireNetworker` can bridge a `NoireEventBus` across the network, so that publishing an event on one instance's bus publishes it on every other instance's bus. It also publishes its own lifecycle events to the attached bus.
+The networker bridges a `NoireEventBus` across the network: publishing an event on one instance's bus publishes it on every other instance's bus. It also publishes its own lifecycle events.
 
-Both require `NetworkerOptions.EventBus` to be set. Since options are snapshotted on activation, set it before the module activates.
+Both need `NetworkerOptions.EventBus`, set before activation.
 
 ### Quick Example
 
@@ -449,7 +443,6 @@ var networker = NoireLibMain.AddModule(new NoireNetworker(
     options: new NetworkerOptions { EventBus = eventBus }
 ));
 
-// Share the type with the network.
 var share = networker.ShareEvent<RaidStartedEvent>();
 
 eventBus?.Subscribe<RaidStartedEvent>(evt =>
@@ -459,21 +452,20 @@ eventBus?.Subscribe<RaidStartedEvent>(evt =>
     NoireLogger.LogInfo($"{evt.Encounter} started, reported by {source}");
 }, owner: this);
 
-// Publishing locally now reaches every instance's bus.
+// Reaches every instance's bus.
 eventBus?.Publish(new RaidStartedEvent { Encounter = "Example" });
 
-// Dispose the token to stop sharing the type.
 share.Dispose();
 ```
 
-`ShareEvent<TEvent>` is loop-safe by construction: an event bridged in from the network is never bridged back out, so two instances cannot ping-pong an event between their buses. A local publish reaches local subscribers exactly once, and each remote instance exactly once.
+`ShareEvent<TEvent>` is loop-safe. An event bridged in is never bridged back out. A local publish reaches local subscribers once and each remote instance once.
 
 `ShareEvent` takes an optional `NetworkerShareDirection`:
 - `Both` (default) - local publishes go to all peers, and events from peers are published locally.
 - `Outbound` - only local publishes go to all peers.
 - `Inbound` - only events from peers are published locally.
 
-Calling `ShareEvent` without an `EventBus` configured logs a warning, shares nothing, and returns an inert token.
+`ShareEvent` without an `EventBus` logs a warning and returns an inert token.
 
 ### Available Events
 
@@ -482,7 +474,7 @@ Calling `ShareEvent` without an `EventBus` configured logs a warning, shares not
 - `NetworkerPeerUpdatedEvent` - A peer's metadata or flags changed
 - `NetworkerStateChangedEvent` - The networker's connection state changed
 
-Each carries the `NoireNetworker` that observed it. Set `NetworkerOptions.PublishModuleEvents` to false to keep them off the bus while still using `ShareEvent`.
+Each carries the `NoireNetworker` that observed it. `NetworkerOptions.PublishModuleEvents = false` keeps them off the bus. `ShareEvent` still works.
 
 ---
 
@@ -490,7 +482,7 @@ Each carries the `NoireNetworker` that observed it. Set `NetworkerOptions.Publis
 
 ### Multiple Networks
 
-Distinct networks are just distinct names, and each can be its own module instance retrieved by module id:
+Distinct networks are distinct names, each its own module instance retrieved by module id:
 
 ```csharp
 NoireLibMain.AddModule(new NoireNetworker("MyPlugin.Sync", moduleId: "Sync"));
@@ -514,25 +506,25 @@ var networker = NoireLibMain.AddModule(new NoireNetworker(
 ));
 ```
 
-Each machine's hub broadcasts UDP beacons carrying a salted hash of the network name, never the name itself, and hubs link to each other over TCP. Remote peers then appear in `OtherPeers` exactly like local ones, distinguishable only by `IsSameMachine`.
+Each hub broadcasts UDP beacons carrying a salted hash of the network name, and hubs link over TCP. Remote peers appear in `OtherPeers` like local ones, told apart by `IsSameMachine`.
 
-Notes on enabling it:
-- **Set a `LanSecret`.** Without one the network is open to any peer on the LAN that knows the network name, and the module logs a warning saying so. The handshake proves knowledge of the secret without transmitting it.
-- The first LAN use may require allowing inbound connections for the game process in Windows Firewall.
-- If a foreign application already occupies the beacon port, LAN discovery is disabled for the session with an error log, and same-PC operation continues unaffected. Override `BeaconPort` to pick another.
-- Links are single-hop: a hub relays between its own clients and its direct hub links, and does not forward LAN traffic on to a third machine's hub.
+Notes:
+- **Set a `LanSecret`.** Without one any LAN peer knowing the network name can join, and the module logs a warning.
+- The first LAN use may need inbound connections allowed for the game in Windows Firewall.
+- If another application holds the beacon port, LAN discovery is disabled for the session with an error log. Same-PC operation continues. Override `BeaconPort`.
+- Links are single-hop. A hub does not forward LAN traffic to a third machine.
 
 ### Disposal
 
-Disposing the module leaves the network cleanly: it announces its departure so peers see it leave promptly rather than waiting for a timeout, fails every pending request and barrier, releases the hub role if it held one (which triggers an immediate re-election among the survivors), and returns to `Stopped`.
+Disposing the module announces its departure, fails every pending request and barrier, releases the hub role (the survivors re-elect at once) and returns to `Stopped`.
 
 ```csharp
 networker.Dispose();
 ```
 
-Modules registered through `NoireLibMain.AddModule` are disposed with the library, so an explicit call is only needed when you manage the lifecycle yourself. `SetActive(false)` performs the same teardown while leaving the module reusable; activating it again rejoins the network.
+Modules registered through `NoireLibMain.AddModule` are disposed with the library. `SetActive(false)` performs the same teardown and keeps the module reusable.
 
-Teardown does not wait on the network. The departure announcement is written in the background and closes its socket once it is out, so disposing from the framework thread does not stall a frame waiting for peers to acknowledge anything. The announcement is best-effort: if it cannot be written, peers fall back to noticing the departure at their next ping timeout instead.
+Teardown does not wait on the network. The departure announcement is written in the background and is best-effort. If it fails, peers notice at their next ping timeout.
 
 ---
 
@@ -540,42 +532,36 @@ Teardown does not wait on the network. The departure announcement is written in 
 
 ### Everything Consumer-Visible Runs on the Framework Thread
 
-Message handlers, request handlers, peer callbacks, state callbacks, bridged-in EventBus publishes, and the continuations of `Request`, `RequestAll`, and `WhenAllFlagged` are all delivered on the framework thread, through a single ordered queue drained on the framework update. Two consequences:
+Message handlers, request handlers, peer and state callbacks, bridged EventBus publishes, and the continuations of `Request`, `RequestAll` and `WhenAllFlagged` all run on the framework thread through one ordered queue:
 
-- You may touch game state directly inside any networker callback, with no marshalling of your own.
-- **Never sync-block (`.Wait()` or `.Result`) on a networker task from the framework thread.** The completion is posted onto that same thread, so blocking it deadlocks against itself. Always `await`.
+- Game state is safe inside any networker callback.
+- **Never `.Wait()` or `.Result` on a networker task from the framework thread.** It deadlocks. Always `await`.
 
-Ordering is preserved: deliveries are processed in the order they were received.
+Deliveries are processed in arrival order.
 
-That inbound queue is bounded by `NetworkerOptions.DeliveryQueueCapacity` (default 4096). If the framework thread is frozen long enough for the queue to overflow, the **oldest deliveries are dropped** with an error log rather than growing memory without limit.
+The queue holds `NetworkerOptions.DeliveryQueueCapacity` deliveries (default 4096). If the framework thread freezes long enough, the **oldest are dropped** with an error log.
 
-There is **one exception**: the final `Stopped` state change is delivered synchronously, on whatever thread stopped the networker, before `Dispose()` or `SetActive(false)` returns. The queue is torn down as part of stopping, so a `Stopped` routed through it would be discarded and never seen at all. Everything else, including the transitions to `Starting`, `Ready`, and `Reelecting`, goes through the queue as described above. If you deactivate or dispose the networker from a background thread, an `OnStateChanged` handler observing `Stopped` therefore runs on that thread, so avoid touching game state from inside it unless you know the stop came from the framework thread.
+**One exception.** The final `Stopped` change is delivered synchronously on the thread that stopped the networker. Stopping from a background thread runs that `OnStateChanged` handler there.
 
 ### Outbound Buffering Across a Hub Re-election Is Bounded and Lossy
 
-This is the most important limit to know.
+The most important limit.
 
-- While the networker is `Ready`, a send routes immediately.
-- While it is `Starting` or `Reelecting`, sends are **buffered** and flushed the moment it becomes `Ready` again. A brief failover is therefore usually invisible to your code.
-- **Past `NetworkerOptions.OutboundBufferCapacity` (default 4096) buffered messages, further sends are dropped** with a warning log. They are not queued, not retried, and not reported to the caller.
-- While the networker is `Stopped`, a send is dropped with a warning.
+- While `Ready`, a send routes immediately.
+- While `Starting` or `Reelecting`, sends are **buffered** and flushed once `Ready`.
+- **Past `NetworkerOptions.OutboundBufferCapacity` (default 4096) buffered messages, further sends are dropped** with a warning.
+- While `Stopped`, a send is dropped with a warning.
 
-**Delivery across a hub failover is therefore best-effort, not guaranteed.** A message can also be lost in the moment a link drops. If your plugin must not lose a message across a failover, implement your own acknowledgement: have the receiver confirm receipt (a `Request` round trip does this naturally) and have the sender retry when the confirmation does not arrive. Raising `OutboundBufferCapacity` widens the window but does not remove the limit.
+**Delivery across a hub failover is best-effort.** A message can also be lost when a link drops. If a message must not be lost, have the receiver confirm it (a `Request` does) and the sender retry.
 
-Nothing here is a problem for the common cases (presence, state broadcasts, coordination flags, requests that carry their own timeout), because each of those either re-announces its full state after a reconnect or surfaces the failure to the caller.
-
-### LAN Has Not Been Verified Across Two Physical Machines
-
-Same-PC multi-process operation is covered by an integration suite that runs the real stack: kernel mutex election, the rendezvous file, and loopback TCP, across multiple module instances, including hub failover and reconvergence.
-
-**The LAN path (UDP discovery beacons and hub-to-hub links) is implemented but has never been verified across two physical machines.** It is untested territory rather than a known-broken feature, and it is off by default. Treat `EnableLan = true` as unproven, and test it in your own environment before relying on it.
+Presence, state broadcasts, flags and requests are unaffected: each re-announces its state after a reconnect or surfaces the failure.
 
 ### Other Notes
 
-- A message type must be subscribed with `On<TMessage>` before it can be received. Inbound messages of a type nobody subscribed to are dropped and logged.
-- Messages are serialized as JSON with Newtonsoft.Json and materialize only into locally registered types, so a payload cannot pick the type it deserializes into. Keep message types to plain serializable data.
-- A single wire frame is capped at `MaxFrameBytes` (default 1 MB). Larger frames are rejected and logged, so chunk large payloads yourself.
-- Peer ids are session-scoped. A relaunched instance is a new peer; put durable identity in metadata.
+- A message type must be subscribed with `On<TMessage>`. Messages of an unsubscribed type are dropped and logged.
+- Messages are JSON through Newtonsoft.Json and only materialize into locally registered types. Keep them to plain serializable data.
+- A frame is capped at `MaxFrameBytes` (default 1 MB). Chunk large payloads yourself.
+- Peer ids are session-scoped. Put durable identity in metadata.
 
 ---
 
@@ -584,45 +570,45 @@ Same-PC multi-process operation is covered by an integration suite that runs the
 ### Instances do not see each other
 - Ensure NoireLib is initialized before adding the module.
 - Confirm the module is active (`IsActive == true`) and that `State == NetworkerState.Ready`.
-- Verify every instance uses the **exact same network name**, which is case-sensitive. A mismatched name presents as an instance that is `Ready` but alone.
+- Every instance must use the **exact same network name**, case-sensitive.
 - Confirm the instances run on the same PC, or that `EnableLan` is true on every instance for LAN peers.
-- Check that no security software is blocking loopback TCP connections for the game process.
-- Check the dalamud logs with `/xllog`.
+- Check that nothing blocks loopback TCP for the game process.
+- Check `/xllog`.
 - If it still does not work, please report it.
 
 ### Messages are not received
-- Ensure the receiving instance subscribed to the type with `On<TMessage>`; unsubscribed types are dropped on arrival.
-- Confirm the message class is identical on both sides, including its namespace, since the full type name identifies it on the wire.
-- `Send` never delivers to the sender itself. Call your own logic directly if the local instance must react too.
-- Ensure the message type is JSON-serializable with public get/set properties.
+- Ensure the receiver subscribed with `On<TMessage>`.
+- The message class must match on both sides, namespace included.
+- `Send` never delivers to the sender.
+- The message type must be JSON-serializable with public get/set properties.
 - Check for a warning about the outbound buffer or the frame size limit in `/xllog`.
 
 ### Requests time out or fail
-- Ensure the target instance registered a handler with `OnRequest<TRequest, TResponse>` for that exact request type. Without one, the request fails with `InvalidOperationException` mentioning "No handler registered".
-- Confirm nothing sync-blocks (`.Wait()` or `.Result`) on the task from the framework thread, which deadlocks. Always await.
-- Raise the timeout with the `timeout` argument or `NetworkerOptions.DefaultRequestTimeout` if the handler is genuinely slow.
-- A `PeerLeftException` means the peer left before answering, which is expected during a failover.
+- The target must register `OnRequest<TRequest, TResponse>` for that exact type. Otherwise the request fails with `InvalidOperationException` mentioning "No handler registered".
+- Never `.Wait()` or `.Result` on the task from the framework thread.
+- Raise the timeout with `timeout` or `NetworkerOptions.DefaultRequestTimeout` for a slow handler.
+- `PeerLeftException` means the peer left before answering, expected during a failover.
 
 ### A barrier never completes
-- Confirm every instance, including the local one, actually calls `SetFlag` with the same flag name.
-- Check `minimumOthers` against the number of peers actually connected; a barrier waiting on more peers than exist can never complete.
-- Barrier evaluation pauses while the networker is not `Ready`, so a re-election in progress delays completion.
-- Pass a `timeout` so the barrier resolves to `false` instead of waiting indefinitely.
+- Every instance, the local one included, must call `SetFlag` with the same flag name.
+- Check `minimumOthers` against the connected peers.
+- Evaluation pauses while the networker is not `Ready`.
+- Pass a `timeout` to resolve to `false` on expiry.
 
 ### LAN peers do not appear
 - Set `EnableLan = true` on **every** instance, on both machines.
-- Ensure both machines use the same network name and the same `LanSecret`. A mismatched secret fails the handshake and logs a rejection.
+- Both machines need the same network name and `LanSecret`. A mismatched secret fails the handshake and logs a rejection.
 - Allow inbound connections for the game process in Windows Firewall on both machines.
-- Confirm both machines are on the same subnet and that UDP broadcast is not blocked by the network hardware.
-- Look for a beacon port bind failure in `/xllog` and override `BeaconPort` if another application holds it.
-- The LAN path has not been verified across two physical machines; see [Delivery Guarantees and Limitations](#delivery-guarantees-and-limitations).
+- Both machines must be on the same subnet with UDP broadcast allowed.
+- Look for a beacon port bind failure in `/xllog` and override `BeaconPort`.
+- The LAN path is untested across two physical machines.
 
 ### EventBus events are not shared
-- Ensure `NetworkerOptions.EventBus` is set **before** the module activates, since options are snapshotted on activation.
+- Set `NetworkerOptions.EventBus` **before** activation.
 - Confirm `ShareEvent<TEvent>` was called on every instance that should send or receive the type.
 - Check the `NetworkerShareDirection`: `Outbound` only sends and `Inbound` only receives.
 - Confirm the EventBus module is active and has subscribers.
-- If `NetworkerPeerJoinedEvent` and friends are missing, confirm `PublishModuleEvents` is true.
+- For the lifecycle events, check `PublishModuleEvents`.
 
 ---
 

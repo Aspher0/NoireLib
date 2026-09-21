@@ -6,19 +6,13 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-// Records every payload written to the game's small constant buffers during a few frames, rather than only the last
-// one. A deferred renderer draws one light at a time through the same buffer, rewriting it per light, so a tracker
-// that keeps only the final contents sees a single value that changes constantly and discards the lights precisely
-// because there are many of them.
+// The deferred renderer rewrites the same buffer once per light.
 internal sealed class ConstantWriteLog
 {
     private const int MaxRecords = 4096;
 
-    // Bytes kept per payload. Must cover a whole buffer, not a guessed-at prefix: a repeating layout is only
-    // recognised when the rows after the first few are present too.
     private const int MaxRecordBytes = 512;
 
-    // Rows printed on one line before a payload is broken out one row per line.
     private const int InlineRowLimit = 6;
 
     private readonly List<WriteRecord> records = new(256);
@@ -28,30 +22,17 @@ internal sealed class ConstantWriteLog
 
     private readonly record struct WriteRecord(nint Pointer, int ByteWidth, byte[] Bytes);
 
-    /// <summary>Whether writes are currently being recorded.</summary>
     public bool Armed => framesRemaining > 0;
 
-    /// <summary>How many payloads have been recorded.</summary>
     public int Count => records.Count;
 
-    /// <summary>Whether the record cap was reached: later passes in the frame were never seen.</summary>
     public bool Truncated => dropped > 0;
 
-    /// <summary>How many payloads were dropped after the cap.</summary>
     public long Dropped => dropped;
 
-    /// <summary>The buffer size this run is restricted to, or zero for all of them.</summary>
     public int SizeFilter => sizeFilter;
 
-    /// <summary>
-    /// Starts recording for the next <paramref name="frames"/> world frames.
-    /// </summary>
-    /// <param name="frames">How many frames to record.</param>
-    /// <param name="byteWidth">
-    /// When above zero, only buffers of exactly this size are recorded. A frame's early passes write thousands
-    /// of object transforms, and an unfiltered log fills its budget on them before the deferred lighting pass
-    /// ever runs.
-    /// </param>
+    // Unfiltered, the early passes' object transforms fill the budget before the lighting pass runs.
     public void Arm(int frames, int byteWidth = 0)
     {
         records.Clear();
@@ -60,18 +41,12 @@ internal sealed class ConstantWriteLog
         framesRemaining = Math.Max(frames, 0);
     }
 
-    /// <summary>Counts down the armed window. Called once per present.</summary>
     public void OnFrameBoundary()
     {
         if (framesRemaining > 0)
             framesRemaining--;
     }
 
-    /// <summary>Records one payload, if there is room.</summary>
-    /// <param name="pointer">The buffer written to.</param>
-    /// <param name="byteWidth">The buffer's declared size.</param>
-    /// <param name="data">The payload.</param>
-    /// <param name="length">Valid bytes at <paramref name="data"/>.</param>
     public unsafe void Record(nint pointer, int byteWidth, nint data, int length)
     {
         if (framesRemaining <= 0 || data == 0)
@@ -80,8 +55,6 @@ internal sealed class ConstantWriteLog
         if (sizeFilter > 0 && byteWidth != sizeFilter)
             return;
 
-        // Counted rather than silently ignored: a log that stops early has not seen the end of the frame, and
-        // the lighting pass is at the end of the frame.
         if (records.Count >= MaxRecords)
         {
             dropped++;
@@ -99,13 +72,6 @@ internal sealed class ConstantWriteLog
         records.Add(new WriteRecord(pointer, byteWidth, bytes));
     }
 
-    /// <summary>
-    /// Groups the recorded payloads and reports the ones that look like a list of lights: a colour-shaped row
-    /// in the same place each time, written many times per frame. Shows the distinct payloads so a repeating
-    /// layout is visible by eye.
-    /// </summary>
-    /// <param name="maxGroups">How many buffers to report.</param>
-    /// <param name="maxPerGroup">How many distinct payloads to show per buffer.</param>
     public string Describe(int maxGroups = 8, int maxPerGroup = 12)
     {
         var sb = new StringBuilder();
@@ -115,8 +81,6 @@ internal sealed class ConstantWriteLog
             return sb.ToString();
         }
 
-        // Group by buffer, and within a buffer keep only distinct payloads: a light list rewrites the same
-        // buffer with different values, while a per-frame constant rewrites it with the same value.
         var byBuffer = new Dictionary<nint, (int ByteWidth, int Writes, List<byte[]> Distinct)>();
         foreach (var record in records)
         {
@@ -141,7 +105,6 @@ internal sealed class ConstantWriteLog
             byBuffer[record.Pointer] = group;
         }
 
-        // Most distinct payloads first: a list of many different lights has many distinct payloads.
         var ordered = new List<KeyValuePair<nint, (int ByteWidth, int Writes, List<byte[]> Distinct)>>(byBuffer);
         ordered.Sort((a, b) => b.Value.Distinct.Count.CompareTo(a.Value.Distinct.Count));
 
@@ -185,12 +148,7 @@ internal sealed class ConstantWriteLog
         return sb.ToString();
     }
 
-    /// <summary>
-    /// The distinct payloads recorded, pooled across every buffer instead of grouped by one. The game cycles a
-    /// small ring of buffers, so the same record lands in a different buffer from one frame to the next; keyed
-    /// by buffer, every entry would read as new on every capture. Only the set of payloads stays stable across
-    /// captures.
-    /// </summary>
+    // The game cycles a small ring of buffers.
     public List<byte[]> DistinctPayloads()
     {
         var distinct = new List<byte[]>();
@@ -203,14 +161,6 @@ internal sealed class ConstantWriteLog
         return distinct;
     }
 
-    /// <summary>
-    /// Reports how a recorded payload set changed against an earlier one. A payload that appears, vanishes, or
-    /// has one row rewritten precisely when a light in the room was switched is a light, whatever it looks
-    /// like; a payload that sits unchanged across that switch is not one, however much it resembles a colour
-    /// and a position.
-    /// </summary>
-    /// <param name="before">The payload set captured before the lighting was altered.</param>
-    /// <param name="after">The payload set captured after it.</param>
     public static string DescribeDiff(IReadOnlyList<byte[]> before, IReadOnlyList<byte[]> after)
     {
         var sb = new StringBuilder();
@@ -238,12 +188,10 @@ internal sealed class ConstantWriteLog
         {
             sb.AppendLine();
             sb.AppendLine("NOTHING RESPONDED. Either the change does not reach this size class, or it never reached the GPU at all -");
-            sb.AppendLine("repeat it with a change that is unmistakable on screen, such as removing a lamp rather than dimming one.");
+            sb.AppendLine("repeat it with a change that is unmistakable on screen, such as removing a lamp.");
             return sb.ToString();
         }
 
-        // A light that was only recoloured leaves a payload whose other rows are untouched. Pairing those up says
-        // which row carries the change, which a plain added/removed listing cannot.
         var pairedRemoved = new bool[removed.Count];
         var shown = 0;
 
@@ -271,7 +219,7 @@ internal sealed class ConstantWriteLog
             if (match >= 0 && bestShared * 2 >= rows)
             {
                 pairedRemoved[match] = true;
-                sb.AppendLine($"CHANGED ({bestShared} of {rows} rows identical, so this is one record rewritten rather than two unrelated ones):");
+                sb.AppendLine($"CHANGED ({bestShared} of {rows} rows identical, one record rewritten):");
                 AppendRowDiff(sb, removed[match], added[i]);
             }
             else
@@ -297,7 +245,6 @@ internal sealed class ConstantWriteLog
         return sb.ToString();
     }
 
-    // Prints two paired payloads row by row, marking the rows that differ.
     private static void AppendRowDiff(StringBuilder sb, byte[] before, byte[] after)
     {
         var rows = Math.Min(before.Length, after.Length) / 16;
@@ -318,7 +265,6 @@ internal sealed class ConstantWriteLog
         }
     }
 
-    // How many 16-byte rows two payloads share at the same offset.
     private static int SharedRows(byte[] a, byte[] b)
     {
         var rows = Math.Min(a.Length, b.Length) / 16;
@@ -344,9 +290,6 @@ internal sealed class ConstantWriteLog
         return false;
     }
 
-    // Writes one payload out as rows, flagging the ones shaped like a colour or a position. Anything past a handful
-    // of rows goes one row per line with its index: a repeating record is spotted by seeing the same kind of row
-    // recur at a fixed spacing, and a single wrapped line hides exactly that.
     private static void AppendPayload(StringBuilder sb, int index, byte[] payload)
     {
         var rows = payload.Length / 16;
@@ -375,7 +318,6 @@ internal sealed class ConstantWriteLog
         }
     }
 
-    // Reads one 16-byte row of a payload as a vector.
     private static Vector4 Row(byte[] payload, int index)
         => BufferHelper.ReadVector4(payload, index * 16);
 

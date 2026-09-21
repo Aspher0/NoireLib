@@ -10,10 +10,7 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
-/// <summary>
-/// The demo window: a status strip, an icon rail, and the open page.
-/// <para>Owns the pages and the <see cref="DemoShell"/> they share; forwards disposal to the three that hold live scenes.</para>
-/// </summary>
+/// <summary>The demo window: a status strip, an icon rail, and the open page.</summary>
 public sealed class DemoWindow : Window, IDisposable
 {
     private const float RailWidth = 158f;
@@ -48,11 +45,7 @@ public sealed class DemoWindow : Window, IDisposable
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
-    /// <summary>
-    /// Hides the window while the game UI is hidden, unless asked otherwise on the Renderer page.
-    /// <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/> keeps the layer alive by telling Dalamud not to hide this
-    /// plugin, so the window can only step aside by checking the game's state itself.
-    /// </summary>
+    /// <summary>Hides the window while the game UI is hidden, unless the Renderer page keeps it open.</summary>
     public override bool DrawConditions()
         => shell.KeepWindowWhenUiHidden || !NoireDraw3D.IsGameUiHidden;
 
@@ -67,14 +60,12 @@ public sealed class DemoWindow : Window, IDisposable
         DrawPage();
     }
 
-    // ---------------------------------------------------------------- status
-
     private static void DrawStatusStrip()
     {
         var enabled = NoireDraw3D.Enabled;
         var live = enabled && NoireDraw3D.HasValidFrame;
 
-        // Colour carries the state rather than a glyph: the demo cannot assume any symbol exists in the loaded font.
+        // The font may lack a status glyph.
         var (color, label) = (enabled, live) switch
         {
             (false, _) => (ImGuiColors.DalamudRed, "OFF"),
@@ -86,8 +77,7 @@ public sealed class DemoWindow : Window, IDisposable
         using (ImRaii.PushColor(ImGuiCol.Text, color))
             ImGui.TextUnformatted(label);
 
-        // Measure before the tooltip: last-item state is per-context, not per-window, so the tooltip's own text would
-        // overwrite it and the fit check below would be reading the wrong rect.
+        // Measured before the tooltip overwrites the last-item state.
         var labelEnd = ImGui.GetItemRectMax().X - ImGui.GetWindowPos().X;
 
         if (ImGui.IsItemHovered())
@@ -102,8 +92,6 @@ public sealed class DemoWindow : Window, IDisposable
 
         var stats = NoireDraw3D.Stats;
 
-        // One slot, worst-first: no depth is broken rendering, a fallback camera is degraded placement, a hidden UI is
-        // merely worth knowing. Anything not abnormal says nothing at all.
         var (flag, flagTip) = !stats.DepthAvailable
             ? ("no depth", "The game's depth buffer was unreadable this frame: nothing hides behind world geometry, and decals have no surface to land on.")
             : stats.UsedFallbackCamera
@@ -112,7 +100,6 @@ public sealed class DemoWindow : Window, IDisposable
                     ? ("ui hidden", "The game UI is hidden and the layer is still drawing, because 'Keep 3D layer' is on.")
                     : (string.Empty, string.Empty);
 
-        // Split rather than totalled: the two halves fail for different reasons, so which one moved is the useful part.
         var ms = $"scene {stats.SceneGpuMs:F2}  comp {stats.CompositeGpuMs:F2} ms";
         float msWidth;
         using (ImRaii.PushFont(UiBuilder.MonoFont))
@@ -121,12 +108,10 @@ public sealed class DemoWindow : Window, IDisposable
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         var flagWidth = flag.Length > 0 ? ImGui.CalcTextSize(flag).X + spacing : 0f;
 
-        // Right-aligned, so the reading sits in a fixed column instead of sliding as the number changes width.
-        // Window-local throughout: SameLine's offset and GetCursorPosX share an origin.
         var right = ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X;
         var x = right - msWidth - flagWidth;
 
-        // Too narrow to place it without running into the label: drop it rather than clip. It is on Diagnostics anyway.
+        // Skipped when too narrow.
         if (x < labelEnd + spacing)
             return;
 
@@ -147,8 +132,6 @@ public sealed class DemoWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             Ui.Tooltip("GPU time last frame: scene draws your geometry, composite blits the layer into the game's frame.");
     }
-
-    // ---------------------------------------------------------------- rail
 
     private void DrawRail()
     {
@@ -173,8 +156,7 @@ public sealed class DemoWindow : Window, IDisposable
         }
     }
 
-    // The caption needs the icon font and the text font on one line, which a Selectable label cannot carry, so the
-    // row is an empty Selectable with its content painted over it.
+    // A label cannot mix the icon and text fonts.
     private void DrawRailItem(DemoPageInfo info)
     {
         var active = shell.Current == info.Page;
@@ -206,15 +188,11 @@ public sealed class DemoWindow : Window, IDisposable
         }
     }
 
-    // The open page: a scroll body for plain pages, a plain frame for the one that pins its own tab bar.
     private void DrawPage()
     {
         using var id = ImRaii.PushId((int)shell.Current);
 
-        // Tabbed pages still need a child, just not a scrolling one. The child is what gives this column its own
-        // layout context: without it the rail beside us is part of the same line, and its full height becomes the
-        // line height, so everything after the first row wraps underneath the rail. NoScroll keeps the page's tab
-        // bar pinned; each of its tabs scrolls its own body instead.
+        // Without its own child, the rail's height wraps later rows underneath it.
         var pinnedTabs = shell.Current == DemoPage.Scenes;
 #if DEBUG
         pinnedTabs = pinnedTabs || shell.Current == DemoPage.Debug;

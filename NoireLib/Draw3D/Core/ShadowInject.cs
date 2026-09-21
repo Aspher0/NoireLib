@@ -7,30 +7,21 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// Draws meshes depth-only into the GAME's shadow maps, inside the game's own shadow passes, so injected geometry
-// casts shadows. Runs at the END of each shadow bind, with the last caster draw's constants still bound; a bind's
-// first draw does not reliably carry the pass that owns the map. Depth compare, depth bias, viewport and culling stay
-// as the game configured them; only the shaders, input assembly and this pass's own constant slots change, and are
-// restored after. The game re-renders a light's map only when its own bookkeeping detects a change near that light,
-// and injected geometry is invisible to that bookkeeping, so a cached map shows the shadow only once the game next
-// refreshes it.
+// Draws at the end of each shadow draw group, with the last caster's constants still bound. A bind's first draw does not reliably carry the owning pass.
+// The game re-renders a cached light map only when it sees a change near that light.
 internal sealed unsafe class ShadowInject : IDisposable
 {
     internal readonly record struct Item(Mesh Mesh, Matrix4x4 World);
 
-    // The g_CameraParameter block, named by the game's own shader reflection: m_ViewMatrix (world to the
-    // pass's view space, three rows) sits at byte 0 and m_ProjectionMatrix (view to clip, four rows) at
-    // byte 288. Those two are what a shadow pass fills; the game's own geometry shaders compose positions
-    // the same way, an instance transform into the pass's view space, then the projection rows.
+    // g_CameraParameter: m_ViewMatrix (three rows) at byte 0, m_ProjectionMatrix (four rows) at byte 288.
     private const int ViewOffset = 0;
     private const int ViewSize = 48;
     private const int ClipOffset = 288;
     private const int ClipSize = 64;
 
-    // The near-field map binds a constant buffer of exactly one matrix, applied whole.
+    // The near-field map binds a constant buffer of exactly one matrix.
     private const int DirectVpSize = 64;
 
-    // The copied rows the vertex shader reads: three view rows, then four clip rows.
     private const int MatrixBufferSize = ViewSize + ClipSize;
 
     private const int MaxScratchPool = 8;
@@ -42,9 +33,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         public Vector4 Mode;
     }
 
-    // Submissions land in pending on the caller's thread; the render thread draws active. The swap happens
-    // at the frame boundary, so the shadow passes - which run at the very start of a frame, before any
-    // submission for that frame could arrive - draw the previous frame's complete set instead of racing it.
+    // The shadow passes run before the frame's submissions arrive. They draw the previous frame's set.
     private readonly object gate = new();
     private List<Item> pending = new(16);
     private List<Item> active = new(16);
@@ -55,44 +44,26 @@ internal sealed unsafe class ShadowInject : IDisposable
     private ID3D11Buffer* matrixBuffer;
     private ID3D11ShaderResourceView* matrixSrv;
 
-    // One readback of the copied rows per casting session and constant layout, so a report of "no shadow"
-    // comes with the numbers instead of another blind round: the rows as copied, and a queued mesh's world
-    // position pushed through them exactly as the vertex shader does it. Each traced frame stalls once.
     private readonly bool[] tracedModes = new bool[2];
     private ID3D11Buffer* traceStaging;
     private readonly ID3D11Buffer*[] scratchPool = new ID3D11Buffer*[MaxScratchPool];
     private readonly int[] scratchSizes = new int[MaxScratchPool];
     private int scratchCount;
 
-    // No-cull variants of the game's own shadow raster states, keyed by the source state (AddRef'd so the
-    // key cannot be recycled under us). The game's state carries the depth bias the map was tuned with, so
-    // it is cloned rather than replaced; only the cull mode changes, because the game's front-face
-    // convention is not this renderer's and inheriting it can cull every injected triangle.
+    // Cloning keeps the map's depth bias. The game's front-face convention can cull every triangle.
     private readonly ID3D11RasterizerState*[] cullSources = new ID3D11RasterizerState*[MaxScratchPool];
     private readonly ID3D11RasterizerState*[] cullVariants = new ID3D11RasterizerState*[MaxScratchPool];
     private int cullCount;
 
-    /// <summary>How many meshes were drawn into the last shadow bind that ran, for diagnostics.</summary>
     public int LastInjectedCount { get; private set; }
 
-    /// <summary>
-    /// How many of last frame's drawn groups were the near-field map (the single-matrix constant layout), for
-    /// diagnostics. The game redraws this map every frame, so a steady non-zero count means a cast appears
-    /// immediately; zero while per-light maps are being drawn means the near-field layout is not being reached.
-    /// </summary>
+    // The near-field map is redrawn every frame.
     public int LastNearFieldCount { get; private set; }
 
-    /// <summary>How many shadow binds received geometry last frame, for diagnostics.</summary>
     public int LastBindCount { get; private set; }
 
-    /// <summary>How many shadow binds were entered with work queued last frame, for diagnostics.</summary>
     public int LastEnteredCount { get; private set; }
 
-    /// <summary>
-    /// How many entered binds were skipped last frame because their constants matched neither measured
-    /// shape. Entered high with drawn zero means the constant layout moved; entered zero means the passes
-    /// are not being seen at all.
-    /// </summary>
     public int LastSkippedCount { get; private set; }
 
     private int bindsThisFrame;
@@ -100,7 +71,6 @@ internal sealed unsafe class ShadowInject : IDisposable
     private int skippedThisFrame;
     private int nearFieldThisFrame;
 
-    /// <summary>Whether anything is queued for the coming shadow passes.</summary>
     public bool HasWork
     {
         get
@@ -110,14 +80,12 @@ internal sealed unsafe class ShadowInject : IDisposable
         }
     }
 
-    /// <summary>Queues a mesh for the next frame's shadow passes. Called from the normal render path, not the render thread.</summary>
     public void Enqueue(in Item item)
     {
         lock (gate)
             pending.Add(item);
     }
 
-    /// <summary>Drops everything queued, so a lapsed caller's meshes do not reappear at stale positions when it resumes.</summary>
     public void Clear()
     {
         lock (gate)
@@ -126,11 +94,10 @@ internal sealed unsafe class ShadowInject : IDisposable
             active.Clear();
         }
 
-        tracedModes[0] = false; // the next casting session logs its rows again
+        tracedModes[0] = false;
         tracedModes[1] = false;
     }
 
-    /// <summary>Frame over (render thread): this frame's submissions become the set the next frame's shadow passes draw.</summary>
     public void OnFrameBoundary()
     {
         lock (gate)
@@ -149,14 +116,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         nearFieldThisFrame = 0;
     }
 
-    /// <summary>
-    /// Draws the active meshes into the currently bound shadow map. Runs on the render thread at the END of
-    /// a shadow bind, with the game's own depth target, viewport, raster state and last-draw constants
-    /// still bound.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="shaders">The shader library supplying the depth-only pipeline.</param>
-    /// <param name="ctx">The game's immediate context.</param>
     public void Execute(RenderDevice device, ShaderLibrary shaders, ID3D11DeviceContext* ctx)
     {
         lock (gate)
@@ -173,8 +132,6 @@ internal sealed unsafe class ShadowInject : IDisposable
             return;
         }
 
-        // The light's view-projection, copied GPU-side out of whatever the game's own draws are about to
-        // consume. Read before the state capture: nothing here changes pipeline state.
         ID3D11Buffer* gameCb = null;
         ctx->VSGetConstantBuffers(0, 1, &gameCb);
         if (gameCb == null)
@@ -186,8 +143,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         D3D11_BUFFER_DESC desc;
         gameCb->GetDesc(&desc);
 
-        // The camera-parameter layout needs both named matrices present; the near-field map's constants
-        // are a single whole transform instead. Anything else is not a layout a light has been measured in.
         float mode;
         if (desc.ByteWidth >= ClipOffset + ClipSize)
         {
@@ -204,9 +159,7 @@ internal sealed unsafe class ShadowInject : IDisposable
             return;
         }
 
-        // Two copies rather than one: a constant buffer cannot be the source or target of a partial copy on
-        // every runtime this may run on, so the whole buffer is cloned to a plain scratch buffer first and
-        // the matrix windows lifted out of that.
+        // A constant buffer cannot be the source of a partial copy on every runtime.
         var scratch = AcquireScratch(device, (int)desc.ByteWidth);
         if (scratch == null)
         {
@@ -241,11 +194,8 @@ internal sealed unsafe class ShadowInject : IDisposable
             ctx->IASetInputLayout(pipeline.Layout);
             ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             ctx->VSSetShader(pipeline.Vs, null, 0);
-            ctx->PSSetShader(null, null, 0); // depth-only: the bound target set has no color views
+            ctx->PSSetShader(null, null, 0); // the bound target set has no color views
 
-            // The game's raster state, with the culling turned off: its depth bias is the map's tuning and
-            // must survive, but its front-face convention is not this renderer's, and a wrong inherited
-            // cull silently removes every injected triangle.
             ID3D11RasterizerState* gameRaster = null;
             ctx->RSGetState(&gameRaster);
             var noCull = CullNoneVariant(device, gameRaster);
@@ -275,7 +225,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         }
     }
 
-    // Draws every active mesh with the pipeline already bound, returning how many drew.
     private int DrawActive(ID3D11DeviceContext* ctx, float mode)
     {
         var drawn = 0;
@@ -304,7 +253,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         return drawn;
     }
 
-    // Creates the matrix buffer, its view and the object constants once. Returns whether they are usable.
     private bool EnsureResources(RenderDevice device)
     {
         if (matrixSrv != null && objectCb != null)
@@ -350,8 +298,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         return true;
     }
 
-    // Logs the copied rows and a queued mesh's world position pushed through them the way the vertex shader does it.
-    // Once per casting session, on the render thread; the copy-and-map stalls that frame.
     private void TraceOnce(RenderDevice device, ID3D11DeviceContext* ctx, float mode)
     {
         if (traceStaging == null)
@@ -393,7 +339,6 @@ internal sealed unsafe class ShadowInject : IDisposable
                 }
             }
 
-            // The same arithmetic the shader runs, so the log answers where this mesh lands in this map.
             var view = mode < 0.5f
                 ? new Vector4(Dot(rows[0], world), Dot(rows[1], world), Dot(rows[2], world), 1f)
                 : world;
@@ -415,7 +360,6 @@ internal sealed unsafe class ShadowInject : IDisposable
 
     private static float Dot(Vector4 a, Vector4 b) => (a.X * b.X) + (a.Y * b.Y) + (a.Z * b.Z) + (a.W * b.W);
 
-    // Lifts one matrix window out of the scratch clone into the row buffer the vertex shader reads.
     private void CopyWindow(ID3D11DeviceContext* ctx, ID3D11Buffer* scratch, int sourceOffset, int destinationOffset, int size)
     {
         var box = new D3D11_BOX
@@ -430,7 +374,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         ctx->CopySubresourceRegion((ID3D11Resource*)matrixBuffer, 0, (uint)destinationOffset, 0, 0, (ID3D11Resource*)scratch, 0, &box);
     }
 
-    // The no-cull clone of a game raster state, created once per distinct source state.
     private ID3D11RasterizerState* CullNoneVariant(RenderDevice device, ID3D11RasterizerState* source)
     {
         for (var i = 0; i < cullCount; i++)
@@ -459,8 +402,7 @@ internal sealed unsafe class ShadowInject : IDisposable
         if (device.Device->CreateRasterizerState(&desc, &created) < 0 || created == null)
             return null;
 
-        // The source pointer is the cache key, so it is pinned: a released-and-reallocated state at the
-        // same address would silently serve another map's bias.
+        // A state reallocated at the same address would serve another map's bias.
         if (source != null)
             source->AddRef();
 
@@ -470,7 +412,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         return created;
     }
 
-    // A plain copy-target buffer of the given size, pooled per distinct size like the probe's staging pool.
     private ID3D11Buffer* AcquireScratch(RenderDevice device, int byteWidth)
     {
         for (var i = 0; i < scratchCount; i++)
@@ -499,7 +440,6 @@ internal sealed unsafe class ShadowInject : IDisposable
         return buffer;
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         Clear();

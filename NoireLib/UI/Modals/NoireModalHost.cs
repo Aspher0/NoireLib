@@ -13,11 +13,9 @@ public sealed class NoireModalHost : NoireDrawable
 
     private static readonly object InstanceLock = new();
 
-    // The prompt options a prompt raised without any draws through. Read only, and never handed out.
     private static readonly PromptOptions PromptDefaults = new();
 
-    // The confirm button's style, reused rather than composed per frame. Its tone is written immediately before it is
-    // drawn with, and one dialog is drawn at a time on one thread.
+    // Its tone is written right before it is drawn. One dialog is drawn at a time on one thread.
     private static readonly ButtonStyle ConfirmStyle = new();
 
     private static NoireModalHost? instance;
@@ -25,8 +23,7 @@ public sealed class NoireModalHost : NoireDrawable
     private NoireModalHost()
         : base("ModalHost", "Modal")
     {
-        // A dialog is awaited, so it has to appear whatever the master default says: an await behind a dialog nobody
-        // drew would never return, and the symptom is a hang with nothing on screen to explain it.
+        // An awaited dialog nobody drew would never return.
         AutoDraw = true;
         Register();
     }
@@ -56,10 +53,29 @@ public sealed class NoireModalHost : NoireDrawable
         if (request == null)
             return;
 
-        if (!request.Opened)
+        if (request.Options.CustomDraw && !request.FellBack)
         {
-            request.Opened = true;
-            request.OpenedAt = NoireUI.Time;
+            var frame = NoireUI.FrameCount;
+
+            if (request.FirstSeenFrame == ModalRequest.NoFrame)
+                request.FirstSeenFrame = frame;
+
+            if (DefersToCaller(request.FirstSeenFrame, request.PresentedFrame, frame))
+                return;
+
+            request.FellBack = true;
+        }
+
+        if (!request.PopupOpened)
+        {
+            request.PopupOpened = true;
+
+            if (!request.Opened)
+            {
+                request.Opened = true;
+                request.OpenedAt = NoireUI.Time;
+            }
+
             ImGui.OpenPopup(PopupId);
         }
 
@@ -84,8 +100,7 @@ public sealed class NoireModalHost : NoireDrawable
             return;
         }
 
-        // The popup is gone but nothing resolved it, so it was closed with Escape or by clicking away. That is a
-        // decline, and it has to complete the task rather than leave the await hanging.
+        // Closed with Escape or by clicking away. That is a decline.
         NoireModal.Complete(request, NoireModal.CancelledResult);
     }
 
@@ -103,8 +118,7 @@ public sealed class NoireModalHost : NoireDrawable
         var theme = NoireTheme.Current;
         var width = request.Options.ScaledWidth - theme.ResolveFramePadding().X * 2f;
 
-        // Resolved through the theme rather than inherited, so a light palette does not leave near-white text on a
-        // near-white dialog.
+        // A light palette must not leave near-white text on a near-white dialog.
         using var textColor = UiPush.Color(ImGuiCol.Text, theme.Resolve(ThemeColor.Text));
 
         NoireLayout.WrapText(width, request, static r => r.Message.Draw());
@@ -133,8 +147,6 @@ public sealed class NoireModalHost : NoireDrawable
 
     private static void DrawPromptField(ModalRequest request, float width)
     {
-        // The shipped defaults rather than a fresh instance: a prompt raised without prompt options draws every frame it
-        // is open, and the fallback carries nothing the caller could have changed.
         var options = request.Options as PromptOptions ?? PromptDefaults;
 
         ImGui.Spacing();
@@ -154,12 +166,9 @@ public sealed class NoireModalHost : NoireDrawable
     private static void DrawConfirmButtons(ModalRequest request)
     {
         var options = request.Options;
-        var confirmLabel = NoireUI.Localize("NoireUI.Modal.Confirm", options.ConfirmLabel ?? DefaultConfirmLabel(request));
-        var cancelLabel = options.CancelLabel ?? NoireUI.Localize("NoireUI.Modal.Cancel", "Cancel");
-
-        var confirmEnabled = request.Kind != ModalKind.Prompt
-            || (request.Options as PromptOptions)?.AllowEmpty == true
-            || !string.IsNullOrWhiteSpace(request.Value);
+        var confirmLabel = ConfirmLabelFor(request);
+        var cancelLabel = CancelLabelFor(request);
+        var confirmEnabled = PromptAllowsConfirm(request);
 
         var countdown = CountdownSeconds(request.OpenedAt, NoireUI.Time, options.EnableAfterSeconds);
 
@@ -188,8 +197,6 @@ public sealed class NoireModalHost : NoireDrawable
 
         ImGui.BeginDisabled(!confirmEnabled);
 
-        // The hold button's style is written into a scratch rather than composed per frame, since a modal asking to be
-        // held is drawn for as long as the user is holding it.
         ConfirmStyle.Tone = tone;
 
         var confirmed = options.HoldSeconds > 0f
@@ -226,6 +233,21 @@ public sealed class NoireModalHost : NoireDrawable
                 NoireModal.Complete(request, index);
         }
     }
+
+    // Defers while presented within the last two frames, and for its first two frames.
+    internal static bool DefersToCaller(int firstSeenFrame, int presentedFrame, int frame)
+        => frame - presentedFrame <= 2 || frame - firstSeenFrame <= 2;
+
+    internal static string ConfirmLabelFor(ModalRequest request)
+        => NoireUI.Localize("NoireUI.Modal.Confirm", request.Options.ConfirmLabel ?? DefaultConfirmLabel(request));
+
+    internal static string CancelLabelFor(ModalRequest request)
+        => request.Options.CancelLabel ?? NoireUI.Localize("NoireUI.Modal.Cancel", "Cancel");
+
+    internal static bool PromptAllowsConfirm(ModalRequest request)
+        => request.Kind != ModalKind.Prompt
+            || (request.Options as PromptOptions)?.AllowEmpty == true
+            || !string.IsNullOrWhiteSpace(request.Value);
 
     internal static int CountdownSeconds(float openedAt, float now, float enableAfterSeconds)
     {

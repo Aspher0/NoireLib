@@ -1,5 +1,4 @@
 using FluentAssertions;
-using NoireLib.Draw3D.Assets;
 using NoireLib.Helpers;
 using System;
 using System.Text;

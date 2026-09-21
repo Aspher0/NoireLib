@@ -261,17 +261,15 @@ public static class FileDialogHelper
     }
 
     /// <summary>
-    /// Retained for compatibility with code that expects an ImGui-driven dialog manager.
+    /// Retained for compatibility with code that expects an ImGui-driven dialog manager. Native dialogs need no draw loop. This does nothing.
     /// </summary>
-    /// <returns>This method does nothing because native dialogs do not require a draw loop.</returns>
     public static void Draw()
     {
     }
 
     /// <summary>
-    /// Retained for compatibility with code that expects an ImGui-driven dialog manager.
+    /// Retained for compatibility with code that expects an ImGui-driven dialog manager. Native dialogs are not tracked after they close. This does nothing.
     /// </summary>
-    /// <returns>This method does nothing because native dialogs are not tracked after closing.</returns>
     public static void Reset()
     {
     }
@@ -478,11 +476,23 @@ public static class FileDialogHelper
                 dialog.SetFileTypes((uint)filterCount, filterBuffer);
             }
 
+            // A full path handed to SetFileName lands in the name box as typed.
             var initialDirectory = ResolveDirectoryPath(request.StartPath);
-            if (!string.IsNullOrWhiteSpace(initialDirectory))
-                dialog.SetFileName(Path.Combine(initialDirectory, BuildDefaultFileName(request.DefaultName, request.DefaultExtension)));
-            else if (!string.IsNullOrWhiteSpace(request.DefaultName) && request.DefaultName != ".")
-                dialog.SetFileName(BuildDefaultFileName(request.DefaultName, request.DefaultExtension));
+            if (!string.IsNullOrWhiteSpace(initialDirectory) && TryCreateShellItem(initialDirectory, out var folderItem))
+            {
+                try
+                {
+                    dialog.SetFolder(folderItem);
+                }
+                finally
+                {
+                    ReleaseComObject(folderItem);
+                }
+            }
+
+            var defaultFileName = BuildDefaultFileName(request.DefaultName, request.DefaultExtension);
+            if (!string.IsNullOrWhiteSpace(defaultFileName))
+                dialog.SetFileName(Path.GetFileName(defaultFileName));
 
             var defaultExtension = request.DefaultExtension.TrimStart('.');
             if (!string.IsNullOrWhiteSpace(defaultExtension))
@@ -762,6 +772,22 @@ public static class FileDialogHelper
         if (instance != null && Marshal.IsComObject(instance))
             Marshal.FinalReleaseComObject(instance);
     }
+
+    private static bool TryCreateShellItem(string path, out IShellItem shellItem)
+    {
+        var interfaceId = typeof(IShellItem).GUID;
+        var result = SHCreateItemFromParsingName(path, IntPtr.Zero, in interfaceId, out var created);
+
+        shellItem = created!;
+        return result >= 0 && created != null;
+    }
+
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = true)]
+    private static extern int SHCreateItemFromParsingName(
+        [MarshalAs(UnmanagedType.LPWStr)] string path,
+        IntPtr bindingContext,
+        in Guid interfaceId,
+        [MarshalAs(UnmanagedType.Interface)] out IShellItem? shellItem);
 
     private static List<string> BuildMacArguments(DialogRequest request)
     {

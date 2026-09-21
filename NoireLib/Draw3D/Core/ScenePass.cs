@@ -12,7 +12,6 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// One item to draw this frame: a mesh (or dynamic-geometry range) with resolved material data and world transform.
 internal struct DrawItem
 {
     public Mesh? Mesh;
@@ -25,9 +24,9 @@ internal struct DrawItem
     public Vector3 BoundsCenter;
     public float BoundsRadius;
     public float EyeDistance;
-    public IReadOnlyList<ExcludeVolume>? ExcludeVolumes; // ground-decal per-actor exclusion (null = none)
-    public Vector4 OutlineColor; // selection outline colour (w > 0 = outlined)
-    public float OutlineWidth;   // outline thickness in screen pixels
+    public IReadOnlyList<ExcludeVolume>? ExcludeVolumes;
+    public Vector4 OutlineColor; // w > 0 = outlined
+    public float OutlineWidth;   // screen pixels
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -42,7 +41,8 @@ internal struct FrameCBData
     public Vector4 Ambient;
     public Vector4 LightDirIntensity;
     public Vector4 LightColor;
-    public Vector4 WorldHeightRegion; // xy = region min XZ (world), z = 1/regionSize, w = 1 when the height-map is valid
+    public Vector4 WorldHeightRegion; // xy = region min XZ, z = 1/regionSize, w = 1 when the height map is valid
+    public Vector4 DepthJitter;       // xy = display-uv offset of this pixel's world ray in the game's jittered depth
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -53,32 +53,27 @@ internal struct ObjectCBData
     public Vector4 BaseColor;
     public Vector4 Params0;
     public Vector4 Params1;
-    public Vector4 Params2; // x = ground-decal projection mode (0 = all surfaces, 1 = highest only); y = box top world Y;
+    public Vector4 Params2; // x = decal projection (0 = all surfaces, 1 = highest only), y = box top world Y,
                             // z = outline reference footprint scale (0 = constant-thickness rim)
-    public Vector4 OutlineColor; // ground-decal rim colour, straight alpha; alpha 0 = unset, so the rim uses BaseColor
-    public Vector4 Params3;      // spare per-shader slot; G-buffer injection puts dye colour in rgb and strength in w
+    public Vector4 OutlineColor; // straight alpha, alpha 0 falls back to BaseColor
+    public Vector4 Params3;      // G-buffer injection puts dye colour in rgb and strength in w
 }
 
-// A ground decal's per-actor exclusion volumes, matching ActorCB in Common.hlsli exactly. Each actor packs as
-// (worldX, worldZ, radius, unused): a horizontal gate the stencil silhouette then cuts, so the fourth slot is
-// padding.
+// Matches ActorCB in Common.hlsli. Each actor packs as (worldX, worldZ, radius, unused).
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct ActorCBData
 {
     public uint ActorCount;
-    public uint CharacterStencil; // game stencil value marking characters (0 = feature off); the exact silhouette source
+    public uint CharacterStencil; // 0 = feature off
     public uint Pad1, Pad2;
     public fixed float Actors[ScenePass.MaxActorVolumes * 4];
 }
 
-// The world pass: collects visible items from retained scenes and the immediate layer, sorts them into opaque, decal
-// and transparent buckets, batches identical runs into instanced draws, and renders into the offscreen premultiplied
-// scene target.
 internal sealed unsafe class ScenePass : IDisposable
 {
-    private const int MaxDynamicVertices = 65535; // 16-bit dynamic index budget per frame
+    private const int MaxDynamicVertices = 65535;
 
-    // Max excluded-actor volumes carried to the decal shader per frame (matches MAX_DECAL_ACTORS in Common.hlsli).
+    // Matches MAX_DECAL_ACTORS in Common.hlsli.
     internal const int MaxActorVolumes = 64;
 
     private GpuBuffer? frameCb;
@@ -92,28 +87,23 @@ internal sealed unsafe class ScenePass : IDisposable
     private ulong[] keys = new ulong[256];
     private int itemCount;
     private int sequence;
-    private uint currentCharacterStencil; // the game stencil value marking characters, this Execute (0 = exclusion off)
+    private uint currentCharacterStencil;
     private FrustumPlanes frustum;
     private Vector3 eyePos;
     private bool collectingForMainPass;
-    private long collectFrameId; // matched against a node's G-buffer-injection submission so it is not drawn twice
+    private long collectFrameId;
 
-    // Distance/screen-size culling and LOD selection, captured once per BeginCollect. Applicable only on the main game
-    // pass with a real projection scale: a render-to-texture view or the wholesale-VP fallback exposes no usable
-    // vertical focal length, so those always draw full detail and never size-cull.
+    // Main pass only. A render-to-texture view has no usable vertical focal length and draws full detail.
     private Draw3DPerformance.Snapshot perfSnapshot;
     private bool perfApplicable;
-    private float projFocalY;   // frame.Proj.M22: NDC vertical units per view-space unit at unit depth
+    private float projFocalY;   // NDC vertical units per view-space unit at unit depth
     private float halfViewportH;
     private bool hasOutlined;
     private float maxOutlineWidth;
     private bool lastPrivateDepthWritten;
 
-    /// <summary>Whether any collected item this frame has a selection outline (drives the optional outline pass).</summary>
     public bool HasOutlinedItems => hasOutlined;
 
-    /// <summary>Counts this frame's <see cref="DecalProjection.HighestOnly"/> ground decals, which gate the collision height-map pass.</summary>
-    /// <returns>The number of top-surface decals collected this frame.</returns>
     public int CountTopSurfaceDecals()
     {
         var n = 0;
@@ -123,11 +113,7 @@ internal sealed unsafe class ScenePass : IDisposable
         return n;
     }
 
-    /// <summary>
-    /// Gets the highest box-top world Y across this frame's <see cref="DecalProjection.HighestOnly"/> decals, the
-    /// ceiling <see cref="RenderWorldHeight"/> clips the height-map to so overhead geometry never masks the ground.
-    /// </summary>
-    /// <returns>The highest box-top world Y, or <see cref="float.NegativeInfinity"/> when there are no such decals.</returns>
+    // NegativeInfinity when there are no HighestOnly decals.
     public float MaxTopSurfaceDecalBoxTopY()
     {
         var top = float.NegativeInfinity;
@@ -140,45 +126,32 @@ internal sealed unsafe class ScenePass : IDisposable
         return top;
     }
 
-    // Whether an item is a ground decal that paints only its column's topmost surface, and so reads the collision
-    // height-map.
     private static bool IsTopSurfaceDecal(in DrawItem item)
         => item.Mat.Domain == MaterialDomain.GroundDecal && item.Mat.ProjectionMode > 0.5f;
 
-    // Computes the AABB-max Y of a decal's unit box under  (row-vector convention).
     private static float BoxTopY(in Matrix4x4 world)
         => world.M42 + 0.5f * (MathF.Abs(world.M12) + MathF.Abs(world.M22) + MathF.Abs(world.M32));
 
-    /// <summary>Whether the last <see cref="Execute"/> populated the private depth buffer, so the outline mask can GE-test it for 3D-object occlusion instead of falling back to world-only occlusion.</summary>
     public bool LastPrivateDepthWritten => lastPrivateDepthWritten;
 
-    /// <summary>The largest outline width (screen pixels) collected this frame (the outline composite kernel size).</summary>
     public float MaxOutlineWidthPixels => maxOutlineWidth;
 
-    /// <summary>Per-frame dynamic geometry, uploaded once at execute (immediate-layer ribbons, flat shapes).</summary>
     public readonly List<Vertex3D> DynVertices = new(4096);
 
-    /// <summary>Per-frame dynamic indices (paired with <see cref="DynVertices"/>).</summary>
     public readonly List<ushort> DynIndices = new(8192);
 
-    /// <summary>External textures with keyed mutexes referenced this frame (acquired/released around the pass).</summary>
     public readonly List<GpuTexture> KeyedTextures = new();
 
     private InstanceData[] instanceScratch = new InstanceData[256];
 
-    // Object-CB change gating: every instanced-route draw writes the same CB content except the material params, so the
-    // upload is skipped until those change. Any non-instanced write invalidates the cache. Render thread only.
+    // Instanced draws only change the material params. Any non-instanced write invalidates the cache.
     private bool objectCbCacheValid;
     private Vector4 objectCbParams0;
     private Vector4 objectCbParams1;
     private Vector4 objectCbParams2;
 
-    /// <summary>Remaining dynamic-vertex budget this frame (immediate layer checks before writing shapes).</summary>
     public int DynamicVertexBudget => MaxDynamicVertices - DynVertices.Count;
 
-    /// <summary>Begins collection for a frame or a render view, resetting the pooled lists and deriving the frustum.</summary>
-    /// <param name="frame">The frame context to collect against.</param>
-    /// <param name="mainPass">Whether this is the main game pass rather than a render-to-texture view.</param>
     public void BeginCollect(in FrameContext frame, bool mainPass)
     {
         itemCount = 0;
@@ -190,7 +163,6 @@ internal sealed unsafe class ScenePass : IDisposable
         hasOutlined = false;
         maxOutlineWidth = 0f;
 
-        // Snapshot once so a mid-frame settings change never tears the pass.
         perfSnapshot = NoireDraw3D.Performance.Take();
         projFocalY = frame.Proj.M22;
         halfViewportH = frame.ViewportSize.Y * 0.5f;
@@ -203,10 +175,6 @@ internal sealed unsafe class ScenePass : IDisposable
         }
     }
 
-    /// <summary>Collects a retained scene's visible renderers under the graph lock, resolving world matrices through the dirty flags.</summary>
-    /// <param name="scene">The scene to walk.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
-    /// <param name="depthAvailable">Whether the game's scene depth is readable this frame.</param>
     public void AddScene(Scene3D scene, RenderStats stats, bool depthAvailable)
     {
         if (!scene.Visible)
@@ -224,9 +192,7 @@ internal sealed unsafe class ScenePass : IDisposable
         if (!node.Visible || node.Destroyed)
             return;
 
-        // Already submitted to the G-buffer injection this frame: drawing it here too would put the mesh on screen
-        // twice, the unlit copy overwriting the lit one. Children were not submitted, so they keep drawing. Main pass
-        // only, since a render-to-texture view draws into a target the injection never touches.
+        // Already drawn by the G-buffer injection this frame. Its children were not submitted and still draw.
         if (collectingForMainPass && node.GameLitFrameId == collectFrameId)
         {
             foreach (var skipped in node.Children)
@@ -259,19 +225,6 @@ internal sealed unsafe class ScenePass : IDisposable
             CollectNode(child, stats, depthAvailable);
     }
 
-    /// <summary>Adds one mesh item, applying culling, the depth-unavailable policy, level-of-detail selection and sort-key derivation.</summary>
-    /// <param name="mesh">The mesh to draw.</param>
-    /// <param name="mat">The resolved material data.</param>
-    /// <param name="texture">The material's texture, or null when untextured.</param>
-    /// <param name="world">The item's world matrix.</param>
-    /// <param name="color">The final tint, premultiplied by the material colour.</param>
-    /// <param name="layer">The sort layer.</param>
-    /// <param name="castsDepth">Whether the item writes the private depth buffer.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
-    /// <param name="depthAvailable">Whether the game's scene depth is readable this frame.</param>
-    /// <param name="excludeVolumes">Per-actor exclusion cylinders for a ground decal, or null.</param>
-    /// <param name="outlineColor">The selection outline colour, with alpha above zero enabling the outline.</param>
-    /// <param name="outlineWidth">The outline thickness in screen pixels.</param>
     public void AddMeshItem(Mesh mesh, in MaterialData mat, GpuTexture? texture, in Matrix4x4 world, Vector4 color, int layer, bool castsDepth, RenderStats stats, bool depthAvailable, IReadOnlyList<ExcludeVolume>? excludeVolumes = null, Vector4 outlineColor = default, float outlineWidth = 0f)
     {
         if (!depthAvailable && ShouldHideWithoutDepth(mat))
@@ -281,7 +234,6 @@ internal sealed unsafe class ScenePass : IDisposable
         }
 
         var bounds = mesh.LocalBounds.Transform(world);
-        // A ground decal's mesh bounds are its volume box, so the same frustum test applies.
         if (!frustum.Intersects(bounds))
         {
             stats.CulledItems++;
@@ -290,7 +242,6 @@ internal sealed unsafe class ScenePass : IDisposable
 
         var distance = Vector3.Distance(bounds.Center, eyePos);
 
-        // Bounds, sort and picking always use the full-resolution mesh; only the drawn mesh changes.
         var drawMesh = mesh;
         if (perfApplicable)
         {
@@ -302,14 +253,12 @@ internal sealed unsafe class ScenePass : IDisposable
 
             var screenRadius = distance > 1e-3f ? bounds.Radius * projFocalY * halfViewportH / distance : float.MaxValue;
 
-            // Outlined objects are exempt from the sub-pixel cull so a selection highlight never vanishes.
             if (perfSnapshot.MinScreenPixels > 0f && outlineColor.W <= 0f && screenRadius < perfSnapshot.MinScreenPixels)
             {
                 stats.CulledItems++;
                 return;
             }
 
-            // Only imported models carry a LOD chain; ground decals never take one.
             if (mesh.LodCount > 0 && mat.Domain != MaterialDomain.GroundDecal)
                 drawMesh = mesh.SelectLod(Draw3DPerformance.SelectLevel(screenRadius, mesh.LodCount, in perfSnapshot));
         }
@@ -317,7 +266,6 @@ internal sealed unsafe class ScenePass : IDisposable
         if (texture != null && texture.HasKeyedMutex && collectingForMainPass && !KeyedTextures.Contains(texture))
             KeyedTextures.Add(texture);
 
-        // Only solid meshes are outlined; a ground decal's OutlineColor is consumed by its own shader instead.
         if (outlineColor.W > 0f && mat.Domain != MaterialDomain.GroundDecal)
         {
             hasOutlined = true;
@@ -341,17 +289,7 @@ internal sealed unsafe class ScenePass : IDisposable
         stats.VisibleItems++;
     }
 
-    /// <summary>Adds a dynamic-geometry range already appended to <see cref="DynVertices"/> and <see cref="DynIndices"/>.</summary>
-    /// <param name="startIndex">The first index of the range.</param>
-    /// <param name="indexCount">The number of indices in the range.</param>
-    /// <param name="mat">The resolved material data.</param>
-    /// <param name="color">The tint.</param>
-    /// <param name="world">The item's world matrix.</param>
-    /// <param name="layer">The sort layer.</param>
-    /// <param name="center">The world-space bounds centre.</param>
-    /// <param name="radius">The world-space bounds radius.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
-    /// <param name="depthAvailable">Whether the game's scene depth is readable this frame.</param>
+    // The range must already be appended to DynVertices and DynIndices.
     public void AddDynamicItem(int startIndex, int indexCount, in MaterialData mat, Vector4 color, in Matrix4x4 world, int layer, Vector3 center, float radius, RenderStats stats, bool depthAvailable)
     {
         if (indexCount == 0)
@@ -379,22 +317,10 @@ internal sealed unsafe class ScenePass : IDisposable
         stats.VisibleItems++;
     }
 
-    /// <summary>
-    /// Decides, per nameplate rect, whether the plate is in front of or behind the Draw3D content covering it, writing
-    /// UI visibility factors for the over-everything composite (1 = the plate reads on top,
-    /// <paramref name="behindFactor"/> = a shape covers its letters). Runs only when the composite draws over the game
-    /// UI; otherwise the game's own plate pass does the same job.
-    /// </summary>
-    /// <param name="frame">The frame context supplying the view-projection and viewport.</param>
-    /// <param name="rects">Per-plate UV rects as (minX, minY, maxX, maxY).</param>
-    /// <param name="plateDistances">Per-plate eye distances.</param>
-    /// <param name="factors">Per-plate UI visibility factors, written by this call.</param>
-    /// <param name="count">The number of plates in the arrays.</param>
-    /// <param name="behindFactor">The visibility factor applied to a covered plate.</param>
-    /// <param name="coveringItemFar">Optional per-plate far-surface distance of the covering item (0 = none).</param>
+    // Rects are UVs as (minX, minY, maxX, maxY).
     public void ComputeRectOcclusion(in FrameContext frame, Vector4[] rects, float[] plateDistances, float[] factors, int count, float behindFactor, float[]? coveringItemFar = null)
     {
-        // The fallback constants only matter under the wholesale-VP camera, whose Proj is identity.
+        // Only the wholesale-VP camera reaches the fallback. Its Proj is identity.
         var gy = frame.Proj.M22 is > 0.1f and < 20f ? frame.Proj.M22 : 1.4f;
         var gx = frame.Proj.M11 is > 0.05f and < 20f ? frame.Proj.M11 : gy * (frame.ViewportSize.Y / MathF.Max(frame.ViewportSize.X, 1f));
 
@@ -410,17 +336,17 @@ internal sealed unsafe class ScenePass : IDisposable
             ref var item = ref items[i];
             var clip = Vector4.Transform(new Vector4(item.BoundsCenter, 1f), frame.ViewProj);
             if (clip.W <= 0.05f)
-                continue; // behind the camera, so it cannot cover a visible plate
+                continue;
 
             var uvX = clip.X / clip.W * 0.5f + 0.5f;
             var uvY = 0.5f - clip.Y / clip.W * 0.5f;
-            var radiusU = item.BoundsRadius * gx / clip.W * 0.5f * 1.25f; // 1.25: conservative slack
+            var radiusU = item.BoundsRadius * gx / clip.W * 0.5f * 1.25f; // 1.25 = conservative slack
             var radiusV = item.BoundsRadius * gy / clip.W * 0.5f * 1.25f;
 
             for (var r = 0; r < count; r++)
             {
                 if (factors[r] != 1f)
-                    continue; // already covered by a nearer item
+                    continue;
 
                 var rect = rects[r];
                 var overlaps = uvX + radiusU >= rect.X && uvX - radiusU <= rect.Z
@@ -428,7 +354,6 @@ internal sealed unsafe class ScenePass : IDisposable
                 if (!overlaps)
                     continue;
 
-                // Covered only when the plate sits behind the item's farthest possible surface; ties go to the letters.
                 if (plateDistances[r] >= item.EyeDistance + item.BoundsRadius)
                 {
                     factors[r] = behindFactor;
@@ -440,7 +365,7 @@ internal sealed unsafe class ScenePass : IDisposable
     }
 
     private static bool ShouldHideWithoutDepth(in MaterialData mat)
-        => mat.Domain == MaterialDomain.GroundDecal // nothing to project onto without depth
+        => mat.Domain == MaterialDomain.GroundDecal
            || (mat.Depth == DepthMode.TestOnly && mat.WhenDepthUnavailable == DepthUnavailableBehavior.Hide);
 
     private void Append(in DrawItem item, int layer, float distance)
@@ -456,9 +381,7 @@ internal sealed unsafe class ScenePass : IDisposable
         var pipelineId = (byte)(((int)item.Mat.Domain << 2) | (item.Mat.Textured ? 1 : 0) | (item.Mat.CustomPipeline != null ? 2 : 0));
         var materialId = (ushort)(item.Mat.GetHashCode() & 0xFFFF);
 
-        // Key composition per bucket: opaque is state-grouped (pipeline and material above depth, which is only an
-        // early-z hint); decal is layer then creation order; transparent is strict back-to-front unless the material
-        // opted into unordered batching.
+        // Opaque: state-grouped. Decal: layer then creation order. Transparent: back-to-front unless opted into batching.
         ulong key = bucket switch
         {
             0 => SortKey.MakeGrouped(0, layer, pipelineId, materialId, depthQ, sequence),
@@ -474,27 +397,7 @@ internal sealed unsafe class ScenePass : IDisposable
         sequence++;
     }
 
-    /// <summary>
-    /// Renders the collected items into the scene target. The caller must hold the StateGuard; every binding this
-    /// method makes is its own and none are restored.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="ctx">The immediate device context.</param>
-    /// <param name="frame">The frame context.</param>
-    /// <param name="sceneRt">The offscreen premultiplied scene target.</param>
-    /// <param name="privateDepth">The pass-owned depth buffer used for object-to-object occlusion.</param>
-    /// <param name="sceneDepthSrv">The game's scene depth, or null when unavailable.</param>
-    /// <param name="worldHeightSrv">The top-down collision height-map, or null when the pass did not run.</param>
-    /// <param name="sceneStencilSrv">The game's stencil plane, or null to disable silhouette-exact decal exclusion.</param>
-    /// <param name="characterStencil">The game stencil value marking characters.</param>
-    /// <param name="topSurfaceThreshold">The elevation band, in world units, for <see cref="DecalProjection.HighestOnly"/> decals.</param>
-    /// <param name="worldHeightRegion">The height-map region as (minX, minZ, 1/size, valid).</param>
-    /// <param name="depthCal">The game depth linearization constants.</param>
-    /// <param name="shaders">The shader library.</param>
-    /// <param name="cache">The pipeline state cache.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
-    /// <param name="wireframe">Whether to rasterize meshes as wireframe.</param>
-    /// <param name="lighting">The scene lighting constants.</param>
+    // The caller holds the StateGuard.
     public void Execute(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -515,7 +418,7 @@ internal sealed unsafe class ScenePass : IDisposable
         Draw3DLighting lighting)
     {
         EnsureBuffers(device);
-        currentCharacterStencil = sceneStencilSrv != null ? characterStencil : 0u; // 0 makes the decal skip the stencil test
+        currentCharacterStencil = sceneStencilSrv != null ? characterStencil : 0u; // 0 skips the stencil test
 
         Array.Sort(keys, items, 0, itemCount);
 
@@ -531,7 +434,6 @@ internal sealed unsafe class ScenePass : IDisposable
             var iSpan = CollectionsMarshal.AsSpan(DynIndices);
             fixed (Vertex3D* v = vSpan)
             {
-                // Aligning to the vertex stride keeps the returned offset a whole number of vertices.
                 if (!dynVertexRing.TryWrite(device, ctx, v, (uint)(vSpan.Length * sizeof(Vertex3D)), (uint)sizeof(Vertex3D), out dynVbOffset))
                     hasDynamic = false;
             }
@@ -543,25 +445,21 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
-        // Matrices are transposed on upload to match HLSL's layout. DepthUv.zw carries this projection's z map
-        // (deviceZ = z + w/clipW), which must match the reversed-Z column rebuilt in NoireDraw3D.RenderMainScene rather
-        // than the game's exposed projection, so SceneWorldPos round-trips through InvViewProj exactly.
+        // DepthUv.zw must match the reversed-Z column rebuilt in NoireDraw3D.RenderMainScene.
         var frameData = new FrameCBData
         {
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
             InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            // The render target size, not the display size, so DisplayUv stays a correct [0,1] UV at any supersample
-            // factor; the game-depth sample then scales that UV by DepthUv into the game buffer.
             Viewport = new Vector4(sceneRt.Width, sceneRt.Height, 1f / sceneRt.Width, 1f / sceneRt.Height),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
-            // DepthCal.w is the top-surface elevation band for HighestOnly decals; 0 degrades them to AllSurfaces and
-            // leaves the height-map at t2 unsampled.
+            // DepthCal.w = top-surface elevation band. 0 degrades HighestOnly decals to AllSurfaces.
             DepthCal = new Vector4(depthCal.X, depthCal.Y, depthCal.Z, worldHeightSrv != null ? topSurfaceThreshold : 0f),
             Ambient = new Vector4(lighting.AmbientColor, lighting.AmbientIntensity),
             LightDirIntensity = new Vector4(Vector3.Normalize(lighting.LightDirection), lighting.LightIntensity),
             LightColor = new Vector4(lighting.LightColor, 0f),
             WorldHeightRegion = worldHeightSrv != null ? worldHeightRegion : Vector4.Zero,
+            DepthJitter = NoireDraw3D.DepthSampleJitterUv,
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
@@ -576,8 +474,7 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
-        // The private depth is bound only on frames with opaque content, so a frame without any never treats the
-        // previous frame's leftover depth as valid.
+        // Bound only on frames with opaque content. A leftover depth must never read as valid.
         var dsv = (ID3D11DepthStencilView*)null;
         if (hasOpaque && privateDepth.EnsureSize(device, sceneRt.Width, sceneRt.Height))
             dsv = privateDepth.Dsv;
@@ -594,7 +491,7 @@ internal sealed unsafe class ScenePass : IDisposable
         var clear = stackalloc float[4];
         ctx->ClearRenderTargetView(rtv, clear);
         if (dsv != null)
-            ctx->ClearDepthStencilView(dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0.0f, 0); // reversed-Z "far" = 0
+            ctx->ClearDepthStencilView(dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0.0f, 0); // reversed-Z far = 0
 
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         var cb = frameCb.Buffer;
@@ -604,9 +501,9 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->VSSetConstantBuffers(1, 1, &ocb);
         ctx->PSSetConstantBuffers(1, 1, &ocb);
         var acb = actorCb!.Buffer;
-        ctx->PSSetConstantBuffers(2, 1, &acb); // b2: per-decal actor exclusion volumes (decal ExcludeVolumes)
-        ctx->PSSetShaderResources(2, 1, &worldHeightSrv); // t2: top-down collision height-map for DecalProjection.HighestOnly (null = off)
-        ctx->PSSetShaderResources(3, 1, &sceneStencilSrv); // t3: game stencil plane for silhouette-exact decal exclusion (null = off)
+        ctx->PSSetConstantBuffers(2, 1, &acb); // b2: decal actor exclusion volumes
+        ctx->PSSetShaderResources(2, 1, &worldHeightSrv); // t2: collision height map (null = off)
+        ctx->PSSetShaderResources(3, 1, &sceneStencilSrv); // t3: game stencil (null = off)
         var pointClamp = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &pointClamp);
         var linearWrap = cache.GetSampler(device, SamplerKey.LinearWrap);
@@ -614,7 +511,6 @@ internal sealed unsafe class ScenePass : IDisposable
 
         var blendFactor = stackalloc float[4];
 
-        // Shadow state to skip redundant binds.
         ID3D11BlendState* curBlend = null;
         ID3D11DepthStencilState* curDepthState = null;
         ID3D11RasterizerState* curRaster = null;
@@ -629,7 +525,7 @@ internal sealed unsafe class ScenePass : IDisposable
         foreach (var tex in KeyedTextures)
             tex.AcquireSync();
 
-        objectCbCacheValid = false; // other passes have written the CB since the last Execute
+        objectCbCacheValid = false;
 
         var i0 = 0;
         while (i0 < itemCount)
@@ -637,11 +533,10 @@ internal sealed unsafe class ScenePass : IDisposable
             ref var item = ref items[i0];
             var bucket = item.Mat.Bucket;
 
-            // A decal's box is the volume its SDF is evaluated in, not geometry, so rasterizing its triangles as lines
-            // shades noise. Scene3D.TraceDecalShapes traces the real shape into the immediate layer instead.
+            // A decal's box is its SDF volume.
             if (wireframe && item.Mat.Domain == MaterialDomain.GroundDecal)
             {
-                i0++; // decals never instance, so the run is always 1 here
+                i0++;
                 continue;
             }
 
@@ -656,8 +551,6 @@ internal sealed unsafe class ScenePass : IDisposable
                     run++;
             }
 
-            // With BatchedObjectConstants on, singles ride the instanced route too: world and tint travel in the
-            // per-instance stream, so the object CB stops changing per draw and its upload is gated below.
             var instanced = run > 1 || (batchable && perfSnapshot.BatchedObjectConstants);
 
             var pipeline = item.Mat.CustomPipeline != null
@@ -666,7 +559,7 @@ internal sealed unsafe class ScenePass : IDisposable
             if (pipeline == null)
             {
                 i0 += run;
-                continue; // pipeline self-disabled, so it renders nothing
+                continue;
             }
 
             var blendKey = bucket == 0 ? BlendKey.Opaque : item.Mat.Blend == BlendMode.Additive ? BlendKey.Additive : BlendKey.Premultiplied;
@@ -680,14 +573,11 @@ internal sealed unsafe class ScenePass : IDisposable
             var depthKey = bucket switch
             {
                 0 => item.WritesPrivateDepth ? DepthKey.WriteGE : DepthKey.ReadGE,
-                // Decals test but never write the private depth, via the ground device-z their pixel shader emits, so
-                // nearer opaque objects occlude them.
+                // Decals test the private depth through the ground device-z their pixel shader emits. They never write it.
                 1 => DepthKey.ReadGE,
                 _ => hasDepthWrites ? DepthKey.ReadGE : DepthKey.Disabled,
             };
-            // A transparent item opting out of the object-to-object depth test stays in front of other 3D objects.
-            // DepthMode.Ignore also drops the world-depth SRV below, so it draws over everything; DepthMode.WorldOnly
-            // keeps it, so a wall still hides the item while a nearer 3D object does not.
+            // Ignore also drops the world-depth SRV. WorldOnly keeps it.
             if (bucket == 2 && item.Mat.Depth is DepthMode.Ignore or DepthMode.WorldOnly)
                 depthKey = DepthKey.Disabled;
             if (dsv == null)
@@ -722,7 +612,7 @@ internal sealed unsafe class ScenePass : IDisposable
                 dynBound = false;
             }
 
-            // Null for DepthMode.Ignore materials: sampling a null SRV returns 0, which reads as fully visible.
+            // Sampling a null SRV returns 0: fully visible.
             var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore && item.Mat.Domain != MaterialDomain.GroundDecal ? null : sceneDepthSrv;
             if ((nint)wantDepthSrv != curDepthSrv)
             {
@@ -737,8 +627,7 @@ internal sealed unsafe class ScenePass : IDisposable
                 curTexture = item.Mat.TexSrv;
             }
 
-            // Auxiliary textures for custom pipelines, unbound when the material carries none so a pipeline that
-            // samples one never reads what the previous draw left in the slot.
+            // Unbound when absent. A pipeline must never read what the previous draw left in the slot.
             if (item.Mat.AuxSrv0 != curAux0)
             {
                 var auxSrv = (ID3D11ShaderResourceView*)item.Mat.AuxSrv0;
@@ -822,8 +711,6 @@ internal sealed unsafe class ScenePass : IDisposable
                 uint instStride = (uint)sizeof(InstanceData);
                 ctx->IASetVertexBuffers(1, 1, &instVb, &instStride, &instOffset);
 
-                // Every instanced-route draw writes an identical CB apart from the material params, so the upload is
-                // skipped while they repeat.
                 var params2 = item.Mat.SurfaceParams;
                 if (!objectCbCacheValid || item.Mat.Params0 != objectCbParams0 || item.Mat.Params1 != objectCbParams1 || params2 != objectCbParams2)
                 {
@@ -863,9 +750,7 @@ internal sealed unsafe class ScenePass : IDisposable
                     BaseColor = item.Color,
                     Params0 = item.Mat.Params0,
                     Params1 = item.Mat.Params1,
-                    // Decals need this register for projection data, so their own values win: x = projection mode,
-                    // y = box top world Y (the height-map's vertical search bound), z = outline reference footprint
-                    // scale. Every other material passes the caller's surface parameters straight through.
+                    // Decals: x = projection mode, y = box top world Y, z = outline reference footprint scale.
                     Params2 = item.Mat.Domain == MaterialDomain.GroundDecal
                         ? new Vector4(item.Mat.ProjectionMode, BoxTopY(in item.World), item.Mat.OutlineScaleRef, 0f)
                         : item.Mat.SurfaceParams,
@@ -873,9 +758,8 @@ internal sealed unsafe class ScenePass : IDisposable
                 };
                 objectCb.UpdateConstant(ctx, in objData);
                 stats.ObjectCbUpdates++;
-                objectCbCacheValid = false; // a real world matrix now sits in the CB
+                objectCbCacheValid = false;
 
-                // Upload (or clear) the exclusion list per decal so each cuts only around the actors it was given.
                 if (item.Mat.Domain == MaterialDomain.GroundDecal)
                     UploadActorVolumes(ctx, item.ExcludeVolumes);
 
@@ -892,20 +776,7 @@ internal sealed unsafe class ScenePass : IDisposable
             tex.ReleaseSync();
     }
 
-    /// <summary>
-    /// Re-rasterizes this frame's opaque, depth-casting mesh items into the game's scene depth, colourless and
-    /// greater-equal tested, so <see cref="Enums.NameplateOcclusion.DepthAware"/> plates are occluded by them. Must run
-    /// right after <see cref="Execute"/>, which leaves the collected items sorted; the caller owns the StateGuard.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="ctx">The immediate device context.</param>
-    /// <param name="frame">The frame context.</param>
-    /// <param name="externalDsv">The game's scene depth-stencil view to write into.</param>
-    /// <param name="viewportWidth">The target width in pixels.</param>
-    /// <param name="viewportHeight">The target height in pixels.</param>
-    /// <param name="shaders">The shader library.</param>
-    /// <param name="cache">The pipeline state cache.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
+    // The caller holds the StateGuard.
     public void ProjectOpaqueDepth(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -922,8 +793,7 @@ internal sealed unsafe class ScenePass : IDisposable
 
         EnsureBuffers(device);
 
-        // Re-upload the frame VP, since the composite rebound the constant buffers after Execute. The rebuilt
-        // reversed-Z column makes SV_Position.z = near/clipW, directly comparable to the game's depth buffer.
+        // The composite rebound the constant buffers after Execute.
         var frameData = new FrameCBData
         {
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
@@ -938,8 +808,6 @@ internal sealed unsafe class ScenePass : IDisposable
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
-        // Where the world is nearer the greater-equal test fails and the world keeps the buffer; where the item is
-        // nearer it writes its own depth, and the later nameplate pass is occluded by it.
         ctx->OMSetRenderTargets(0, null, externalDsv);
 
         var viewport = new D3D11_VIEWPORT { Width = viewportWidth, Height = viewportHeight, MaxDepth = 1f };
@@ -972,7 +840,6 @@ internal sealed unsafe class ScenePass : IDisposable
             if (vb == null)
                 continue;
 
-            // Every opaque vertex shader emits SV_Position from World*ViewProj, so one unlit pipeline serves all.
             var pipeline = shaders.GetStandard(device, MaterialDomain.Unlit, textured: false, instanced: false, opaqueDomain: true);
             if (pipeline == null)
                 return;
@@ -1022,24 +889,7 @@ internal sealed unsafe class ScenePass : IDisposable
         }
     }
 
-    /// <summary>
-    /// Renders the collision-world mesh top-down into an R32F height-map, each texel holding the highest collision Y in
-    /// its XZ column up to <paramref name="heightCeiling"/>, which a <see cref="DecalProjection.HighestOnly"/> decal
-    /// samples. Standalone in its target and states, so it runs before <see cref="Execute"/>. On false the caller must
-    /// leave the height-map SRV unbound, since the target is cleared only on the drawing path and binding it after a
-    /// bail feeds the decal uninitialized heights instead of degrading to <c>AllSurfaces</c>.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="ctx">The immediate device context.</param>
-    /// <param name="collisionMesh">The cached collision-world mesh, with vertices relative to <paramref name="meshCenter"/>.</param>
-    /// <param name="meshCenter">The world-space origin the mesh vertices are relative to.</param>
-    /// <param name="heightMatrix">The affine world-XZ-to-clip map, matching <c>WorldHeightRegion</c>.</param>
-    /// <param name="heightCeiling">The world Y above which collision is discarded.</param>
-    /// <param name="target">The R32F height-map target.</param>
-    /// <param name="shaders">The shader library.</param>
-    /// <param name="cache">The pipeline state cache.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
-    /// <returns>False when the map could not be drawn (no mesh, no target, or a self-disabled pipeline).</returns>
+    // On false the caller must leave the height-map SRV unbound. The target is only cleared on the drawing path.
     public bool RenderWorldHeight(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -1067,8 +917,8 @@ internal sealed unsafe class ScenePass : IDisposable
 
         var frameData = new FrameCBData
         {
-            ViewProj = Matrix4x4.Transpose(heightMatrix), // affine XZ->clip; the VS does mul(wp, ViewProj)
-            DepthCal = new Vector4(heightCeiling, 0f, 0f, 0f), // x = ceiling: the pixel shader discards collision above it
+            ViewProj = Matrix4x4.Transpose(heightMatrix),
+            DepthCal = new Vector4(heightCeiling, 0f, 0f, 0f), // x = ceiling
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
@@ -1082,7 +932,7 @@ internal sealed unsafe class ScenePass : IDisposable
 
         var rtv = target.Rtv;
         ctx->OMSetRenderTargets(1, &rtv, null);
-        var clear = stackalloc float[4] { -1e30f, -1e30f, -1e30f, -1e30f }; // MAX-blend baseline: below any real world Y
+        var clear = stackalloc float[4] { -1e30f, -1e30f, -1e30f, -1e30f };
         ctx->ClearRenderTargetView(rtv, clear);
 
         var viewport = new D3D11_VIEWPORT { Width = target.Width, Height = target.Height, MaxDepth = 1f };
@@ -1093,9 +943,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         var cb = frameCb.Buffer;
         ctx->VSSetConstantBuffers(0, 1, &cb);
-        // b0 must reach the pixel shader too, which reads the ceiling from DepthCal.x. StateGuard has already restored
-        // the game's buffers into the PS slots, so without this bind the shader reads out of range, D3D returns 0, and
-        // the ceiling test discards everything above world Y 0.
+        // The PS slots otherwise hold the game's buffers.
         ctx->PSSetConstantBuffers(0, 1, &cb);
         var ocb = objectCb.Buffer;
         ctx->VSSetConstantBuffers(1, 1, &ocb);
@@ -1117,25 +965,7 @@ internal sealed unsafe class ScenePass : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Draws the outlined items into a silhouette mask and a world-visibility target, reusing the collected and sorted
-    /// items. The mask holds each object's full silhouette with no depth test, so the composite outlines the whole
-    /// object rather than its unoccluded fragments only, and the visibility target lets the composite hide that outline
-    /// where the silhouette sits behind the world. Must run right after <see cref="Execute"/>, while the private depth
-    /// still holds this frame's scene. Fail-soft.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="ctx">The immediate device context.</param>
-    /// <param name="frame">The frame context.</param>
-    /// <param name="maskRt">The silhouette target, rgb = outline colour and a = coverage.</param>
-    /// <param name="visRt">The visibility target, r = whether the silhouette pixel is in front of the game world.</param>
-    /// <param name="privateDepth">The pass-owned depth buffer, bound read-only for the decal test.</param>
-    /// <param name="privateDepthValid">Whether <paramref name="privateDepth"/> holds this frame's scene.</param>
-    /// <param name="sceneDepthSrv">The game's scene depth, or null when unavailable.</param>
-    /// <param name="depthCal">The game depth linearization constants.</param>
-    /// <param name="shaders">The shader library.</param>
-    /// <param name="cache">The pipeline state cache.</param>
-    /// <param name="stats">The per-frame counters to accumulate into.</param>
+    // maskRt: rgb = colour, a = coverage. visRt: in front of the game world or not.
     public void RenderOutlineMask(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -1155,13 +985,13 @@ internal sealed unsafe class ScenePass : IDisposable
 
         EnsureBuffers(device);
 
-        // Re-upload the frame constants, since the composite may have rebound b0. Matches Execute's mapping.
+        // The composite may have rebound b0.
         var frameData = new FrameCBData
         {
             ViewProj = Matrix4x4.Transpose(frame.ViewProj),
             InvViewProj = Matrix4x4.Transpose(frame.InvViewProj),
             EyePosTime = new Vector4(frame.EyePos, frame.Time),
-            Viewport = new Vector4(maskRt.Width, maskRt.Height, 1f / maskRt.Width, 1f / maskRt.Height), // render size (supersample-aware)
+            Viewport = new Vector4(maskRt.Width, maskRt.Height, 1f / maskRt.Width, 1f / maskRt.Height),
             DepthUv = new Vector4(frame.DepthUvScale.X, frame.DepthUvScale.Y, 0f, frame.NearPlane),
             DepthCal = depthCal,
             Ambient = Vector4.Zero,
@@ -1170,7 +1000,6 @@ internal sealed unsafe class ScenePass : IDisposable
         };
         frameCb!.UpdateConstant(ctx, in frameData);
 
-        // The private depth is never cleared here, so this frame's scene depth survives for later passes.
         var dsv = privateDepthValid ? privateDepth.Dsv : null;
         var rtvs = stackalloc ID3D11RenderTargetView*[2] { maskRt.Rtv, visRt.Rtv };
         ctx->OMSetRenderTargets(2, rtvs, dsv);
@@ -1181,7 +1010,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->RSSetScissorRects(1, &scissor);
 
         var clear = stackalloc float[4];
-        ctx->ClearRenderTargetView(maskRt.Rtv, clear); // colour targets only; the depth is read, never cleared
+        ctx->ClearRenderTargetView(maskRt.Rtv, clear);
         ctx->ClearRenderTargetView(visRt.Rtv, clear);
 
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
@@ -1197,7 +1026,7 @@ internal sealed unsafe class ScenePass : IDisposable
         ctx->PSSetSamplers(0, 1, &pointClamp);
 
         var blendFactor = stackalloc float[4];
-        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF); // overwrite: mask stores (colour, coverage)
+        ctx->OMSetBlendState(cache.GetBlend(device, BlendKey.Opaque), blendFactor, 0xFFFFFFFF);
 
         ID3D11RasterizerState* curRaster = null;
         ID3D11DepthStencilState* curDepthState = null;
@@ -1215,13 +1044,10 @@ internal sealed unsafe class ScenePass : IDisposable
         for (var i = 0; pipeline != null && i < itemCount; i++)
         {
             ref var item = ref items[i];
-            // A ground decal's projected footprint has no meaningful screen silhouette, and immediate markers have no
-            // outline state, so only solid meshes reach the mask.
             if (item.OutlineColor.W <= 0f || item.Mesh == null || item.Mat.Domain == MaterialDomain.GroundDecal)
                 continue;
 
-            // No depth test: occlusion is applied later from the visibility target, so the outline stays whole instead
-            // of fragmenting behind a fence.
+            // Occlusion comes from the visibility target. The outline must not fragment behind a fence.
             var depthState = cache.GetDepth(device, DepthKey.Disabled);
             if (depthState != curDepthState)
             {
@@ -1229,7 +1055,6 @@ internal sealed unsafe class ScenePass : IDisposable
                 curDepthState = depthState;
             }
 
-            // Null on an x-ray mesh, so the visibility test reports visible everywhere and its outline is never hidden.
             var wantDepthSrv = item.Mat.Depth == DepthMode.Ignore ? null : sceneDepthSrv;
             if ((nint)wantDepthSrv != curDepthSrv)
             {
@@ -1266,7 +1091,7 @@ internal sealed unsafe class ScenePass : IDisposable
             {
                 World = Matrix4x4.Transpose(item.World),
                 InvWorld = Matrix4x4.Identity,
-                BaseColor = item.OutlineColor, // drives the mask rgb and the coverage alpha
+                BaseColor = item.OutlineColor,
                 Params0 = item.Mat.Params0,
                 Params1 = item.Mat.Params1,
             };
@@ -1276,15 +1101,11 @@ internal sealed unsafe class ScenePass : IDisposable
             stats.DrawCalls++;
         }
 
-        // Unbind the private depth so it can serve as a render target again, and clear t0 so the mask textures the
-        // outline composite is about to read are never also bound as an input.
         ctx->OMSetRenderTargets(2, rtvs, null);
         ID3D11ShaderResourceView* nullSrv = null;
         ctx->PSSetShaderResources(0, 1, &nullSrv);
     }
 
-    // Uploads a ground decal's per-actor exclusion cylinders into the decal shader's ActorCB at b2, clearing the
-    // previous decal's list when empty.
     private void UploadActorVolumes(ID3D11DeviceContext* ctx, IReadOnlyList<ExcludeVolume>? vols)
     {
         var actorData = new ActorCBData();
@@ -1295,7 +1116,7 @@ internal sealed unsafe class ScenePass : IDisposable
             actorData.Actors[i * 4 + 0] = v.Position.X;
             actorData.Actors[i * 4 + 1] = v.Position.Z;
             actorData.Actors[i * 4 + 2] = v.Radius;
-            actorData.Actors[i * 4 + 3] = 0f; // unused: the stencil silhouette makes the cut, so the gate is horizontal
+            actorData.Actors[i * 4 + 3] = 0f;
         }
 
         actorData.ActorCount = (uint)n;
@@ -1310,7 +1131,6 @@ internal sealed unsafe class ScenePass : IDisposable
         actorCb ??= GpuBuffer.CreateConstant(device, (uint)sizeof(ActorCBData));
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         frameCb?.Dispose();

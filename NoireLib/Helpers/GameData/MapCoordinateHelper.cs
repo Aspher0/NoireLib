@@ -1,4 +1,5 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
+using System.Globalization;
 using System.Numerics;
 using Lumina.Excel.Sheets;
 
@@ -14,8 +15,7 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class MapCoordinateHelper
 {
-    // The map image space is 2048 pixels across with the world origin at its centre, and a map coordinate runs across
-    // 41 of its own units over that same span, offset so that the first unit is 1 rather than 0.
+    // The map image space is 2048 pixels across, world origin at its centre. A map coordinate runs over 41 units of it, starting at 1.
     private const float MarkerCentre = 1024f;
     private const float MarkerSpan = 2048f;
     private const float CoordinateSpan = 41f;
@@ -23,7 +23,7 @@ public static class MapCoordinateHelper
 
     /// <summary>
     /// Projects a map marker into world space through the map it is drawn on. Only X and Z are meaningful: a marker
-    /// carries no height, so Y comes back zero rather than guessed.
+    /// carries no height. Y comes back zero. It is never guessed.
     /// </summary>
     /// <param name="marker">The marker to project.</param>
     /// <param name="map">The map the marker belongs to.</param>
@@ -52,11 +52,7 @@ public static class MapCoordinateHelper
     public static float MarkerToWorld(float marker, float sizeFactor, float offset)
         => ((marker - MarkerCentre) / Scale(sizeFactor)) - offset;
 
-    /// <summary>
-    /// Converts a world position to the map coordinate pair the game writes it as, being the numbers shown beside the
-    /// minimap and carried in a map link. The world X axis maps to the coordinate's X and the world Z axis to its Y;
-    /// the height is not part of a map coordinate at all.
-    /// </summary>
+    /// <summary>Converts a world position to the map coordinate the game shows beside the minimap and in map links. World Z is the coordinate's Y.</summary>
     /// <param name="world">The world position.</param>
     /// <param name="map">The map to express it on.</param>
     /// <returns>The map coordinate pair.</returns>
@@ -74,7 +70,7 @@ public static class MapCoordinateHelper
                MapCoordinateToWorld(y, map.SizeFactor, map.OffsetY));
 
     /// <summary>Converts a world position back to the map-marker pixel the sheet would store it as.</summary>
-    /// <param name="world">The world position; its height is not part of a marker.</param>
+    /// <param name="world">The world position. Its height is not part of a marker.</param>
     /// <param name="map">The map to express it on.</param>
     /// <returns>The marker X and Y pixels.</returns>
     public static (float X, float Y) WorldToMarker(Vector3 world, MapProjection map)
@@ -171,7 +167,7 @@ public static class MapCoordinateHelper
 
     /// <summary>
     /// Reads every marker a territory draws and projects each into world space through its own map's projection. A
-    /// territory that spans several maps has a different offset per map, so projecting them together through one is
+    /// territory that spans several maps has a different offset per map. Projecting them together through one is
     /// wrong. This resolves that without the caller needing to know the territory spans anything.
     /// </summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
@@ -226,6 +222,120 @@ public static class MapCoordinateHelper
 
         return found;
     }
+
+    /// <summary>
+    /// Expresses a world position as the map coordinate pair the game shows beside the minimap, on whichever of the
+    /// territory's maps the position belongs to.
+    /// </summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <param name="world">The world position.</param>
+    /// <param name="coordinate">The coordinate, its X from the world X axis and its Y from the world Z axis.</param>
+    /// <param name="mapId">The Map row the coordinate is expressed on, zero when there is none.</param>
+    /// <returns>True when the territory is drawn on a map.</returns>
+    public static bool TryWorldToMapCoordinate(uint territoryId, Vector3 world, out Vector2 coordinate, out uint mapId)
+    {
+        coordinate = default;
+        mapId = 0;
+
+        var (ownMapId, maps) = MapsOf(territoryId);
+        if (PickMap(maps, ownMapId, world) is not { } map)
+            return false;
+
+        var (x, y) = WorldToMapCoordinate(world, map);
+        coordinate = new Vector2(x, y);
+        mapId = map.MapId;
+        return true;
+    }
+
+    /// <summary>
+    /// Writes a world position the way a report names a place, with the map coordinate beside it. A position on no
+    /// map is written on its own.
+    /// </summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <param name="world">The world position.</param>
+    /// <returns>The position and its map coordinate.</returns>
+    public static string DescribePlace(uint territoryId, Vector3 world)
+        => TryWorldToMapCoordinate(territoryId, world, out var coordinate, out _)
+            ? string.Create(CultureInfo.InvariantCulture,
+                $"{world.X:F3}, {world.Y:F3}, {world.Z:F3} (map {coordinate.X:F1}, {coordinate.Y:F1})")
+            : string.Create(CultureInfo.InvariantCulture, $"{world.X:F3}, {world.Y:F3}, {world.Z:F3}");
+
+    /// <summary>
+    /// The map a world position belongs to. A housing district draws its main division and its subdivision on two
+    /// maps with different offsets, and a position belongs to the one it lands inside, the territory's own map first.
+    /// </summary>
+    /// <param name="maps">The territory's maps, from <see cref="ReadMaps"/>.</param>
+    /// <param name="ownMapId">The TerritoryType row's own Map id, zero when it names none.</param>
+    /// <param name="world">The world position.</param>
+    /// <returns>The map to express the position on, or null when there are no maps.</returns>
+    public static MapProjection? PickMap(IReadOnlyList<MapProjection> maps, uint ownMapId, Vector3 world)
+    {
+        if (maps.Count == 0)
+            return null;
+
+        MapProjection? own = null;
+        MapProjection? inside = null;
+
+        foreach (var candidate in maps)
+        {
+            var isInside = IsInsideMap(candidate, world);
+
+            if (candidate.MapId == ownMapId)
+            {
+                own = candidate;
+
+                if (isInside)
+                    return candidate;
+            }
+            else if (isInside && inside == null)
+            {
+                inside = candidate;
+            }
+        }
+
+        return inside ?? own ?? maps[0];
+    }
+
+    /// <summary>Whether a world position lands inside the area a map draws.</summary>
+    /// <param name="map">The map to test against.</param>
+    /// <param name="world">The world position.</param>
+    /// <returns>True when the position's coordinate falls within the map's own span.</returns>
+    public static bool IsInsideMap(MapProjection map, Vector3 world)
+    {
+        var (x, y) = WorldToMapCoordinate(world, map);
+        var last = WorldToMapCoordinate((MarkerCentre / Scale(map.SizeFactor)) - map.OffsetX, map.SizeFactor, map.OffsetX);
+
+        return x >= CoordinateOrigin && y >= CoordinateOrigin && x <= last && y <= last;
+    }
+
+    /// <summary>The maps a territory is drawn across and its own map id, read once per territory.</summary>
+    /// <param name="territoryId">The TerritoryType row id.</param>
+    /// <returns>The territory's own Map id and every map it is drawn across.</returns>
+    public static (uint OwnMapId, IReadOnlyList<MapProjection> Maps) MapsOf(uint territoryId)
+    {
+        lock (CacheLock)
+        {
+            if (Cached.TryGetValue(territoryId, out var known))
+                return known;
+        }
+
+        var ownMapId = SafeExecutor.ExecuteSafely(
+            () => ExcelSheetHelper.TryGetRow<TerritoryType>(territoryId, out var row) && row is { } territory
+                ? territory.Map.RowId
+                : 0u,
+            0u);
+
+        var read = (ownMapId, ReadMaps(territoryId));
+
+        lock (CacheLock)
+            Cached[territoryId] = read;
+
+        return read;
+    }
+
+    private static readonly object CacheLock = new();
+
+    private static readonly Dictionary<uint, (uint OwnMapId, IReadOnlyList<MapProjection> Maps)> Cached = [];
 
     private static float Scale(float sizeFactor) => sizeFactor / 100f;
 }

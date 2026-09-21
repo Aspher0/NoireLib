@@ -14,25 +14,20 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the trap doors of the Draw3D core: constant-buffer packing sizes (a drive-by field addition
-/// must fail the build, not the visuals), scene-graph semantics (dirty flags, cycles, destruction),
-/// disposed-scene semantics (a dead scene rejects new content instead of silently destroying it),
-/// steady-state allocation of the frame body's device-free half, and the rule that the renderer core
-/// references no ImGui anywhere under NoireLib/Draw3D (executable policy, not convention).
-/// </summary>
+/// <summary>Locks the trap doors of the Draw3D core: constant-buffer packing sizes, scene-graph semantics, disposed-scene rejection, steady-state allocation, and the rule that the renderer core references no ImGui under NoireLib/Draw3D.</summary>
 public class Draw3DCoreContractTests
 {
-    // ---------------------------------------------------------------- constant-buffer packing
+    [Fact]
+    public void FrameCB_Is272Bytes() => Unsafe.SizeOf<FrameCBData>().Should().Be(272);
 
     [Fact]
-    public void FrameCB_Is256Bytes() => Unsafe.SizeOf<FrameCBData>().Should().Be(256); // + WorldHeightRegion (decal height-map)
+    public void ResolveCB_Is176Bytes() => Unsafe.SizeOf<ResolveCBData>().Should().Be(176); // two matrices, params, game depth
 
     [Fact]
-    public void ObjectCB_Is224Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(224); // + Params3 (spare slot; the G-buffer injection's dye)
+    public void ObjectCB_Is224Bytes() => Unsafe.SizeOf<ObjectCBData>().Should().Be(224);
 
     [Fact]
-    public void CompositeCB_Is4112Bytes() => Unsafe.SizeOf<CompositeCBData>().Should().Be(4112); // header + 128 rects + 128 factors
+    public void CompositeCB_Is4112Bytes() => Unsafe.SizeOf<CompositeCBData>().Should().Be(4112); // header, 128 rects, 128 factors
 
     [Fact]
     public void Vertex3D_Is64Bytes() => Unsafe.SizeOf<Vertex3D>().Should().Be(64,
@@ -40,8 +35,6 @@ public class Draw3DCoreContractTests
 
     [Fact]
     public void InstanceData_Is80Bytes() => Unsafe.SizeOf<InstanceData>().Should().Be(80);
-
-    // ---------------------------------------------------------------- scene graph
 
     [Fact]
     public void SceneGraph_ParentMove_UpdatesChildWorldMatrix()
@@ -66,7 +59,7 @@ public class Draw3DCoreContractTests
         node.LocalRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, MathF.PI / 2f);
         node.LocalPosition = new Vector3(10f, 0f, 0f);
 
-        // v * S*R*T: local +X (1,0,0) scales to (2,0,0), rotates 90° around Y to (0,0,-2), then translates.
+        // v * S*R*T. Local +X scales to (2,0,0), rotates 90 degrees around Y to (0,0,-2), then translates.
         var world = node.WorldMatrix;
         var p = Vector3.Transform(new Vector3(1f, 0f, 0f), world);
         p.X.Should().BeApproximately(10f, 1e-4f);
@@ -124,8 +117,6 @@ public class Draw3DCoreContractTests
         sceneB.NodeCount.Should().Be(2);
     }
 
-    // ---------------------------------------------------------------- disposed-scene semantics
-
     [Fact]
     public void AdoptRoot_OnDisposedScene_Throws()
     {
@@ -136,7 +127,7 @@ public class Draw3DCoreContractTests
 
         var act = () => target.AdoptRoot(node);
         act.Should().Throw<ObjectDisposedException>(
-            "a disposed scene has already run its teardown, so a root adopted afterwards would never be freed; CreateNode already rejects this");
+            "a root adopted after teardown would never be freed. CreateNode already rejects this");
     }
 
     [Fact]
@@ -149,11 +140,9 @@ public class Draw3DCoreContractTests
 
         var act = () => target.AddModel(model);
         act.Should().Throw<ObjectDisposedException>(
-            "Own frees anything handed to a dead scene, so adopting there would hand back a model whose GPU buffers are gone and which draws nothing without erroring");
+            "Own frees anything handed to a dead scene. Adopting there would hand back a model whose GPU buffers are gone, drawing nothing without erroring");
         model.Root.Destroyed.Should().BeFalse("a rejected AddModel must not destroy the model the caller still owns");
     }
-
-    // ---------------------------------------------------------------- prepare phase
 
     [Fact]
     public void FirePrepare_FeatureThatThrows_IsDetachedAndTheOthersStillRun()
@@ -180,16 +169,13 @@ public class Draw3DCoreContractTests
         scene.AddFeature(new FeatureAdder(late));
         var frame = MakeFrame();
 
-        // The prepare loop runs off a snapshot taken under the lock: a feature registered from inside a feature must
-        // neither run this frame nor disturb the loop already in flight.
+        // The prepare loop runs off a snapshot. A feature registered mid-loop runs next frame.
         scene.FirePrepare(in frame);
         late.Calls.Should().Be(0);
 
         scene.FirePrepare(in frame);
         late.Calls.Should().Be(1);
     }
-
-    // ---------------------------------------------------------------- steady-state allocation
 
     [Fact]
     public void FirePrepare_HandlerAndFeatures_AllocateNothingAfterWarmup()
@@ -203,7 +189,7 @@ public class Draw3DCoreContractTests
         scene.AddFeature(second);
         var frame = MakeFrame();
 
-        scene.FirePrepare(in frame); // warm-up (JIT, snapshot buffer growth)
+        scene.FirePrepare(in frame); // warm-up
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         for (var i = 0; i < 8; i++)
@@ -243,7 +229,7 @@ public class Draw3DCoreContractTests
             }
         }
 
-        Pass(); // warm-up (JIT, lazy internals)
+        Pass(); // warm-up
 
         var before = GC.GetAllocatedBytesForCurrentThread();
         Pass();
@@ -254,9 +240,7 @@ public class Draw3DCoreContractTests
     [Fact]
     public void RendererCore_OutsideInteraction_ReferencesNoImGui()
     {
-        // The renderer core is the pure D3D11 pipeline and must not depend on input/UI concerns. Only
-        // NoireLib/Draw3D/Interaction/ (NoireInteract and the gizmo, including its ImGuizmo backend) is allowed to
-        // read ImGui; it sits above the renderer and never touches the render pipeline itself.
+        // Only NoireLib/Draw3D/Interaction/ may read ImGui.
         var draw3dDir = FindDraw3DSourceDirectory();
         var offenders = new System.Collections.Generic.List<string>();
 
@@ -264,7 +248,7 @@ public class Draw3DCoreContractTests
         {
             var relative = Path.GetRelativePath(draw3dDir, file);
             if (relative.StartsWith("Interaction" + Path.DirectorySeparatorChar, StringComparison.Ordinal))
-                continue; // the sanctioned input layer, allowed to read ImGui IO
+                continue;
 
             var text = File.ReadAllText(file);
             if (text.Contains("Dalamud.Bindings.ImGui", StringComparison.Ordinal))
@@ -274,9 +258,6 @@ public class Draw3DCoreContractTests
         offenders.Should().BeEmpty("the renderer core references no ImGui bindings, and only NoireLib/Draw3D/Interaction/ may");
     }
 
-    // ---------------------------------------------------------------- helpers
-
-    /// <summary>A device-free frame snapshot: the prepare phase only passes it through, so identity matrices suffice.</summary>
     private static FrameContext MakeFrame()
         => new(Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity, Matrix4x4.Identity,
             Vector3.Zero, 0f, new Vector2(1920f, 1080f), Vector2.One, true, 0.1f, true, false, 1);
@@ -294,7 +275,6 @@ public class Draw3DCoreContractTests
             => throw new InvalidOperationException("feature failure");
     }
 
-    /// <summary>Registers another feature from inside the prepare loop, to prove the loop runs off a snapshot.</summary>
     private sealed class FeatureAdder : ISceneFeature
     {
         private ISceneFeature? pending;

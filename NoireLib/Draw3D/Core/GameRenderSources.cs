@@ -13,43 +13,30 @@ using RenderTargetManager = FFXIVClientStructs.FFXIV.Client.Graphics.Render.Rend
 
 namespace NoireLib.Draw3D.Core;
 
-// Draw3D's render sources: the game's D3D11 device, backbuffer, scene depth and camera, plus the composite's
-// nameplate and HUD policy rects and the decal actor exclusions. Every read goes through named fields on Instance()
-// singletons: no signatures, no offsets, no hooks. Addon geometry is not read here; it comes from AddonHelper. All
-// methods return raw values only; COM lifetime management happens in the callers.
+// Every read goes through named fields on Instance() singletons. COM lifetime is the callers' concern.
 internal static unsafe class GameRenderSources
 {
     internal readonly record struct BackBufferInfo(nint Texture, uint Width, uint Height);
 
-    // Raw scene-depth texture information for the current frame. Value-equality is used for change detection.
     internal readonly record struct DepthTextureInfo(nint Texture, nint GameSrv, uint ActualWidth, uint ActualHeight, uint AllocatedWidth, uint AllocatedHeight);
 
     internal struct CameraData
     {
-        /// <summary>Render camera view matrix (valid when <see cref="HasRenderCamera"/>).</summary>
+        // One frame ahead of the camera the game draws with.
         public Matrix4x4 View;
-        /// <summary>Render camera projection matrix - the game's exact reversed-Z, infinite-far projection.</summary>
         public Matrix4x4 Proj;
-        /// <summary>The render camera's second projection matrix (role unknown) - diagnostics/probe only, never a render source.</summary>
+        // Role unknown. Diagnostics only.
         public Matrix4x4 Proj2;
-        /// <summary>The game's own combined view-projection (world-to-screen path), used as cross-check and wholesale fallback.</summary>
         public Matrix4x4 ControlViewProj;
-        /// <summary>Camera origin in world space.</summary>
         public Vector3 Origin;
-        /// <summary>True when the RenderCamera pair was read successfully.</summary>
         public bool HasRenderCamera;
-        /// <summary>True when Control's combined view-projection was read successfully.</summary>
         public bool HasControlViewProj;
-        /// <summary>Depth convention flags straight from the render camera (expected false/false: reversed-Z, infinite far).</summary>
+        // Expected false/false: reversed-Z, infinite far.
         public bool StandardZ, FiniteFarPlane;
-        /// <summary>Camera frustum parameters (diagnostics + culling).</summary>
         public float NearPlane, FarPlane, Fov, AspectRatio;
     }
 
-    /// <summary>
-    /// The game's D3D11 device as an unvalidated IUnknown: Kernel.Device's forwarder primary,
-    /// Dalamud's <c>UiBuilder.DeviceHandle</c> fallback. Callers must QueryInterface (see <see cref="RenderDevice.TryCreate"/>).
-    /// </summary>
+    // Unvalidated IUnknown. Callers QueryInterface.
     public static void* GetDeviceUnknown()
     {
         var kernel = KernelDevice.Instance();
@@ -61,7 +48,6 @@ internal static unsafe class GameRenderSources
         return raw;
     }
 
-    /// <summary>Reads the current backbuffer texture pointer and swapchain dimensions. False when anything on the path is null or zero-sized.</summary>
     public static bool TryGetBackBuffer(out BackBufferInfo info)
     {
         info = default;
@@ -82,10 +68,6 @@ internal static unsafe class GameRenderSources
         return true;
     }
 
-    /// <summary>
-    /// Reads the game's scene depth texture ("Unscaled scene reverse-Z depth stencil") from RenderTargetManager.<br/>
-    /// False when unavailable - the frame runs in depth-off mode.
-    /// </summary>
     public static bool TryGetDepthTexture(out DepthTextureInfo info)
     {
         info = default;
@@ -111,11 +93,6 @@ internal static unsafe class GameRenderSources
         return true;
     }
 
-    /// <summary>
-    /// Reads the swapchain's depth texture - the probe's diagnostics alternate for answering
-    /// "which buffer really holds this frame's scene depth at present time". Never a render source
-    /// unless the probe proves it should be.
-    /// </summary>
     public static bool TryGetSwapChainDepthTexture(out DepthTextureInfo info)
     {
         info = default;
@@ -138,11 +115,6 @@ internal static unsafe class GameRenderSources
         return true;
     }
 
-    /// <summary>
-    /// Reads the camera once, as a single immutable snapshot per presented frame. View and projection come
-    /// from the single active RenderCamera; the Control combined VP is the wholesale fallback and validator
-    /// cross-check - sources are never mixed.
-    /// </summary>
     public static bool TryGetCamera(out CameraData data)
     {
         data = default;
@@ -182,20 +154,12 @@ internal static unsafe class GameRenderSources
         return data.HasRenderCamera || data.HasControlViewProj;
     }
 
-    // Slack (framebuffer pixels) added around each nameplate policy rect - see the padding note at its use.
     private const float PlateRectPadding = 6f;
 
-    // The smallest rect containing both (xy = min, zw = max).
     private static Vector4 Union(in Vector4 a, in Vector4 b)
         => new(MathF.Min(a.X, b.X), MathF.Min(a.Y, b.Y), MathF.Max(a.Z, b.Z), MathF.Max(a.W, b.W));
 
-    /// <summary>
-    /// Collects the screen rects (display-UV space: xy = min, zw = max) of the currently visible
-    /// nameplates plus each plate's world-space distance from the camera. The rects are invisible
-    /// policy regions for the composite's per-pixel UI mask (nameplate layering over everything).
-    /// Fails soft: any inconsistency returns 0 rects - plates read on top for this frame only.
-    /// </summary>
-    /// <param name="rawDistances">Optional diagnostics: the game's raw (squared) <c>DistanceFromCamera</c> per plate.</param>
+    // Any failure returns 0 rects, leaving plates on top for that frame.
     public static int CollectNamePlateRects(Vector4[] rects, float[] distances, int max, Vector2 displaySize, float[]? rawDistances = null)
     {
         if (displaySize.X <= 0 || displaySize.Y <= 0)
@@ -211,8 +175,7 @@ internal static unsafe class GameRenderSources
             if (ui3d == null)
                 return 0;
 
-            var addon = (AddonNamePlate*)NoireService.GameGui.GetAddonByName("NamePlate").Address;
-            if (addon == null || !addon->AtkUnitBase.IsVisible)
+            if (!AddonHelper.TryGetAddon<AddonNamePlate>("NamePlate", out var addon) || !addon->AtkUnitBase.IsVisible)
                 return 0;
 
             var count = 0;
@@ -233,11 +196,7 @@ internal static unsafe class GameRenderSources
                 if (!plate.IsVisible)
                     continue;
 
-                // The UNION of the plate's container and its interactable collision box, never the tighter of the two.
-                // The rect is only a policy gate, so overshooting is free: outside the plate's actual pixels the UI
-                // mask reads no coverage and the layer draws there regardless of what the rect says. Undershooting is
-                // not free - whatever part of the plate falls outside (its icon, a name overhanging the interactable
-                // box, status markers) keeps the default "UI reads on top" and survives a plate meant to be covered.
+                // Container and collision box. Undershooting leaves an overhanging name on top of a covered plate.
                 var hasRect = new NoireAddonNode(plateAddon, (AtkResNode*)plate.NameplateCollision).TryGetScreenRect(out var rect);
                 if (new NoireAddonNode(plateAddon, plate.NameContainer).TryGetScreenRect(out var containerRect))
                 {
@@ -248,20 +207,13 @@ internal static unsafe class GameRenderSources
                 if (!hasRect)
                     continue;
 
-                // Same reasoning as the union, applied to time rather than space: these node positions are read on the
-                // framework thread, but the composite that uses them runs at present time, so under camera motion the
-                // plate has moved a little by then. Padding absorbs that drift for free - a rect reaching past the
-                // plate covers pixels the UI never drew, where the mask reads no coverage and nothing changes.
+                // Absorbs the plate's drift between this framework-thread read and the present-time composite.
                 rect = new Vector4(rect.X - PlateRectPadding, rect.Y - PlateRectPadding, rect.Z + PlateRectPadding, rect.W + PlateRectPadding);
 
-                // DistanceFromCamera is a SQUARED distance and must be rooted before comparing it against the linear
-                // world distances the occlusion test works in; used raw, every plate reads as impossibly far and
-                // loses every comparison, so DepthAware degrades to always-Covered.
-                // NamePlatePos is not a substitute: it reads as the world origin, so a distance measured from it is
-                // the camera's distance from (0,0,0) - equally unusable.
+                // DistanceFromCamera is squared. NamePlatePos reads as the world origin.
                 var plateDistanceSq = info->DistanceFromCamera;
                 if (plateDistanceSq <= 0f)
-                    continue; // no usable distance - leave this plate reading on top rather than guess at its depth
+                    continue;
 
                 if (rawDistances != null)
                     rawDistances[count] = plateDistanceSq;
@@ -276,16 +228,10 @@ internal static unsafe class GameRenderSources
         }
         catch (System.Exception)
         {
-            return 0; // protection off this frame - never let nameplate reads take the frame down
+            return 0;
         }
     }
 
-    /// <summary>
-    /// Collects the screen rects (display-UV space) of every visible game addon (HUD windows). Used as force-on-top
-    /// policy regions inside the composite: where a HUD window overlaps a "covered" nameplate region, the HUD still
-    /// reads on top. Fails soft to 0 appended rects.
-    /// </summary>
-    /// <returns>The number of rects appended starting at <paramref name="startIndex"/>.</returns>
     public static int CollectVisibleAddonRects(Vector4[] rects, int startIndex, int max, Vector2 displaySize)
     {
         if (displaySize.X <= 0 || displaySize.Y <= 0)
@@ -295,8 +241,6 @@ internal static unsafe class GameRenderSources
         {
             var count = 0;
 
-            // The helper skips near-fullscreen transparent overlay roots (nameplates, fly text, screen info) by default:
-            // they cover the whole viewport and would cut the entire layer.
             foreach (var addon in AddonHelper.VisibleAddons(displaySize))
             {
                 if (count >= max || startIndex + count >= rects.Length)
@@ -317,12 +261,7 @@ internal static unsafe class GameRenderSources
         }
     }
 
-    /// <summary>
-    /// Appends nearby game objects to <paramref name="into"/> as <see cref="ExcludeVolume"/>s (position + hitbox
-    /// radius * <paramref name="radiusScale"/>) for a ground decal's <c>ExcludeVolumes</c>. Filtered by
-    /// <paramref name="include"/> (default: players, battle NPCs, event NPCs) and capped at <paramref name="max"/>.
-    /// Reads the object table, so call it on the framework thread. Fails soft (appends nothing) on error.
-    /// </summary>
+    // Framework thread only.
     public static void CollectActorExclusions(List<ExcludeVolume> into, int max, Func<IGameObject, bool>? include, float radiusScale)
     {
         if (into == null || max <= 0 || !NoireService.IsInitialized())
@@ -338,9 +277,7 @@ internal static unsafe class GameRenderSources
                 if (obj == null || !predicate(obj))
                     continue;
 
-                // A GENEROUS gate: this radius does not cut anything itself - it only selects which characters the
-                // stencil exclusion applies to, so it must comfortably contain the character's whole XZ footprint
-                // (arms, a tail). A margin over the hitbox is safe (only stencil-character pixels inside it are ever removed).
+                // Only selects where the stencil exclusion applies. Must contain the whole XZ footprint.
                 var radius = (obj.HitboxRadius > 0f ? obj.HitboxRadius : 0.5f) + 0.8f;
 
                 into.Add(new ExcludeVolume(obj.Position, radius * radiusScale));
@@ -348,18 +285,10 @@ internal static unsafe class GameRenderSources
         }
         catch (System.Exception)
         {
-            // exclusion unavailable this call - the decal reads over actors rather than taking the frame down
         }
     }
 
-    /// <summary>
-    /// Appends exclusion volumes chosen by a per-object <paramref name="selector"/> (return null to skip an object) -
-    /// the full-control path where the caller decides the exact volume. Walks the whole object table (capped at
-    /// <paramref name="max"/>). Reads the object table, so call it on the framework thread. Fails soft on error.
-    /// </summary>
-    /// <param name="into">The list to append to.</param>
-    /// <param name="max">Cap on the number of volumes.</param>
-    /// <param name="selector">Per-object volume selector; null result skips the object.</param>
+    // Framework thread only.
     public static void CollectActorExclusions(List<ExcludeVolume> into, int max, Func<IGameObject, ExcludeVolume?> selector)
     {
         if (into == null || selector == null || max <= 0 || !NoireService.IsInitialized())
@@ -380,12 +309,9 @@ internal static unsafe class GameRenderSources
         }
         catch (System.Exception)
         {
-            // exclusion unavailable this call - the decal reads over actors rather than taking the frame down
         }
     }
 
-    // Default CollectActorExclusions(List{ExcludeVolume}, int, Func{IGameObject, bool}, float) filter: characters
-    // (players), monsters and NPCs.
     private static bool DefaultActorInclude(IGameObject o)
         => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc;
 }

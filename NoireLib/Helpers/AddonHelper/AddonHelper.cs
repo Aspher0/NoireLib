@@ -6,6 +6,7 @@ using Dalamud.Game.NativeWrapper;
 using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using InteropGenerator.Runtime;
+using Lumina.Text.ReadOnly;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -23,7 +24,7 @@ using AtkValueType = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType;
 
 /// <summary>
 /// A helper class to help with addon manipulation, such as finding addons, getting data, sending callbacks, etc.<br/>
-/// This static class exposes the pointer-level primitives; for everyday usage prefer the fluent wrappers <see cref="NoireAddon"/> and <see cref="NoireAddonNode"/>, obtained via <see cref="GetAddon(string)"/>.
+/// This static class exposes the pointer-level primitives. For everyday usage prefer the fluent wrappers <see cref="NoireAddon"/> and <see cref="NoireAddonNode"/>, obtained via <see cref="GetAddon(string)"/>.
 /// </summary>
 public static partial class AddonHelper
 {
@@ -34,7 +35,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="addonName">The name of the addon to get.</param>
     /// <param name="addonPtr">A pointer to the addon, if found.</param>
-    /// <returns>True if the addon was found; otherwise, false.</returns>
+    /// <returns>True if the addon was found.</returns>
     public static unsafe bool TryGetAddon(string addonName, out AtkUnitBase* addonPtr)
     {
         addonPtr = null;
@@ -55,7 +56,7 @@ public static partial class AddonHelper
     /// A pointer to the addon, if found.<br/>
     /// Will also be populated even if the addon is not ready.
     /// </param>
-    /// <returns>True if the addon is found and ready to be interacted with; otherwise, false.</returns>
+    /// <returns>True if the addon is found and ready to be interacted with.</returns>
     public static unsafe bool TryGetReadyAddon(string addonName, out AtkUnitBase* addonPtr)
         => TryGetAddon(addonName, out addonPtr) && IsAddonLoaded(addonPtr);
 
@@ -63,7 +64,7 @@ public static partial class AddonHelper
     /// Determines if an addon is visible and loaded, and ready to be interacted with.
     /// </summary>
     /// <param name="addon">The addon to check.</param>
-    /// <returns>True if the addon is loaded and ready to be interacted with; otherwise, false.</returns>
+    /// <returns>True if the addon is loaded and ready to be interacted with.</returns>
     public static unsafe bool IsAddonLoaded(AtkUnitBase* addon)
         => addon != null && addon->IsVisible && addon->UldManager.LoadedState == AtkLoadState.Loaded && addon->IsReady && addon->IsFullyLoaded();
 
@@ -72,7 +73,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="addon">The addon to inspect.</param>
     /// <param name="nodePtr">The root node pointer, if found.</param>
-    /// <returns>True if the addon is loaded and has a root node; otherwise, false.</returns>
+    /// <returns>True if the addon is loaded and has a root node.</returns>
     public static unsafe bool TryGetRootNode(AtkUnitBase* addon, out AtkResNode* nodePtr)
     {
         nodePtr = null;
@@ -90,7 +91,7 @@ public static partial class AddonHelper
     /// <param name="addon">The addon to inspect.</param>
     /// <param name="nodeId">The node id to look up.</param>
     /// <param name="nodePtr">The node pointer, if found.</param>
-    /// <returns>True if the addon is ready and the node exists; otherwise, false.</returns>
+    /// <returns>True if the addon is ready and the node exists.</returns>
     public static unsafe bool TryGetNode(AtkUnitBase* addon, uint nodeId, out AtkResNode* nodePtr)
     {
         nodePtr = null;
@@ -108,7 +109,7 @@ public static partial class AddonHelper
     /// <param name="addon">The addon to inspect.</param>
     /// <param name="nodePtr">The final node pointer, if found.</param>
     /// <param name="nodeIds">The chain of node ids to resolve.</param>
-    /// <returns>True if every node in the chain was resolved; otherwise, false.</returns>
+    /// <returns>True if every node in the chain was resolved.</returns>
     public static unsafe bool TryGetNode(AtkUnitBase* addon, out AtkResNode* nodePtr, params int[] nodeIds)
     {
         nodePtr = null;
@@ -131,7 +132,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="node">The node to inspect.</param>
     /// <param name="textNodePtr">The text node pointer, if the cast succeeded.</param>
-    /// <returns>True if the node is a text node; otherwise, false.</returns>
+    /// <returns>True if the node is a text node.</returns>
     public static unsafe bool TryGetTextNode(AtkResNode* node, out AtkTextNode* textNodePtr)
     {
         textNodePtr = node == null ? null : node->GetAsAtkTextNode();
@@ -143,7 +144,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="node">The node to inspect.</param>
     /// <param name="componentNodePtr">The component node pointer, if the cast succeeded.</param>
-    /// <returns>True if the node is a component node; otherwise, false.</returns>
+    /// <returns>True if the node is a component node.</returns>
     public static unsafe bool TryGetComponentNode(AtkResNode* node, out AtkComponentNode* componentNodePtr)
     {
         componentNodePtr = node == null ? null : node->GetAsAtkComponentNode();
@@ -155,7 +156,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="textNode">The text node to read.</param>
     /// <param name="text">The resolved managed text, if found.</param>
-    /// <returns>True if the text node exists and its text could be read; otherwise, false.</returns>
+    /// <returns>True if the text node exists and its text could be read.</returns>
     public static unsafe bool TryReadText(AtkTextNode* textNode, out string text)
     {
         text = string.Empty;
@@ -172,7 +173,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="node">The node to read.</param>
     /// <param name="text">The resolved managed text, if found.</param>
-    /// <returns>True if the node is a text node and its text could be read; otherwise, false.</returns>
+    /// <returns>True if the node is a text node and its text could be read.</returns>
     public static unsafe bool TryReadText(AtkResNode* node, out string text)
     {
         text = string.Empty;
@@ -194,7 +195,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="value">The value to read.</param>
     /// <param name="result">The resolved managed value.</param>
-    /// <returns>True if the value could be read; otherwise, false.</returns>
+    /// <returns>True if the value could be read.</returns>
     public static unsafe bool TryReadValue(AtkValue* value, out object? result)
     {
         result = null;
@@ -232,6 +233,7 @@ public static partial class AddonHelper
                 return true;
 
             case AtkValueType.String:
+            case AtkValueType.ConstString:
             case AtkValueType.ManagedString:
                 result = ReadCString(value->String);
                 return true;
@@ -344,7 +346,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="key">The registration key used to unregister the registration later.</param>
     /// <param name="registration">The registration to store.</param>
-    /// <returns>True if the key was newly added; otherwise, false when an existing keyed registration was replaced.</returns>
+    /// <returns>True if the key was newly added. Otherwise false when an existing keyed registration was replaced.</returns>
     public static bool RegisterEvent(string key, IDisposable? registration)
     {
         ValidateRegistrationKey(key);
@@ -370,7 +372,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="key">The registration key used to unregister the event later.</param>
     /// <param name="eventHandle">The addon event handle to store.</param>
-    /// <returns>True if the event handle was stored; otherwise, false.</returns>
+    /// <returns>True if the event handle was stored.</returns>
     public static bool RegisterEvent(string key, AddonEventHandle? eventHandle)
         => RegisterEvent(key, eventHandle == null ? null : WrapEventHandle(eventHandle));
 
@@ -378,7 +380,7 @@ public static partial class AddonHelper
     /// Determines whether keyed registrations exist for the supplied key.
     /// </summary>
     /// <param name="key">The registration key to inspect.</param>
-    /// <returns>True if the key has stored registrations; otherwise, false.</returns>
+    /// <returns>True if the key has stored registrations.</returns>
     public static bool HasRegisteredEvents(string key)
     {
         ValidateRegistrationKey(key);
@@ -391,7 +393,7 @@ public static partial class AddonHelper
     /// Unregisters every stored registration for the supplied key.
     /// </summary>
     /// <param name="key">The registration key to unregister.</param>
-    /// <returns>True if at least one registration was removed; otherwise, false.</returns>
+    /// <returns>True if at least one registration was removed.</returns>
     public static bool UnregisterEvents(string key)
     {
         ValidateRegistrationKey(key);
@@ -433,7 +435,7 @@ public static partial class AddonHelper
     /// Tries to prevent the original lifecycle action from running.
     /// </summary>
     /// <param name="addonArgs">The lifecycle event arguments to mutate.</param>
-    /// <returns>True if the request was applied during this call; otherwise, false.</returns>
+    /// <returns>True if the request was applied during this call.</returns>
     public static bool TryPreventOriginal(AddonArgs addonArgs)
     {
         ArgumentNullException.ThrowIfNull(addonArgs);
@@ -450,7 +452,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="addonArgs">The lifecycle event arguments to inspect.</param>
     /// <param name="addonPtr">The resolved addon pointer, if found.</param>
-    /// <returns>True if the addon pointer was resolved; otherwise, false.</returns>
+    /// <returns>True if the addon pointer was resolved.</returns>
     public static unsafe bool TryGetAddon(AddonArgs addonArgs, out AtkUnitBase* addonPtr)
     {
         addonPtr = null;
@@ -469,7 +471,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="addonArgs">The lifecycle event arguments to inspect.</param>
     /// <param name="addonPtr">The resolved addon pointer, if found.</param>
-    /// <returns>True if the addon pointer was resolved and the addon is ready; otherwise, false.</returns>
+    /// <returns>True if the addon pointer was resolved and the addon is ready.</returns>
     public static unsafe bool TryGetReadyAddon(AddonArgs addonArgs, out AtkUnitBase* addonPtr)
         => TryGetAddon(addonArgs, out addonPtr) && IsAddonLoaded(addonPtr);
 
@@ -478,7 +480,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="eventData">The addon event data to inspect.</param>
     /// <param name="addonPtr">The resolved addon pointer, if found.</param>
-    /// <returns>True if the addon pointer was resolved; otherwise, false.</returns>
+    /// <returns>True if the addon pointer was resolved.</returns>
     public static unsafe bool TryGetAddon(AddonEventData eventData, out AtkUnitBase* addonPtr)
     {
         addonPtr = null;
@@ -497,7 +499,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="eventData">The addon event data to inspect.</param>
     /// <param name="addonPtr">The resolved addon pointer, if found.</param>
-    /// <returns>True if the addon pointer was resolved and the addon is ready; otherwise, false.</returns>
+    /// <returns>True if the addon pointer was resolved and the addon is ready.</returns>
     public static unsafe bool TryGetReadyAddon(AddonEventData eventData, out AtkUnitBase* addonPtr)
         => TryGetAddon(eventData, out addonPtr) && IsAddonLoaded(addonPtr);
 
@@ -506,7 +508,7 @@ public static partial class AddonHelper
     /// </summary>
     /// <param name="eventData">The addon event data to inspect.</param>
     /// <param name="nodePtr">The resolved node pointer, if found.</param>
-    /// <returns>True if the node pointer was resolved; otherwise, false.</returns>
+    /// <returns>True if the node pointer was resolved.</returns>
     public static unsafe bool TryGetNode(AddonEventData eventData, out AtkResNode* nodePtr)
     {
         nodePtr = null;
@@ -579,7 +581,7 @@ public static partial class AddonHelper
     /// <param name="node">The node to update.</param>
     /// <param name="clickableCursorOnHover">Whether the clickable cursor should be shown on hover.</param>
     /// <param name="textInputCursorOnHover">Whether the text input cursor should be shown on hover.</param>
-    /// <returns>True if the node was updated; otherwise, false.</returns>
+    /// <returns>True if the node was updated.</returns>
     public static unsafe bool TrySetNodeCursor(AtkResNode* node, bool clickableCursorOnHover = true, bool textInputCursorOnHover = false)
     {
         if (node == null)
@@ -627,13 +629,134 @@ public static partial class AddonHelper
         return CreateEventRegistration(mouseOverHandle, mouseOutHandle);
     }
 
+    /// <summary>Reads a shared string array by index. A list window keeps its rows there.</summary>
+    /// <param name="arrayIndex">The array's index, as the window's subscription names it.</param>
+    /// <param name="limit">The most rows to read. Zero reads the whole array.</param>
+    /// <returns>The rows, empty when the array is not there.</returns>
+    public static unsafe IReadOnlyList<string> ReadStringArray(int arrayIndex, int limit = 0)
+    {
+        var rows = new List<string>();
+
+        if (arrayIndex < 0 || !NoireService.IsInitialized())
+            return rows;
+
+        var stage = AtkStage.Instance();
+
+        if (stage == null)
+            return rows;
+
+        var arrays = stage->GetStringArrayData();
+
+        if (arrays == null)
+            return rows;
+
+        var array = arrays[arrayIndex];
+
+        if (array == null || array->StringArray == null)
+            return rows;
+
+        var count = limit > 0 ? Math.Min(limit, array->Size) : array->Size;
+
+        for (var index = 0; index < count; index++)
+        {
+            var entry = array->StringArray[index];
+
+            rows.Add(entry.HasValue ? new ReadOnlySeStringSpan(entry.AsSpan()).ExtractText() : string.Empty);
+        }
+
+        return rows;
+    }
+
+    /// <summary>Sends a node the event a click raises, like the game. The window's own handler builds its call.</summary>
+    /// <param name="addon">The window the node belongs to.</param>
+    /// <param name="node">The node clicked.</param>
+    /// <param name="eventType">The event a click raises on that node.</param>
+    /// <returns>True when the event reached the window.</returns>
+    public static unsafe bool ClickNode(AtkUnitBase* addon, AtkResNode* node, AtkEventType eventType)
+    {
+        if (!IsAddonLoaded(addon) || node == null)
+            return false;
+
+        var param = node->GetEventParam(eventType);
+
+        var click = new AtkEvent
+        {
+            Node = node,
+            Target = (AtkEventTarget*)node,
+            Listener = (AtkEventListener*)addon,
+            Param = param,
+        };
+
+        addon->ReceiveEvent(eventType, (int)param, &click, null);
+        return true;
+    }
+
+    /// <summary>Clicks a button of a window by the id of its node.</summary>
+    /// <param name="addonName">The window.</param>
+    /// <param name="nodeId">The button node's id.</param>
+    /// <returns>True when the click reached the window.</returns>
+    public static unsafe bool ClickButton(string addonName, uint nodeId)
+        => TryGetReadyAddon(addonName, out var addon)
+            && ClickNode(addon, addon->GetNodeById(nodeId), AtkEventType.ButtonClick);
+
+    /// <summary>Clicks a row of a window's list through the list's own dispatch.</summary>
+    /// <param name="addonName">The window.</param>
+    /// <param name="nodeId">The list node's id.</param>
+    /// <param name="rowIndex">The row, counted from zero.</param>
+    /// <returns>True when the click reached the list.</returns>
+    public static unsafe bool ClickListItem(string addonName, uint nodeId, int rowIndex)
+    {
+        if (rowIndex < 0 || !TryGetReadyAddon(addonName, out var addon))
+            return false;
+
+        var node = addon->GetNodeById(nodeId);
+
+        if (node == null || (ushort)node->Type < 1000)
+            return false;
+
+        var component = ((AtkComponentNode*)node)->Component;
+
+        if (component == null)
+            return false;
+
+        ((AtkComponentList*)component)->DispatchItemEvent(rowIndex, AtkEventType.ListItemClick);
+        return true;
+    }
+
+    /// <summary>Clicks the Yes or the No button of the confirmation window.</summary>
+    /// <param name="yes">True for Yes, false for No.</param>
+    /// <returns>True when the click reached the window.</returns>
+    public static unsafe bool ClickYesNo(bool yes)
+    {
+        if (!TryGetReadyAddon("SelectYesno", out var addon))
+            return false;
+
+        var dialog = (FFXIVClientStructs.FFXIV.Client.UI.AddonSelectYesno*)addon;
+        var button = yes ? dialog->YesButton : dialog->NoButton;
+
+        return button != null && ClickNode(addon, (AtkResNode*)button->OwnerNode, AtkEventType.ButtonClick);
+    }
+
+    /// <summary>Clicks the button of the notice window.</summary>
+    /// <returns>True when the click reached the window.</returns>
+    public static unsafe bool ClickOk()
+    {
+        if (!TryGetReadyAddon("SelectOk", out var addon))
+            return false;
+
+        var dialog = (FFXIVClientStructs.FFXIV.Client.UI.AddonSelectOk*)addon;
+
+        return dialog->OkButton != null
+            && ClickNode(addon, (AtkResNode*)dialog->OkButton->OwnerNode, AtkEventType.ButtonClick);
+    }
+
     /// <summary>
     /// Tries to send callback values to a ready addon.
     /// </summary>
     /// <param name="addon">The addon to send callback values to.</param>
     /// <param name="updateState">Whether the addon should update its internal state after the callback is fired.</param>
     /// <param name="values">The callback values to marshal into <see cref="AtkValue"/> instances.</param>
-    /// <returns>True if the addon was ready and the callback was sent successfully; otherwise, false.</returns>
+    /// <returns>True if the addon was ready and the callback was sent successfully.</returns>
     public static unsafe bool SendCallback(AtkUnitBase* addon, bool updateState, params object[] values)
     {
         if (!IsAddonLoaded(addon))
@@ -641,8 +764,12 @@ public static partial class AddonHelper
 
         ArgumentNullException.ThrowIfNull(values);
 
+        // FireCallback returns what the addon's handler returned.
         if (values.Length == 0)
-            return addon->FireCallback(0, null, updateState);
+        {
+            addon->FireCallback(0, null, updateState);
+            return true;
+        }
 
         var atkValues = new AtkValue[values.Length];
 
@@ -656,7 +783,8 @@ public static partial class AddonHelper
                     TryWriteAtkValue(&atkValuesPtr[index], values[index]);
                 }
 
-                return addon->FireCallback((uint)values.Length, atkValuesPtr, updateState);
+                addon->FireCallback((uint)values.Length, atkValuesPtr, updateState);
+                return true;
             }
             finally
             {
@@ -725,10 +853,13 @@ public static partial class AddonHelper
         return managedText ?? string.Empty;
     }
 
-    private static string ReadUtf8String(FFXIVClientStructs.FFXIV.Client.System.String.Utf8String textValue)
+    private static unsafe string ReadUtf8String(FFXIVClientStructs.FFXIV.Client.System.String.Utf8String textValue)
     {
-        string? managedText = textValue.ToString();
-        return managedText ?? string.Empty;
+        if (textValue.StringPtr.Value == null || textValue.Length == 0)
+            return string.Empty;
+
+        // Node text carries SeString payloads: colours, item links.
+        return new ReadOnlySeStringSpan(textValue.AsSpan()).ExtractText();
     }
 
     private static string FormatManagedValue(object? value)

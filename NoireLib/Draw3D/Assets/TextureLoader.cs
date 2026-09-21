@@ -10,20 +10,11 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace NoireLib.Draw3D.Assets;
 
-/// <summary>
-/// Produces <see cref="GpuTexture"/>s for Draw3D materials by bridging Dalamud's texture pipeline -
-/// decoding, caching and lifetime stay Dalamud's problem.<br/>
-/// <b>Ownership:</b> every returned texture is owned by the caller - dispose it when done. The bridge
-/// keeps its own reference to the underlying Dalamud resource, so the source wrap's lifetime stops mattering.
-/// </summary>
+/// <summary>Produces <see cref="GpuTexture"/>s through Dalamud's texture pipeline. The caller disposes every returned texture.</summary>
 public static class TextureLoader
 {
-    /// <summary>
-    /// Bridges an existing Dalamud texture wrap into a material-ready texture: the wrap's low-level resource
-    /// is shared (independent reference), then QueryInterface proves the handle really is a shader resource
-    /// view, never assumed.
-    /// </summary>
-    /// <param name="wrap">The source wrap; can be disposed freely after this call.</param>
+    /// <summary>Bridges an existing Dalamud texture wrap into a material-ready texture sharing its low-level resource.</summary>
+    /// <param name="wrap">The source wrap. Can be disposed freely after this call.</param>
     /// <returns>The bridged texture, or null when the handle is not a D3D11 SRV (logged once).</returns>
     public static unsafe GpuTexture? FromWrap(IDalamudTextureWrap wrap)
     {
@@ -34,11 +25,11 @@ public static class TextureLoader
         if (!ComPtrUtil.TryQi<ID3D11ShaderResourceView>((IUnknown*)(nint)shared.Handle.Handle, out var srv))
         {
             shared.Dispose();
-            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView - cannot bridge.", "Draw3D");
+            NoireLogger.LogError("TextureLoader: the wrap handle is not an ID3D11ShaderResourceView. Cannot bridge.", "Draw3D");
             return null;
         }
 
-        // GpuTexture adopts the QI reference and keeps the shared wrap alive until disposed.
+        // The texture keeps the shared wrap alive until disposed.
         var tex = GpuTexture.FromSrv(srv.Get(), wrap.Width, wrap.Height, addRef: true, ownedWrap: shared);
         srv.Dispose();
         return tex;
@@ -92,19 +83,12 @@ public static class TextureLoader
     }
 }
 
-/// <summary>
-/// Opens textures rendered by another process via DXGI shared handles - the socket that makes external
-/// producers (e.g. an off-screen browser renderer) usable as ordinary material textures.
-/// If the producer uses a keyed mutex, it is acquired/released automatically around each frame's use.
-/// </summary>
+/// <summary>Opens textures another process renders into DXGI shared handles. The keyed mutex is handled per frame.</summary>
 public static unsafe class ExternalTexture
 {
-    /// <summary>
-    /// Opens a shared texture; NT handles require ID3D11Device1 (captured at init, absence degrades only
-    /// this feature).
-    /// </summary>
+    /// <summary>Opens a shared texture. NT handles need ID3D11Device1.</summary>
     /// <param name="handle">The shared handle from the producing process.</param>
-    /// <param name="ntHandle">True for NT handles (D3D11.1 sharing), false for legacy/KMT handles.</param>
+    /// <param name="ntHandle">Whether the handle is an NT handle (D3D11.1 sharing) or a legacy KMT handle.</param>
     /// <returns>The texture, or null on failure (logged).</returns>
     public static GpuTexture? FromSharedHandle(nint handle, bool ntHandle)
     {
@@ -137,7 +121,6 @@ public static unsafe class ExternalTexture
             return null;
         }
 
-
         D3D11_TEXTURE2D_DESC desc;
         texture->GetDesc(&desc);
 
@@ -150,7 +133,7 @@ public static unsafe class ExternalTexture
         }
 
         var result = GpuTexture.FromSharedResource((ID3D11Resource*)texture, srv, (int)desc.Width, (int)desc.Height);
-        texture->Release(); // FromSharedResource AddRef'd; drop the open's reference
+        texture->Release(); // FromSharedResource AddRef'd
         return result;
     }
 }

@@ -6,7 +6,6 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-// One light read out of a payload the game uploaded for a frame.
 internal readonly record struct GameLight(
     Vector3 Position,
     Vector3 Direction,
@@ -14,28 +13,20 @@ internal readonly record struct GameLight(
     float Radius,
     float TransformDisagreement)
 {
-    /// <summary>The brightest channel.</summary>
     public float Intensity => MathF.Max(Color.X, MathF.Max(Color.Y, Color.Z));
 
-    /// <summary>Whether this light contributes anything at all.</summary>
     public bool IsLit => Intensity > 0.0001f;
 
-    /// <summary>
-    /// Whether this is the scene's directional light rather than a lamp.<br/>
-    /// A directional light has nowhere to be and no reach to limit, and the game says so by leaving both fields
-    /// at their identity: no position and a volume scale of one.
-    /// </summary>
+    // The game leaves a directional light's position at zero and its volume scale at one.
     public bool IsDirectional => Radius is > 0.99f and < 1.01f && Position.LengthSquared() < 0.0001f;
 
-    /// <summary>Places this light in the world, given where the camera was when it was captured.</summary>
-    /// <param name="camera">The camera position the capture was relative to.</param>
+    // Captured positions are camera-relative.
     public Vector3 WorldPosition(Vector3 camera) => IsDirectional ? Position : Position + camera;
 }
 
-// Reads the game's per-light records out of the payloads a write-log run captured.
 internal static class GameLightHarvest
 {
-    /// <summary>Bytes in one record. The whole 512 B buffer carries a single light, with the tail rows unused.</summary>
+    // One 512 B buffer carries a single light.
     public const int RecordBytes = 512;
 
     private const int RecordRows = RecordBytes / 16;
@@ -48,17 +39,9 @@ internal static class GameLightHarvest
 
     private const int TransformRow = 13;
 
-    // How far from unit length a direction may be and still count as one.
     private const float DirectionTolerance = 0.01f;
 
-    /// <summary>
-    /// Reads a payload as a light, if it is one.<br/>
-    /// The two tests together keep the material-parameter buffers out. Those share the 512 B class and would
-    /// otherwise be picked up in quantity: they satisfy the duplicated-colour test easily, since whole runs of
-    /// their rows are <c>(1, 1, 1, 1)</c>, but their row 1 has a length of 1.73 rather than 1.
-    /// </summary>
-    /// <param name="payload">A captured 512 B payload.</param>
-    /// <param name="light">The light read out of it.</param>
+    // Material-parameter buffers pass the colour test. Their row 1 has length 1.73.
     public static bool TryParse(byte[] payload, out GameLight light)
     {
         light = default;
@@ -71,8 +54,7 @@ internal static class GameLightHarvest
         if (MathF.Abs(axis.Length() - 1f) > DirectionTolerance)
             return false;
 
-        // The game writes the diffuse and specular colours identically. Two adjacent rows agreeing exactly is a
-        // convention rather than a coincidence, and it is the one part of the layout visible in every record.
+        // The game writes the diffuse and specular colours identically, in adjacent rows.
         var color = Row(payload, ColorRow);
         if (color != Row(payload, ColorRow + 1))
             return false;
@@ -92,11 +74,7 @@ internal static class GameLightHarvest
         return true;
     }
 
-    // Reads the light volume's reach and where it sits. Rows 13-15 are a world-to-volume transform: a rotation scaled
-    // uniformly, with the translation in the `w` slots. Its scale is the reciprocal of the light's reach, because the
-    // volume is a unit shape stretched to that reach. The translation is not the position. It is expressed in the
-    // volume's own rotated frame, so reading it directly yields a point that wanders as the light turns. The rotation
-    // has to be undone: for M = [R*s | t], the centre is -(R^T/s)*t.
+    // Rows 13-15 are M = [R*s | t] with s = 1/reach. The centre is -(R^T/s)*t.
     private static void ReadTransform(byte[] payload, out Vector3 centre, out float radius)
     {
         centre = Vector3.Zero;
@@ -115,7 +93,6 @@ internal static class GameLightHarvest
 
         radius = 1f / scale;
 
-        // Transposing the rotation inverts it, since it is orthonormal once the scale is divided out.
         var t = new Vector3(a.W, b.W, c.W);
         centre = -new Vector3(
             (a.X * t.X) + (b.X * t.Y) + (c.X * t.Z),
@@ -123,8 +100,6 @@ internal static class GameLightHarvest
             (a.Z * t.X) + (b.Z * t.Y) + (c.Z * t.Z)) / (scale * scale);
     }
 
-    /// <summary>Reads every light out of a captured payload set.</summary>
-    /// <param name="payloads">Distinct payloads from a write-log run restricted to the 512 B class.</param>
     public static List<GameLight> FromPayloads(IReadOnlyList<byte[]> payloads)
     {
         var lights = new List<GameLight>();
@@ -134,14 +109,10 @@ internal static class GameLightHarvest
                 lights.Add(light);
         }
 
-        // Brightest first: in a room of many lamps the ones that matter to a nearby object are at the top.
         lights.Sort((x, y) => y.Intensity.CompareTo(x.Intensity));
         return lights;
     }
 
-    /// <summary>Reports the harvested lights, brightest first.</summary>
-    /// <param name="lights">The lights read from a capture.</param>
-    /// <param name="candidates">How many payloads were examined, for saying how many were rejected.</param>
     public static string Describe(IReadOnlyList<GameLight> lights, int candidates)
     {
         var sb = new StringBuilder();
@@ -180,10 +151,9 @@ internal static class GameLightHarvest
 
         sb.AppendLine();
 
-        // The parse rests on row 0 and the volume transform being one point. Reporting how far apart they drifted
-        // means a layout that quietly stops holding announces itself instead of producing plausible nonsense.
+        // A disagreement means the layout has changed.
         sb.AppendLine(worst < 0.05f
-            ? $"Layout check: the position row and the volume transform agree to within {worst:F3} units, so the parse holds."
+            ? $"Layout check: the position row and the volume transform agree to within {worst:F3} units. The parse holds."
             : $"LAYOUT CHECK FAILED: the position row and the volume transform disagree by up to {worst:F3} units. The record is not laid out the way this assumes and the values above cannot be trusted.");
 
         return sb.ToString();

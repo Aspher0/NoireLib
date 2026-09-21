@@ -7,10 +7,9 @@ using System.Numerics;
 namespace NoireLib.UI;
 
 /// <summary>
-/// A data grid over a list you already have: sortable, searchable, filterable, virtualized, selectable, totalled and
-/// exportable.
+/// A sortable, searchable, filterable, virtualized, selectable, totalled and exportable data grid over your list.<br/>
+/// The rows are never copied.
 /// </summary>
-/// <remarks>The table never copies your rows; it holds the list you gave it and works in indices into it.</remarks>
 /// <typeparam name="T">The row type.</typeparam>
 [NoireFacadeFactory]
 public sealed partial class NoireTable<T>
@@ -45,9 +44,9 @@ public sealed partial class NoireTable<T>
     public List<TableColumn<T>> Columns { get; } = new();
 
     /// <summary>
-    /// The rows to show, held rather than copied.
+    /// The rows to show.<br/>
+    /// Editing the list in place needs <see cref="Invalidate"/>.
     /// </summary>
-    /// <remarks>Assigning marks the table for a rebuild; editing the list in place needs <see cref="Invalidate"/>.</remarks>
     public IReadOnlyList<T> Rows
     {
         get => rows;
@@ -200,8 +199,8 @@ public sealed partial class NoireTable<T>
     /// </summary>
     public float Height { get; set; }
 
-    /// <summary>How many rows there must be before the table draws only what is on screen.</summary>
-    public int VirtualizeThreshold { get; set; } = 100;
+    /// <summary>How many rows there must be before the table draws only what is on screen. Zero clips any table.</summary>
+    public int VirtualizeThreshold { get; set; }
 
     /// <summary>
     /// Whether only the rows on screen are drawn. When <see langword="null"/>, past

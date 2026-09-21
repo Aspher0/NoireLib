@@ -30,20 +30,17 @@ public sealed class NoireTheme
         [ThemeColor.TextMuted] = new Vector4(0.62f, 0.62f, 0.65f, 1f),
         [ThemeColor.TextDisabled] = new Vector4(0.45f, 0.45f, 0.48f, 1f),
         [ThemeColor.Shadow] = new Vector4(0f, 0f, 0f, 0.55f),
+        [ThemeColor.Control] = new Vector4(0.34f, 0.34f, 0.37f, 0.90f),
     };
 
-    /// <summary>
-    /// The theme every widget resolves against; assigning <see langword="null"/> restores an empty theme.
-    /// </summary>
+    /// <summary>The theme every widget resolves against. <see langword="null"/> restores an empty theme.</summary>
     public static NoireTheme Current
     {
         get => current;
         set => current = value ?? new NoireTheme();
     }
 
-    /// <summary>
-    /// Every color this theme overrides; a color left out is resolved from the ImGui style instead.
-    /// </summary>
+    /// <summary>The colors this theme overrides. The others come from the ImGui style.</summary>
     public Dictionary<ThemeColor, Vector4> Colors { get; } = new();
 
     /// <summary>
@@ -92,45 +89,37 @@ public sealed class NoireTheme
     /// <summary>The color of drop shadows and scrims.</summary>
     public Vector4? Shadow { get => Get(ThemeColor.Shadow); set => Set(ThemeColor.Shadow, value); }
 
+    /// <summary>The fill of a neutral button and a collapsible header, set apart from the surface it sits on.</summary>
+    public Vector4? Control { get => Get(ThemeColor.Control); set => Set(ThemeColor.Control, value); }
+
     #endregion
 
     #region Shape
 
-    // Values in this region are pixel measurements at 100%, scaled by NoireUI.Scale when resolved.
+    // Pixel measurements at 100%.
 
-    /// <summary>
-    /// The corner radius of buttons, toggles and framed widgets, at 100%; when <see langword="null"/>, the ImGui frame
-    /// rounding is used.
-    /// </summary>
+    /// <summary>The corner radius of buttons, toggles and framed widgets at 100%. When <see langword="null"/>, the ImGui frame rounding.</summary>
     public float? Rounding { get; set; }
 
-    /// <summary>
-    /// The corner radius of raised surfaces at 100%; when <see langword="null"/>, the ImGui window rounding is used.
-    /// </summary>
+    /// <summary>The corner radius of raised surfaces at 100%. When <see langword="null"/>, the ImGui window rounding.</summary>
     public float? SurfaceRounding { get; set; }
 
-    /// <summary>
-    /// The thickness of widget borders at 100%; when <see langword="null"/>, the ImGui frame border size is used.
-    /// </summary>
+    /// <summary>The thickness of widget borders at 100%. When <see langword="null"/>, the ImGui frame border size.</summary>
     public float? BorderSize { get; set; }
 
-    /// <summary>
-    /// The padding inside widgets at 100%; when <see langword="null"/>, the ImGui frame padding is used.
-    /// </summary>
+    /// <summary>The padding inside widgets at 100%. When <see langword="null"/>, the ImGui frame padding.</summary>
     public Vector2? FramePadding { get; set; }
 
-    /// <summary>
-    /// The spacing between consecutive items at 100%; when <see langword="null"/>, the ImGui item spacing is used.
-    /// </summary>
+    /// <summary>The spacing between items at 100%. When <see langword="null"/>, the ImGui item spacing.</summary>
     public Vector2? ItemSpacing { get; set; }
 
     #endregion
 
     #region Type
 
-    // Sizes here are logical pixels at 100%; NoireText scales them when it builds the font.
+    // Logical pixels at 100%.
 
-    // The shipped proportions of the type scale, as multiples of BodySize.
+    // Multiples of BodySize.
     private static readonly Dictionary<TextSize, float> SizeRatios = new()
     {
         [TextSize.Display] = 2.2f,
@@ -139,23 +128,19 @@ public sealed class NoireTheme
         [TextSize.Caption] = 0.85f,
     };
 
-    /// <summary>
-    /// Every text size this theme overrides; a size left out is derived from <see cref="BodySize"/> instead.
-    /// </summary>
+    /// <summary>The text sizes this theme overrides. The others derive from <see cref="BodySize"/>.</summary>
     public Dictionary<TextSize, float> TextSizes { get; } = new();
 
-    /// <summary>The masthead size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The masthead size at 100%. When <see langword="null"/>, derived from <see cref="BodySize"/>.</summary>
     public float? DisplaySize { get => GetSize(TextSize.Display); set => SetSize(TextSize.Display, value); }
 
-    /// <summary>The section-heading size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The section-heading size at 100%. When <see langword="null"/>, derived from <see cref="BodySize"/>.</summary>
     public float? HeadingSize { get => GetSize(TextSize.Heading); set => SetSize(TextSize.Heading, value); }
 
-    /// <summary>
-    /// The running-text size at 100%; when <see langword="null"/>, the host's own default font size is used.
-    /// </summary>
+    /// <summary>The running-text size at 100%. When <see langword="null"/>, the host's default font size.</summary>
     public float? BodySize { get => GetSize(TextSize.Body); set => SetSize(TextSize.Body, value); }
 
-    /// <summary>The supporting-text size at 100%; when <see langword="null"/>, it is derived from <see cref="BodySize"/>.</summary>
+    /// <summary>The supporting-text size at 100%. When <see langword="null"/>, derived from <see cref="BodySize"/>.</summary>
     public float? CaptionSize { get => GetSize(TextSize.Caption); set => SetSize(TextSize.Caption, value); }
 
     /// <summary>
@@ -256,12 +241,19 @@ public sealed class NoireTheme
     public Vector4 Muted(Vector4 color) => ColorHelper.ScaleAlpha(color, MutedAlpha);
 
     /// <summary>
-    /// A text color that stays legible on top of a filled widget.
+    /// A text color that stays legible on top of a filled widget. A translucent fill is judged as it appears over
+    /// <see cref="ThemeColor.Surface"/>.
     /// </summary>
     /// <param name="background">The color the text sits on.</param>
     /// <returns>The legible text color.</returns>
     public Vector4 On(Vector4 background)
-        => ColorHelper.Readable(background, Resolve(ThemeColor.Text), new Vector4(0.06f, 0.06f, 0.07f, 1f));
+    {
+        var seen = background.W >= 1f
+            ? background
+            : ColorHelper.Mix(Resolve(ThemeColor.Surface), background, background.W);
+
+        return ColorHelper.Readable(seen, Resolve(ThemeColor.Text), new Vector4(0.06f, 0.06f, 0.07f, 1f));
+    }
 
     #endregion
 
@@ -294,8 +286,7 @@ public sealed class NoireTheme
     public Vector4 Resolve(string token, Vector4 fallback)
         => CustomColors.TryGetValue(token, out var value) ? value : fallback;
 
-    // Shape values below are logical units, authored at 100% and scaled here. The ImGui branch of each is returned
-    // untouched: Dalamud has already scaled the style, and scaling it again is the one way this goes wrong.
+    // Logical units, scaled here. The ImGui branches are returned untouched: Dalamud already scaled the style.
 
     /// <summary>
     /// Resolves the corner radius of framed widgets.
@@ -351,6 +342,7 @@ public sealed class NoireTheme
         var accent = Resolve(ThemeColor.Accent);
         var raised = Resolve(ThemeColor.SurfaceRaised);
         var sunken = Resolve(ThemeColor.SurfaceSunken);
+        var control = Resolve(ThemeColor.Control);
 
         var style = new UiStyle
         {
@@ -363,9 +355,9 @@ public sealed class NoireTheme
             FrameColor = sunken,
             FrameHoveredColor = Hover(sunken),
             FrameActiveColor = Active(sunken),
-            ButtonColor = raised,
-            ButtonHoveredColor = Hover(raised),
-            ButtonActiveColor = Active(raised),
+            ButtonColor = control,
+            ButtonHoveredColor = Hover(control),
+            ButtonActiveColor = Active(control),
             HeaderColor = ColorHelper.ScaleAlpha(accent, 0.35f),
             FrameRounding = ResolveRounding(),
             PopupRounding = ResolveSurfaceRounding(),
@@ -437,6 +429,7 @@ public sealed class NoireTheme
 
         var raised = dark ? ColorHelper.Lighten(surface, 0.07f) : ColorHelper.Darken(surface, 0.05f);
         var sunken = dark ? ColorHelper.Darken(surface, 0.35f) : ColorHelper.Darken(surface, 0.08f);
+        var control = dark ? ColorHelper.Lighten(surface, 0.20f) : ColorHelper.Darken(surface, 0.14f);
         var text = ColorHelper.Readable(surface);
 
         return new NoireTheme
@@ -445,6 +438,7 @@ public sealed class NoireTheme
             Surface = ColorHelper.WithAlpha(surface, surface.W),
             SurfaceRaised = ColorHelper.WithAlpha(raised, 1f),
             SurfaceSunken = ColorHelper.WithAlpha(sunken, 1f),
+            Control = ColorHelper.WithAlpha(control, 1f),
             Border = ColorHelper.ScaleAlpha(ColorHelper.Mix(text, tint, 0.35f), 0.35f),
             Text = text,
             TextMuted = ColorHelper.Mix(text, surface, 0.35f),
@@ -457,13 +451,11 @@ public sealed class NoireTheme
         };
     }
 
-    /// <summary>
-    /// Builds a complete palette from a single accent color given as a HEX string.
-    /// </summary>
-    /// <param name="accentHex">The accent color as a HEX string; the leading "#" is optional.</param>
+    /// <summary>Builds a complete palette from one accent color.</summary>
+    /// <param name="accentHex">The accent color as HEX. The leading "#" is optional.</param>
     /// <param name="dark">Whether to build a dark palette.</param>
     /// <returns>The built theme.</returns>
-    /// <exception cref="ArgumentException">Thrown when the HEX string is not a valid color.</exception>
+    /// <exception cref="ArgumentException">The HEX string is not a valid color.</exception>
     public static NoireTheme FromAccent(string accentHex, bool dark = true)
         => FromAccent(ColorHelper.HexToVector4(accentHex), dark);
 
@@ -519,8 +511,7 @@ public sealed class NoireTheme
             Colors.Remove(token);
     }
 
-    // Null for the tokens ImGui has no equivalent for (the semantic colors and the shadow), which fall back to shipped
-    // defaults instead.
+    // ImGui has no equivalent for the semantic colors and the shadow. ImGuiCol.Button is near transparent in the Dalamud style.
     private static ImGuiCol? MapToImGui(ThemeColor token) => token switch
     {
         ThemeColor.Accent => ImGuiCol.CheckMark,

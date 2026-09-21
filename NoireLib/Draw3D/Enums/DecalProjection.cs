@@ -1,19 +1,11 @@
 ﻿namespace NoireLib.Draw3D.Enums;
 
-/// <summary>
-/// How a ground decal resolves multiple stacked surfaces inside its projection volume (e.g. a tabletop with the floor
-/// visible beneath it). Uses the collision world, so it needs <see cref="NoireDraw3D.CollisionHeightMap"/> on to take
-/// effect (otherwise every decal behaves as <see cref="AllSurfaces"/>).
-/// </summary>
+/// <summary>How a ground decal resolves stacked surfaces, such as a tabletop above a floor. Needs <see cref="NoireDraw3D.CollisionHeightMap"/>.</summary>
 public enum DecalProjection
 {
-    /// <summary>Paint every surface the footprint covers (the default) - floor, tabletop, and the floor under the table all get painted.</summary>
+    /// <summary>Paints every surface the footprint covers (the default).</summary>
     AllSurfaces = 0,
 
-    /// <summary>
-    /// Paint only the <b>topmost</b> surface per column: a surface that sits behind a nearer collision surface along the
-    /// view ray (the floor beneath a table) is skipped, so the decal drapes over the highest thing. Relies on the covering
-    /// object having collision (tables usually do; a collision-less prop won't hide the floor beneath it).
-    /// </summary>
+    /// <summary>Paints only the topmost collision surface per column. An object without collision hides nothing.</summary>
     HighestOnly = 1,
 }

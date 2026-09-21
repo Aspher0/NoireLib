@@ -8,10 +8,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Reads back the game's G-buffer targets so what each one carries can be seen rather than assumed. A format
-// constrains what a channel could hold, not what it holds: four of the five targets here are the same B8G8R8A8_UNORM,
-// so format alone cannot tell albedo from a normal from a mask. A normal buffer is visibly pastel and centred near
-// the middle of its range, an albedo looks like the room, and a mask is a handful of flat values.
+// Four of the five targets share B8G8R8A8_UNORM. The format cannot tell albedo from a normal or a mask.
 internal static unsafe class GBufferProbe
 {
     private readonly record struct ChannelStats(
@@ -23,15 +20,8 @@ internal static unsafe class GBufferProbe
         int InfCount,
         float DisplayScale);
 
-    // Decode buffer, reused across targets and across runs. See ReadPixels for why it is not allocated per call.
     private static float[]? scratch;
 
-    /// <summary>
-    /// Copies each target, measures it, and writes it out as a viewable image.
-    /// </summary>
-    /// <param name="device">The render device whose context performs the copy.</param>
-    /// <param name="targets">The G-buffer resources, in bind order.</param>
-    /// <param name="folder">Where to write the images.</param>
     public static string Describe(RenderDevice device, IReadOnlyList<nint> targets, string folder)
     {
         var sb = new StringBuilder();
@@ -67,15 +57,11 @@ internal static unsafe class GBufferProbe
         return sb.ToString();
     }
 
-    // Copies one render target to staging, measures it, and writes a BMP of it. Usable against any target at any
-    // point in the frame, not only the G-buffer: finding which pass first produces a wrong pixel means reading the
-    // intermediate targets, not the final image.
     internal static string Dump(RenderDevice device, nint resource, string path)
     {
         if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
             return "not a texture, skipped";
 
-        // A dump that decodes correctly but fails to land on disk is the same as no dump at all.
         try
         {
             var folder = Path.GetDirectoryName(path);
@@ -99,7 +85,7 @@ internal static unsafe class GBufferProbe
             stagingDesc.MiscFlags = 0;
 
             ComPtr<ID3D11Texture2D> staging = default;
-            using (staging)
+            try
             {
                 if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
                     return "staging allocation failed";
@@ -124,8 +110,6 @@ internal static unsafe class GBufferProbe
 
                     var scaleNote = stats.DisplayScale < 1f ? $"  (image divided by {1f / stats.DisplayScale:F2} to be viewable)" : string.Empty;
 
-                    // Non-finite pixels are called out rather than folded into the range: anything multiplied by
-                    // an infinity stays infinite, and anything multiplied by a NaN stays NaN.
                     var badNote = stats.NanCount > 0 || stats.InfCount > 0
                         ? $"\n    NOT FINITE: {stats.NanCount} pixel(s) NaN, {stats.InfCount} infinite - these survive any later multiply"
                         : string.Empty;
@@ -143,13 +127,14 @@ internal static unsafe class GBufferProbe
                     ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
                 }
             }
+            finally
+            {
+                staging.Dispose();
+            }
         }
     }
 
-    // Writes the stencil plane of the scene depth-stencil as an image, plus a census of the values in it. The game
-    // marks pixels in stencil during its geometry pass and its deferred light volumes test that mark, so the value
-    // only exists between those two passes: read at the end of the frame, it has already been consumed and reports
-    // zero.
+    // The game's stencil marks only exist between its geometry pass and its light volumes.
     internal static string DumpStencil(RenderDevice device, nint resource, string path)
     {
         if (resource == 0 || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)resource, out var source))
@@ -160,8 +145,6 @@ internal static unsafe class GBufferProbe
             D3D11_TEXTURE2D_DESC desc;
             source.Get()->GetDesc(&desc);
 
-            // How far into each texel the stencil byte sits, per depth-stencil layout. A format with no
-            // stencil plane has nothing to report.
             var stride = desc.Format switch
             {
                 DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT => 4,
@@ -172,7 +155,7 @@ internal static unsafe class GBufferProbe
             if (stride == 0)
                 return $"{desc.Format} carries no stencil plane";
 
-            var offset = stride - 1 == 3 ? 3 : 4; // R24G8: byte 3; R32G8X24: byte 4
+            var offset = stride - 1 == 3 ? 3 : 4; // R24G8: byte 3, R32G8X24: byte 4
 
             var stagingDesc = desc;
             stagingDesc.Usage = D3D11_USAGE.D3D11_USAGE_STAGING;
@@ -181,7 +164,7 @@ internal static unsafe class GBufferProbe
             stagingDesc.MiscFlags = 0;
 
             ComPtr<ID3D11Texture2D> staging = default;
-            using (staging)
+            try
             {
                 if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
                     return "stencil staging allocation failed";
@@ -213,8 +196,6 @@ internal static unsafe class GBufferProbe
                             var value = src[(x * stride) + offset];
                             census[value]++;
 
-                            // Written as the raw value rather than normalised: a stencil image is read by
-                            // matching a grey level back to a number, not by judging its brightness.
                             StoreGrey(scratch, ((y * width) + x) * 4, value / 255f);
                         }
                     }
@@ -236,13 +217,13 @@ internal static unsafe class GBufferProbe
                     ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
                 }
             }
+            finally
+            {
+                staging.Dispose();
+            }
         }
     }
 
-    // Reads every G-buffer target at one screen position, averaged over a small patch. The game's own copy of a model
-    // sits in the same buffer, in the same frame, under the same lights, so sampling both turns a visual impression
-    // into a per-channel difference that can be driven to zero. Copies only the patch rather than the whole target,
-    // so it is cheap enough to run per frame.
     internal static bool TrySampleAt(RenderDevice device, IReadOnlyList<nint> targets, int x, int y, int patch, List<Vector4> samples)
     {
         samples.Clear();
@@ -260,7 +241,6 @@ internal static unsafe class GBufferProbe
         return true;
     }
 
-    // Copies one patch of one target into staging and averages it.
     private static bool TrySampleOne(RenderDevice device, nint resource, int x, int y, int patch, out Vector4 value)
     {
         value = default;
@@ -291,7 +271,7 @@ internal static unsafe class GBufferProbe
             stagingDesc.MiscFlags = 0;
 
             ComPtr<ID3D11Texture2D> staging = default;
-            using (staging)
+            try
             {
                 if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
                     return false;
@@ -343,13 +323,15 @@ internal static unsafe class GBufferProbe
                     ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
                 }
             }
+            finally
+            {
+                staging.Dispose();
+            }
         }
     }
 
-    // The companion path for a target's alpha channel, which carries its own quantity and needs its own image.
     private static string AlphaPath(string path) => Path.ChangeExtension(path, null) + "_alpha.bmp";
 
-    // Decodes a mapped target into RGBA floats. Half-float targets keep their range, so values above 1 survive.
     private static float[] ReadPixels(in D3D11_MAPPED_SUBRESOURCE mapped, in D3D11_TEXTURE2D_DESC desc, out bool supported)
     {
         var width = (int)desc.Width;
@@ -505,7 +487,6 @@ internal static unsafe class GBufferProbe
         return pixels;
     }
 
-    // Writes a colour with an opaque alpha, so a target carrying fewer than four channels still reads as an image.
     private static void Store(float[] pixels, int offset, float r, float g, float b)
     {
         pixels[offset + 0] = r;
@@ -514,13 +495,9 @@ internal static unsafe class GBufferProbe
         pixels[offset + 3] = 1f;
     }
 
-    // Writes a single-channel value across all three colour channels. Depth, occlusion and mask buffers are read by
-    // eye, and a one-channel target written as pure red is far harder to compare against another than the same data
-    // as grey.
     private static void StoreGrey(float[] pixels, int offset, float value) => Store(pixels, offset, value, value, value);
 
-    // Decodes one channel of a packed small float (the 11- and 10-bit channels of R11G11B10_FLOAT): five exponent
-    // bits, no sign bit, bias 15.
+    // Five exponent bits, no sign bit, bias 15.
     private static float UnpackSmallFloat(uint bits, int mantissaBits)
     {
         var exponent = (int)(bits >> mantissaBits) & 0x1F;
@@ -535,14 +512,10 @@ internal static unsafe class GBufferProbe
         };
     }
 
-    // How many log2 buckets the brightness histogram uses, spanning 2^-20 to 2^20.
     private const int HistogramBuckets = 320;
 
-    // The fraction of pixels the written image keeps below saturation.
     private const float DisplayPercentile = 0.995f;
 
-    // Measures the channels: range, mean, how many distinct values red takes, how many pixels are not finite, and the
-    // divisor the image should be written with.
     private static ChannelStats Measure(float[] pixels, int width, int height)
     {
         var min = new[] { float.MaxValue, float.MaxValue, float.MaxValue, float.MaxValue };
@@ -565,8 +538,6 @@ internal static unsafe class GBufferProbe
             {
                 var v = pixels[(i * 4) + c];
 
-                // A non-finite value must never reach the range or the scale: one infinity in a channel makes
-                // the maximum infinite, and every other pixel then divides to zero.
                 if (float.IsNaN(v))
                 {
                     if (c < 3)
@@ -596,7 +567,6 @@ internal static unsafe class GBufferProbe
             if (pixelNan) nan++;
             if (pixelInf) inf++;
 
-            // Quantised so a smoothly varying channel reads as many values and a flag channel as few.
             var r = pixels[i * 4];
             if (r is >= 0f and <= 1f)
                 seen[(int)(r * 255f)] = true;
@@ -626,8 +596,6 @@ internal static unsafe class GBufferProbe
         return Math.Clamp(bucket, 0, HistogramBuckets - 1);
     }
 
-    // The divisor that puts DisplayPercentile of the frame below saturation. Dividing by the brightest pixel instead
-    // is unusable on any buffer holding a highlight: the highlight sets the scale and the entire image renders black.
     private static float PercentileScale(int[] histogram, int total)
     {
         if (total == 0)
@@ -649,20 +617,19 @@ internal static unsafe class GBufferProbe
         return 1f;
     }
 
-    // Writes a 24-bit BMP: opens in every image viewer and needs no encoder.
     private static void WriteBmp(string path, float[] pixels, int width, int height, float scale, bool alphaOnly)
     {
-        var rowBytes = ((width * 3) + 3) & ~3;   // BMP rows are padded to 4 bytes
+        var rowBytes = ((width * 3) + 3) & ~3;   // padded to 4 bytes
         var imageBytes = rowBytes * height;
 
         using var stream = new FileStream(path, FileMode.Create, FileAccess.Write);
         using var w = new BinaryWriter(stream);
 
-        w.Write((ushort)0x4D42);            // "BM"
+        w.Write((ushort)0x4D42);
         w.Write(54 + imageBytes);
         w.Write(0);
         w.Write(54);
-        w.Write(40);                        // BITMAPINFOHEADER
+        w.Write(40);
         w.Write(width);
         w.Write(height);
         w.Write((ushort)1);
@@ -675,7 +642,7 @@ internal static unsafe class GBufferProbe
         w.Write(0);
 
         var row = new byte[rowBytes];
-        for (var y = height - 1; y >= 0; y--)   // BMP rows run bottom-up
+        for (var y = height - 1; y >= 0; y--)   // bottom-up
         {
             Array.Clear(row);
             for (var x = 0; x < width; x++)

@@ -3,7 +3,6 @@ using NoireLib.Draw3D.Enums;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// Where the layer lands in the game's frame, and what it does about the HUD and plates it finds there.
 internal sealed class NativeUiPage
 {
     public void Draw()
@@ -14,12 +13,12 @@ internal sealed class NativeUiPage
         using (Ui.Form("nativeui.layering"))
         {
             Ui.Enum("Composite at", static () => NoireDraw3D.NativeUi.Layering, static v => NoireDraw3D.NativeUi.Layering = v,
-                "UnderGameUi draws before the native UI, so the HUD reads on top. OverEverything draws after it and can decide per element.");
+                "UnderGameUi draws before the native UI. The HUD reads on top. OverEverything draws after it and can decide per element.");
         }
 
         Ui.Section("Masking");
         if (!over)
-            Ui.Callout("UnderGameUi: the game paints over the layer itself, so there is nothing here to configure.");
+            Ui.Callout("UnderGameUi. The game paints over the layer itself. Nothing here to configure.");
 
         using (Ui.Disabled(!over))
         using (Ui.Form("nativeui.over"))
@@ -27,7 +26,7 @@ internal sealed class NativeUiPage
             Ui.Toggle("Keep UI on top", static () => NoireDraw3D.NativeUi.KeepUiOnTop, static v => NoireDraw3D.NativeUi.KeepUiOnTop = v,
                 "Masks the layer per pixel so the HUD reads on top, following the UI's exact shape.");
             Ui.Slider("Nameplate dim", static () => NoireDraw3D.NativeUi.NameplateDim, static v => NoireDraw3D.NativeUi.NameplateDim = v, 0f, 1f,
-                "How much a covered plate still shows through: 0 fully covered, toward 1 faintly readable. Needs the mask on, and only applies to a plate the mode below decided is covered.");
+                "How much a covered plate still shows through. 0 fully covered, toward 1 faintly readable. Needs the mask on, and only applies to a plate the mode below decided is covered.");
         }
 
         Ui.Section("Nameplates");
@@ -41,6 +40,6 @@ internal sealed class NativeUiPage
             return;
 
         Ui.Gap();
-        Ui.Callout("Covered does nothing under UnderGameUi - the game draws plates after the layer, so this behaves as AlwaysVisible.");
+        Ui.Callout("Covered does nothing under UnderGameUi. The game draws plates after the layer. This behaves as AlwaysVisible.");
     }
 }

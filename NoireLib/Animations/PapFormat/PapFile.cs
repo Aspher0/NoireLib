@@ -1,4 +1,5 @@
 using NoireLib.Animations.PapFormat.Parsing;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,11 +19,7 @@ public enum SkeletonType
     Weapon = 3,
 }
 
-/// <summary>
-/// A parsed .pap: the container format that holds one or more named animations, each pairing a havok
-/// animation binding with a TMB timeline. Reads and writes the container's own header/offsets/padding;
-/// each <see cref="PapAnimation"/> owns its own name and TMB.
-/// </summary>
+/// <summary>A parsed .pap: one or more named animations, each pairing a havok binding with a TMB timeline.</summary>
 public class PapFile
 {
     /// <summary> The FFXIV model id this file was authored against. </summary>
@@ -35,7 +32,7 @@ public class PapFile
     /// <summary> The animations declared by this file, in file order. </summary>
     public readonly List<PapAnimation> Animations = [];
 
-    private byte[] HavokData = [];
+    private ReadOnlyMemory<byte> HavokData = ReadOnlyMemory<byte>.Empty;
     private byte[] PostAnimationPadding = [];
     private readonly string? HkxTempLocation;
     private int ModdedTmbOffset4 = 0;
@@ -49,10 +46,21 @@ public class PapFile
     }
 
     /// <summary> Parses a .pap from <paramref name="reader"/>, starting at its current position. </summary>
-    /// <param name="reader">The source to parse from; left positioned just past the file on return.</param>
+    /// <param name="reader">The source to parse from. Left positioned just past the file on return.</param>
     /// <param name="hkxTempPath">Where to dump the embedded havok blob, or null to skip the dump.</param>
     /// <exception cref="InvalidDataException">The magic is wrong or the animation info overruns the havok block.</exception>
     public PapFile(BinaryReader reader, string? hkxTempPath = null)
+        : this(reader, hkxTempPath, null)
+    {
+    }
+
+    internal static PapFile FromBytes(byte[] papBytes)
+    {
+        using var reader = new BinaryReader(new MemoryStream(papBytes, false));
+        return new PapFile(reader, null, papBytes);
+    }
+
+    private PapFile(BinaryReader reader, string? hkxTempPath, byte[]? sharedSource)
     {
         HkxTempLocation = hkxTempPath;
 
@@ -90,9 +98,22 @@ public class PapFile
             throw new InvalidDataException($"Animation info overran havok position by {-paddingSize} bytes");
 
         var havokDataSize = footerPosition - havokPosition;
-        HavokData = reader.ReadBytes(havokDataSize);
+
+        if (sharedSource != null && startPos + footerPosition <= sharedSource.Length && havokDataSize >= 0)
+        {
+            HavokData = sharedSource.AsMemory((int)reader.BaseStream.Position, havokDataSize);
+            reader.BaseStream.Position += havokDataSize;
+        }
+        else
+        {
+            HavokData = reader.ReadBytes(havokDataSize);
+        }
+
         if (HkxTempLocation != null)
-            File.WriteAllBytes(HkxTempLocation, HavokData);
+        {
+            using var dump = File.Create(HkxTempLocation);
+            dump.Write(HavokData.Span);
+        }
 
         ModdedPapMod4 = (int)((reader.BaseStream.Position - startPos) % 4);
 
@@ -122,15 +143,17 @@ public class PapFile
     /// <returns>The serialized .pap.</returns>
     public byte[] ToBytes()
     {
-        using var ms = new MemoryStream();
-        using var writer = new BinaryWriter(ms);
-
         var tmbData = Animations.Select(x => x.GetTmbBytes()).ToList();
+
+        var result = new byte[SerializedSize(tmbData)];
+
+        using var ms = new MemoryStream(result);
+        using var writer = new BinaryWriter(ms);
 
         var startPos = writer.BaseStream.Position;
 
-        writer.Write(0x20706170); // magic "pap "
-        writer.Write(0x00020001); // version
+        writer.Write(0x20706170); // "pap "
+        writer.Write(0x00020001);
         writer.Write((short)Animations.Count);
 
         ModelId.Write(writer);
@@ -138,9 +161,9 @@ public class PapFile
         Variant.Write(writer);
 
         var offsetPos = writer.BaseStream.Position;
-        writer.Write(0); // info offset placeholder
-        writer.Write(0); // havok offset placeholder
-        writer.Write(0); // footer offset placeholder
+        writer.Write(0); // placeholder
+        writer.Write(0); // placeholder
+        writer.Write(0); // placeholder
 
         var infoPos = writer.BaseStream.Position;
 
@@ -151,7 +174,7 @@ public class PapFile
 
         var havokPos = writer.BaseStream.Position;
 
-        writer.Write(HavokData);
+        writer.Write(HavokData.Span);
 
         PadTo(writer, writer.BaseStream.Position, 4, ModdedPapMod4);
 
@@ -174,7 +197,27 @@ public class PapFile
         writer.Write(timelineOffset);
         writer.BaseStream.Position = endPos;
 
-        return ms.ToArray();
+        if (endPos != result.Length)
+            throw new InvalidDataException($"The .pap serialized to {endPos} bytes where {result.Length} were planned.");
+
+        return result;
+    }
+
+    private long SerializedSize(List<byte[]> tmbData)
+    {
+        long size = 26 + (long)Animations.Count * PapAnimation.InfoSize + PostAnimationPadding.Length + HavokData.Length;
+
+        var currentMod = (int)(size % 4);
+        if (currentMod != ModdedPapMod4)
+            size += (4 - currentMod + ModdedPapMod4) % 4;
+
+        for (var idx = 0; idx < tmbData.Count; idx++)
+        {
+            size += tmbData[idx].Length;
+            size += CalculatePadding(size, idx, tmbData.Count, ModdedTmbOffset4);
+        }
+
+        return size;
     }
 
     private static void Pad(BinaryWriter writer, int count)

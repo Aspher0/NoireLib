@@ -10,16 +10,12 @@ namespace NoireLib.Helpers;
 /// </summary>
 public static class GameObjectHelper
 {
-    /// <summary>
-    /// The distance between two objects, defaulting to the terms the game's own range checks use: height ignored
-    /// and hitbox to hitbox rather than origin to origin.
-    /// </summary>
+    /// <summary>The distance between two objects. By default like the game's range checks: height ignored, hitbox to hitbox.</summary>
     /// <param name="from">The object to measure from.</param>
     /// <param name="to">The object to measure to.</param>
-    /// <param name="ignoreHeight">Whether to measure on the horizontal plane only, leaving Y out.</param>
-    /// <param name="betweenHitboxes">Whether to subtract both objects' GetRadius, which makes a 15 yalm limit trip
-    /// at roughly 17.5 yalms centre to centre between two players.</param>
-    /// <returns>The distance in yalms, which is negative when two hitboxes overlap.</returns>
+    /// <param name="ignoreHeight">Whether to measure on the horizontal plane only.</param>
+    /// <param name="betweenHitboxes">Whether to subtract both objects' GetRadius. A 15 yalm limit then trips at about 17.5 yalms between two players.</param>
+    /// <returns>The distance in yalms. Negative when two hitboxes overlap.</returns>
     public static unsafe float DistanceBetween(
         IGameObject from, IGameObject to, bool ignoreHeight = true, bool betweenHitboxes = true)
     {
@@ -45,14 +41,43 @@ public static class GameObjectHelper
     }
 
     /// <summary>
+    /// Whether the local player is close enough to interact with an object, answered by the game's own range check,
+    /// never by a distance of our choosing. The game measures hitbox to hitbox and ignores height. The
+    /// limit is not a single number and cannot be replicated with a constant.
+    /// </summary>
+    /// <param name="target">The object to reach.</param>
+    /// <param name="interactionType">The interaction the game should measure for. The game takes a byte here and
+    /// publishes no enum for it. 0 is the plain object interaction every caller starts from.</param>
+    /// <param name="logErrorsToUser">Whether to let the game print its own "too far away" error to the chat log.</param>
+    /// <returns>True when the game considers the object in range, false when it does not or nothing can be read.</returns>
+    public static unsafe bool IsWithinInteractRange(IGameObject target, byte interactionType = 0, bool logErrorsToUser = false)
+    {
+        if (target == null || target.Address == 0)
+            return false;
+
+        var local = NoireService.ObjectTable.LocalPlayer;
+
+        if (local == null || local.Address == 0)
+            return false;
+
+        var eventFramework = FFXIVClientStructs.FFXIV.Client.Game.Event.EventFramework.Instance();
+
+        if (eventFramework == null)
+            return false;
+
+        return eventFramework->CheckInteractRange(
+            (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)local.Address,
+            (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)target.Address,
+            interactionType,
+            logErrorsToUser);
+    }
+
+    /// <summary>
     /// The value the game puts in any target id field when there is no target.
     /// </summary>
     public const ulong NoTargetId = 0xE0000000;
 
-    /// <summary>
-    /// The bearing from one point to another, in the rotation a character's SetRotation takes, which is
-    /// <c>Atan2(dx, dz)</c> rather than the usual <c>Atan2(dy, dx)</c>.
-    /// </summary>
+    /// <summary>The bearing from one point to another as SetRotation takes it: <c>Atan2(dx, dz)</c>.</summary>
     /// <param name="from">The position to measure from.</param>
     /// <param name="to">The position to face.</param>
     /// <returns>The rotation in radians.</returns>
@@ -80,10 +105,7 @@ public static class GameObjectHelper
         return NoireService.TargetManager.SoftTarget ?? NoireService.TargetManager.Target;
     }
 
-    /// <summary>
-    /// The id of the object any character is targeting, read off the character rather than the target manager, and
-    /// taking the soft target over the hard target as the game does.
-    /// </summary>
+    /// <summary>The id of the object a character is targeting, read off the character. The soft target wins over the hard target.</summary>
     /// <param name="character">The character whose target to read.</param>
     /// <returns>The target's game object id, or <see cref="NoTargetId"/> when there is none.</returns>
     public static unsafe ulong GetTargetId(ICharacter character)

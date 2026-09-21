@@ -5,7 +5,7 @@ namespace NoireLib.Helpers;
 
 /// <summary>
 /// Reads what the game's sheets say about a territory: its name, the level files it is built from, whether it is a
-/// real place, whether it is queued for rather than walked into, and which crossings out of it a quest gates. Every
+/// real place, whether it is queued for and not walked into, and which crossings out of it a quest gates. Every
 /// read is guarded, and a missing sheet yields an empty result.
 /// </summary>
 public static class TerritoryHelper
@@ -74,7 +74,7 @@ public static class TerritoryHelper
         }, string.Empty) ?? string.Empty;
     }
 
-    /// <summary>The territory's PlaceName row id, which names the place language-independently.</summary>
+    /// <summary>The territory's PlaceName row id.</summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The PlaceName row id, or zero.</returns>
     public static uint PlaceNameId(uint territoryId)
@@ -88,10 +88,7 @@ public static class TerritoryHelper
         }, 0u);
     }
 
-    /// <summary>
-    /// The aetheryte the territory is bound to, which for a residential district is the city crystal that offers its
-    /// wards and elsewhere is the crystal a map teleport lands on.
-    /// </summary>
+    /// <summary>The aetheryte a territory is bound to. For a residential district, the city crystal offering its wards.</summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The Aetheryte row id, or zero when the territory names none.</returns>
     public static uint AetheryteOf(uint territoryId)
@@ -105,10 +102,7 @@ public static class TerritoryHelper
         }, 0u);
     }
 
-    /// <summary>
-    /// The quests the territory's own event handler names, which for a residential district is the unlock quest its
-    /// aetheryte ward travel and ward changes are gated on.
-    /// </summary>
+    /// <summary>The quests the territory's own event handler names. For a residential district, the ward travel unlock quest.</summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The Quest row ids, or empty when the handler names none.</returns>
     public static IReadOnlyList<uint> ReadHandlerQuests(uint territoryId)
@@ -123,7 +117,7 @@ public static class TerritoryHelper
                 || handlerRow is not { } handler)
                 return [];
 
-            // The handler mixes quests with other event kinds, so an id only counts when the Quest sheet has it.
+            // The handler mixes quests with other event kinds.
             var quests = new List<uint>();
             foreach (var entry in handler.Data)
             {
@@ -135,10 +129,7 @@ public static class TerritoryHelper
         }, []) ?? [];
     }
 
-    /// <summary>
-    /// The territory's <c>Bg</c> string, which is the path its level files sit under and the thing
-    /// <see cref="LevelFileHelper"/> reads them by.
-    /// </summary>
+    /// <summary>The territory's <c>Bg</c> string, the path its level files sit under.</summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <returns>The Bg string, or empty when the row does not resolve.</returns>
     public static string Bg(uint territoryId)
@@ -178,6 +169,42 @@ public static class TerritoryHelper
     }
 
     /// <summary>
+    /// Finds the territories that name a level file and whose place, zone or region name matches, in the client's
+    /// language. The zone name is what groups the two decks of Limsa Lominsa.
+    /// </summary>
+    /// <param name="name">The name to look for.</param>
+    /// <param name="match">How the name is compared. Both compare case insensitively.</param>
+    /// <returns>The matching TerritoryType row ids, empty when nothing matches or the sheet is missing.</returns>
+    public static IReadOnlySet<uint> FindByPlaceName(string name, NameMatch match = NameMatch.Contains)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return new HashSet<uint>();
+
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            var found = new HashSet<uint>();
+            var sheet = ExcelSheetHelper.GetSheet<TerritoryType>();
+            if (sheet == null)
+                return (IReadOnlySet<uint>)found;
+
+            foreach (var territory in sheet)
+            {
+                if (territory.RowId == 0 || territory.Bg.ExtractText().Length == 0)
+                    continue;
+
+                if (WorldObjectHelper.NameMatches(territory.PlaceName.ValueNullable?.Name.ExtractText(), name, match)
+                    || WorldObjectHelper.NameMatches(territory.PlaceNameZone.ValueNullable?.Name.ExtractText(), name, match)
+                    || WorldObjectHelper.NameMatches(territory.PlaceNameRegion.ValueNullable?.Name.ExtractText(), name, match))
+                {
+                    found.Add(territory.RowId);
+                }
+            }
+
+            return found;
+        }, new HashSet<uint>()) ?? new HashSet<uint>();
+    }
+
+    /// <summary>
     /// Reads the territories that describe a real place, being those with either a place name or a level file. The
     /// sheet carries a long tail of placeholder rows with neither that other sheets still point at.
     /// </summary>
@@ -185,10 +212,7 @@ public static class TerritoryHelper
     public static IReadOnlySet<uint> ReadReal()
         => ReadWhere(static territory => territory.PlaceName.RowId != 0 || territory.Bg.ExtractText().Length > 0);
 
-    /// <summary>
-    /// Reads the territories entered from the duty finder rather than walked into, being those with a
-    /// <c>ContentFinderCondition</c>, which leaves out the instanced rooms a character walks into through a door.
-    /// </summary>
+    /// <summary>Reads the territories entered from the duty finder: those with a <c>ContentFinderCondition</c>.</summary>
     /// <returns>The territory row ids that are queueable duties.</returns>
     public static IReadOnlySet<uint> ReadQueueableDuties()
         => ReadWhere(static territory => territory.ContentFinderCondition.RowId != 0);
@@ -204,10 +228,8 @@ public static class TerritoryHelper
         => mountable ??= ReadWhere(static territory => territory.Mount);
 
     /// <summary>
-    /// Reads the territories the sheets can prove flight in.
-    /// Whether a zone permits flight is not in the client's data, the
-    /// server states it per zone-in, and the client keeps that answer in <c>PlayerState.CanFly</c>, which
-    /// <see cref="FlightHelper.CanFlyHere"/> reads.
+    /// Reads the territories the sheets can prove flight in.<br/>
+    /// The server states flight per zone-in. <see cref="FlightHelper.CanFlyHere"/> reads that answer.
     /// </summary>
     /// <returns>The territory row ids flight is provably possible in.</returns>
     public static IReadOnlySet<uint> ReadFlightCapable()
@@ -222,11 +244,7 @@ public static class TerritoryHelper
         return flightCapable = found;
     }
 
-    /// <summary>
-    /// Reads the territories whose intended use bars casting Teleport, which the game states as
-    /// <c>TerritoryIntendedUse.EnableTeleport</c>. The Diadem's rows bar it; the Cosmic Exploration planets allow it.
-    /// Cached, since the sheet cannot change while the client runs.
-    /// </summary>
+    /// <summary>Reads the territories whose <c>TerritoryIntendedUse.EnableTeleport</c> bars casting Teleport. Cached.</summary>
     /// <returns>The territory row ids Teleport cannot be cast from.</returns>
     public static IReadOnlySet<uint> ReadTeleportBarred()
         => teleportBarred ??= ReadWhere(static territory => territory.TerritoryIntendedUse.ValueNullable is { } use && !use.EnableTeleport);
@@ -261,11 +279,8 @@ public static class TerritoryHelper
         return aetherCurrentZones = list;
     }
 
-    /// <summary>
-    /// Reads the quest conditions the <c>ZoneSharedGroup</c> sheet puts on zone crossings. Every requirement row on a
-    /// shared group is a condition, not just the first, since a barrier can sit behind several quests at once.
-    /// </summary>
-    /// <returns>The gates keyed by the gated level object's instance id; a crossing can carry several.</returns>
+    /// <summary>Reads the quest conditions <c>ZoneSharedGroup</c> puts on zone crossings. Every requirement row is a condition.</summary>
+    /// <returns>The gates keyed by the gated level object's instance id.</returns>
     public static IReadOnlyDictionary<uint, IReadOnlyList<ZoneCrossingGate>> ReadZoneCrossingGates()
     {
         var empty = (IReadOnlyDictionary<uint, IReadOnlyList<ZoneCrossingGate>>)new Dictionary<uint, IReadOnlyList<ZoneCrossingGate>>();
@@ -292,7 +307,7 @@ public static class TerritoryHelper
                         if (questId == 0)
                             continue;
 
-                        // A missing sequence column means the quest has to be complete, marked as 255.
+                        // A missing sequence column means the quest must be complete, marked as 255.
                         var step = i < row.RequirementQuestSequence.Count ? (byte)row.RequirementQuestSequence[i] : (byte)255;
                         gates.Add(new ZoneCrossingGate(questId, step));
                     }
@@ -347,7 +362,7 @@ public static class TerritoryHelper
                 continue;
             }
 
-            // Failing a preferred entry, the lowest row id wins: variants are added by later patches and take later ids.
+            // Otherwise the lowest row id wins. Later patches add variants at later ids.
             var candidateIsPreferred = preferred != null && preferred.Contains(territoryId);
             var existingIsPreferred = preferred != null && preferred.Contains(existing);
             if (candidateIsPreferred && !existingIsPreferred)
@@ -377,7 +392,6 @@ public static class TerritoryHelper
     public static uint ResolveAlias(IReadOnlyDictionary<uint, uint>? aliases, uint territoryId)
         => aliases != null && aliases.TryGetValue(territoryId, out var canonical) ? canonical : territoryId;
 
-    // Collects the row ids of every non-zero TerritoryType row the predicate accepts.
     private static IReadOnlySet<uint> ReadWhere(System.Func<TerritoryType, bool> predicate)
     {
         return SafeExecutor.ExecuteSafely(() =>

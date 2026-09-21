@@ -4,17 +4,9 @@ using System.Numerics;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// Orientation overrides applied to every imported mesh, for a file authored in a convention the loaders do
-/// not expect.<br/>
-/// <b>Everything here is off by default and should stay off.</b> Both loaders take positions, normals and
-/// transforms exactly as authored and reverse only the triangle winding, which is correct for the game's own
-/// models and for a conforming glTF; these exist because exporters disagree (a tool that writes Z-up, or a
-/// pipeline that has already converted handedness once), and such a file cannot be told apart from a correct
-/// one by reading it.
+/// Orientation overrides applied to every imported mesh.<br/>
+/// Off by default. A change affects models imported afterwards.
 /// </summary>
-/// <remarks>
-/// A change affects models imported afterwards, not what is already on screen.
-/// </remarks>
 public sealed class Draw3DImportFlips
 {
     /// <summary>Reflect through the YZ plane.</summary>
@@ -23,11 +15,7 @@ public sealed class Draw3DImportFlips
     /// <summary>Reflect through the XY plane.</summary>
     public bool MirrorZ { get; set; }
 
-    /// <summary>
-    /// Reverse the triangle index order again, swapping which side of every face is the front; undoes the
-    /// loaders' own conversion to this renderer's clockwise-front convention, needed only for a file whose
-    /// winding was already converted (any other file renders inside out with it on).
-    /// </summary>
+    /// <summary>Reverse the triangle index order again, for a file whose winding was already converted to clockwise-front.</summary>
     public bool ReverseWinding { get; set; }
 
     /// <summary>Mirror the texture horizontally.</summary>
@@ -36,7 +24,7 @@ public sealed class Draw3DImportFlips
     /// <summary>Mirror the texture vertically.</summary>
     public bool FlipV { get; set; }
 
-    /// <summary>Whether anything at all is being changed, so the default path can skip the work entirely.</summary>
+    /// <summary>Whether any override is enabled.</summary>
     public bool Any => MirrorX || MirrorZ || ReverseWinding || FlipU || FlipV;
 
     /// <summary>Turns everything off, restoring each loader's own conversion.</summary>
@@ -49,8 +37,6 @@ public sealed class Draw3DImportFlips
         FlipV = false;
     }
 
-    // Applies the selected transforms to a decoded mesh in place; does nothing when none is selected, so an import
-    // that wants no transform pays nothing for the option existing.
     internal void Apply(Vertex3D[] vertices, ushort[] indices)
     {
         if (!Any)
@@ -65,8 +51,6 @@ public sealed class Draw3DImportFlips
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
     }
 
-    // The same transforms for a loader that has not yet narrowed its indices to 16 bits, kept beside the other
-    // overload so the two import paths cannot drift.
     internal void Apply(Vertex3D[] vertices, System.Collections.Generic.List<uint> indices)
     {
         if (!Any)
@@ -81,17 +65,13 @@ public sealed class Draw3DImportFlips
             (indices[i + 1], indices[i + 2]) = (indices[i + 2], indices[i + 1]);
     }
 
-    // The same mirrors applied to a node's local transform, as a change of basis rather than a multiply. A
-    // hierarchical model needs both halves or neither: mirroring only the vertices reflects each mesh in its own
-    // local space while the transforms that place those meshes stay put, mirroring the parts without changing their
-    // arrangement (a flat mesh list has no transforms, so it never shows the discrepancy).
+    // A hierarchical model must mirror vertices and transforms together.
     internal Matrix4x4 Apply(Matrix4x4 local)
     {
         if (!MirrorX && !MirrorZ)
             return local;
 
-        // M' = F * M * F with F = diag(sx, 1, sz, 1), which for a diagonal F is elementwise: each cell is
-        // scaled by the factor of its row times the factor of its column.
+        // M' = F * M * F with diagonal F.
         var f = new[] { MirrorX ? -1f : 1f, 1f, MirrorZ ? -1f : 1f, 1f };
         var result = local;
 
@@ -103,14 +83,12 @@ public sealed class Draw3DImportFlips
         return result;
     }
 
-    // Positions, normals, tangents and texture coordinates - everything that does not depend on the index type.
     private void ApplyToVertices(Vertex3D[] vertices)
     {
         var sx = MirrorX ? -1f : 1f;
         var sz = MirrorZ ? -1f : 1f;
 
-        // A single mirror is a reflection and flips the frame's handedness; two mirrors are a rotation and
-        // do not. The tangent's w carries that handedness, so it flips exactly when the transform reflects.
+        // One mirror flips handedness, two do not.
         var handedness = sx * sz;
 
         for (var i = 0; i < vertices.Length; i++)

@@ -8,11 +8,7 @@ using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin;
 
-/// <summary>
-/// A demonstration plugin for the NoireLib Draw3D renderer. Everything it does goes through the public Draw3D API -
-/// spawning the showcase scene, tweaking every global knob, building scenes and decals, and running the render
-/// diagnostics.
-/// </summary>
+/// <summary>Demo plugin exercising the public NoireLib Draw3D API.</summary>
 public sealed class Plugin : IDalamudPlugin
 {
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
@@ -26,7 +22,6 @@ public sealed class Plugin : IDalamudPlugin
     {
         NoireLibMain.Initialize(PluginInterface, this);
 
-        // The render validators (validate / probe / camtrace / ...) live in the library; expose their /noire3d command.
         NoireDraw3D.EnableDiagnosticsCommand();
 
         demoWindow = new DemoWindow();

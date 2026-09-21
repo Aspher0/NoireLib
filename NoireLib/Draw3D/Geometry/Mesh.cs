@@ -5,19 +5,13 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Geometry;
 
-/// <summary>
-/// An immutable GPU mesh (vertex + index buffer) with a precomputed bounding sphere.<br/>
-/// <b>Creation is synchronous and thread-safe</b> (D3D11 devices are free-threaded), so a background asset load
-/// produces ready-to-draw meshes directly.<br/>
-/// <b>Ownership:</b> the creator disposes it; nodes and renderers only reference it, and sharing one mesh across
-/// many nodes is intended usage.
-/// </summary>
+/// <summary>An immutable GPU mesh, disposed by its creator and shareable across nodes. Creation is thread-safe.</summary>
 public sealed unsafe class Mesh : IDisposable
 {
     private GpuBuffer? vertexBuffer;
     private GpuBuffer? indexBuffer;
-    private Mesh[]? lods; // progressively coarser levels (finest first), owned by this mesh; null = none
-    private MeshBvh? bvh; // lazily built on the first pick, from the retained CPU geometry (keepCpuData meshes only)
+    private Mesh[]? lods; // finest first
+    private MeshBvh? bvh; // built on the first pick
     private bool bvhAttempted;
     private readonly object bvhLock = new();
     private volatile bool disposed;
@@ -28,16 +22,16 @@ public sealed unsafe class Mesh : IDisposable
     /// <summary>Number of indices (triangle list).</summary>
     public int IndexCount { get; }
 
-    /// <summary>True when the index buffer is 32-bit (large imported meshes); false = 16-bit.</summary>
+    /// <summary>Whether the index buffer uses 32-bit indices.</summary>
     public bool Uses32BitIndices { get; }
 
-    /// <summary>Conservative model-space bounding sphere (culling, picking).</summary>
+    /// <summary>Conservative model-space bounding sphere.</summary>
     public BoundingSphere LocalBounds { get; }
 
     /// <summary>Optional debug name.</summary>
     public string? Name { get; }
 
-    /// <summary>CPU vertex copy, retained when requested at creation (exact picking).</summary>
+    /// <summary>CPU vertex copy, retained when requested at creation.</summary>
     public Vertex3D[]? CpuVertices { get; }
 
     /// <summary>CPU 16-bit index copy, retained when requested at creation (null for 32-bit meshes).</summary>
@@ -46,21 +40,14 @@ public sealed unsafe class Mesh : IDisposable
     /// <summary>CPU 32-bit index copy, retained when requested at creation (null for 16-bit meshes).</summary>
     public uint[]? CpuIndices32 { get; }
 
-    /// <summary>True once disposed; draws referencing a disposed mesh are skipped and counted, never a crash.</summary>
+    /// <summary>True once disposed. Draws referencing a disposed mesh are skipped.</summary>
     public bool IsDisposed => disposed;
 
-    /// <summary>
-    /// Number of coarser level-of-detail meshes attached below this one (0 = none); the renderer draws a lower LOD
-    /// based on screen size, but culling, picking and bounds always use this full-resolution mesh, generated
-    /// automatically for large imported models (see <see cref="MeshSimplifier.BuildLods"/>) and off otherwise.
-    /// </summary>
+    /// <summary>Number of coarser LOD meshes. Culling, picking and bounds use the full-resolution mesh.</summary>
     public int LodCount => lods?.Length ?? 0;
 
-    /// <summary>
-    /// Attaches a finest-first chain of coarser LOD meshes, transferring their ownership to this mesh (freed when
-    /// it is) and replacing any existing chain; pass an empty array to clear it.
-    /// </summary>
-    /// <param name="levels">Coarser meshes, ordered from most to least detailed; null or empty clears the chain.</param>
+    /// <summary>Replaces the chain of coarser LOD meshes, transferring their ownership to this mesh.</summary>
+    /// <param name="levels">Coarser meshes, ordered from most to least detailed. Null or empty clears the chain.</param>
     public void SetLods(Mesh[]? levels)
     {
         var old = lods;
@@ -70,11 +57,9 @@ public sealed unsafe class Mesh : IDisposable
                 lod.Dispose();
     }
 
-    /// <summary>
-    /// The mesh to draw at the given LOD level: 0 (or no chain) returns this full-resolution mesh, higher levels
-    /// return progressively coarser ones clamped to the coarsest available, driven by the renderer's screen-size selection.
-    /// </summary>
-    /// <param name="level">0 = full detail; 1..<see cref="LodCount"/> = coarser levels.</param>
+    /// <summary>Returns the mesh for an LOD level, clamped to the coarsest available.</summary>
+    /// <param name="level">0 for full detail, 1 to <see cref="LodCount"/> for coarser levels.</param>
+    /// <returns>This mesh or one of its LOD meshes.</returns>
     public Mesh SelectLod(int level)
     {
         var chain = lods;
@@ -84,9 +69,7 @@ public sealed unsafe class Mesh : IDisposable
         return chain[Math.Min(level - 1, chain.Length - 1)];
     }
 
-    // Casts a model-space ray against this mesh's triangles via a lazily-built BVH and returns the nearest hit, with 
-    // in the units of ; returns false when the mesh kept no CPU geometry (created without keepCpuData), is disposed,
-    // or the ray misses, and is safe to call from any thread.
+    // t in units of localDirection. Any thread.
     internal bool RayCastLocal(Vector3 localOrigin, Vector3 localDirection, out float t, out int triangle)
     {
         t = 0f;
@@ -101,7 +84,7 @@ public sealed unsafe class Mesh : IDisposable
             {
                 if (bvh == null && !bvhAttempted)
                 {
-                    bvhAttempted = true; // build once even if the mesh is degenerate (Build returns null)
+                    bvhAttempted = true; // Build returns null for a degenerate mesh
                     bvh = MeshBvh.Build(CpuVertices, CpuIndices16, CpuIndices32);
                 }
 
@@ -116,7 +99,7 @@ public sealed unsafe class Mesh : IDisposable
     {
         get
         {
-            var vb = vertexBuffer; // local copy: Dispose may null the field concurrently
+            var vb = vertexBuffer; // Dispose may null the field concurrently
             return disposed || vb == null ? null : vb.Buffer;
         }
     }
@@ -204,15 +187,14 @@ public sealed unsafe class Mesh : IDisposable
 
         disposed = true;
 
-        // Coarser LOD levels are owned by this mesh - release them with it.
         var chain = lods;
         lods = null;
-        bvh = null; // managed arrays only; GC reclaims them once unreferenced
+        bvh = null;
         if (chain != null)
             foreach (var lod in chain)
                 lod.Dispose();
 
-        // Defer the GPU releases to the render thread so an in-progress frame can never bind a freed buffer.
+        // An in-progress frame never binds a freed buffer.
         var vb = vertexBuffer;
         var ib = indexBuffer;
         vertexBuffer = null;

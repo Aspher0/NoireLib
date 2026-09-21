@@ -6,18 +6,12 @@ using static TerraFX.Interop.DirectX.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// D3DCompile wrapper: compiles HLSL text (with defines) to bytecode, surfacing the compiler's own error text verbatim
-// so shader authors see real diagnostics, not HRESULTs.
 internal static unsafe class ShaderCompiler
 {
     private const uint D3DCompileDebug = 1u << 0;              // D3DCOMPILE_DEBUG
     private const uint D3DCompileOptimizationLevel3 = 1u << 15; // D3DCOMPILE_OPTIMIZATION_LEVEL3
     private const uint D3DCompileWarningsAreErrors = 1u << 18;  // D3DCOMPILE_WARNINGS_ARE_ERRORS
 
-    /// <summary>
-    /// Compiles <paramref name="source"/> with the given entry point and profile.
-    /// Returns false with the compiler's error text on failure.
-    /// </summary>
     public static bool TryCompile(
         string name,
         string source,
@@ -39,7 +33,6 @@ internal static unsafe class ShaderCompiler
         flags |= D3DCompileDebug;
 #endif
 
-        // Pin NUL-terminated macro strings for the duration of the call.
         var pins = new List<GCHandle>();
         try
         {
@@ -58,10 +51,11 @@ internal static unsafe class ShaderCompiler
                 };
             }
 
-            macros[defineCount] = default; // terminator
+            macros[defineCount] = default;
 
+            // A using over the struct would dispose a copy taken while the pointer was still null.
             TerraFX.Interop.Windows.ComPtr<ID3DBlob> errors = default;
-            using (errors)
+            try
             {
                 fixed (byte* src = sourceBytes)
                 fixed (byte* entry = entryBytes)
@@ -84,6 +78,10 @@ internal static unsafe class ShaderCompiler
                         return false;
                     }
                 }
+            }
+            finally
+            {
+                errors.Dispose();
             }
 
             return true;

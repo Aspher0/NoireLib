@@ -9,11 +9,7 @@ using System.Text;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// A dropdown that selects several things at once and does not close when you pick one. Every option is a checkbox,
-/// the preview summarises what is chosen, and the popup stays open until you are finished.
-/// </summary>
-/// <remarks>Selection is by value rather than by index.</remarks>
+/// <summary>A dropdown of checkboxes that selects several items by value and stays open while picking.</summary>
 /// <typeparam name="T">The type of the items.</typeparam>
 [NoireFacadeFactory]
 public sealed class NoireMultiCombo<T>
@@ -23,7 +19,6 @@ public sealed class NoireMultiCombo<T>
     private readonly List<(int Index, int Score)> scored = new();
     private readonly HashSet<T> selected;
 
-    // Kept between frames so that composing the preview costs nothing once it has grown.
     private readonly StringBuilder previewBuilder = new(64);
 
     private string filterText = string.Empty;
@@ -146,6 +141,15 @@ public sealed class NoireMultiCombo<T>
     /// <summary>How many options it takes before <see cref="Virtualize"/> turns itself on.</summary>
     public int VirtualizeThreshold { get; set; } = 100;
 
+    /// <summary>
+    /// Draws each option yourself, tick box included.<br/>
+    /// Set <see cref="ItemHeight"/> as well when the rows are taller than one line.
+    /// </summary>
+    public Action<UiMultiComboItemDraw<T>>? ItemRenderer { get; set; }
+
+    /// <summary>The height of one option at 100%. When <see langword="null"/>, one line of text.</summary>
+    public float? ItemHeight { get; set; }
+
     #endregion
 
     #region Selection
@@ -251,8 +255,6 @@ public sealed class NoireMultiCombo<T>
         if (values != null)
             items.AddRange(values);
 
-        // Anything no longer on offer stops being selected, or the selection quietly reports things that are not
-        // there any more.
         selected.RemoveWhere(item => !items.Contains(item));
 
         RebuildFilteredIndices();
@@ -292,18 +294,14 @@ public sealed class NoireMultiCombo<T>
 
         var label = string.IsNullOrEmpty(Label) ? string.Empty : Label;
 
-        // Without this the popup falls back to ImGui's own cap of roughly eight rows, while the option list inside
-        // it is a child sized for VisibleItemCount plus a filter row and the shortcuts above it: the content
-        // overflows and both grow a scrollbar, one around the list and one around the popup holding it.
-        // Snapped to whole pixels for the same reason the combo box snaps its own: ImGui floors a window's size
-        // whenever a size constraint is present, but the scrollbar test adds the window padding to the content size
-        // unfloored, so any fraction in the padding leaves the popup permanently short of what it holds.
+        // ImGui's own popup cap is about eight rows. The list child and the popup would each grow a scrollbar.
+        // ImGui floors a constrained window's size but tests the scrollbar against unfloored padding.
         var hostPadding = ImGui.GetStyle().WindowPadding;
         using var padding = UiPush.Style(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(hostPadding.X), MathF.Round(hostPadding.Y)));
 
         ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
 
-        // Read before the popup opens, since inside one the current window is the popup itself.
+        // Inside the popup the current window is the popup.
         var ownerInFront = UiWindowOrder.InTopLayer;
 
         if (!ImGui.BeginCombo(UiIds.Labelled(label, "###NoireMultiCombo_", Id), BuildPreview()))
@@ -363,8 +361,6 @@ public sealed class NoireMultiCombo<T>
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         var width = (ImGui.GetContentRegionAvail().X - spacing) * 0.5f;
 
-        // Scoped to what the filter is showing rather than to everything. With a filter box directly above it,
-        // "all" means what is currently shown.
         if (ImGui.Button(UiIds.Labelled(SelectAllText, "###NoireMultiComboAll_", Id), new Vector2(width, 0f)))
         {
             var changed = false;
@@ -404,8 +400,6 @@ public sealed class NoireMultiCombo<T>
         }
         else if (ImGui.IsKeyPressed(ImGuiKey.Enter, false) && highlightIndex >= 0 && highlightIndex < filteredIndices.Count)
         {
-            // Enter toggles rather than confirms, because there is nothing to confirm: the dropdown is a set being
-            // edited, and it closes when the user says so.
             var index = filteredIndices[highlightIndex];
 
             if (index < items.Count)
@@ -415,9 +409,6 @@ public sealed class NoireMultiCombo<T>
 
     private void DrawItemRows()
     {
-        // Sized to the options it actually holds rather than to the full budget, so a filter that leaves three matches
-        // shrinks the dropdown instead of padding it out with dead space. The popup's cap above is the full budget, so
-        // this can only ever be smaller than what the popup allows and the popup never needs a scrollbar of its own.
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
         var height = (visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y;
 
@@ -468,10 +459,7 @@ public sealed class NoireMultiCombo<T>
         var isHighlighted = position == highlightIndex;
         var start = ImGui.GetCursorPos();
 
-        // Closing is asked for outright rather than left to the selectable's own flag: ImGui only closes a popup
-        // from a selectable whose own window carries the popup flag, and these rows live in a child window inside
-        // the popup, so that flag decides nothing here. Closing the current popup still works from a child, since
-        // it acts on the popup stack rather than the window doing the asking.
+        // ImGui only closes a popup from a selectable in the popup window itself. These rows live in a child.
         if (ImGui.Selectable(UiIds.For("###NoireMultiComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.DontClosePopups, new Vector2(0f, ResolveItemHeight())))
         {
             Toggle(item);
@@ -489,19 +477,34 @@ public sealed class NoireMultiCombo<T>
         var after = ImGui.GetCursorPos();
         ImGui.SetCursorPos(start);
 
-        DrawCheckbox(isSelected);
-        DrawLabel(DisplayOf(item));
+        if (ItemRenderer is { } renderer)
+        {
+            try
+            {
+                renderer(new UiMultiComboItemDraw<T>(this, item, itemIndex, DisplayOf(item), isSelected, isHighlighted));
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(this, ex, $"The item renderer of multi-combo '{Id}' threw an exception.");
+            }
+        }
+        else
+        {
+            DrawItemCheckbox(isSelected);
+            DrawItemLabel(DisplayOf(item));
+        }
 
         ImGui.SetCursorPos(after);
     }
+
+    internal void DrawItemCheckbox(bool isSelected) => DrawCheckbox(isSelected);
 
     private static void DrawCheckbox(bool isSelected)
     {
         var theme = NoireTheme.Current;
         var side = NoireText.LineHeight() * 0.72f;
 
-        // Centred on the label rather than on the row, since a line reserves room under the baseline that a row label
-        // rarely uses and a box centred on the row reads as sitting above the words next to it.
+        // Centred on the label. A box centred on the row sits above the words.
         var origin = ImGui.GetCursorScreenPos() + new Vector2(0f, NoireText.CenterOffset() - (side * 0.5f));
         var box = origin + new Vector2(side, side);
 
@@ -524,7 +527,7 @@ public sealed class NoireMultiCombo<T>
         ImGui.SameLine(0f, NoireUI.Scaled(7f));
     }
 
-    private void DrawLabel(string display)
+    internal void DrawItemLabel(string display)
     {
         if (!showMatches)
         {
@@ -584,8 +587,6 @@ public sealed class NoireMultiCombo<T>
         if (remaining > 0)
             previewBuilder.Append("  ").Append(OverflowText(PreviewOverflowFormat, remaining));
 
-        // Turned into a string only when it differs from the one already handed out. Comparing is a walk over a short
-        // span; producing it is an allocation on the draw thread.
         if (!previewBuilder.Equals(previewText.AsSpan()))
             previewText = previewBuilder.ToString();
 
@@ -609,15 +610,11 @@ public sealed class NoireMultiCombo<T>
 
     private static readonly HotPathCache<OverflowKey, string> Overflows = new(256);
 
-    // The height the dropdown is capped at: the filter row and the shortcuts, when shown, plus exactly
-    // VisibleItemCount options.
     private float MeasureMaxPopupHeight()
     {
         var visibleCount = Math.Max(1, VisibleItemCount);
 
-        // Nothing to cap while everything fits: the popup comes out exactly as tall as its own contents. A cap
-        // computed to that same height would have to agree with ImGui about every row, gap and padding at once, in
-        // a measurement taken before the popup exists, and a pixel under it is a scrollbar over a list that fits.
+        // Uncapped while everything fits. A cap one pixel under the content is a scrollbar.
         if (filteredIndices.Count <= visibleCount)
             return float.MaxValue;
 
@@ -633,12 +630,12 @@ public sealed class NoireMultiCombo<T>
             height += (style.ItemSpacing.Y * 2f) + 1f;
         }
 
-        // A hair of slack, because the popup is being asked to fit content into a budget equal to that content and a
-        // rounding difference either way decides whether a scrollbar appears.
+        // A hair of slack against rounding.
         return height + style.ItemSpacing.Y;
     }
 
-    private float ResolveItemHeight() => NoireText.LineHeight();
+    private float ResolveItemHeight()
+        => ItemHeight.HasValue ? NoireUI.Scaled(ItemHeight.Value) : NoireText.LineHeight();
 
     private float ResolveRowStep() => ResolveItemHeight() + ImGui.GetStyle().ItemSpacing.Y;
 

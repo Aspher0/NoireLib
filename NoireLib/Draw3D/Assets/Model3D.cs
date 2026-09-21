@@ -5,12 +5,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Assets;
 
-/// <summary>
-/// An imported model: a detached node subtree plus the meshes and textures the import created.<br/>
-/// <b>Ownership:</b> the model owns its imported GPU assets and releases them on dispose; the scene it
-/// gets attached to never does. Attach with <see cref="AttachTo(Scene3D)"/> or <see cref="AttachTo(SceneNode)"/> -
-/// an O(1) reparent, callable from any thread.
-/// </summary>
+/// <summary>An imported model: a detached node subtree plus the meshes and textures it owns. The scene never releases them.</summary>
 public sealed class Model3D : IDisposable
 {
     private readonly List<Mesh> meshes;

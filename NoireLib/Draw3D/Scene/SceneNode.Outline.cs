@@ -2,23 +2,15 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// An opt-in selection/highlight outline for a node: a <b>real screen-space silhouette outline</b> (a post-process
-/// rim drawn from a coverage mask, not a second mesh), so it traces the object's actual outline and works for solid
-/// meshes and ground decals alike. The default <see cref="MakeSelectable"/> highlight stays a tint; outline is
-/// something you turn on (directly here, or via <c>editor.SelectionOutline</c>).
-/// </summary>
 public sealed partial class SceneNode
 {
-    /// <summary>Whether an outline is currently enabled (its color's alpha &gt; 0).</summary>
+    /// <summary>Whether an outline is currently enabled.</summary>
     public bool HasOutline => Renderer is { } renderer && renderer.OutlineColor.W > 0f;
 
-    /// <summary>
-    /// Shows a real silhouette outline around this node in the given color; no-op (logged) when the node has no
-    /// renderer, calling it again updates the color/width, fluent.
-    /// </summary>
-    /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible).</param>
-    /// <param name="widthPixels">Outline thickness in screen pixels (default 4).</param>
+    /// <summary>Shows a screen-space silhouette outline around this node, or logs and does nothing without a renderer. Fluent.</summary>
+    /// <param name="color">Outline color in straight alpha.</param>
+    /// <param name="widthPixels">Outline thickness in screen pixels.</param>
+    /// <returns>This node.</returns>
     public SceneNode ShowOutline(Vector4 color, float widthPixels = 4f)
     {
         var renderer = Renderer;
@@ -33,7 +25,8 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Removes the outline, if any; fluent.</summary>
+    /// <summary>Removes the outline, if any. Fluent.</summary>
+    /// <returns>This node.</returns>
     public SceneNode HideOutline()
     {
         if (Renderer is { } renderer)

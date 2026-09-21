@@ -123,6 +123,31 @@ public static unsafe class WorldHelper
         return found;
     }
 
+    /// <summary>The physical region of the Oceanian data centre.</summary>
+    public const byte OceaniaRegionId = 4;
+
+    private static readonly byte[] RegionsReachingOceania = [1, 2, 3];
+
+    /// <summary>
+    /// Whether data centre travel reaches one physical region from another. Travel stays inside a region, with
+    /// Oceania reachable from Japan, North America and Europe and reaching none of them back.
+    /// The sheets and the client both know region equality and nothing more. The Oceanian allowance is the lobby
+    /// server's and was read off a live client. docs/Data Centre Travel Reach.md holds the reading.
+    /// </summary>
+    /// <param name="fromRegionId">The region the character belongs to.</param>
+    /// <param name="toRegionId">The region asked for.</param>
+    /// <returns>True when the travel is offered.</returns>
+    public static bool TravelReaches(byte fromRegionId, byte toRegionId)
+    {
+        if (fromRegionId == 0 || toRegionId == 0)
+            return false;
+
+        if (fromRegionId == toRegionId)
+            return true;
+
+        return toRegionId == OceaniaRegionId && Array.IndexOf(RegionsReachingOceania, fromRegionId) >= 0;
+    }
+
     /// <summary>A data centre's name.</summary>
     /// <param name="dataCenterId">The WorldDCGroupType row id.</param>
     /// <returns>The name, or an empty string.</returns>
@@ -179,7 +204,7 @@ public static unsafe class WorldHelper
 
     #region Where the character is
 
-    /// <summary>The world the character is standing on right now, which is not their home world while visiting.</summary>
+    /// <summary>The world the character is standing on, which differs from the home world while visiting.</summary>
     /// <returns>The World row id, or zero when there is no loaded character.</returns>
     public static ushort CurrentId()
         => CharacterHelper.IsStateReady
@@ -212,7 +237,7 @@ public static unsafe class WorldHelper
     }
 
     /// <summary>
-    /// Whether the character is visiting a world on another data centre; reaching it takes a different route than an
+    /// Whether the character is visiting a world on another data centre. Reaching it takes a different route than an
     /// ordinary world visit.
     /// </summary>
     /// <returns>True when the character is away from their home data centre.</returns>
@@ -259,5 +284,6 @@ public static unsafe class WorldHelper
         row.DataCenter.RowId,
         row.DataCenter.ValueNullable?.Name.ExtractText() ?? string.Empty,
         row.Region,
-        row.IsPublic);
+        row.IsPublic,
+        (byte)(row.DataCenter.ValueNullable?.Region.RowId ?? 0));
 }

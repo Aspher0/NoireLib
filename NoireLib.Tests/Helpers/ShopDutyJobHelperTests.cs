@@ -11,8 +11,8 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Locks the pure rules in the shop, duty, class job, text command and world helpers: the ones that index a catalog,
 /// pick the cheapest price, fold a set of flags, reduce a typed command line, or answer a query the sheets cannot
-/// serve. Every one of them is a function over its inputs, so none of these needs a game. The sheet reads around them
-/// are exercised in game, and their no-game behaviour is asserted here instead.
+/// serve. Every one of them is a function over its inputs. None of these needs a game. The sheet reads around them
+/// are exercised in game. Their no-game behaviour is asserted here.
 /// </summary>
 public sealed class ShopDutyJobHelperTests
 {
@@ -37,7 +37,6 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void ShopOffer_IsNotAGilPurchaseWhenGilIsOnlyPartOfThePrice()
     {
-        // A special shop can charge gil alongside a token, and that is not something a plain gil purchase can pay.
         var offer = Offer(costs: [new ShopCost(ShopHelper.GilItemId, 100), new ShopCost(28, 3)]);
 
         offer.GilCost.Should().Be(100);
@@ -51,6 +50,51 @@ public sealed class ShopDutyJobHelperTests
 
         offer.GilCost.Should().Be(0);
         offer.IsGilPurchase.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShopCost_RecognisesACurrencyWithoutTheSheets()
+    {
+        new ShopCost(ShopHelper.GilItemId, 500).IsCurrency.Should().BeTrue();
+        new ShopCost(ShopHelper.StormSealItemId, 200).IsCurrency.Should().BeTrue();
+        new ShopCost(FireCrystalItemId, 3).IsCurrency.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShopOffer_AsksForGilAlone()
+        => Offer(costs: [new ShopCost(ShopHelper.GilItemId, 1200)]).PurchaseKind.Should().Be(PurchaseKind.GilShop);
+
+    [Fact]
+    public void ShopOffer_AsksForCurrenciesAlone()
+    {
+        Offer(costs: [new ShopCost(ShopHelper.StormSealItemId, 200)]).PurchaseKind.Should().Be(PurchaseKind.CurrencyExchange);
+        Offer(costs: [new ShopCost(ShopHelper.StormSealItemId, 200), new ShopCost(ShopHelper.GilItemId, 50)])
+            .PurchaseKind.Should().Be(PurchaseKind.CurrencyExchange);
+    }
+
+    [Fact]
+    public void ShopOffer_AsksForAnOrdinaryItem()
+    {
+        var offer = Offer(costs: [new ShopCost(ShopHelper.StormSealItemId, 200), new ShopCost(FireCrystalItemId, 3)]);
+
+        offer.PurchaseKind.Should().Be(PurchaseKind.ItemExchange);
+        offer.IsPurchase.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShopOffer_AsksForNothingAtAll()
+    {
+        var offer = Offer(costs: []);
+
+        offer.PurchaseKind.Should().Be(PurchaseKind.Free);
+        offer.IsPurchase.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShopOffer_IsAPurchaseForGilAndForCurrencies()
+    {
+        Offer(costs: [new ShopCost(ShopHelper.GilItemId, 10)]).IsPurchase.Should().BeTrue();
+        Offer(costs: [new ShopCost(ShopHelper.FlameSealItemId, 10)]).IsPurchase.Should().BeTrue();
     }
 
     #endregion
@@ -88,11 +132,44 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void Catalog_HasNoCheapestGilPriceForATokenOnlyItem()
     {
-        // The token offer is in the catalog and findable, it just cannot be paid for with gil.
         var catalog = SampleCatalog();
 
         catalog.ShopsSelling(30000).Should().ContainSingle();
         catalog.CheapestGilPrice(30000).Should().BeNull();
+    }
+
+    [Fact]
+    public void Catalog_ListsEveryShopSellingAnItemAndOnlyTheReachedOnesApart()
+    {
+        var catalog = ReachableSampleCatalog();
+
+        catalog.ShopsSelling(4850).Should().Equal(262100u, 262200u);
+        catalog.ReachableShopsSelling(4850).Should().Equal(262200u);
+        catalog.NpcsReaching(262200).Should().Equal(1000u);
+        catalog.IsReachable(262100).Should().BeFalse();
+    }
+
+    [Fact]
+    public void Catalog_SkipsAShopNoNpcOpensWhenItPicksTheCheapestGilPrice()
+    {
+        var cheapest = ReachableSampleCatalog().CheapestGilPrice(4850);
+
+        cheapest.Should().NotBeNull();
+        cheapest!.Value.ShopId.Should().Be(262200u);
+    }
+
+    [Fact]
+    public void Catalog_HasNoCheapestGilPriceWhenNoNpcOpensAnyShopSellingIt()
+        => ReachableSampleCatalog().CheapestGilPrice(6174).Should().BeNull();
+
+    [Fact]
+    public void Catalog_ReadsEveryShopAsReachedWhenTheNpcWalkHasNotRun()
+    {
+        var catalog = SampleCatalog();
+
+        catalog.IsReachable(262100).Should().BeTrue();
+        catalog.ReachableShopsSelling(4850).Should().Equal(262100u, 262200u);
+        catalog.NpcsReaching(262100).Should().BeEmpty();
     }
 
     [Fact]
@@ -134,8 +211,6 @@ public sealed class ShopDutyJobHelperTests
     [InlineData(GrandCompany.ImmortalFlames, ShopHelper.FlameSealItemId)]
     public void SealItemId_AnswersWithoutAGame(GrandCompany company, uint expected)
     {
-        // The currencies are Item rows, so they answer from static sheet data with nothing running: no client, no
-        // logged-in character, no inventory.
         ShopHelper.SealItemId(company).Should().Be(expected);
         ShopHelper.GilItemId.Should().Be(1);
     }
@@ -154,8 +229,7 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void DutyInfo_HoldsTheRouletteRowIdsTheGameItselfNumbers()
     {
-        // A roulette is a ContentRoulette row, not a name written down here: row 1 is Leveling and row 9 is Mentor on
-        // every client, and a roulette added in a later patch is just another row id.
+        // Row 1 is Leveling and row 9 is Mentor on every client.
         var duty = Duty(roulettes: [1, 9]);
 
         duty.IsInRoulette(1).Should().BeTrue();
@@ -166,8 +240,6 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void DutyInfo_IsOnlyInstanceContentWhenItsLinkTypeSaysSo()
     {
-        // The content column points into whichever sheet the link type names, so a non-instanced duty's content id is
-        // a row in some other sheet and must not be handed to an instance content lookup.
         Duty(contentId: 20, contentLinkType: ContentType.Instance).IsInstanceContent.Should().BeTrue();
         Duty(contentId: 20, contentLinkType: ContentType.Public).IsInstanceContent.Should().BeFalse();
         Duty(contentId: 0, contentLinkType: ContentType.Instance).IsInstanceContent.Should().BeFalse();
@@ -203,8 +275,7 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void ClassJobInfo_DoesNotCallACrafterOrGathererABattleJob()
     {
-        // A crafter and a gatherer sit outside the battle job numbering entirely, so their zero there means "not a
-        // battle job", never "not a job". They are recognised by their own index instead.
+        // Crafters and gatherers have no battle job index. Zero there means "not a battle job".
         var crafter = Job(jobIndex: 0, handOrLandIndex: 0, battleClassIndex: -1);
 
         crafter.IsBattleJob.Should().BeFalse();
@@ -215,8 +286,6 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void ClassJobInfo_SeparatesABattleClassFromTheJobItAdvancesInto()
     {
-        // A base class has a place in the class numbering and none in the job numbering; a job that was introduced
-        // outright has both, so the class test has to exclude anything already numbered as a job.
         Job(jobIndex: 0, battleClassIndex: 0).IsBattleClass.Should().BeTrue();
         Job(jobIndex: 11, battleClassIndex: 9).IsBattleClass.Should().BeFalse();
         Job(jobIndex: 1, battleClassIndex: -1).IsBattleClass.Should().BeFalse();
@@ -247,8 +316,7 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void ClassJobInfo_IsHandOrLandOnlyWithAnIndexAmongThem()
     {
-        // The game gives every crafter and gatherer an index among them and every battle job -1, which is the test
-        // with nothing written down: no row id, no abbreviation, no category number.
+        // The game gives every crafter and gatherer an index among them and every battle job -1.
         Job(handOrLandIndex: -1).IsHandOrLand.Should().BeFalse();
         Job(handOrLandIndex: 0).IsHandOrLand.Should().BeTrue();
         Job(handOrLandIndex: 7).IsHandOrLand.Should().BeTrue();
@@ -257,8 +325,6 @@ public sealed class ShopDutyJobHelperTests
     [Fact]
     public void CategoryIncludes_RejectsAClassJobTheCategorySheetHasNoColumnFor()
     {
-        // The sheet holds one column per class and job, so an id past the last column can only ever be false and must
-        // not be looked up as though it had one.
         ClassJobHelper.CategoryIncludes(1, 4000).Should().BeFalse();
     }
 
@@ -330,6 +396,24 @@ public sealed class ShopDutyJobHelperTests
 
     #region Sample data
 
+    private const uint FireCrystalItemId = 7;
+
+    private static ShopCatalog ReachableSampleCatalog()
+    {
+        var sample = SampleCatalog();
+        var shopsByItem = new Dictionary<uint, IReadOnlyList<uint>>(sample.ShopsByItem) { [6174] = [262300u] };
+        var offersByShop = new Dictionary<uint, IReadOnlyList<ShopOffer>>(sample.OffersByShop)
+        {
+            [262300] = [Offer(262300, EventHandlerContent.Shop, 6174, [new ShopCost(ShopHelper.GilItemId, 2400)])],
+        };
+
+        return new ShopCatalog(
+            shopsByItem,
+            offersByShop,
+            sample.KindsByShop,
+            new Dictionary<uint, IReadOnlyList<uint>> { [262200] = [1000u] });
+    }
+
     private static ShopOffer Offer(
         uint shopId = 262100,
         EventHandlerContent kind = EventHandlerContent.Shop,
@@ -337,10 +421,6 @@ public sealed class ShopDutyJobHelperTests
         IReadOnlyList<ShopCost>? costs = null)
         => new(shopId, kind, itemId, 1, false, costs ?? [new ShopCost(ShopHelper.GilItemId, 1000)], [], 0, 0);
 
-    /// <summary>
-    /// Two gil shops selling the same item at different prices, and a token shop selling something else, which is the
-    /// smallest shape that exercises every catalog query.
-    /// </summary>
     private static ShopCatalog SampleCatalog()
     {
         var first = Offer(262100, EventHandlerContent.Shop, 4850, [new ShopCost(ShopHelper.GilItemId, 1000)]);

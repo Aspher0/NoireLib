@@ -66,7 +66,7 @@ public readonly struct Draw3DStats
     /// <summary>The active depth route and format, the live depth-calibration fit, and the UI-mask health.</summary>
     public required string DepthSource { get; init; }
 
-    /// <summary>Whether the wholesale VP camera fallback was active last frame.</summary>
+    /// <summary>Whether no render camera was readable last frame and it projected with the control's view-projection alone.</summary>
     public required bool UsedFallbackCamera { get; init; }
 
     /// <summary>Whether last frame projected with the captured GPU camera constants.</summary>
@@ -74,6 +74,9 @@ public readonly struct Draw3DStats
 
     /// <summary>Frames projected with the captured GPU camera constants since the last counter reset.</summary>
     public required long GpuCameraFrames { get; init; }
+
+    /// <summary>Frames with no captured GPU camera, projected with the control's view-projection instead.</summary>
+    public required long ControlCameraFrames { get; init; }
 
     /// <summary>Camera-constant capture state: locked identity and health, or why it is inactive.</summary>
     public required string CameraCapture { get; init; }
@@ -101,7 +104,7 @@ public readonly struct Draw3DStats
           frames: rendered {FramesRendered}, skipped (disabled {FramesSkippedDisabled}, init {FramesSkippedInitPending}, device {FramesSkippedNoDevice}, camera {FramesSkippedNoCamera}, size {FramesSkippedZeroSize}, empty {FramesSkippedEmpty}, ui-hidden {FramesSkippedUiHidden})
           last frame: draws {DrawCalls}, batches {Batches}, instances {Instances}, tris {Triangles}, visible {VisibleItems}, culled {CulledItems}, objectCb updates {ObjectCbUpdates}
           depth: available {DepthAvailable} ({DepthSource}), depth-off frames {DepthOffFrames} | camera fallback: {UsedFallbackCamera}
-          camera capture: {CameraCapture} | gpu-camera last frame: {UsedGpuCamera}, frames {GpuCameraFrames}
+          camera capture: {CameraCapture} | gpu-camera last frame: {UsedGpuCamera}, frames {GpuCameraFrames}, control-camera fallback frames {ControlCameraFrames}
           protection rects: {ProtectRects} | disposed-asset draws: {DisposedAssetDraws} | Im dropped: {ImCommandsDropped}
           gpu: scene {SceneGpuMs:F3} ms, composite {CompositeGpuMs:F3} ms
           last pick: {LastPickMicros} us, {LastPickNodes} nodes, {LastPickRefined} refined

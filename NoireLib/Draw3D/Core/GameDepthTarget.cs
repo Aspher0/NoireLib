@@ -3,27 +3,18 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// A writable depth-stencil view over the game's scene depth buffer, used ONLY by DepthAware: at pre-UI injection time
-// Draw3D re-rasterizes its opaque objects' depth into the game's buffer (greater-equal tested against the world's own
-// depth), so the game's later nameplate pass occludes against 3D objects that stand in front of a character. This
-// deliberately departs from the usual rule that the game's depth buffer is read-only; hence it is fail-soft, and
-// re-derives itself whenever the underlying texture changes (resolution, GPose, upscaler).
+// Writes Draw3D's opaque depth into the game's buffer so the nameplate pass occludes against it. The one exception to read-only depth.
 internal sealed unsafe class GameDepthTarget : System.IDisposable
 {
     private ComPtr<ID3D11DepthStencilView> dsv;
     private nint lastTexture;
     private bool loggedUnknownFormat;
 
-    /// <summary>Actual (rendered) width of the depth region this frame - the viewport width for the depth-write.</summary>
+    // The rendered size.
     public uint Width { get; private set; }
 
-    /// <summary>Actual (rendered) height of the depth region this frame - the viewport height for the depth-write.</summary>
     public uint Height { get; private set; }
 
-    /// <summary>
-    /// Ensures a DSV over the current scene depth texture, recreating it only when the texture pointer changes.
-    /// Returns null when depth is unavailable or the format cannot back a depth-stencil view (then depth-write is skipped).
-    /// </summary>
     public ID3D11DepthStencilView* Ensure(RenderDevice device)
     {
         if (!GameRenderSources.TryGetDepthTexture(out var info))
@@ -77,7 +68,6 @@ internal sealed unsafe class GameDepthTarget : System.IDisposable
         }
     }
 
-    // Maps a (typeless or typed) depth texture format to the DSV format that writes its depth plane.
     private static DXGI_FORMAT DsvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT => DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT,
@@ -87,7 +77,6 @@ internal sealed unsafe class GameDepthTarget : System.IDisposable
         _ => DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
     };
 
-    /// <summary>Drops the current DSV. The next <see cref="Ensure"/> re-acquires.</summary>
     public void Invalidate()
     {
         dsv.Dispose();
@@ -95,6 +84,5 @@ internal sealed unsafe class GameDepthTarget : System.IDisposable
         lastTexture = 0;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Invalidate();
 }

@@ -5,14 +5,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// One-frame diagnostic for the game's shadow passes: which depth-only binds the frame runs, what each one renders
-// into, and what sits in the VS constant buffers at each one's first draw. Shadow casting needs the LIGHT's
-// view-projection, per cascade, and nothing on the CPU side hands it over - it has to be found in the constants the
-// game's own shadow draws consume. The camera capture cannot be reused as-is: its matching strategy validates
-// candidates against a same-instant struct camera read, and no such reference exists for a light. This probe reads
-// what is actually there and classifies the matrix-shaped windows (an orthographic projection reads very differently
-// from an object's rigid world transform). Armed for exactly one frame; every capture is a CopyResource plus a
-// synchronous map, so the frame it runs on stalls - a one-shot diagnostic, never a resident cost.
+// The light's per-cascade view-projection is not exposed CPU side. It has to be found in the VS constants. The armed frame stalls.
 internal sealed unsafe class ShadowProbe : IDisposable
 {
     private const int MaxBinds = 12;
@@ -30,10 +23,8 @@ internal sealed unsafe class ShadowProbe : IDisposable
     private readonly int[] stagingSizes = new int[MaxStagingPool];
     private int stagingCount;
 
-    /// <summary>Whether the probe is watching the current frame.</summary>
     public bool Armed => armed;
 
-    /// <summary>Arms the probe for the next frame's depth-only binds.</summary>
     public void Arm()
     {
         report.Clear();
@@ -43,13 +34,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
         armed = true;
     }
 
-    /// <summary>
-    /// A depth-only bind just applied (no color target resolved, a depth-stencil present). Records what it
-    /// renders into; the constants are read at the bind's first draw, because at the bind itself the VS slots
-    /// still hold the previous pass's buffers - the same trap the camera capture documented.
-    /// </summary>
-    /// <param name="dsv">The bound depth-stencil view.</param>
-    /// <param name="isMainSceneDepth">Whether this is the scene's own depth, so a pre-pass is not mistaken for a shadow map.</param>
+    // At the bind itself the VS slots still hold the previous pass's buffers.
     public void OnDepthOnlyBind(nint dsv, bool isMainSceneDepth)
     {
         if (!armed || dsv == 0)
@@ -82,11 +67,10 @@ internal sealed unsafe class ShadowProbe : IDisposable
         if (viewDesc.ViewDimension == D3D11_DSV_DIMENSION.D3D11_DSV_DIMENSION_TEXTURE2DARRAY)
             report.Append($" slice {viewDesc.Texture2DArray.FirstArraySlice}");
 
-        report.AppendLine(isMainSceneDepth ? "  (MAIN scene depth - a pre-pass, not a shadow map)" : string.Empty);
+        report.AppendLine(isMainSceneDepth ? "  (main scene depth pre-pass)" : string.Empty);
         pendingDraw = true;
     }
 
-    /// <summary>First draw after a recorded depth-only bind: reads the VS constant buffers as bound right now.</summary>
     public void OnGameDraw(ID3D11DeviceContext* ctx)
     {
         if (!armed || !pendingDraw)
@@ -115,7 +99,6 @@ internal sealed unsafe class ShadowProbe : IDisposable
         }
     }
 
-    /// <summary>Frame over: logs the report and disarms. Idempotent when not armed.</summary>
     public void OnFrameBoundary()
     {
         if (!armed)
@@ -133,10 +116,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
         report.Clear();
     }
 
-    // Copies one bound constant buffer to the CPU and reports every window that reads as a matrix. The classification
-    // is deliberately shallow - the probe's job is to make the candidates visible, not to decide. Row norms
-    // distinguish an orthographic projection (small, axis-dependent scales) from an object's rigid world transform
-    // (unit rows); the reader makes that call from the numbers in the report.
+    // Row norms separate an orthographic projection from a rigid world transform.
     private void ScanBuffer(ID3D11DeviceContext* ctx, ID3D11Buffer* buffer, int slot, int byteWidth)
     {
         var staging = AcquireStaging(ctx, byteWidth);
@@ -168,10 +148,8 @@ internal sealed unsafe class ShadowProbe : IDisposable
         }
     }
 
-    // Reports one 16-float window when it is matrix-shaped, in both layouts it could be stored in.
     private void DescribeWindow(ReadOnlySpan<float> window, int slot, int byteOffset)
     {
-        // Copied out because a span cannot be captured by the accessor below; sixteen floats.
         var w = new float[16];
         for (var i = 0; i < 16; i++)
         {
@@ -183,8 +161,6 @@ internal sealed unsafe class ShadowProbe : IDisposable
 
         for (var transposed = 0; transposed < 2; transposed++)
         {
-            // Read as row-vector convention (the camera's): rows 0..2 are the basis, row 3 the translation,
-            // column 3 the projective part. The transposed pass reads the same bytes column-major.
             float At(int r, int c) => transposed == 0 ? w[(r * 4) + c] : w[(c * 4) + r];
 
             var col3 = (X: At(0, 3), Y: At(1, 3), Z: At(2, 3), W: At(3, 3));
@@ -201,7 +177,7 @@ internal sealed unsafe class ShadowProbe : IDisposable
             if (!affine && !perspective)
                 continue;
 
-            // An identity is a matrix too, and reporting hundreds of them would bury the real candidates.
+            // There are hundreds of identities.
             var identity = affine
                            && MathF.Abs(r0 - 1f) < 1e-5f && MathF.Abs(r1 - 1f) < 1e-5f && MathF.Abs(r2 - 1f) < 1e-5f
                            && MathF.Abs(At(3, 0)) < 1e-5f && MathF.Abs(At(3, 1)) < 1e-5f && MathF.Abs(At(3, 2)) < 1e-5f;
@@ -215,7 +191,6 @@ internal sealed unsafe class ShadowProbe : IDisposable
         }
     }
 
-    // A CPU-readable staging buffer of the given size, pooled per distinct size.
     private ID3D11Buffer* AcquireStaging(ID3D11DeviceContext* ctx, int byteWidth)
     {
         for (var i = 0; i < stagingCount; i++)
@@ -251,7 +226,6 @@ internal sealed unsafe class ShadowProbe : IDisposable
         return buffer;
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         for (var i = 0; i < stagingCount; i++)

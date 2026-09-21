@@ -4,9 +4,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Blend state catalog keys. CompositeRgb is premultiplied with the alpha write masked off - the backbuffer's alpha
-// channel is the game's native-UI coverage (our per-pixel mask source, and other overlay libraries read it too), so
-// the composite must never write into it.
+// CompositeRgb masks off the alpha write. The composite never writes the present buffer's alpha.
 internal enum BlendKey { Opaque = 0, Premultiplied = 1, Additive = 2, CompositeRgb = 3, Max = 4 }
 
 internal enum DepthKey { WriteGE = 0, ReadGE = 1, Disabled = 2 }
@@ -15,8 +13,7 @@ internal enum RasterKey { CullBack = 0, CullFront = 1, TwoSided = 2, Wire = 3 }
 
 internal enum SamplerKey { PointClamp = 0, LinearWrap = 1, LinearClamp = 2 }
 
-// Lazily-created, enum-keyed immutable pipeline state objects. Exact descriptor values are normative: blending is
-// premultiplied everywhere translucent, and depth bias stays zero (the SRV-compare design needs none).
+// Depth bias stays zero. The SRV-compare design needs none.
 internal sealed unsafe class StateCache : IDisposable
 {
     private readonly ComPtr<ID3D11BlendState>[] blends = new ComPtr<ID3D11BlendState>[5];
@@ -24,7 +21,6 @@ internal sealed unsafe class StateCache : IDisposable
     private readonly ComPtr<ID3D11RasterizerState>[] rasters = new ComPtr<ID3D11RasterizerState>[4];
     private readonly ComPtr<ID3D11SamplerState>[] samplers = new ComPtr<ID3D11SamplerState>[3];
 
-    /// <summary>Gets (creating on first use) the blend state for a key.</summary>
     public ID3D11BlendState* GetBlend(RenderDevice device, BlendKey key)
     {
         ref var slot = ref blends[(int)key];
@@ -38,7 +34,7 @@ internal sealed unsafe class StateCache : IDisposable
         {
             case BlendKey.Opaque:
                 rt.BlendEnable = BOOL.FALSE;
-                // All descriptor fields must still be valid enum values even when disabled.
+                // Descriptor fields must be valid enum values even when disabled.
                 rt.SrcBlend = D3D11_BLEND.D3D11_BLEND_ONE;
                 rt.DestBlend = D3D11_BLEND.D3D11_BLEND_ZERO;
                 rt.BlendOp = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD;
@@ -73,8 +69,7 @@ internal sealed unsafe class StateCache : IDisposable
                 rt.BlendOpAlpha = D3D11_BLEND_OP.D3D11_BLEND_OP_ADD;
                 break;
             case BlendKey.Max:
-                // Keep the maximum of src/dest - the top-down collision height-map accumulates the HIGHEST world Y per
-                // texel. Blend factors are ignored for MIN/MAX ops but must still be valid enum values.
+                // Blend factors are ignored for MAX but must be valid enum values.
                 rt.BlendEnable = BOOL.TRUE;
                 rt.SrcBlend = D3D11_BLEND.D3D11_BLEND_ONE;
                 rt.DestBlend = D3D11_BLEND.D3D11_BLEND_ONE;
@@ -89,7 +84,6 @@ internal sealed unsafe class StateCache : IDisposable
         return slot.Get();
     }
 
-    /// <summary>Gets (creating on first use) the depth-stencil state for a key.</summary>
     public ID3D11DepthStencilState* GetDepth(RenderDevice device, DepthKey key)
     {
         ref var slot = ref depths[(int)key];
@@ -108,7 +102,6 @@ internal sealed unsafe class StateCache : IDisposable
         return slot.Get();
     }
 
-    /// <summary>Gets (creating on first use) the rasterizer state for a key.</summary>
     public ID3D11RasterizerState* GetRaster(RenderDevice device, RasterKey key)
     {
         ref var slot = ref rasters[(int)key];
@@ -133,7 +126,7 @@ internal sealed unsafe class StateCache : IDisposable
         return slot.Get();
     }
 
-    /// <summary>Gets (creating on first use) the sampler for a key. Scene depth must use PointClamp (bilinear depth = halo bug).</summary>
+    // Bilinear depth filtering produces halos.
     public ID3D11SamplerState* GetSampler(RenderDevice device, SamplerKey key)
     {
         ref var slot = ref samplers[(int)key];
@@ -155,7 +148,6 @@ internal sealed unsafe class StateCache : IDisposable
         return slot.Get();
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         for (var i = 0; i < blends.Length; i++) blends[i].Dispose();

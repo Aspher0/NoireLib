@@ -3,23 +3,17 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Read-only access to the stencil plane of the game's scene depth-stencil buffer (bound only as an SRV, never a DSV),
-// so a ground decal can occlude itself along an excluded character's silhouette without any volume. Creates its own
-// *_G8_UINT view of the typeless depth-stencil texture; formats with no stencil plane leave this off and the decal
-// paints as before. Mirrors SceneDepth; re-derives on any texture change.
 internal sealed unsafe class SceneStencil : System.IDisposable
 {
     private ComPtr<ID3D11ShaderResourceView> srv;
     private GameRenderSources.DepthTextureInfo lastInfo;
     private bool valid;
 
-    /// <summary>The stencil SRV for this frame (a <c>uint2</c> texture; stencil is the G channel), or null when unavailable.</summary>
+    // uint2 with stencil in G. Null when unavailable.
     public ID3D11ShaderResourceView* Srv => valid ? srv.Get() : null;
 
-    /// <summary>True when the stencil plane is readable this frame.</summary>
     public bool IsValid => valid;
 
-    /// <summary>Per-frame validation and (re)acquisition. Cheap when nothing changed. Returns true when stencil is usable.</summary>
     public bool Update(RenderDevice device)
     {
         if (!GameRenderSources.TryGetDepthTexture(out var info))
@@ -44,7 +38,7 @@ internal sealed unsafe class SceneStencil : System.IDisposable
 
             var stencilFormat = StencilSrvFormat(texDesc.Format);
             if (stencilFormat == DXGI_FORMAT.DXGI_FORMAT_UNKNOWN)
-                return false; // this depth format carries no stencil plane - feature stays off
+                return false;
 
             var srvDesc = new D3D11_SHADER_RESOURCE_VIEW_DESC
             {
@@ -66,8 +60,6 @@ internal sealed unsafe class SceneStencil : System.IDisposable
         }
     }
 
-    // Maps a depth-stencil texture's (typeless) format to the SRV format that reads its stencil plane, or UNKNOWN
-    // when it has none.
     internal static DXGI_FORMAT StencilSrvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT
@@ -77,7 +69,6 @@ internal sealed unsafe class SceneStencil : System.IDisposable
         _ => DXGI_FORMAT.DXGI_FORMAT_UNKNOWN,
     };
 
-    /// <summary>Drops the current SRV. The next Update re-acquires.</summary>
     public void Invalidate()
     {
         srv.Dispose();
@@ -86,6 +77,5 @@ internal sealed unsafe class SceneStencil : System.IDisposable
         lastInfo = default;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Invalidate();
 }

@@ -1,3 +1,4 @@
+using Dalamud.Interface.Windowing;
 using NoireLib.Core.Modules;
 using NoireLib.Database;
 using System;
@@ -22,7 +23,6 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     private string databaseName = DefaultDatabaseName;
     private int entriesVersion;
 
-    // UI Control flags
     private bool allowUserTogglePersistence = false;
     private bool allowUserClearInMemory = true;
     private bool allowUserClearDatabase = true;
@@ -57,7 +57,6 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         bool allowManualEntryCreation = false)
             : base(moduleId, active, enableLogging, persistLogs, databaseName, allowUserTogglePersistence, allowUserClearInMemory, allowUserClearDatabase, allowManualEntryCreation) { }
 
-    // Constructor for use with AddModule{T}(string?) with . Only used for internal module management.
     internal NoireHistoryLogger(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -112,8 +111,54 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         set => allowManualEntryCreation = value;
     }
 
-    // A counter bumped whenever the entries returned by GetEntriesSnapshot change. Lets a reader tell that its cached
-    // view is still current without taking a snapshot to compare against.
+    /// <summary>
+    /// Whether the user may delete individual entries: <see cref="AllowUserClearDatabase"/> while persisting, <see cref="AllowUserClearInMemory"/> otherwise.
+    /// </summary>
+    public bool CanUserDeleteEntries => persistLogs ? allowUserClearDatabase : allowUserClearInMemory;
+
+    /// <summary>
+    /// The plugin's own log window, shown in place of the built-in <see cref="HistoryLoggerWindow"/>, or <see langword="null"/>.
+    /// </summary>
+    public Window? CustomWindow => CustomDisplayWindow;
+
+    /// <summary>
+    /// Makes <see cref="NoireModuleWithWindowBase{TModule, TWindow}.ShowWindow"/> and the other window methods open
+    /// <paramref name="window"/> in place of the built-in one.<br/>
+    /// The plugin draws the window itself, typically from a <see cref="HistoryLogView"/>. <see langword="null"/> restores the built-in window.
+    /// </summary>
+    /// <param name="window">The plugin's window, or <see langword="null"/>.</param>
+    /// <returns>The module instance for chaining.</returns>
+    public NoireHistoryLogger SetCustomWindow(Window? window)
+    {
+        SetCustomDisplayWindow(window);
+        return this;
+    }
+
+    /// <summary>
+    /// Formats an entry as one line: <c>yyyy-MM-dd HH:mm:ss | Level | Category | Message | Source</c>, with <c>-</c> for a missing source.
+    /// </summary>
+    /// <param name="entry">The entry to format.</param>
+    /// <returns>The formatted line.</returns>
+    public static string FormatEntry(HistoryLogEntry entry)
+    {
+        ArgumentNullException.ThrowIfNull(entry);
+
+        var source = string.IsNullOrWhiteSpace(entry.Source) ? "-" : entry.Source;
+        return $"{entry.Timestamp:yyyy-MM-dd HH:mm:ss} | {entry.Level} | {entry.Category} | {entry.Message} | {source}";
+    }
+
+    /// <summary>
+    /// Formats entries with <see cref="FormatEntry"/>, one per line, for the clipboard or a file.
+    /// </summary>
+    /// <param name="entries">The entries to format, in output order.</param>
+    /// <returns>The formatted text.</returns>
+    public static string FormatEntries(IEnumerable<HistoryLogEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        return string.Join(Environment.NewLine, entries.Select(FormatEntry));
+    }
+
+    // Lets a reader tell its cached view is current without taking a snapshot.
     internal int EntriesVersion
     {
         get
@@ -145,8 +190,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// Removes a log entry from memory, and from the database when persisted, respecting the
     /// <see cref="AllowUserClearInMemory"/> and <see cref="AllowUserClearDatabase"/> permissions.<br/>
     /// Pass the entry <see cref="AddEntry(HistoryLogEntry)"/> returned, or one read from a snapshot. A hand-built
-    /// entry is not the one the module stored: persistence stamps the stored copy with a database id, and
-    /// normalization can rewrite its fields, so it is not guaranteed to match.
+    /// entry is not guaranteed to match the stored one. Persistence stamps it with a database id, and normalization
+    /// can rewrite its fields.
     /// </summary>
     /// <param name="entry">The entry to remove.</param>
     /// <returns><see langword="true"/> if an entry was removed.</returns>
@@ -165,18 +210,15 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
             if (allowUserClearDatabase)
                 removed |= RemoveMatchingEntry(databaseEntries, entry);
 
-            // The permission and the persistence flag are read once, alongside the removal they gate, so that the
-            // delete below cannot run against a decision the in-memory removal was not made from.
+            // The delete must use the same decision as the in-memory removal.
             deleteFromDatabase = allowUserClearDatabase && persistLogs;
 
-            // Bumping alongside the mutation keeps a reader from observing changed entries under an unchanged version
-            // and caching that view for as long as nothing else changes.
+            // Bumped with the mutation. A reader must never see changed entries under an unchanged version.
             if (removed)
                 entriesVersion++;
         }
 
-        // The delete opens the database and blocks for the whole round trip, so it runs outside the lock the window
-        // takes to read the entries and their version on every frame it draws. It leaves no in-memory state to update.
+        // The delete blocks for the whole round trip. It runs outside the lock the window takes every frame.
         if (deleteFromDatabase && entry.Id is long id)
         {
             var deleted = ExecuteDatabaseQuery(builder => builder.Where("id", id).Delete());
@@ -193,8 +235,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     public void ExecuteDatabaseQuery(Action<QueryBuilder<HistoryLogEntryModel>> action)
     {
-        // Checked before the call rather than by the query builder, which opens the database and creates the table
-        // before it ever reaches the action.
+        // Before the query builder opens the database and creates the table.
         ArgumentNullException.ThrowIfNull(action);
 
         HistoryLogEntryModel.ExecuteQuery(databaseName, action);
@@ -208,8 +249,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <exception cref="ArgumentNullException">Thrown when <paramref name="action"/> is <see langword="null"/>.</exception>
     public TResult ExecuteDatabaseQuery<TResult>(Func<QueryBuilder<HistoryLogEntryModel>, TResult> action)
     {
-        // Checked before the call rather than by the query builder, which opens the database and creates the table
-        // before it ever reaches the action.
+        // Before the query builder opens the database and creates the table.
         ArgumentNullException.ThrowIfNull(action);
 
         return HistoryLogEntryModel.ExecuteQuery(databaseName, action);
@@ -262,8 +302,8 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// </summary>
     protected override void OnDeactivated()
     {
-        if (ModuleWindow?.IsOpen == true)
-            ModuleWindow.IsOpen = false;
+        if (DisplayedWindow?.IsOpen == true)
+            DisplayedWindow.IsOpen = false;
 
         if (EnableLogging)
             NoireLogger.LogInfo(this, "History Logger deactivated.");
@@ -296,8 +336,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
 
         persistLogs = persist;
 
-        // Toggling persistence swaps which list GetEntriesSnapshot reads from, so the snapshot changes even
-        // though no entry was touched.
+        // Toggling persistence swaps the list GetEntriesSnapshot reads.
         lock (entryLock)
             entriesVersion++;
 
@@ -376,7 +415,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <param name="category">Optional category.</param>
     /// <param name="level">Optional severity level.</param>
     /// <param name="source">Optional source name.</param>
-    /// <returns>The entry as it is stored; pass this to <see cref="RemoveEntry"/>.</returns>
+    /// <returns>The entry as it is stored. Pass this to <see cref="RemoveEntry"/>.</returns>
     public HistoryLogEntry AddEntry(string message, string? category = null, HistoryLogLevel level = HistoryLogLevel.Info, string? source = null)
     {
         var entry = new HistoryLogEntry
@@ -391,16 +430,10 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return AddEntry(entry);
     }
 
-    /// <summary>
-    /// Adds a log entry and persists it if configured.
-    /// </summary>
+    /// <summary>Adds a log entry and persists it if configured.</summary>
     /// <param name="entry">The entry to add.</param>
-    /// <returns>
-    /// The entry as it is stored: normalized, and carrying the database <see cref="HistoryLogEntry.Id"/> if persisted.
-    /// Differs from <paramref name="entry"/>, which stays untouched; keep this value for a later
-    /// <see cref="RemoveEntry"/> call.
-    /// </returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="entry"/> is <see langword="null"/>.</exception>
+    /// <returns>The entry as stored, normalized and carrying its database <see cref="HistoryLogEntry.Id"/> if persisted. Keep it for <see cref="RemoveEntry"/>.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="entry"/> is <see langword="null"/>.</exception>
     public HistoryLogEntry AddEntry(HistoryLogEntry entry)
     {
         ArgumentNullException.ThrowIfNull(entry);
@@ -492,8 +525,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
     /// <param name="replaceExisting">Whether to replace existing entries.</param>
     public void LoadEntriesFromDatabase(bool replaceExisting)
     {
-        // Ascending by id keeps the oldest entry at index 0: both the append path and TrimEntries's front-trim
-        // assume that order. Loading newest first would make trimming drop the newest rows instead.
+        // Oldest at index 0. The append path and TrimEntries both assume it.
         var models = HistoryLogEntryModel.ExecuteQuery(databaseName, builder => builder.OrderByAsc("id").Get());
         var loadedEntries = models.Select(ToEntryFromModel).Where(entry => entry != null).Cast<HistoryLogEntry>().ToList();
 
@@ -560,8 +592,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
 
     private static bool RemoveMatchingEntry(List<HistoryLogEntry> target, HistoryLogEntry entry)
     {
-        // A persisted entry is matched on its database id, not by value: a timestamp round-trips through text on
-        // save and reload, so a reloaded entry is not dependably equal by value to the one that was written.
+        // A timestamp round-trips through text. Persisted entries match on their database id.
         if (entry.Id is not long id)
             return target.Remove(entry);
 
@@ -580,8 +611,7 @@ public class NoireHistoryLogger : NoireModuleWithWindowBase<NoireHistoryLogger, 
         return entry with { Category = category, Message = message };
     }
 
-    // Drops the oldest entries from  until it holds at most  of them. Entry lists are ordered oldest first, so the
-    // excess is removed from the front.
+    // Lists are ordered oldest first.
     internal static void TrimEntries(List<HistoryLogEntry> target, int maxEntries)
     {
         if (maxEntries <= 0)

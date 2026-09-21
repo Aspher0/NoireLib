@@ -53,6 +53,9 @@ public sealed class TooltipStyle
     /// <summary>Whether the tooltip is kept fully inside the viewport.</summary>
     public bool ClampToViewport { get; set; } = true;
 
+    /// <summary>The widest the tooltip's text runs at 100% before it wraps. Zero means no limit.</summary>
+    public float MaxWidth { get; set; } = 380f;
+
     /// <summary>
     /// Replaces the tooltip's background and border with custom painting, while NoireUI keeps placement, measuring and
     /// the content.
@@ -68,6 +71,8 @@ public sealed class TooltipStyle
     internal Vector2 ScaledMouseOffset => NoireUI.Scaled(MouseOffset);
 
     internal float ScaledItemGap => NoireUI.Scaled(ItemGap);
+
+    internal float ScaledMaxWidth => MaxWidth > 0f ? NoireUI.Scaled(MaxWidth) : 0f;
 
     internal Vector2 ScaledItemOffset => NoireUI.Scaled(ItemOffset);
 

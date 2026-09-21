@@ -1,29 +1,20 @@
+﻿using FFXIVClientStructs.FFXIV.Client.LayoutEngine.Layer;
+using Lumina.Data.Parsing.Layer;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Lumina.Data.Files;
-using Lumina.Data.Parsing.Layer;
 
 namespace NoireLib.Helpers;
 
 /// <summary>
-/// Reads a territory's placed objects out of its level (<c>.lgb</c>) files: the crystals, zone lines, spawn volumes,
-/// NPCs, and interactables the game lays a place out with. Resolving the level directory from a territory's <c>Bg</c>
-/// string is a pure rule; the file read itself goes through the game's data archives. A missing or unreadable file
-/// yields an empty result rather than throwing.
-/// <br/>
-/// A level file states what <i>could</i> stand in a territory, never what does: layers are switched on and off for
-/// quest progress, instance, phase, and season. Use <see cref="LayoutHelper.IsInstancePlaced"/> to ask the loaded
-/// game layout whether a particular placement is really standing there.
+/// Reads a territory's placed objects out of its <c>.lgb</c> level files. A missing or unreadable file yields an empty result.<br/>
+/// A level file states what could stand in a territory. Use <see cref="LayoutHelper.IsInstancePlaced"/> to ask whether a placement is really there.
 /// </summary>
 public static class LevelFileHelper
 {
     private const string LevelSegment = "/level/";
 
-    /// <summary>
-    /// The level files a territory is laid out across. A place's objects are spread over several of them rather than
-    /// one, so anything wanting a complete picture reads more than a single file.
-    /// </summary>
+    /// <summary>The level files a territory is laid out across.</summary>
     public static class Files
     {
         /// <summary>The map layout: aetheryte crystals, shared groups, and the zone-boundary ExitRanges.</summary>
@@ -38,11 +29,11 @@ public static class LevelFileHelper
         /// <summary>
         /// The live layout: the arrival volumes of the places whose contents the game switches on and off, such as a
         /// Grand Company barracks or a story tower's floors. It holds arrival volumes that appear in no other level
-        /// file, so a warp landing in one of those places resolves to no position without it.
+        /// file. A warp landing in one of those places resolves to no position without it.
         /// </summary>
         public const string PlanLive = "planlive.lgb";
 
-        /// <summary>The static scenery layout. Large and holding nothing interactable, so it is rarely worth reading.</summary>
+        /// <summary>The static scenery layout. Large and holding nothing interactable. Rarely worth reading.</summary>
         public const string Background = "bg.lgb";
 
         /// <summary>
@@ -121,7 +112,7 @@ public static class LevelFileHelper
     /// <summary>Reads a territory's placed objects from one of its level files.</summary>
     /// <param name="territoryBg">The TerritoryType.Bg string.</param>
     /// <param name="fileName">The level file name, one of <see cref="Files"/>.</param>
-    /// <param name="filter">What to keep; the default keeps every mapped kind.</param>
+    /// <param name="filter">What to keep. The default keeps every mapped kind.</param>
     /// <returns>The placed objects, or an empty list when the file is missing or unreadable.</returns>
     public static IReadOnlyList<LevelObject> ReadObjects(
         string territoryBg,
@@ -134,40 +125,27 @@ public static class LevelFileHelper
 
         return SafeExecutor.ExecuteSafely(() =>
         {
-            // Read the raw bytes and validate the layer-group header BEFORE letting Lumina parse the file. A handful
-            // of stub planner.lgb files are malformed: they carry the file magic but a blank chunk magic, so Lumina's
-            // parser reads a garbage layer count and attempts a multi-gigabyte allocation that throws OutOfMemory. In
-            // game, with the client already holding several gigabytes, each such attempt first triggers a long
-            // blocking garbage collection, so seventeen of them across the world froze the client for tens of
-            // seconds. Skipping them on the raw header, which never parses, avoids the bad allocation entirely.
-            var raw = NoireService.DataManager.GetFile(directory + fileName);
-            if (!IsParseable(raw?.Data))
+            var data = NoireService.DataManager.GetFile(directory + fileName)?.Data;
+            if (data == null)
                 return (IReadOnlyList<LevelObject>)[];
 
-            var lgb = NoireService.DataManager.GetFile<LgbFile>(directory + fileName);
-            if (lgb == null)
+            var layers = LayerGroupHelper.ReadLevel(data);
+            if (layers.Count == 0)
                 return (IReadOnlyList<LevelObject>)[];
 
-            // Which territories each layer belongs to, in the file's own layer order. Read from the bytes, since
-            // Lumina resolves a layer's set list against the wrong base. A file whose layer count does not line up
-            // is left unstamped rather than mis-stamped: a wrong attribution would hide a real placement.
-            var territories = LayerSetHelper.ReadLayerTerritories(territoryBg, fileName);
-            if (territories.Count != lgb.Layers.Length)
-                territories = [];
+            var territories = LayerSetHelper.ResolveLayerTerritories(territoryBg, layers);
 
             var list = new List<LevelObject>();
-            for (var layerIndex = 0; layerIndex < lgb.Layers.Length; layerIndex++)
+            for (var layerIndex = 0; layerIndex < layers.Count; layerIndex++)
             {
-                var layer = lgb.Layers[layerIndex];
-                var layerTerritories = territories.Count == 0 ? null : territories[layerIndex];
-                foreach (var instance in layer.InstanceObjects)
+                var layer = layers[layerIndex];
+                var layerTerritories = territories[layerIndex];
+                foreach (var entry in layer.Entries)
                 {
-                    // The layer, not the object, carries the seasonal condition and the layer sets, so both are
-                    // stamped onto every object read out of that layer and travel with it.
-                    var mapped = Map(instance, layer.FestivalID, layer.FestivalPhaseID, layerTerritories);
+                    // The layer carries the seasonal condition and the layer sets.
+                    var mapped = Map(entry, layer.FestivalId, layer.FestivalPhase, layerTerritories, layer.Name);
 
-                    // Filtering here, rather than accumulating everything first, keeps the retained set small enough
-                    // to parse the whole world without running out of memory.
+                    // Filtered here to parse the whole world within memory.
                     if (filter.Keeps(mapped))
                         list.Add(mapped);
                 }
@@ -180,7 +158,7 @@ public static class LevelFileHelper
     /// <summary>Reads a territory's placed objects from one of its level files, resolving the level path from the sheet.</summary>
     /// <param name="territoryId">The TerritoryType row id.</param>
     /// <param name="fileName">The level file name, one of <see cref="Files"/>.</param>
-    /// <param name="filter">What to keep; the default keeps every mapped kind.</param>
+    /// <param name="filter">What to keep. The default keeps every mapped kind.</param>
     /// <returns>The placed objects, or an empty list when the territory or the file could not be read.</returns>
     public static IReadOnlyList<LevelObject> ReadObjects(
         uint territoryId,
@@ -189,13 +167,11 @@ public static class LevelFileHelper
         => ReadObjects(TerritoryHelper.Bg(territoryId), fileName, filter);
 
     /// <summary>
-    /// Reads everything interactable a territory places, merging <see cref="Files.Interactable"/> into one list.
-    /// Crystals and zone lines live in the map file, arrival volumes in the event file, the trigger NPCs of a lift in
-    /// the planner file, and the arrival volumes of the places the game switches on and off in the live file, so a
-    /// complete picture needs all four.
+    /// Reads everything interactable a territory places from the four <see cref="Files.Interactable"/> files.<br/>
+    /// Crystals and zone lines are in the map file, arrival volumes in the event file, lift NPCs in the planner file and switchable places in the live file.
     /// </summary>
     /// <param name="territoryBg">The TerritoryType.Bg string.</param>
-    /// <param name="filter">What to keep; the default keeps every mapped kind.</param>
+    /// <param name="filter">What to keep. The default keeps every mapped kind.</param>
     /// <returns>The placed objects across the four files.</returns>
     public static IReadOnlyList<LevelObject> ReadPlacements(string territoryBg, LevelObjectFilter filter = default)
     {
@@ -208,7 +184,7 @@ public static class LevelFileHelper
 
     /// <inheritdoc cref="ReadPlacements(string, LevelObjectFilter)"/>
     /// <param name="territoryId">The TerritoryType row id.</param>
-    /// <param name="filter">What to keep; the default keeps every mapped kind.</param>
+    /// <param name="filter">What to keep. The default keeps every mapped kind.</param>
     public static IReadOnlyList<LevelObject> ReadPlacements(uint territoryId, LevelObjectFilter filter = default)
         => ReadPlacements(TerritoryHelper.Bg(territoryId), filter);
 
@@ -228,10 +204,54 @@ public static class LevelFileHelper
         return list;
     }
 
+    /// <summary>Keeps the objects read out of a layer whose name contains a fragment, case-insensitive.</summary>
+    /// <param name="objects">The objects to filter.</param>
+    /// <param name="layerFragment">The fragment a layer name must contain.</param>
+    /// <returns>The matching objects.</returns>
+    public static IReadOnlyList<LevelObject> InLayer(IReadOnlyList<LevelObject> objects, string layerFragment)
+    {
+        var list = new List<LevelObject>();
+        if (string.IsNullOrEmpty(layerFragment))
+            return list;
+
+        foreach (var levelObject in objects)
+        {
+            if (levelObject.Layer.Contains(layerFragment, StringComparison.OrdinalIgnoreCase))
+                list.Add(levelObject);
+        }
+
+        return list;
+    }
+
+    /// <summary>Picks the object standing nearest a point.</summary>
+    /// <param name="objects">The objects to search.</param>
+    /// <param name="point">The point to measure from.</param>
+    /// <param name="nearest">The nearest object when the list held one.</param>
+    /// <returns>True when the list was not empty.</returns>
+    public static bool TryGetNearest(IReadOnlyList<LevelObject> objects, Vector3 point, out LevelObject nearest)
+    {
+        nearest = default;
+        var best = float.MaxValue;
+        var found = false;
+
+        foreach (var levelObject in objects)
+        {
+            var distance = Vector3.DistanceSquared(levelObject.Position, point);
+            if (distance >= best)
+                continue;
+
+            best = distance;
+            nearest = levelObject;
+            found = true;
+        }
+
+        return found;
+    }
+
     /// <summary>
     /// Indexes every spawn volume by the territory it stands in and its own instance id: a zone transition or a warp
     /// names a destination territory and a PopRange instance within it, and nothing else ties those two numbers to a
-    /// position. An <see cref="LevelExitKind.IntraZoneTeleport"/> names no territory, so it is looked up under the
+    /// position. An <see cref="LevelExitKind.IntraZoneTeleport"/> names no territory. It is looked up under the
     /// one it departs from.
     /// </summary>
     /// <param name="objectsByTerritory">Each territory's placed objects.</param>
@@ -252,81 +272,70 @@ public static class LevelFileHelper
         return index;
     }
 
-    // A well-formed layer group starts with file magic "LGB1" and, at offset 0x0C, chunk magic "LGP1". The
-    // malformed stub files carry the file magic but a blank chunk magic, so the chunk magic is the reliable check.
-    private static bool IsParseable(byte[]? data)
+    private static LevelExitKind MapExitKind(ExitRangeType exitType)
     {
-        return data is { Length: >= 0x10 }
-            && data[0] == (byte)'L' && data[1] == (byte)'G' && data[2] == (byte)'B' && data[3] == (byte)'1'
-            && data[0x0C] == (byte)'L' && data[0x0D] == (byte)'G' && data[0x0E] == (byte)'P' && data[0x0F] == (byte)'1';
-    }
-
-    // Lumina names only trigger type 1, the zone line. Type 2 is unnamed by Lumina: it carries no destination
-    // territory and moves the character within its own territory, so it must be read as a raw value.
-    private static LevelExitKind MapExitKind(LayerCommon.ExitRangeInstanceObject exit)
-    {
-        return (int)exit.ExitType switch
+        return exitType switch
         {
-            1 => LevelExitKind.ZoneLine,
-            2 => LevelExitKind.IntraZoneTeleport,
+            ExitRangeType.ZoneLine => LevelExitKind.ZoneLine,
+            ExitRangeType.Invisible => LevelExitKind.IntraZoneTeleport,
             _ => LevelExitKind.None,
         };
     }
 
     private static LevelObject Map(
-        LayerCommon.InstanceObject instance,
+        LayerGroupEntry entry,
         ushort festivalId,
         ushort festivalPhase,
-        IReadOnlyList<uint>? layerTerritories)
+        IReadOnlyList<uint>? layerTerritories,
+        string layerName)
     {
-        var translation = instance.Transform.Translation;
-        var position = new Vector3(translation.X, translation.Y, translation.Z);
+        var position = entry.Translation;
+        var yaw = entry.Rotation.Y;
 
-        switch (instance.AssetType)
+        switch (entry.Type)
         {
-            case LayerEntryType.ExitRange when instance.Object is LayerCommon.ExitRangeInstanceObject exit:
-                // An ExitRange is a box the character steps through; its rotation and scale reconstruct the boundary
-                // wall, so the crossing can be described as a surface rather than as a single point.
-                var rotation = instance.Transform.Rotation;
-                var scale = instance.Transform.Scale;
-                return new LevelObject(LevelObjectKind.ExitRange, instance.InstanceId, position,
-                    DestTerritoryId: exit.TerritoryType, DestInstanceId: exit.DestInstanceId,
-                    Yaw: rotation.Y, Scale: new Vector3(scale.X, scale.Y, scale.Z),
+            case LayerEntryType.ExitRange:
+                // An ExitRange is a box the character steps through.
+                return new LevelObject(LevelObjectKind.ExitRange, entry.InstanceId, position,
+                    DestTerritoryId: entry.DestTerritoryId, DestInstanceId: entry.DestInstanceId,
+                    Yaw: yaw, Scale: entry.Scale,
                     FestivalId: festivalId, FestivalPhase: festivalPhase,
-                    ExitKind: MapExitKind(exit), ReturnInstanceId: exit.ReturnInstanceId);
+                    ExitKind: MapExitKind(entry.ExitType), ReturnInstanceId: entry.ReturnInstanceId, Layer: layerName);
 
             case LayerEntryType.PopRange:
-                return new LevelObject(LevelObjectKind.PopRange, instance.InstanceId, position,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
+                return new LevelObject(LevelObjectKind.PopRange, entry.InstanceId, position,
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories,
+                    Layer: layerName);
 
-            case LayerEntryType.Aetheryte when instance.Object is LayerCommon.AetheryteInstanceObject aetheryte:
-                // The placed crystal carries its Aetheryte sheet row id, so a position is matched to a row by id
-                // alone, with no marker, map projection, or name matching.
-                return new LevelObject(LevelObjectKind.Aetheryte, instance.InstanceId, position,
-                    BaseId: aetheryte.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
+            case LayerEntryType.Aetheryte:
+                // The placed crystal carries its Aetheryte row id.
+                return new LevelObject(LevelObjectKind.Aetheryte, entry.InstanceId, position,
+                    BaseId: entry.BaseId, Yaw: yaw,
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories,
+                    Layer: layerName);
 
-            case LayerEntryType.SharedGroup when instance.Object is LayerCommon.SharedGroupInstanceObject shared:
-                return new LevelObject(LevelObjectKind.SharedGroup, instance.InstanceId, position,
-                    AssetPath: shared.AssetPath ?? string.Empty,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
+            case LayerEntryType.SharedGroup:
+                return new LevelObject(LevelObjectKind.SharedGroup, entry.InstanceId, position,
+                    AssetPath: entry.AssetPath, Yaw: yaw,
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories,
+                    Layer: layerName);
 
-            case LayerEntryType.EventNPC when instance.Object is LayerCommon.ENPCInstanceObject npc:
-                return new LevelObject(LevelObjectKind.EventNpc, instance.InstanceId, position,
-                    BaseId: npc.ParentData.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
+            case LayerEntryType.EventNPC:
+                return new LevelObject(LevelObjectKind.EventNpc, entry.InstanceId, position,
+                    BaseId: entry.BaseId, Yaw: yaw,
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories,
+                    Layer: layerName);
 
-            case LayerEntryType.EventObject when instance.Object is LayerCommon.EventInstanceObject eventObject:
-                // The placed object carries its EObj sheet row id, linking it to the event handler it runs. An
-                // object whose handler is a Warp row is the "exit to somewhere" interactable that leaves nearly
-                // every instance, reached the same way as an NPC's warp handler.
-                return new LevelObject(LevelObjectKind.EventObject, instance.InstanceId, position,
-                    BaseId: eventObject.ParentData.BaseId,
-                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories);
+            case LayerEntryType.EventObject:
+                // The object carries its EObj row id. One whose handler is a Warp row is an instance's exit.
+                return new LevelObject(LevelObjectKind.EventObject, entry.InstanceId, position,
+                    BaseId: entry.BaseId, Yaw: yaw,
+                    FestivalId: festivalId, FestivalPhase: festivalPhase, LayerTerritories: layerTerritories,
+                    Layer: layerName);
 
             default:
-                return new LevelObject(LevelObjectKind.Other, instance.InstanceId, position,
-                    LayerTerritories: layerTerritories);
+                return new LevelObject(LevelObjectKind.Other, entry.InstanceId, position,
+                    LayerTerritories: layerTerritories, Layer: layerName);
         }
     }
 }

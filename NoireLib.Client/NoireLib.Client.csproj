@@ -1,0 +1,62 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <LangVersion>latest</LangVersion>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>disable</ImplicitUsings>
+        <Version>2.0.1.0</Version>
+        <Title>NoireLib.Client - NoireRemote and NoireWebsocket, both directions</Title>
+        <Authors>Aspher0</Authors>
+        <Description>The Dalamud-free half of NoireLib: the NoireRemote listener, the wire contract, endpoint discovery and the caller entry point, plus NoireWebsocket's four client transports (raw RFC 6455, server-sent events, long-polling and Socket.IO) and its WebSocket server. Reference this from a program that is not a plugin to host endpoints or sockets of your own, or to call and connect to a plugin's.</Description>
+        <Copyright>© 2026 Aspher0</Copyright>
+        <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageTags>NoireLib;NoireRemote;NoireWebsocket;Dalamud;Plugin;Aspher0;Library;Http;Websocket;SocketIO;Sse;Client;Server</PackageTags>
+        <NeutralLanguage>en</NeutralLanguage>
+        <PackageId>NoireLib.Client</PackageId>
+        <PackageLicenseFile>LICENSE</PackageLicenseFile>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+        <PackageReadmeFile>Nuget_README.md</PackageReadmeFile>
+        <GenerateDocumentationFile>true</GenerateDocumentationFile>
+        <Configurations>Debug;Release;PublicRelease</Configurations>
+        <AssemblyName>NoireLib.Client</AssemblyName>
+        <RootNamespace>NoireLib.Remote</RootNamespace>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)'=='Release' or '$(Configuration)'=='PublicRelease'">
+        <Optimize>true</Optimize>
+        <DebugType>none</DebugType>
+    </PropertyGroup>
+
+    <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+      <DebugType>none</DebugType>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <None Include="..\LICENSE">
+            <Pack>True</Pack>
+            <PackagePath>\</PackagePath>
+        </None>
+
+        <None Include="..\Nuget_README.md">
+            <Pack>True</Pack>
+            <PackagePath>\</PackagePath>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <EmbeddedResource Include="Server\Console\console.html" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Newtonsoft.Json" Version="13.0.4" />
+        <PackageReference Include="SocketIOClient" Version="3.1.2" />
+        <PackageReference Include="SocketIO.Serializer.NewtonsoftJson" Version="3.1.2" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <InternalsVisibleTo Include="NoireLib" />
+        <InternalsVisibleTo Include="NoireLib.Tests" />
+    </ItemGroup>
+</Project>

@@ -3,9 +3,7 @@ using System.Runtime.InteropServices;
 
 namespace NoireLib.Draw3D.Geometry;
 
-/// <summary>
-/// The one vertex format of the Draw3D core: 48 bytes - position, normal, UV, straight-alpha color.
-/// </summary>
+/// <summary>The vertex format of the Draw3D core: position, normal, UV, straight-alpha color and tangent.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct Vertex3D
 {
@@ -18,17 +16,17 @@ public struct Vertex3D
     /// <summary>Texture coordinates in [0,1].</summary>
     public Vector2 Uv;
 
-    /// <summary>Vertex color, straight alpha (premultiplied inside the shader).</summary>
+    /// <summary>Vertex color in straight alpha.</summary>
     public Vector4 Color;
 
-    /// <summary>
-    /// Model-space tangent (xyz) and bitangent handedness (w, -1 or +1), or all zero when the mesh carries none;
-    /// shaders use this frame when <c>w</c> is nonzero and fall back to a derivative frame when it is zero, so
-    /// meshes built without tangents keep working unchanged.
-    /// </summary>
+    /// <summary>Model-space tangent in xyz and bitangent handedness in w, or zero to use a derivative frame.</summary>
     public Vector4 Tangent;
 
-    /// <summary>Creates a vertex with no authored tangent (normal-mapped shading falls back to a derivative frame).</summary>
+    /// <summary>Creates a vertex with no authored tangent.</summary>
+    /// <param name="position">Model-space position.</param>
+    /// <param name="normal">Outward model-space normal.</param>
+    /// <param name="uv">Texture coordinates.</param>
+    /// <param name="color">Vertex color in straight alpha.</param>
     public Vertex3D(Vector3 position, Vector3 normal, Vector2 uv, Vector4 color)
     {
         Position = position;
@@ -39,6 +37,11 @@ public struct Vertex3D
     }
 
     /// <summary>Creates a vertex with an authored tangent frame.</summary>
+    /// <param name="position">Model-space position.</param>
+    /// <param name="normal">Outward model-space normal.</param>
+    /// <param name="uv">Texture coordinates.</param>
+    /// <param name="color">Vertex color in straight alpha.</param>
+    /// <param name="tangent">Tangent in xyz and bitangent handedness in w.</param>
     public Vertex3D(Vector3 position, Vector3 normal, Vector2 uv, Vector4 color, Vector4 tangent)
     {
         Position = position;
@@ -49,11 +52,7 @@ public struct Vertex3D
     }
 }
 
-/// <summary>
-/// Per-instance stream data (input slot 1): the world matrix as four UNtransposed rows plus an instance tint.<br/>
-/// Rows are untransposed because HLSL's <c>float4x4(r0..r3)</c> attribute constructor builds logical rows directly,
-/// bypassing constant-buffer packing - see the note in Unlit.hlsl.
-/// </summary>
+/// <summary>Per-instance data: the world matrix as four untransposed rows, for HLSL's <c>float4x4(r0..r3)</c>, and a tint.</summary>
 [StructLayout(LayoutKind.Sequential)]
 public struct InstanceData
 {
@@ -69,6 +68,9 @@ public struct InstanceData
     public Vector4 Color;
 
     /// <summary>Builds instance data from a world matrix and tint.</summary>
+    /// <param name="world">The world matrix.</param>
+    /// <param name="color">Tint in straight alpha.</param>
+    /// <returns>The instance data.</returns>
     public static InstanceData From(in Matrix4x4 world, Vector4 color) => new()
     {
         W0 = new Vector4(world.M11, world.M12, world.M13, world.M14),
@@ -79,9 +81,7 @@ public struct InstanceData
     };
 }
 
-/// <summary>
-/// A conservative bounding sphere used for frustum culling and picking.
-/// </summary>
+/// <summary>A conservative bounding sphere used for frustum culling and picking.</summary>
 public readonly struct BoundingSphere
 {
     /// <summary>Sphere center.</summary>
@@ -91,14 +91,17 @@ public readonly struct BoundingSphere
     public readonly float Radius;
 
     /// <summary>Creates a bounding sphere.</summary>
+    /// <param name="center">Sphere center.</param>
+    /// <param name="radius">Sphere radius.</param>
     public BoundingSphere(Vector3 center, float radius)
     {
         Center = center;
         Radius = radius;
     }
 
-    /// <summary>Computes a conservative sphere for a vertex set: center = middle of the AABB, radius = max distance to it.</summary>
+    /// <summary>Computes a conservative sphere centered on the vertex set's bounding box.</summary>
     /// <param name="vertices">The vertices to bound.</param>
+    /// <returns>The bounding sphere.</returns>
     public static BoundingSphere FromVertices(System.ReadOnlySpan<Vertex3D> vertices)
     {
         if (vertices.Length == 0)
@@ -119,8 +122,9 @@ public readonly struct BoundingSphere
         return new BoundingSphere(center, System.MathF.Sqrt(radiusSq));
     }
 
-    /// <summary>Transforms the sphere by a world matrix (radius scaled by the largest axis scale - conservative).</summary>
+    /// <summary>Transforms the sphere by a world matrix, scaling the radius by the largest axis scale.</summary>
     /// <param name="world">The world matrix to apply.</param>
+    /// <returns>The transformed sphere.</returns>
     public BoundingSphere Transform(in Matrix4x4 world)
     {
         var center = Vector3.Transform(Center, world);
@@ -132,9 +136,7 @@ public readonly struct BoundingSphere
     }
 }
 
-/// <summary>
-/// CPU-side mesh data produced by <see cref="MeshBuilder"/>: a vertex array and a 16-bit index array (clockwise-front winding).
-/// </summary>
+/// <summary>CPU-side mesh data produced by <see cref="MeshBuilder"/>, with 16-bit indices.</summary>
 /// <param name="Vertices">Vertex array.</param>
-/// <param name="Indices">Index array (triangle list, clockwise front).</param>
+/// <param name="Indices">Index array as a clockwise-front triangle list.</param>
 public readonly record struct MeshData(Vertex3D[] Vertices, ushort[] Indices);

@@ -5,11 +5,8 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Throttled, allocation-free CPU readback of a single depth texel, for the obstacle-occlusion hover test. D3D forbids
-// a sub-region copy of a depth-stencil texture, so a naive copy-map-read-destroy pattern per hover frame would churn
-// GPU memory and stall the pipeline, freezing and eventually crashing the device under sustained use. This keeps one
-// staging copy, recreated only when size or format changes, and reads it one cycle late with a non-blocking map, so a
-// probe never allocates and never waits on the GPU; render-thread only, released with the renderer.
+// D3D forbids a sub-region copy of a depth-stencil texture, and a per-frame create-copy-map-destroy crashes the device.
+// One staging copy is kept and read one cycle late. Render thread only.
 internal sealed unsafe class DepthProbe : IDisposable
 {
     private ComPtr<ID3D11Texture2D> staging;
@@ -19,24 +16,18 @@ internal sealed unsafe class DepthProbe : IDisposable
     private GameRenderSources.DepthTextureInfo pendingInfo;
     private Vector2 pendingDisplaySize;
 
-    /// <summary>
-    /// Returns the depth texel under <paramref name="screenPx"/> from the previous cycle's whole-texture copy
-    /// (non-blocking), then queues a fresh copy for next time. False until a copy has completed, on a resource
-    /// mismatch, or when the texel is unreadable/open-sky. The sample is the surface's NDC z.
-    /// </summary>
     public bool TrySample(RenderDevice device, in GameRenderSources.DepthTextureInfo info, Vector2 screenPx, Vector2 displaySize, out float sample)
     {
         sample = float.NaN;
         var got = false;
 
-        // 1. Read the copy queued last cycle. At the callers' throttle it is long finished, so DO_NOT_WAIT never stalls.
+        // Last cycle's copy is finished. DO_NOT_WAIT never stalls.
         if (copyPending && staging.Get() != null)
         {
             got = TryReadPending(device, screenPx, out sample);
             copyPending = false;
         }
 
-        // 2. Match the staging copy to the live depth texture (recreate only on change), then queue this frame's copy.
         if (!EnsureStaging(device, in info) || !ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)info.Texture, out var source))
             return got;
 
@@ -62,11 +53,11 @@ internal sealed unsafe class DepthProbe : IDisposable
         var ctx = device.Context;
         D3D11_MAPPED_SUBRESOURCE mapped;
         if (ctx->Map((ID3D11Resource*)staging.Get(), 0, D3D11_MAP.D3D11_MAP_READ, doNotWait, &mapped) < 0)
-            return false; // still in flight (rare at the callers' throttle): read on the next cycle
+            return false;
 
         try
         {
-            // displayUv * ActualSize = the texel the shader's scaled sample lands on (mirrors DepthReadback).
+            // Mirrors DepthReadback.
             var px = Math.Clamp((int)(screenPx.X / ds.X * pendingInfo.ActualWidth), 0, (int)pendingInfo.AllocatedWidth - 1);
             var py = Math.Clamp((int)(screenPx.Y / ds.Y * pendingInfo.ActualHeight), 0, (int)pendingInfo.AllocatedHeight - 1);
             var value = DepthReadback.ReadDepthTexel(mapped, format, px, py);
@@ -118,7 +109,6 @@ internal sealed unsafe class DepthProbe : IDisposable
         }
     }
 
-    /// <summary>Releases the staging texture (recreated on the next sample). Drops any pending copy.</summary>
     public void Release()
     {
         staging.Dispose();
@@ -128,6 +118,5 @@ internal sealed unsafe class DepthProbe : IDisposable
         copyPending = false;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Release();
 }

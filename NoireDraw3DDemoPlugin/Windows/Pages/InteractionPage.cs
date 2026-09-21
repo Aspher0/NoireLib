@@ -8,14 +8,12 @@ using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// Pointer input: hover, click, drag, selection keys, and a live readout of who owns the mouse.
 internal sealed class InteractionPage
 {
     private enum ModifierChoice { Ctrl, Shift, Alt, None }
     private enum DeselectKeyChoice { Escape, Delete, Backspace, None }
 
-    // Local mirrors of the Func<bool> predicates: a lambda can't be read back, so the choice is tracked here, seeded to
-    // the library defaults (Ctrl toggle, Shift add, Alt click-through, Escape deselect).
+    // A lambda cannot be read back. Seeded to the library defaults.
     private int toggleModIdx = (int)ModifierChoice.Ctrl;
     private int addModIdx = (int)ModifierChoice.Shift;
     private int clickThroughModIdx = (int)ModifierChoice.Alt;
@@ -33,14 +31,14 @@ internal sealed class InteractionPage
             Ui.Toggle("Select on click", () => it.SelectOnClick, v => it.SelectOnClick = v,
                 "Whether a left-click on a selectable object updates its scene's selection.");
             Ui.Slider("Drag threshold (px)", () => it.DragThresholdPixels, v => it.DragThresholdPixels = v, 0f, 20f,
-                "Movement before a left press counts as a drag rather than a click. This is what tells a click apart from the game's click-and-drag camera pan.");
+                "Movement threshold before a left press becomes a drag. This tells a click apart from the game's click-and-drag camera pan.");
         }
 
         Ui.Section("Mouse sharing");
         using (Ui.Form("interact.mouse"))
         {
             Ui.Toggle("Hover claims mouse", () => it.BlockGameMouseOnHover, v => it.BlockGameMouseOnHover = v,
-                "Off, the camera still pans over highlighted objects; a drag always claims the mouse. On blocks camera and zoom whenever the cursor rests on an object.");
+                "Off, the camera still pans over highlighted objects. A drag always claims the mouse. On blocks camera and zoom whenever the cursor rests on an object.");
             Ui.Toggle("Game UI blocks", () => it.GameUiBlocksInteraction, v => it.GameUiBlocksInteraction = v,
                 "Whether native UI under the cursor stops picking an object behind it.");
         }
@@ -58,7 +56,7 @@ internal sealed class InteractionPage
         using (Ui.Form("interact.keys"))
         {
             Ui.Flags("Deselect on", () => it.DeselectOn, v => it.DeselectOn = v,
-                "ClickEmpty deselects on a left click on empty world; Key deselects on the key below. Tick both for both.");
+                "ClickEmpty deselects on a left click on empty world. Key deselects on the key below. Tick both for both.");
 
             using (Ui.Disabled((it.DeselectOn & DeselectMode.Key) == 0))
             {
@@ -85,10 +83,10 @@ internal sealed class InteractionPage
         {
             Ui.Value("Hovered", it.HoveredNode?.Name ?? "-",
                 it.HoveredNode != null ? ImGuiColors.HealerGreen : ImGuiColors.DalamudGrey3);
-            Ui.Value("Interacting", YesNo(it.IsInteracting), "A gesture Draw3D owns is in progress: a click resolving, or a drag.");
+            Ui.Value("Interacting", YesNo(it.IsInteracting), "A gesture Draw3D owns is in progress, such as a click resolving or a drag.");
             Ui.Value("Capturing mouse", YesNo(it.IsCapturingMouse), "Draw3D is claiming the mouse from the game this frame.");
             Ui.Value("Foreign UI has mouse", YesNo(it.ForeignUiHasMouse),
-                "Another surface owns it: a different plugin's window, native UI under the cursor, or the cursor outside the viewport. While true, nothing hovers, picks or captures.");
+                "Another surface owns it, such as a different plugin's window, native UI under the cursor, or the cursor outside the viewport. While true, nothing hovers, picks or captures.");
         }
 
         Ui.Section("Debug");
@@ -103,7 +101,6 @@ internal sealed class InteractionPage
 
     private static string YesNo(bool value) => value ? "yes" : "no";
 
-    // Maps a modifier choice to the held-key predicate the interaction layer polls each frame.
     private static Func<bool> ModifierFunc(ModifierChoice choice) => choice switch
     {
         ModifierChoice.Ctrl => static () => ImGui.GetIO().KeyCtrl,
@@ -112,9 +109,7 @@ internal sealed class InteractionPage
         _ => static () => false,
     };
 
-    // Maps a deselect-key choice to the held-key predicate (the library takes the press edge). Read from the OS
-    // through IsAsyncKeyDown: Dalamud only forwards a key to ImGui while a text field is focused, so
-    // ImGui.IsKeyPressed is dead during play. Modifiers are exempt, hence ModifierFunc.
+    // ImGui.IsKeyPressed only sees a key while a text field is focused.
     private static Func<bool> DeselectKeyFunc(DeselectKeyChoice choice) => choice switch
     {
         DeselectKeyChoice.Escape => static () => KeybindsHelper.IsAsyncKeyDown((int)VirtualKey.ESCAPE),

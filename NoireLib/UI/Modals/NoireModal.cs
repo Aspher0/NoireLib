@@ -5,10 +5,8 @@ using System.Threading.Tasks;
 namespace NoireLib.UI;
 
 /// <summary>
-/// Dialogs you await: <c>if (await NoireModal.ConfirmAsync(...))</c>. Dialogs queue: raising two shows the first, then
-/// the second, and the queue is safe to add to from any thread.<br/>
-/// Never block on one of these from the draw or framework thread: the task completes on the draw thread, so a wait
-/// there hangs the game.
+/// Dialogs you await: <c>if (await NoireModal.ConfirmAsync(...))</c>. They queue, and the queue is thread safe.<br/>
+/// Never block on one from the draw or framework thread. The task completes on the draw thread.
 /// </summary>
 [NoireFacade]
 public static class NoireModal
@@ -35,6 +33,11 @@ public static class NoireModal
     /// </summary>
     /// <exception cref="InvalidOperationException">Thrown when NoireLib has not been initialized yet.</exception>
     public static NoireModalHost Host => NoireModalHost.Instance;
+
+    /// <summary>
+    /// The dialog at the front of the queue, or <see langword="null"/> when none is pending.
+    /// </summary>
+    public static NoireModalView? Active => Current?.View;
 
     #region Asking
 
@@ -124,17 +127,14 @@ public static class NoireModal
             request.Resolve(CancelledResult);
     }
 
-    /// <summary>
-    /// Forgets a remembered answer, so the dialog using that <see cref="ModalOptions.RememberKey"/> asks again.
-    /// </summary>
+    /// <summary>Forgets a remembered answer. The dialog using that <see cref="ModalOptions.RememberKey"/> asks again.</summary>
     /// <param name="rememberKey">The key the answer was stored under.</param>
-    /// <returns>True when an answer was stored and has now been removed.</returns>
+    /// <returns>True when an answer was removed.</returns>
     public static bool Forget(string rememberKey)
         => !string.IsNullOrWhiteSpace(rememberKey) && NoireUiState.Remove(StateKeyFor(rememberKey));
 
     #endregion
 
-    // Null when the queue is empty.
     internal static ModalRequest? Current
     {
         get
@@ -144,7 +144,7 @@ public static class NoireModal
         }
     }
 
-    // result is 1 for confirmed, a zero-based index for a choice, or CancelledResult for cancelled.
+    // 1 for confirmed, a zero-based index for a choice, or CancelledResult.
     internal static void Complete(ModalRequest request, int result)
     {
         lock (SyncRoot)
@@ -162,9 +162,7 @@ public static class NoireModal
     {
         ArgumentNullException.ThrowIfNull(message);
 
-        // Touching the host here creates and registers the drawable on the first ask, so an awaited dialog cannot
-        // sit in a queue nobody draws. There is nothing to draw onto before NoireLib is initialized, so the dialog
-        // simply queues until there is.
+        // Registers the drawable on the first ask. Before initialization the dialog queues.
         if (NoireService.IsInitialized())
             _ = Host;
 
@@ -204,10 +202,22 @@ internal sealed class ModalRequest
         Options = options;
         Choices = choices;
 
-        // Continuations must not run inside the draw loop that completed the dialog: an await that immediately drew
-        // more UI, or blocked, would be running in the middle of someone else's frame.
+        // Continuations must not run inside the draw loop that completed the dialog.
         Completion = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        View = new NoireModalView(this);
     }
+
+    public NoireModalView View { get; }
+
+    public int FirstSeenFrame { get; set; } = NoFrame;
+
+    public int PresentedFrame { get; set; } = NoFrame;
+
+    public bool FellBack { get; set; }
+
+    public bool PopupOpened { get; set; }
+
+    public const int NoFrame = int.MinValue / 2;
 
     public ModalKind Kind { get; }
 
@@ -223,12 +233,10 @@ internal sealed class ModalRequest
 
     public string Value { get; set; } = string.Empty;
 
-    // Whether the user ticked "don't ask again".
     public bool Remember { get; set; }
 
     public bool Opened { get; set; }
 
-    // The time the dialog was first drawn at, which ModalOptions.EnableAfterSeconds counts from.
     public float OpenedAt { get; set; }
 
     public bool Focused { get; set; }

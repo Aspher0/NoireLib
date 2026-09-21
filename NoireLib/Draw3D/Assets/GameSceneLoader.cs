@@ -1,3 +1,4 @@
+using Lumina.Data.Parsing.Layer;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
@@ -21,87 +22,74 @@ public readonly record struct GameScenePart(
     Vector3 Scale);
 
 /// <summary>
-/// Loads a scene definition (<c>.sgb</c>) out of the game archives and decodes every model it places.<br/>
-/// Furniture is stored as a scene: the file the game spawns for an item is its sgb, which places one or
-/// more models with transforms and may nest further scenes (planters, exterior sets).<br/>
-/// Like <see cref="GameModelLoader"/>, only files are read: nothing is spawned in the game itself.
+/// Loads an <c>.sgb</c> or <c>.lgb</c> from the game archives and decodes every model it places, nested groups included.<br/>
+/// Furniture is stored as a scene.
 /// </summary>
 public static class GameSceneLoader
 {
-    // How deep nested scenes are followed; the archives nest one level, the cap only breaks reference cycles.
+    // Furniture nests one level. The cap bounds a pathological file.
     private const int MaxDepth = 4;
 
-    /// <summary>Loads a scene and decodes every model it places, including models placed by nested scenes.</summary>
-    /// <param name="sgbPath">Archive path of the scene, such as <c>bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb</c>.</param>
+    /// <summary>Loads a scene or level file and decodes every model it places, including models placed by nested scenes.</summary>
+    /// <param name="path">Archive path of the <c>.sgb</c> or <c>.lgb</c>, such as <c>bgcommon/hou/indoor/general/0001/asset/fun_b0_m0001.sgb</c>.</param>
     /// <param name="lod">Level of detail to decode for each model, 0 being the most detailed.</param>
-    /// <param name="importVertexColors">Apply each model's vertex color channel; off by default (see <see cref="GameModelLoader"/>).</param>
-    /// <returns>One entry per placed model, or an empty array if the scene does not exist.</returns>
-    public static GameScenePart[] Load(string sgbPath, int lod = 0, bool importVertexColors = false)
+    /// <param name="importVertexColors">Whether to apply each model's vertex color channel (see <see cref="GameModelLoader"/>).</param>
+    /// <returns>One entry per placed model, or an empty array if the file does not exist.</returns>
+    public static GameScenePart[] Load(string path, int lod = 0, bool importVertexColors = false)
+        => Load(path, null, lod, importVertexColors);
+
+    /// <summary>Loads the chosen layers of a scene or level file and decodes every model they place. A level file's parts stand at world positions.</summary>
+    /// <param name="path">Archive path of the <c>.sgb</c> or <c>.lgb</c>.</param>
+    /// <param name="layerFilter">Which of the file's own layers to load, null for all. Nested scenes are always loaded whole.</param>
+    /// <param name="lod">Level of detail to decode for each model, 0 being the most detailed.</param>
+    /// <param name="importVertexColors">Whether to apply each model's vertex color channel.</param>
+    /// <returns>One entry per placed model, or an empty array if the file does not exist.</returns>
+    public static GameScenePart[] Load(string path, Func<LayerGroupLayer, bool>? layerFilter, int lod = 0, bool importVertexColors = false)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(sgbPath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
-        var scene = NoireService.DataManager.GetFile<GameSgbFile>(sgbPath);
-        if (scene is null)
-            return [];
-
+        // A level file places the same model many times.
+        var decoded = new Dictionary<string, GameModelMesh[]>(StringComparer.Ordinal);
         var parts = new List<GameScenePart>();
-        var visited = new HashSet<string>(StringComparer.Ordinal) { sgbPath };
-        Collect(scene, Matrix4x4.Identity, lod, importVertexColors, parts, visited, depth: 0);
+        foreach (var entry in LayerGroupHelper.Flatten(path, layerFilter, MaxDepth))
+        {
+            if (entry.Type != LayerEntryType.BG || entry.AssetPath.Length == 0)
+                continue;
+
+            if (!Matrix4x4.Decompose(entry.World, out var scale, out var rotation, out var translation))
+                continue;
+
+            if (!decoded.TryGetValue(entry.AssetPath, out var meshes))
+                decoded[entry.AssetPath] = meshes = GameModelLoader.Load(entry.AssetPath, lod, importVertexColors);
+
+            if (meshes.Length > 0)
+                parts.Add(new GameScenePart(meshes, entry.AssetPath, translation, rotation, scale));
+        }
+
         return parts.ToArray();
     }
 
-    /// <inheritdoc cref="Load"/>
+    /// <summary>Loads a scene or level file and decodes every model it places off the calling thread.</summary>
+    /// <param name="path">Archive path of the <c>.sgb</c> or <c>.lgb</c>.</param>
+    /// <param name="lod">Level of detail to decode for each model, 0 being the most detailed.</param>
+    /// <param name="importVertexColors">Whether to apply each model's vertex color channel.</param>
     /// <param name="ct">Optional cancellation token.</param>
-    public static Task<GameScenePart[]> LoadAsync(string sgbPath, int lod = 0, bool importVertexColors = false, CancellationToken ct = default)
-        => Task.Run(() => Load(sgbPath, lod, importVertexColors), ct);
+    /// <returns>One entry per placed model, or an empty array if the file does not exist.</returns>
+    public static Task<GameScenePart[]> LoadAsync(string path, int lod = 0, bool importVertexColors = false, CancellationToken ct = default)
+        => Task.Run(() => Load(path, null, lod, importVertexColors), ct);
 
-    /// <inheritdoc cref="StainHelper.DefaultStainForScene"/>
-    public static ushort? DefaultStain(string sgbPath)
-        => StainHelper.DefaultStainForScene(sgbPath);
-
-    /// <inheritdoc cref="StainHelper.DefaultStainForModel"/>
-    public static ushort? DefaultStainForModel(string modelGamePath)
-        => StainHelper.DefaultStainForModel(modelGamePath);
-
-    private static void Collect(
-        GameSgbFile scene,
-        in Matrix4x4 parent,
-        int lod,
-        bool importVertexColors,
-        List<GameScenePart> parts,
-        HashSet<string> visited,
-        int depth)
-    {
-        foreach (var placement in scene.Models)
-        {
-            var world = Compose(placement) * parent;
-            if (!Matrix4x4.Decompose(world, out var scale, out var rotation, out var translation))
-                continue; // a degenerate transform has nothing visible to place
-
-            var meshes = GameModelLoader.Load(placement.Path, lod, importVertexColors);
-            if (meshes.Length > 0)
-                parts.Add(new GameScenePart(meshes, placement.Path, translation, rotation, scale));
-        }
-
-        if (depth >= MaxDepth)
-            return;
-
-        foreach (var placement in scene.Attachments)
-        {
-            if (!visited.Add(placement.Path))
-                continue;
-
-            var nested = NoireService.DataManager.GetFile<GameSgbFile>(placement.Path);
-            if (nested is not null)
-                Collect(nested, Compose(placement) * parent, lod, importVertexColors, parts, visited, depth + 1);
-        }
-    }
-
-    // A placement's local matrix: scale, then rotation X-Y-Z, then translation.
-    private static Matrix4x4 Compose(in GameSgbPlacement placement) =>
-        Matrix4x4.CreateScale(placement.Scale)
-        * Matrix4x4.CreateRotationX(placement.Rotation.X)
-        * Matrix4x4.CreateRotationY(placement.Rotation.Y)
-        * Matrix4x4.CreateRotationZ(placement.Rotation.Z)
-        * Matrix4x4.CreateTranslation(placement.Translation);
+    /// <summary>Loads the chosen layers of a scene or level file off the calling thread.</summary>
+    /// <param name="path">Archive path of the <c>.sgb</c> or <c>.lgb</c>.</param>
+    /// <param name="layerFilter">Which of the file's own layers to load, null for all.</param>
+    /// <param name="lod">Level of detail to decode for each model, 0 being the most detailed.</param>
+    /// <param name="importVertexColors">Whether to apply each model's vertex color channel.</param>
+    /// <param name="ct">Optional cancellation token.</param>
+    /// <returns>One entry per placed model, or an empty array if the file does not exist.</returns>
+    public static Task<GameScenePart[]> LoadAsync(
+        string path,
+        Func<LayerGroupLayer, bool>? layerFilter,
+        int lod = 0,
+        bool importVertexColors = false,
+        CancellationToken ct = default)
+        => Task.Run(() => Load(path, layerFilter, lod, importVertexColors), ct);
 }

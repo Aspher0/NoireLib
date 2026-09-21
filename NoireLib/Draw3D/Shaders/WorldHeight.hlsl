@@ -1,10 +1,4 @@
-// NoireLib Draw3D - top-down collision height-map. Renders the cached collision mesh through a direct affine
-// world-to-clip map (ViewProj set on the CPU so world XZ maps linearly to the target, no perspective) and outputs the
-// vertex's world Y. Drawn with MAX blend, so each texel holds the highest collision Y in that XZ column - but ONLY up
-// to DepthCal.x, the tallest ground-decal box top this frame: anything above it (a ceiling / roof / overhead floor)
-// is discarded, so a covered room's roof never masks the ground below. Each decal further bounds the search to its
-// OWN box top in the shader. Ground decals sample this to tell "elevated body" from "ground/furniture surface"
-// independent of camera angle. See BuildHeightMapMatrix + the world-occlusion branch in GroundDecal.hlsl.
+// Top-down collision height map, MAX-blended. Each texel holds the highest collision Y up to DepthCal.x.
 #include "Common.hlsli"
 
 struct VsIn
@@ -24,19 +18,15 @@ struct PsIn
 PsIn vs(VsIn v)
 {
     PsIn o;
-    float4 wp = mul(float4(v.pos, 1.0), World);   // World = translate(region centre): verts are region-relative
-    o.svPos   = mul(wp, ViewProj);                // ViewProj = CPU-built affine XZ-to-clip map (see BuildHeightMapMatrix)
+    float4 wp = mul(float4(v.pos, 1.0), World);   // region-relative verts
+    o.svPos   = mul(wp, ViewProj);                // CPU-built affine XZ-to-clip map
     o.worldY  = wp.y;
     return o;
 }
 
 float ps(PsIn i) : SV_Target
 {
-    // Drop overhead geometry (ceiling / roof / upper floor) above the tallest decal box top so MAX blend keeps the
-    // real ground/furniture below it, not the roof. No derivatives here, so the discard is /WX-safe.
-    // NOTE: this reads b0 from the PIXEL stage, so RenderWorldHeight must PSSetConstantBuffers(0, ...) as well as
-    // VSSetConstantBuffers. Miss that and DepthCal.x reads as 0, which discards every surface above world Y 0 and
-    // leaves the height-map empty - HighestOnly then silently degrades to AllSurfaces.
+    // Reads b0 in the pixel stage. RenderWorldHeight must bind it there, or every surface above Y 0 is discarded.
     if (i.worldY > DepthCal.x)
         discard;
     return i.worldY;

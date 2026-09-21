@@ -4,10 +4,7 @@ using System.Numerics;
 
 namespace NoireLib.UI;
 
-/// <summary>
-/// The look of a button drawn with <see cref="NoireButtons"/>. Every value left <see langword="null"/> resolves
-/// through <see cref="Tone"/> and <see cref="NoireTheme.Current"/>; setting one overrides only that value.
-/// </summary>
+/// <summary>The look of a button drawn with <see cref="NoireButtons"/>. A <see langword="null"/> value resolves through <see cref="Tone"/> and the theme.</summary>
 public sealed class ButtonStyle
 {
     /// <summary>
@@ -39,8 +36,67 @@ public sealed class ButtonStyle
     /// <summary>The padding between the label and the button edge, at 100%. When <see langword="null"/>, the theme frame padding is used.</summary>
     public Vector2? Padding { get; set; }
 
-    /// <summary>An icon drawn before the label.</summary>
-    public FontAwesomeIcon? Icon { get; set; }
+    /// <summary>A FontAwesome icon drawn before the label. Setting it clears <see cref="NoireIcon"/> and <see cref="IconName"/>.</summary>
+    public FontAwesomeIcon? Icon
+    {
+        get => icon;
+        set
+        {
+            icon = value;
+
+            if (value.HasValue)
+            {
+                noireIcon = null;
+                iconName = null;
+            }
+        }
+    }
+
+    /// <summary>A built-in textured mark drawn before the label. Setting it clears <see cref="Icon"/> and <see cref="IconName"/>.</summary>
+    public NoireIcon? NoireIcon
+    {
+        get => noireIcon;
+        set
+        {
+            noireIcon = value;
+
+            if (value.HasValue)
+            {
+                icon = null;
+                iconName = null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Artwork registered with <see cref="NoireIcons.Register"/>, drawn before the label. Setting it clears
+    /// <see cref="Icon"/> and <see cref="NoireIcon"/>.
+    /// </summary>
+    public string? IconName
+    {
+        get => iconName;
+        set
+        {
+            iconName = value;
+
+            if (value != null)
+            {
+                icon = null;
+                noireIcon = null;
+            }
+        }
+    }
+
+    /// <summary>The side of a textured icon at 100%. When <see langword="null"/>, it matches the label's line height.</summary>
+    public float? IconSize { get; set; }
+
+    private FontAwesomeIcon? icon;
+    private NoireIcon? noireIcon;
+    private string? iconName;
+
+    internal bool HasTexturedIcon => noireIcon.HasValue || iconName != null;
+
+    internal bool HasAnyIcon => icon.HasValue || HasTexturedIcon;
 
     /// <summary>The icon color. When <see langword="null"/>, the label color is used.</summary>
     public Vector4? IconColor { get; set; }
@@ -65,13 +121,12 @@ public sealed class ButtonStyle
     public float HoldBorderThickness { get; set; } = 2.5f;
 
     /// <summary>
-    /// Replaces the button's own painting entirely, while NoireUI keeps doing the sizing, the hit testing and the state
-    /// tracking.
+    /// Replaces the button's painting. NoireUI still does the sizing, hit testing and state.<br/>
+    /// The label is not drawn when this is set.
     /// </summary>
-    /// <remarks>The label is not drawn for you when this is set.</remarks>
     public Action<UiButtonDraw>? CustomDraw { get; set; }
 
-    // What the painter draws from: each logical value above is scaled here, and only here.
+    // Scaled here, and only here.
 
     internal float ResolveBorderSize()
         => BorderSize.HasValue ? NoireUI.Scaled(BorderSize.Value) : NoireTheme.Current.ResolveBorderSize();
@@ -98,6 +153,9 @@ public sealed class ButtonStyle
         Rounding = Rounding,
         Padding = Padding,
         Icon = Icon,
+        NoireIcon = NoireIcon,
+        IconName = IconName,
+        IconSize = IconSize,
         IconColor = IconColor,
         CenterLabel = CenterLabel,
         HoldFill = HoldFill,
@@ -121,6 +179,9 @@ public sealed class ButtonStyle
         Rounding = source.Rounding;
         Padding = source.Padding;
         Icon = source.Icon;
+        NoireIcon = source.NoireIcon;
+        IconName = source.IconName;
+        IconSize = source.IconSize;
         IconColor = source.IconColor;
         CenterLabel = source.CenterLabel;
         HoldFill = source.HoldFill;

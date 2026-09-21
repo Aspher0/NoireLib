@@ -52,7 +52,12 @@ public sealed class TableColumn<T>
     /// </summary>
     public float Width { get; set; }
 
-    /// <summary>Paints a cell instead of the plain text.</summary>
+    /// <summary>
+    /// Whether the column shares out the width the fixed columns leave, weighted by <see cref="Width"/> when set.
+    /// </summary>
+    public bool Stretch { get; set; }
+
+    /// <summary>Paints a cell in place of the plain text.</summary>
     public Action<UiTableCellDraw<T>>? Renderer { get; set; }
 
     /// <summary>
@@ -93,8 +98,7 @@ public sealed class TableColumn<T>
         if (Sort != null)
             return Sort;
 
-        // Held rather than rebuilt, and still correct when the caller swaps the key or the text afterwards: the
-        // delegate is bound to this column and reads whichever it was given at the moment it runs.
+        // The delegate reads the key and text at the moment it runs.
         if (SortKey != null)
             return keyComparison ??= CompareKeys;
 

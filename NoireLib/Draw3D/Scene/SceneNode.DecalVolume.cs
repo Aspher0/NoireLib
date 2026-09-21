@@ -1,4 +1,3 @@
-using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Geometry;
 using NoireLib.Draw3D.Im;
 using NoireLib.Draw3D.Materials;
@@ -8,50 +7,28 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// An opt-in wireframe of a decal's <b>projection box</b>: the oriented volume the shader evaluates its SDF inside,
-/// traced as the box's twelve world-space edges. Where <see cref="ShowDecalShape"/> answers "what does this decal
-/// paint", this answers "how far does its projection reach" - the box sweeps above and below the surface, and only what
-/// falls inside it can be painted at all, so it is the aid for sizing the sweep and seeing why a decal stops short of a
-/// wall or a step.
-/// <br/>
-/// The two are independent and compose (turn both on to see the painted shape sitting inside the volume that
-/// produced it); like the shape outline, this is re-emitted every frame through the immediate layer (camera-facing,
-/// so the edges stay crisp and are never distorted by the decal's non-uniform scale).
-/// </summary>
 public sealed partial class SceneNode
 {
-    // Default volume-edge width, in world units; thinner than the shape outline so the box reads as scaffolding
-    // behind it.
     private const float DefaultDecalVolumeWidth = 0.02f;
 
-    // The immediate-layer style for the box edges: a world-depth-tested line, so the volume reads as a real frame in
-    // the scene.
     private static readonly ImShapeStyle DecalVolumeEdgeStyle = new();
 
-    // Reusable face-loop buffer; render-thread only (see DecalOverlayService), so one per thread keeps the per-frame
-    // trace allocation-free.
+    // Per thread.
     [System.ThreadStatic]
     private static List<Vector3>? decalVolumePath;
 
-    // The volume-edge color (straight alpha); alpha 0 = the opt-in box is off, driven by ShowDecalVolume /
-    // HideDecalVolume.
+    // Straight alpha. Alpha 0 = off.
     private Vector4 decalVolumeColor;
 
     private float decalVolumeWidth = DefaultDecalVolumeWidth;
 
-    /// <summary>Whether the decal-volume box is currently shown (its color's alpha &gt; 0).</summary>
+    /// <summary>Whether the decal projection box is currently shown.</summary>
     public bool HasDecalVolume => decalVolumeColor.W > 0f;
 
-    /// <summary>
-    /// Shows the decal's projection box as a wireframe - the twelve edges of the volume the shader tests against, so
-    /// you can see exactly how far the projection reaches above and below the surface; toggle it back off with
-    /// <see cref="HideDecalVolume"/> (calling it again updates the color / width), fluent.<br/>
-    /// It follows the node's transform and the decal's <see cref="DecalSurface"/> constraint live, so it tracks the
-    /// decal through any edit; no-op (logged) when the node carries no decal material.
-    /// </summary>
-    /// <param name="color">Edge color, straight alpha (alpha &gt; 0 to be visible); null uses the decal's own color, made opaque.</param>
-    /// <param name="edgeWidth">Edge thickness in world units (default 0.02).</param>
+    /// <summary>Shows the edges of the decal's projection box, or logs and does nothing without a decal material. Fluent.</summary>
+    /// <param name="color">Edge color in straight alpha, or null for the decal's own color made opaque.</param>
+    /// <param name="edgeWidth">Edge thickness in world units.</param>
+    /// <returns>This node.</returns>
     public SceneNode ShowDecalVolume(Vector4? color = null, float edgeWidth = DefaultDecalVolumeWidth)
     {
         if (Renderer?.Material is not { Domain: MaterialDomain.GroundDecal } decalMat)
@@ -69,16 +46,15 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Hides the decal-volume box, if shown; fluent.</summary>
+    /// <summary>Hides the decal projection box, if shown. Fluent.</summary>
     public SceneNode HideDecalVolume()
     {
         decalVolumeColor = default;
         if (!HasDecalShape)
-            DecalOverlayService.Unregister(this); // the shape outline may still need the per-frame slot
+            DecalOverlayService.Unregister(this); // the shape outline may still need the slot
         return this;
     }
 
-    // Stops the decal-volume box and drops the node from the service when nothing else needs it (called on destroy).
     private void ReleaseDecalVolume()
     {
         if (decalVolumeColor.W <= 0f)
@@ -89,9 +65,7 @@ public sealed partial class SceneNode
             DecalOverlayService.Unregister(this);
     }
 
-    // Emits this node's decal-volume box into the immediate layer for this frame; render-thread only, driven off
-    // OnRenderOverlay by DecalOverlayService (the opt-in path) or by TraceDecalVolumes (the master toggle), reading
-    // the world matrix under the graph lock and skipping a destroyed, hidden, or no-longer-decal node.
+    // Render thread. Force draws a node that did not opt in.
     internal void DrawDecalVolumeEdges(ImDraw3D im, bool force = false)
     {
         Vector4 color;
@@ -118,7 +92,6 @@ public sealed partial class SceneNode
 
         var path = decalVolumePath ??= new List<Vector3>(4);
 
-        // The two face loops, then the four verticals joining them - the box's twelve edges.
         for (var face = 0; face < 2; face++)
         {
             path.Clear();

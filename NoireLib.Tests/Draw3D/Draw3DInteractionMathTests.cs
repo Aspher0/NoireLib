@@ -3,6 +3,7 @@ using NoireLib.Draw3D;
 using NoireLib.Draw3D.Interaction;
 using NoireLib.Draw3D.Interaction.Gizmo;
 using NoireLib.Draw3D.Scene;
+using NoireLib.Helpers;
 using System;
 using System.Numerics;
 using Xunit;
@@ -15,7 +16,7 @@ namespace NoireLib.Tests;
 /// </summary>
 public class Draw3DInteractionMathTests
 {
-    /// <summary>A reversed-Z infinite-far projection (FoV 90°, aspect 1, near 0.1), reused for projection math.</summary>
+    /// <summary>A reversed-Z infinite-far projection: FoV 90 degrees, aspect 1, near 0.1.</summary>
     private static readonly Matrix4x4 Proj = new(
         1, 0, 0, 0,
         0, 1, 0, 0,
@@ -31,12 +32,10 @@ public class Draw3DInteractionMathTests
             reversedZ: true, nearPlane: 0.1f, hasDepth: true, usedFallbackCamera: false, frameId: 1);
     }
 
-    // ---------------------------------------------------------------- InteractMath
-
     [Fact]
     public void RayPlane_HitsExpectedPoint()
     {
-        InteractMath.RayPlane(new Vector3(0, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, out var t, out var hit)
+        Geometry3DHelper.RayPlane(new Vector3(0, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, out var t, out var hit)
             .Should().BeTrue();
         t.Should().BeApproximately(5f, 1e-4f);
         hit.Should().Be(Vector3.Zero);
@@ -45,15 +44,14 @@ public class Draw3DInteractionMathTests
     [Fact]
     public void RayPlane_ParallelIsRejected()
     {
-        InteractMath.RayPlane(new Vector3(0, 5, 0), new Vector3(1, 0, 0), Vector3.Zero, Vector3.UnitY, out _, out _)
+        Geometry3DHelper.RayPlane(new Vector3(0, 5, 0), new Vector3(1, 0, 0), Vector3.Zero, Vector3.UnitY, out _, out _)
             .Should().BeFalse();
     }
 
     [Fact]
     public void ClosestAxisParam_ProjectsRayOntoAxis()
     {
-        // A ray dropping straight down onto the X axis at x = 3 has closest param 3.
-        InteractMath.ClosestAxisParam(new Vector3(3, 4, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitX, out var s)
+        Geometry3DHelper.ClosestAxisParam(new Vector3(3, 4, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitX, out var s)
             .Should().BeTrue();
         s.Should().BeApproximately(3f, 1e-4f);
     }
@@ -61,31 +59,31 @@ public class Draw3DInteractionMathTests
     [Fact]
     public void RaySegmentDistance_MeasuresPerpendicularGap()
     {
-        var d = InteractMath.RaySegmentDistance(new Vector3(0, 2, 0), new Vector3(1, 0, 0), new Vector3(0, 0, 0), new Vector3(5, 0, 0), out _);
+        var d = Geometry3DHelper.RaySegmentDistance(new Vector3(0, 2, 0), new Vector3(1, 0, 0), new Vector3(0, 0, 0), new Vector3(5, 0, 0), out _);
         d.Should().BeApproximately(2f, 1e-4f);
     }
 
     [Fact]
     public void RayRing_HitsBandNotCenter()
     {
-        // Ring of radius 2 in the XZ plane (normal +Y). A ray onto its rim hits; onto its center misses.
-        InteractMath.RayRing(new Vector3(2, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, 2f, 0.2f, out _).Should().BeTrue();
-        InteractMath.RayRing(new Vector3(0, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, 2f, 0.2f, out _).Should().BeFalse();
+        // Radius 2 in the XZ plane. The rim hits, the center misses.
+        Geometry3DHelper.RayRing(new Vector3(2, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, 2f, 0.2f, out _).Should().BeTrue();
+        Geometry3DHelper.RayRing(new Vector3(0, 5, 0), new Vector3(0, -1, 0), Vector3.Zero, Vector3.UnitY, 2f, 0.2f, out _).Should().BeFalse();
     }
 
     [Fact]
     public void SignedAngleOnPlane_MatchesHandTurn()
     {
-        // From +X to +Z about +Y is -90° (right-handed cross points to -Y).
-        var angle = InteractMath.SignedAngleOnPlane(Vector3.Zero, Vector3.UnitY, new Vector3(1, 0, 0), new Vector3(0, 0, 1));
+        // -90 degrees: the right-handed cross points to -Y.
+        var angle = Geometry3DHelper.SignedAngleOnPlane(Vector3.Zero, Vector3.UnitY, new Vector3(1, 0, 0), new Vector3(0, 0, 1));
         angle.Should().BeApproximately(-MathF.PI / 2f, 1e-4f);
     }
 
     [Fact]
-    public void WorldPerPixel_MatchesProjectionScale()
+    public void TryWorldPerPixel_MatchesProjectionScale()
     {
-        // At z = 10 the 90° frustum is 20 world units wide across 1000 px, giving 0.02 world/px.
-        InteractMath.WorldPerPixel(Frame(), new Vector3(0, 0, 10), out var wpp, out var right, out var up).Should().BeTrue();
+        // At z = 10 the 90 degree frustum is 20 units across 1000 px.
+        Frame().TryWorldPerPixel(new Vector3(0, 0, 10), out var wpp, out var right, out var up).Should().BeTrue();
         wpp.Should().BeApproximately(0.02f, 1e-3f);
         right.X.Should().BeGreaterThan(0.99f);
         up.Y.Should().BeGreaterThan(0.99f);
@@ -94,12 +92,10 @@ public class Draw3DInteractionMathTests
     [Fact]
     public void Snap_RoundsToGrid()
     {
-        InteractMath.Snap(1.2f, 0.5f).Should().BeApproximately(1.0f, 1e-5f);
-        InteractMath.Snap(new Vector3(0.24f, 0.26f, 9f), new Vector3(0.5f, 0.5f, 0f))
+        MathHelper.Snap(1.2f, 0.5f).Should().BeApproximately(1.0f, 1e-5f);
+        Geometry3DHelper.Snap(new Vector3(0.24f, 0.26f, 9f), new Vector3(0.5f, 0.5f, 0f))
             .Should().Be(new Vector3(0f, 0.5f, 9f));
     }
-
-    // ---------------------------------------------------------------- GizmoMath
 
     [Fact]
     public void ScreenConstantLength_IsPixelsTimesWorldPerPixel()
@@ -112,8 +108,8 @@ public class Draw3DInteractionMathTests
     {
         var d = GizmoMath.AxisTranslationDelta(
             Vector3.UnitX, Vector3.Zero,
-            new Vector3(0, 5, 0), new Vector3(0, -1, 0),   // press ray meets X axis at 0
-            new Vector3(2, 5, 0), new Vector3(0, -1, 0));  // now meets X axis at 2
+            new Vector3(0, 5, 0), new Vector3(0, -1, 0),   // meets X axis at 0
+            new Vector3(2, 5, 0), new Vector3(0, -1, 0));  // meets X axis at 2
         d.Should().BeApproximately(2f, 1e-4f);
     }
 
@@ -122,8 +118,8 @@ public class Draw3DInteractionMathTests
     {
         var angle = GizmoMath.RotationAngle(
             Vector3.Zero, Vector3.UnitY,
-            new Vector3(1, 10, 0), new Vector3(0, -1, 0),   // press hits (1,0,0)
-            new Vector3(0, 10, 1), new Vector3(0, -1, 0));  // now hits (0,0,1)
+            new Vector3(1, 10, 0), new Vector3(0, -1, 0),
+            new Vector3(0, 10, 1), new Vector3(0, -1, 0));
         angle.Should().BeApproximately(-MathF.PI / 2f, 1e-3f);
     }
 
@@ -153,8 +149,6 @@ public class Draw3DInteractionMathTests
         GizmoMath.SnapScale(0.05f, 0.25f).Should().BeApproximately(0.25f, 1e-5f, "scale never snaps below one increment");
     }
 
-    // ---------------------------------------------------------------- InteractSelection
-
     [Fact]
     public void Selection_Single_ReplacesOnPick()
     {
@@ -175,11 +169,11 @@ public class Draw3DInteractionMathTests
         var a = new SceneNode(null, "a");
         var b = new SceneNode(null, "b");
 
-        sel.Pick(a);                                   // no modifier, replace
-        sel.Pick(b, SelectionModifiers.Add);           // shift-add
+        sel.Pick(a);
+        sel.Pick(b, SelectionModifiers.Add);
         sel.Nodes.Should().HaveCount(2);
 
-        sel.Pick(a, SelectionModifiers.Toggle);        // ctrl-toggle removes a
+        sel.Pick(a, SelectionModifiers.Toggle);
         sel.Nodes.Should().ContainSingle().Which.Should().BeSameAs(b);
     }
 
@@ -206,7 +200,7 @@ public class Draw3DInteractionMathTests
         sel.Changed += () => changes++;
 
         sel.Pick(a);
-        sel.Pick(a);   // same node, no change
+        sel.Pick(a);
         changes.Should().Be(1);
     }
 }

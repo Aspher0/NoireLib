@@ -5,16 +5,12 @@ using System.Reflection;
 
 namespace NoireLib.IPC;
 
-/// <summary>
-/// Represents a reusable configuration scope for resolving IPC names and channels.
-/// </summary>
+/// <summary>A reusable configuration scope for resolving IPC names and channels.</summary>
 public sealed class NoireIpcScope
 {
-    /// <summary>
-    /// Initializes a new instance of the <see cref="NoireIpcScope"/> class.
-    /// </summary>
+    /// <summary>Creates a scope.</summary>
     /// <param name="prefix">The prefix to apply to names resolved by the scope.</param>
-    /// <param name="useDefaultPrefix">If set to <see langword="true"/>, default prefix resolution is used when <paramref name="prefix"/> is not supplied.</param>
+    /// <param name="useDefaultPrefix">Whether default prefix resolution applies when <paramref name="prefix"/> is not supplied.</param>
     /// <param name="messageResultType">The trailing generic type to use for message channels created by the scope.</param>
     public NoireIpcScope(string? prefix, bool useDefaultPrefix, Type messageResultType)
     {
@@ -23,27 +19,16 @@ public sealed class NoireIpcScope
         MessageResultType = messageResultType;
     }
 
-    /// <summary>
-    /// Gets the explicit prefix assigned to the scope.
-    /// </summary>
-    /// <returns>The scope prefix, or <see langword="null"/> to inherit the current scope prefix.</returns>
+    /// <summary>The explicit prefix assigned to the scope, or null to inherit the current scope prefix.</summary>
     public string? Prefix { get; }
 
-    /// <summary>
-    /// Gets a value indicating whether default prefix resolution is enabled for the scope.
-    /// </summary>
-    /// <returns><see langword="true"/> when default prefix resolution is enabled; otherwise, <see langword="false"/>.</returns>
+    /// <summary>Whether default prefix resolution is enabled for the scope.</summary>
     public bool UseDefaultPrefix { get; }
 
-    /// <summary>
-    /// Gets the trailing generic type used for message channels created by the scope.
-    /// </summary>
-    /// <returns>The message result type used by channels created from the scope.</returns>
+    /// <summary>The trailing generic type used for message channels created by the scope.</summary>
     public Type MessageResultType { get; }
 
-    /// <summary>
-    /// Resolves a local IPC name into its final channel name using the scope configuration.
-    /// </summary>
+    /// <summary>Resolves a local IPC name into its final channel name.</summary>
     /// <param name="name">The local or fully qualified IPC name.</param>
     /// <returns>The fully qualified IPC channel name.</returns>
     public string ResolveName(string name)
@@ -166,10 +151,7 @@ public sealed class NoireIpcScope
     public TResult InvokeFunc<TResult>(string name, Type[] parameterTypes, params object?[] arguments)
         => Channel(name).InvokeFunc<TResult>(parameterTypes, arguments);
 
-    /// <summary>
-    /// Registers or binds every annotated member on an object instance decorated with <see cref="NoireIpcAttribute"/>.
-    /// Methods are registered as IPC providers. Properties with delegate types are bound as IPC consumers. Events are bridged to IPC messages for publishing and subscription.
-    /// </summary>
+    /// <summary>Registers or binds every annotated member on an object instance decorated with <see cref="NoireIpcAttribute"/>. Methods become providers, delegate-typed properties become consumers, events become message channels.</summary>
     /// <param name="instance">The object instance whose annotated members should be processed.</param>
     /// <param name="bindingFlags">The binding flags used to discover members on <paramref name="instance"/>.</param>
     /// <returns>A group containing handles for the annotated registrations and consumer bindings.</returns>
@@ -180,10 +162,7 @@ public sealed class NoireIpcScope
         return RegisterAttributedMembers(instance.GetType(), instance, bindingFlags);
     }
 
-    /// <summary>
-    /// Registers or binds every annotated static member on a type decorated with <see cref="NoireIpcAttribute"/>.
-    /// Methods are registered as IPC providers. Properties with delegate types are bound as IPC consumers. Events are bridged to IPC messages for publishing and subscription.
-    /// </summary>
+    /// <summary>Registers or binds every annotated static member on a type decorated with <see cref="NoireIpcAttribute"/>. Methods become providers, delegate-typed properties become consumers, events become message channels.</summary>
     /// <param name="type">The type containing annotated static members.</param>
     /// <param name="bindingFlags">The binding flags used to discover static members on <paramref name="type"/>.</param>
     /// <returns>A group containing handles for the annotated registrations and consumer bindings.</returns>
@@ -310,10 +289,17 @@ public sealed class NoireIpcScope
                     handles.Add(registration);
                 }
             }
+            else if (entry.Property != null)
+            {
+                // Registering it here surfaces a bad property immediately.
+                var providerDelegate = NoireIPC.CreateProviderDelegateForProperty(target, entry.Property);
+                var registration = scope.Channel(memberName).Register(providerDelegate, entry.Attribute.Kind);
+                handles.Add(registration);
+            }
             else
             {
                 throw new InvalidOperationException(
-                    $"Member '{type.FullName}.{entry.Member.Name}' with [NoireIpc] must be either a method, an event, a property with a delegate type, or a property with NoireIpcConsumer<TDelegate>.");
+                    $"Member '{type.FullName}.{entry.Member.Name}' with [NoireIpc] must be either a method, an event, or a property.");
             }
         }
 

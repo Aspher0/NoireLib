@@ -10,6 +10,7 @@ You are reading the documentation for the `NoireHistoryLogger` module.
 - [Creating and Adding Logs](#creating-and-adding-logs)
 - [Log Levels](#log-levels)
 - [Displaying the History Logger Window](#displaying-the-history-logger-window)
+- [Using Your Own Window](#using-your-own-window)
 - [Database Persistence](#database-persistence)
 - [Auto-Logging with Proxies](#auto-logging-with-proxies)
 - [Advanced Features](#advanced-features)
@@ -20,12 +21,13 @@ You are reading the documentation for the `NoireHistoryLogger` module.
 
 ## Overview
 
-The `NoireHistoryLogger` is a module that provides comprehensive logging capabilities with optional database persistence and a built-in UI for viewing and managing logs. It provides:
+`NoireHistoryLogger` logs entries in memory, optionally to the database, with a window to view and manage them. It provides:
 - **In-memory and database storage** for log entries
 - **Built-in UI window** for viewing and managing logs
+- **Your own window** in place of the built-in one, fed by a cached `HistoryLogView`
 - **Multiple log levels** (Trace, Debug, Info, Warning, Error, Critical)
 - **Category-based organization** for filtering and grouping logs
-- **Auto-logging capabilities** with dynamic proxies
+- **Auto-logging** with dynamic proxies
 - **User permissions** for UI control
 - **Advanced query support** for database operations
 
@@ -43,13 +45,9 @@ Log events in your plugin:
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Simple log
 logger?.AddEntry("Plugin initialized successfully");
-
-// Log with category
 logger?.AddEntry("Configuration loaded", category: "Config");
 
-// Log with level and source
 logger?.AddEntry(
     message: "Failed to connect to server",
     category: "Network",
@@ -66,8 +64,6 @@ Open the history logger window:
 logger?.ShowWindow();
 ```
 
-That's it! You now have a fully functional history logger with UI.
-
 ---
 
 ## Configuration
@@ -78,45 +74,41 @@ Configure the module using the constructor:
 
 ```csharp
 var historyLogger = new NoireHistoryLogger(
-    moduleId: "MyLogger",                           // Optional identifier
-    active: true,                                   // Enable/disable the module
-    enableLogging: true,                            // Enable internal logging
-    persistLogs: false,                             // Enable database persistence
-    databaseName: "MyPluginLogs",                   // Optional custom database name
-    allowUserTogglePersistence: false,              // Allow user to toggle persistence in UI
-    allowUserClearInMemory: true,                   // Allow user to clear in-memory logs
-    allowUserClearDatabase: true,                   // Allow user to clear database logs
-    allowManualEntryCreation: false                 // Allow user to create manual entries in UI
+    moduleId: "MyLogger",
+    active: true,
+    enableLogging: true,
+    persistLogs: false,
+    databaseName: "MyPluginLogs",
+    allowUserTogglePersistence: false,
+    allowUserClearInMemory: true,
+    allowUserClearDatabase: true,
+    allowManualEntryCreation: false
 );
 ```
 
 ### Property Configuration
 
-You can also configure the module after creation:
+Or configure it after creation:
 
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Set database persistence
 logger?.SetPersistLogs(persist: true, loadExisting: true);
-
-// Change database name
 logger?.SetDatabaseName("CustomDatabase");
 
-// Configure user permissions
 logger?.SetAllowUserTogglePersistence(true)
        ?.SetAllowUserClearInMemory(true)
        ?.SetAllowUserClearDatabase(false)
        ?.SetAllowManualEntryCreation(true);
 
-// Set maximum in-memory entries (default: 2000)
+// Default: 2000
 if (logger != null)
     logger.MaxInMemoryEntries = 5000;
 ```
 
 ### User Permission Flags
 
-Control what users can do in the UI:
+What users can do in the window:
 
 - `AllowUserTogglePersistence`: Allow toggling database persistence on/off
 - `AllowUserClearInMemory`: Allow clearing in-memory (runtime) logs
@@ -141,16 +133,10 @@ Add log entries with varying levels of detail:
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Minimal log
 logger?.AddEntry("Something happened");
-
-// With category
 logger?.AddEntry("User logged in", category: "Authentication");
-
-// With level
 logger?.AddEntry("Low memory warning", level: HistoryLogLevel.Warning);
 
-// Complete log entry
 logger?.AddEntry(
     message: "Database query failed: Timeout exceeded",
     category: "Database",
@@ -190,7 +176,7 @@ if (logger != null)
     logger.MaxInMemoryEntries = -1;
 ```
 
-When the limit is exceeded, the oldest entries are automatically removed from memory.
+Past the limit, the oldest entries are removed from memory.
 
 ---
 
@@ -201,12 +187,12 @@ The module supports six severity levels:
 ```csharp
 public enum HistoryLogLevel
 {
-    Trace,      // Detailed diagnostic information
-    Debug,      // Debugging information
-    Info,       // General informational messages
-    Warning,    // Warning messages
-    Error,      // Error messages
-    Critical    // Critical failures
+    Trace,
+    Debug,
+    Info,
+    Warning,
+    Error,
+    Critical
 }
 ```
 
@@ -221,32 +207,91 @@ Show or hide the history logger window:
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Show the window
 logger?.ShowWindow();
-
-// Hide the window
 logger?.HideWindow();
-
-// Toggle the window
 logger?.ToggleWindow();
 
-// Show, hide or toggle from a single call (null toggles)
+// SetShowWindow(null) toggles.
 logger?.SetShowWindow(true);
 
-// Check if the window is open
 var isOpen = logger?.IsWindowOpen ?? false;
 ```
 
 ### Window Features
 
-The built-in UI provides:
-- **Log filtering** by category and log level
-- **Search functionality** to find specific entries
-- **Sorting options** (newest/oldest first, or alphabetical ordering)
-- **Color-coded log levels** for easy identification
-- **Entry details** including timestamp, source, and message
-- **Clear actions** (respecting user permissions)
-- **Persistence toggle** (if enabled)
+The built-in window provides:
+- **Filtering** by category and log level
+- **Search**
+- **Sorting** (newest or oldest first, or alphabetical)
+- **Color-coded log levels**
+- **Entry details**: timestamp, source and message
+- **Clear actions**, following the user permissions
+- **Persistence toggle**, if enabled
+
+---
+
+## Using Your Own Window
+
+Register any Dalamud `Window` in place of the built-in one. `ShowWindow()`, `HideWindow()`, `ToggleWindow()`, `SetShowWindow()` and `IsWindowOpen` then act on it. Add it to your own `WindowSystem`.
+
+```csharp
+var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
+
+logger?.SetCustomWindow(myLogsWindow);   // ShowWindow() now opens myLogsWindow
+logger?.SetCustomWindow(null);           // back to the built-in window
+var custom = logger?.CustomWindow;
+```
+
+Switching while a window is open closes it and opens the other.
+
+### HistoryLogView
+
+The search, filters, sorting and paging of the built-in window. Results are cached and rebuilt only when the entries or a setting change. Reading them every frame does not allocate.
+
+```csharp
+var view = new HistoryLogView(logger);
+
+view.SearchText = "penumbra";                          // message, category and source, case-insensitive
+view.ToggleLevel(HistoryLogLevel.Warning);             // empty level set = every level
+view.SetCategorySelected("Swap", true);                // empty category set = every category
+view.ClearLevelFilter();
+view.ClearCategoryFilter();
+view.SortColumn = HistoryLogSortColumn.Time;           // Time, Level, Category, Source
+view.SortDescending = true;                            // newest first (default)
+view.ItemsPerPage = 50;                                // back to page 1
+view.Page = view.PageCount;                            // 1-based, clamped
+```
+
+Changing the search, a filter or the page size returns to page 1. Sorting keeps the page.
+
+```csharp
+IReadOnlyList<HistoryLogEntry> page = view.PageEntries;   // current page, in sort order
+IReadOnlyList<HistoryLogEntry> all = view.Entries;        // every matching entry
+int first = view.PageStartIndex;                          // index in Entries of page[0]
+int total = view.TotalCount;                              // before any filter
+int warnings = view.CountOf(HistoryLogLevel.Warning);     // before any filter
+IReadOnlyList<string> categories = view.Categories;       // distinct, sorted
+int revision = view.Revision;                             // changes on every rebuild: rebuild cached text when it does
+```
+
+### Operations
+
+Everything the built-in window does is public on the module:
+
+```csharp
+logger.AddEntry("What happened", "General", HistoryLogLevel.Info, "Manual");   // manual entry
+if (logger.CanUserDeleteEntries)
+    logger.RemoveEntry(entry);                     // delete one entry
+logger.ClearEntries();                             // clear in-memory (gate on AllowUserClearInMemory)
+logger.ClearDatabaseEntries();                     // clear database (gate on AllowUserClearDatabase)
+logger.LoadEntriesFromDatabase(true);              // refresh from the database
+logger.SetPersistLogs(true);                       // persistence toggle (gate on AllowUserTogglePersistence)
+
+ImGui.SetClipboardText(NoireHistoryLogger.FormatEntries(view.Entries));   // export or copy
+var line = NoireHistoryLogger.FormatEntry(entry);  // "yyyy-MM-dd HH:mm:ss | Level | Category | Message | Source"
+```
+
+The built-in window clears in-memory entries while not persisting and database entries while persisting. Its display options are persisted in `HistoryLoggerConfig` (`ShowLevelBackgroundColors`, `SelectLinesSeparately`, `HideCategoryColumn`, `HideSourceColumn`, `ItemsPerPage`) for your window to read.
 
 ---
 
@@ -254,7 +299,7 @@ The built-in UI provides:
 
 ### Enabling Persistence
 
-Enable database persistence to store logs permanently:
+Store logs in the database:
 
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
@@ -271,16 +316,15 @@ logger?.SetPersistLogs(persist: false);
 
 ### Custom Database Name
 
-Override the default database name:
+Override the database name:
 
 ```csharp
-// Via constructor
 var logger = new NoireHistoryLogger(
     persistLogs: true,
     databaseName: "MyPluginLogs"
 );
 
-// Via method (will reload from new database if persistence is enabled)
+// Reloads from the new database if persistence is enabled.
 logger?.SetDatabaseName("MyPluginLogs");
 ```
 
@@ -288,40 +332,33 @@ Default database name: `"NoireHistoryLogger"`
 
 ### Loading from Database
 
-Manually reload logs from the database:
+Reload logs from the database:
 
 ```csharp
-// Replace existing entries with database logs
 logger?.LoadEntriesFromDatabase(replaceExisting: true);
-
-// Append database logs to existing entries
 logger?.LoadEntriesFromDatabase(replaceExisting: false);
 ```
 
 ### Clearing Database Logs
 
-Clear persisted logs from the database:
+Clear persisted logs:
 
 ```csharp
-// Clear the database entries, and the rows behind them when persistence is on
-logger?.ClearDatabaseEntries();
-
-// Clear in-memory entries only
-logger?.ClearEntries();
+logger?.ClearDatabaseEntries();  // also clears the underlying rows when persistence is on
+logger?.ClearEntries();          // in-memory only
 ```
 
-**Note:** unlike `RemoveEntry`, these two clear unconditionally. The `AllowUserClear*` permissions gate the
-matching buttons in the window, not these calls.
+These two clear unconditionally, unlike `RemoveEntry`. The `AllowUserClear*` permissions only gate the window's buttons.
 
 ---
 
 ## Auto-Logging with Proxies
 
-The `NoireHistoryLogger` supports automatic logging of method calls using dynamic proxies.
+Method calls can be logged automatically through dynamic proxies.
 
 ### Basic Proxy Usage
 
-Create a proxy that automatically logs method calls:
+A proxy that logs method calls:
 
 ```csharp
 public class UserService
@@ -343,8 +380,7 @@ service?.CreateUser("john.doe");  // Logs: "UserService.CreateUser invoked"
 service?.DeleteUser(123);         // Logs: "UserService.DeleteUser invoked"
 ```
 
-A proxy works by subclassing the type and overriding its members, so the methods to log must be `virtual`.
-A non-virtual one is skipped, with a warning naming it.
+A proxy subclasses the type. The methods to log must be `virtual`. A non-virtual one is skipped with a warning naming it.
 
 ### Proxy with Existing Instance
 
@@ -365,39 +401,33 @@ var loggedService = logger?.CreateLoggedProxy(
 Register types for automatic logging:
 
 ```csharp
-// Register a single type
 logger?.RegisterTypeForAutoLogging<UserService>(category: "Services");
 
-// Create proxies - automatically uses registered settings
-var service1 = logger?.CreateLoggedProxy<UserService>();  // Uses "Services" category
+var service1 = logger?.CreateLoggedProxy<UserService>();  // uses the "Services" category
 
-// Clear registrations
 logger?.ClearAutoLoggingRegistrations();
 ```
 
 ### Selective Method Logging
 
-Control which methods to log:
+Choose which methods to log:
 
 ```csharp
-// Log all methods
 var proxy1 = logger?.CreateLoggedProxy<MyClass>(logAllMethods: true);
 
-// Log only the members decorated with [NoireLog]
+// false logs only the members decorated with [NoireLog].
 var proxy2 = logger?.CreateLoggedProxy<MyClass>(logAllMethods: false);
 
-// Override registered settings
 logger?.RegisterTypeForAutoLogging<MyClass>(category: "Auto");
 var proxy3 = logger?.CreateLoggedProxy<MyClass>(
-    logAllMethods: false,  // Override registered setting
-    category: "Manual"     // Override registered category
+    logAllMethods: false,  // overrides the registered setting
+    category: "Manual"     // overrides the registered category
 );
 ```
 
 ### The [NoireLog] Attribute
 
-`[NoireLog]` marks what a proxy logs when `logAllMethods` is off, and overrides the message, category and
-level of the entry a call produces. It applies to a method, a property, a constructor, or a whole class:
+`[NoireLog]` marks what a proxy logs when `logAllMethods` is off, and overrides the entry's message, category and level. It applies to a method, a property, a constructor or a whole class:
 
 ```csharp
 public class UserService
@@ -412,8 +442,7 @@ public class UserService
 }
 ```
 
-A call that throws is logged at `Error` and the exception is appended to the message, unless the attribute
-names a level of its own. The exception then keeps propagating.
+A throwing call is logged at `Error` with the exception appended, unless the attribute names a level. The exception keeps propagating.
 
 ---
 
@@ -421,7 +450,7 @@ names a level of its own. The exception then keeps propagating.
 
 ### Retrieving Log Entries
 
-Get snapshots of log entries:
+Snapshots of log entries:
 
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
@@ -429,22 +458,17 @@ var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 // Get current entries (returns runtime or database entries based on persistence mode)
 IReadOnlyList<HistoryLogEntry>? entries = logger?.GetEntriesSnapshot();
 
-// Get runtime-only entries
 IReadOnlyList<HistoryLogEntry>? runtimeEntries = logger?.GetRuntimeEntriesSnapshot();
-
-// Get database entries
 IReadOnlyList<HistoryLogEntry>? databaseEntries = logger?.GetDatabaseEntriesSnapshot();
 ```
 
 ### Category Management
 
-Retrieve and work with categories:
+Categories:
 
 ```csharp
-// Get all distinct categories
 IReadOnlyList<string>? categories = logger?.GetCategories();
 
-// Use in UI dropdown, filtering, etc.
 foreach (var category in categories ?? Enumerable.Empty<string>())
 {
     Console.WriteLine($"Category: {category}");
@@ -453,19 +477,15 @@ foreach (var category in categories ?? Enumerable.Empty<string>())
 
 ### Removing Specific Entries
 
-Remove individual log entries:
+Remove individual entries:
 
 ```csharp
 // AddEntry returns the entry as stored, and RemoveEntry matches on it
 var stored = logger?.AddEntry("Test entry", category: "Test");
-
-// Remove the entry (respects user permissions)
 bool removed = stored != null && (logger?.RemoveEntry(stored) ?? false);
 ```
 
-Both `AddEntry` overloads return the stored entry. Keep that value rather than the one you handed in: the
-module normalizes an entry on the way in, and persistence stamps the stored copy with its database `Id`, so
-the entry you built yourself is not the one that ended up stored and will not reliably match it.
+Both `AddEntry` overloads return the stored entry, normalized and stamped with its database `Id` when persisted. Pass that value to `RemoveEntry`.
 
 ```csharp
 var entry = new HistoryLogEntry
@@ -478,19 +498,17 @@ var entry = new HistoryLogEntry
 var stored = logger?.AddEntry(entry);
 ```
 
-Entries read from `GetEntriesSnapshot()`, `GetRuntimeEntriesSnapshot()` or `GetDatabaseEntriesSnapshot()`
-are stored entries too, and can be passed to `RemoveEntry` directly.
+Entries from `GetEntriesSnapshot()`, `GetRuntimeEntriesSnapshot()` or `GetDatabaseEntriesSnapshot()` are stored entries too.
 
-Passing `null` to `AddEntry(HistoryLogEntry)` or to `RemoveEntry` throws an `ArgumentNullException`.
+`null` passed to `AddEntry(HistoryLogEntry)` or `RemoveEntry` throws `ArgumentNullException`.
 
-**Note:** Removal respects `AllowUserClearInMemory` and `AllowUserClearDatabase` permissions.
+Removal respects `AllowUserClearInMemory` and `AllowUserClearDatabase`.
 
 ### Direct Database Queries
 
-Execute custom queries against the log database:
+Custom queries on the log database:
 
 ```csharp
-// Execute a query without returning a result
 logger?.ExecuteDatabaseQuery(builder =>
 {
     builder.Where("level", "Error")
@@ -498,13 +516,11 @@ logger?.ExecuteDatabaseQuery(builder =>
            .Delete();
 });
 
-// Execute a query with a result
 var errorCount = logger?.ExecuteDatabaseQuery(builder =>
 {
     return builder.Where("level", "Error").Count();
 }) ?? 0;
 
-// Get entries from last hour
 var recentLogs = logger?.ExecuteDatabaseQuery(builder =>
 {
     return builder.Where("timestamp", ">", DateTime.UtcNow.AddHours(-1))
@@ -515,27 +531,20 @@ var recentLogs = logger?.ExecuteDatabaseQuery(builder =>
 
 ### Checking Module State
 
-Access module properties:
+Module properties:
 
 ```csharp
 var logger = NoireLibMain.GetModule<NoireHistoryLogger>();
 
-// Check persistence status
 bool isPersisting = logger?.PersistLogs ?? false;
-
-// Get database name
 string dbName = logger?.DatabaseName ?? "Unknown";
-
-// Get max entries
 int maxEntries = logger?.MaxInMemoryEntries ?? 0;
 
-// Check user permissions
 bool canTogglePersist = logger?.AllowUserTogglePersistence ?? false;
 bool canClearMemory = logger?.AllowUserClearInMemory ?? false;
 bool canClearDatabase = logger?.AllowUserClearDatabase ?? false;
 bool canAddManually = logger?.AllowManualEntryCreation ?? false;
 
-// Check window state
 bool hasWindow = logger?.HasWindow ?? false;
 bool isWindowOpen = logger?.IsWindowOpen ?? false;
 ```
@@ -546,38 +555,35 @@ bool isWindowOpen = logger?.IsWindowOpen ?? false;
 
 ### Logs not appearing
 - Ensure the module is active (`IsActive == true`).
-- Confirm `AddEntry()` is being called correctly.
-- Check that entries are not being trimmed due to `MaxInMemoryEntries` limit.
-- Verify no exceptions are being thrown (enable `enableLogging: true`).
-- Check the dalamud logs with `/xllog`.
+- Check entries are not trimmed by `MaxInMemoryEntries`.
+- Enable `enableLogging: true` to see exceptions.
+- Check `/xllog`.
 
 ### Database persistence not working
 - Verify `PersistLogs` is set to `true`.
-- Check that the database name is valid (not null/empty).
-- Ensure NoireLib's database system is properly initialized.
-- Try calling `LoadEntriesFromDatabase(true)` manually.
-- Check for database file permissions issues.
+- Check the database name is not null or empty.
+- Ensure NoireLib's database system is initialized.
+- Call `LoadEntriesFromDatabase(true)` manually.
+- Check file permissions on the database.
 
 ### Window not showing
 - Confirm the module has a registered window (`HasWindow == true`).
 - Ensure `ShowWindow()` is called after module initialization.
-- Check that the module is active. Deactivating the module closes the window.
-- Read back `IsWindowOpen` after the call to tell a window that never opened from one drawn off screen.
-- Verify no UI framework conflicts.
+- Check that the module is active. Deactivating it closes the window.
+- Read `IsWindowOpen` after the call to tell a window that never opened from one off screen.
+- With `SetCustomWindow()`, add your window to your plugin's `WindowSystem`. The module only toggles `IsOpen`.
 
 ### Proxy auto-logging not working
-- Confirm the method being called is public and `virtual`. A proxy subclasses the type, so it cannot
-  intercept a non-virtual member; each one it has to skip is named in a warning.
-- Check that `logAllMethods` is set correctly. With it off, only members carrying `[NoireLog]` are logged.
-- Confirm you are calling the proxy that `CreateLoggedProxy` returned rather than the original instance.
-- `RegisterTypeForAutoLogging<T>()` only supplies the default used when `logAllMethods` is left null, so
-  passing `logAllMethods` explicitly ignores it.
+- The method must be public and `virtual`. Each skipped member is named in a warning.
+- Check `logAllMethods`. When off, only members carrying `[NoireLog]` are logged.
+- Call the proxy `CreateLoggedProxy` returned.
+- `RegisterTypeForAutoLogging<T>()` only supplies the default for a null `logAllMethods`.
 
 ### Entries being trimmed unexpectedly
-- Check `MaxInMemoryEntries` value (default: 2000).
+- Check `MaxInMemoryEntries` (default 2000).
 - Increase the limit: `logger.MaxInMemoryEntries = 5000;`
 - Enable database persistence to retain all logs.
-- Implement custom archiving logic using `GetEntriesSnapshot()`.
+- Archive entries yourself with `GetEntriesSnapshot()`.
 
 ---
 

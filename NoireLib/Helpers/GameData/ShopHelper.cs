@@ -1,6 +1,7 @@
 using FFXIVClientStructs.FFXIV.Client.Game.Event;
 using Lumina.Excel.Sheets;
 using System.Collections.Generic;
+using System.Threading;
 using GrandCompany = FFXIVClientStructs.FFXIV.Client.UI.Agent.GrandCompany;
 
 namespace NoireLib.Helpers;
@@ -8,7 +9,7 @@ namespace NoireLib.Helpers;
 /// <summary>
 /// Reads what the game's shops sell and what they charge.
 /// <br/>
-/// A shop row id is also the NPC's event handler id, so feeding <see cref="FindShopsSelling"/> to
+/// A shop row id is also the NPC's event handler id. Feeding <see cref="FindShopsSelling"/> to
 /// <see cref="EventNpcHelper.ScanHandlers"/> gives the NPCs selling an item.
 /// </summary>
 public static class ShopHelper
@@ -25,9 +26,78 @@ public static class ShopHelper
     /// <summary>The Immortal Flames' flame seals.</summary>
     public const uint FlameSealItemId = 22;
 
+    /// <summary>The ItemSortCategory row holding the game's own Currency tab.</summary>
+    public const uint CurrencySortCategoryId = 3;
+
+    /// <summary>The ItemUICategory row holding the currencies the interface groups together.</summary>
+    public const uint CurrencyUiCategoryId = 100;
+
+    /// <summary>The patch a shop line carries once a patch has turned it off. The window no longer shows it.</summary>
+    public const ushort RetiredPatch = 9999;
+
     private const int HandlerContentShift = 16;
 
+    private static readonly IReadOnlySet<uint> FallbackCurrencyItemIds = new HashSet<uint>
+    {
+        GilItemId,
+        StormSealItemId,
+        SerpentSealItemId,
+        FlameSealItemId,
+    };
+
+    private static readonly object CurrencyLock = new();
+
+    private static readonly object CatalogLock = new();
+
     private static ShopCatalog? cachedCatalog;
+    private static IReadOnlySet<uint>? cachedCurrencies;
+
+    #region Currencies
+
+    /// <summary>
+    /// Every item the game files as a currency: gil, the seals, the tomestones, the scrips, the marks and MGP. Read
+    /// once from the Item sheet.
+    /// </summary>
+    public static IReadOnlySet<uint> CurrencyItemIds
+    {
+        get
+        {
+            lock (CurrencyLock)
+                return cachedCurrencies ??= BuildCurrencyItemIds();
+        }
+    }
+
+    /// <summary>Whether an item is a currency, never something a list can ask for.</summary>
+    /// <param name="itemId">The Item row id.</param>
+    /// <returns>True when the item is a currency, false otherwise.</returns>
+    public static bool IsCurrency(uint itemId) => itemId != 0 && CurrencyItemIds.Contains(itemId);
+
+    private static IReadOnlySet<uint> BuildCurrencyItemIds()
+    {
+        var found = SafeExecutor.ExecuteSafely(() =>
+        {
+            var currencies = new HashSet<uint>(FallbackCurrencyItemIds);
+            var sheet = ExcelSheetHelper.GetSheet<Item>();
+
+            if (sheet == null)
+                return currencies;
+
+            foreach (var item in sheet)
+            {
+                if (item.RowId != 0
+                    && (item.ItemSortCategory.RowId == CurrencySortCategoryId || item.ItemUICategory.RowId == CurrencyUiCategoryId))
+                {
+                    currencies.Add(item.RowId);
+                }
+            }
+
+            return currencies;
+        }, null);
+
+        return found ?? FallbackCurrencyItemIds;
+    }
+
+    #endregion
 
     #region One shop
 
@@ -41,7 +111,12 @@ public static class ShopHelper
 
         var content = (EventHandlerContent)(shopId >> HandlerContentShift);
 
-        return content is EventHandlerContent.Shop or EventHandlerContent.SpecialShop ? content : null;
+        return content is EventHandlerContent.Shop
+            or EventHandlerContent.SpecialShop
+            or EventHandlerContent.GrandCompanyShop
+            or EventHandlerContent.FreeCompanyCreditShop
+            ? content
+            : null;
     }
 
     /// <summary>A shop's own name, which most vendors leave empty.</summary>
@@ -57,6 +132,9 @@ public static class ShopHelper
             EventHandlerContent.SpecialShop => ExcelSheetHelper.TryGetRow<SpecialShop>(shopId, out var specialShop) && specialShop.HasValue
                 ? specialShop.Value.Name.ExtractText()
                 : string.Empty,
+            EventHandlerContent.FreeCompanyCreditShop => ExcelSheetHelper.TryGetRow<FccShop>(shopId, out var creditShop) && creditShop.HasValue
+                ? creditShop.Value.Name.ExtractText()
+                : string.Empty,
             _ => string.Empty,
         }, string.Empty) ?? string.Empty;
     }
@@ -70,6 +148,8 @@ public static class ShopHelper
         {
             EventHandlerContent.Shop => ReadGilShopOffers(shopId),
             EventHandlerContent.SpecialShop => ReadSpecialShopOffers(shopId),
+            EventHandlerContent.GrandCompanyShop => ReadGrandCompanyShopOffers(shopId),
+            EventHandlerContent.FreeCompanyCreditShop => ReadCompanyCreditOffers(shopId),
             _ => [],
         };
     }
@@ -96,9 +176,18 @@ public static class ShopHelper
     #region The catalog
 
     /// <summary>Indexes every gil and special shop. Cached.</summary>
-    /// <param name="refresh">Whether to rebuild rather than answer from the cache.</param>
+    /// <param name="refresh">Whether to rebuild, never answer from the cache.</param>
     /// <returns>The catalog, or <see cref="ShopCatalog.Empty"/> when the sheets could not be read.</returns>
     public static ShopCatalog ScanCatalog(bool refresh = false)
+    {
+        if (!refresh && Volatile.Read(ref cachedCatalog) is { } cached)
+            return cached;
+
+        lock (CatalogLock)
+            return BuildCatalog(refresh);
+    }
+
+    private static ShopCatalog BuildCatalog(bool refresh)
     {
         if (!refresh && cachedCatalog != null)
             return cachedCatalog;
@@ -129,7 +218,27 @@ public static class ShopHelper
                 }
             }
 
-            return new ShopCatalog(shopsByItem, offersByShop, kindsByShop);
+            var grandCompanyShops = ExcelSheetHelper.GetSheet<GCShop>();
+            if (grandCompanyShops != null)
+            {
+                foreach (var shop in grandCompanyShops)
+                {
+                    if (shop.RowId != 0)
+                        Index(shop.RowId, EventHandlerContent.GrandCompanyShop, ReadGrandCompanyShopOffers(shop.RowId));
+                }
+            }
+
+            var creditShops = ExcelSheetHelper.GetSheet<FccShop>();
+            if (creditShops != null)
+            {
+                foreach (var shop in creditShops)
+                {
+                    if (shop.RowId != 0)
+                        Index(shop.RowId, EventHandlerContent.FreeCompanyCreditShop, ReadCompanyCreditOffers(shop.RowId));
+                }
+            }
+
+            return new ShopCatalog(shopsByItem, offersByShop, kindsByShop, NpcsByShop(offersByShop.Keys));
 
             void Index(uint shopId, EventHandlerContent kind, IReadOnlyList<ShopOffer> offers)
             {
@@ -155,7 +264,8 @@ public static class ShopHelper
             }
         }, ShopCatalog.Empty) ?? ShopCatalog.Empty;
 
-        return cachedCatalog = built;
+        Volatile.Write(ref cachedCatalog, built);
+        return built;
     }
 
     /// <summary>The shops that sell an item.</summary>
@@ -163,14 +273,31 @@ public static class ShopHelper
     /// <returns>The shop row ids, in ascending order.</returns>
     public static IReadOnlyList<uint> FindShopsSelling(uint itemId) => ScanCatalog().ShopsSelling(itemId);
 
+    private static Dictionary<uint, IReadOnlyList<uint>>? NpcsByShop(IEnumerable<uint> shopIds)
+    {
+        var index = VendorHelper.ScanRoutes();
+
+        if (index.Count == 0)
+            return null;
+
+        var reaching = new Dictionary<uint, IReadOnlyList<uint>>();
+
+        foreach (var shopId in shopIds)
+        {
+            var npcs = index.NpcsReaching(shopId);
+
+            if (npcs.Count > 0)
+                reaching[shopId] = npcs;
+        }
+
+        return reaching;
+    }
+
     #endregion
 
     #region Shops an NPC does not run directly
 
-    /// <summary>
-    /// The shops each <c>TopicSelect</c> menu leads to. An NPC fronting a menu runs the menu's handler, not the
-    /// shop's, so a handler scan alone misses these.
-    /// </summary>
+    /// <summary>The shops each <c>TopicSelect</c> menu leads to. An NPC fronting a menu runs the menu's handler.</summary>
     /// <returns>The shop row ids behind each TopicSelect row id.</returns>
     public static IReadOnlyDictionary<uint, IReadOnlyList<uint>> ReadTopicSelectShops()
     {
@@ -202,13 +329,48 @@ public static class ShopHelper
         }, []) ?? [];
     }
 
-    /// <summary>The special shops each <c>InclusionShop</c> leads to, through its categories and series.</summary>
-    /// <returns>The SpecialShop row ids behind each InclusionShop row id.</returns>
-    public static IReadOnlyDictionary<uint, IReadOnlyList<uint>> ReadInclusionShops()
+    /// <summary>
+    /// The special shops a <c>FateShop</c> row hands an NPC. The row is keyed by the ENpcBase and no handler on that
+    /// NPC points at it. A walk over its handlers alone misses these.
+    /// </summary>
+    /// <returns>The special shop row ids behind each ENpcBase row id.</returns>
+    public static IReadOnlyDictionary<uint, IReadOnlyList<uint>> ReadFateShops()
     {
         return SafeExecutor.ExecuteSafely(() =>
         {
             var found = new Dictionary<uint, IReadOnlyList<uint>>();
+            var sheet = ExcelSheetHelper.GetSheet<FateShop>();
+            if (sheet == null)
+                return found;
+
+            foreach (var row in sheet)
+            {
+                if (row.RowId == 0)
+                    continue;
+
+                List<uint>? shops = null;
+
+                foreach (var shop in row.SpecialShop)
+                {
+                    if (shop.RowId != 0 && (shops == null || !shops.Contains(shop.RowId)))
+                        (shops ??= []).Add(shop.RowId);
+                }
+
+                if (shops != null)
+                    found[row.RowId] = shops;
+            }
+
+            return found;
+        }, []) ?? [];
+    }
+
+    /// <summary>The special shops each <c>InclusionShop</c> leads to, through its categories and series.</summary>
+    /// <returns>The entries behind each InclusionShop row id, each naming its special shop and its job restriction.</returns>
+    public static IReadOnlyDictionary<uint, IReadOnlyList<InclusionShopEntry>> ReadInclusionShops()
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            var found = new Dictionary<uint, IReadOnlyList<InclusionShopEntry>>();
             var sheet = ExcelSheetHelper.GetSheet<InclusionShop>();
             if (sheet == null)
                 return found;
@@ -218,7 +380,7 @@ public static class ShopHelper
                 if (inclusion.RowId == 0)
                     continue;
 
-                var shops = new List<uint>();
+                var shops = new List<InclusionShopEntry>();
 
                 foreach (var categoryRef in inclusion.Category)
                 {
@@ -232,8 +394,10 @@ public static class ShopHelper
                     foreach (var entry in series)
                     {
                         var shopId = entry.SpecialShop.RowId;
-                        if (shopId != 0 && !shops.Contains(shopId))
-                            shops.Add(shopId);
+                        if (shopId == 0 || shops.Exists(known => known.SpecialShopId == shopId))
+                            continue;
+
+                        shops.Add(new InclusionShopEntry(shopId, category.Value.RowId, category.Value.ClassJobCategory.RowId));
                     }
                 }
 
@@ -249,10 +413,7 @@ public static class ShopHelper
 
     #region Grand company quartermasters
 
-    /// <summary>
-    /// What a grand company's quartermaster sells. Addressed by company rather than by shop row, since the stock is
-    /// assembled from every <c>GCScripShopCategory</c> belonging to it.
-    /// </summary>
+    /// <summary>What a grand company's quartermaster sells, from every <c>GCScripShopCategory</c> belonging to it.</summary>
     /// <param name="grandCompany">The grand company.</param>
     /// <returns>The offers, priced in that company's seals.</returns>
     public static IReadOnlyList<ShopOffer> ReadGrandCompanyOffers(GrandCompany grandCompany)
@@ -316,6 +477,52 @@ public static class ShopHelper
 
     #region Sheet reading
 
+    private static IReadOnlyList<ShopOffer> ReadGrandCompanyShopOffers(uint shopId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            if (!ExcelSheetHelper.TryGetRow<GCShop>(shopId, out var shop) || shop is not { } row || row.GrandCompany.RowId == 0)
+                return (IReadOnlyList<ShopOffer>)[];
+
+            var offers = new List<ShopOffer>();
+
+            foreach (var offer in ReadGrandCompanyOffers((GrandCompany)row.GrandCompany.RowId))
+                offers.Add(offer with { ShopId = shopId });
+
+            return offers;
+        }, []) ?? [];
+    }
+
+    private static IReadOnlyList<ShopOffer> ReadCompanyCreditOffers(uint shopId)
+    {
+        return SafeExecutor.ExecuteSafely(() =>
+        {
+            var offers = new List<ShopOffer>();
+
+            if (!ExcelSheetHelper.TryGetRow<FccShop>(shopId, out var shop) || shop is not { } row)
+                return offers;
+
+            foreach (var line in row.ItemData)
+            {
+                if (line.Item.RowId == 0)
+                    continue;
+
+                offers.Add(new ShopOffer(
+                    shopId,
+                    EventHandlerContent.FreeCompanyCreditShop,
+                    line.Item.RowId,
+                    1,
+                    false,
+                    [new ShopCost(0, line.Cost, 0, ShopCostKind.CompanyCredit)],
+                    [],
+                    0,
+                    0));
+            }
+
+            return offers;
+        }, []) ?? [];
+    }
+
     private static IReadOnlyList<ShopOffer> ReadGilShopOffers(uint shopId)
     {
         return SafeExecutor.ExecuteSafely(() =>
@@ -328,7 +535,7 @@ public static class ShopHelper
             foreach (var line in subrows)
             {
                 var item = line.Item.ValueNullable;
-                if (item == null || item.Value.RowId == 0)
+                if (item == null || item.Value.RowId == 0 || line.Patch == RetiredPatch)
                     continue;
 
                 var quests = new List<uint>();
@@ -344,7 +551,7 @@ public static class ShopHelper
                     item.Value.RowId,
                     1,
                     line.IsHQ,
-                    // A gil shop carries no price of its own; the item's vendor price is the price.
+                    // A gil shop's price is the item's vendor price.
                     [new ShopCost(GilItemId, item.Value.PriceMid)],
                     quests,
                     line.AchievementRequired.RowId,
@@ -366,19 +573,31 @@ public static class ShopHelper
 
             foreach (var entry in shop.Value.Item)
             {
+                if (entry.PatchNumber == RetiredPatch)
+                    continue;
+
                 var costs = new List<ShopCost>();
 
                 foreach (var cost in entry.ItemCosts)
                 {
-                    if (cost.ItemCost.RowId != 0 && cost.CurrencyCost != 0)
-                        costs.Add(new ShopCost(cost.ItemCost.RowId, cost.CurrencyCost, cost.CollectabilityCost));
+                    if (cost.ItemCost.RowId == 0 || cost.CurrencyCost == 0)
+                        continue;
+
+                    // For those two kinds the cost column holds a Tomestones row or a scrip slot.
+                    var kind = ShopCurrencyHelper.KindOf(cost.CostType);
+                    var slot = kind is ShopCostKind.Tomestone or ShopCostKind.Scrip ? cost.ItemCost.RowId : 0;
+
+                    costs.Add(new ShopCost(
+                        ShopCurrencyHelper.Resolve(kind, cost.ItemCost.RowId),
+                        cost.CurrencyCost,
+                        cost.CollectabilityCost,
+                        kind,
+                        slot));
                 }
 
                 var quests = entry.Quest.RowId != 0 ? new List<uint> { entry.Quest.RowId } : [];
 
-                // One entry can hand over several items for one price, so each becomes its own offer sharing the
-                // costs. Skipping entries that hand over nothing drops the sheet's fixed-length padding; filtering
-                // on cost instead would also drop the free exchanges.
+                // One entry can hand over several items for one price. Entries handing over nothing are the sheet's padding.
                 foreach (var received in entry.ReceiveItems)
                 {
                     if (received.Item.RowId == 0 || received.ReceiveCount == 0)

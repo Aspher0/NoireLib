@@ -41,10 +41,33 @@ public sealed class CollapsibleOptions
     public bool Danger { get; set; }
 
     /// <summary>
-    /// The header color. When <see langword="null"/>, the theme text color is used, or the danger color when
-    /// <see cref="Danger"/> is set.
+    /// The color of the header label and arrow. When <see langword="null"/>, the theme text color is used, or the
+    /// danger color when <see cref="Danger"/> is set.
     /// </summary>
     public Vector4? HeaderColor { get; set; }
+
+    /// <summary>
+    /// The fill behind the header. When <see langword="null"/>, the theme's <see cref="ThemeColor.Control"/> color at 30%
+    /// opacity. A zero alpha draws no fill and moves the hover to the label.
+    /// </summary>
+    public Vector4? HeaderBackground { get; set; }
+
+    /// <summary>
+    /// The fill behind the header while it is hovered. When <see langword="null"/>, <see cref="HeaderBackground"/>
+    /// shifted by the theme's hover amount.
+    /// </summary>
+    public Vector4? HeaderHoveredBackground { get; set; }
+
+    /// <summary>
+    /// The corner radius of the header fill in pixels at 100% scale. When <see langword="null"/>, the theme rounding.
+    /// </summary>
+    public float? HeaderRounding { get; set; }
+
+    /// <summary>
+    /// The space between the edge of the header fill and its arrow and label, in pixels at 100% scale. When
+    /// <see langword="null"/>, the theme frame padding.
+    /// </summary>
+    public Vector2? HeaderPadding { get; set; }
 
     /// <summary>
     /// How far the body is indented under the header, in pixels. Zero uses the current ImGui indent step.

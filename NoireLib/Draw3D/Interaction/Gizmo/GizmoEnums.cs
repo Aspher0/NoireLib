@@ -2,7 +2,7 @@ using System;
 
 namespace NoireLib.Draw3D.Interaction.Gizmo;
 
-/// <summary>Which transform operations a <see cref="NoireGizmo"/> exposes. Combine for a universal gizmo.</summary>
+/// <summary>Which transform operations a <see cref="NoireGizmo"/> exposes. Flags combine.</summary>
 [Flags]
 public enum GizmoOp
 {
@@ -32,63 +32,76 @@ public enum GizmoSpace
     Local,
 }
 
-/// <summary>How the native gizmo's handles are occluded (the ImGuizmo backend is always flat-on-top, unaffected).</summary>
+/// <summary>How the native gizmo's handles are occluded. The ImGuizmo backend always draws on top.</summary>
 public enum GizmoDepth
 {
-    /// <summary>
-    /// Occluded by the game world (walls / terrain) but always drawn on top of other 3D objects; the default,
-    /// staying visible over the object it edits while hiding behind a wall like real geometry.
-    /// </summary>
+    /// <summary>Occluded by the game world but drawn on top of other 3D objects (the default).</summary>
     OnTopOfObjects,
 
-    /// <summary>Drawn on top of absolutely everything: world and 3D objects alike (x-ray); a handle is never hidden.</summary>
+    /// <summary>Drawn on top of everything. A handle is never hidden.</summary>
     AlwaysOnTop,
 
-    /// <summary>Fully depth-tested: occluded by the world <i>and</i> by other 3D objects (can be buried inside the object it edits).</summary>
+    /// <summary>Fully depth-tested against the world and other 3D objects, including the object being edited.</summary>
     Occluded,
 }
 
 /// <summary>Which gizmo implementation draws and solves the handles.</summary>
 public enum GizmoBackend
 {
-    /// <summary>
-    /// In-world depth gizmos: real depth-tested geometry drawn through <see cref="Im.ImDraw3D"/> and hit-tested with the
-    /// render-time camera - occludes correctly, never wobbles under camera motion, can render through walls, and
-    /// supports per-axis universal snapping.
-    /// </summary>
+    /// <summary>Depth-tested in-world handles drawn through <see cref="Im.ImDraw3D"/> and hit-tested with the render-time camera.</summary>
     Native,
 
-    /// <summary>
-    /// The classic 2D-projected ImGui gizmo, drawn by <c>Dalamud.Bindings.ImGuizmo</c> and fed the render camera's
-    /// view/projection - same API surface as <see cref="Native"/>, flat (always on top, no depth occlusion),
-    /// snapping translation in the gizmo's own frame to match the native backend; the default.
-    /// </summary>
+    /// <summary>The flat, always-on-top 2D gizmo drawn by <c>Dalamud.Bindings.ImGuizmo</c> from the render camera (the default).</summary>
     ImGuizmo,
 }
 
-/// <summary>One grabbable element of a gizmo. Axis handles carry an axis index (0 = X, 1 = Y, 2 = Z).</summary>
+/// <summary>One grabbable element of a gizmo.</summary>
 public enum GizmoHandle
 {
     /// <summary>Nothing grabbed.</summary>
     None,
 
-    /// <summary>Translate along X / Y / Z.</summary>
-    TranslateX, TranslateY, TranslateZ,
+    /// <summary>Translate along X.</summary>
+    TranslateX,
 
-    /// <summary>Translate on the YZ / ZX / XY plane.</summary>
-    TranslateYZ, TranslateZX, TranslateXY,
+    /// <summary>Translate along Y.</summary>
+    TranslateY,
+
+    /// <summary>Translate along Z.</summary>
+    TranslateZ,
+
+    /// <summary>Translate on the YZ plane.</summary>
+    TranslateYZ,
+
+    /// <summary>Translate on the ZX plane.</summary>
+    TranslateZX,
+
+    /// <summary>Translate on the XY plane.</summary>
+    TranslateXY,
 
     /// <summary>Translate freely on the camera-facing plane.</summary>
     TranslateScreen,
 
-    /// <summary>Rotate about X / Y / Z.</summary>
-    RotateX, RotateY, RotateZ,
+    /// <summary>Rotate about X.</summary>
+    RotateX,
+
+    /// <summary>Rotate about Y.</summary>
+    RotateY,
+
+    /// <summary>Rotate about Z.</summary>
+    RotateZ,
 
     /// <summary>Rotate about the camera-facing axis.</summary>
     RotateScreen,
 
-    /// <summary>Scale along X / Y / Z (object space).</summary>
-    ScaleX, ScaleY, ScaleZ,
+    /// <summary>Scale along the object's X axis.</summary>
+    ScaleX,
+
+    /// <summary>Scale along the object's Y axis.</summary>
+    ScaleY,
+
+    /// <summary>Scale along the object's Z axis.</summary>
+    ScaleZ,
 
     /// <summary>Uniform scale (center knob).</summary>
     ScaleUniform,
@@ -96,7 +109,7 @@ public enum GizmoHandle
 
 internal static class GizmoHandleInfo
 {
-    /// <summary>The axis index (0/1/2) an axis-bound handle addresses, or -1 for screen/uniform handles.</summary>
+    // Axis index (0/1/2) of an axis-bound handle, or -1 for screen and uniform handles.
     public static int AxisIndex(GizmoHandle h) => h switch
     {
         GizmoHandle.TranslateX or GizmoHandle.RotateX or GizmoHandle.ScaleX or GizmoHandle.TranslateYZ => 0,

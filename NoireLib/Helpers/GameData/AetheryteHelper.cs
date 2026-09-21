@@ -14,15 +14,11 @@ public static class AetheryteHelper
 {
     /// <summary>
     /// The shared-group asset family a residential aethernet crystal belongs to. Shirogane places the Far Eastern
-    /// model where other districts place the Eorzean one, so crystals match on this prefix rather than an exact path.
+    /// model where other districts place the Eorzean one. Crystals match on this prefix, never an exact path.
     /// </summary>
     public const string ResidentialCrystalAssetPrefix = "bgcommon/world/aet/shared/for_bg/sgbg_w_aet_";
 
-    /// <summary>
-    /// Reads every aetheryte and aethernet shard the sheet describes, without positions. The generic estate-hall rows
-    /// are skipped, since a character's own estate comes from the teleport list instead, as is the sheet's placeholder
-    /// row, which resolves to no name through either name column.
-    /// </summary>
+    /// <summary>Reads every aetheryte and aethernet shard, without positions. Estate-hall rows and the placeholder row are skipped.</summary>
     /// <returns>The aetheryte and shard identity rows.</returns>
     public static IReadOnlyList<AetheryteEntry> ReadAll()
     {
@@ -72,12 +68,9 @@ public static class AetheryteHelper
         }, []) ?? [];
     }
 
-    /// <summary>
-    /// Fills the entries with the world positions of the crystals placed in the level files, matching on the Aetheryte
-    /// row id each placed crystal carries. A row whose crystal is absent keeps the position it arrived with.
-    /// </summary>
+    /// <summary>Fills the entries with the positions of the crystals placed in the level files, matched on Aetheryte row id.</summary>
     /// <param name="entries">The identity rows, typically from <see cref="ReadAll"/>.</param>
-    /// <param name="levelObjects">Level objects to read the crystals out of; anything else in the list is ignored.</param>
+    /// <param name="levelObjects">Level objects to read the crystals out of.</param>
     /// <returns>The entries with positions filled where a crystal carried the row id.</returns>
     public static IReadOnlyList<AetheryteEntry> ApplyLevelPositions(
         IReadOnlyList<AetheryteEntry> entries,
@@ -111,19 +104,14 @@ public static class AetheryteHelper
         }, string.Empty) ?? string.Empty;
     }
 
-    /// <summary>
-    /// Whether an Aetheryte row is an estate hall, being a Free Company or private-estate teleport target rather than
-    /// a teleport aetheryte or an aethernet shard. An estate hall is flagged not-an-aetheryte and belongs to no
-    /// aethernet group, which is also how an owned estate is recognised in the teleport list, whose entry for one
-    /// carries no ward, plot, or housing flag.
-    /// </summary>
+    /// <summary>Whether an Aetheryte row is an estate hall: flagged not-an-aetheryte and in no aethernet group.</summary>
     /// <param name="row">The Aetheryte sheet row.</param>
     /// <returns>True when the row is an estate hall.</returns>
     public static bool IsEstateHall(Aetheryte row) => IsEstateHall(row.IsAetheryte, row.AethernetGroup);
 
     /// <inheritdoc cref="IsEstateHall(Aetheryte)"/>
     /// <param name="aetheryteId">The Aetheryte row id.</param>
-    /// <returns>True when the row is an estate hall; false when the id resolves to nothing.</returns>
+    /// <returns>True when the row is an estate hall. False when the id resolves to nothing.</returns>
     public static bool IsEstateHall(uint aetheryteId) => ReadEstateHall(aetheryteId).IsEstateHall;
 
     /// <summary>Applies the estate-hall rule to the two flags alone, for a caller holding them without the row.</summary>
@@ -169,8 +157,7 @@ public static class AetheryteHelper
     {
         var unlocked = new HashSet<uint>();
 
-        // With no character there is nothing to attune, so the empty set is a real answer; mid-login the same empty
-        // set is only a read that could not happen.
+        // With no character the empty set is a real answer. Mid-login it is not.
         if (!CharacterHelper.IsStateReady)
             return (unlocked, CharacterHelper.IsLoggedOut);
 
@@ -183,28 +170,20 @@ public static class AetheryteHelper
             return true;
         }, false);
 
-        // The client fills the list asynchronously, so an empty result usually means it has not filled yet rather than
-        // a character attuned to nothing. The list is game memory that outlives a character switch, so a non-empty one
-        // still reads as the previous character's attunements until the new character's refresh runs.
+        // The client fills the list asynchronously. The list outlives a character switch until the new character's refresh runs.
         return (unlocked, IsCurrentAnswer(read, unlocked.Count, teleportListOwner, CharacterHelper.LocalContentId));
     }
 
-    // Decides whether a teleport-list read answers for the character standing there now: it succeeded, found at least
-    // one attunement, and the list was last refreshed by that same character.
     internal static bool IsCurrentAnswer(bool read, int attunedCount, ulong listOwner, ulong character)
         => read && attunedCount > 0 && listOwner != 0 && listOwner == character;
 
-    // The character the teleport list was last refreshed for. The list outlives a character switch, so a read is only
-    // an answer when the refresh that filled it was asked by the character standing there now.
     private static ulong teleportListOwner;
 
     /// <summary>
-    /// Asks the game to refill its teleport list, the source of the attuned set, the fares, and the character's own
-    /// estates. Framework thread only, and gated on the player object being in the world rather than on the character
-    /// state alone: the game builds each fare from where the character stands, so calling it while that object is
-    /// absent access-violates inside game code, past any try/catch.
+    /// Asks the game to refill its teleport list.<br/>
+    /// Framework thread only, and only while the player object is in the world. Calling it without one access-violates inside game code.
     /// </summary>
-    /// <returns>True when the game was asked, false when it was not safe to ask.</returns>
+    /// <returns>True when the game was asked.</returns>
     public static unsafe bool RefreshTeleportList()
     {
         if (!CharacterHelper.IsPlayerLoaded)
@@ -219,31 +198,100 @@ public static class AetheryteHelper
         return true;
     }
 
+    /// <summary>The game's teleport list: fares, favoured and residence entries, and the discount.</summary>
+    /// <param name="Fares">The gil fare per aetheryte id, discounts applied.</param>
+    /// <param name="Favoured">The aetherytes charged half as favourites.</param>
+    /// <param name="Residences">The aetherytes charged a quarter as the character's home.</param>
+    /// <param name="Multiplier">What a discount leaves of the full price, as a percentage. 100 when there is none.</param>
+    public readonly record struct TeleportPrices(
+        IReadOnlyDictionary<uint, int> Fares,
+        IReadOnlySet<uint> Favoured,
+        IReadOnlySet<uint> Residences,
+        int Multiplier);
+
     /// <summary>
-    /// Reads the gil fare to each attuned aetheryte from the game's teleport list, so any discount the character has
-    /// is already applied. An aetheryte listed more than once keeps its cheapest entry. Framework thread only, and
-    /// only once <see cref="CharacterHelper.IsStateReady"/>.
+    /// Reads the whole teleport list. The discount is measured against the fare formula.<br/>
+    /// Framework thread only, once <see cref="CharacterHelper.IsStateReady"/>.
     /// </summary>
-    /// <returns>The fare per aetheryte id.</returns>
-    public static IReadOnlyDictionary<uint, int> ReadTeleportFares()
+    /// <returns>The prices, empty when the list cannot be read.</returns>
+    public static TeleportPrices ReadTeleportPrices()
     {
         var fares = new Dictionary<uint, int>();
+        var favoured = new HashSet<uint>();
+        var residences = new HashSet<uint>();
+        var multiplier = 100;
+
         if (!CharacterHelper.IsStateReady)
-            return fares;
+            return new TeleportPrices(fares, favoured, residences, multiplier);
 
         SafeExecutor.ExecuteSafely(() =>
         {
             RefreshTeleportList();
+
+            var from = NoireService.ClientState.TerritoryType;
+            var measured = new List<int>();
+
             foreach (var entry in NoireService.AetheryteList)
             {
                 var cost = checked((int)entry.GilCost);
                 fares[entry.AetheryteId] = fares.TryGetValue(entry.AetheryteId, out var existing)
                     ? Math.Min(existing, cost)
                     : cost;
+
+                if (entry.IsFavourite)
+                    favoured.Add(entry.AetheryteId);
+
+                var residence = entry.IsApartment || entry.IsSharedHouse || entry.Plot != 0;
+                if (residence)
+                    residences.Add(entry.AetheryteId);
+
+                measured.Add(MeasuredMultiplier(from, entry.AetheryteId, cost, entry.IsFavourite, residence));
             }
+
+            multiplier = Agreed(measured);
         });
 
-        return fares;
+        return new TeleportPrices(fares, favoured, residences, multiplier);
+    }
+
+    /// <inheritdoc cref="ReadTeleportPrices"/>
+    /// <returns>The fare per aetheryte id.</returns>
+    public static IReadOnlyDictionary<uint, int> ReadTeleportFares() => ReadTeleportPrices().Fares;
+
+    // -1 when the fare formula has nothing to compare against.
+    private static int MeasuredMultiplier(uint fromTerritory, uint aetheryteId, int charged, bool favoured, bool residence)
+    {
+        if (!ExcelSheetHelper.TryGetRow<Aetheryte>(aetheryteId, out var row) || row is not { } aetheryte)
+            return -1;
+
+        var discount = residence ? TeleportDiscount.ResidentDistrict
+            : favoured ? TeleportDiscount.Favoured
+            : TeleportDiscount.None;
+
+        var full = TeleportFareHelper.Fare(fromTerritory, aetheryte.Territory.RowId, discount);
+        return full > 0 ? charged * 100 / full : -1;
+    }
+
+    // A single disagreeing entry falls back to the full price.
+    private static int Agreed(List<int> measured)
+    {
+        var agreed = -1;
+        foreach (var value in measured)
+        {
+            if (value < 0)
+                continue;
+
+            if (agreed < 0)
+            {
+                agreed = value;
+                continue;
+            }
+
+            if (Math.Abs(agreed - value) > 1)
+                return 100;
+        }
+
+        return agreed < 0 ? 100 : agreed;
     }
 
     /// <summary>Whether a shared-group asset path is a residential aethernet crystal.</summary>
@@ -255,7 +303,7 @@ public static class AetheryteHelper
 
     /// <summary>
     /// Reads a residential district's aethernet shards, labelled with the ward each one serves. A district's level
-    /// file places no Aetheryte-type objects, so its crystals are shared-group placements recognised by asset path and
+    /// file places no Aetheryte-type objects. Its crystals are shared-group placements recognised by asset path and
     /// labelled from the nearest map marker.
     /// </summary>
     /// <param name="districtTerritoryId">The residential district's TerritoryType row id.</param>
@@ -285,7 +333,7 @@ public static class AetheryteHelper
         return shards;
     }
 
-    // An aetheryte's aethernet name when it has one, else its place name. An empty result marks the placeholder row.
+    // An empty result marks the placeholder row.
     private static string ResolveName(Aetheryte row)
     {
         var name = row.AethernetName.ValueNullable?.Name.ExtractText();

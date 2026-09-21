@@ -1,11 +1,9 @@
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
-using Dalamud.Interface.ImGuiNotification;
 using Dalamud.Interface.Utility.Raii;
 using NoireLib.Core.Modules;
 using NoireLib.UI;
 using System;
-using System.Linq;
 using System.Numerics;
 
 namespace NoireLib.Changelog;
@@ -15,11 +13,6 @@ namespace NoireLib.Changelog;
 /// </summary>
 public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 {
-    private Version? selectedVersion = null;
-    private Version? previousSelectedVersion = null;
-    private ChangelogVersion? currentChangelog = null;
-    private Version[] availableVersions = [];
-
     /// <summary>
     /// Gets or sets the name of the display window.
     /// </summary>
@@ -34,61 +27,26 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
     {
         Size = new Vector2(750, 500);
 
-        UpdateVersions();
         UpdateTitleBarButtons();
     }
 
     /// <summary>
-    /// Updates the list of available versions from the ChangelogManager.
+    /// Reloads the versions from the ChangelogManager and selects the latest one.
     /// </summary>
-    public void UpdateVersions()
-    {
-        selectedVersion = null;
-        currentChangelog = null;
-        availableVersions = Array.Empty<Version>();
-
-        var versions = ParentModule.GetAllVersions();
-        availableVersions = versions.Select(v => v.Version).ToArray();
-
-        if (availableVersions.Length > 0)
-        {
-            selectedVersion = availableVersions[0];
-            currentChangelog = ParentModule.GetVersion(selectedVersion);
-        }
-
-        if (availableVersions.Length == 0)
-            CloseWindow();
-    }
+    public void UpdateVersions() => ParentModule.RebuildVersions();
 
     /// <summary>
-    /// Shows the changelog window for a specific version. If no version is provided, it shows the latest version.
+    /// Shows this window on a specific version. If no version is provided, it shows the latest version.
     /// </summary>
     /// <param name="version">The Version object to show.</param>
     public void ShowChangelogForVersion(Version? version = null)
     {
-        if (availableVersions.Length == 0)
-        {
-            NoireService.NotificationManager.AddNotification(new Notification
-            {
-                Content = "There are no changelogs available",
-                Title = "No changelog available",
-                InitialDuration = TimeSpan.FromMilliseconds(3000),
-                Type = NotificationType.Warning,
-            });
+        if (!ParentModule.PrepareDisplay(version))
             return;
-        }
-
-        if (version != null && availableVersions.Contains(version))
-            selectedVersion = version;
-        else
-            selectedVersion = availableVersions[0];
-
-        currentChangelog = ParentModule.GetVersion(selectedVersion);
-        previousSelectedVersion = selectedVersion;
 
         IsOpen = true;
 
-        ParentModule.OnWindowOpened(selectedVersion);
+        ParentModule.OnWindowOpened(ParentModule.SelectedVersion!.Version);
     }
 
     /// <summary>
@@ -122,27 +80,24 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
         ImGui.Text("Select Version:");
         ImGui.SameLine();
 
+        var selectedVersion = ParentModule.SelectedVersion?.Version;
+        var currentChangelog = ParentModule.SelectedVersion;
+
         ImGui.SetNextItemWidth(200f);
         var selectedVersionString = selectedVersion?.ToString(4) ?? string.Empty;
         using (var combo = ImRaii.Combo("##VersionSelector", selectedVersionString, ImGuiComboFlags.HeightRegular))
         {
             if (combo)
             {
-                foreach (var version in availableVersions)
+                foreach (var changelog in ParentModule.Versions)
                 {
+                    var version = changelog.Version;
                     bool isSelected = version == selectedVersion;
                     var versionString = version.ToString(4);
                     if (ImGui.Selectable($"{versionString}##version_{versionString}", isSelected))
                     {
-                        var oldVersion = selectedVersion;
-                        selectedVersion = version;
-                        currentChangelog = ParentModule.GetVersion(selectedVersion);
-
-                        if (oldVersion != selectedVersion)
-                        {
-                            ParentModule.OnVersionChanged(oldVersion, selectedVersion);
-                            previousSelectedVersion = selectedVersion;
-                        }
+                        ParentModule.SelectVersion(version);
+                        currentChangelog = ParentModule.SelectedVersion;
                     }
 
                     if (isSelected)
@@ -181,13 +136,14 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
 
     private void DrawChangelogContent()
     {
+        var currentChangelog = ParentModule.SelectedVersion;
         if (currentChangelog == null)
         {
             ImGui.TextDisabled("No changelog available for this version.");
             return;
         }
 
-        var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // Reserve space for footer
+        var availHeight = ImGui.GetContentRegionAvail().Y - 40f; // footer
 
         var bgColor = new Vector4(0.5f, 0.5f, 0.5f, 0.05f);
         using (UiPush.Color(ImGuiCol.Border, bgColor))
@@ -196,8 +152,7 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             {
                 var padding = 5f;
                 ImGui.Dummy(new Vector2(0, padding));
-                // ImRaii, not raw ImGui.Indent: its scaled overload multiplies by the global scale, so indentation
-                // stays consistent across UI scales.
+                // Scales with the global UI scale.
                 using (ImRaii.PushIndent(padding))
                 {
                     using (UiPush.TextWrapPos(ImGui.GetCursorPosX() + ImGui.GetContentRegionAvail().X - padding))
@@ -281,7 +236,6 @@ public class ChangelogWindow : NoireModuleWindowBase<NoireChangelogManager>
             return;
         }
 
-        // Regular entry
         var startPos = ImGui.GetCursorPos();
         var levelIndent = 20f;
         var totalIndent = entry.IndentLevel * levelIndent;

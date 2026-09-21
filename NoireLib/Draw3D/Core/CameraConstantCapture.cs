@@ -9,10 +9,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Captures the camera constants the GPU rasterizes the world with by tapping the cbuffer upload paths
-// (UpdateSubresource, Map/Unmap). The lock identity is an (offset, layout) family across a size class of buffers,
-// never a single pointer, and matching compares the X/Y/W columns only. Any failure falls back to the CPU camera
-// struct snapshot.
+// Captures the camera constants the game draws the world with from its cbuffer uploads.
 internal sealed unsafe class CameraConstantCapture : IDisposable
 {
     // ID3D11DeviceContext vtable slots (base interface numbering).
@@ -22,34 +19,28 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private const int SlotCopyResource = 47;
     private const int SlotUpdateSubresource = 48;
 
-    // Discovery bounds. Buffers larger than TrackedBytes are counted for the probe report but never copied.
-    // Buffers up to SmallScanBytes are scored per update; larger tracked buffers get a last-write scan at commit.
+    // Buffers above TrackedBytes are only counted. Buffers above SmallScanBytes are scanned at commit only.
     private const int MaxTrackedBuffers = 48;
     private const int TrackedBytes = 4096;
     private const int MinTrackedBytes = 64;
     private const int SmallScanBytes = 512;
-    private const int LearnBudgetPerFrame = 128;   // unknown-pointer QI+GetDesc calls allowed per frame while discovering
-    private const int ScoreBudgetPerFrame = 4096;  // capture-time window scores allowed per frame while discovering
-    private const int MaxMapPending = 8;
+    private const int LearnBudgetPerFrame = 128;
+    private const int ScoreBudgetPerFrame = 4096;
+    private const int MaxMapPending = 64;          // the game maps dozens of view buffers before unmapping any
     private const int MaxFamilies = 32;
     private const int MaxMembers = 8;
-    private const int PendingRingLength = 32;      // must exceed the member writes that can follow the main-view upload before its pass draws
-    private const int VsSlotCount = 14;            // D3D11 common-shader cbuffer slots queried for the bound-confirm
+    private const int PendingRingLength = 32;      // must exceed the writes that follow the main-view upload before its pass draws
+    private const int VsSlotCount = 14;
 
-    // Match thresholds (normalized RMS). CandidateErr admits a window into the family table, LockErr keeps a
-    // streak alive, StrongErr must be reached once before locking, SteadyErr is the per-commit validation gate.
     private const float CandidateErr = 2e-2f;
     private const float LockErr = 1e-2f;
     private const float StrongErr = 3e-3f;
-    private const float SteadyErr = 5e-2f;
     private const int LockStreak = 12;
     private const int UnlockAfterInvalidCommits = 90;
 
     internal enum MatrixForm : byte
     {
-        /// <summary>Row-major bytes match the row-vector View*Proj directly.</summary>
         ViewProj = 0,
-        /// <summary>The window holds the transpose of the row-vector View*Proj.</summary>
         ViewProjTransposed = 1,
     }
 
@@ -64,7 +55,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void CopySubresourceRegionFn(nint context, nint dstResource, uint dstSubresource, uint dstX, uint dstY, uint dstZ, nint srcResource, uint srcSubresource, nint srcBox);
 
-    // A cbuffer observed during discovery: identity, payload, per-frame best match, probe bookkeeping.
     private struct TrackedBuffer
     {
         public nint Ptr;
@@ -72,14 +62,13 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         public byte[]? Bytes;
         public int ValidBytes;
         public long UpdatesSeen;
+        public long LastUpdatePresent;
         public byte Mechanisms;        // bit 1 = UpdateSubresource, bit 2 = Map/Unmap
         public bool UpdatedSinceScan;
-        public long FullCaptures;      // whole-payload copies into Bytes; lets a reader tell fresh bytes from frozen ones
-        public int LastBoundSlot;      // -1 until seen bound to the VS at a main-pass commit
-        public float BestVpErr;        // best window error ever seen for either lock form (probe report)
+        public long FullCaptures;
+        public int LastBoundSlot;
+        public float BestVpErr;
 
-        // Best-matching window since the last commit, scored at capture time (small buffers only): survives
-        // later writes from other views landing in the same physical buffer.
         public bool HasBestSinceCommit;
         public float BestErrSinceCommit;
         public int BestOffsetSinceCommit;
@@ -91,10 +80,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     {
         public nint Resource;
         public nint Data;
+        public long Stamp;
     }
 
-    // A candidate lock target: an (offset, layout) window family and the member buffers it has been seen in. Streaks
-    // are per family, never per buffer, since the camera write rotates across the member buffers.
+    // Streaks are per family: the camera write rotates across the members.
     private struct Family
     {
         public int Offset;
@@ -137,7 +126,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     {
         public Matrix4x4 Vp;
         public long Seq;
-        public long Present; // presentIndex when the upload was captured
+        public long Present;
     }
 
     private NoireHook<MapFn>? mapHook;
@@ -154,20 +143,18 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private RenderTargetTap? tap;
 
     private volatile bool active;
-    private int detourFaults;                 // three throwing detour bodies self-disable the feature
+    private int detourFaults;
     private bool faultLogged;
 
     private readonly TrackedBuffer[] tracked = new TrackedBuffer[MaxTrackedBuffers];
     private int trackedCount;
-    private int evictionCursor;
     private int learnBudget;
     private int scoreBudget;
-    private long largeCbuffersSeen;           // distinct constant buffers above TrackedBytes (probe report)
-    private long copiesIntoTracked;           // CopyResource/CopySubresourceRegion into a tracked/locked buffer (probe report)
+    private long largeCbuffersSeen;
+    private long copiesIntoTracked;
 
-    // Pointers checked once and found uninteresting (not a buffer, not a cbuffer, out of size bounds). A ring so a
-    // long session cannot grow it; overwritten entries are re-checked on next sight, costing learn budget.
     private const int MaxIgnored = 1024;
+    private const int IgnoredForgetPresents = 600;
     private readonly nint[] ignoredPtrs = new nint[MaxIgnored];
     private int ignoredCount;
     private int ignoredCursor;
@@ -176,20 +163,19 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private long ignoredTooLarge;
     private long ignoredTooSmall;
 
-    // Learning-machinery counters for the probe report.
     private long statLearns;
     private long statEvictions;
+    private long statTableFullRefusals;
     private long statBudgetExhaustedFrames;
 
     private readonly MapPendingEntry[] mapPending = new MapPendingEntry[MaxMapPending];
 
     private readonly Family[] families = new Family[MaxFamilies];
     private int familyCount;
-    private long commitFrames;                // main-pass commits seen (discovery clock)
+    private long commitFrames;
 
-    // Locked state. Writes and consumers all run on the render thread, so plain fields are safe. Membership is a
-    // size class, not a pointer set: the camera block rotates round-robin across same-size physical buffers, so a
-    // pointer-set lock starves. Validation at commit decides which windows of that byte-width are the main view.
+    // The camera block rotates round-robin across same-size buffers. The lock is a byte width.
+    private float commitNearPlane = 0.1f;
     private bool lockedOn;
     private int lockedOffset;
     private MatrixForm lockedForm;
@@ -207,29 +193,32 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private long commitPresentIndex = -1;
     private bool haveCommit;
     private long presentIndex;
-    private volatile bool awaitingMainDraw;   // set at the main-pass OM bind; the commit runs at the pass's first draw
-    private Matrix4x4 lastCommitRefVp;        // the previous commit's struct reference (scoring's second anchor)
+    private volatile bool awaitingMainDraw;
+    private Matrix4x4 lastCommitRefVp;
     private bool hasLastCommitRef;
 
-    // The last two real commits, for predicting a miss frame's camera. Extrapolated commits never enter this
-    // history, so a prediction is never built from other predictions.
-    private Matrix4x4 lastRealVp;
-    private long lastRealPresent = -1;
-    private Matrix4x4 prevRealVp;
-    private long prevRealPresent = -1;
-
-    // Counters surfaced through stats and the probe report.
     private long statCommits;
     private long statValidCommits;
     private long statValidationFails;
+    private readonly long[] statShapeRejects = new long[5];
+    private ViewShape lastRejectedShape;
+    private ViewShapeMismatch lastRejectedReason;
+    private long statCaptureShapeRejects;
+    private long statPriorFrameSkips;
+    private long statLateCommits;
+    private long statUntrackedCaptures;
+    private long statMapTableOverflows;
+    private long statMappingsDroppedAtPresent;
+    private long mapStamp;
+    private long priorFrameCountHwm;
+    private int reuseStreak;
+    private ViewShape captureRefShape;
+    private bool hasCaptureRefShape;
     private long statStaleSkips;
-    private long statExtrapolated;
     private long statConsumedInject;
     private long statConsumedPresent;
     private long statLocks;
 
-    // Miss classification: an exhausted frame is classified by what the pending ring held at that moment, and the
-    // next frame's first attempt checks whether the missed frame's upload arrived after the watch ended.
     private long statMissNoUpload;
     private long statMissRejected;
     private long statMissLateArrival;
@@ -239,19 +228,13 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     private int probeFramesRemaining;
     private int fullCaptureFramesRemaining;
 
-    // Records every payload rather than only the last one per buffer. Idle unless armed.
     private readonly ConstantWriteLog writeLog = new();
     private bool probeArmed;
 
-    /// <summary>True once the upload-path hooks are installed (they may still be disabled).</summary>
     public bool Installed => updateSubresourceHook != null;
 
-    /// <summary>Whether a camera constant window family is currently locked and producing per-frame commits.</summary>
     public bool IsLocked => lockedOn;
 
-    /// <summary>Classifies the contents of every tracked constant buffer.</summary>
-    /// <param name="lockedOnly">Whether to restrict the result to buffers of the locked size class.</param>
-    /// <returns>One snapshot per tracked buffer, copied so it can be compared across calls.</returns>
     public IReadOnlyList<ConstantSnapshot> SnapshotConstants(bool lockedOnly = false)
     {
         var snapshots = new List<ConstantSnapshot>();
@@ -271,30 +254,20 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return snapshots;
     }
 
-    /// <summary>Whether whole payloads are currently being copied.</summary>
     public bool FullCaptureArmed => fullCaptureFramesRemaining > 0;
 
-    /// <summary>Copies whole upload payloads for the next <paramref name="frames"/> world frames.</summary>
-    /// <param name="frames">How many world frames to keep copying for.</param>
     public void ArmFullCapture(int frames) => fullCaptureFramesRemaining = Math.Max(frames, 0);
 
-    /// <summary>Records every payload written to tracked buffers for the next few frames.</summary>
-    /// <param name="frames">How many world frames to record.</param>
-    /// <param name="byteWidth">Size to restrict recording to, or zero for every tracked buffer.</param>
     public void ArmWriteLog(int frames, int byteWidth = 0)
     {
-        // The log only sees buffers the tracking table already knows, so whole-payload copying must be on.
         if (fullCaptureFramesRemaining <= 0)
             fullCaptureFramesRemaining = Math.Max(frames, 0) + 1;
 
         writeLog.Arm(frames, byteWidth);
     }
 
-    /// <summary>Whether the write log hit its cap: the end of the frame was never recorded.</summary>
     public bool WriteLogTruncated => writeLog.Truncated;
 
-    /// <summary>Lists the distinct buffer sizes currently tracked.</summary>
-    /// <returns>The tracked byte widths, ascending.</returns>
     public IReadOnlyList<int> TrackedSizes()
     {
         var sizes = new SortedSet<int>();
@@ -307,27 +280,16 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return new List<int>(sizes);
     }
 
-    /// <summary>Whether the write log is currently recording.</summary>
     public bool WriteLogArmed => writeLog.Armed;
 
-    /// <summary>How many payloads the write log has recorded.</summary>
     public int WriteLogCount => writeLog.Count;
 
-    /// <summary>Reports what the write log recorded, grouped by buffer and ordered by how varied each one is.</summary>
-    /// <returns>The report text.</returns>
     public string DescribeWriteLog() => writeLog.Describe();
 
-    /// <summary>Returns the distinct payloads from the last write-log run.</summary>
-    /// <returns>One byte array per distinct payload.</returns>
     public List<byte[]> WriteLogPayloads() => writeLog.DistinctPayloads();
 
-    /// <summary>The buffer size the last write-log run was restricted to, or zero for all of them.</summary>
     public int WriteLogSize => writeLog.SizeFilter;
 
-    /// <summary>Installs the upload-path hooks, disabled, on the immediate context's vtable. One-time and fail-soft.</summary>
-    /// <param name="device">The render device whose immediate context is hooked.</param>
-    /// <param name="ownerTap">The render-target tap driving the injection state.</param>
-    /// <returns>True when the hooks are in place.</returns>
     public bool Install(RenderDevice device, RenderTargetTap ownerTap)
     {
         if (updateSubresourceHook != null)
@@ -356,7 +318,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "Draw3D: failed to install the camera-constant capture hooks (the layer projects with the struct snapshot instead).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: failed to install the camera-constant capture hooks (the layer projects with the fallback camera instead).", "Draw3D");
             Dispose();
             return false;
         }
@@ -365,8 +327,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return true;
     }
 
-    /// <summary>Enables or disables the upload-path taps. Driven by the render-target tap's injection state.</summary>
-    /// <param name="enabled">Whether the taps should run.</param>
     public void SetActive(bool enabled)
     {
         if (updateSubresourceHook == null || detourFaults >= 3)
@@ -383,14 +343,10 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         copySubresourceRegionHook?.SetEnabled(enabled);
     }
 
-    /// <summary>
-    /// Advances the present index the commit-freshness rules compare against and resets the per-frame budgets.
-    /// Render thread, from <see cref="RenderTargetTap.OnPresent"/>.
-    /// </summary>
     public void OnFrameBoundary()
     {
         presentIndex++;
-        awaitingMainDraw = false; // a frame whose main pass never drew must not commit on an unrelated later draw
+        awaitingMainDraw = false;
         if (fullCaptureFramesRemaining > 0)
             fullCaptureFramesRemaining--;
 
@@ -399,14 +355,21 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             statBudgetExhaustedFrames++;
         learnBudget = LearnBudgetPerFrame;
         scoreBudget = ScoreBudgetPerFrame;
-        Array.Clear(mapPending); // a mapping never legitimately spans a present; dropping strays keeps the table free
+
+        if (presentIndex % IgnoredForgetPresents == 0)
+        {
+            ignoredCount = 0;
+            ignoredCursor = 0;
+        }
+        for (var i = 0; i < mapPending.Length; i++)
+        {
+            if (mapPending[i].Resource != 0)
+                statMappingsDroppedAtPresent++;
+        }
+
+        Array.Clear(mapPending);
     }
 
-    /// <summary>
-    /// Unlocks and re-runs discovery for <paramref name="frames"/> main-pass frames while accumulating the full
-    /// observation table, then logs the report.
-    /// </summary>
-    /// <param name="frames">How many main-pass frames to observe, clamped to 30..6000.</param>
     public void ArmProbe(int frames)
     {
         probeFramesRemaining = Math.Clamp(frames, 30, 6000);
@@ -415,17 +378,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         ResetDiscovery();
     }
 
-    /// <summary>Whether the tap should keep its draw hooks enabled: the commit runs at the main pass's first draw.</summary>
     public bool WantsDrawSignal => active;
 
-    // Draws a locked commit may retry across while the frame's fresh main-view upload has not landed.
     private const int CommitRetryDraws = 96;
     private int commitRetriesLeft;
 
-    /// <summary>
-    /// Arms the commit for the main scene pass's draws, from the tap's OM detour at the pass bind. The bind itself
-    /// is too early: the camera block is uploaded between the bind and the first draw.
-    /// </summary>
+    // The camera block is uploaded after the OM bind and before the first draw.
     public void OnMainPassBind()
     {
         if (!active)
@@ -435,12 +393,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         commitRetriesLeft = CommitRetryDraws;
     }
 
-    /// <summary>
-    /// Handles a game draw from the tap's draw detours. Locked, it retries the commit on each draw until the
-    /// frame's fresh main-view upload lands, bounded by <see cref="CommitRetryDraws"/>; discovering, the first
-    /// draw learns the VS-bound buffers and advances the lock state machine.
-    /// </summary>
-    /// <param name="context">The device context the draw was issued on.</param>
     public void OnGameDraw(nint context)
     {
         if (!awaitingMainDraw || context != gameContext || tap is not { SuppressSelf: false, IsInjecting: false })
@@ -455,6 +407,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             }
 
             var refVp = cam.View * cam.Proj;
+            commitNearPlane = cam.NearPlane;
+            hasCaptureRefShape = TryReadViewShape(in refVp, out captureRefShape) && captureRefShape.WScale >= 1e-4f;
 
             if (!lockedOn)
             {
@@ -472,8 +426,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 commitFrames++;
                 statCommits++;
 
-                // An upload stamped with the missed frame's present index but sequenced after its watch ended
-                // arrived too late to be committed.
+                // An upload stamped with the missed frame but sequenced after its watch ended arrived too late.
                 if (missOpenPresent >= 0)
                 {
                     for (var i = 0; i < PendingRingLength; i++)
@@ -489,7 +442,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 }
             }
 
-            if (TryCommitLocked(in refVp, firstAttempt))
+            if (TryCommitLocked(firstAttempt))
             {
                 awaitingMainDraw = false;
                 invalidCommitStreak = 0;
@@ -499,17 +452,15 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             }
 
             if (--commitRetriesLeft > 0)
-                return; // fresh upload not landed yet, the next draw retries
+                return;
 
             awaitingMainDraw = false;
-            invalidCommitStreak++; // the miss counts toward the unlock safety even when extrapolation covers it
+            invalidCommitStreak++;
 
-            // Fresh uploads present but all rejected means the validation gates; none at all means the game
-            // did not upload during the watch.
             var freshSeen = false;
             for (var i = 0; i < PendingRingLength; i++)
             {
-                if (pendingRing[i].Seq > lastCommittedSeq)
+                if (pendingRing[i].Seq > lastCommittedSeq && pendingRing[i].Present == presentIndex)
                 {
                     freshSeen = true;
                     break;
@@ -523,10 +474,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             missOpenPresent = presentIndex;
             missOpenSeqHwm = pendingSeq;
 
-            // Predicting from the last two real commits avoids the one-frame pop the struct snapshot's phase
-            // error produces on a miss frame.
-            if (TryExtrapolateCommit(in refVp))
+            // A frame with no upload keeps the last commit for one frame. A longer run means uploads are lost.
+            if (!freshSeen && haveCommit && reuseStreak < 1)
             {
+                reuseStreak++;
+                statStaleSkips++;
+                commitPresentIndex = presentIndex;
                 FinishCommitFrame(in refVp);
                 return;
             }
@@ -546,7 +499,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    // Stores the phase reference for the next frame's scoring and validation, and advances the probe clock.
     private void FinishCommitFrame(in Matrix4x4 refVp)
     {
         lastCommitRefVp = refVp;
@@ -559,13 +511,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    /// <summary>Gets the committed GPU view-projection for the frame being composited.</summary>
-    /// <param name="presentTimePath">True for the present-time composite, false for the pre-UI inject path.</param>
-    /// <param name="viewProj">Receives the captured view-projection, Z column as uploaded.</param>
-    /// <returns>True when a commit fresh for that frame exists.</returns>
     public bool TryGetCommitted(bool presentTimePath, out Matrix4x4 viewProj)
     {
         viewProj = default;
+        if (!presentTimePath && lockedOn)
+            CommitNewestUpload();
+
         if (!lockedOn || !haveCommit || !IsCommitFresh(commitPresentIndex, presentIndex, presentTimePath))
             return false;
 
@@ -577,8 +528,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return true;
     }
 
-    /// <summary>Describes the capture state in one line, for stats and the camtrace report.</summary>
-    /// <returns>The state line.</returns>
     public string Describe()
     {
         if (updateSubresourceHook == null)
@@ -591,12 +540,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             return $"discovering ({trackedCount} buffers observed, {familyCount} families, {commitFrames} main-pass frames)";
 
         return $"locked {lockedByteWidth} B ring @ offset {lockedOffset} {FormName(lockedForm)} via {MechanismName(lockedMechanisms)}; "
-               + $"commits {statValidCommits}/{statCommits} valid, extrapolated {statExtrapolated}, stale skips {statStaleSkips}, foreign rejects {statValidationFails}, "
+               + $"commits {statValidCommits}/{statCommits} valid, reused {statStaleSkips}, prior-frame uploads skipped {statPriorFrameSkips}, committed at consumption {statLateCommits}, "
+               + $"rejects {statValidationFails} unusable + {statCaptureShapeRejects} other views (projection {statShapeRejects[1]}, aspect {statShapeRejects[2]}, skew {statShapeRejects[3]}, mirrored {statShapeRejects[4]}; "
+               + $"last {lastRejectedReason}: w {lastRejectedShape.WScale:0.###} sx {lastRejectedShape.ScaleX:0.###} sy {lastRejectedShape.ScaleY:0.###}), "
                + $"misses noUpload {statMissNoUpload} / rejected {statMissRejected} / arrived-late {statMissLateArrival}, "
-               + $"fresh at inject {statConsumedInject} / present {statConsumedPresent}, locks {statLocks}";
+               + $"map-table overflows {statMapTableOverflows}, captures from unlisted buffers {statUntrackedCaptures}, width queries {statWidthQueries}, mappings open at present {statMappingsDroppedAtPresent}, learns {statLearns} / evictions {statEvictions} / table-full refusals {statTableFullRefusals}, fresh at inject {statConsumedInject} / present {statConsumedPresent}, locks {statLocks}";
     }
-
-    // ---------------------------------------------------------------- detours
 
     private bool Relevant(nint context) => active && context == gameContext && tap is { SuppressSelf: false, IsInjecting: false };
 
@@ -604,14 +553,16 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     {
         var hr = mapHook!.Original(context, resource, subresource, mapType, mapFlags, mappedOut);
 
-        // Write-intent maps only (2 = WRITE, 3 = READ_WRITE, 4 = WRITE_DISCARD, 5 = WRITE_NO_OVERWRITE).
+        // 2 = WRITE, 3 = READ_WRITE, 4 = WRITE_DISCARD, 5 = WRITE_NO_OVERWRITE.
         if (hr >= 0 && mapType >= 2 && subresource == 0 && mappedOut != 0 && Relevant(context))
         {
             try
             {
-                // Learning keeps running while locked so a ring buffer reallocated on a zone change joins the
-                // tracked table and its size-class updates feed the locked extraction.
-                if (FindOrLearn(resource) >= 0)
+                // A mapped row pitch is the buffer's byte width.
+                var admitted = lockedOn
+                    ? WidthOf(resource, (int)((D3D11_MAPPED_SUBRESOURCE*)mappedOut)->RowPitch) == lockedByteWidth
+                    : FindOrLearn(resource) >= 0;
+                if (admitted)
                 {
                     var data = *(nint*)mappedOut;
                     if (data != 0)
@@ -650,13 +601,11 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
     {
         updateSubresourceHook!.Original(context, dstResource, dstSubresource, dstBox, srcData, srcRowPitch, srcDepthPitch);
 
-        // The caller's source memory stays valid for the whole call, including this epilogue.
         if (dstSubresource == 0 && srcData != 0 && Relevant(context))
         {
             try
             {
-                // A box-less update carries the whole buffer; with a box the source allocation is only
-                // [left, right) bytes long, so reading past right faults.
+                // With a box the source is only [left, right) bytes long. Reading past right faults.
                 var offset = 0;
                 var length = int.MaxValue;
                 if (dstBox != 0)
@@ -668,7 +617,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                         return;
                 }
 
-                if (FindOrLearn(dstResource) >= 0)
+                if (lockedOn ? WidthOf(dstResource) == lockedByteWidth : FindOrLearn(dstResource) >= 0)
                     CapturePayload(dstResource, srcData, offset, length, mechanism: 1);
             }
             catch (Exception ex)
@@ -700,26 +649,43 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (!faultLogged)
         {
             faultLogged = true;
-            NoireLogger.LogError(ex, "Draw3D: camera-constant capture faulted; after 3 faults it self-disables (struct snapshot fallback).", "Draw3D");
+            NoireLogger.LogError(ex, "Draw3D: camera-constant capture faulted; after 3 faults it self-disables (fallback camera meanwhile).", "Draw3D");
         }
 
         if (detourFaults >= 3)
             SetActive(false);
     }
 
-    // ---------------------------------------------------------------- payload tracking
-
     private void RememberMapping(nint resource, nint data)
     {
+        var free = -1;
         for (var i = 0; i < mapPending.Length; i++)
         {
-            if (mapPending[i].Resource == 0 || mapPending[i].Resource == resource)
+            if (mapPending[i].Resource == resource)
             {
-                mapPending[i].Resource = resource;
                 mapPending[i].Data = data;
+                mapPending[i].Stamp = ++mapStamp;
                 return;
             }
+
+            if (free < 0 && mapPending[i].Resource == 0)
+                free = i;
         }
+
+        if (free < 0)
+        {
+            statMapTableOverflows++;
+            free = 0;
+            for (var i = 1; i < mapPending.Length; i++)
+            {
+                if (mapPending[i].Stamp < mapPending[free].Stamp)
+                    free = i;
+            }
+        }
+
+        mapPending[free].Resource = resource;
+        mapPending[free].Data = data;
+        mapPending[free].Stamp = ++mapStamp;
     }
 
     private nint TakeMapping(nint resource)
@@ -737,7 +703,55 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return 0;
     }
 
-    // Whether the pointer is already a tracked buffer, without learning it.
+    private const int WidthCacheSize = 8192;
+    private const int WidthCacheProbe = 16;
+    private const long WidthRecheckPresents = 240;
+    private readonly nint[] widthKeys = new nint[WidthCacheSize];
+    private readonly int[] widthValues = new int[WidthCacheSize];
+    private readonly long[] widthStamps = new long[WidthCacheSize];
+    private long statWidthQueries;
+
+    private int WidthOf(nint ptr, int widthHint = -1)
+    {
+        var home = (int)((((ulong)ptr >> 4) * 0x9E3779B97F4A7C15UL) >> 51) & (WidthCacheSize - 1);
+        var slot = -1;
+        for (var k = 0; k < WidthCacheProbe; k++)
+        {
+            var i = (home + k) & (WidthCacheSize - 1);
+            if (widthKeys[i] == ptr)
+            {
+                var fresh = presentIndex - widthStamps[i] <= WidthRecheckPresents;
+                var contradicted = widthHint >= 0 && widthHint == lockedByteWidth && widthValues[i] != widthHint;
+                if (fresh && !contradicted)
+                    return widthValues[i];
+                slot = i;
+                break;
+            }
+
+            if (slot < 0 && (widthKeys[i] == 0 || presentIndex - widthStamps[i] > WidthRecheckPresents))
+                slot = i;
+        }
+
+        if (slot < 0)
+            slot = home;
+
+        var width = -1;
+        statWidthQueries++;
+        if (ComPtrUtil.TryQi<ID3D11Buffer>((IUnknown*)ptr, out var buffer))
+        {
+            D3D11_BUFFER_DESC desc;
+            buffer.Get()->GetDesc(&desc);
+            buffer.Dispose();
+            if ((desc.BindFlags & (uint)D3D11_BIND_FLAG.D3D11_BIND_CONSTANT_BUFFER) != 0)
+                width = (int)desc.ByteWidth;
+        }
+
+        widthKeys[slot] = ptr;
+        widthValues[slot] = width;
+        widthStamps[slot] = presentIndex;
+        return width;
+    }
+
     private bool IsObservedBuffer(nint ptr)
     {
         for (var i = 0; i < trackedCount; i++)
@@ -768,8 +782,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             ignoredCount++;
     }
 
-    // Finds the tracked slot for a buffer, learning it on first sight with a budgeted QI and GetDesc. Only constant
-    // buffers within the size bounds enter the table.
     private int FindOrLearn(nint ptr)
     {
         for (var i = 0; i < trackedCount; i++)
@@ -802,7 +814,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         if (desc.ByteWidth > TrackedBytes)
         {
-            largeCbuffersSeen++; // reported by the probe as the signal for a ring-allocation scheme
+            largeCbuffersSeen++;
             ignoredTooLarge++;
             AddIgnored(ptr);
             return -1;
@@ -822,31 +834,41 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return Learn(slotIdx, ptr, (int)desc.ByteWidth);
     }
 
-    // Takes a tracked slot for a new buffer, appending while capacity remains and otherwise evicting round-robin an
-    // entry with no update this discovery (a freed buffer's stale pointer).
+    // Eviction must work on a full table, or a buffer reallocated later (a zone change) never gets a slot.
     private int AcquireTrackedSlot()
     {
         if (trackedCount < MaxTrackedBuffers)
             return trackedCount;
 
-        for (var step = 0; step < trackedCount; step++)
+        var victim = -1;
+        var victimLocked = true;
+        var victimLast = long.MaxValue;
+        for (var i = 0; i < trackedCount; i++)
         {
-            var i = (evictionCursor + step) % trackedCount;
-            if (tracked[i].UpdatesSeen == 0)
+            var isLockedWidth = lockedOn && tracked[i].ByteWidth == lockedByteWidth;
+            var last = tracked[i].UpdatesSeen == 0 ? long.MinValue : tracked[i].LastUpdatePresent;
+            if (victim < 0 || (victimLocked && !isLockedWidth) || (victimLocked == isLockedWidth && last < victimLast))
             {
-                evictionCursor = (i + 1) % trackedCount;
-                statEvictions++;
-                return i;
+                victim = i;
+                victimLocked = isLockedWidth;
+                victimLast = last;
             }
         }
 
-        return -1;
+        if (victim < 0 || (victimLast >= presentIndex && victimLast != long.MinValue))
+        {
+            statTableFullRefusals++;
+            return -1;
+        }
+
+        statEvictions++;
+        return victim;
     }
 
     private int Learn(int slotIdx, nint ptr, int byteWidth)
     {
         ref var slot = ref tracked[slotIdx];
-        var pooled = slot.Bytes; // the payload array is pooled and survives slot reuse
+        var pooled = slot.Bytes;
         slot = default;
         slot.Ptr = ptr;
         slot.ByteWidth = byteWidth;
@@ -860,11 +882,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return slotIdx;
     }
 
-    // Copies an upload payload into the tracker while discovering, or extracts the locked window once locked.
     private void CapturePayload(nint resource, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
-        // Recorded first and independently of the tracking table, which holds only the final write and so cannot
-        // represent a buffer written many times per frame.
         if (writeLog.Armed)
         {
             for (var i = 0; i < trackedCount; i++)
@@ -879,36 +898,52 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         if (lockedOn)
         {
-            // Any tracked buffer of the locked byte-width is a potential ring member; validation at commit
-            // decides which extracted windows are the main view.
+            var ti = -1;
             for (var i = 0; i < trackedCount; i++)
             {
-                if (tracked[i].Ptr != resource)
-                    continue;
-
-                if (tracked[i].ByteWidth != lockedByteWidth)
-                    return;
-
-                // The source allocation is only sourceLength bytes, so a box that clips the locked 64-byte
-                // window is skipped rather than over-read.
-                var windowInSource = lockedOffset - sourceOffset;
-                if (windowInSource < 0 || (long)windowInSource + 64 > sourceLength)
-                    return;
-
-                var floats = (float*)(data + windowInSource);
-                var vp = ExtractMatrix(new ReadOnlySpan<float>(floats, 16), lockedForm == MatrixForm.ViewProjTransposed);
-                pendingRing[pendingCursor] = new PendingMatrix { Vp = vp, Seq = ++pendingSeq, Present = presentIndex };
-                pendingCursor = (pendingCursor + 1) % PendingRingLength;
-                lockedMechanisms |= mechanism;
-                tracked[i].UpdatesSeen++; // keeps live ring members protected from slot eviction
-
-                // Once locked the stored bytes freeze at whatever discovery last saw, unless a capture window
-                // is armed.
-                if (fullCaptureFramesRemaining > 0)
-                    CopyPayloadBytes(ref tracked[i], data, sourceOffset, sourceLength, mechanism);
-
-                return;
+                if (tracked[i].Ptr == resource)
+                {
+                    ti = i;
+                    break;
+                }
             }
+
+            var windowInSource = lockedOffset - sourceOffset;
+            if (windowInSource < 0 || (long)windowInSource + 64 > sourceLength)
+                return;
+
+            var floats = (float*)(data + windowInSource);
+            var vp = ExtractMatrix(new ReadOnlySpan<float>(floats, 16), lockedForm == MatrixForm.ViewProjTransposed);
+            if (ti >= 0)
+            {
+                tracked[ti].UpdatesSeen++;
+                tracked[ti].LastUpdatePresent = presentIndex;
+            }
+            else
+            {
+                statUntrackedCaptures++;
+            }
+
+            // Environment probes and shadow cascades share this byte width every frame. Their view shape rejects them.
+            if (hasCaptureRefShape)
+            {
+                var mismatch = TryReadViewShape(in vp, out var shape) ? CompareViewShape(in shape, in captureRefShape) : ViewShapeMismatch.Projection;
+                if (mismatch != ViewShapeMismatch.None)
+                {
+                    statCaptureShapeRejects++;
+                    statShapeRejects[(int)mismatch]++;
+                    lastRejectedShape = shape;
+                    lastRejectedReason = mismatch;
+                    return;
+                }
+            }
+
+            pendingRing[pendingCursor] = new PendingMatrix { Vp = vp, Seq = ++pendingSeq, Present = presentIndex };
+            pendingCursor = (pendingCursor + 1) % PendingRingLength;
+            lockedMechanisms |= mechanism;
+
+            if (ti >= 0 && fullCaptureFramesRemaining > 0)
+                CopyPayloadBytes(ref tracked[ti], data, sourceOffset, sourceLength, mechanism);
 
             return;
         }
@@ -923,16 +958,15 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 return;
 
             slot.UpdatesSeen++;
+            slot.LastUpdatePresent = presentIndex;
 
-            // Each physical buffer is overwritten several times per frame, so only scoring every write can
-            // catch the main-view upload.
+            // Each physical buffer is overwritten several times per frame.
             if (slot.ByteWidth <= SmallScanBytes)
                 ScoreBufferNow(ref slot);
             return;
         }
     }
 
-    // Copies an upload payload into a tracked buffer's byte store.
     private bool CopyPayloadBytes(ref TrackedBuffer slot, nint data, int sourceOffset, int sourceLength, byte mechanism)
     {
         if (slot.Bytes == null || sourceOffset < 0 || sourceOffset >= TrackedBytes)
@@ -952,16 +986,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return true;
     }
 
-    // Scores every window of a freshly captured small-buffer payload against the struct camera read now, keeping the
-    // buffer's best match since the last commit. Budgeted per frame, and skipped when no struct camera is available.
     private void ScoreBufferNow(ref TrackedBuffer slot)
     {
         var windows = (Math.Min(slot.ValidBytes, slot.ByteWidth) - 64) / 16 + 1;
         if (windows <= 0)
             return;
 
-        // Buffers bound to the VS at the main pass are the only lock candidates and are few, so they are scored
-        // unconditionally rather than competing with the per-draw upload stream for the budget.
         if (slot.LastBoundSlot < 0)
         {
             if (scoreBudget < windows * 2)
@@ -973,8 +1003,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (!GameRenderSources.TryGetCamera(out var cam) || !cam.HasRenderCamera)
             return;
 
-        // Two references, best fit wins: uploads carry a view setup up to a frame older than this instant, so
-        // under motion the same-instant read alone is skewed and the previous commit's reference brackets it.
+        // The struct camera runs a frame ahead of the uploads.
         var refVp = cam.View * cam.Proj;
         var floats = MemoryMarshal.Cast<byte, float>(new ReadOnlySpan<byte>(slot.Bytes, 0, Math.Min(slot.ValidBytes, slot.ByteWidth)));
         for (var offset = 0; offset + 16 <= floats.Length; offset += 4)
@@ -1008,8 +1037,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
-    // ---------------------------------------------------------------- discovery
-
     private void ResetDiscovery()
     {
         familyCount = 0;
@@ -1023,8 +1050,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             tracked[i].HasBestSinceCommit = false;
         }
 
-        // Clearing the ignore ring re-checks pointers the allocator reused for a real cbuffer; a stale ignore
-        // entry would hide the camera for the rest of the session.
+        // A stale entry for a reused address would hide the camera for the rest of the session.
         ignoredCount = 0;
         ignoredCursor = 0;
         ignoredNotBuffer = 0;
@@ -1033,14 +1059,14 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         ignoredTooSmall = 0;
         statLearns = 0;
         statEvictions = 0;
+        statTableFullRefusals = 0;
         statBudgetExhaustedFrames = 0;
         largeCbuffersSeen = 0;
         copiesIntoTracked = 0;
         commitFrames = 0;
     }
 
-    // Learns and marks the buffers bound to the VS at the main pass's first draw. Sampled at the first draw rather
-    // than the OM bind, where the VS slots still hold the previous pass's buffers.
+    // At the OM bind the VS slots still hold the previous pass's buffers.
     private void LearnBoundBuffers(ID3D11DeviceContext* ctx)
     {
         var bound = stackalloc ID3D11Buffer*[VsSlotCount];
@@ -1064,7 +1090,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
             if (idx < 0)
             {
-                // Bound to the VS means a constant buffer already, so only the size gate applies and no budget.
                 D3D11_BUFFER_DESC desc;
                 b->GetDesc(&desc);
                 if (desc.ByteWidth >= MinTrackedBytes && desc.ByteWidth <= TrackedBytes)
@@ -1075,19 +1100,17 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 }
                 else if (desc.ByteWidth > TrackedBytes)
                 {
-                    largeCbuffersSeen++; // a large cbuffer bound at the main pass signals a ring-allocation scheme
+                    largeCbuffersSeen++;
                 }
             }
 
             if (idx >= 0)
                 tracked[idx].LastBoundSlot = s;
 
-            b->Release(); // VSGetConstantBuffers AddRef'd each returned buffer
+            b->Release();
         }
     }
 
-    // Runs one discovery step: merges the capture-time best matches and the larger buffers' last-write scan into the
-    // family table, advances the winning family's streak, and locks when a stable strong winner emerges.
     private void AdvanceDiscovery(in Matrix4x4 refVp)
     {
         var bestIdx = -1;
@@ -1109,8 +1132,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 ConsiderWinner(f, slot.BestErrSinceCommit, boundHere, ref bestIdx, ref bestErr, ref bestBound);
             }
 
-            // Commit-moment backstop covering uploads the capture-time path missed, such as activation
-            // mid-frame or an untapped write route.
             if (boundHere && slot.ByteWidth <= SmallScanBytes && slot.ValidBytes >= 64)
             {
                 var boundFloats = MemoryMarshal.Cast<byte, float>(new ReadOnlySpan<byte>(slot.Bytes, 0, Math.Min(slot.ValidBytes, slot.ByteWidth)));
@@ -1130,8 +1151,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 }
             }
 
-            // Larger buffers get a last-write scan instead. Steady discovery only pays for bound ones; an armed
-            // probe scans them all so the report can expose a camera hiding in an unbound buffer.
             if (slot.ByteWidth > SmallScanBytes && slot.UpdatedSinceScan && (slot.LastBoundSlot >= 0 || probeArmed))
             {
                 slot.UpdatedSinceScan = false;
@@ -1153,8 +1172,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             }
         }
 
-        // Two families can tie within noise when the same matrix is stored twice per upload, so an incumbent
-        // carrying a streak keeps the win while within a factor of this frame's best; alternating would never lock.
+        // The same matrix is stored twice per upload. An incumbent keeps the win within a factor of two, or the lock never settles.
         if (bestIdx >= 0)
         {
             for (var i = 0; i < familyCount; i++)
@@ -1163,6 +1181,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                     continue;
 
                 if (families[i].Streak > families[bestIdx].Streak
+                    && families[i].Offset <= families[bestIdx].Offset
                     && families[i].LastErr < bestErr * 2f
                     && (families[i].BoundSeen || !bestBound))
                 {
@@ -1171,8 +1190,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
             }
         }
 
-        // Only this frame's winning family advances and the other families that matched reset. A family with no
-        // match this frame keeps its streak, since the camera family is written at every world frame anyway.
         for (var i = 0; i < familyCount; i++)
         {
             if (families[i].LastCommitSeen != commitFrames)
@@ -1188,8 +1205,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         {
             ref var winner = ref families[bestIdx];
 
-            // BoundSeen is a hard requirement: it rules out locking onto a camera-shaped upload the world pass
-            // never reads, such as another overlay in the same process uploading its own frame constants.
+            // Excludes camera-shaped uploads the world pass never reads.
             if (winner.Streak >= LockStreak && winner.MinErr < StrongErr && winner.BoundSeen)
                 LockOn(in winner);
         }
@@ -1200,10 +1216,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         if (familyIdx < 0)
             return;
 
-        // Bound beats unbound at any error; among equals the smaller error wins.
+        // The world is drawn with the block's first view-projection (offset 96). The copy at 512 is Control's and lags it.
+        const float tieErr = 1e-4f;
+        var tie = bestIdx >= 0 && bound == bestBound && MathF.Abs(err - bestErr) <= tieErr;
         var better = bestIdx < 0
                      || (bound && !bestBound)
-                     || (bound == bestBound && err < bestErr);
+                     || (tie ? families[familyIdx].Offset < families[bestIdx].Offset : bound == bestBound && err < bestErr);
         if (better)
         {
             bestIdx = familyIdx;
@@ -1225,8 +1243,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 if (f.Offset == byteOffset && f.Form == form)
                 {
                     f.Hits++;
-                    // Keep the best error within one commit frame: a later, worse member match (another view's
-                    // constants in a sibling ring buffer) must not overwrite the main view's score.
                     if (f.LastCommitSeen != commitFrames || err < f.LastErr)
                         f.LastErr = err;
                     f.MinErr = MathF.Min(f.MinErr, err);
@@ -1278,8 +1294,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         lockedMechanisms = 0;
         lockedByteWidth = 0;
 
-        // The locked identity is the size class of the family's members, resolved from any member's tracked
-        // entry: extraction matches on byte-width, never on the pointers the family happened to accumulate.
         for (var i = 0; i < trackedCount; i++)
         {
             if (winner.HasMember(tracked[i].Ptr))
@@ -1300,7 +1314,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         if (lockedByteWidth <= 0)
         {
-            // No member resolved to a tracked entry (evicted between upsert and lock), so nothing can be extracted.
             lockedOn = false;
             return;
         }
@@ -1318,133 +1331,233 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
 
         lockedOn = false;
         haveCommit = false;
-        lastRealPresent = -1; // a prediction must never bridge across a relock
-        prevRealPresent = -1;
         missOpenPresent = -1;
         if (!unlockLogged)
         {
             unlockLogged = true;
-            NoireLogger.LogInfo($"Draw3D: camera-constant lock released ({reason}) - rediscovering; struct-snapshot fallback meanwhile.", "Draw3D");
+            NoireLogger.LogInfo($"Draw3D: camera-constant lock released ({reason}) - rediscovering; fallback camera meanwhile.", "Draw3D");
         }
     }
 
-    // ---------------------------------------------------------------- locked commit
+    // A matrix invertible before the reversed-Z rebuild can be singular after it.
+    private static bool IsUsableCamera(in Matrix4x4 m, float nearPlane)
+    {
+        var sum = MathF.Abs(m.M11) + MathF.Abs(m.M22) + MathF.Abs(m.M41) + MathF.Abs(m.M42) + MathF.Abs(m.M44);
+        if (!float.IsFinite(sum) || sum <= 1e-6f)
+            return false;
 
-    // Promotes the newest fresh pending upload that validates against the struct camera to this frame's commit.
-    // Validation runs against both the draw-moment reference and the previous commit's reference, since uploads carry
-    // the previous frame's camera phase. An upload already committed once is never re-committed.
-    private bool TryCommitLocked(in Matrix4x4 refVp, bool firstAttempt)
+        if (!float.IsFinite(m.M12) || !float.IsFinite(m.M21) || !float.IsFinite(m.M43) || !float.IsFinite(m.M14))
+            return false;
+
+        var rebuilt = m;
+        rebuilt.M13 = 0f;
+        rebuilt.M23 = 0f;
+        rebuilt.M33 = 0f;
+        rebuilt.M43 = nearPlane > 1e-6f ? nearPlane : 0.1f;
+
+        return Matrix4x4.Invert(rebuilt, out _);
+    }
+
+    private const float ViewShapeTolerance = 2e-2f;
+
+    internal struct ViewShape
+    {
+        public float ScaleX;
+
+        public float ScaleY;
+
+        // 1 for perspective, 0 for orthographic.
+        public float WScale;
+
+        public float Skew;
+
+        public int Handedness;
+
+        public Vector3 Eye;
+    }
+
+    // In a perspective row-vector view-projection the W column is forward. X and Y are right and up plus a jitter term along forward.
+    internal static bool TryReadViewShape(in Matrix4x4 m, out ViewShape shape)
+    {
+        shape = default;
+        var c1 = new Vector3(m.M11, m.M21, m.M31);
+        var c2 = new Vector3(m.M12, m.M22, m.M32);
+        var c4 = new Vector3(m.M14, m.M24, m.M34);
+        if (!float.IsFinite(c1.X + c1.Y + c1.Z + c2.X + c2.Y + c2.Z + c4.X + c4.Y + c4.Z))
+            return false;
+
+        var w = c4.Length();
+        shape.WScale = w;
+        if (w < 1e-4f)
+            return true;
+
+        var forward = c4 / w;
+        var right = c1 - (Vector3.Dot(c1, forward) * forward);
+        var up = c2 - (Vector3.Dot(c2, forward) * forward);
+        shape.ScaleX = right.Length();
+        shape.ScaleY = up.Length();
+        if (shape.ScaleX < 1e-6f || shape.ScaleY < 1e-6f)
+            return false;
+
+        shape.Skew = Vector3.Dot(right, up) / (shape.ScaleX * shape.ScaleY);
+        shape.Handedness = Vector3.Dot(Vector3.Cross(right, up), forward) >= 0f ? 1 : -1;
+
+        // The eye is the point that lands on clip X = Y = W = 0.
+        var basis = new Matrix4x4(
+            m.M11, m.M12, m.M14, 0f,
+            m.M21, m.M22, m.M24, 0f,
+            m.M31, m.M32, m.M34, 0f,
+            0f, 0f, 0f, 1f);
+        if (Matrix4x4.Invert(basis, out var inverse))
+            shape.Eye = Vector3.Transform(-new Vector3(m.M41, m.M42, m.M44), inverse);
+
+        return true;
+    }
+
+    internal enum ViewShapeMismatch : byte
+    {
+        None = 0,
+        Projection = 1,
+        AspectRatio = 2,
+        Skew = 3,
+        Handedness = 4,
+    }
+
+    internal static ViewShapeMismatch CompareViewShape(in ViewShape candidate, in ViewShape reference)
+    {
+        if (reference.WScale < 1e-4f || candidate.WScale < 1e-4f
+            || MathF.Abs(candidate.WScale - reference.WScale) > ViewShapeTolerance * reference.WScale)
+            return ViewShapeMismatch.Projection;
+
+        // The field of view changes (zoom, GPose) and the struct camera is a frame ahead. Only the aspect ratio is comparable.
+        var candidateAspect = candidate.ScaleY / candidate.ScaleX;
+        var referenceAspect = reference.ScaleY / reference.ScaleX;
+        if (MathF.Abs(candidateAspect - referenceAspect) > ViewShapeTolerance * referenceAspect)
+            return ViewShapeMismatch.AspectRatio;
+
+        if (MathF.Abs(candidate.Skew) > ViewShapeTolerance)
+            return ViewShapeMismatch.Skew;
+
+        return candidate.Handedness != reference.Handedness ? ViewShapeMismatch.Handedness : ViewShapeMismatch.None;
+    }
+
+    // Some sessions upload the camera after the main pass's first draw.
+    private void CommitNewestUpload()
+    {
+        var bestSeq = -1L;
+        var bestIdx = -1;
+        for (var i = 0; i < PendingRingLength; i++)
+        {
+            ref var entry = ref pendingRing[i];
+            // Where the upload falls against the present counter varies per session. The stamp is only an age bound.
+            if (entry.Seq <= bestSeq || entry.Present < presentIndex - 1)
+                continue;
+
+            if (!IsUsableCamera(in entry.Vp, commitNearPlane))
+                continue;
+
+            bestSeq = entry.Seq;
+            bestIdx = i;
+        }
+
+        if (bestIdx < 0)
+            return;
+
+        if (bestSeq != lastCommittedSeq || commitPresentIndex != presentIndex)
+            statLateCommits += bestSeq > lastCommittedSeq ? 1 : 0;
+
+        committedVp = pendingRing[bestIdx].Vp;
+        commitPresentIndex = presentIndex;
+        haveCommit = true;
+        lastCommittedSeq = Math.Max(lastCommittedSeq, bestSeq);
+        reuseStreak = 0;
+        invalidCommitStreak = 0;
+    }
+
+    // Uploads stamped with an earlier present are the previous frame's camera uploaded again.
+    private bool TryCommitLocked(bool firstAttempt)
     {
         var bestSeq = -1L;
         var bestIdx = -1;
         for (var i = 0; i < PendingRingLength; i++)
         {
             var seq = pendingRing[i].Seq;
-            if (seq == 0 || seq <= bestSeq)
+            if (seq == 0)
                 continue;
 
-            var err = MatrixError(in pendingRing[i].Vp, in refVp, skipZColumn: true);
-            if (hasLastCommitRef)
+            if (!IsUsableCamera(in pendingRing[i].Vp, commitNearPlane))
             {
-                var errPrev = MatrixError(in pendingRing[i].Vp, in lastCommitRefVp, skipZColumn: true);
-                if (!float.IsNaN(errPrev) && (float.IsNaN(err) || errPrev < err))
-                    err = errPrev;
+                if (seq > validationCountHwm)
+                {
+                    statValidationFails++;
+                    validationCountHwm = seq;
+                }
+
+                continue;
             }
 
-            if (err < SteadyErr)
+            if (pendingRing[i].Present != presentIndex)
+            {
+                if (seq > priorFrameCountHwm)
+                {
+                    statPriorFrameSkips++;
+                    priorFrameCountHwm = seq;
+                }
+
+                continue;
+            }
+
+            if (seq > bestSeq)
             {
                 bestSeq = seq;
                 bestIdx = i;
             }
-            else if (seq > validationCountHwm)
-            {
-                statValidationFails++; // a foreign view's constants (shadow, water, portrait), or a torn read
-                validationCountHwm = seq; // an entry lingering in the ring is counted once, not once per commit
-            }
-        }
-
-        if (bestIdx >= 0 && bestSeq <= lastCommittedSeq)
-        {
-            if (firstAttempt)
-                statStaleSkips++;
-            bestIdx = -1; // already projected with once, so wait for the frame's fresh upload instead
         }
 
         if (bestIdx < 0)
             return false;
 
+        if (bestSeq <= lastCommittedSeq)
+        {
+            commitPresentIndex = presentIndex;
+            return true;
+        }
+
+        reuseStreak = 0;
         committedVp = pendingRing[bestIdx].Vp;
         commitPresentIndex = presentIndex;
         haveCommit = true;
         lastCommittedSeq = bestSeq;
-
-        // Real commits feed the miss-frame prediction, and a same-present re-entry must not collapse the pair
-        // into a zero-length step.
-        if (lastRealPresent != presentIndex)
-        {
-            prevRealVp = lastRealVp;
-            prevRealPresent = lastRealPresent;
-            lastRealVp = committedVp;
-            lastRealPresent = presentIndex;
-        }
-        else
-        {
-            lastRealVp = committedVp;
-        }
-
         return true;
     }
 
-    // ---------------------------------------------------------------- extrapolated commit (miss frames)
-
-    // How many presents past the last real commit a prediction may reach, beyond which the struct fallback stands.
-    private const int MaxExtrapolateGap = 3;
-
-    // Predicts this frame's camera from the last two real commits at constant velocity and promotes it as the commit
-    // when it validates against the same dual reference a real commit uses. A camera cut fails validation.
-    private bool TryExtrapolateCommit(in Matrix4x4 refVp)
-    {
-        if (lastRealPresent < 0 || prevRealPresent < 0)
-            return false;
-
-        var lastGap = lastRealPresent - prevRealPresent;
-        var gap = presentIndex - lastRealPresent;
-        if (lastGap < 1 || gap < 1 || gap > MaxExtrapolateGap)
-            return false;
-
-        var pred = ExtrapolateCamera(in prevRealVp, in lastRealVp, lastGap, gap);
-
-        var err = MatrixError(in pred, in refVp, skipZColumn: true);
-        if (hasLastCommitRef)
-        {
-            var errPrev = MatrixError(in pred, in lastCommitRefVp, skipZColumn: true);
-            if (!float.IsNaN(errPrev) && (float.IsNaN(err) || errPrev < err))
-                err = errPrev;
-        }
-
-        if (float.IsNaN(err) || err >= SteadyErr)
-            return false;
-
-        committedVp = pred;
-        commitPresentIndex = presentIndex;
-        haveCommit = true;
-        statExtrapolated++;
-        return true;
-    }
-
-    // Advances the last real commit by the per-present delta between the last two, scaled to the presents being
-    // bridged. Per-element linear extrapolation, exact for translation and a small-angle approximation for rotation.
-    internal static Matrix4x4 ExtrapolateCamera(in Matrix4x4 prev, in Matrix4x4 last, long lastGap, long gap)
-    {
-        var t = (float)gap / lastGap;
-        return last + ((last - prev) * t);
-    }
-
-    // ---------------------------------------------------------------- pure logic (unit-tested)
-
-    // Measures the normalized RMS error between a 16-float cbuffer window and a reference row-vector matrix. The
-    // uploaded Z column legitimately differs from the struct-composed one, so it is normally skipped.
+    // Skips the Z column and removes TAA jitter from both sides. The drawn camera is jittered and the struct is not.
     internal static float WindowError(ReadOnlySpan<float> window, in Matrix4x4 reference, bool transposed, bool skipZColumn)
+    {
+        if (skipZColumn)
+        {
+            for (var k = 0; k < 16; k++)
+            {
+                if (!float.IsFinite(window[k]))
+                    return float.NaN;
+            }
+
+            var candidate = RemoveTemporalJitter(ExtractMatrix(window, transposed), out _);
+            var centredRef = RemoveTemporalJitter(in reference, out _);
+            Span<float> cv = stackalloc float[16]
+            {
+                candidate.M11, candidate.M12, candidate.M13, candidate.M14,
+                candidate.M21, candidate.M22, candidate.M23, candidate.M24,
+                candidate.M31, candidate.M32, candidate.M33, candidate.M34,
+                candidate.M41, candidate.M42, candidate.M43, candidate.M44,
+            };
+            return RawWindowError(cv, in centredRef, transposed: false, skipZColumn: true);
+        }
+
+        return RawWindowError(window, in reference, transposed, skipZColumn);
+    }
+
+    private static float RawWindowError(ReadOnlySpan<float> window, in Matrix4x4 reference, bool transposed, bool skipZColumn)
     {
         Span<float> r = stackalloc float[16]
         {
@@ -1491,7 +1604,53 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return WindowError(av, in b, transposed: false, skipZColumn);
     }
 
-    // Reads a 16-float window as a row-vector matrix, transposing when the window holds the transpose.
+    // The game rasterizes half a pixel right and down of its camera constants (measured 0.3 cm error with it, 1.4 cm without).
+    internal static Matrix4x4 ApplyPixelOffset(in Matrix4x4 m, Vector2 pixels, Vector2 displaySize)
+    {
+        if (displaySize.X <= 0f || displaySize.Y <= 0f)
+            return m;
+
+        var dx = 2f * pixels.X / displaySize.X;
+        var dy = -2f * pixels.Y / displaySize.Y;
+        var r = m;
+        r.M11 += dx * m.M14;
+        r.M21 += dx * m.M24;
+        r.M31 += dx * m.M34;
+        r.M41 += dx * m.M44;
+        r.M12 += dy * m.M14;
+        r.M22 += dy * m.M24;
+        r.M32 += dy * m.M34;
+        r.M42 += dy * m.M44;
+        return r;
+    }
+
+    // Only a layer composited after the TAA resolve wants the jitter removed.
+    internal static Matrix4x4 RemoveTemporalJitter(in Matrix4x4 m, out Vector2 jitter)
+    {
+        var c4 = new Vector3(m.M14, m.M24, m.M34);
+        var w2 = Vector3.Dot(c4, c4);
+        if (w2 < 1e-8f)
+        {
+            jitter = Vector2.Zero;
+            return m;
+        }
+
+        var jx = Vector3.Dot(new Vector3(m.M11, m.M21, m.M31), c4) / w2;
+        var jy = Vector3.Dot(new Vector3(m.M12, m.M22, m.M32), c4) / w2;
+        jitter = new Vector2(jx, jy);
+
+        var r = m;
+        r.M11 -= jx * m.M14;
+        r.M21 -= jx * m.M24;
+        r.M31 -= jx * m.M34;
+        r.M41 -= jx * m.M44;
+        r.M12 -= jy * m.M14;
+        r.M22 -= jy * m.M24;
+        r.M32 -= jy * m.M34;
+        r.M42 -= jy * m.M44;
+        return r;
+    }
+
     internal static Matrix4x4 ExtractMatrix(ReadOnlySpan<float> window, bool transposed)
     {
         var m = new Matrix4x4(
@@ -1502,12 +1661,8 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         return transposed ? Matrix4x4.Transpose(m) : m;
     }
 
-    // Whether a commit belongs to the frame the caller is compositing. The inject path runs before its frame's
-    // present boundary and the present-time path runs after it, so they expect different indices.
     internal static bool IsCommitFresh(long commitIndex, long presentIndex, bool presentTimePath)
         => commitIndex >= 0 && commitIndex == (presentTimePath ? presentIndex - 1 : presentIndex);
-
-    // ---------------------------------------------------------------- probe report
 
     private static string FormName(MatrixForm form) => form == MatrixForm.ViewProj ? "VP" : "VP-transposed";
 
@@ -1519,13 +1674,12 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         _ => "none observed",
     };
 
-    // Logs the full discovery observation table (armed by /noire3d cbprobe).
     private void ReportProbe()
     {
         var sb = new StringBuilder();
         sb.AppendLine($"Draw3D cbprobe: {commitFrames} main-pass frames observed, {trackedCount} small cbuffers tracked.");
         sb.AppendLine($"  state now: {Describe()}");
-        sb.AppendLine($"  learning: {statLearns} learns ({statEvictions} evictions), budget-exhausted frames {statBudgetExhaustedFrames}; copies into observed buffers: {copiesIntoTracked}.");
+        sb.AppendLine($"  learning: {statLearns} learns ({statEvictions} evictions, {statTableFullRefusals} refused with the table full), budget-exhausted frames {statBudgetExhaustedFrames}; copies into observed buffers: {copiesIntoTracked}.");
         sb.AppendLine($"  ignored: not-a-buffer {ignoredNotBuffer}, no-cbuffer-flag {ignoredNoCbufferFlag}, > {TrackedBytes} B {ignoredTooLarge} (large cbuffers {largeCbuffersSeen}), < {MinTrackedBytes} B {ignoredTooSmall}.");
         sb.AppendLine("  tracked buffers (cbuffers 64 B..4 KB seen on the upload paths):");
         sb.AppendLine("    buffer | size | updates | via | VS slot | best VP window err");
@@ -1560,7 +1714,6 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         NoireLogger.LogInfo(sb.ToString(), "Draw3D");
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         active = false;
@@ -1582,8 +1735,7 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         tap = null;
     }
 
-    // Builds the options for a hook on a device vtable slot: no guard, no counters and no verification, since these
-    // run thousands of times per frame and the addresses are slots no symbol source describes.
+    // These run thousands of times per frame on unnamed vtable slots.
     private static HookOptions DeviceHookOptions(string name) => new()
     {
         Name = name,

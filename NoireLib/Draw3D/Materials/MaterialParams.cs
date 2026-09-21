@@ -4,9 +4,7 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Materials;
 
-// The flattened, GPU-facing form of a Material resolved once at snapshot time. Value equality (texture by SRV
-// pointer) is the batching key: the immediate layer produces batchable draws without allocating Material records per
-// call, keeping the steady-state path allocation-free.
+// Resolved at snapshot time. Value equality, textures by SRV pointer, is the batching key.
 internal struct MaterialData : IEquatable<MaterialData>
 {
     public MaterialDomain Domain;
@@ -21,17 +19,16 @@ internal struct MaterialData : IEquatable<MaterialData>
     public nint AuxSrv1;
     public Vector4 Params0;
     public Vector4 Params1; // x = DepthFade, y = shapeKind, z = outlineWidth, w = heightFade
-    public Vector4 SurfaceParams; // custom pipelines only: arrives as Params2 (decals need that register themselves)
-    public float ProjectionMode; // ground decals: (float)DecalProjection (0 = AllSurfaces, 1 = HighestOnly)
-    public float OutlineScaleRef; // ground decals: outline rim reference footprint scale; 0 = constant world thickness
-                                  // (scene decals), else proportional to the immediate layer's own footprint scale
-    public Vector4 DecalOutlineColor; // ground decals: rim colour, straight alpha; alpha 0 = unset (rim uses the decal colour)
+    public Vector4 SurfaceParams; // custom pipelines only, arrives as Params2
+    public float ProjectionMode; // ground decals: 0 = AllSurfaces, 1 = HighestOnly
+    public float OutlineScaleRef; // ground decals: 0 for constant world thickness
+    public Vector4 DecalOutlineColor; // ground decals: straight alpha, alpha 0 = decal colour
     public string? CustomPipeline;
 
-    /// <summary>The bucket this material renders in: 0 opaque, 1 ground decal, 2 transparent.</summary>
+    // 0 opaque, 1 ground decal, 2 transparent.
     public readonly int Bucket => Domain == MaterialDomain.GroundDecal ? 1 : Blend == BlendMode.Opaque ? 0 : 2;
 
-    /// <summary>Resolves a material record; returns false when the draw must be skipped (texture disposed).</summary>
+    // False when a referenced texture is disposed.
     public static bool TryFrom(Material material, out MaterialData data)
     {
         data = default;
@@ -41,16 +38,15 @@ internal struct MaterialData : IEquatable<MaterialData>
         {
             srv = material.Texture.SrvPointer;
             if (srv == 0)
-                return false; // disposed texture - skip and count, never bind a stale pointer
+                return false; // never bind a stale pointer
         }
 
-        // Same rule for auxiliary textures: a disposed one skips the draw rather than binding a stale pointer.
         if (!TryResolveAux(material.AuxTexture0, out data.AuxSrv0) || !TryResolveAux(material.AuxTexture1, out data.AuxSrv1))
             return false;
 
         var domain = material.Domain;
         data.Domain = domain;
-        // Decals cannot be opaque; Additive passes through (stacked decals sum toward white), anything else resolves to Premultiplied.
+        // Decals cannot be opaque.
         data.Blend = domain == MaterialDomain.GroundDecal
             ? material.Blend == BlendMode.Additive ? BlendMode.Additive : BlendMode.Premultiplied
             : material.Blend;
@@ -71,7 +67,6 @@ internal struct MaterialData : IEquatable<MaterialData>
         return true;
     }
 
-    // Resolves an optional auxiliary texture; returns false when it exists but has been disposed.
     private static bool TryResolveAux(Assets.GpuTexture? texture, out nint srv)
     {
         srv = 0;
@@ -82,7 +77,6 @@ internal struct MaterialData : IEquatable<MaterialData>
         return srv != 0;
     }
 
-    /// <inheritdoc/>
     public readonly bool Equals(MaterialData other)
         => Domain == other.Domain
         && Blend == other.Blend
@@ -102,10 +96,8 @@ internal struct MaterialData : IEquatable<MaterialData>
         && DecalOutlineColor == other.DecalOutlineColor
         && string.Equals(CustomPipeline, other.CustomPipeline, StringComparison.Ordinal);
 
-    /// <inheritdoc/>
     public readonly override bool Equals(object? obj) => obj is MaterialData other && Equals(other);
 
-    /// <inheritdoc/>
     public readonly override int GetHashCode()
         => HashCode.Combine(
             (int)Domain | ((int)Blend << 4) | ((int)Depth << 8) | ((int)Cull << 12),

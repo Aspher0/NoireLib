@@ -4,20 +4,19 @@ using System;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// Grouped configuration surface: the scattered native-UI flags collected under <see cref="NativeUi"/>, and a batch
-/// <see cref="Configure"/> entry point over a live view of every knob (render + interaction). Sugar over the same
-/// settings - no separate config store; the old flat properties remain as <c>[Obsolete]</c> forwarders.
+/// The grouped configuration surface of the Draw3D hub: the native-UI settings under <see cref="NativeUi"/> and the
+/// batch <see cref="Configure"/> entry point.
 /// </summary>
 public static partial class NoireDraw3D
 {
-    /// <summary>The native-UI layering knobs, grouped (mirrors how <see cref="Lighting"/> is a sub-object).</summary>
+    /// <summary>Gets the native-UI layering settings.</summary>
     public static NativeUiConfig NativeUi { get; } = new();
 
     /// <summary>
-    /// One-shot batch setup over a live view of the settings (render config + <see cref="Interaction"/>). Sugar for a
-    /// sequence of property assignments; the view writes straight through to the same live settings.
+    /// Applies a batch of settings through a view that writes straight through to the live render and
+    /// <see cref="Interaction"/> settings.
     /// </summary>
-    /// <param name="configure">Receives the config view to mutate.</param>
+    /// <param name="configure">The callback receiving the config view to mutate.</param>
     public static void Configure(Action<Draw3DConfig> configure)
     {
         ArgumentNullException.ThrowIfNull(configure);
@@ -26,18 +25,16 @@ public static partial class NoireDraw3D
     }
 
     /// <summary>
-    /// The grouped native-UI configuration, reached via <see cref="NoireDraw3D.NativeUi"/>. <see cref="Layering"/> picks
-    /// where the layer lands; <see cref="KeepUiOnTop"/> and <see cref="NameplateDim"/> configure what it does about the
-    /// UI it finds there, and apply only under <see cref="Draw3DLayering.OverEverything"/> (under the game UI, the game
-    /// paints over the layer itself). <see cref="Nameplates"/> applies to both, by different means.
+    /// The native-UI layering settings, reached via <see cref="NoireDraw3D.NativeUi"/>, where <see cref="KeepUiOnTop"/>
+    /// and <see cref="NameplateDim"/> apply only under <see cref="Draw3DLayering.OverEverything"/>.
     /// </summary>
     public sealed class NativeUiConfig
     {
         internal NativeUiConfig() { }
 
         /// <summary>
-        /// Where the finished layer lands in the game's frame. Default <see cref="Draw3DLayering.UnderGameUi"/>.
-        /// Both modes are raw D3D blits; neither involves ImGui.
+        /// Gets or sets where the finished layer lands in the game's frame, <see cref="Draw3DLayering.UnderGameUi"/>
+        /// by default.
         /// </summary>
         public Draw3DLayering Layering
         {
@@ -46,13 +43,9 @@ public static partial class NoireDraw3D
         }
 
         /// <summary>
-        /// Masks the layer per-pixel so the game's HUD, addons and nameplates read on top of it. Default true. Only applies
-        /// while <see cref="Layering"/> is <see cref="Draw3DLayering.OverEverything"/> - under the game UI, the game paints
-        /// its own UI over the layer a moment after it composites, so this is neither needed nor consulted there.<br/>
-        /// Letter-exact and carries no rectangles: Draw3D snapshots the game's present buffer before and after the native UI
-        /// is drawn into it, and wherever the two differ is where the UI painted. Needs the render-thread hook armed; on a
-        /// frame where the injection point cannot fire, the layer composites unmasked. <c>/noire3d uimask</c> reports whether
-        /// the difference is working.
+        /// Gets or sets whether the layer is masked per pixel by the difference between the present buffer before and
+        /// after the native UI draws. The HUD, addons and nameplates read on top under
+        /// <see cref="Draw3DLayering.OverEverything"/> (true by default, reported by <c>/noire3d uimask</c>).
         /// </summary>
         public bool KeepUiOnTop
         {
@@ -61,11 +54,10 @@ public static partial class NoireDraw3D
         }
 
         /// <summary>
-        /// Whether the game's own nameplates are occluded by 3D objects standing in front of them. Default
-        /// <see cref="NameplateOcclusion.DepthAware"/>; fail-soft. Honoured under both layering modes: under
-        /// <see cref="Draw3DLayering.UnderGameUi"/> it stamps depth for the game's plate pass to test against; under
-        /// <see cref="Draw3DLayering.OverEverything"/> it gates where the <see cref="KeepUiOnTop"/> mask applies, so needs
-        /// that on. <see cref="NameplateOcclusion.Covered"/> requires <see cref="Draw3DLayering.OverEverything"/>.
+        /// Gets or sets whether the game's nameplates are occluded by 3D objects in front of them, by a depth stamp under
+        /// the game UI and by gating the <see cref="KeepUiOnTop"/> mask over everything
+        /// (<see cref="NameplateOcclusion.DepthAware"/> by default, <see cref="NameplateOcclusion.Covered"/> requiring
+        /// <see cref="Draw3DLayering.OverEverything"/>).
         /// </summary>
         public NameplateOcclusion Nameplates
         {
@@ -74,11 +66,8 @@ public static partial class NoireDraw3D
         }
 
         /// <summary>
-        /// How much a nameplate that your content covers still shows through it: 0 (default) fully covered, toward 1
-        /// faintly readable. Only applies while <see cref="Layering"/> is <see cref="Draw3DLayering.OverEverything"/>, with
-        /// <see cref="KeepUiOnTop"/> on, and only to a plate <see cref="Nameplates"/> decided is covered -
-        /// <see cref="NameplateOcclusion.AlwaysVisible"/> never reaches it. Under the game UI, a depth test can only occlude
-        /// a plate or not, so there is no partial value to apply.
+        /// Gets or sets how much a covered nameplate still shows through the layer, from 0 (the default, fully covered)
+        /// toward 1, applied only over everything with <see cref="KeepUiOnTop"/> on.
         /// </summary>
         public float NameplateDim
         {
@@ -88,9 +77,8 @@ public static partial class NoireDraw3D
     }
 
     /// <summary>
-    /// A thin, live view over the Draw3D settings for <see cref="Configure"/> - a single object gathering the top-level
-    /// render knobs, the grouped <see cref="NativeUi"/>, the <see cref="Lighting"/> sub-object and the
-    /// <see cref="Interaction"/> facade. Every property reads/writes the live setting directly.
+    /// A live view over the Draw3D settings for <see cref="Configure"/>, every property reading and writing the live
+    /// setting directly.
     /// </summary>
     public sealed class Draw3DConfig
     {
@@ -98,37 +86,37 @@ public static partial class NoireDraw3D
 
         internal Draw3DConfig() { }
 
-        /// <summary>Master switch (see <see cref="NoireDraw3D.Enabled"/>).</summary>
+        /// <summary>Gets or sets the master switch (see <see cref="NoireDraw3D.Enabled"/>).</summary>
         public bool Enabled
         {
             get => NoireDraw3D.Enabled;
             set => NoireDraw3D.Enabled = value;
         }
 
-        /// <summary>0-1 opacity applied to the whole 3D layer at composite time (see <see cref="NoireDraw3D.LayerOpacity"/>).</summary>
+        /// <summary>Gets or sets the 0-1 opacity of the whole 3D layer (see <see cref="NoireDraw3D.LayerOpacity"/>).</summary>
         public float LayerOpacity
         {
             get => NoireDraw3D.LayerOpacity;
             set => NoireDraw3D.LayerOpacity = value;
         }
 
-        /// <summary>Keep the 3D layer rendering while the plugin UI is hidden (see <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/>).</summary>
+        /// <summary>Gets or sets whether the 3D layer keeps rendering while the game UI is hidden (see <see cref="NoireDraw3D.KeepDrawingWhenUiHidden"/>).</summary>
         public bool KeepDrawingWhenUiHidden
         {
             get => NoireDraw3D.KeepDrawingWhenUiHidden;
             set => NoireDraw3D.KeepDrawingWhenUiHidden = value;
         }
 
-        /// <summary>The grouped native-UI knobs (see <see cref="NoireDraw3D.NativeUi"/>).</summary>
+        /// <summary>Gets the native-UI layering settings (see <see cref="NoireDraw3D.NativeUi"/>).</summary>
         public NativeUiConfig NativeUi => NoireDraw3D.NativeUi;
 
-        /// <summary>Lighting parameters for lit materials (see <see cref="NoireDraw3D.Lighting"/>).</summary>
+        /// <summary>Gets the lighting parameters for lit materials (see <see cref="NoireDraw3D.Lighting"/>).</summary>
         public Draw3DLighting Lighting => NoireDraw3D.Lighting;
 
-        /// <summary>Performance knobs: model level-of-detail and culling (see <see cref="NoireDraw3D.Performance"/>).</summary>
+        /// <summary>Gets the level-of-detail and culling settings (see <see cref="NoireDraw3D.Performance"/>).</summary>
         public Draw3DPerformance Performance => NoireDraw3D.Performance;
 
-        /// <summary>The interaction knobs (see <see cref="NoireDraw3D.Interaction"/>).</summary>
+        /// <summary>Gets the interaction settings (see <see cref="NoireDraw3D.Interaction"/>).</summary>
         public Draw3DInteraction Interaction => NoireDraw3D.Interaction;
     }
 }

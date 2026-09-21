@@ -16,7 +16,7 @@ public static partial class NoireLayout
 
     #region Splitter
 
-    // At 100%, large enough that a pane cannot be dragged shut and lost.
+    // Large enough that a pane cannot be dragged shut and lost.
     private const float DefaultSplitterMinimum = 40f;
 
     private const string GrabKey = "grab";
@@ -33,7 +33,6 @@ public static partial class NoireLayout
     /// <returns>True while the splitter is being dragged.</returns>
     public static bool Splitter(string id, ref float size, float minSize = 0f, float maxSize = 0f, float thickness = 0f, bool vertical = true, float length = 0f)
     {
-        // A shared scratch object rather than a fresh one, so this overload allocates nothing per frame.
         Shorthand.MinSize = minSize;
         Shorthand.MaxSize = maxSize;
         Shorthand.Thickness = thickness;
@@ -43,7 +42,6 @@ public static partial class NoireLayout
         return Splitter(id, ref size, Shorthand);
     }
 
-    // Reused rather than allocated per call, and only read inside the call that wrote it.
     private static readonly SplitterOptions Shorthand = new();
 
     /// <summary>
@@ -79,7 +77,6 @@ public static partial class NoireLayout
 
         var pointer = options.Vertical ? ImGui.GetMousePos().X : ImGui.GetMousePos().Y;
 
-        // The distance from the pointer to the edge it is holding, taken once when the drag starts.
         if (ImGui.IsItemActivated())
             UiFrameState.Set(id, GrabKey, pointer - size);
 
@@ -116,8 +113,7 @@ public static partial class NoireLayout
         return dragging;
     }
 
-    // Derived from the pointer's absolute position, never from how far it moved, so a clamped delta cannot accumulate
-    // into drift between the divider and the pointer.
+    // From the pointer's absolute position. A clamped delta must not accumulate into drift.
     internal static float ResolveSize(float pointer, float grabOffset, float minSize, float maxSize)
         => Math.Clamp(pointer - grabOffset, minSize, MathF.Max(minSize, maxSize));
 
@@ -168,23 +164,23 @@ public static partial class NoireLayout
             : UiFrameState.Get(id, "open", options.DefaultOpen);
 
         var spacing = theme.ResolveItemSpacing();
+        var padding = options.HeaderPadding.HasValue ? NoireUI.Scaled(options.HeaderPadding.Value) : theme.ResolveFramePadding();
         var lineHeight = ImGui.GetTextLineHeight();
         var arrowWidth = lineHeight * 0.8f;
         var available = ImGui.GetContentRegionAvail().X;
 
-        // Extras with no width given still need room reserved, or the header button takes the whole row and pushes
-        // them onto the next line.
+        // Extras need room reserved, or the header button takes the whole row.
         var extrasWidth = options.HeaderExtras == null
             ? 0f
             : MathF.Max(1f, options.HeaderExtrasWidth ?? available * 0.25f);
 
         var headerWidth = extrasWidth > 0f
-            ? MathF.Max(arrowWidth, available - extrasWidth - spacing.X)
+            ? MathF.Max(arrowWidth + padding.X * 2f, available - extrasWidth - spacing.X)
             : available;
 
         if (ImGui.InvisibleButton(
                 UiIds.Join(string.Empty, id, "##NoireCollapsibleHeader"),
-                new Vector2(MathF.Max(1f, headerWidth), lineHeight + spacing.Y)))
+                new Vector2(MathF.Max(1f, headerWidth), lineHeight + padding.Y * 2f)))
         {
             open = !open;
 
@@ -198,10 +194,14 @@ public static partial class NoireLayout
         var min = ImGui.GetItemRectMin();
         var max = ImGui.GetItemRectMax();
 
+        const float defaultHeaderAlpha = 0.30f;
+        var background = options.HeaderBackground ?? ColorHelper.WithAlpha(theme.Resolve(ThemeColor.Control), defaultHeaderAlpha);
+        var fill = hovered ? options.HeaderHoveredBackground ?? theme.Hover(background) : background;
+
         var headerColor = options.HeaderColor
             ?? (options.Danger ? theme.Resolve(ThemeColor.Danger) : theme.Resolve(ThemeColor.Text));
 
-        if (hovered)
+        if (hovered && fill.W <= 0f)
             headerColor = theme.Hover(headerColor);
 
         var turn = NoireUI.ReducedMotion
@@ -214,11 +214,19 @@ public static partial class NoireLayout
 
         if (!drawList.IsNull)
         {
-            DrawCaret(drawList, new Vector2(min.X + arrowWidth * 0.5f, (min.Y + max.Y) * 0.5f), arrowWidth * 0.34f, turn, headerColor);
+            if (fill.W > 0f)
+            {
+                var rounding = options.HeaderRounding.HasValue ? NoireUI.Scaled(options.HeaderRounding.Value) : theme.ResolveRounding();
+                drawList.AddRectFilled(min, max, ColorHelper.Vector4ToUint(fill), rounding);
+            }
+
+            var contentLeft = min.X + padding.X;
+
+            DrawCaret(drawList, new Vector2(contentLeft + arrowWidth * 0.5f, (min.Y + max.Y) * 0.5f), arrowWidth * 0.34f, turn, headerColor);
 
             var textSize = NoireText.CalcSize(label);
             drawList.AddText(
-                new Vector2(min.X + arrowWidth + spacing.X * 0.5f, (min.Y + max.Y) * 0.5f - textSize.Y * 0.5f),
+                new Vector2(contentLeft + arrowWidth + spacing.X * 0.5f, (min.Y + max.Y) * 0.5f - textSize.Y * 0.5f),
                 ColorHelper.Vector4ToUint(headerColor),
                 label);
         }
@@ -267,7 +275,6 @@ public static partial class NoireLayout
         ArgumentNullException.ThrowIfNull(measure);
         ArgumentNullException.ThrowIfNull(draw);
 
-        // Resolved once for the row rather than once per item; FlowItem re-resolves only a negative gap.
         var gap = spacing >= 0f ? spacing : NoireTheme.Current.ResolveItemSpacing().X;
 
         for (var index = 0; index < items.Count; index++)
@@ -278,14 +285,11 @@ public static partial class NoireLayout
         }
     }
 
-    /// <summary>
-    /// Places the next item of a wrapping row, beside the previous one or at the start of a new line.
-    /// </summary>
-    /// <remarks>Called immediately before drawing each item.</remarks>
-    /// <param name="itemWidth">How wide the item about to be drawn will be.</param>
-    /// <param name="first">Whether this is the first item of the row, which always starts on the current line.</param>
-    /// <param name="spacing">The gap between items in pixels, or a negative value for the theme item spacing.</param>
-    /// <param name="width">How wide the row may grow from where it starts, or zero to resolve it.</param>
+    /// <summary>Places the next item of a wrapping row. Call it right before drawing each item.</summary>
+    /// <param name="itemWidth">The width of the item about to be drawn.</param>
+    /// <param name="first">Whether this is the row's first item.</param>
+    /// <param name="spacing">The gap between items in pixels. Negative for the theme item spacing.</param>
+    /// <param name="width">How wide the row may grow. Zero to resolve it.</param>
     /// <returns>True when the item was moved to a new line.</returns>
     public static bool FlowItem(float itemWidth, bool first, float spacing = -1f, float width = 0f)
     {
@@ -311,11 +315,9 @@ public static partial class NoireLayout
     public static float ContentWidth()
         => MathF.Max(0f, ResolveRowRightEdge(0f) - ImGui.GetCursorScreenPos().X);
 
-    // Prefers an explicit width, then an active text wrap position, then the window's content edge. ImGui has no right
-    // margin: indenting moves the left edge only.
+    // Explicit width, then the text wrap position, then the window's content edge.
     private static float ResolveRowRightEdge(float width)
     {
-        // Submitting an item puts the cursor back at the start of the next line, so this is the row's left edge.
         var rowLeft = ImGui.GetCursorScreenPos().X;
 
         if (width > 0f)
@@ -327,13 +329,11 @@ public static partial class NoireLayout
         return rowLeft + ImGui.GetContentRegionAvail().X;
     }
 
-    // rightEdge is in screen coordinates and valid only when this returns true.
     private static bool TryGetWrapRightEdge(out float rightEdge)
     {
         rightEdge = 0f;
 
-        // The availability stand-in the rest of NoireUI goes through, so this still sees a wrap position when
-        // ImGui is driven headless.
+        // Also sees a wrap position when ImGui runs headless.
         if (!UiDraw.Available)
             return false;
 
@@ -360,7 +360,7 @@ public static partial class NoireLayout
 
     private static readonly CollapsibleOptions DefaultCollapsibleOptions = new();
 
-    // turn is the rotation, 0 pointing right and 1 pointing down.
+    // turn: 0 points right, 1 points down.
     private static void DrawCaret(ImDrawListPtr drawList, Vector2 center, float radius, float turn, Vector4 color)
     {
         var angle = turn * MathF.PI * 0.5f;
@@ -375,15 +375,13 @@ public static partial class NoireLayout
         drawList.AddTriangleFilled(Point(0f), Point(MathF.Tau / 3f), Point(-MathF.Tau / 3f), packed);
     }
 
-    // Returns null when nothing should be persisted. A blank id is refused, since it would grow the state file by an
-    // entry per session while never restoring one.
+    // A blank id would add a state entry per session and never restore one.
     private static string? ResolvePersistKey(string id, bool persist)
     {
         if (!persist)
             return null;
 
-        // Built through the id cache rather than interpolated, since the key is resolved every frame and the state
-        // file is keyed on its exact bytes.
+        // Resolved every frame. The state file is keyed on the exact bytes.
         if (!string.IsNullOrWhiteSpace(id))
             return UiIds.Join("Collapsible.", id, ".open");
 
@@ -392,8 +390,8 @@ public static partial class NoireLayout
             if (PersistRefusals.Add("<blank>"))
             {
                 NoireLogger.LogWarning(
-                    "A collapsible section asked to persist its open state but was given a blank id, so there is nothing to key it on. " +
-                    "Its state is not being saved. Give the section a stable id to persist it.",
+                    "A collapsible section asked to persist its open state with a blank id. Its state is not saved. " +
+                    "Give the section a stable id to persist it.",
                     nameof(NoireLayout));
             }
         }

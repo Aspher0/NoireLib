@@ -21,15 +21,25 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     protected TWindow? ModuleWindow { get; set; }
 
     /// <summary>
+    /// A window supplied by the plugin that replaces <see cref="ModuleWindow"/> for display, or <see langword="null"/> to use the built-in one.
+    /// </summary>
+    protected Window? CustomDisplayWindow { get; private set; }
+
+    /// <summary>
+    /// The window the show, hide and toggle methods act on: <see cref="CustomDisplayWindow"/> when set, otherwise <see cref="ModuleWindow"/>.
+    /// </summary>
+    protected Window? DisplayedWindow => CustomDisplayWindow ?? ModuleWindow;
+
+    /// <summary>
     /// Gets whether this module has an associated window.
     /// </summary>
     public bool HasWindow => ModuleWindow != null;
 
     /// <summary>
-    /// Whether the module's window is currently open; false when the module holds no window (see <see cref="HasWindow"/>).
+    /// Whether the module's displayed window is currently open; false when the module holds no window (see <see cref="HasWindow"/>).
     /// Use <see cref="SetShowWindow"/>, <see cref="ShowWindow"/>, <see cref="HideWindow"/> or <see cref="ToggleWindow"/> to change it.
     /// </summary>
-    public bool IsWindowOpen => ModuleWindow?.IsOpen == true;
+    public bool IsWindowOpen => DisplayedWindow?.IsOpen == true;
 
     /// <summary>
     /// Gets or sets the display name of the module's window.
@@ -204,9 +214,7 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// <exception cref="InvalidOperationException">Thrown if the module holds a window and the NoireLib window system is not initialized.</exception>
     protected TModule UnregisterWindow()
     {
-        // Checked before the window system is: a module with no window has nothing to unregister, and requiring a
-        // window system here would make disposal throw, and skip the rest of teardown, for every module whose
-        // window is merely absent.
+        // A windowless module needs no window system; skipping this check would throw on disposal for every module without one.
         if (ModuleWindow == null)
             return (TModule)this;
 
@@ -228,13 +236,35 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     }
 
     /// <summary>
+    /// Replaces the built-in window with <paramref name="window"/> for display, carrying the open state across.<br/>
+    /// The module never draws or registers <paramref name="window"/>; <see langword="null"/> restores the built-in window.
+    /// </summary>
+    /// <param name="window">The replacement window, or <see langword="null"/>.</param>
+    protected void SetCustomDisplayWindow(Window? window)
+    {
+        if (ReferenceEquals(CustomDisplayWindow, window))
+            return;
+
+        var previous = DisplayedWindow;
+        var wasOpen = previous?.IsOpen == true;
+
+        if (wasOpen)
+            previous!.IsOpen = false;
+
+        CustomDisplayWindow = window;
+
+        if (wasOpen && DisplayedWindow != null)
+            DisplayedWindow.IsOpen = true;
+    }
+
+    /// <summary>
     /// Shows the module's window if it has one.
     /// </summary>
     /// <param name="show">Whether to show the window. Set to null to toggle the window.</param>
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule SetShowWindow(bool? show)
     {
-        if (ModuleWindow != null)
+        if (DisplayedWindow != null)
         {
             if (!show.HasValue)
                 ToggleWindow();
@@ -255,8 +285,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ShowWindow()
     {
-        if (ModuleWindow != null)
-            ModuleWindow.IsOpen = true;
+        if (DisplayedWindow != null)
+            DisplayedWindow.IsOpen = true;
         else if (EnableLogging)
             NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
@@ -269,8 +299,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule HideWindow()
     {
-        if (ModuleWindow != null)
-            ModuleWindow.IsOpen = false;
+        if (DisplayedWindow != null)
+            DisplayedWindow.IsOpen = false;
         else if (EnableLogging)
             NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
@@ -283,8 +313,8 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
     /// <returns>The module instance for chaining.</returns>
     public virtual TModule ToggleWindow()
     {
-        if (ModuleWindow != null)
-            ModuleWindow.IsOpen = !ModuleWindow.IsOpen;
+        if (DisplayedWindow != null)
+            DisplayedWindow.IsOpen = !DisplayedWindow.IsOpen;
         else if (EnableLogging)
             NoireLogger.LogWarning((TModule)this, "This module does not have an associated window.");
 
@@ -293,10 +323,11 @@ public abstract class NoireModuleWithWindowBase<TModule, TWindow> : NoireModuleB
 
     #endregion
 
-    // Runs the module's teardown, unregistering any module window before the module tears itself down. The window
-    // goes first so that a module stops being drawn before the state its window reads is taken apart.
+    // Window unregistered before base teardown. It must stop drawing before its state is torn apart.
     private protected override void DisposeCore()
     {
+        // The custom window belongs to the plugin; released here, never closed or disposed.
+        CustomDisplayWindow = null;
         UnregisterWindow();
         DisposeInternal();
     }

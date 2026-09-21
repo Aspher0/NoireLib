@@ -8,6 +8,7 @@ You are reading the documentation for the `NoireChangelogManager` module.
 - [Configuration](#configuration)
 - [Creating Changelogs](#creating-changelogs)
 - [Displaying the Changelog Window](#displaying-the-changelog-window)
+- [Using Your Own Window](#using-your-own-window)
 - [EventBus Integration](#eventbus-integration)
 - [Advanced Features](#advanced-features)
 - [Troubleshooting](#troubleshooting)
@@ -17,11 +18,12 @@ You are reading the documentation for the `NoireChangelogManager` module.
 
 ## Overview
 
-The `NoireChangelogManager` is a module that manages and displays changelogs for your plugin. It provides:
+`NoireChangelogManager` manages and displays your plugin's changelogs. It provides:
 - **Automatic changelog loading** from your assembly
 - **Automatic display** of new versions to users
 - **Version management** with ordered display (newest to oldest)
 - **Rich formatting** with colors, icons, headers, separators, and buttons
+- **Your own window** in place of the built-in one, drawn from the module's versions and selection
 - **EventBus integration** for reacting to changelog actions
 
 ---
@@ -78,7 +80,7 @@ public class MyChangelog : BaseChangelogVersion
 }
 ```
 
-Helper methods are provided to create entries easily (see [Creating Changelogs](#creating-changelogs) for details).
+Helper methods create entries (see [Creating Changelogs](#creating-changelogs)).
 
 ---
 
@@ -86,43 +88,36 @@ Helper methods are provided to create entries easily (see [Creating Changelogs](
 
 ### Module Parameters
 
-You can configure the most important options of the module with the module's constructor:
+The main options go through the constructor:
 
 ```csharp
-var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Changelog"); // Optional
+var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Changelog");
 
 var changelogManager = new NoireChangelogManager(
-    active: true,                               // Enable/disable the module
-    moduleId: "MyChangelog",                    // Optional identifier
-    shouldAutomaticallyShowChangelog: true,     // Auto-show on new versions
-    versions: null,                             // Optional pre-loaded list of versions, if null, it loads from your assembly
-    eventBus: eventBus                          // Optional EventBus for publishing events
+    active: true,
+    moduleId: "MyChangelog",
+    shouldAutomaticallyShowChangelog: true,
+    versions: null,     // null loads from your assembly
+    eventBus: eventBus
 );
 ```
 
-You can also modify the following properties after creating the module:
+Properties after creation:
 
-- `ShouldAutomaticallyShowChangelog`: If true, the changelog window will automatically open when a new version is detected. Default: `false`.
-- `DisplayWindowName`: Optional custom name for the changelog window (set it with `SetWindowName`). Default: `"Changelog"`.
-- `TitleBarButtons`: Optional list of buttons to add to the title bar. Default: `empty list`. Use methods to modify.
-- `EventBus`: Optional EventBus instance for publishing changelog events. Default: `null`.
-
-You can also use the provided methods to modify the module configuration after creation (see [Property Configuration](#property-configuration)).
+- `ShouldAutomaticallyShowChangelog`: Opens the changelog window when a new version is detected. Default: `false`.
+- `DisplayWindowName`: A custom name for the changelog window, set with `SetWindowName`. Default: `"Changelog"`.
+- `TitleBarButtons`: Buttons added to the title bar. Default: `empty list`. Modify it through the methods.
+- `EventBus`: An EventBus for changelog events. Default: `null`.
 
 ### Property Configuration
 
-You can also configure the module after creation:
+Or configure it after creation:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
-// Set automatic display behavior
 changelogManager?.SetAutomaticallyShowChangelog(true);
-
-// Change window name
 changelogManager?.SetWindowName("My Plugin Updates");
-
-// Add title bar buttons
 changelogManager?.AddTitleBarButton(new TitleBarButton
 {
     Icon = FontAwesomeIcon.QuestionCircle,
@@ -131,7 +126,7 @@ changelogManager?.AddTitleBarButton(new TitleBarButton
 });
 ```
 
-You can also chain these methods for convenience:
+The methods chain:
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
@@ -143,9 +138,9 @@ changelogManager?
 
 ### Automatic Display
 
-When `ShouldAutomaticallyShowChangelog` is enabled, the changelog window opens automatically when a new version is detected.
+With `ShouldAutomaticallyShowChangelog` on, the window opens when a new version is detected.
 
-If you would rather control when the window is shown, you can disable this feature and call `ShowWindow()` manually.
+Otherwise call `ShowWindow()` yourself.
 
 ---
 
@@ -167,11 +162,11 @@ public class MyChangelog : BaseChangelogVersion
 
     private static ChangelogVersion V1_0_0_0() => new()
     {
-        Version = new(1, 0, 0, 0),                   // Required: Version object, always displayed as Major.Minor.Build.Revision
-        Date = "2025-01-01",                         // Required: Release date
-        Title = "Initial Release",                   // Optional: Version title
-        TitleColor = Blue,                           // Optional: Title color
-        Description = "Sample short description.",   // Optional: Short description
+        Version = new(1, 0, 0, 0),                   // Required
+        Date = "2025-01-01",                         // Required
+        Title = "Initial Release",                   // Optional
+        TitleColor = Blue,                           // Optional
+        Description = "Sample short description.",   // Optional
         Entries = new List<ChangelogEntry>
         {
             // Your changelog entries here
@@ -182,13 +177,13 @@ public class MyChangelog : BaseChangelogVersion
 }
 ```
 
-**Note:** Versions are automatically normalized to 4 components. If you create a version with `new Version(1, 0)`, it will be stored and displayed as `1.0.0.0`.
+Versions are normalized to 4 components. `new Version(1, 0)` is stored and displayed as `1.0.0.0`.
 
 ### Entry Types
 
 #### 1. Headers
 
-Creates section headers with optional icons:
+Section headers with optional icons:
 
 ```csharp
 Header("New Features", Green),
@@ -198,7 +193,7 @@ Header("Changes", Orange, icon: FontAwesomeIcon.Wrench, iconColor: Blue),
 
 #### 2. Regular Entries
 
-Standard changelog entries with optional indentation and icons:
+Entries with optional indentation and icons:
 
 ```csharp
 Entry("Added new feature"),
@@ -210,7 +205,7 @@ Entry("With icon", Green, icon: FontAwesomeIcon.Check),
 
 #### 3. Separators
 
-Add visual separators between sections:
+Separators between sections:
 
 ```csharp
 Separator(),
@@ -218,7 +213,7 @@ Separator(),
 
 #### 4. Buttons
 
-Interactive buttons with custom actions:
+Buttons with custom actions:
 
 ```csharp
 Button(
@@ -240,7 +235,7 @@ Button(
 
 #### 5. Raw
 
-Raw C# code that will be executed during rendering:
+C# code executed during rendering:
 ```csharp
 Raw(() =>
 {
@@ -251,8 +246,7 @@ Raw(() =>
 
 ### Available Colors
 
-The base changelog class (`BaseChangelogVersion`) provides predefined colors. Alternatively, can also use custom/dalamud colors.
-Refer to the `ColorHelper` class for useful utility methods.
+`BaseChangelogVersion` provides predefined colors. Custom and Dalamud colors work too. See `ColorHelper`.
 
 ---
 
@@ -260,56 +254,93 @@ Refer to the `ColorHelper` class for useful utility methods.
 
 ### Manual Display
 
-Show the changelog window programmatically:
+Show the window:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
-// Show the changelog window
 changelogManager?.ShowWindow();
-
-// Hide the changelog window
 changelogManager?.HideWindow();
-
-// Toggle the changelog window
 changelogManager?.ToggleWindow();
 
-// Show, hide or toggle from a single call (null toggles)
+// SetShowWindow(null) toggles.
 changelogManager?.SetShowWindow(true);
 
-// Check if the window is open
 var isOpen = changelogManager?.IsWindowOpen ?? false;
 ```
 
 ### Show Specific Version
 
-Display a specific version in the changelog:
+Show a specific version:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
-// Open the window on a specific version
 changelogManager?.ShowChangelogForVersion(new Version(1, 0, 0, 0));
-
-// Open the window on the latest available version
 changelogManager?.ShowChangelogForVersion();
 ```
 
-A version this manager does not hold selects the latest available version instead of failing.
-When no version is available at all, the window stays closed and a notification is raised.
+An unknown version falls back to the latest. With no version at all the window stays closed and a notification is raised.
 
 ### Automatic Display
 
-When `ShouldAutomaticallyShowChangelog` is enabled, the window automatically opens for new versions. This happens:
+With `ShouldAutomaticallyShowChangelog` on, the window opens:
 - When the module is activated (`IsActive == true`)
-- When a new version is detected (compared to last seen version)
+- When a new version is detected against the last seen one
 - When no version has been recorded before (first run)
+
+---
+
+## Using Your Own Window
+
+Register any Dalamud `Window` in place of the built-in one. `ShowWindow()`, `HideWindow()`, `ToggleWindow()`, `SetShowWindow()`, `IsWindowOpen`, `ShowChangelogForVersion()` and the automatic display then act on it. Add it to your own `WindowSystem`.
+
+```csharp
+var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
+
+changelogManager?.SetCustomWindow(myChangelogWindow);   // every open path now opens myChangelogWindow
+changelogManager?.SetCustomWindow(null);                // back to the built-in window
+var custom = changelogManager?.CustomWindow;
+```
+
+Switching while a window is open closes it and opens the other. Set the window before activating the module for the automatic display to open it.
+
+The window draws from the module:
+
+```csharp
+public override void Draw()
+{
+    foreach (var version in changelogManager.Versions)             // newest first, cached
+    {
+        if (ImGui.Selectable(version.Version.ToString(), ReferenceEquals(version, changelogManager.SelectedVersion)))
+            changelogManager.SelectVersion(version.Version);      // publishes ChangelogVersionChangedEvent
+    }
+
+    if (changelogManager.SelectedVersion is { } selected)          // null when there is no version
+    {
+        foreach (var entry in selected.Entries)
+        {
+            // entry.Text, TextColor, Icon, IconColor, IsHeader, IsSeparator, IndentLevel, HasBullet,
+            // ButtonText, ButtonAction, IsRaw, RawAction
+        }
+    }
+
+    if (ImGui.Button("Close"))
+        changelogManager.CloseWindow();                           // publishes ChangelogWindowClosedEvent
+
+    var autoShow = changelogManager.ShouldAutomaticallyShowChangelog;
+    if (ImGui.Checkbox("Show the changelog after an update", ref autoShow))
+        changelogManager.SetAutomaticallyShowChangelog(autoShow);
+}
+```
+
+`ShowChangelogForVersion()` selects the version before opening. The window only reads `SelectedVersion`.
 
 ---
 
 ## EventBus Integration
 
-The `NoireChangelogManager` can publish events to a `NoireEventBus` for all important changelog actions.
+The module publishes events to a `NoireEventBus` for every changelog action.
 
 ### Quick Example
 
@@ -317,13 +348,12 @@ The `NoireChangelogManager` can publish events to a `NoireEventBus` for all impo
 // Create EventBus
 var eventBus = NoireLibMain.AddModule<NoireEventBus>("EventBus_Changelog");
 
-// Subscribe to changelog events **before** creating the ChangelogManager, since it will be showing the window on initialization
+// Subscribe before creating the ChangelogManager. It may show the window on initialization.
 eventBus?.Subscribe<ChangelogWindowOpenedEvent>(evt =>
 {
     NoireLogger.LogInfo($"Changelog opened for version {evt.Version}");
 }, owner: this);
 
-// Create ChangelogManager with EventBus
 var changelogManager = NoireLibMain.AddModule(new NoireChangelogManager(
     active: true,
     shouldAutomaticallyShowChangelog: true,
@@ -348,12 +378,11 @@ var changelogManager = NoireLibMain.AddModule(new NoireChangelogManager(
 
 ### Title Bar Buttons
 
-Add custom buttons to the changelog window's title bar:
+Custom title bar buttons:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
-// Add a single button
 changelogManager?.AddTitleBarButton(new TitleBarButton
 {
     Icon = FontAwesomeIcon.Cog,
@@ -361,7 +390,6 @@ changelogManager?.AddTitleBarButton(new TitleBarButton
     Click = (e) => { /* Open settings */ },
 });
 
-// Set multiple buttons
 changelogManager?.SetTitleBarButtons(new List<TitleBarButton>
 {
     new() { Icon = FontAwesomeIcon.Home, IconOffset = new(2, 2), Click = (e) => { /* Home */ } },
@@ -374,30 +402,21 @@ changelogManager?.SetTitleBarButtons(new List<TitleBarButton>
     },
 });
 
-// Remove button by index
 changelogManager?.RemoveTitleBarButton(0);
-
-// Clear all buttons
 changelogManager?.ClearTitleBarButtons();
 ```
 
 ### Version Management
 
-Manually manage versions:
+Manage versions by hand:
 
 ```csharp
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>();
 
-// Get all versions (newest to oldest)
 var versions = changelogManager?.GetAllVersions();
-
-// Get specific version
 var version = changelogManager?.GetVersion(new Version(1, 0, 0, 0));
-
-// Get latest version
 var latest = changelogManager?.GetLatestVersion();
 
-// Add version manually
 changelogManager?.AddVersion(new ChangelogVersion
 {
     Version = new Version(1, 3, 0, 0),
@@ -405,13 +424,8 @@ changelogManager?.AddVersion(new ChangelogVersion
     Entries = new List<ChangelogEntry> { /* ... */ }
 });
 
-// Add multiple versions
 changelogManager?.AddVersions(versionsList);
-
-// Remove version
 changelogManager?.RemoveVersion(new Version(1, 0, 0, 0));
-
-// Clear all versions
 changelogManager?.ClearVersions();
 ```
 
@@ -423,21 +437,25 @@ changelogManager?.ClearVersions();
 - Ensure NoireLib is initialized before adding the module.
 - Confirm the module is active (`IsActive == true`).
 - Check that your changelog class inherits from `BaseChangelogVersion`.
-- Verify the changelog class is in the same assembly (project) as your plugin.
+- The changelog class must be in your plugin's assembly.
 - Make sure `GetVersions()` returns a non-empty list.
-- Check the dalamud logs with `/xllog`.
+- Check `/xllog`.
 - If it still does not work, please report it.
 
 ### Automatic display not working
 - Set `ShouldAutomaticallyShowChangelog = true`.
 - Ensure the module is active (`IsActive = true`).
-- Check that a new version is detected (compare with last seen version).
-- You can also manually call `ClearLastSeenVersion()`, set `ShouldAutomaticallyShowChangelog = true`, and check if the changelog window appears the next time the module is initialized.
+- Check that a new version is detected against the last seen one.
+- Call `ClearLastSeenVersion()` with `ShouldAutomaticallyShowChangelog = true` and check the window on the next initialization.
+
+### My own window does not open
+- Call `SetCustomWindow()` before `Activate()` when the automatic display must open it.
+- Add the window to your plugin's `WindowSystem`. The module only toggles `IsOpen`.
 
 ### EventBus events not firing
-- Ensure an `EventBus` is provided to the ChangelogManager (either in constructor or via property).
+- Give the ChangelogManager an `EventBus`, in the constructor or through the property.
 - Check that the EventBus is active and has subscribers.
-- Enable EventBus logging with `enableLogging: true` for debugging.
+- Enable EventBus logging with `enableLogging: true`.
 
 ---
 

@@ -40,7 +40,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     #region Constructors & Event Bus
 
     /// <summary>
-    /// The associated <see cref="NoireEventBus"/> instance for publishing command events; when set,
+    /// The associated <see cref="NoireEventBus"/> instance for publishing command events. When set,
     /// <see cref="CommandExecutedEvent"/> and <see cref="CommandFailedEvent"/> are published automatically.
     /// </summary>
     public NoireEventBus? EventBus { get; set; }
@@ -79,7 +79,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         NoireEventBus? eventBus = null)
         : base(moduleId, active, enableLogging, enableAutoHelp, maxHistorySize, eventBus) { }
 
-    // Constructor for use with AddModule{T}(string?) with , for internal module management only.
     internal NoireCommandRouter(ModuleId? moduleId, bool active = true, bool enableLogging = true)
         : base(moduleId, active, enableLogging) { }
 
@@ -152,7 +151,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// <summary>
     /// Sets whether auto-generated help output is enabled.
     /// </summary>
-    /// <param name="enable">True to enable auto-help; false to disable.</param>
+    /// <param name="enable">True to enable auto-help. False to disable.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter SetAutoHelp(bool enable)
     {
@@ -162,10 +161,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
     private bool separateDalamudHelpEntries = true;
 
-    /// <summary>
-    /// Whether each command's Dalamud help message ends with a blank line separating it from the next entry, which
-    /// the last entry by display order then name never carries. Setting it refreshes every live registration.
-    /// </summary>
+    /// <summary>Whether each command's Dalamud help message ends with a blank line, except the last entry. Setting it refreshes every registration.</summary>
     public bool SeparateDalamudHelpEntries
     {
         get => separateDalamudHelpEntries;
@@ -179,7 +175,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// <summary>
     /// Sets whether Dalamud help entries are separated by a blank line.
     /// </summary>
-    /// <param name="enable">True to separate entries; false to list them back to back.</param>
+    /// <param name="enable">True to separate entries. False to list them back to back.</param>
     /// <returns>The module instance for chaining.</returns>
     public NoireCommandRouter SetSeparateDalamudHelpEntries(bool enable)
     {
@@ -188,7 +184,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// The maximum number of <see cref="CommandHistoryEntry"/> records to retain, oldest discarded first; 0 disables
+    /// The maximum number of <see cref="CommandHistoryEntry"/> records to retain, oldest discarded first. 0 disables
     /// recording entirely, leaving <see cref="GetHistory"/> permanently empty.
     /// </summary>
     /// <exception cref="ArgumentOutOfRangeException">Thrown when the value is negative.</exception>
@@ -203,7 +199,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     }
 
     /// <summary>
-    /// Sets the maximum number of command history entries to retain; 0 disables recording entirely.
+    /// Sets the maximum number of command history entries to retain. 0 disables recording entirely.
     /// </summary>
     /// <param name="maxSize">The maximum history size. Must not be negative.</param>
     /// <returns>The module instance for chaining.</returns>
@@ -220,7 +216,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     #region Public API
 
     /// <summary>
-    /// Maps a root slash command and returns a <see cref="RootCommandBuilder"/> for configuring it; registers with
+    /// Maps a root slash command and returns a <see cref="RootCommandBuilder"/> for configuring it. Registers with
     /// Dalamud immediately if the module is active, and replaces any existing mapping of the same name.
     /// </summary>
     /// <param name="command">The root slash command string (e.g. "/somecommand"), with a leading '/' added automatically if missing.</param>
@@ -234,8 +230,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         if (!command.StartsWith('/'))
             command = "/" + command;
 
-        // Lower-cased so Dalamud's canonical spelling and help listing do not depend on caller capitalization;
-        // lookups here are case-insensitive regardless.
         command = command.ToLowerInvariant();
 
         var registration = new RootCommandRegistration(command);
@@ -251,7 +245,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                     NoireLogger.LogDebug(this, $"Replacing existing command mapping for '{command}'.");
             }
 
-            // A root command cannot share its name with an alias of another command, so the alias gives way.
+            // A root command cannot share a name with another command's alias. The alias gives way.
             if (aliasRegistrations.TryGetValue(command, out var aliasOwner))
                 RemoveAliasFromRegistration(aliasOwner, command);
 
@@ -261,7 +255,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         if (IsActive)
             RegisterWithDalamud(registration);
 
-        // The new entry may have demoted a previously last entry, whose blank-line separator needs re-adding.
+        // A previously last entry may need its separator back.
         RefreshAllRegistrations();
 
         return new RootCommandBuilder(this, registration);
@@ -271,7 +265,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// Removes a mapped root command, its aliases, and unregisters them from Dalamud.
     /// </summary>
     /// <param name="command">The root slash command string to remove.</param>
-    /// <returns>True if the command was found and removed; otherwise, false.</returns>
+    /// <returns>True if the command was found and removed.</returns>
     public bool Unmap(string command)
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -289,7 +283,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             RemoveAliasEntries(registration);
             registrations.Remove(command);
 
-            // The removed entry may have been the last one; its predecessor's separator goes away.
+            // The removed entry may have been the last one.
             RefreshAllRegistrations();
 
             if (EnableLogging)
@@ -303,7 +297,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     /// Gets whether a command is currently mapped, as a root command or as an alias.
     /// </summary>
     /// <param name="command">The slash command string to check.</param>
-    /// <returns>True if the command is registered; otherwise, false.</returns>
+    /// <returns>True if the command is registered.</returns>
     public bool IsCommandRegistered(string command)
     {
         if (string.IsNullOrWhiteSpace(command))
@@ -314,6 +308,29 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
         lock (registrationLock)
             return registrations.ContainsKey(command) || aliasRegistrations.ContainsKey(command);
+    }
+
+    public bool PrintHelp(string command)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+            return false;
+
+        if (!command.StartsWith('/'))
+            command = "/" + command;
+
+        RootCommandRegistration? registration;
+
+        lock (registrationLock)
+        {
+            if (!registrations.TryGetValue(command, out registration) &&
+                !aliasRegistrations.TryGetValue(command, out registration))
+            {
+                return false;
+            }
+        }
+
+        PrintHelp(registration);
+        return true;
     }
 
     /// <summary>
@@ -385,8 +402,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             NoireService.CommandManager.AddHandler(registration.Command, commandInfo);
 
-            // Set only once Dalamud owns the handler, so a failed registration does not look live to
-            // RefreshRegistration or UnregisterFromDalamud.
+            // A failed registration must not look live.
             registration.DalamudCommandInfo = commandInfo;
 
             if (EnableLogging)
@@ -459,8 +475,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    // Adds a normalized alias to a registration and registers it with Dalamud if the module is active; called by
-    // AddAlias(string). A collision with an existing command or alias is logged and ignored.
     internal void AddAliasToRegistration(RootCommandRegistration registration, string alias)
     {
         if (string.IsNullOrWhiteSpace(alias))
@@ -495,16 +509,14 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         RefreshAllRegistrations();
     }
 
-    // Drops a registration's aliases from the alias lookup, called under registrationLock when the registration is
-    // being removed or replaced.
+    // Called under registrationLock.
     private void RemoveAliasEntries(RootCommandRegistration registration)
     {
         foreach (var alias in registration.Aliases)
             aliasRegistrations.Remove(alias);
     }
 
-    // Removes a single alias from its owning registration and unregisters it from Dalamud, called under
-    // registrationLock when a new root command claims the alias's name.
+    // Called under registrationLock.
     private void RemoveAliasFromRegistration(RootCommandRegistration registration, string alias)
     {
         UnregisterAliasFromDalamud(registration, alias);
@@ -515,7 +527,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             NoireLogger.LogDebug(this, $"Removed alias '{alias}' from command '{registration.Command}'; the name was claimed by a new root command.");
     }
 
-    // Applies a registration's current metadata to its live Dalamud command info and alias infos, if registered.
     internal void RefreshRegistration(RootCommandRegistration registration)
     {
         if (registration.DalamudCommandInfo != null)
@@ -533,8 +544,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    // Refreshes every live registration, needed whenever the command set, a display order or a visibility changes,
-    // since the blank-line separation depends on which visible entry sorts last.
+    // Blank-line separation depends on which visible entry sorts last.
     internal void RefreshAllRegistrations()
     {
         lock (registrationLock)
@@ -555,8 +565,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             ? message + Environment.NewLine
             : message;
 
-    // Whether the given entry sorts last among all visible entries, roots and aliases, by display order then command
-    // name.
     internal bool IsLastDalamudHelpEntry(string command, int displayOrder)
     {
         lock (registrationLock)
@@ -584,8 +592,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                (otherOrder == displayOrder && string.Compare(otherCommand, command, StringComparison.OrdinalIgnoreCase) > 0);
     }
 
-    // The entry point Dalamud invokes for every mapped command, on the framework thread; resolves the registration
-    // for  and dispatches it through the router.
+    // Framework thread.
     internal void OnCommandDispatched(string command, string rawArgs)
     {
         if (!IsActive)
@@ -615,15 +622,13 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
     {
         try
         {
-            // The root condition gates everything below it: the raw handler, the default handler, every
-            // subcommand, and the command's own help.
+            // The root condition gates every handler and the command's own help.
             if (registration.Condition != null && !registration.Condition())
             {
                 if (EnableLogging)
                     NoireLogger.LogDebug(this, $"Command '{command}' condition returned false.");
 
-                // Recorded before printing: if PrintToChat throws, the outer catch below must not overwrite this
-                // outcome with the chat failure instead of the actual refusal.
+                // Recorded before printing. A throwing PrintToChat must not be reported as the outcome.
                 AddHistoryEntry(command, rawArgs, null, false);
                 NoireLogger.PrintToChat(XivChatType.Debug, $"Command '{command}' is not available right now.");
                 return;
@@ -696,8 +701,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
             {
                 var unknownSubCommandName = tokens[0];
 
-                // The fallback handler claims unmatched tokens ahead of the default handler, which stays bound to
-                // the bare command; without either, an unmatched token is an error.
+                // The fallback handler claims unmatched tokens. The default handler stays bound to the bare command.
                 if (registration.FallbackHandler != null)
                 {
                     registration.FallbackHandler(new ParsedCommandArguments(trimmedArgs, tokens));
@@ -732,7 +736,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
             if (currentSubCommand.Handler == null)
             {
-                // Printing help here is not a failure: unlike the paths below, it records no history entry.
+                // Help here records no history entry.
                 if (currentSubCommand.SubCommands.Count > 0 && remainingTokens.Length == 0 && EnableAutoHelp)
                 {
                     PrintHelp(registration, currentSubCommand, resolvedPath);
@@ -797,8 +801,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             NoireLogger.LogError(this, ex, $"Error dispatching command '{command} {rawArgs}'.");
 
-            // Dalamud invokes this on the framework thread, so an escaping exception here crashes the game.
-            // Reporting is wrapped in SafeExecutor since a consumer's event handler can itself throw.
+            // Framework thread. An escaping exception crashes the game.
             SafeExecutor.ExecuteSafely(() =>
             {
                 AddHistoryEntry(command, rawArgs, null, false);
@@ -824,8 +827,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return null;
     }
 
-    // Converts the tokens of an invocation into the arguments its handler expects, returning a rejection through 
-    // rather than printing it.
     private ParsedCommandArguments? ParseArguments(SubCommandDefinition subCommand, string[] argTokens, string rawArgs, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
         error = null;
@@ -889,8 +890,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return parsed;
     }
 
-    // Fills a subcommand's arguments when its optional ones may arrive in any order, matching each surplus token to
-    // the first optional argument whose type accepts it.
     private ParsedCommandArguments? ParseArgumentsWithUnorderedOptionals(SubCommandDefinition subCommand, ParsedCommandArguments parsed, string[] argTokens, string qualifiedCommandPath, out NoireLogger.ChatMessageBuilder? error)
     {
         error = null;
@@ -931,8 +930,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         {
             var token = argTokens[i];
 
-            // The first optional argument the token converts into claims it; the converted value from that attempt
-            // is reused, not reconverted.
             CommandArgumentDefinition? matchedArgument = null;
             object? converted = null;
 
@@ -989,8 +986,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
                 else
                     task = ((Func<Task>)subCommand.Handler)();
 
-                // Reporting is deferred to the continuation since the outcome is unknown until the task settles;
-                // awaiting here would stall the framework thread for the handler's duration.
+                // Awaiting here would stall the framework thread.
                 _ = task.ContinueWith(completedTask => ReportAsyncOutcome(completedTask, command, rawArgs, subCommandPath), TaskScheduler.Default);
                 return;
             }
@@ -1011,8 +1007,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         }
     }
 
-    // Records exactly one outcome for a settled async handler task: success when the task ran to completion, failure
-    // when it faulted or was cancelled.
     private void ReportAsyncOutcome(Task completedTask, string command, string rawArgs, string subCommandPath)
     {
         if (completedTask.IsCompletedSuccessfully)
@@ -1039,8 +1033,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         });
     }
 
-    // Runs outcome reporting on the framework thread, since publishing invokes consumer handlers inline and those
-    // routinely touch game state; runs inline instead when NoireLib is not initialized.
+    // Publishing invokes consumer handlers inline that touch game state.
     private static void ReportOnFrameworkThread(Action report)
     {
         if (NoireService.IsInitialized() && !NoireService.Framework.IsInFrameworkUpdateThread)
@@ -1083,8 +1076,7 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
 
         NoireLogger.PrintToChat(XivChatType.Debug, header);
 
-        // The documented fallback exists in the root scope only, slotted among the subcommand lines by display
-        // order, with a tie listing it first.
+        // Root scope only, ordered among the subcommands by display order. Ties list it first.
         var fallback = scope == null ? registration.FallbackDefinition : null;
         var fallbackPrinted = fallback is not { ShowInHelp: true };
 
@@ -1213,7 +1205,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return string.IsNullOrWhiteSpace(subCommandPath) ? command : $"{command} {subCommandPath}";
     }
 
-    // Splits a raw argument string into tokens, respecting quoted strings.
     internal static string[] Tokenize(string input)
     {
         if (string.IsNullOrWhiteSpace(input))
@@ -1260,7 +1251,6 @@ public class NoireCommandRouter : NoireModuleBase<NoireCommandRouter>
         return [.. tokens];
     }
 
-    // Attempts to convert a string token to the specified target type.
     internal static bool TryConvertArgument(string token, Type targetType, out object? result)
     {
         result = null;

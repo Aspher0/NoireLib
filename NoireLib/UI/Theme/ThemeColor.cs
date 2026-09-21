@@ -44,4 +44,7 @@ public enum ThemeColor
 
     /// <summary>The color of drop shadows and scrims.</summary>
     Shadow,
+
+    /// <summary>The fill of a neutral button and a collapsible header, set apart from the surface it sits on.</summary>
+    Control,
 }

@@ -6,6 +6,8 @@ using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Game.UI;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using NoireLib.Animations.Helpers;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace NoireLib.Helpers;
@@ -16,7 +18,7 @@ namespace NoireLib.Helpers;
 public static class CharacterHelper
 {
     /// <summary>
-    /// Whether a character is logged in and their state is loaded, so character data is safe to read. Login alone
+    /// Whether a character is logged in and their state is loaded. Character data is safe to read. Login alone
     /// fires before the client finishes assembling the character, and reading the teleport list, housing data or
     /// quest journal before then walks unfilled pointers and access-violates.
     /// </summary>
@@ -33,24 +35,16 @@ public static class CharacterHelper
     }
 
     /// <summary>
-    /// Whether the character is ready and their player object exists in the world, which is the bar a call into game
-    /// code needs rather than <see cref="IsStateReady"/>. The player object is filled in after the state reports
-    /// loaded and destroyed before the client reports logged out, leaving windows where a game function reaching for
-    /// it access-violates.
+    /// Whether the character's player object exists in the world. Calling into game code needs this, not <see cref="IsStateReady"/>.<br/>
+    /// Around login and logout a game function reaching for the object access-violates.
     /// </summary>
     public static bool IsPlayerLoaded
         => IsStateReady && NoireService.IsInitialized() && NoireService.ObjectTable.LocalPlayer != null;
 
-    /// <summary>
-    /// Whether there is no character at all, as opposed to one whose state is not readable yet. With no character an
-    /// empty unlock read is the answer; while one is being assembled the same empty read is not.
-    /// </summary>
+    /// <summary>Whether there is no character at all. With no character an empty unlock read is the answer. Mid-login it is not.</summary>
     public static bool IsLoggedOut => !NoireService.IsInitialized() || !NoireService.ClientState.IsLoggedIn;
 
-    /// <summary>
-    /// The logged-in character's content id, or zero when no character state is loaded, which tells one character
-    /// from another across a switch that leaves stale game memory such as the teleport list behind.
-    /// </summary>
+    /// <summary>The logged-in character's content id, or zero when no character state is loaded.</summary>
     public static unsafe ulong LocalContentId
     {
         get
@@ -226,22 +220,18 @@ public static class CharacterHelper
         return true;
     }
 
-    /// <summary>
-    /// Gets the memory address of the owner character's companion object, which is their minion.
-    /// </summary>
+    /// <summary>Gets the address of the owner character's minion.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
-    /// <returns>The memory address of the companion object, or 0 if not found.</returns>
+    /// <returns>The address, or 0 if not found.</returns>
     public unsafe static nint GetCompanionAddress(ICharacter ownerCharacter)
     {
         var native = CharacterHelper.GetCharacterAddress(ownerCharacter);
         return (nint)native->CompanionData.CompanionObject;
     }
 
-    /// <summary>
-    /// Gets the owner character's companion instance, which is their minion.
-    /// </summary>
+    /// <summary>Gets the owner character's minion.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
-    /// <returns>The companion character instance, or null if not found.</returns>
+    /// <returns>The minion, or null if not found.</returns>
     public static ICharacter? GetCompanion(ICharacter ownerCharacter)
     {
         var companionAddress = GetCompanionAddress(ownerCharacter);
@@ -275,11 +265,9 @@ public static class CharacterHelper
         return GetCharacterFromAddress(petAddress);
     }
 
-    /// <summary>
-    /// Gets the memory address of the owner character's buddy object, which is their chocobo.
-    /// </summary>
+    /// <summary>Gets the address of the owner character's chocobo.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
-    /// <returns>The memory address of the buddy object, or 0 if not found.</returns>
+    /// <returns>The address, or 0 if not found.</returns>
     public unsafe static nint GetBuddyAddress(ICharacter ownerCharacter)
     {
         var native = CharacterHelper.GetCharacterAddress(ownerCharacter);
@@ -287,11 +275,9 @@ public static class CharacterHelper
         return (nint)manager->LookupBuddyByOwnerObject((BattleChara*)native);
     }
 
-    /// <summary>
-    /// Gets the owner character's buddy instance, which is their chocobo.
-    /// </summary>
+    /// <summary>Gets the owner character's chocobo.</summary>
     /// <param name="ownerCharacter">The owner character.</param>
-    /// <returns>The buddy character instance, or null if not found.</returns>
+    /// <returns>The chocobo, or null if not found.</returns>
     public static ICharacter? GetBuddy(ICharacter ownerCharacter)
     {
         var buddyAddress = GetBuddyAddress(ownerCharacter);
@@ -318,12 +304,9 @@ public static class CharacterHelper
                characterAddress == GetBuddyAddress(local);
     }
 
-    /// <summary>
-    /// Determines whether the given character is the local player's companion, pet or buddy, which excludes the
-    /// local player character itself.
-    /// </summary>
-    /// <param name="character">The character instance to check.</param>
-    /// <returns>True if the character is owned by the local player, false otherwise.</returns>
+    /// <summary>Whether the character is the local player's companion, pet or buddy.</summary>
+    /// <param name="character">The character to check.</param>
+    /// <returns>True if the local player owns it.</returns>
     public static bool IsCharacterOwnedByLocalPlayer(ICharacter character)
     {
         if (character == null)
@@ -367,8 +350,7 @@ public static class CharacterHelper
                buddyAddress == character.Address;
     }
 
-    // Footing bits the game keeps on the character that FFXIVClientStructs does not name; offsets are for the
-    // 2026-08-14 binary and only the emote code reads them.
+    // Footing bits FFXIVClientStructs does not name. Offsets are for the 2026-08-14 binary.
     private const int GroundMaterialOffset = 0x598;
     private const int StandingInWaterOffset = 0x5AC;
     private const int WaterFallbackFlagsOffset = 0x190;
@@ -394,13 +376,9 @@ public static class CharacterHelper
     public static bool IsStandingOnSnow(ICharacter character)
         => GetGroundMaterial(character) == Enums.GroundMaterial.Snow;
 
-    /// <summary>
-    /// Whether the character has water underfoot, the condition /splash requires, which shallow water satisfies and
-    /// no condition flag or sheet column expresses.
-    /// </summary>
+    /// <summary>Whether the character has water underfoot, the condition /splash requires. Shallow water counts.</summary>
     /// <param name="character">The character to read.</param>
-    /// <param name="includeFallback">Whether to also accept the secondary flag the game allows on its play path,
-    /// which the gate deciding command acceptance ignores.</param>
+    /// <param name="includeFallback">Whether to also accept the secondary flag the game's play path allows.</param>
     /// <returns>True when water is underfoot.</returns>
     public static unsafe bool IsStandingInWater(ICharacter character, bool includeFallback = false)
     {
@@ -437,22 +415,59 @@ public static class CharacterHelper
     }
 
     /// <summary>
-    /// The condition flags that mean the local player is too busy to be made to act: casting, either cutscene,
-    /// either event occupancy, and the three crafting states. Gathering is absent because fishing raises the
-    /// gathering flags too, so <see cref="IsLocalPlayerOccupied"/> tests it separately.
+    /// The condition flags that mean the local player cannot be made to act: events, cutscenes, crafting, gathering
+    /// and fishing, combat, zoning, jumping and flight, mounting, carrying, performing, housing and the mini games.
     /// </summary>
-    public static readonly ConditionFlag[] OccupiedConditions =
+    public static IReadOnlyList<ConditionFlag> OccupiedConditions { get; } =
     [
-        ConditionFlag.Casting,
-        ConditionFlag.Casting87,
-        ConditionFlag.OccupiedInCutSceneEvent,
-        ConditionFlag.WatchingCutscene,
-        ConditionFlag.WatchingCutscene78,
+        ConditionFlag.Occupied,
+        ConditionFlag.Occupied30,
+        ConditionFlag.Occupied33,
+        ConditionFlag.Occupied38,
+        ConditionFlag.Occupied39,
         ConditionFlag.OccupiedInEvent,
         ConditionFlag.OccupiedInQuestEvent,
+        ConditionFlag.OccupiedInCutSceneEvent,
+        ConditionFlag.OccupiedSummoningBell,
+        ConditionFlag.WatchingCutscene,
+        ConditionFlag.WatchingCutscene78,
+        ConditionFlag.Casting,
+        ConditionFlag.Casting87,
         ConditionFlag.Crafting,
-        ConditionFlag.ExecutingCraftingAction,
         ConditionFlag.PreparingToCraft,
+        ConditionFlag.ExecutingCraftingAction,
+        ConditionFlag.Gathering,
+        ConditionFlag.ExecutingGatheringAction,
+        ConditionFlag.Fishing,
+        ConditionFlag.MeldingMateria,
+        ConditionFlag.InCombat,
+        ConditionFlag.Unconscious,
+        ConditionFlag.BetweenAreas,
+        ConditionFlag.BetweenAreas51,
+        ConditionFlag.LoggingOut,
+        ConditionFlag.Jumping,
+        ConditionFlag.Jumping61,
+        ConditionFlag.InFlight,
+        ConditionFlag.Mounting,
+        ConditionFlag.Mounting71,
+        ConditionFlag.MountOrOrnamentTransition,
+        ConditionFlag.RidingPillion,
+        ConditionFlag.UsingChocoboTaxi,
+        ConditionFlag.CarryingItem,
+        ConditionFlag.CarryingObject,
+        ConditionFlag.BeingMoved,
+        ConditionFlag.OperatingSiegeMachine,
+        ConditionFlag.Performing,
+        ConditionFlag.UsingHousingFunctions,
+        ConditionFlag.TradeOpen,
+        ConditionFlag.ChocoboRacing,
+        ConditionFlag.PlayingMiniGame,
+        ConditionFlag.PlayingLordOfVerminion,
+        ConditionFlag.ReadyingVisitOtherWorld,
+        ConditionFlag.WaitingToVisitOtherWorld,
+        ConditionFlag.EditingPortrait,
+        ConditionFlag.EditingStrategyBoard,
+        ConditionFlag.DutyRecorderPlayback,
     ];
 
     /// <summary>
@@ -474,26 +489,68 @@ public static class CharacterHelper
     ];
 
     /// <summary>
-    /// Whether the local player is busy enough that making them act should be refused: casting or dead, in
-    /// any of <see cref="OccupiedConditions"/>, or gathering by something other than fishing.
+    /// Checks whether the local player cannot be made to act: missing, dead, casting, untargetable, jumping or
+    /// falling, or in any of <see cref="OccupiedConditions"/>.
     /// </summary>
-    /// <param name="includeGathering">Whether gathering counts as occupied, excluding fishing, which raises the
-    /// gathering flags on a player who can still be acted on.</param>
-    /// <returns>True when the local player should be left alone, and false when there is no local player.</returns>
-    public static bool IsLocalPlayerOccupied(bool includeGathering = true)
+    /// <returns>True when the player should be left alone, also when no local player is loaded.</returns>
+    public static bool IsLocalPlayerOccupied()
+        => ReadLocalPlayerOccupancy().IsOccupied;
+
+    /// <summary>
+    /// Checks whether the local player cannot be made to act, leaving some of <see cref="OccupiedConditions"/> out.
+    /// </summary>
+    /// <param name="ignoredConditions">The flags not to count, such as the OccupiedInEvent an open market board raises.</param>
+    /// <returns>True when the player should be left alone, also when no local player is loaded.</returns>
+    public static bool IsLocalPlayerOccupied(params ConditionFlag[] ignoredConditions)
+        => ReadLocalPlayerOccupancy(ignoredConditions).IsOccupied;
+
+    /// <summary>
+    /// Reads every cause that keeps the local player from acting: missing, dead, casting, untargetable, jumping or
+    /// falling, and each of <see cref="OccupiedConditions"/> raised. Framework thread only.
+    /// </summary>
+    /// <returns>The causes found, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
+    public static PlayerOccupancy ReadLocalPlayerOccupancy()
+        => ReadLocalPlayerOccupancy([]);
+
+    /// <summary>
+    /// Reads every cause that keeps the local player from acting, leaving some of <see cref="OccupiedConditions"/>
+    /// out. Framework thread only.
+    /// </summary>
+    /// <param name="ignoredConditions">The flags not to count, such as the OccupiedInEvent an open market board raises.</param>
+    /// <returns>The causes found, <see cref="PlayerOccupancy.NoPlayer"/> without a local player.</returns>
+    public static unsafe PlayerOccupancy ReadLocalPlayerOccupancy(params ConditionFlag[] ignoredConditions)
     {
-        if (NoireService.ObjectTable.LocalPlayer is not { } local)
-            return false;
+        if (!NoireService.IsInitialized() || NoireService.ObjectTable.LocalPlayer is not { } local || local.Address == 0)
+            return PlayerOccupancy.NoPlayer;
 
-        if (local.IsCasting || local.IsDead)
-            return true;
+        var native = GetCharacterAddress(local);
 
-        if (NoireService.Condition.Any(OccupiedConditions))
-            return true;
+        return EvaluateOccupancy(
+            local.IsDead,
+            local.IsCasting,
+            local.IsTargetable,
+            native != null && native->IsJumping(),
+            static flag => NoireService.Condition[flag],
+            ignoredConditions);
+    }
 
-        return includeGathering
-            && !NoireService.Condition[ConditionFlag.Fishing]
-            && NoireService.Condition.Any(ConditionFlag.Gathering, ConditionFlag.ExecutingGatheringAction);
+    internal static PlayerOccupancy EvaluateOccupancy(
+        bool isDead,
+        bool isCasting,
+        bool isTargetable,
+        bool isAirborne,
+        Func<ConditionFlag, bool> isConditionActive,
+        IReadOnlyCollection<ConditionFlag>? ignoredConditions)
+    {
+        var active = new List<ConditionFlag>();
+
+        foreach (var flag in OccupiedConditions)
+        {
+            if (ignoredConditions?.Contains(flag) != true && isConditionActive(flag))
+                active.Add(flag);
+        }
+
+        return new PlayerOccupancy(false, isDead, isCasting, !isTargetable, isAirborne, active);
     }
 
     /// <summary>
@@ -540,11 +597,7 @@ public static class CharacterHelper
             : NoireService.ObjectTable.PlayerObjects.FirstOrDefault(p => p.Address == address) as IPlayerCharacter;
     }
 
-    /// <summary>
-    /// The draw object a character is currently built from and the human skeleton it animates as. The drawn model
-    /// decides which skeleton's animations the game asks for, and its skeleton never changes after it is built, so
-    /// a body change produces a new <paramref name="DrawObject"/>.
-    /// </summary>
+    /// <summary>The draw object a character is built from and the human skeleton it animates as. A body change produces a new <paramref name="DrawObject"/>.</summary>
     /// <param name="DrawObject">The address of the drawn model.</param>
     /// <param name="SkeletonId">The human skeleton id, such as "c0801".</param>
     public readonly record struct DrawnBody(nint DrawObject, string SkeletonId);
@@ -617,8 +670,7 @@ public static class CharacterHelper
         return native != null && WeaponModelSetId(native, DrawDataContainer.WeaponSlot.OffHand) != 0;
     }
 
-    // The weapon model set id a hand carries, taken from the drawn weapon and falling back to the equipped model id
-    // while the weapon is hidden or still loading. A hand holding nothing reads as zero.
+    // Falls back to the equipped model id while the weapon is hidden or loading. An empty hand reads as zero.
     private static unsafe ushort WeaponModelSetId(Character* native, DrawDataContainer.WeaponSlot slot)
     {
         ref var data = ref native->DrawData.Weapon(slot);

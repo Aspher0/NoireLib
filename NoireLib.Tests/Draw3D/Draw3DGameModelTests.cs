@@ -1,10 +1,12 @@
 using FluentAssertions;
 using Lumina;
+using Lumina.Data.Parsing.Layer;
 using NoireLib.Draw3D.Assets;
 using NoireLib.Helpers;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using System.Text.RegularExpressions;
 using Xunit;
@@ -14,12 +16,12 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Locks the game model parser against real game files: the layout walk must land exactly on the
 /// declared runtime block size, and the decoded geometry must be finite and plausibly sized.<br/>
-/// These tests need a local game installation and skip cleanly without one, so they are a
-/// correctness gate on machines that have the game and inert everywhere else.
+/// These tests need a local game installation and skip cleanly without one. They are a
+/// correctness gate on machines that have the game, inert everywhere else.
 /// </summary>
 public class Draw3DGameModelTests
 {
-    /// <summary>Models chosen to cover both position encodings, both material path styles, and a range of sizes.</summary>
+    /// <summary>Both position encodings, both material path styles, a range of sizes.</summary>
     private static readonly string[] SampleModels =
     [
         "bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl",
@@ -45,8 +47,7 @@ public class Draw3DGameModelTests
             if (!game.FileExists(path))
                 continue;
 
-            // A mis-sized block anywhere in the runtime walk makes LoadFile throw, because every
-            // buffer offset derived from it would silently address the wrong bytes.
+            // A mis-sized block anywhere in the runtime walk makes LoadFile throw.
             var file = game.GetFile<GameModelFile>(path);
 
             file.Should().NotBeNull();
@@ -108,11 +109,7 @@ public class Draw3DGameModelTests
         decoded.Should().BeGreaterThan(0);
     }
 
-    /// <summary>
-    /// The model's own bounding box, which the layout walk reaches on its way past the per-bone boxes. It is
-    /// the collision of the 84 925 placements in the game whose collision is a box rather than a mesh, so a
-    /// box read from the wrong place there is a crate a path routes straight through.
-    /// </summary>
+    /// <summary>The model's own bounding box, reached by the layout walk past the per-bone boxes. It backs box-shaped collision placements in the game.</summary>
     [Fact]
     public void LoadFile_RealGameModels_ReadsABoundingBoxThatEnclosesTheGeometry()
     {
@@ -137,8 +134,7 @@ public class Draw3DGameModelTests
             (model.BoundingBoxMax - model.BoundingBoxMin).Length().Should().BeGreaterThan(0.001f,
                 because: "a zero-extent box means the walk stopped short of the bounding boxes");
 
-            // Tolerance is proportional because the box bounds every level of detail and every shape the
-            // model can take, while the decoded geometry is only the first level's rest pose.
+            // The box bounds every LOD and shape. The decoded geometry is the first LOD's rest pose.
             var slack = 0.05f + (model.BoundingBoxMax - model.BoundingBoxMin).Length() * 0.05f;
             foreach (var mesh in GameModelLoader.Decode(model))
             {
@@ -156,7 +152,7 @@ public class Draw3DGameModelTests
         checkedModels.Should().BeGreaterThan(0);
     }
 
-    /// <summary>Materials covering both shader packages and both color table layouts.</summary>
+    /// <summary>Both shader packages and both color table layouts.</summary>
     private static readonly string[] SampleMaterials =
     [
         "bgcommon/hou/indoor/general/0001/material/fun_b0_m0001_1a.mtrl",
@@ -181,7 +177,7 @@ public class Draw3DGameModelTests
             if (!game.FileExists(path))
                 continue;
 
-            // A mis-sized block makes LoadFile throw, because the walk must end on the declared file size.
+            // A walk not ending on the declared file size throws.
             var file = game.GetFile<GameMaterialFile>(path);
 
             file.Should().NotBeNull();
@@ -213,8 +209,7 @@ public class Draw3DGameModelTests
             var file = game.GetFile<GameMaterialFile>(path)!;
             foreach (var sampler in file.Samplers)
             {
-                // Sampler identifiers are a checksum of the sampler's name, so a shipped name list
-                // reproduces them exactly. A miss means either the derivation or the list has drifted.
+                // Sampler ids are a checksum of the name. A miss means the derivation or the list drifted.
                 GameShaderNames.NameOf(sampler.SamplerId).Should().NotBeNull(
                     because: $"sampler 0x{sampler.SamplerId:X8} in '{path}' should resolve from the shipped name list");
                 checkedSamplers++;
@@ -271,16 +266,12 @@ public class Draw3DGameModelTests
         var file = game.GetFile<GameMaterialFile>(Path)!;
         var diffuse = file.ConstantValue("g_DiffuseColor");
 
-        // The constant is parsed data: it is a slot the stain system writes into, and its file value is not
-        // what an undyed item renders as (that is the default stain - see UndyedStain_IsTheGamesSnowWhite).
-        // Reading it still has to work.
         diffuse.Should().NotBeNull(because: "a dyeable material carries the constant its stain is written into");
         diffuse!.Length.Should().Be(3);
         foreach (var channel in diffuse)
             channel.Should().BeInRange(0f, 1f);
 
-        // Most materials leave this white, where it changes nothing. This one is a dyeable piece and sets a
-        // real color: an all-white read would mean the value was missed.
+        // This dyeable piece sets a real color.
         diffuse.Should().NotBeEquivalentTo(new[] { 1f, 1f, 1f });
     }
 
@@ -301,10 +292,7 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // The game's own background shaders write the position element's fourth component into the
-        // G-buffer's occlusion channel; the importer carries it in the color's alpha. A carved piece must
-        // therefore decode with alpha varying below 1 in its recesses while its open surfaces sit at 1 -
-        // a flat 1 everywhere would mean the component was dropped again.
+        // Background shaders write position.w into the G-buffer's occlusion channel. The importer carries it in the color's alpha.
         var meshes = GameModelLoader.Decode(game.GetFile<GameModelFile>(Path)!);
         var min = 1f;
         var max = 0f;
@@ -325,13 +313,9 @@ public class Draw3DGameModelTests
     [Fact]
     public void DecodeTangentFrame_ReconstructsAnOrthogonalFrame()
     {
-        // The model stores the bitangent with a handedness flag; the loader reconstructs the tangent so the
-        // shader's bitangent = cross(normal, tangent) * handedness lands back on what the file stored. For a
-        // +Y normal and a +X bitangent with positive handedness, the round trip demands tangent = -Z... the
-        // assertion below IS that algebra, so a sign change in the reconstruction fails here before it ships
-        // as a model whose bumps face the wrong way.
+        // The shader recovers the bitangent as cross(normal, tangent) * handedness. For a +Y normal and +X bitangent that needs tangent = -Z.
         var normal = Vector3.UnitY;
-        var packedBitangentX = new Vector4(1f, 0.5f, 0.5f, 1f); // bytes 255,128,128 -> bitangent +X, handedness +1
+        var packedBitangentX = new Vector4(1f, 0.5f, 0.5f, 1f); // bytes 255,128,128: bitangent +X, handedness +1
 
         var tangent = GameModelLoader.DecodeTangentFrame(packedBitangentX, normal);
 
@@ -340,7 +324,6 @@ public class Draw3DGameModelTests
         t.Length().Should().BeApproximately(1f, 1e-5f);
         Vector3.Dot(t, normal).Should().BeApproximately(0f, 1e-5f, because: "the frame is orthogonal");
 
-        // The shader's reconstruction of the bitangent must return the stored vector.
         var rebuilt = Vector3.Cross(normal, t) * tangent.W;
         rebuilt.X.Should().BeApproximately(1f, 1e-4f);
         rebuilt.Y.Should().BeApproximately(0f, 1e-4f);
@@ -350,8 +333,7 @@ public class Draw3DGameModelTests
     [Fact]
     public void DecodeTangentFrame_DegenerateInputMeansNoFrame()
     {
-        // Bytes at 128,128,128 encode a zero vector; the shaders key "no authored frame" on w == 0, so the
-        // decode must return exactly zero rather than a normalize() of noise.
+        // 128,128,128 is a zero vector. The shaders key "no authored frame" on w == 0.
         GameModelLoader.DecodeTangentFrame(new Vector4(0.5f, 0.5f, 0.5f, 1f), Vector3.UnitY).Should().Be(Vector4.Zero);
     }
 
@@ -365,16 +347,15 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // An empty stain slot renders stain row 1; this pins the shipped constant to the game's own table so
-        // a patch that moves the table breaks here instead of silently shifting every undyed item.
+        // An empty stain slot renders stain row 1.
         var sheet = game.GetExcelSheet<Lumina.Excel.Sheets.Stain>();
         sheet.Should().NotBeNull();
         GameMaterial.UndyedStain.Should().Be(StainHelper.ToColor(sheet!.GetRow(1).Color));
     }
 
     [Theory]
-    [InlineData("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb", 1)]  // Snow White, stated explicitly - the bar stool's known undyed look
-    [InlineData("bgcommon/hou/indoor/general/0560/asset/fun_b0_m0560.sgb", 14)] // Blood Red - the Hingan Sofa's known undyed look
+    [InlineData("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb", 1)]
+    [InlineData("bgcommon/hou/indoor/general/0560/asset/fun_b0_m0560.sgb", 14)]
     public void SceneFile_CarriesTheDefaultStain(string sgbPath, int expected)
     {
         var game = GameDataFixture.TryOpen();
@@ -390,9 +371,7 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // Both anchors were verified in game: an undyed placement of the second renders Blood Red, of the
-        // first Snow White, with the stain slot empty in both cases. The value is stated in the file for
-        // both - dyeable furniture names its default stain rather than relying on a fallback.
+        // Verified in game: undyed, the second renders Blood Red and the first Snow White.
         StainHelper.TryReadSceneDefaultStain(game.GetFile(sgbPath)!.Data, out var stain).Should().BeTrue();
         ((int)stain).Should().Be(expected);
     }
@@ -414,13 +393,12 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // Single-model furniture places its one model at the scene origin, and the entry names both the
-        // model and its collision file with entry-relative offsets - the walk this pins.
-        var scene = game.GetFile<GameSgbFile>(Path)!;
-        scene.Models.Should().HaveCount(1);
+        // The entry names the model and its collision file with entry-relative offsets.
+        var models = Models(LayerGroupHelper.Read(game.GetFile(Path)!.Data));
+        models.Should().HaveCount(1);
 
-        var placement = scene.Models[0];
-        placement.Path.Should().Be("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl");
+        var placement = models[0];
+        placement.AssetPath.Should().Be("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl");
         placement.CollisionPath.Should().EndWith(".pcb");
         placement.Translation.Should().Be(Vector3.Zero);
         placement.Scale.Should().Be(Vector3.One);
@@ -443,20 +421,18 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // An item made of several models must decode them all, each with a plausible transform - this is
-        // what spawning the model file alone was silently missing.
-        var scene = game.GetFile<GameSgbFile>(Path)!;
-        scene.Models.Should().HaveCountGreaterThan(1);
+        var models = Models(LayerGroupHelper.Read(game.GetFile(Path)!.Data));
+        models.Should().HaveCountGreaterThan(1);
 
-        foreach (var placement in scene.Models)
+        foreach (var placement in models)
         {
-            placement.Path.Should().EndWith(".mdl");
+            placement.AssetPath.Should().EndWith(".mdl");
             placement.Scale.X.Should().BeInRange(0.001f, 1000f);
         }
     }
 
     [Fact]
-    public void SceneFile_NestedScenesAreListedAsAttachments()
+    public void SceneFile_NestedScenesAreListedAsSharedGroups()
     {
         var game = GameDataFixture.TryOpen();
         if (game is null)
@@ -472,31 +448,61 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // Outdoor sets nest further scenes; every referenced file must itself parse with this layout so a
-        // recursive load cannot walk into an unreadable file.
-        var scene = game.GetFile<GameSgbFile>(Path)!;
-        scene.Attachments.Should().NotBeEmpty();
+        // Outdoor sets nest further scenes.
+        var nested = new List<LayerGroupEntry>();
+        foreach (var layer in LayerGroupHelper.Read(game.GetFile(Path)!.Data))
+            nested.AddRange(layer.Entries.Where(e => e.Type == LayerEntryType.SharedGroup));
+        nested.Should().NotBeEmpty();
 
-        foreach (var attachment in scene.Attachments)
+        foreach (var group in nested)
         {
-            attachment.Path.Should().EndWith(".sgb");
-            game.GetFile<GameSgbFile>(attachment.Path).Should().NotBeNull();
+            group.AssetPath.Should().EndWith(".sgb");
+            LayerGroupHelper.Read(game.GetFile(group.AssetPath)!.Data).Should().NotBeEmpty();
         }
     }
 
     [Fact]
-    public void PathBesideModel_PairsFurnitureModelsWithTheirScene()
+    public void SceneFile_FlattenComposesNestedScenesOntoTheirParent()
     {
-        GameSgbFile.PathBesideModel("bgcommon/hou/indoor/general/0681/bgparts/fun_b0_m0681.mdl")
-            .Should().Be("bgcommon/hou/indoor/general/0681/asset/fun_b0_m0681.sgb");
+        var game = GameDataFixture.TryOpen();
+        if (game is null)
+        {
+            Assert.Skip("No game installation found.");
+            return;
+        }
 
-        GameSgbFile.PathBesideModel("chara/equipment/e0001/model/c0101e0001_top.mdl").Should().BeNull();
-        GameSgbFile.PathBesideModel("not-a-model.tex").Should().BeNull();
+        const string Path = "bgcommon/hou/outdoor/general/0022/asset/gar_b0_m0022.sgb";
+        if (!game.FileExists(Path))
+        {
+            Assert.Skip("Sample sgb not present.");
+            return;
+        }
+
+        IReadOnlyList<LayerGroupLayer> Read(string path) => game.GetFile(path) is { } file ? LayerGroupHelper.Read(file.Data) : [];
+
+        // Child placement composed onto the parent's.
+        var flat = LayerGroupHelper.Flatten(Path, Read, null, LayerGroupHelper.DefaultMaxDepth);
+        var top = Read(Path).SelectMany(l => l.Entries).ToList();
+        var expected = new List<(string Path, Matrix4x4 World)>();
+        foreach (var entry in top)
+        {
+            expected.Add((entry.AssetPath, entry.World));
+            if (entry.Type != LayerEntryType.SharedGroup)
+                continue;
+            foreach (var child in Read(entry.AssetPath).SelectMany(l => l.Entries))
+                expected.Add((child.AssetPath, child.World * entry.World));
+        }
+
+        flat.Select(e => (e.AssetPath, e.World)).Should().Equal(expected);
+        flat.Count.Should().BeGreaterThan(top.Count, "the nested scenes contribute their own models");
     }
 
+    private static List<LayerGroupEntry> Models(IReadOnlyList<LayerGroupLayer> layers)
+        => layers.SelectMany(l => l.Entries).Where(e => e.Type == LayerEntryType.BG).ToList();
+
     [Theory]
-    [InlineData("bgcommon/hou/indoor/general/0681/material/fun_b0_m0681_0a.mtrl", 32u)] // Mole Brown
-    [InlineData("bgcommon/hou/indoor/general/0559/material/fun_b0_m0559_0a.mtrl", 14u)] // Blood Red
+    [InlineData("bgcommon/hou/indoor/general/0681/material/fun_b0_m0681_0a.mtrl", 32u)]
+    [InlineData("bgcommon/hou/indoor/general/0559/material/fun_b0_m0559_0a.mtrl", 14u)]
     public void DiffuseConstant_HoldsExactStainTableColors(string materialPath, uint stainRow)
     {
         var game = GameDataFixture.TryOpen();
@@ -512,9 +518,6 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // The constant lands on stain rows verbatim across dyeable furniture, but it is not what an undyed
-        // placement renders (that is the sgb's default stain, or the Snow White fallback). Pinned so a layout
-        // change in either the parser or the table is caught; its in-game role is documented in docs/.
         var file = game.GetFile<GameMaterialFile>(materialPath)!;
         var diffuse = file.ConstantValue("g_DiffuseColor");
         diffuse.Should().NotBeNull().And.HaveCount(3);
@@ -522,22 +525,6 @@ public class Draw3DGameModelTests
         var stain = StainHelper.ToColor(game.GetExcelSheet<Lumina.Excel.Sheets.Stain>()!.GetRow(stainRow).Color);
         var distance = (new Vector3(diffuse![0], diffuse[1], diffuse[2]) - stain).Length();
         distance.Should().BeLessThan(0.005f);
-    }
-
-    [Fact]
-    public void ResolveByOwnerName_ReadsTheOwnerOutOfTheFilename()
-    {
-        // A body material referenced by an equipment model lives under the human tree, and only the filename
-        // says so. Both variant layouts are offered because the human directories split on it.
-        GameMaterialLoader.ResolveByOwnerName("/mt_c0201b0001_a.mtrl").Should().Equal(
-            "chara/human/c0201/obj/body/b0001/material/v0001/mt_c0201b0001_a.mtrl",
-            "chara/human/c0201/obj/body/b0001/material/mt_c0201b0001_a.mtrl");
-
-        GameMaterialLoader.ResolveByOwnerName("/mt_c0201e0007_top_a.mtrl", variant: 10).Should().Equal(
-            "chara/equipment/e0007/material/v0010/mt_c0201e0007_top_a.mtrl");
-
-        GameMaterialLoader.ResolveByOwnerName("/mt_notacharacter.mtrl").Should().BeEmpty();
-        GameMaterialLoader.ResolveByOwnerName("bg/absolute/path.mtrl").Should().BeEmpty();
     }
 
     [Fact]
@@ -557,45 +544,22 @@ public class Draw3DGameModelTests
             return;
         }
 
-        // The robe references its own material AND its wearer's skin material. The skin one does not resolve
-        // beside the model - its file lives under the human tree - which left a garment's body parts
-        // drawing with no material until the owner-name fallback existed.
+        // The robe references its own material and its wearer's skin material under the human tree.
         var model = game.GetFile<GameModelFile>(ModelPath)!;
         model.MaterialPaths.Should().NotBeEmpty();
 
         foreach (var raw in model.MaterialPaths)
         {
-            var resolved = GameMaterialLoader.ResolvePath(ModelPath, raw, variant: 10);
+            var resolved = GamePathHelper.ResolveMaterialPath(ModelPath, raw, variant: 10);
             if (resolved is not null && game.FileExists(resolved))
                 continue;
 
             var found = false;
-            foreach (var candidate in GameMaterialLoader.ResolveByOwnerName(raw, variant: 10))
+            foreach (var candidate in GamePathHelper.ResolveMaterialByOwnerName(raw, variant: 10))
                 found |= game.FileExists(candidate);
 
             found.Should().BeTrue(because: $"'{raw}' must resolve somewhere, or its meshes draw with no material");
         }
-    }
-
-    [Fact]
-    public void ResolvePath_RelativeCharacterMaterial_LandsOnTheVariantFolder()
-    {
-        // Character models store material paths relative, and they resolve beside the model directory
-        // rather than under it. Getting this wrong yields a path that simply does not exist.
-        var resolved = GameMaterialLoader.ResolvePath(
-            "chara/equipment/e0001/model/c0101e0001_top.mdl",
-            "/mt_c0101e0001_top_a.mtrl");
-
-        resolved.Should().Be("chara/equipment/e0001/material/v0001/mt_c0101e0001_top_a.mtrl");
-    }
-
-    [Fact]
-    public void ResolvePath_AbsoluteBackgroundMaterial_IsUnchanged()
-    {
-        const string Absolute = "bgcommon/hou/indoor/general/0001/material/fun_b0_m0001_1a.mtrl";
-
-        GameMaterialLoader.ResolvePath("bgcommon/hou/indoor/general/0001/bgparts/fun_b0_m0001.mdl", Absolute)
-            .Should().Be(Absolute);
     }
 
     [Fact]
@@ -627,17 +591,12 @@ public class Draw3DGameModelTests
             }
         }
 
-        // A body garment sits on the torso of a character roughly 1.8 units tall. Geometry centred on
-        // the origin instead would mean the vertex stride was misread and every offset drifted.
+        // Geometry centered on the origin would mean a misread vertex stride.
         lowest.Should().BeInRange(0.5f, 1.5f, because: "a torso garment starts around waist height");
         highest.Should().BeInRange(1.2f, 2.0f, because: "a torso garment ends around shoulder height");
     }
 
-    /// <summary>
-    /// Background models declare no vertex color element, so importing vertex colors cannot change how one
-    /// is drawn. This is worth pinning down because the option is visible next to settings that do change
-    /// the result, which invites reading a coincidence as cause and effect.
-    /// </summary>
+    /// <summary>Background models declare no vertex color element. Importing vertex colors cannot change how one is drawn.</summary>
     [Fact]
     public void Decode_BackgroundModels_CarryNoVertexColorChannel()
     {
@@ -667,7 +626,6 @@ public class Draw3DGameModelTests
                 }
             }
 
-            // The decoder must then produce the same geometry either way, since there is nothing to import.
             var without = GameModelLoader.Decode(file, 0, importVertexColors: false);
             var with = GameModelLoader.Decode(file, 0, importVertexColors: true);
 
@@ -686,7 +644,7 @@ public class Draw3DGameModelTests
     }
 }
 
-/// <summary>Opens the local game archives directly, so model parsing can be tested without Dalamud or a running game.</summary>
+// Opens the local game archives directly.
 internal static class GameDataFixture
 {
     private static GameData? cached;
@@ -696,8 +654,7 @@ internal static class GameDataFixture
     /// <summary>Returns the local game archives, or null when no installation can be located.</summary>
     public static GameData? TryOpen()
     {
-        // Test classes run in parallel and construction takes seconds, so the whole attempt is serialized:
-        // a caller arriving mid-construction must wait for the answer rather than read null and skip.
+        // Test classes run in parallel and construction takes seconds.
         lock (gate)
         {
             if (attempted)
@@ -718,7 +675,7 @@ internal static class GameDataFixture
                 }
                 catch
                 {
-                    // An unreadable installation is treated as absent; these tests are a gate, not a hard requirement.
+                    // An unreadable installation counts as absent.
                 }
             }
 

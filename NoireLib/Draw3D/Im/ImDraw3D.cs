@@ -11,16 +11,12 @@ using System.Runtime.InteropServices;
 namespace NoireLib.Draw3D.Im;
 
 /// <summary>
-/// The immediate-mode drawing layer: call <c>Draw*</c> every frame; anything not re-requested vanishes.
-/// "Im" means <i>immediate-mode pattern</i> - nothing to do with ImGui: every call becomes real meshes through the
-/// same D3D scene pass as retained content.<br/>
-/// <b>Timing contract:</b> calls made inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an
-/// <see cref="Scene.ISceneFeature"/> render <b>this frame, always</b>. Calls made anywhere else render at most one
-/// frame late (buffered) - imperceptible for markers.
+/// The immediate-mode layer. Shapes drawn each frame render through the scene pass.<br/>
+/// Calls inside <see cref="Scene.Scene3D.OnPrepareFrame"/> or an <see cref="Scene.ISceneFeature"/> render the same frame. Elsewhere they may render a frame late.
 /// </summary>
 public sealed class ImDraw3D
 {
-    private enum Kind { Donut, Circle, Sector, Rect, Line, Path, Sphere, Arrow, Mesh }
+    private enum Kind { Donut, Circle, Sector, Rect, Chevron, Line, Path, Sphere, Arrow, Mesh }
 
     private struct Command
     {
@@ -36,7 +32,6 @@ public sealed class ImDraw3D
         public Matrix4x4 World;
     }
 
-    // Line width, in world units, for a decal outline traced in wireframe mode.
     private const float OutlineWidth = 0.03f;
 
     private readonly object sync = new();
@@ -45,7 +40,7 @@ public sealed class ImDraw3D
 
     private Mesh? unitBox;
     private Mesh? unitSphere;
-    private List<Vector3>? outlinePath; // reusable buffer for wireframe decal outlines; Consume is render-thread only
+    private List<Vector3>? outlinePath; // render thread only
 
     internal ImDraw3D() { }
 
@@ -59,27 +54,68 @@ public sealed class ImDraw3D
         }
     }
 
-    /// <summary>Draws a ground donut (ring) around <paramref name="center"/>.</summary>
+    /// <summary>Draws a ground ring around <paramref name="center"/>.</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="innerRadius">Inner radius.</param>
+    /// <param name="outerRadius">Outer radius.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional placement and blending style.</param>
     public void DrawDonut(Vector3 center, float innerRadius, float outerRadius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Donut, A = center, F0 = innerRadius, F1 = outerRadius, Color = color, Style = style ?? default });
 
     /// <summary>Draws a ground circle at <paramref name="center"/>.</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="radius">Circle radius.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional placement and blending style.</param>
     public void DrawCircle(Vector3 center, float radius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Circle, A = center, F0 = radius, Color = color, Style = style ?? default });
 
-    /// <summary>Draws a ground pie-slice decal. <paramref name="facingRad"/> is the slice center direction (radians around +Y, 0 = +Z).</summary>
+    /// <summary>Draws a ground pie slice around <paramref name="center"/>.</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="facingRad">Slice direction in radians around +Y, 0 facing +Z.</param>
+    /// <param name="halfAngleRad">Half of the slice's opening angle, in radians.</param>
+    /// <param name="innerRadius">Inner radius, 0 for a full slice.</param>
+    /// <param name="outerRadius">Outer radius.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional placement and blending style.</param>
     public void DrawSector(Vector3 center, float facingRad, float halfAngleRad, float innerRadius, float outerRadius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Sector, A = center, F0 = facingRad, F1 = halfAngleRad, F2 = outerRadius, B = new Vector3(innerRadius, 0, 0), Color = color, Style = style ?? default });
 
     /// <summary>Draws a ground rectangle centered at <paramref name="center"/>, rotated by <paramref name="facingRad"/> around +Y.</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="facingRad">Rotation in radians around +Y.</param>
+    /// <param name="size">Width along local X and depth along local Z.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional placement and blending style.</param>
     public void DrawRect(Vector3 center, float facingRad, Vector2 size, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Rect, A = center, F0 = facingRad, F1 = size.X, F2 = size.Y, Color = color, Style = style ?? default });
 
+    /// <summary>Draws a ground chevron centered at <paramref name="center"/>, pointing along <paramref name="facingRad"/> around +Y (0 = +Z).</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="facingRad">Pointing direction in radians around +Y.</param>
+    /// <param name="size">Width across and depth along the pointing direction, in world units.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="stroke">Half the stroke width as a footprint ratio, 0 meaning 0.22.</param>
+    /// <param name="style">Optional placement and blending style.</param>
+    public void DrawChevron(Vector3 center, float facingRad, Vector2 size, Vector4 color, float stroke = 0f, ImShapeStyle? style = null)
+        => Add(new Command { Kind = Kind.Chevron, A = center, F0 = facingRad, F1 = size.X, F2 = size.Y, B = new Vector3(stroke, 0, 0), Color = color, Style = style ?? default });
+
     /// <summary>Draws a camera-facing line segment of the given world-space width.</summary>
+    /// <param name="from">Start point.</param>
+    /// <param name="to">End point.</param>
+    /// <param name="width">Width in world units.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional depth and blending style.</param>
     public void DrawLine(Vector3 from, Vector3 to, float width, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Line, A = from, B = to, F0 = width, Color = color, Style = style ?? default });
 
     /// <summary>Draws a camera-facing ribbon along a polyline.</summary>
+    /// <param name="points">Polyline points. Fewer than two draws nothing.</param>
+    /// <param name="width">Width in world units.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="closed">Whether the last point connects back to the first.</param>
+    /// <param name="style">Optional depth and blending style.</param>
     public void DrawPath(IReadOnlyList<Vector3> points, float width, Vector4 color, bool closed = false, ImShapeStyle? style = null)
     {
         ArgumentNullException.ThrowIfNull(points);
@@ -96,14 +132,26 @@ public sealed class ImDraw3D
     }
 
     /// <summary>Draws a translucent sphere.</summary>
+    /// <param name="center">World-space centre.</param>
+    /// <param name="radius">Sphere radius.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional depth and blending style.</param>
     public void DrawSphere(Vector3 center, float radius, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Sphere, A = center, F0 = radius, Color = color, Style = style ?? default });
 
     /// <summary>Draws a 3D arrow from <paramref name="from"/> to <paramref name="to"/>.</summary>
+    /// <param name="from">Base point.</param>
+    /// <param name="to">Tip point.</param>
+    /// <param name="width">Shaft width in world units.</param>
+    /// <param name="color">Color in straight alpha.</param>
+    /// <param name="style">Optional depth and blending style.</param>
     public void DrawArrow(Vector3 from, Vector3 to, float width, Vector4 color, ImShapeStyle? style = null)
         => Add(new Command { Kind = Kind.Arrow, A = from, B = to, F0 = width, Color = color, Style = style ?? default });
 
-    /// <summary>The escape hatch: draws any mesh with any material at a world transform, for this frame only.</summary>
+    /// <summary>Draws any mesh with any material at a world transform, for this frame only.</summary>
+    /// <param name="mesh">The mesh to draw. Referenced, never owned.</param>
+    /// <param name="world">The world transform.</param>
+    /// <param name="material">The material to draw with.</param>
     public void DrawMesh(Mesh mesh, in Matrix4x4 world, Material material)
     {
         ArgumentNullException.ThrowIfNull(mesh);
@@ -117,7 +165,6 @@ public sealed class ImDraw3D
             commands.Add(command);
     }
 
-    // Converts the buffered commands into draw items for this frame and clears the buffer.
     internal void Consume(ScenePass pass, in FrameContext frame, RenderStats stats, bool depthAvailable, bool wireframe = false, bool outlineDecals = false, bool volumeDecals = false)
     {
         Command[] snapshot;
@@ -168,6 +215,7 @@ public sealed class ImDraw3D
                     case Kind.Circle:
                     case Kind.Sector:
                     case Kind.Rect:
+                    case Kind.Chevron:
                         if (cmd.Style.Placement == ImShapePlacement.Grounded)
                             AddDecal(pass, ref cmd, in frame, stats, depthAvailable, wireframe, outlineDecals, volumeDecals);
                         else
@@ -217,7 +265,13 @@ public sealed class ImDraw3D
                 scale = new Vector3(cmd.F1, height, cmd.F2);
                 facing = cmd.F0;
                 break;
-            default: // Circle
+            case Kind.Chevron:
+                shape = DecalShape.Chevron;
+                shapeParams = new Vector4(cmd.B.X, 0f, 0f, cmd.Style.FillOpacity);
+                scale = new Vector3(cmd.F1, height, cmd.F2);
+                facing = cmd.F0;
+                break;
+            default:
                 shape = DecalShape.Circle;
                 shapeParams = new Vector4(0f, 0f, 0f, cmd.Style.FillOpacity);
                 scale = new Vector3(cmd.F0 * 2f, height, cmd.F0 * 2f);
@@ -231,13 +285,12 @@ public sealed class ImDraw3D
         if (wireframe || outlineDecals)
             AddDecalOutline(pass, shape, shapeParams, in world, cmd.Color, cmd.Style.Layer, in frame, stats, depthAvailable);
 
-        // The projection box is drawn regardless of wireframe: it is the volume, not the paint, so it still answers
-        // "how far does this reach" on a frame where the decal itself is dropped.
+        // Drawn even in wireframe.
         if (volumeDecals)
             AddDecalVolume(pass, in world, cmd.Color, cmd.Style.Layer, in frame, stats, depthAvailable);
 
         if (wireframe)
-            return; // the pass drops decals in wireframe (their box carries no shape to rasterize) - the outline above is the whole draw
+            return; // the pass drops decals in wireframe
 
         var mat = new MaterialData
         {
@@ -248,20 +301,14 @@ public sealed class ImDraw3D
             Cull = CullMode.Front,
             Params0 = shapeParams,
             Params1 = new Vector4(0f, (float)shape, cmd.Style.OutlineWidth, 1f),
-            // The size is baked into the footprint scale below, so pass it as the outline reference: the rim stays
-            // proportional to the drawn radius, not the constant-thickness rim scene decals get.
             OutlineScaleRef = 0.5f * (scale.X + scale.Z),
             DecalOutlineColor = cmd.Style.OutlineColor,
         };
 
-        // Per-decal actor exclusion: the shader skips pixels standing above these actors' feet inside their
-        // radius, so a character in the decal is cut out without holing the ground around them.
         pass.AddMeshItem(mesh, in mat, null, in world, cmd.Color, cmd.Style.Layer, castsDepth: false, stats, depthAvailable, cmd.Style.ExcludeVolumes);
     }
 
-    // Emits a grounded shape as its painted outline (wireframe mode): the same loops ShowDecalShape traces, as
-    // camera-facing ribbons. Drawn on the shape's own plane rather than projected, since without the decal shader
-    // there is no surface to project onto.
+    // In wireframe nothing projects.
     private void AddDecalOutline(ScenePass pass, DecalShape shape, Vector4 shapeParams, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
     {
         var path = outlinePath ??= new List<Vector3>(DecalOutline.Segments * 2 + 8);
@@ -297,9 +344,6 @@ public sealed class ImDraw3D
         }
     }
 
-    // Emits a grounded shape's projection box as camera-facing ribbons (DecalVolumeOutlines): the twelve edges of the
-    // volume the decal's SDF is evaluated in, which an immediate-mode shape has no node to opt into. Mirrors
-    // ShowDecalVolume for the retained side.
     private void AddDecalVolume(ScenePass pass, in Matrix4x4 world, Vector4 color, int layer, in FrameContext frame, RenderStats stats, bool depthAvailable)
     {
         Span<Vector3> corners = stackalloc Vector3[DecalOutline.VolumeCorners];
@@ -308,7 +352,7 @@ public sealed class ImDraw3D
         var path = outlinePath ??= new List<Vector3>(DecalOutline.Segments * 2 + 8);
         var style = new ImShapeStyle { Placement = ImShapePlacement.Flat, Layer = layer };
 
-        // Runs 0-1 are the bottom and top face loops (closed); 2-5 are the verticals joining them (open).
+        // Runs 0-1 are the face loops, 2-5 the verticals.
         for (var run = 0; run < 6; run++)
         {
             var closed = run < 2;
@@ -353,6 +397,12 @@ public sealed class ImDraw3D
 
     private static void AddFlatShape(ScenePass pass, ref Command cmd, RenderStats stats, bool depthAvailable)
     {
+        if (cmd.Kind == Kind.Chevron)
+        {
+            AddFlatChevron(pass, ref cmd, stats, depthAvailable);
+            return;
+        }
+
         var segments = Math.Clamp(cmd.Style.Segments, 3, 256);
         var estimate = (segments + 2) * 2;
         if (pass.DynamicVertexBudget < estimate)
@@ -382,7 +432,7 @@ public sealed class ImDraw3D
                 facing = cmd.F0;
                 radius = cmd.F2;
                 break;
-            default: // Rect
+            default:
                 MeshBuilder.WriteQuad(verts, indices, cmd.F1, cmd.F2);
                 facing = cmd.F0;
                 radius = MathF.Sqrt(cmd.F1 * cmd.F1 + cmd.F2 * cmd.F2) * 0.5f;
@@ -391,6 +441,35 @@ public sealed class ImDraw3D
 
         var world = Matrix4x4.CreateFromAxisAngle(Vector3.UnitY, facing) * Matrix4x4.CreateTranslation(cmd.A);
         var mat = FlatData(cmd.Style, cullNone: true);
+        pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, cmd.Color, in world, cmd.Style.Layer, cmd.A, radius, stats, depthAvailable);
+    }
+
+    private static void AddFlatChevron(ScenePass pass, ref Command cmd, RenderStats stats, bool depthAvailable)
+    {
+        if (pass.DynamicVertexBudget < 6)
+        {
+            stats.ImCommandsDropped++;
+            return;
+        }
+
+        Span<Vector2> corners = stackalloc Vector2[6];
+        DecalOutline.ChevronOutline(cmd.B.X, corners);
+
+        var verts = pass.DynVertices;
+        var indices = pass.DynIndices;
+        var startIndex = indices.Count;
+        var baseVertex = verts.Count;
+
+        foreach (var corner in corners)
+            verts.Add(new Vertex3D(new Vector3(corner.X * 0.5f * cmd.F1, 0f, corner.Y * 0.5f * cmd.F2), Vector3.UnitY, Vector2.Zero, new Vector4(1f, 1f, 1f, 1f)));
+
+        ReadOnlySpan<int> quads = [0, 1, 4, 0, 4, 5, 1, 2, 3, 1, 3, 4];
+        foreach (var index in quads)
+            indices.Add((ushort)(baseVertex + index));
+
+        var world = Matrix4x4.CreateFromAxisAngle(Vector3.UnitY, cmd.F0) * Matrix4x4.CreateTranslation(cmd.A);
+        var mat = FlatData(cmd.Style, cullNone: true);
+        var radius = MathF.Sqrt(cmd.F1 * cmd.F1 + cmd.F2 * cmd.F2) * 0.5f;
         pass.AddDynamicItem(startIndex, indices.Count - startIndex, in mat, cmd.Color, in world, cmd.Style.Layer, cmd.A, radius, stats, depthAvailable);
     }
 
@@ -422,7 +501,6 @@ public sealed class ImDraw3D
             return;
         }
 
-        // Line / Path: camera-facing ribbon written directly in world space.
         ReadOnlySpan<Vector3> points = cmd.Kind == Kind.Line
             ? stackalloc Vector3[2] { cmd.A, cmd.B }
             : paths.AsSpan(cmd.PathStart, cmd.PathCount);
@@ -498,11 +576,10 @@ public sealed class ImDraw3D
         Depth = style.IgnoreDepth ? DepthMode.Ignore : style.OnTopOfObjects ? DepthMode.WorldOnly : DepthMode.TestOnly,
         WhenDepthUnavailable = DepthUnavailableBehavior.Ignore,
         Cull = cullNone ? CullMode.None : CullMode.Back,
-        UnorderedBatching = true, // markers may draw in any order - lets identical shapes instance hard
+        UnorderedBatching = true, // identical shapes instance
         Params1 = new Vector4(style.DepthFade, 0f, 0f, 0f),
     };
 
-    // The rotation aiming a +Y-built mesh (cone, cylinder) along a direction.
     private static Matrix4x4 RotationFromYTo(Vector3 dir)
         => Matrix4x4.CreateFromQuaternion(TransformHelper.FromToRotation(Vector3.UnitY, dir));
 

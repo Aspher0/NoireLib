@@ -4,23 +4,14 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Geometry;
 
-/// <summary>
-/// CPU mesh decimation for the level-of-detail chain.
-/// The primary path is a topology-preserving <b>quadric error edge-collapse</b> (<see cref="Simplify"/>) that
-/// collapses the lowest-error edges first and keeps every vertex on an original edge, so an organic model degrades
-/// smoothly instead of shattering; a <b>vertex-clustering</b> fallback (<see cref="Cluster"/>) covers meshes the
-/// quadric pass cannot reduce (heavily non-manifold soup), never producing NaN/degenerate geometry but occasionally
-/// bridging gaps, so it is only a backstop.
-/// <see cref="BuildLods"/> assembles the chain, quadric-first with a clustering fallback per level.
-/// </summary>
+/// <summary>CPU mesh decimation for the level-of-detail chain, by quadric edge collapse with a vertex-clustering fallback.</summary>
 public static partial class MeshSimplifier
 {
-    /// <summary>A decimated vertex/index set (32-bit indices; the caller narrows to 16-bit when it fits).</summary>
+    /// <summary>A decimated vertex and 32-bit index set.</summary>
     /// <param name="Vertices">The reduced vertex set.</param>
-    /// <param name="Indices">The reduced index set (triangle list, winding preserved).</param>
+    /// <param name="Indices">The reduced triangle-list indices, winding preserved.</param>
     public readonly record struct Result(Vertex3D[] Vertices, uint[] Indices);
 
-    // Running attribute sum for one cluster cell; averaged into a single representative vertex.
     private struct Accum
     {
         public Vector3 PositionSum;
@@ -48,15 +39,12 @@ public static partial class MeshSimplifier
         }
     }
 
-    /// <summary>
-    /// Clusters the mesh onto a lattice of about <paramref name="cellsPerLongestAxis"/> cells across its longest bounds
-    /// axis and returns the reduced geometry, or null when the input is empty/flat or the reduction is not worth keeping
-    /// (at least <paramref name="minReduction"/> of the triangles must be removed, else there is no LOD to gain).
-    /// </summary>
+    /// <summary>Merges vertices on a lattice spanning the mesh's longest bounds axis. Robust on non-manifold input but may bridge gaps.</summary>
     /// <param name="vertices">Source vertices.</param>
     /// <param name="indices">Source indices (triangle list).</param>
-    /// <param name="cellsPerLongestAxis">Lattice resolution along the longest bounds axis - lower = coarser LOD.</param>
-    /// <param name="minReduction">Minimum fraction of triangles that must be removed for the result to be returned (0..1).</param>
+    /// <param name="cellsPerLongestAxis">Lattice resolution along the longest bounds axis, lower being coarser.</param>
+    /// <param name="minReduction">Minimum fraction of triangles (0..1) that must be removed for the result to be returned.</param>
+    /// <returns>The reduced geometry, or null when the input is empty or flat or the reduction falls short.</returns>
     public static Result? Cluster(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<uint> indices, int cellsPerLongestAxis, float minReduction = 0.2f)
     {
         if (vertices.Length < 3 || indices.Length < 3 || cellsPerLongestAxis < 1)
@@ -72,13 +60,12 @@ public static partial class MeshSimplifier
         var size = max - min;
         var longest = MathF.Max(size.X, MathF.Max(size.Y, size.Z));
         if (longest <= 1e-6f)
-            return null; // a flat/point set has no volume to cluster
+            return null; // a flat set has no volume to cluster
 
         var invCell = cellsPerLongestAxis / longest;
         var gy = Math.Max(1, (int)(size.Y * invCell) + 1);
         var gz = Math.Max(1, (int)(size.Z * invCell) + 1);
 
-        // Map each vertex to its cell's representative (accumulated), so a cell shared by many vertices merges them.
         var cellToRep = new Dictionary<long, int>(vertices.Length);
         var reps = new List<Accum>();
         var remap = new int[vertices.Length];
@@ -103,7 +90,6 @@ public static partial class MeshSimplifier
             reps[rep] = acc;
         }
 
-        // Rebuild triangles, dropping any whose corners collapsed into a shared cell (winding of the survivors kept).
         var newIndices = new List<uint>(indices.Length);
         for (var t = 0; t + 2 < indices.Length; t += 3)
         {
@@ -123,7 +109,6 @@ public static partial class MeshSimplifier
         if (reduction < minReduction)
             return null;
 
-        // Compact to only the representatives a surviving triangle references (an emptied cell leaves no vertex behind).
         var compact = new int[reps.Count];
         Array.Fill(compact, -1);
         var outVertices = new List<Vertex3D>(reps.Count);
@@ -142,22 +127,15 @@ public static partial class MeshSimplifier
         return new Result(outVertices.ToArray(), newIndices.ToArray());
     }
 
-    // Lattice resolutions for the clustering backstop, used only when the quadric pass cannot reduce a mesh.
+    // Only when the quadric pass cannot reduce a mesh.
     private static readonly int[] FallbackClusterCells = { 48, 24, 12 };
 
-    /// <summary>
-    /// Builds a chain of progressively coarser LOD meshes from the source geometry, ordered finest-first: each level
-    /// is a quadric error edge-collapse to the matching fraction of the original triangle count
-    /// (<paramref name="targetRatios"/>, e.g. <c>[0.5, 0.25, 0.12]</c>), falling back to a clustering chain if the
-    /// quadric pass cannot reduce the mesh at all; a level no smaller than the previous one is skipped, so the chain
-    /// is monotonic and may be shorter than requested (empty when nothing reduces usefully); meshes are created on
-    /// the calling thread (devices are free-threaded), so this runs on the import thread, and the caller owns and
-    /// disposes the returned meshes.
-    /// </summary>
+    /// <summary>Builds a finest-first chain of coarser LOD meshes. The caller disposes them.</summary>
     /// <param name="vertices">Full-resolution vertices.</param>
     /// <param name="indices">Full-resolution indices.</param>
     /// <param name="targetRatios">Descending target triangle fractions (0..1), one per desired LOD level.</param>
     /// <param name="name">Optional debug name carried onto each LOD mesh.</param>
+    /// <returns>The LOD meshes, possibly fewer than requested or none.</returns>
     public static Mesh[] BuildLods(Vertex3D[] vertices, uint[] indices, ReadOnlySpan<float> targetRatios, string? name = null)
     {
         ArgumentNullException.ThrowIfNull(vertices);
@@ -172,13 +150,13 @@ public static partial class MeshSimplifier
 
             var triangles = result.Indices.Length / 3;
             if (triangles >= prevTriangles || triangles < 1)
-                continue; // no improvement on the previous level - drop this rung
+                continue;
 
             lods.Add(MakeMesh(result.Vertices, result.Indices, name));
             prevTriangles = triangles;
         }
 
-        // Backstop for a mesh the quadric pass could not reduce (heavily non-manifold): the robust clustering chain.
+        // Typically a heavily non-manifold mesh.
         if (lods.Count == 0)
         {
             prevTriangles = indices.Length / 3;
@@ -199,7 +177,6 @@ public static partial class MeshSimplifier
         return lods.ToArray();
     }
 
-    // Creates a GPU mesh from decimated data, narrowing to a 16-bit index buffer when the vertex count allows.
     private static Mesh MakeMesh(Vertex3D[] vertices, uint[] indices, string? name)
     {
         if (vertices.Length <= ushort.MaxValue)

@@ -8,9 +8,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Render-thread hook on the game's D3D11 immediate context, serving the bind-sequence diagnostic, the pre-UI and
-// G-buffer injection points, and the main-scene-pass camera phase. Installed on first use only, and each hook stays
-// disabled until a capture is armed or an injection is enabled.
+// Render-thread hooks on the game's D3D11 immediate context. Each hook stays disabled until something needs it.
 internal sealed unsafe class RenderTargetTap : IDisposable
 {
     // ID3D11DeviceContext vtable slots.
@@ -20,14 +18,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private const int SlotDrawInstanced = 21;
     private const int SlotOmSetRenderTargets = 33;
     private const int SlotRsSetViewports = 44;
-    private const int MaxBinds = 640; // a full frame including the late UI stage
+    private const int MaxBinds = 640;
     private const int MaxMultiBinds = 32;
-    private const int MaxTargetsPerBind = 8; // D3D11's simultaneous render target limit
-    // The measured G-buffer pass binds five. A lower floor also matches a three-target bind on the same scene
-    // depth whose slots carry a different set, so injected geometry would write albedo into a half-float target.
+    private const int MaxTargetsPerBind = 8;
+    // The G-buffer pass binds five. A three-target bind on the same depth carries a different layout.
     private const int GBufferMinTargets = 5;
-    private const int CaptureWarmupFrames = 6; // let the swapchain flip through all its buffers first
-    private const int InjectOrdinal = 2; // present-buffer bind #: 1 = world copy, 2 = after world / before UI
+    private const int CaptureWarmupFrames = 6;
 
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void OmSetRenderTargetsFn(nint context, uint numViews, nint ppRenderTargetViews, nint pDepthStencilView);
@@ -42,10 +38,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate void RsSetViewportsFn(nint context, uint numViewports, nint pViewports);
 
-    // One render-target bind, whose Format is the view's format rather than the texture's.
     private readonly record struct Bind(uint NumViews, nint Rtv0Resource, DXGI_FORMAT Format, uint Width, uint Height, bool HasDsv, bool IsBackbuffer, int DrawCount);
 
-    // One target of a multi-target bind, for reading a G-buffer's layout.
     private readonly record struct TargetInfo(nint Resource, DXGI_FORMAT Format, uint Width, uint Height);
 
     private NoireHook<OmSetRenderTargetsFn>? omHook;
@@ -54,7 +48,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private NoireHook<DrawIndexedInstancedFn>? drawIndexedInstancedHook;
     private NoireHook<DrawInstancedFn>? drawInstancedHook;
     private NoireHook<RsSetViewportsFn>? rsSetViewportsHook;
-    // Only the frame dump needs a device: it copies a target mid-frame. Every other job reads binds alone.
     private RenderDevice? device;
     private OmSetRenderTargetsFn? omDetour;
     private DrawIndexedFn? drawIndexedDetour;
@@ -67,10 +60,8 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private readonly Bind[] binds = new Bind[MaxBinds];
     private int bindCount;
 
-    // Created on first arm, disposed with the tap.
     private ShadowProbe? shadowProbe;
 
-    // Whole target sets of multi-target binds, sized flat and up front so the render thread never allocates.
     private readonly int[] multiBindAt = new int[MaxMultiBinds];
     private readonly TargetInfo[] multiBindTargets = new TargetInfo[MaxMultiBinds * MaxTargetsPerBind];
     private readonly int[] multiBindCounts = new int[MaxMultiBinds];
@@ -79,46 +70,43 @@ internal sealed unsafe class RenderTargetTap : IDisposable
     private volatile int state; // 0 = idle, 1 = warming up, 2 = capturing
     private int warmupLeft;
 
-    // Each dump is a full-resolution copy plus a synchronous map, so the frame it runs on stalls badly.
+    // Each dump is a full-resolution copy and a synchronous map. The frame stalls.
     private const int MaxFrameDumps = 16;
     private int dumpFrom = -1;
     private int dumpCount;
-    private int dumpStride; // > 0 = spread across the whole frame instead of a contiguous span
+    private int dumpStride;
     private int dumpsWritten;
     private string dumpFolder = string.Empty;
 
-    // Bind count of the last captured frame; a frame is not a fixed length, so bind indices do not carry across runs.
+    // A frame has no fixed length. Bind indices do not carry across runs.
     private int lastFrameBindCount;
 
-    // A bind counts as a backbuffer bind if its target matches any of the flip-model buffers seen at present.
     private readonly nint[] knownBackbuffers = new nint[8];
     private int knownBackbufferCount;
 
-    // Injection state.
-    private nint presentBuffer;             // committed present-composition buffer (learned last frame)
+    private nint presentBuffer;
     private nint candidatePresentBuffer;    // RTV seen right before a swapchain bind this frame
-    private nint lastNonBackbufferRtv;      // running previous RTV (candidate source)
-    private int presentBufferBinds;         // present-buffer binds so far this frame
-    private volatile bool injecting;        // re-entrancy guard around the injection callback
+    private nint lastNonBackbufferRtv;
+    private int presentBufferBinds;
+    private int presentBufferBindsLastFrame;
+    private bool injectedThisFrame;
+    private bool sawDepthBindLastFrame;
+    private int injectedAtBind;
+    private int injectedAtBindLastFrame;
+    private InjectRule injectedByLastFrame;
+    private InjectRule injectedBy;
+    private bool sawDepthBindThisFrame;
+    private volatile bool injecting;
 
-    // The camera the world was rasterized with, snapshotted at the FIRST main-scene bind (depth-stencil ==
-    // RenderTargetManager.DepthStencil) and then locked. The game advances the camera between the shadow passes and
-    // the main pass, so a shadow-pass snapshot is sub-pixel wrong and the overlay swims; it is only the fallback.
+    // Snapshotted at the first main-scene bind and locked for the frame. A shadow-pass snapshot is provisional.
     private GameRenderSources.CameraData worldCamera;
     private volatile bool hasWorldCamera;
-    private bool mainDepthSeen;      // locked once the main-scene depth is captured this frame
-    private nint frameSceneDepthTex; // RTM.DepthStencil texture, cached per present for the main-pass fingerprint
+    private bool mainDepthSeen;
+    private nint frameSceneDepthTex;
 
-    /// <summary>
-    /// Fired inside the game's G-buffer pass at its first draw, with the pass's targets already bound. The
-    /// callback draws into the game's own targets and must restore every pipeline state it changes.
-    /// </summary>
+    // The callback draws into the game's own targets and must restore every pipeline state it changes.
     public Action? GBufferInjector { get; set; }
 
-    /// <summary>
-    /// Whether the G-buffer injection is wanted this frame. Setting it keeps the four per-draw hooks enabled,
-    /// which costs a managed callback on every draw the game makes, so it must follow queued work rather than latch.
-    /// </summary>
     public bool GBufferInjectionEnabled
     {
         get => gbufferInjectionEnabled;
@@ -134,21 +122,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private bool gbufferInjectionEnabled;
 
-    // Set at the G-buffer bind, consumed at that pass's first draw.
     private bool gbufferPassArmed;
     private bool gbufferDoneThisFrame;
 
-    /// <summary>
-    /// Fired with the game's context at the end of every shadow draw group that received draws, while the group's
-    /// map, viewport, raster state and settled constants are all still bound. Groups with no draws are cached maps
-    /// that already carry the geometry, and drawing into one again stamps a second silhouette.
-    /// </summary>
+    // A group with no draws is a cached map. Drawing into it again stamps a second silhouette.
     public Action<nint>? ShadowInjector { get; set; }
 
-    /// <summary>
-    /// Whether the shadow injection is wanted this frame; it costs the same per-draw callback the G-buffer
-    /// injection does, so it follows queued work rather than latching.
-    /// </summary>
     public bool ShadowInjectionEnabled
     {
         get => shadowInjectionEnabled;
@@ -164,62 +143,50 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private bool shadowInjectionEnabled;
 
-    /// <summary>Fired once per frame on the render thread, so the shadow queue can flip its frame boundary.</summary>
     public Action? ShadowFrameBoundary { get; set; }
 
-    // Whether the current bind is a shadow-map bind, and whether the current draw group has drawn into it.
     private bool shadowBindActive;
     private bool shadowBindSawDraw;
 
-    /// <summary>When true the detours skip their work, set around Draw3D's own binds so they are never observed.</summary>
     public bool SuppressSelf;
 
-    /// <summary>Whether an injection callback is running right now, so Draw3D's own D3D calls inside it are not observed.</summary>
     public bool IsInjecting => injecting;
 
-    /// <summary>
-    /// The camera-constant capture riding this tap's frame phase, signalled from here at the frame boundary and the
-    /// main-pass bind. Null when not installed.
-    /// </summary>
     public CameraConstantCapture? Capture;
 
-    /// <summary>Enables the pre-UI injection path (the OM hook must be installed and stays enabled while set).</summary>
     public bool InjectionEnabled { get; private set; }
 
-    /// <summary>Callback fired on the render thread at the injection point with the present-buffer resource, returning whether it rendered.</summary>
     public Func<nint, bool>? Injector { get; set; }
 
-    /// <summary>
-    /// The committed present-composition buffer, or 0 before one has been learned. The same resource the
-    /// <see cref="Injector"/> is handed, and still readable at present time, by which point the game has drawn its
-    /// native UI into it.
-    /// </summary>
+    // Still readable at present time, with the game's native UI drawn into it.
     public nint PresentBuffer => presentBuffer;
 
-    /// <summary>
-    /// The view and projection the world currently in the present buffer was rasterized with, captured on the render
-    /// thread.
-    /// </summary>
-    /// <param name="camera">Receives the captured camera.</param>
-    /// <returns>False before this frame's first depth pass is seen, for instance on a menu or loading frame.</returns>
+    public int PresentBufferBindsLastFrame => presentBufferBindsLastFrame;
+
+    internal enum InjectRule : byte
+    {
+        None = 0,
+        // The first present-buffer bind carrying a depth-stencil: the world-space UI pass.
+        FirstDepthBind = 1,
+        LastBind = 2,
+        ForcedOrdinal = 3,
+    }
+
+    public string InjectionDescription => injectedByLastFrame == InjectRule.None
+        ? $"not injected ({presentBufferBindsLastFrame} present-buffer binds)"
+        : $"{injectedByLastFrame} at bind {injectedAtBindLastFrame} of {presentBufferBindsLastFrame}";
+
+    // 0 places the layer automatically. The pass count changes with the upscaler, glare, dynamic resolution and group pose.
+    public int InjectOrdinal { get; set; }
+
     public bool TryGetWorldCamera(out GameRenderSources.CameraData camera)
     {
         camera = worldCamera;
         return hasWorldCamera;
     }
 
-    /// <summary>
-    /// Whether this frame's world-camera snapshot came from the main scene pass rather than the less accurate
-    /// first-depth-bind fallback.
-    /// </summary>
-    public bool WorldCameraIsMainPass => mainDepthSeen;
-
-    /// <summary>True once the hooks have been installed (they may still be disabled).</summary>
     public bool Installed => omHook != null;
 
-    /// <summary>Installs the hooks, disabled, by reading the immediate context's vtable slots.</summary>
-    /// <param name="device">The render device whose immediate context is hooked.</param>
-    /// <returns>True when the hooks are installed or were already installed.</returns>
     public bool Install(RenderDevice device)
     {
         if (omHook != null)
@@ -259,18 +226,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return true;
     }
 
-    /// <summary>Turns the pre-UI injection path on or off, keeping the OM hook enabled while it is on.</summary>
-    /// <param name="enabled">Whether the injection path runs.</param>
     public void SetInjection(bool enabled)
     {
         InjectionEnabled = enabled;
         RefreshOmHookState();
     }
 
-    /// <summary>
-    /// Arms the <see cref="ShadowProbe"/> for the next frame, recording every depth-only bind's target and the
-    /// vertex-shader constants at its first draw into the log.
-    /// </summary>
     public void ArmShadowProbe()
     {
         if (omHook == null)
@@ -280,7 +241,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         shadowProbe.Arm();
     }
 
-    /// <summary>Arms a one-frame diagnostic capture after a short warm-up, so every swapchain buffer is learned first.</summary>
     public void ArmCapture()
     {
         if (omHook == null)
@@ -295,10 +255,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         RefreshOmHookState();
     }
 
-    /// <summary>Arms a capture that also writes out what a span of binds produced, as images.</summary>
-    /// <param name="from">First bind index to write out.</param>
-    /// <param name="count">How many consecutive binds to write out.</param>
-    /// <param name="folder">Destination folder for the images.</param>
     public void ArmFrameDump(int from, int count, string folder)
     {
         if (omHook == null)
@@ -312,13 +268,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         dumpFolder = folder;
     }
 
-    /// <summary>
-    /// Arms a dump spread evenly across the whole frame rather than over a chosen span, so it does not depend on a
-    /// bind index staying stable across runs.
-    /// </summary>
-    /// <param name="count">How many binds to write out, spread across the frame.</param>
-    /// <param name="folder">Destination folder for the images.</param>
-    /// <returns>The stride chosen, or 0 when the hooks are not installed.</returns>
     public int ArmFrameSweep(int count, string folder)
     {
         if (omHook == null)
@@ -326,16 +275,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
         ArmFrameDump(0, count, folder);
 
-        // Length assumed for a frame that has never been measured; the stride only sets sample spacing, so
-        // guessing high costs a sparser sweep rather than a failed one.
         const int AssumedFrameBinds = 128;
         var length = lastFrameBindCount > 0 ? lastFrameBindCount : AssumedFrameBinds;
         dumpStride = Math.Max(1, length / dumpCount);
         return dumpStride;
     }
 
-    // Writes out the target that has just finished being drawn into, when it falls in the armed span. Runs before the
-    // game's new bind is applied, the only moment the previous target's contents are final.
+    // Runs before the game's new bind is applied, the only moment the previous target's contents are final.
     private void DumpFinishedBind()
     {
         var finished = bindCount - 1;
@@ -361,8 +307,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             var note = GBufferProbe.Dump(dev, resource, path);
             NoireLogger.LogInfo($"[FrameDump] bind {finished}: {note}", "Draw3D");
 
-            // The stencil mark the game's light volumes test exists only between the geometry and lighting passes,
-            // so nothing at the end of the frame can read it.
+            // The light volumes' stencil mark only exists between the geometry and lighting passes.
             if (GameRenderSources.TryGetDepthTexture(out var depth) && depth.Texture != 0)
             {
                 var stencilPath = System.IO.Path.Combine(dumpFolder, $"frame_bind{finished:D3}_stencil.bmp");
@@ -375,11 +320,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    /// <summary>
-    /// Per-present bookkeeping on the render thread: learns the swapchain backbuffers, commits the present buffer
-    /// learned this frame, resets per-frame counters, and drives the diagnostic-capture state machine.
-    /// </summary>
-    /// <param name="backbufferTexture">The backbuffer texture being presented.</param>
     public void OnPresent(nint backbufferTexture)
     {
         RememberBackbuffer(backbufferTexture);
@@ -392,15 +332,22 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             presentBuffer = candidatePresentBuffer;
         candidatePresentBuffer = 0;
         lastNonBackbufferRtv = 0;
+        presentBufferBindsLastFrame = presentBufferBinds;
         presentBufferBinds = 0;
-        hasWorldCamera = false; // re-snapshot at the next frame's main scene pass
+        sawDepthBindLastFrame = sawDepthBindThisFrame;
+        sawDepthBindThisFrame = false;
+        injectedByLastFrame = injectedThisFrame ? injectedBy : InjectRule.None;
+        injectedAtBindLastFrame = injectedThisFrame ? injectedAtBind : 0;
+        injectedThisFrame = false;
+        injectedBy = InjectRule.None;
+        injectedAtBind = 0;
+        hasWorldCamera = false;
         mainDepthSeen = false;
 
         gbufferPassArmed = false;
         gbufferDoneThisFrame = false;
         shadowBindActive = false;
         shadowBindSawDraw = false;
-        // Scene-depth texture for next frame's main-pass fingerprint; a resize costs one frame of first-depth fallback.
         frameSceneDepthTex = GameRenderSources.TryGetDepthTexture(out var sceneDepth) ? sceneDepth.Texture : 0;
 
         switch (state)
@@ -430,16 +377,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         if (omHook != null && omHook.IsEnabled != wanted)
             omHook.SetEnabled(wanted);
 
-        // The viewport hook exists solely for the shadow injection's group boundaries.
         rsSetViewportsHook?.SetEnabled(shadowInjectionEnabled);
 
-        // The camera-constant capture only has a main-pass signal while the injection point is running.
         Capture?.SetActive(InjectionEnabled);
         RefreshDrawHookState();
     }
 
-    // Enables the draw hooks for whichever consumer wants them: the one-frame capture, an injection, or the
-    // camera-constant commit.
     private void RefreshDrawHookState()
         => SetDrawHooksEnabled(state == 2 || GBufferInjectionEnabled || shadowInjectionEnabled || (Capture?.WantsDrawSignal ?? false));
 
@@ -481,11 +424,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void OmDetour(nint context, uint numViews, nint ppRtvs, nint pDsv)
     {
-        // The target about to be replaced has just received its last draw, the only point its contents are readable.
         if (state == 2 && dumpFrom >= 0 && !injecting && !SuppressSelf && context == gameContext)
             DumpFinishedBind();
 
-        // Everything a shadow draw group ran with stays bound until the Original call below applies the new targets.
+        // The shadow group's state stays bound until Original applies the new targets.
         TryInjectShadowAtGroupEnd(context);
 
         if (!injecting && context == gameContext)
@@ -501,8 +443,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
         var rtv0 = ResolveRtv0Resource(numViews, ppRtvs);
 
-        // Depth-only binds cover both shadow maps and the scene's own depth pre-pass; the probe records which is which
-        // rather than filtering here.
         if (shadowProbe is { Armed: true } && rtv0 == 0 && pDsv != 0)
             shadowProbe.OnDepthOnlyBind(pDsv, IsMainSceneDepth(pDsv));
 
@@ -522,8 +462,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             }
         }
 
-        // The camera is snapshotted at the FIRST main-scene-depth bind, never a later one: transparency, water and
-        // depth-reading post-fx re-bind scene depth with a newer camera that overshoots the already-drawn pixels.
+        // First bind only. Transparency, water and post-fx re-bind scene depth with a newer camera.
         if (InjectionEnabled && !mainDepthSeen && pDsv != 0 && rtv0 != 0 && !IsBackbuffer(rtv0))
         {
             if (IsMainSceneDepth(pDsv) && GameRenderSources.TryGetCamera(out var mainSnap))
@@ -532,18 +471,17 @@ internal sealed unsafe class RenderTargetTap : IDisposable
                 hasWorldCamera = true;
                 mainDepthSeen = true;
 
-                // The game binds and uploads its camera block between this bind and the pass's first draw, so the
-                // commit is armed rather than taken here. The struct snapshot above stays the fallback.
+                // The game uploads its camera block between this bind and the pass's first draw.
                 Capture?.OnMainPassBind();
             }
             else if (!hasWorldCamera && GameRenderSources.TryGetCamera(out var provisionalSnap))
             {
-                worldCamera = provisionalSnap; // shadow-pass fallback until the main pass replaces it
+                worldCamera = provisionalSnap;
                 hasWorldCamera = true;
             }
         }
 
-        // Post-process passes also bind multiple targets, but never with the scene's depth-stencil.
+        // Post-process passes bind multiple targets too, never with the scene's depth-stencil.
         if (GBufferInjectionEnabled && !gbufferDoneThisFrame && numViews >= GBufferMinTargets && pDsv != 0 && IsMainSceneDepth(pDsv))
             gbufferPassArmed = true;
 
@@ -553,8 +491,34 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         if (InjectionEnabled && presentBuffer != 0 && rtv0 == presentBuffer && Injector != null)
         {
             presentBufferBinds++;
-            if (presentBufferBinds == InjectOrdinal)
+
+            // The first depth-bearing present-buffer bind starts the world-space UI. Without one, the last bind is used.
+            var rule = InjectRule.None;
+            if (!injectedThisFrame)
             {
+                if (InjectOrdinal > 0)
+                {
+                    if (presentBufferBinds == InjectOrdinal)
+                        rule = InjectRule.ForcedOrdinal;
+                }
+                else if (pDsv != 0)
+                {
+                    rule = InjectRule.FirstDepthBind;
+                }
+                else if (!sawDepthBindLastFrame && presentBufferBindsLastFrame > 0 && presentBufferBinds == presentBufferBindsLastFrame)
+                {
+                    rule = InjectRule.LastBind;
+                }
+            }
+
+            if (pDsv != 0)
+                sawDepthBindThisFrame = true;
+
+            if (rule != InjectRule.None)
+            {
+                injectedThisFrame = true;
+                injectedBy = rule;
+                injectedAtBind = presentBufferBinds;
                 injecting = true;
                 try
                 {
@@ -572,11 +536,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    // Runs at every game draw, taking the camera commit before the G-buffer injection so injected geometry is
-    // projected with the camera the commit establishes.
+    // The camera commit runs first. Injected geometry uses the committed camera.
     private void OnDraw(nint context)
     {
-        Capture?.OnGameDraw(context); // a no-op except at the main pass's first draw
+        Capture?.OnGameDraw(context);
 
         if (shadowProbe is { Armed: true } && !injecting && !SuppressSelf && context == gameContext)
             shadowProbe.OnGameDraw((TerraFX.Interop.DirectX.ID3D11DeviceContext*)context);
@@ -587,7 +550,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         if (!gbufferPassArmed || GBufferInjector is not { } injector)
             return;
 
-        // Disarmed before the call, so a callback that throws is not retried against every remaining draw of the pass.
+        // Disarmed before the call. A throwing callback is not retried on every remaining draw.
         gbufferPassArmed = false;
         gbufferDoneThisFrame = true;
 
@@ -607,16 +570,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    // Injects the queued shadow geometry if a shadow draw group with draws behind it is ending right now. Called
-    // before the state change that ends the group, which is a new target bind or a viewport change inside the same
-    // bind, since an atlas map renders each slice as its own viewport group with its own constants.
+    // An atlas shadow map renders each slice as its own viewport group with its own constants.
     private void TryInjectShadowAtGroupEnd(nint context)
     {
         if (!shadowBindActive || !shadowBindSawDraw || !shadowInjectionEnabled || injecting || SuppressSelf
             || context != gameContext || ShadowInjector is not { } shadowInjector)
             return;
 
-        // The next group must see its own draws before it earns an injection.
         shadowBindSawDraw = false;
 
         injecting = true;
@@ -637,7 +597,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
 
     private void RsSetViewportsDetour(nint context, uint numViewports, nint pViewports)
     {
-        // A viewport change inside a shadow bind ends the current slice's draw group, while its constants still bind.
         TryInjectShadowAtGroupEnd(context);
 
         rsSetViewportsHook!.Original(context, numViewports, pViewports);
@@ -694,12 +653,10 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             return 0;
 
         var res = (nint)resource;
-        resource->Release(); // used for comparison only; the RTV keeps the resource alive
+        resource->Release();
         return res;
     }
 
-    // Whether a bound depth-stencil view targets the main scene depth, distinguishing the main world pass from the
-    // shadow-map passes that render first. False when the per-frame scene-depth cache is unset.
     private bool IsMainSceneDepth(nint pDsv)
     {
         if (frameSceneDepthTex == 0 || pDsv == 0)
@@ -711,7 +668,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             return false;
 
         var match = (nint)resource == frameSceneDepthTex;
-        resource->Release(); // used for comparison only; the DSV keeps the resource alive
+        resource->Release();
         return match;
     }
 
@@ -745,11 +702,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         binds[bindCount++] = new Bind(numViews, rtv0, format, w, h, pDsv != 0, IsBackbuffer(rtv0), drawCounter);
     }
 
-    /// <summary>
-    /// The G-buffer's target resources from the last capture, in bind order, chosen from the multi-target binds that
-    /// carry a depth-stencil.
-    /// </summary>
-    /// <returns>The target resources, or an empty list when no candidate bind was captured.</returns>
     public List<nint> GBufferTargets()
     {
         var result = new List<nint>();
@@ -768,8 +720,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             var width = multiBindTargets[i * MaxTargetsPerBind].Width;
             var draws = binds[at + 1].DrawCount - binds[at].DrawCount;
 
-            // Target count first, then resolution, then draws. Draws alone picks a two-target post-process bind over
-            // the G-buffer, and resolution is what rejects the half- and quarter-resolution post-process binds.
+            // Draws alone picks a two-target post-process bind. Resolution rejects the half- and quarter-resolution ones.
             if (targets < bestTargets)
                 continue;
 
@@ -794,13 +745,12 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         return result;
     }
 
-    // Reports the target set of every multi-target bind, whose formats an injected draw must match exactly.
     private void AppendMultiTargets(StringBuilder sb)
     {
         if (multiBindCount == 0)
         {
             sb.AppendLine();
-            sb.AppendLine("No multi-target binds this frame. With only one target ever bound the renderer is forward, not deferred.");
+            sb.AppendLine("No multi-target binds this frame. With only one target ever bound the renderer is forward.");
             return;
         }
 
@@ -823,7 +773,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         }
     }
 
-    // Names a DXGI format, falling back to its numeric value so an unlisted one is still reportable.
     private static string FormatName(DXGI_FORMAT format) => format switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R8G8B8A8_UNORM => "R8G8B8A8_UNORM",
@@ -844,7 +793,6 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         _ => $"format {(int)format}",
     };
 
-    // Records every target of a multi-target bind, so a G-buffer's channel layout is readable.
     private void RecordMultiTarget(uint numViews, nint ppRtvs)
     {
         if (multiBindCount >= MaxMultiBinds || ppRtvs == 0)
@@ -860,8 +808,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             if (view == null)
                 continue;
 
-            // The view's format, not the texture's: a typeless texture is viewed as UNORM by one pass and SRGB by
-            // another, and writing through the wrong one shifts every colour.
+            // A typeless texture is viewed as UNORM by one pass and SRGB by another. The view's format is the one written.
             D3D11_RENDER_TARGET_VIEW_DESC viewDesc;
             view->GetDesc(&viewDesc);
 
@@ -883,7 +830,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
             multiBindTargets[(slot * MaxTargetsPerBind) + written] = new TargetInfo((nint)resource, viewDesc.Format, w, h);
             written++;
 
-            resource->Release(); // used for comparison only; the view keeps the resource alive
+            resource->Release();
         }
 
         if (written == 0)
@@ -928,14 +875,13 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         NoireLogger.PrintToChat($"Draw3D: captured {bindCount} binds / {drawCounter} draws this frame.");
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         InjectionEnabled = false;
         Injector = null;
         ShadowInjector = null;
         ShadowFrameBoundary = null;
-        Capture = null; // owned and disposed by the hub
+        Capture = null;
         shadowProbe?.Dispose();
         shadowProbe = null;
 
@@ -959,8 +905,7 @@ internal sealed unsafe class RenderTargetTap : IDisposable
         rsSetViewportsDetour = null;
     }
 
-    // Options for a hook on a graphics device call: no fault guard, no counters and no verification, because these
-    // run thousands of times per frame and the addresses are vtable slots XIVClientStructs never describes.
+    // These run thousands of times per frame on unnamed vtable slots.
     private static HookOptions DeviceHookOptions(string name) => new()
     {
         Name = name,

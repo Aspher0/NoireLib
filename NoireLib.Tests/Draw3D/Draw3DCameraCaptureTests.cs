@@ -7,13 +7,12 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Locks the pure logic of the camera-constant capture: the window matcher (including the rule that the Z column is
-/// excluded, because the game's uploaded Z column legitimately differs from the struct-composed one), the layout
-/// extraction, the commit validation gate, and the commit-freshness rules the two composite paths rely on.
+/// Locks the pure logic of the camera-constant capture: the window matcher, the layout extraction, view-shape
+/// identity, jitter removal, the half-pixel offset and the commit-freshness rules the composite paths rely on.
 /// </summary>
 public class Draw3DCameraCaptureTests
 {
-    /// <summary>A realistic perspective view-projection in the row-vector convention the renderer uses.</summary>
+    /// <summary>A perspective view-projection in the row-vector convention.</summary>
     private static Matrix4x4 MakeViewProj(Vector3 eye, Vector3 target)
     {
         var view = Matrix4x4.CreateLookAt(eye, target, Vector3.UnitY);
@@ -21,7 +20,7 @@ public class Draw3DCameraCaptureTests
         return view * proj;
     }
 
-    /// <summary>The same matrix with a replaced Z column, representing what the game's uploaded VP looks like next to the struct's.</summary>
+    /// <summary>The same matrix with a replaced Z column, like the game's uploaded VP.</summary>
     private static Matrix4x4 WithForeignZColumn(Matrix4x4 m)
     {
         m.M13 = 0f;
@@ -66,7 +65,7 @@ public class Draw3DCameraCaptureTests
         CameraConstantCapture.WindowError(transposedWindow, in refVp, transposed: true, skipZColumn: true)
             .Should().BeLessThan(1e-6f);
         CameraConstantCapture.WindowError(transposedWindow, in refVp, transposed: false, skipZColumn: true)
-            .Should().BeGreaterThan(1e-2f, "a perspective VP is far from symmetric, so the wrong layout must not match");
+            .Should().BeGreaterThan(1e-2f, "the wrong layout must not match a far-from-symmetric perspective VP");
     }
 
     [Fact]
@@ -92,93 +91,167 @@ public class Draw3DCameraCaptureTests
     }
 
     [Fact]
-    public void MatrixError_AcceptsTemporalSkew_RejectsForeignCamera()
+    public void MatrixError_IgnoresTemporalJitter_RejectsForeignCamera()
     {
         var eye = new Vector3(200f, 40f, -100f);
-        var refVp = MakeViewProj(eye, eye + new Vector3(0.6f, -0.2f, 0.9f));
+        var view = Matrix4x4.CreateLookAt(eye, eye + new Vector3(0.6f, -0.2f, 0.9f), Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        var jittered = proj;
+        jittered.M31 = 0.5f / 1920f;
+        jittered.M32 = -0.5f / 1080f;
 
-        // A fast camera one sim-tick ahead: a few centimeters of travel and a fraction of a degree of turn.
-        var skewed = MakeViewProj(eye + new Vector3(0.05f, 0f, 0.07f), eye + new Vector3(0.605f, -0.199f, 0.975f));
-        CameraConstantCapture.MatrixError(in skewed, in refVp, skipZColumn: true)
-            .Should().BeLessThan(0.05f, "the validation gate must tolerate the sim-vs-render skew being fixed");
+        CameraConstantCapture.MatrixError(view * jittered, view * proj, skipZColumn: true)
+            .Should().BeLessThan(1e-5f, "the drawn camera carries jitter the CPU camera does not, and must still rank first");
 
-        // A different view entirely (a portrait/offscreen camera).
         var foreign = MakeViewProj(new Vector3(0f, 1.6f, 2.2f), new Vector3(0f, 1.4f, 0f));
-        CameraConstantCapture.MatrixError(in foreign, in refVp, skipZColumn: true)
-            .Should().BeGreaterThan(0.05f, "a foreign view's constants must fail validation and never be committed");
+        CameraConstantCapture.MatrixError(foreign, view * proj, skipZColumn: true)
+            .Should().BeGreaterThan(0.05f);
+    }
+
+    [Fact]
+    public void ApplyPixelOffset_ShiftsEveryPointByTheSamePixels()
+    {
+        var vp = MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero);
+        var shifted = CameraConstantCapture.ApplyPixelOffset(in vp, new Vector2(0.5f, 0.5f), new Vector2(1920f, 1080f));
+
+        foreach (var p in new[] { Vector3.Zero, new Vector3(3f, 1f, -2f), new Vector3(-6f, 0f, 4f) })
+        {
+            var a = Vector4.Transform(new Vector4(p, 1f), vp);
+            var b = Vector4.Transform(new Vector4(p, 1f), shifted);
+            var dxPixels = ((b.X / b.W) - (a.X / a.W)) * 0.5f * 1920f;
+            var dyPixels = -((b.Y / b.W) - (a.Y / a.W)) * 0.5f * 1080f;
+            dxPixels.Should().BeApproximately(0.5f, 1e-3f, "right by half a pixel");
+            dyPixels.Should().BeApproximately(0.5f, 1e-3f, "down by half a pixel");
+            b.W.Should().BeApproximately(a.W, 1e-4f, "depth is untouched");
+        }
     }
 
     [Fact]
     public void IsCommitFresh_MatchesThePathTiming()
     {
-        // The inject path runs before its frame's present boundary: the commit carries the current index.
+        // The inject path runs before its present boundary.
         CameraConstantCapture.IsCommitFresh(commitIndex: 7, presentIndex: 7, presentTimePath: false).Should().BeTrue();
         CameraConstantCapture.IsCommitFresh(commitIndex: 6, presentIndex: 7, presentTimePath: false).Should().BeFalse();
 
-        // The present-time path runs after the boundary advanced: the commit carries the previous index.
+        // The present-time path runs after the boundary advanced.
         CameraConstantCapture.IsCommitFresh(commitIndex: 7, presentIndex: 8, presentTimePath: true).Should().BeTrue();
         CameraConstantCapture.IsCommitFresh(commitIndex: 7, presentIndex: 9, presentTimePath: true).Should().BeFalse();
 
-        // No commit yet.
         CameraConstantCapture.IsCommitFresh(commitIndex: -1, presentIndex: 0, presentTimePath: false).Should().BeFalse();
     }
 
-    // ---------------------------------------------------------------- extrapolated commit (miss frames)
-
-    [Fact]
-    public void ExtrapolateCamera_ConstantTranslation_PredictsTheNextStepExactly()
+    private static CameraConstantCapture.ViewShape Shape(in Matrix4x4 m)
     {
-        // A camera panning at constant velocity: the prediction one present ahead is the true next matrix,
-        // because view-projection is linear in the eye translation for a fixed orientation.
-        var prev = MakeViewProj(new Vector3(0f, 5f, 0f), new Vector3(0f, 5f, 10f));
-        var last = MakeViewProj(new Vector3(1f, 5f, 0f), new Vector3(1f, 5f, 10f));
-        var truth = MakeViewProj(new Vector3(2f, 5f, 0f), new Vector3(2f, 5f, 10f));
-
-        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 1);
-
-        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: false)
-            .Should().BeLessThan(1e-5f);
+        CameraConstantCapture.TryReadViewShape(in m, out var shape).Should().BeTrue();
+        return shape;
     }
 
     [Fact]
-    public void ExtrapolateCamera_ScalesTheStepToTheGaps()
+    public void ViewShape_IsTheSameForTheSameCameraAnywhere_WhateverTheMotion()
     {
-        // Two presents to bridge from a one-present velocity sample: twice the step.
-        var prev = MakeViewProj(new Vector3(0f, 5f, 0f), new Vector3(0f, 5f, 10f));
-        var last = MakeViewProj(new Vector3(1f, 5f, 0f), new Vector3(1f, 5f, 10f));
-        var truth = MakeViewProj(new Vector3(3f, 5f, 0f), new Vector3(3f, 5f, 10f));
+        // Two poses farther apart than any frame of motion.
+        var reference = MakeViewProj(new Vector3(120f, 35f, -240f), new Vector3(118f, 33f, -238f));
+        var elsewhere = WithForeignZColumn(MakeViewProj(new Vector3(-400f, 2f, 90f), new Vector3(-400f, 50f, 91f)));
 
-        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 2);
-
-        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: false)
-            .Should().BeLessThan(1e-5f);
-
-        // And a two-present velocity sample bridging one present: half the step.
-        var half = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 2, gap: 1);
-        var truthHalf = MakeViewProj(new Vector3(1.5f, 5f, 0f), new Vector3(1.5f, 5f, 10f));
-        CameraConstantCapture.MatrixError(in half, in truthHalf, skipZColumn: false)
-            .Should().BeLessThan(1e-5f);
+        CameraConstantCapture.CompareViewShape(Shape(in elsewhere), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.None, "shape says which view this is, never where it is");
     }
 
     [Fact]
-    public void ExtrapolateCamera_FrameSizedRotation_StaysInsideTheValidationGate()
+    public void ViewShape_RecoversTheEye()
     {
-        // Rotation extrapolates only to first order, so the prediction is approximate; what matters is that a
-        // frame-sized turn predicts well inside the commit validation gate while a camera cut lands far outside,
-        // so the gate keeps cuts on the struct fallback.
-        var eye = new Vector3(100f, 20f, -50f);
-        var prev = MakeViewProj(eye, eye + Direction(0.00f));
-        var last = MakeViewProj(eye, eye + Direction(0.02f));
-        var truth = MakeViewProj(eye, eye + Direction(0.04f));
+        var eye = new Vector3(120f, 35f, -240f);
+        var shape = Shape(MakeViewProj(eye, new Vector3(118f, 33f, -238f)));
 
-        var pred = CameraConstantCapture.ExtrapolateCamera(in prev, in last, lastGap: 1, gap: 1);
-        CameraConstantCapture.MatrixError(in pred, in truth, skipZColumn: true)
-            .Should().BeLessThan(0.05f, "a frame of turn must validate, or the prediction never engages");
-
-        var cut = MakeViewProj(new Vector3(-300f, 8f, 400f), new Vector3(-300f, 8f, 410f));
-        CameraConstantCapture.MatrixError(in pred, in cut, skipZColumn: true)
-            .Should().BeGreaterThan(0.05f, "a camera cut must fail validation so the prediction is never used across one");
+        Vector3.Distance(shape.Eye, eye).Should().BeLessThan(1e-2f);
     }
 
-    private static Vector3 Direction(float yaw) => new(MathF.Sin(yaw), 0f, MathF.Cos(yaw));
+    [Fact]
+    public void ViewShape_ToleratesTemporalJitter()
+    {
+        var eye = new Vector3(10f, 5f, 10f);
+        var target = new Vector3(0f, 0f, 0f);
+        var view = Matrix4x4.CreateLookAt(eye, target, Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        var jittered = proj;
+        jittered.M31 = 2f / 2560f; // half a pixel at 1440p width
+        jittered.M32 = 2f / 1440f;
+
+        CameraConstantCapture.CompareViewShape(Shape(view * jittered), Shape(view * proj))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.None);
+    }
+
+    [Fact]
+    public void RemoveTemporalJitter_RecoversTheCentredCamera()
+    {
+        var view = Matrix4x4.CreateLookAt(new Vector3(120f, 35f, -240f), new Vector3(118f, 33f, -238f), Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        var jittered = proj;
+        jittered.M31 = 0.37f / 1920f;
+        jittered.M32 = -0.21f / 1080f;
+
+        var centred = CameraConstantCapture.RemoveTemporalJitter(view * jittered, out var jitter);
+        var expected = view * proj;
+
+        foreach (var (a, b) in new[] { (centred.M11, expected.M11), (centred.M21, expected.M21), (centred.M31, expected.M31), (centred.M41, expected.M41),
+                                       (centred.M12, expected.M12), (centred.M22, expected.M22), (centred.M32, expected.M32), (centred.M42, expected.M42) })
+            a.Should().BeApproximately(b, 1e-4f);
+
+        MathF.Abs(jitter.X).Should().BeApproximately(0.37f / 1920f, 1e-6f);
+        MathF.Abs(jitter.Y).Should().BeApproximately(0.21f / 1080f, 1e-6f);
+    }
+
+    [Fact]
+    public void RemoveTemporalJitter_LeavesACentredCameraAlone()
+    {
+        var vp = MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero);
+        var result = CameraConstantCapture.RemoveTemporalJitter(in vp, out var jitter);
+
+        jitter.Length().Should().BeLessThan(1e-6f);
+        result.M41.Should().BeApproximately(vp.M41, 1e-5f);
+        result.M11.Should().BeApproximately(vp.M11, 1e-6f);
+    }
+
+    [Fact]
+    public void ViewShape_RejectsAnOrthographicShadowView()
+    {
+        var reference = MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero);
+        var light = Matrix4x4.CreateLookAt(new Vector3(50f, 100f, 20f), Vector3.Zero, Vector3.UnitY)
+                    * Matrix4x4.CreateOrthographic(80f, 80f, 1f, 500f);
+
+        CameraConstantCapture.CompareViewShape(Shape(in light), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.Projection);
+    }
+
+    [Fact]
+    public void ViewShape_RejectsAnotherAspect_AcceptsAnotherFieldOfView()
+    {
+        var eye = new Vector3(10f, 5f, 10f);
+        var view = Matrix4x4.CreateLookAt(eye, Vector3.Zero, Vector3.UnitY);
+        var reference = view * Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        var portrait = view * Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 3f / 4f, 0.1f, 1000f);
+        var probe = view * Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 2f, 1f, 0.1f, 1000f);
+        var groupPoseWide = view * Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI * 0.8f, 16f / 9f, 0.1f, 1000f);
+        var groupPoseNarrow = view * Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 12f, 16f / 9f, 0.1f, 1000f);
+
+        CameraConstantCapture.CompareViewShape(Shape(in portrait), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.AspectRatio);
+        CameraConstantCapture.CompareViewShape(Shape(in probe), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.AspectRatio);
+        CameraConstantCapture.CompareViewShape(Shape(in groupPoseWide), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.None, "the field of view is the player's to change");
+        CameraConstantCapture.CompareViewShape(Shape(in groupPoseNarrow), Shape(in reference))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.None, "the field of view is the player's to change");
+    }
+
+    [Fact]
+    public void ViewShape_RejectsAReflectedView()
+    {
+        var view = Matrix4x4.CreateLookAt(new Vector3(10f, 5f, 10f), Vector3.Zero, Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        var mirror = Matrix4x4.CreateReflection(new Plane(Vector3.UnitY, 0f));
+
+        CameraConstantCapture.CompareViewShape(Shape(mirror * view * proj), Shape(view * proj))
+            .Should().Be(CameraConstantCapture.ViewShapeMismatch.Handedness);
+    }
 }

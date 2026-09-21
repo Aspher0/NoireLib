@@ -1,9 +1,10 @@
-using Dalamud.Plugin;
+﻿using Dalamud.Plugin;
 using Dalamud.Utility;
 using NoireLib.Configuration;
 using NoireLib.Core.Modules;
 using NoireLib.Database.Migrations;
 using NoireLib.Helpers.ObjectExtensions;
+using NoireLib.Remote;
 using NoireLib.IPC;
 using System;
 using System.Collections.Generic;
@@ -17,9 +18,6 @@ namespace NoireLib;
 /// </summary>
 public class NoireLibMain
 {
-    /// <summary>
-    /// The callbacks registered to run on disposal, with their key and priority.
-    /// </summary>
     private static readonly List<(string Key, Action Callback, int Priority)> OnDisposeCallbacks = new();
 
     /// <summary>
@@ -40,6 +38,9 @@ public class NoireLibMain
 
         if (initialized)
         {
+            // Installed here. A plugin that only opens a socket never starts NoireRemote.
+            Websocket.NoireWebsocketHost.Install(new Remote.NoireRemotePluginHost());
+
             DatabaseMigrationExecutor.RegisterMigrationsFromAssembly(plugin.GetType().Assembly);
             var preloadDatabases = Database.NoireDbModelBase.GetDatabasesToPreload(plugin.GetType().Assembly);
             foreach (var databaseName in preloadDatabases)
@@ -47,8 +48,13 @@ public class NoireLibMain
             NoireDatabase.InitializeRegisteredDatabases();
 
             NoireIPC.RegisterAttributedTypes(plugin.GetType().Assembly);
+            NoireRemote.PublishAttributedTypes(plugin.GetType().Assembly);
+            Websocket.NoireWebsocket.PublishAttributedTypes(plugin.GetType().Assembly);
 
             NoireConfigManager.PreloadMarked(plugin.GetType().Assembly);
+
+            // Background. The first route request does not pay for it.
+            Navigation.NoireNavigation.Prime();
 
             NoireLogger.LogInfo<NoireLibMain>($"NoireLib {typeof(NoireLibMain).Assembly.GetName().Version} has been successfully initialized for {dalamudPluginInterface.InternalName} {plugin.GetType().Assembly.GetName().Version}.");
         }
@@ -258,7 +264,7 @@ public class NoireLibMain
     /// <typeparam name="T">The type of the module to retrieve.</typeparam>
     /// <param name="moduleId">The id of the module to retrieve, or <see langword="null"/> to match on type alone.</param>
     /// <param name="index">
-    /// The zero-based index among the matching instances, clamped into range rather than rejected.
+    /// The zero-based index among the matching instances. Out-of-range values are clamped, never rejected.
     /// </param>
     /// <returns>The matching instance, or null when nothing matches.</returns>
     public static T? GetModule<T>(string? moduleId = null, int index = 0) where T : class, INoireModule
@@ -355,7 +361,7 @@ public class NoireLibMain
         if (!allModulesDisposed)
             NoireLogger.LogWarning("Some modules failed to dispose properly during NoireLib disposal. Please report this to the devs.");
 
-        // Each callback is isolated so one that throws cannot strand the callbacks after it or the teardown below.
+        // One throwing callback must not strand the rest or the teardown.
         var orderedCallbacks = OnDisposeCallbacks.OrderBy(c => c.Priority).ToArray();
         foreach (var (key, callback, _) in orderedCallbacks)
         {
@@ -369,7 +375,17 @@ public class NoireLibMain
             }
         }
 
-        // Ahead of the service teardown: dropping a link needs the chat service that registered it.
+        // The pool's timer is held outside this plugin's load context. The plugin never collects until it is dropped.
+        try
+        {
+            NoireRemoteClient.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            NoireLogger.LogError(ex, "Failed to drop the HTTP connection pool during NoireLib disposal.");
+        }
+
+        // Dropping a link needs the chat service that registered it.
         try
         {
             NoireLib.Helpers.ChatLinkHelper.Clear();
@@ -379,8 +395,7 @@ public class NoireLibMain
             NoireLogger.LogError(ex, "Failed to drop the registered chat links during NoireLib disposal.");
         }
 
-        // Last, so a setting changed by a module teardown or a disposal callback is written rather than left
-        // sitting in the [AutoSave] debounce window.
+        // Last. Writes out a setting changed during teardown.
         try
         {
             NoireConfigManager.FlushPendingSaves();

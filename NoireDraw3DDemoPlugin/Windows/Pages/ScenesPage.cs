@@ -1,19 +1,14 @@
 using Dalamud.Bindings.ImGui;
-using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility.Raii;
+using NoireDraw3DDemoPlugin.Models;
+using NoireDraw3DDemoPlugin.Services;
 using NoireLib;
-using NoireLib.Draw3D;
 using NoireLib.Draw3D.Enums;
 using NoireLib.Draw3D.Interaction;
-using NoireLib.Draw3D.Interaction.Gizmo;
-using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
-using System.Collections.Generic;
-using System.IO;
 using System.Numerics;
-using System.Threading.Tasks;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
@@ -23,58 +18,28 @@ namespace NoireDraw3DDemoPlugin.Windows.Pages;
 /// </summary>
 public sealed class ScenesPage : IDisposable
 {
-    private enum Primitive { Box, Sphere, Cylinder, Cone, Torus, Quad, Disc, Ring, Arrow }
-
     private const float ObjectListWidth = 250f;
 
-    private readonly List<DemoScene> scenes = new();
+    private readonly SceneSpawnService spawnService = new();
     private readonly NodeInspector inspector = new();
 
-    private DemoScene? open;        // the scene being worked on; never null once EnsureMainScene has run
-    private SceneNode? inspected;   // the object the inspector edits (follows the scene's primary selection)
-    private bool mainSceneAdded;
-    private int spawnCounter;
+    private DemoScene? open;        // never null once EnsureMainScene has run
+    private SceneNode? inspected;   // follows the scene's primary selection
     private int sceneIdx;
 
-    // Primitive spawn controls.
-    private Vector4 primColor = new(0.85f, 0.60f, 0.40f, 1f);
-    private bool primLit = true;
-
-    // Decal spawn controls.
-    private int decalShapeIdx;
-    private int decalSurfaceIdx;
-    private int decalProjIdx;
-    private bool decalAdditive;
-    private Vector4 decalColor = new(0.30f, 0.70f, 1f, 0.9f);
-    private bool decalCustomOutlineColor;
-    private Vector4 decalOutlineColor = new(1f, 0.95f, 0.55f, 1f);
-    private bool decalShowVolume;
-    private float decalSize = 4f;
-    private float decalOutline = 0.08f;
-
-    // Editor UI state.
     private Vector4 selectionOutlineColor = new(1f, 0.85f, 0.2f, 1f);
-
-    // World-geometry / glTF import controls.
-    private string modelPath = string.Empty;
-    private bool modelVertexColors;
-    private bool modelGenerateLods;
-    private float worldRadius = 20f;
-    private bool worldAnalytic = true;
-    private string spawnStatus = string.Empty;
 
     public void Draw()
     {
-        EnsureMainScene();
-        PruneDisposedScenes();
+        spawnService.EnsureMainScene();
+        spawnService.PruneDisposedScenes(ref open, ref inspected);
 
         if (open is null or { Scene.IsDisposed: true })
-            OpenScene(scenes[0]);
+            OpenScene(spawnService.Scenes[0]);
 
         var demo = open!;
 
-        // Bar and tab strip are drawn straight into the page, outside any scroll region, so they stay pinned; each tab
-        // then scrolls its own body.
+        // Drawn outside any scroll region to stay pinned.
         DrawSceneBar(demo);
 
         using var tabs = ImRaii.TabBar("##scenetabs");
@@ -84,7 +49,7 @@ public sealed class ScenesPage : IDisposable
         using (var tab = ImRaii.TabItem("Objects"))
         {
             if (tab)
-                DrawObjects(demo); // already a pair of side-by-side children, each scrolling itself
+                DrawObjects(demo);
         }
 
         using (var tab = ImRaii.TabItem("Spawn"))
@@ -118,21 +83,28 @@ public sealed class ScenesPage : IDisposable
         }
     }
 
-    // ---------------------------------------------------------------- scene bar
-
     private void DrawSceneBar(DemoScene demo)
     {
+        var scenes = spawnService.Scenes;
         var names = new string[scenes.Count];
         for (var i = 0; i < scenes.Count; i++)
             names[i] = $"{scenes[i].Label}  ({scenes[i].Scene.NodeCount} objects)";
 
-        sceneIdx = Math.Clamp(scenes.IndexOf(demo), 0, Math.Max(0, scenes.Count - 1));
+        var idx = -1;
+        for (var i = 0; i < scenes.Count; i++)
+        {
+            if (ReferenceEquals(scenes[i], demo))
+            {
+                idx = i;
+                break;
+            }
+        }
 
-        // A free-standing toolbar rather than a form row: a picker plus three buttons is wider than a form's control
-        // cell, and a table cell clips rather than wraps.
+        sceneIdx = Math.Clamp(idx, 0, Math.Max(0, scenes.Count - 1));
+
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted("Working on");
-        Ui.HelpMarker("Every tab below acts on this scene. Scenes render independently and hold their own selection, so two can overlap in the world without interfering.");
+        Ui.HelpMarker("Every tab below acts on this scene. Scenes render independently and hold their own selection. Two can overlap in the world without interfering.");
 
         ImGui.SameLine();
         ImGui.SetNextItemWidth(260f * Ui.Scale);
@@ -141,7 +113,7 @@ public sealed class ScenesPage : IDisposable
 
         ImGui.SameLine();
         if (Ui.Button("New scene"))
-            OpenScene(NewScene());
+            OpenScene(spawnService.NewScene());
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Creates an extra retained scene through NoireDraw3D.CreateScene, rendered after the main one. It is a self-contained unit: its own objects, selection, editor and gizmo.");
 
@@ -156,7 +128,7 @@ public sealed class ScenesPage : IDisposable
         }
 
         if (!demo.Owned && ImGui.IsItemHovered())
-            Ui.Tooltip("MainScene is permanent and cannot be disposed - it belongs to the library, not the demo. Use \"Clear objects\" instead, or make a new scene.");
+            Ui.Tooltip("MainScene is permanent and cannot be disposed. It belongs to the library. Use \"Clear objects\", or make a new scene.");
 
         ImGui.SameLine();
         if (Ui.Button("Clear objects"))
@@ -178,13 +150,11 @@ public sealed class ScenesPage : IDisposable
         Ui.Gap();
     }
 
-    // ---------------------------------------------------------------- objects
-
     private void DrawObjects(DemoScene demo)
     {
         demo.PruneDestroyed();
 
-        // Follow the scene's in-world selection unless the list has an explicit, still-valid pick.
+        // Follows the in-world selection unless the list holds a valid pick.
         if (inspected is null or { IsDestroyed: true } || !ReferenceEquals(inspected.Scene, demo.Scene))
             inspected = demo.Selection.Primary;
 
@@ -196,8 +166,7 @@ public sealed class ScenesPage : IDisposable
 
         ImGui.SameLine();
 
-        // The pane itself never scrolls: it holds the inspector's own pinned header and tab strip, and the tab bodies
-        // inside scroll on their own.
+        // The pane never scrolls. The tab bodies scroll on their own.
         using var detail = ImRaii.Child("##inspector", Vector2.Zero, true,
             ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse);
         if (!detail)
@@ -231,8 +200,7 @@ public sealed class ScenesPage : IDisposable
             var node = demo.Nodes[i];
             var selected = demo.Selection.Contains(node);
 
-            // The list shows what the world shows: hovering an entry is not selection, so the tint marks what the scene
-            // selection actually holds, and the inspector target is what the entry highlight tracks.
+            // The tint marks the scene selection. The highlight tracks the inspector target.
             using var color = ImRaii.PushColor(ImGuiCol.Text, ImGuiColors.ParsedGold, selected);
             if (ImGui.Selectable($"{node.Name ?? "(unnamed)"}##node{i}", ReferenceEquals(inspected, node)))
             {
@@ -242,63 +210,59 @@ public sealed class ScenesPage : IDisposable
         }
     }
 
-    // ---------------------------------------------------------------- spawn
-
     private void DrawSpawn(DemoScene demo)
     {
         Ui.Section("Primitives");
         using (Ui.Form("scenes.prim"))
         {
-            Ui.Color4("Color", () => primColor, v => primColor = v);
-            Ui.Toggle("Lit", () => primLit, v => primLit = v,
-                "On: Material.Lit, shaded against the Lighting page. Off: Material.Unlit + additive, which reads as a glow.");
+            Ui.Color4("Color", () => spawnService.PrimColor, v => spawnService.PrimColor = v);
+            Ui.Toggle("Lit", () => spawnService.PrimLit, v => spawnService.PrimLit = v,
+                "On uses Material.Lit, shaded against the Lighting page. Off uses Material.Unlit plus additive, which reads as a glow.");
         }
 
         Ui.Gap();
-        if (Ui.Button("Box")) SpawnPrimitive(demo, Primitive.Box);
-        ImGui.SameLine(); if (Ui.Button("Sphere")) SpawnPrimitive(demo, Primitive.Sphere);
-        ImGui.SameLine(); if (Ui.Button("Cylinder")) SpawnPrimitive(demo, Primitive.Cylinder);
-        ImGui.SameLine(); if (Ui.Button("Cone")) SpawnPrimitive(demo, Primitive.Cone);
-        ImGui.SameLine(); if (Ui.Button("Torus")) SpawnPrimitive(demo, Primitive.Torus);
-        ImGui.SameLine(); if (Ui.Button("Quad")) SpawnPrimitive(demo, Primitive.Quad);
-        ImGui.SameLine(); if (Ui.Button("Disc")) SpawnPrimitive(demo, Primitive.Disc);
-        ImGui.SameLine(); if (Ui.Button("Ring")) SpawnPrimitive(demo, Primitive.Ring);
-        ImGui.SameLine(); if (Ui.Button("Arrow")) SpawnPrimitive(demo, Primitive.Arrow);
+        if (Ui.Button("Box")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Box);
+        ImGui.SameLine(); if (Ui.Button("Sphere")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Sphere);
+        ImGui.SameLine(); if (Ui.Button("Cylinder")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Cylinder);
+        ImGui.SameLine(); if (Ui.Button("Cone")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Cone);
+        ImGui.SameLine(); if (Ui.Button("Torus")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Torus);
+        ImGui.SameLine(); if (Ui.Button("Quad")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Quad);
+        ImGui.SameLine(); if (Ui.Button("Disc")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Disc);
+        ImGui.SameLine(); if (Ui.Button("Ring")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Ring);
+        ImGui.SameLine(); if (Ui.Button("Arrow")) inspected = spawnService.SpawnPrimitive(demo, SceneSpawnService.Primitive.Arrow);
 
         Ui.Section("Decal");
         Ui.Note("A box whose volume the shape is painted inside, projected onto whatever the depth buffer says is there.");
         Ui.Gap();
         using (Ui.Form("scenes.decal"))
         {
-            Ui.Enum<DecalShape>("Shape", ref decalShapeIdx,
+            Ui.Enum<DecalShape>("Shape", ref spawnService.DecalShapeIdx,
                 "The footprint painted: Circle, Ring (inner radius from ShapeParams.X), Sector (a pie slice), Rect, or Texture (stamps the material's texture).");
-            Ui.Enum<DecalSurface>("Surface", ref decalSurfaceIdx,
+            Ui.Enum<DecalSurface>("Surface", ref spawnService.DecalSurfaceIdx,
                 "Ground projects down, Wall projects into the wall it faces, Both rotates freely.");
-            Ui.Enum<DecalProjection>("Projection", ref decalProjIdx,
+            Ui.Enum<DecalProjection>("Projection", ref spawnService.DecalProjIdx,
                 "AllSurfaces paints everything in the box. HighestOnly paints only the topmost surface per column (needs the height-map, Decals page).");
-            Ui.Color4("Color", () => decalColor, v => decalColor = v);
-            Ui.Toggle("Additive", () => decalAdditive, v => decalAdditive = v,
+            Ui.Color4("Color", () => spawnService.DecalColor, v => spawnService.DecalColor = v);
+            Ui.Toggle("Additive", () => spawnService.DecalAdditive, v => spawnService.DecalAdditive = v,
                 "Additive blend: stacked decals sum toward white. Off is the standard translucent blend.");
-            Ui.Slider("Footprint size (m)", () => decalSize, v => decalSize = v, 1f, 12f,
+            Ui.Slider("Footprint size (m)", () => spawnService.DecalSize, v => spawnService.DecalSize = v, 1f, 12f,
                 "Scales the projection box: footprint and vertical sweep.");
-            Ui.Slider("Outline width", () => decalOutline, v => decalOutline = v, 0f, 0.3f,
+            Ui.Slider("Outline width", () => spawnService.DecalOutline, v => spawnService.DecalOutline = v, 0f, 0.3f,
                 "Rim thickness, held constant in world space regardless of the footprint size above. 0 is a flat fill.");
-            Ui.Toggle("Custom border color", () => decalCustomOutlineColor, v => decalCustomOutlineColor = v,
-                "On, the border gets its own color instead of the decal's.");
-            using (Ui.Disabled(!decalCustomOutlineColor))
-                Ui.Color4("Border color", () => decalOutlineColor, v => decalOutlineColor = v);
-            Ui.Toggle("Show volume box", () => decalShowVolume, v => decalShowVolume = v,
+            Ui.Toggle("Custom border color", () => spawnService.DecalCustomOutlineColor, v => spawnService.DecalCustomOutlineColor = v,
+                "On, the border color is set independently below.");
+            using (Ui.Disabled(!spawnService.DecalCustomOutlineColor))
+                Ui.Color4("Border color", () => spawnService.DecalOutlineColor, v => spawnService.DecalOutlineColor = v);
+            Ui.Toggle("Show volume box", () => spawnService.DecalShowVolume, v => spawnService.DecalShowVolume = v,
                 "Spawns it with its projection box drawn.");
         }
 
         Ui.Gap();
         if (Ui.Button("Spawn decal at my feet", new Vector2(220f * Ui.Scale, 0f)))
-            SpawnDecal(demo);
+            inspected = spawnService.SpawnDecal(demo);
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("Spawns it where you stand, already excluding characters and NPCs so they are not painted over.");
+            Ui.Tooltip("Spawns it where you stand, already excluding characters and NPCs from being painted over.");
     }
-
-    // ---------------------------------------------------------------- editor & gizmo
 
     private void DrawEditor(SceneEditor editor)
     {
@@ -310,7 +274,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Toggle("Editor enabled", () => editor.Enabled, v => editor.Enabled = v,
                 "Off, the gizmo neither draws nor interacts. The selection still tracks.");
             Ui.Toggle("Multi-select", () => editor.MultiSelect, v => editor.MultiSelect = v,
-                "Lets picks build a multi-object selection; the gizmo then edits the group around its centroid.");
+                "Lets picks build a multi-object selection. The gizmo then edits the group around its centroid.");
 
             Ui.Row("Selection outline");
             var outlineOn = editor.SelectionOutline.HasValue;
@@ -342,7 +306,7 @@ public sealed class ScenesPage : IDisposable
             Ui.Enum("Depth", () => gizmo.Depth, v => gizmo.Depth = v,
                 "OnTopOfObjects: hidden by walls, drawn over objects. AlwaysOnTop: x-ray. Occluded: fully depth-tested.");
             Ui.Toggle("Drag feedback", () => gizmo.Options.ShowDragFeedback, v => gizmo.Options.ShowDragFeedback = v,
-                "Draws the drag preview: an anchor at the pre-drag centre, a guide line, and the live amount moved / rotated / scaled.");
+                "Draws the drag preview, an anchor at the pre-drag centre, a guide line, and the live amount moved / rotated / scaled.");
             Ui.Drag("Handle length (px)", () => gizmo.Options.HandlePixelLength, v => gizmo.Options.HandlePixelLength = v, 1f, 20f, 400f,
                 "Held constant regardless of camera distance.");
             Ui.Drag("Handle thickness (px)", () => gizmo.Options.HandlePixelThickness, v => gizmo.Options.HandlePixelThickness = v, 0.1f, 1f, 20f);
@@ -372,198 +336,50 @@ public sealed class ScenesPage : IDisposable
         }
     }
 
-    // ---------------------------------------------------------------- world & models
-
-    // The world-collision and imported-model spawns: SpawnWorldGeometry / SpawnWorldDecal (framework-thread only) and
-    // the glTF importer.
     private void DrawWorldAndModels(DemoScene demo)
     {
         Ui.Section("Model");
         using (Ui.Form("scenes.model"))
         {
-            Ui.Text("Model file", () => modelPath, v => modelPath = v, @"Absolute path to a .gltf / .glb", 512,
-                "An absolute path. Surrounding quotes are stripped, so Explorer's \"Copy as path\" pastes straight in.");
-            Ui.Toggle("Import vertex colors", () => modelVertexColors, v => modelVertexColors = v,
-                "Off by default: FFXIV-derived exports store shader masks in this channel rather than color.");
-            Ui.Toggle("Generate LODs", () => modelGenerateLods, v => modelGenerateLods = v,
+            Ui.Text("Model file", () => spawnService.ModelPath, v => spawnService.ModelPath = v, @"Absolute path to a .gltf / .glb", 512,
+                "An absolute path. Surrounding quotes are stripped for Explorer's \"Copy as path\" to paste straight in.");
+            Ui.Toggle("Import vertex colors", () => spawnService.ModelVertexColors, v => spawnService.ModelVertexColors = v,
+                "Off by default. FFXIV-derived exports use this channel for shader masks.");
+            Ui.Toggle("Generate LODs", () => spawnService.ModelGenerateLods, v => spawnService.ModelGenerateLods = v,
                 "Builds coarser levels for large primitives at import, drawn as they shrink on screen. The lever for many copies of a heavy model.");
         }
 
         Ui.Gap();
         if (Ui.Button("Load model", new Vector2(220f * Ui.Scale, 0f)))
-            LoadModel(demo);
+            spawnService.LoadModel(demo);
 
         Ui.Gap();
 
         Ui.Section("World collision");
-        Ui.Note("Reads the live collision scene, so both run on the framework thread and fail soft with nothing under you.");
+        Ui.Note("Reads the live collision scene. Both run on the framework thread and fail soft with nothing under you.");
         Ui.Gap();
         using (Ui.Form("scenes.world"))
         {
-            Ui.Slider("Query radius (m)", () => worldRadius, v => worldRadius = v, 5f, 60f,
+            Ui.Slider("Query radius (m)", () => spawnService.WorldRadius, v => spawnService.WorldRadius = v, 5f, 60f,
                 "Half-size of the cubic query around you.");
-            Ui.Toggle("Include analytic colliders", () => worldAnalytic, v => worldAnalytic = v,
-                "Also collect box / cylinder / sphere / plane colliders - invisible walls and trigger volumes - not just mesh models.");
+            Ui.Toggle("Include analytic colliders", () => spawnService.WorldAnalytic, v => spawnService.WorldAnalytic = v,
+                "Also collects box / cylinder / sphere / plane colliders, such as invisible walls and trigger volumes, in addition to mesh models.");
         }
 
         Ui.Gap();
         if (Ui.Button("Spawn world geometry", new Vector2(220f * Ui.Scale, 0f)))
-            NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldGeometry(demo));
+            NoireService.Framework.RunOnFrameworkThread(() => spawnService.SpawnWorldGeometry(demo));
         if (ImGui.IsItemHovered())
-            Ui.Tooltip("Turns the real collision around you into a translucent scene mesh - the same surface ground decals project onto. A debugging and preview aid.");
+            Ui.Tooltip("Turns the real collision around you into a translucent scene mesh, the same surface ground decals project onto. A debugging and preview aid.");
 
         ImGui.SameLine();
         if (Ui.Button("Spawn world decal", new Vector2(220f * Ui.Scale, 0f)))
-            NoireService.Framework.RunOnFrameworkThread(() => SpawnWorldDecal(demo));
+            NoireService.Framework.RunOnFrameworkThread(() => spawnService.SpawnWorldDecal(demo));
         if (ImGui.IsItemHovered())
             Ui.Tooltip("Projects a footprint onto the collision surface, draping over slopes and furniture.");
 
         Ui.Gap();
-        Ui.Status(spawnStatus);
-    }
-
-    // ---------------------------------------------------------------- spawning
-
-    private void SpawnPrimitive(DemoScene demo, Primitive kind)
-    {
-        var scene = demo.Scene;
-        var pos = NextSpawnPos();
-        var mat = primLit ? Material.Lit(primColor) : Material.Unlit(primColor) with { Blend = BlendMode.Additive };
-        var node = kind switch
-        {
-            Primitive.Box => scene.AddBox(new Vector3(1.2f, 1.2f, 1.2f), mat, pos, "Box", keepCpuData: true),
-            Primitive.Sphere => scene.AddSphere(0.7f, mat, pos, "Sphere", keepCpuData: true),
-            Primitive.Cylinder => scene.AddCylinder(0.6f, 1.4f, mat, pos, "Cylinder", keepCpuData: true),
-            Primitive.Cone => scene.AddCone(0.7f, 1.4f, mat, pos, "Cone", keepCpuData: true),
-            Primitive.Torus => scene.AddTorus(0.7f, 0.25f, mat, pos, "Torus", keepCpuData: true),
-            Primitive.Quad => scene.AddQuad(1.4f, 1.4f, mat with { Cull = CullMode.None }, pos, "Quad", keepCpuData: true),
-            Primitive.Disc => scene.AddDisc(0.8f, mat with { Cull = CullMode.None }, pos, "Disc", keepCpuData: true),
-            Primitive.Ring => scene.AddRing(0.4f, 0.8f, mat with { Cull = CullMode.None }, pos, "Ring", keepCpuData: true),
-            _ => scene.AddArrow(1.4f, mat, pos, "Arrow", keepCpuData: true),
-        };
-
-        demo.Track(node.MakeSelectable());
-        demo.Selection.SetSingle(node); // select it so the gizmo attaches and the inspector opens on it
-        inspected = node;
-    }
-
-    private void SpawnDecal(DemoScene demo)
-    {
-        var pos = PlayerPos();
-        var shape = Enum.GetValues<DecalShape>()[decalShapeIdx];
-        var surface = Enum.GetValues<DecalSurface>()[decalSurfaceIdx];
-        var projection = Enum.GetValues<DecalProjection>()[decalProjIdx];
-
-        var mat = Material.Decal(shape, decalColor, outlineWidth: decalOutline, surface: surface, projection: projection, additive: decalAdditive,
-                                 outlineColor: decalCustomOutlineColor ? decalOutlineColor : null);
-        var node = demo.Scene.AddBox(mat, pos, "Decal", keepCpuData: true)
-             .Scale(new Vector3(decalSize, decalSize, decalSize))
-             .MakeSelectable()
-             .ExcludeObjects(static o => o.ObjectKind is ObjectKind.Pc or ObjectKind.BattleNpc or ObjectKind.EventNpc);
-
-        if (decalShowVolume)
-            node.ShowDecalVolume();
-
-        demo.Track(node);
-        demo.Selection.SetSingle(node); // select it so the gizmo attaches and the inspector opens on it
-        inspected = node;
-    }
-
-    // Imports a glTF/glb off-thread; the scene owns the result, and the model root joins the object list.
-    private void LoadModel(DemoScene demo)
-    {
-        var path = modelPath.Trim().Trim('"');
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-        {
-            spawnStatus = $"Model file not found: '{path}'. Pass an absolute path to a .gltf / .glb.";
-            return;
-        }
-
-        var scene = demo.Scene;
-        var at = PlayerPos() + new Vector3(0f, 1f, 4f);
-        spawnStatus = $"Loading '{Path.GetFileName(path)}' - it appears in front of you when ready (errors go to /xllog).";
-        scene.LoadModelAsync(path, at, Path.GetFileNameWithoutExtension(path), keepCpuData: true, importVertexColors: modelVertexColors, generateLods: modelGenerateLods)
-            .ContinueWith(task =>
-            {
-                if (task.IsFaulted)
-                {
-                    NoireLogger.LogError(task.Exception!, $"Draw3D demo: glTF import failed for '{path}'.", "Draw3D Demo");
-                    spawnStatus = $"Import failed for '{Path.GetFileName(path)}' - see /xllog.";
-                    return;
-                }
-
-                // The load can finish after the scene was disposed / closed; re-check before touching it.
-                if (scene.IsDisposed || !ReferenceEquals(demo.Scene, scene))
-                    return;
-
-                demo.Track(task.Result.Root.MakeSelectable());
-                spawnStatus = $"Imported '{Path.GetFileName(path)}'.";
-            }, TaskScheduler.Default);
-    }
-
-    // Spawns the game's real collision around the player as a translucent mesh. Framework thread only.
-    private void SpawnWorldGeometry(DemoScene demo)
-    {
-        if (demo.Scene.IsDisposed)
-            return;
-
-        var mat = Material.Lit(new Vector4(0.35f, 0.75f, 1f, 0.4f)) with { Cull = CullMode.None, Blend = BlendMode.Premultiplied };
-        var node = demo.Scene.SpawnWorldGeometry(PlayerPos(), worldRadius, mat, worldAnalytic, "WorldGeometry", keepCpuData: true);
-        if (node == null)
-        {
-            spawnStatus = "No collision found near you (open area / airborne, or the read faulted - see /xllog).";
-            return;
-        }
-
-        demo.Track(node.MakeSelectable());
-        spawnStatus = "Spawned the real collision around you, translucent blue.";
-    }
-
-    // Projects a decal footprint onto the real collision surface under the player. Framework thread only.
-    private void SpawnWorldDecal(DemoScene demo)
-    {
-        if (demo.Scene.IsDisposed)
-            return;
-
-        var mat = Material.Unlit(decalColor) with { Cull = CullMode.None };
-        var node = demo.Scene.SpawnWorldDecal(PlayerPos(), Vector3.UnitY, decalSize, decalSize, mat, depth: 3f, name: "WorldDecal");
-        if (node == null)
-        {
-            spawnStatus = "Nothing under the footprint to project onto.";
-            return;
-        }
-
-        demo.Track(node.MakeSelectable());
-        spawnStatus = "Projected a decal onto the real world surface (it drapes over slopes and furniture).";
-    }
-
-    private static Vector3 PlayerPos() => NoireService.ObjectTable.LocalPlayer?.Position ?? Vector3.Zero;
-
-    private Vector3 NextSpawnPos()
-    {
-        var p = PlayerPos();
-        var i = spawnCounter++;
-        return p + new Vector3((i % 5) * 2f - 4f, 1f, 4f + i / 5 * 2f);
-    }
-
-    // ---------------------------------------------------------------- scene bookkeeping
-
-    private void EnsureMainScene()
-    {
-        if (mainSceneAdded)
-            return;
-
-        mainSceneAdded = true;
-        scenes.Insert(0, new DemoScene(NoireDraw3D.MainScene, owned: false, "MainScene"));
-    }
-
-    private DemoScene NewScene()
-    {
-        var scene = NoireDraw3D.CreateScene($"demo{scenes.Count}");
-        var demo = new DemoScene(scene, owned: true, $"demo{scenes.Count}");
-        demo.EnsureEditor(GizmoOp.Universal);
-        scenes.Add(demo);
-        return demo;
+        Ui.Status(spawnService.Status);
     }
 
     private void OpenScene(DemoScene demo)
@@ -573,29 +389,9 @@ public sealed class ScenesPage : IDisposable
         demo.EnsureEditor();
     }
 
-    private void PruneDisposedScenes()
-    {
-        for (var i = scenes.Count - 1; i >= 0; i--)
-        {
-            if (!scenes[i].Owned || !scenes[i].Scene.IsDisposed)
-                continue;
-
-            if (ReferenceEquals(open, scenes[i]))
-            {
-                open = null;
-                inspected = null;
-            }
-
-            scenes.RemoveAt(i);
-        }
-    }
-
     public void Dispose()
     {
-        foreach (var demo in scenes)
-            demo.TearDown();
-
-        scenes.Clear();
+        spawnService.Dispose();
         open = null;
         inspected = null;
     }

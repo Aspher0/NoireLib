@@ -6,11 +6,8 @@ using TerraFX.Interop.Windows;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// A texture usable by Draw3D materials - a shader resource view plus optional owned resources.<br/>
-/// <b>Ownership:</b> the creator disposes it; materials and renderers only reference it, and assigning one
-/// texture to many materials is free.<br/>
-/// Disposal is safe at any time from any thread: the wrapper is marked dead immediately (draws skip it)
-/// and the GPU objects are released on the render thread at the start of the next frame.
+/// A texture usable by Draw3D materials.<br/>
+/// The creator disposes it. Disposal is safe from any thread. The GPU objects are released on the render thread next frame.
 /// </summary>
 public sealed unsafe class GpuTexture : IDisposable
 {
@@ -26,7 +23,7 @@ public sealed unsafe class GpuTexture : IDisposable
     /// <summary>Texture height in pixels (0 when unknown).</summary>
     public int Height { get; }
 
-    /// <summary>True once disposed; draws referencing a disposed texture are skipped and counted, never a crash.</summary>
+    /// <summary>Whether the texture is disposed. Draws referencing it are skipped and counted.</summary>
     public bool IsDisposed => disposed;
 
     internal ID3D11ShaderResourceView* Srv => disposed ? null : srv.Get();
@@ -41,7 +38,7 @@ public sealed unsafe class GpuTexture : IDisposable
         Height = height;
     }
 
-    // Wraps an existing SRV; when  is true the SRV is borrowed (one AddRef now, one Release on dispose).
+    // With addRef the SRV is borrowed.
     internal static GpuTexture FromSrv(ID3D11ShaderResourceView* srvPtr, int width, int height, bool addRef, IDisposable? ownedWrap = null)
     {
         var tex = new GpuTexture(width, height) { ownedWrap = ownedWrap };
@@ -51,7 +48,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    // Creates an owned RGBA8 texture from raw pixels; safe from any thread.
+    // Any thread.
     internal static GpuTexture CreateFromPixels(RenderDevice device, ReadOnlySpan<byte> rgbaPixels, int width, int height)
     {
         if (rgbaPixels.Length < width * height * 4)
@@ -91,7 +88,6 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    // Wraps a shared-handle resource (external producer); internal, see ExternalTexture.
     internal static GpuTexture FromSharedResource(ID3D11Resource* sharedResource, ID3D11ShaderResourceView* srvPtr, int width, int height)
     {
         var tex = new GpuTexture(width, height);
@@ -105,7 +101,7 @@ public sealed unsafe class GpuTexture : IDisposable
         return tex;
     }
 
-    // Acquires the producer's keyed mutex (key 0, non-blocking); no-op without a mutex.
+    // Key 0, non-blocking.
     internal void AcquireSync()
     {
         var m = keyedMutex.Get();
@@ -113,7 +109,6 @@ public sealed unsafe class GpuTexture : IDisposable
             m->AcquireSync(0, 0);
     }
 
-    // Releases the producer's keyed mutex (key 0); no-op without a mutex.
     internal void ReleaseSync()
     {
         var m = keyedMutex.Get();
@@ -129,7 +124,7 @@ public sealed unsafe class GpuTexture : IDisposable
 
         disposed = true;
 
-        // Defer the COM releases to the render thread so an in-progress frame can never bind a freed view.
+        // An in-progress frame can never bind a freed view.
         var srvCopy = srv;
         var resCopy = resource;
         var mutexCopy = keyedMutex;

@@ -7,6 +7,7 @@ namespace NoireLib.Helpers;
 /// <param name="DataCenterId">The WorldDCGroupType row id.</param>
 /// <param name="DataCenterName">The data centre's name.</param>
 /// <param name="RegionId">The physical region hosting it.</param>
+/// <param name="DataCenterRegionId">The physical region of the world's data centre. Travel is bounded by it.</param>
 /// <param name="IsPublic">Whether players can be on it. Most sheet rows are not.</param>
 public sealed record WorldInfo(
     ushort RowId,
@@ -15,4 +16,5 @@ public sealed record WorldInfo(
     uint DataCenterId,
     string DataCenterName,
     byte RegionId,
-    bool IsPublic);
+    bool IsPublic,
+    byte DataCenterRegionId = 0);

@@ -6,11 +6,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the theme's resolution rules: an unset color falls through rather than forcing a default, a generated palette
-/// stays legible, derivation follows the surface rather than a fixed direction, and a theme survives a share-code round
-/// trip.
-/// </summary>
+/// <summary>Locks the theme's resolution rules.</summary>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireThemeTests
 {
@@ -40,7 +36,7 @@ public class NoireThemeTests
 
         theme.Accent = null;
 
-        theme.Colors.Should().NotContainKey(ThemeColor.Accent, "because a null assignment means 'fall through', not 'transparent'");
+        theme.Colors.Should().NotContainKey(ThemeColor.Accent, "because a null assignment means 'fall through'");
     }
 
     [Fact]
@@ -56,6 +52,43 @@ public class NoireThemeTests
 
         var contrast = ColorHelper.Luminance(text) - ColorHelper.Luminance(surface);
         contrast.Should().BeGreaterThan(0.4f, "because generated text has to stay readable on its own generated surface");
+    }
+
+    [Fact]
+    public void FromAccent_ControlStandsOffTheSurface()
+    {
+        var dark = NoireTheme.FromAccent(Gold);
+        var light = NoireTheme.FromAccent(Gold, dark: false);
+
+        var darkLift = ColorHelper.Luminance(dark.Resolve(ThemeColor.Control)) - ColorHelper.Luminance(dark.Resolve(ThemeColor.Surface));
+        var lightDrop = ColorHelper.Luminance(light.Resolve(ThemeColor.Surface)) - ColorHelper.Luminance(light.Resolve(ThemeColor.Control));
+
+        darkLift.Should().BeGreaterThan(0.08f, "because a neutral button at rest has to read apart from the window behind it");
+        lightDrop.Should().BeGreaterThan(0.08f, "because a neutral button at rest has to read apart from the window behind it");
+        dark.Resolve(ThemeColor.Control).W.Should().Be(1f);
+    }
+
+    [Fact]
+    public void DefaultControl_IsAVisibleGreyUnderLightText()
+    {
+        var theme = new NoireTheme();
+        var control = theme.Resolve(ThemeColor.Control);
+        var surface = theme.Resolve(ThemeColor.Surface);
+
+        control.W.Should().BeApproximately(0.90f, 0.001f, "because an unset control fill is a grey at 90% opacity");
+        (ColorHelper.Luminance(control) - ColorHelper.Luminance(surface)).Should().BeGreaterThan(0.2f, "because a neutral button has to stand apart from the window behind it");
+        ColorHelper.Luminance(theme.On(control)).Should().BeGreaterThan(0.5f, "because the label on a neutral button has to be light");
+    }
+
+    [Fact]
+    public void On_JudgesATranslucentFillOverTheSurface()
+    {
+        var theme = NoireTheme.FromAccent(Gold);
+        var faintLightFill = new Vector4(0.9f, 0.9f, 0.9f, 0.15f);
+        var opaqueLightFill = new Vector4(0.9f, 0.9f, 0.9f, 1f);
+
+        ColorHelper.Luminance(theme.On(faintLightFill)).Should().BeGreaterThan(0.5f, "because a faint light fill over a dark surface still reads dark");
+        ColorHelper.Luminance(theme.On(opaqueLightFill)).Should().BeLessThan(0.5f);
     }
 
     [Fact]
@@ -95,7 +128,7 @@ public class NoireThemeTests
             .BeGreaterThan(ColorHelper.Luminance(darkButton), "because a dark button has nowhere to go but brighter");
 
         ColorHelper.Luminance(theme.Hover(paleAccent)).Should()
-            .BeLessThan(ColorHelper.Luminance(paleAccent), "because brightening an already pale colour washes it out instead of reading as a hover");
+            .BeLessThan(ColorHelper.Luminance(paleAccent), "because brightening an already pale colour washes it out");
     }
 
     [Theory]
@@ -142,7 +175,7 @@ public class NoireThemeTests
         var hover = ColorHelper.Luminance(theme.Hover(baseColor));
         var active = ColorHelper.Luminance(theme.Active(baseColor));
 
-        active.Should().BeGreaterThan(hover, "because pressing should read as a further step, not a different state");
+        active.Should().BeGreaterThan(hover, "because pressing reads as a further step");
     }
 
     [Fact]
@@ -194,7 +227,7 @@ public class NoireThemeTests
 
         decoded.Success.Should().BeTrue(decoded.Message);
         decoded.Value.Should().NotBeNull();
-        decoded.Value!.Rounding.Should().Be(0f, "because zero rounding is a real choice, not an absent one");
+        decoded.Value!.Rounding.Should().Be(0f, "because zero rounding is a real choice");
         decoded.Value.HoverShift.Should().BeApproximately(0.3f, 0.0001f);
         var accent = decoded.Value.Resolve(ThemeColor.Accent);
         accent.X.Should().BeApproximately(Gold.X, 0.01f, "because the palette travels as HEX, which rounds to 8 bits per channel");
@@ -234,7 +267,7 @@ public class NoireThemeTests
         var theme = snapshot.ToTheme();
 
         theme.Colors.Should().ContainKey(ThemeColor.Accent);
-        theme.Colors.Should().NotContainKey(ThemeColor.Danger, "because a value that does not parse is skipped rather than failing the whole theme");
+        theme.Colors.Should().NotContainKey(ThemeColor.Danger, "because a value that does not parse is skipped");
         theme.Colors.Should().HaveCount(1);
     }
 }

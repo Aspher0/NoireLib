@@ -8,32 +8,27 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// A compiled VS+PS pair with its input layout. Failed pipelines render nothing.
+// Failed pipelines render nothing.
 internal sealed unsafe class ShaderPipeline : IDisposable
 {
     internal ComPtr<ID3D11VertexShader> VsPtr;
     internal ComPtr<ID3D11PixelShader> PsPtr;
     internal ComPtr<ID3D11InputLayout> LayoutPtr;
 
-    /// <summary>Small id used in sort keys (grouping only).</summary>
     public byte Id { get; init; }
 
-    /// <summary>Pipeline name (diagnostics).</summary>
     public string Name { get; init; } = string.Empty;
 
-    /// <summary>True when this pipeline consumes the per-instance stream (input slot 1).</summary>
+    // Consumes the per-instance stream in input slot 1.
     public bool Instanced { get; init; }
 
-    /// <summary>The vertex shader (null when failed).</summary>
     public ID3D11VertexShader* Vs => VsPtr.Get();
 
-    /// <summary>The pixel shader (null when failed).</summary>
     public ID3D11PixelShader* Ps => PsPtr.Get();
 
-    /// <summary>The input layout (null for the composite pipeline).</summary>
+    // Null for fullscreen pipelines.
     public ID3D11InputLayout* Layout => LayoutPtr.Get();
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         LayoutPtr.Dispose();
@@ -42,8 +37,7 @@ internal sealed unsafe class ShaderPipeline : IDisposable
     }
 }
 
-// Named pipeline cache over the embedded HLSL sources. Variants are #define permutations; a compile error disables
-// only the owning pipeline (logged once) and never throws into the frame.
+// A compile error disables only the owning pipeline, logged once.
 internal sealed unsafe class ShaderLibrary : IDisposable
 {
     private readonly Dictionary<string, ShaderPipeline?> cache = new();
@@ -51,7 +45,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
     private readonly Dictionary<string, string> embedded = new(StringComparer.OrdinalIgnoreCase);
     private byte nextId = 1;
 
-    /// <summary>Loads and include-resolves the embedded shader sources.</summary>
     public ShaderLibrary()
     {
         const string Folder = ".Draw3D.Shaders.";
@@ -68,7 +61,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         }
     }
 
-    /// <summary>Gets the standard pipeline for a material configuration, or null when its compile failed.</summary>
+    // Every Get* returns null when the pipeline failed to compile.
     public ShaderPipeline? GetStandard(RenderDevice device, MaterialDomain domain, bool textured, bool instanced, bool opaqueDomain)
     {
         var key = $"{domain}|{(textured ? "T" : "-")}|{(instanced ? "I" : "-")}|{(opaqueDomain ? "O" : "-")}";
@@ -95,7 +88,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Gets the composite pipeline (fullscreen triangle, no input layout), or null when its compile failed.</summary>
     public ShaderPipeline? GetComposite(RenderDevice device)
     {
         const string key = "Composite";
@@ -107,13 +99,17 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>
-    /// Gets the pipeline that writes a mesh into the GAME's G-buffer, so the game's own lighting pass lights
-    /// it. Null on compile failure, which leaves the object on its normal path rather than failing the frame.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="textured">Whether the mesh samples a base texture into its albedo.</param>
-    /// <param name="maps">Whether the material's normal and specular maps are bound, giving per-pixel detail.</param>
+    public ShaderPipeline? GetTemporalResolve(RenderDevice device)
+    {
+        const string key = "TemporalResolve";
+        if (cache.TryGetValue(key, out var cached))
+            return cached;
+
+        var pipeline = Compile(device, key, GetSource("TemporalResolve.hlsl"), null, instanced: false, createLayout: false);
+        cache[key] = pipeline;
+        return pipeline;
+    }
+
     public ShaderPipeline? GetGameGBuffer(RenderDevice device, bool textured, bool maps)
     {
         var key = $"GameGBuffer{(textured ? "_T" : string.Empty)}{(maps ? "_M" : string.Empty)}";
@@ -132,10 +128,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>
-    /// Gets the depth-only pipeline that draws a mesh into the GAME's shadow maps, so injected geometry
-    /// casts shadows. Null on compile failure, which leaves objects casting nothing rather than failing.
-    /// </summary>
     public ShaderPipeline? GetShadowDepth(RenderDevice device)
     {
         const string key = "ShadowDepth";
@@ -147,7 +139,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Gets the outline coverage-mask pipeline for a solid mesh silhouette (non-instanced, standard vertex layout), or null on compile failure.</summary>
     public ShaderPipeline? GetOutlineMaskMesh(RenderDevice device)
     {
         const string key = "OutlineMaskMesh";
@@ -159,7 +150,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Gets the outline composite pipeline (fullscreen triangle dilating the coverage mask into a rim), or null on compile failure.</summary>
     public ShaderPipeline? GetOutline(RenderDevice device)
     {
         const string key = "Outline";
@@ -171,7 +161,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Gets the top-down collision height-map pipeline (standard vertex layout; MAX-blended world Y), or null on compile failure.</summary>
+    // World Y, MAX-blended.
     public ShaderPipeline? GetWorldHeight(RenderDevice device)
     {
         const string key = "WorldHeight";
@@ -183,18 +173,17 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         return pipeline;
     }
 
-    /// <summary>Registers a custom pipeline by name, the seam through which callers supply their own HLSL. The source may include "Common.hlsli".</summary>
+    // The source may include "Common.hlsli".
     public bool RegisterCustom(string name, string hlslSource)
     {
         if (string.IsNullOrWhiteSpace(name))
             return false;
 
         customSources[name] = hlslSource;
-        cache.Remove($"custom:{name}"); // recompile on next use
+        cache.Remove($"custom:{name}");
         return true;
     }
 
-    /// <summary>Gets a registered custom pipeline (non-instanced, standard vertex layout), or null.</summary>
     public ShaderPipeline? GetCustom(RenderDevice device, string name)
     {
         var key = $"custom:{name}";
@@ -232,7 +221,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
 
     private ShaderPipeline? Compile(RenderDevice device, string name, string source, IReadOnlyList<(string, string)>? defines, bool instanced, bool createLayout)
     {
-        // Custom sources may also carry includes.
         source = ResolveIncludes(source, 0);
 
         if (!ShaderCompiler.TryCompile(name, source, "vs", "vs_5_0", defines, out var vsBlob, out var vsError))
@@ -291,8 +279,7 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         fixed (byte* pIWorld = iworld)
         fixed (byte* pIColor = icolor)
         {
-            // Every element of Vertex3D is declared for every pipeline; a shader that does not read a
-            // semantic simply leaves it unconsumed, which D3D11 permits.
+            // D3D11 permits unconsumed semantics.
             var elements = stackalloc D3D11_INPUT_ELEMENT_DESC[10];
             var count = 0u;
             elements[count++] = Element(pPosition, 0, DXGI_FORMAT.DXGI_FORMAT_R32G32B32_FLOAT, 0, 0);
@@ -333,7 +320,6 @@ internal sealed unsafe class ShaderLibrary : IDisposable
         InstanceDataStepRate = 1,
     };
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         foreach (var pipeline in cache.Values)

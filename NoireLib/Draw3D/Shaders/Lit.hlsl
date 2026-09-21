@@ -1,5 +1,4 @@
-// NoireLib Draw3D - half-Lambert lit shader (variants: LIT_TEXTURED, LIT_INSTANCED, OPAQUE_DOMAIN).
-// Deliberately not trying to match the game's lighting - a clean stylized look beats an uncanny mismatch.
+// Half-Lambert lit shader. Variants: LIT_TEXTURED, LIT_INSTANCED, OPAQUE_DOMAIN.
 #include "Common.hlsli"
 
 struct VsIn
@@ -9,7 +8,7 @@ struct VsIn
     float2 uv     : TEXCOORD0;
     float4 color  : COLOR0;
 #ifdef LIT_INSTANCED
-    // Instance world rows are UNtransposed (see Unlit.hlsl note).
+    // Instance world rows are untransposed (see Unlit.hlsl).
     float4 i0 : IWORLD0; float4 i1 : IWORLD1; float4 i2 : IWORLD2; float4 i3 : IWORLD3;
     float4 iColor : ICOLOR;
 #endif
@@ -38,7 +37,7 @@ PsIn vs(VsIn v)
     o.svPos       = mul(wp, ViewProj);
     o.uv          = v.uv;
     o.color       = v.color * BaseColor * tint;
-    // Exact for rotation + uniform scale; non-uniform scale skews lighting (accepted core limitation).
+    // Exact for rotation and uniform scale only.
     o.worldNormal = mul(float4(v.normal, 0.0), world).xyz;
     o.clipZW      = o.svPos.zw;
     return o;
@@ -51,7 +50,7 @@ float4 ps(PsIn i) : SV_Target
     c *= BaseTex.Sample(BaseSamp, i.uv);
 #endif
     float3 n = normalize(i.worldNormal);
-    float ndl = dot(n, normalize(LightDirIntensity.xyz)) * 0.5 + 0.5;   // half-Lambert
+    float ndl = dot(n, normalize(LightDirIntensity.xyz)) * 0.5 + 0.5;
     c.rgb = c.rgb * (Ambient.rgb * Ambient.a + LightColor.rgb * (ndl * ndl) * LightDirIntensity.w);
 
     float vis = DepthVisibility(DisplayUv(i.svPos), i.clipZW.y, Params1.x);
@@ -60,6 +59,6 @@ float4 ps(PsIn i) : SV_Target
     return float4(c.rgb, 1.0);
 #else
     c.a *= vis;
-    return float4(c.rgb * c.a, c.a);                     // premultiplied output: rgb already scaled by alpha
+    return float4(c.rgb * c.a, c.a);                     // premultiplied
 #endif
 }

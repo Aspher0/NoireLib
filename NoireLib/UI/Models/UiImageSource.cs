@@ -2,6 +2,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using System;
 using System.Numerics;
+using System.Reflection;
 
 namespace NoireLib.UI;
 
@@ -16,6 +17,7 @@ public sealed class UiImageSource
         GameIcon,
         GameTexture,
         Wrap,
+        ManifestResource,
     }
 
     private readonly SourceKind kind;
@@ -23,14 +25,23 @@ public sealed class UiImageSource
     private readonly uint gameIconId;
     private readonly bool gameIconHiRes;
     private readonly IDalamudTextureWrap? wrap;
+    private readonly Assembly? assembly;
 
-    private UiImageSource(SourceKind kind, string? path = null, uint gameIconId = 0, bool gameIconHiRes = true, IDalamudTextureWrap? wrap = null)
+    private readonly bool missing;
+
+    private ISharedImmediateTexture? manifestTexture;
+
+    private UiImageSource(SourceKind kind, string? path = null, uint gameIconId = 0, bool gameIconHiRes = true, IDalamudTextureWrap? wrap = null, Assembly? assembly = null)
     {
         this.kind = kind;
         this.path = path;
         this.gameIconId = gameIconId;
         this.gameIconHiRes = gameIconHiRes;
         this.wrap = wrap;
+        this.assembly = assembly;
+
+        if (assembly != null && path != null)
+            missing = assembly.GetManifestResourceInfo(path) == null;
     }
 
     /// <summary>
@@ -68,12 +79,9 @@ public sealed class UiImageSource
         return new UiImageSource(SourceKind.GameTexture, path: texPath);
     }
 
-    /// <summary>
-    /// Creates an image source from an existing texture wrap.
-    /// </summary>
-    /// <remarks>The wrap stays owned by the caller and must outlive this source.</remarks>
-    /// <param name="textureWrap">The texture wrap to use.</param>
-    /// <returns>The created <see cref="UiImageSource"/>.</returns>
+    /// <summary>Creates an image source from a texture wrap. The wrap stays owned by the caller and must outlive this source.</summary>
+    /// <param name="textureWrap">The texture wrap.</param>
+    /// <returns>The image source.</returns>
     public static UiImageSource FromWrap(IDalamudTextureWrap textureWrap)
     {
         if (textureWrap == null)
@@ -82,13 +90,27 @@ public sealed class UiImageSource
         return new UiImageSource(SourceKind.Wrap, wrap: textureWrap);
     }
 
-    /// <summary>
-    /// Resolves this source to a texture wrap usable with ImGui for the current frame.
-    /// </summary>
-    /// <remarks>Shared sources may return an empty placeholder texture while still loading.</remarks>
-    /// <returns>The resolved texture wrap, or <see langword="null"/> if it could not be resolved.</returns>
+    /// <summary>Creates an image source from an image embedded as a manifest resource.</summary>
+    /// <param name="assembly">The assembly holding the resource.</param>
+    /// <param name="resourceName">The resource's manifest name.</param>
+    /// <returns>The image source. An unknown name resolves to nothing.</returns>
+    public static UiImageSource FromManifestResource(Assembly assembly, string resourceName)
+    {
+        ArgumentNullException.ThrowIfNull(assembly);
+
+        if (string.IsNullOrWhiteSpace(resourceName))
+            throw new ArgumentNullException(nameof(resourceName), "Resource name cannot be null or blank.");
+
+        return new UiImageSource(SourceKind.ManifestResource, path: resourceName, assembly: assembly);
+    }
+
+    /// <summary>Resolves this source to a texture wrap for the current frame.</summary>
+    /// <returns>The texture wrap, or <see langword="null"/> when it could not be resolved.</returns>
     public IDalamudTextureWrap? GetWrap()
     {
+        if (missing)
+            return null;
+
         try
         {
             return kind switch
@@ -97,6 +119,7 @@ public sealed class UiImageSource
                 SourceKind.File => NoireService.TextureProvider.GetFromFile(path!).GetWrapOrEmpty(),
                 SourceKind.GameTexture => NoireService.TextureProvider.GetFromGame(path!).GetWrapOrEmpty(),
                 SourceKind.GameIcon => NoireService.TextureProvider.GetFromGameIcon(new GameIconLookup(gameIconId, hiRes: gameIconHiRes)).GetWrapOrEmpty(),
+                SourceKind.ManifestResource => (manifestTexture ??= NoireService.TextureProvider.GetFromManifestResource(assembly!, path!)).GetWrapOrEmpty(),
                 _ => null,
             };
         }
@@ -118,6 +141,6 @@ public sealed class UiImageSource
             return null;
 
         var size = resolved.Size;
-        return size.X <= 4 && size.Y <= 4 ? null : size; // Shared textures return a 4x4 placeholder while loading.
+        return size.X <= 4 && size.Y <= 4 ? null : size; // shared textures return a 4x4 placeholder while loading
     }
 }

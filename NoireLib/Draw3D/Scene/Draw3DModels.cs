@@ -6,27 +6,16 @@ using System.Threading.Tasks;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Imported-model shortcuts that fold loading, attaching, and disposal tracking into one call and hand the model to the
-/// scene's ownership scope, so <see cref="Scene3D.Dispose"/> frees its meshes and textures. Thin sugar over
-/// <see cref="GltfLoader"/> + <see cref="Model3D.AttachTo(Scene3D)"/> + <see cref="Scene3D.Own{T}"/>.
-/// </summary>
+/// <summary>Imported-model shortcuts that load, attach and hand a model to the scene. <see cref="Scene3D.Dispose"/> frees it.</summary>
 public static class Draw3DModels
 {
-    /// <summary>
-    /// Attaches an already-loaded model to the scene and hands the scene ownership of it, returning the model's root
-    /// node (chainable); throws on a disposed scene rather than adopting into it, matching <see cref="Scene3D.CreateNode"/>,
-    /// since <see cref="Scene3D.Own{T}"/> frees anything handed to a dead scene and adopting there would hand back a
-    /// model whose GPU buffers are already gone and which silently draws nothing.
-    /// </summary>
+    /// <summary>Attaches an already-loaded model to the scene and hands the scene ownership of it.</summary>
     /// <param name="scene">The target scene.</param>
     /// <param name="model">The imported model to attach and own.</param>
     /// <param name="position">Local position for the model root (scene root space).</param>
     /// <param name="name">Optional name override for the model root.</param>
-    /// <exception cref="ObjectDisposedException">
-    /// The scene is disposed; the caller's <paramref name="model"/> is left untouched, unless the scene was disposed
-    /// concurrently with this call, in which case <see cref="Scene3D.Own{T}"/> has already freed it.
-    /// </exception>
+    /// <returns>The model's root node.</returns>
+    /// <exception cref="ObjectDisposedException">The scene is disposed. The model is freed only if disposal raced this call.</exception>
     public static SceneNode AddModel(this Scene3D scene, Model3D model, Vector3 position = default, string? name = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -36,8 +25,7 @@ public static class Draw3DModels
         model.AttachTo(scene);
         scene.Own(model);
 
-        // A scene disposed concurrently with this call means Own has just freed the model, which is its contract for a
-        // dead scene. Report that instead of positioning and returning a root whose GPU buffers no longer exist.
+        // A scene disposed concurrently has just freed the model.
         ObjectDisposedException.ThrowIf(scene.IsDisposed, scene);
 
         model.Root.LocalPosition = position;
@@ -46,19 +34,16 @@ public static class Draw3DModels
         return model.Root;
     }
 
-    /// <summary>
-    /// Loads a glTF/glb model from disk (blocking), attaches it to the scene and hands the scene ownership, returning
-    /// the imported <see cref="Model3D"/> (its meshes/textures are freed by <see cref="Scene3D.Dispose"/>); prefer
-    /// <see cref="LoadModelAsync"/> off the framework thread for large files.
-    /// </summary>
+    /// <summary>Loads a glTF or glb model from disk synchronously, attaches it to the scene and hands the scene ownership.</summary>
     /// <param name="scene">The target scene.</param>
     /// <param name="path">Absolute path to a .gltf or .glb file.</param>
     /// <param name="position">Local position for the model root.</param>
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
-    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint; off by default, since FFXIV-derived exports store shader data there, not colors (see <see cref="GltfLoader"/>).</param>
-    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; tune via <see cref="NoireDraw3D.Performance"/>).</param>
-    /// <exception cref="ObjectDisposedException">The scene is disposed; the imported model is freed before the throw.</exception>
+    /// <param name="importVertexColors">Whether to apply the glTF <c>COLOR_0</c> channel as an albedo tint (FFXIV-derived exports store shader data there).</param>
+    /// <param name="generateLods">Whether to build a level-of-detail chain for large primitives.</param>
+    /// <returns>The imported model.</returns>
+    /// <exception cref="ObjectDisposedException">The scene is disposed. The imported model is freed before the throw.</exception>
     public static Model3D LoadModel(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -66,22 +51,17 @@ public static class Draw3DModels
         return AttachOrFree(scene, model, position, name);
     }
 
-    /// <summary>
-    /// Loads a glTF/glb model from disk on the thread pool, then attaches it to the scene and hands the scene ownership
-    /// (scene-graph mutation is thread-safe), returning the imported <see cref="Model3D"/>, ready and attached.<br/>
-    /// A large file takes long enough to parse that the scene can be disposed while the load is still running; that
-    /// case throws <see cref="ObjectDisposedException"/> and frees the imported model first, so a teardown during a
-    /// load costs neither a leak nor a silently dead model.
-    /// </summary>
+    /// <summary>Loads a glTF or glb model from disk on the thread pool, then attaches it to the scene and hands the scene ownership.</summary>
     /// <param name="scene">The target scene.</param>
     /// <param name="path">Absolute path to a .gltf or .glb file.</param>
     /// <param name="position">Local position for the model root.</param>
     /// <param name="name">Optional name override for the model root.</param>
     /// <param name="keepCpuData">Retain CPU-side geometry on the imported meshes for exact picking.</param>
-    /// <param name="importVertexColors">Apply the glTF <c>COLOR_0</c> channel as an albedo tint; off by default (see <see cref="GltfLoader"/>).</param>
-    /// <param name="generateLods">Build a level-of-detail chain for large primitives (off by default; tune via <see cref="NoireDraw3D.Performance"/>).</param>
+    /// <param name="importVertexColors">Whether to apply the glTF <c>COLOR_0</c> channel as an albedo tint.</param>
+    /// <param name="generateLods">Whether to build a level-of-detail chain for large primitives.</param>
     /// <param name="ct">Optional cancellation token.</param>
-    /// <exception cref="ObjectDisposedException">The scene was disposed before or during the load; the imported model is freed before the throw.</exception>
+    /// <returns>The imported model, attached.</returns>
+    /// <exception cref="ObjectDisposedException">The scene was disposed before or during the load. The imported model is freed before the throw.</exception>
     public static async Task<Model3D> LoadModelAsync(this Scene3D scene, string path, Vector3 position = default, string? name = null, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -89,9 +69,7 @@ public static class Draw3DModels
         return AttachOrFree(scene, model, position, name);
     }
 
-    // Hands a just-imported model to the scene, freeing it if the scene will not take it: the load owns the model
-    // until the scene does, and a scene that died while the file was being parsed leaves nobody else to release its
-    // GPU resources, so the failure path frees them here rather than leaking them.
+    // The load owns the model until the scene takes it.
     private static Model3D AttachOrFree(Scene3D scene, Model3D model, Vector3 position, string? name)
     {
         try
@@ -101,7 +79,7 @@ public static class Draw3DModels
         }
         catch
         {
-            model.Dispose(); // idempotent: harmless when the scene's own Own() already freed it
+            model.Dispose(); // idempotent
             throw;
         }
     }

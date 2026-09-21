@@ -5,28 +5,25 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Geometry;
 
-// A bounding-volume hierarchy over a mesh's triangles for fast ray picking, built once per mesh (lazily, on the first
-// pick) and reused, turning a per-triangle O(triangles) scan into an O(log triangles) traversal. Model-space: the
-// caller brings the ray into mesh space so a moving node never invalidates the tree. Median-split build, stack
-// traversal, no per-query allocation, two-sided triangle test matching the picker's own.
+// Model-space. A moving node never invalidates the tree.
 internal sealed class MeshBvh
 {
-    private const int LeafTriangles = 4;   // stop splitting at this many triangles per leaf
-    private const int MaxDepth = 48;       // traversal stack bound (a well-balanced tree is far shallower)
+    private const int LeafTriangles = 4;
+    private const int MaxDepth = 48;
 
-    // A flat node: a leaf holds a triangle range; an internal node holds two child indices (Left &gt;= 0).
+    // An internal node (Left >= 0) holds its right child in Start.
     private struct Node
     {
         public Vector3 Min;
         public Vector3 Max;
-        public int Left;   // child node index, or -1 for a leaf
-        public int Start;  // leaf: first triangle in the permuted order
-        public int Count;  // leaf: triangle count
+        public int Left;   // -1 for a leaf
+        public int Start;
+        public int Count;
     }
 
     private readonly Node[] nodes;
-    private readonly int[] tri;        // permuted triangle order (leaves index into this)
-    private readonly Vector3[] v0, v1, v2; // per-triangle corner positions (model space), indexed by original triangle id
+    private readonly int[] tri;
+    private readonly Vector3[] v0, v1, v2;
 
     private MeshBvh(Node[] nodes, int[] tri, Vector3[] v0, Vector3[] v1, Vector3[] v2)
     {
@@ -37,7 +34,6 @@ internal sealed class MeshBvh
         this.v2 = v2;
     }
 
-    /// <summary>Builds a BVH from a mesh's CPU geometry; returns null when the mesh has no triangles.</summary>
     public static MeshBvh? Build(Vertex3D[] vertices, ushort[]? indices16, uint[]? indices32)
     {
         var indexCount = indices16?.Length ?? indices32?.Length ?? 0;
@@ -77,20 +73,17 @@ internal sealed class MeshBvh
             tri[t] = t;
         }
 
-        // A growable list keeps the build correct under recursion; one flattening copy at the end, the tree is built once.
         var list = new List<Node>(2 * (triCount / LeafTriangles + 1));
         BuildRange(list, tri, centroid, v0, v1, v2, 0, triCount);
 
         return new MeshBvh(list.ToArray(), tri, v0, v1, v2);
     }
 
-    // Recursively builds a node covering triangles [lo, hi) of the permuted order and returns its index.
     private static int BuildRange(List<Node> nodes, int[] tri, Vector3[] centroid, Vector3[] v0, Vector3[] v1, Vector3[] v2, int lo, int hi)
     {
         var self = nodes.Count;
-        nodes.Add(default); // reserve this node's slot; filled in below (after children, for an internal node)
+        nodes.Add(default); // filled after the children
 
-        // Node bounds over the triangle corners in this range.
         var min = new Vector3(float.MaxValue);
         var max = new Vector3(float.MinValue);
         for (var i = lo; i < hi; i++)
@@ -107,8 +100,7 @@ internal sealed class MeshBvh
             return self;
         }
 
-        // Split on the axis with the widest spread of centroids, at the spatial midpoint; fall back to the object
-        // median if the midpoint leaves one side empty (all centroids on one side of the plane).
+        // Midpoint of the widest centroid axis, falling back to a count split when one side is empty.
         Vector3 cmin = new(float.MaxValue), cmax = new(float.MinValue);
         for (var i = lo; i < hi; i++)
         {
@@ -122,7 +114,7 @@ internal sealed class MeshBvh
 
         var mid = Partition(tri, centroid, lo, hi, axis, split);
         if (mid == lo || mid == hi)
-            mid = lo + count / 2; // midpoint degenerate - split by count so recursion always shrinks
+            mid = lo + count / 2;
 
         var left = BuildRange(nodes, tri, centroid, v0, v1, v2, lo, mid);
         var right = BuildRange(nodes, tri, centroid, v0, v1, v2, mid, hi);
@@ -130,7 +122,6 @@ internal sealed class MeshBvh
         return self;
     }
 
-    // Hoare-style partition of tri[lo,hi) by centroid on  around .
     private static int Partition(int[] tri, Vector3[] centroid, int lo, int hi, int axis, float split)
     {
         var i = lo;
@@ -148,10 +139,7 @@ internal sealed class MeshBvh
         return i;
     }
 
-    /// <summary>
-    /// Casts a ray (model space) and returns the nearest two-sided triangle hit: <paramref name="t"/> is the distance
-    /// along <paramref name="direction"/>, <paramref name="triangle"/> the original triangle index; no allocation.
-    /// </summary>
+    // Two-sided. triangle is the original index.
     public bool RayCast(Vector3 origin, Vector3 direction, out float t, out int triangle)
     {
         t = float.MaxValue;
@@ -189,7 +177,6 @@ internal sealed class MeshBvh
                 continue;
             }
 
-            // Push both children (Left = child, Start = right child for an internal node); bounded by MaxDepth.
             if (sp + 2 <= MaxDepth)
             {
                 stack[sp++] = node.Left;

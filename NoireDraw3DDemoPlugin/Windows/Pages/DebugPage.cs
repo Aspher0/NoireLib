@@ -11,19 +11,16 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// Development tooling: render-pass probes, the G-buffer injection's raw channels, the live G-buffer comparison and
-// the import orientation overrides. Compiled only into debug builds.
 internal sealed class DebugPage
 {
     private enum MiscRed
     {
-        /// <summary>65504, what the channel holds where the game's geometry pass has not written it.</summary>
+        // 65504, where the game's geometry pass has not written.
         Sentinel,
 
-        /// <summary>1, the top of the range every other channel uses.</summary>
         One,
 
-        /// <summary>0, the value the game's own geometry carries.</summary>
+        // 0, what the game's own geometry carries.
         Zero,
     }
 
@@ -44,8 +41,7 @@ internal sealed class DebugPage
         Ui.Note("Development tooling. This page only exists in debug builds.");
         Ui.Gap();
 
-        // The tab bar stays pinned; each tab scrolls its own body. The window hosts this page in a
-        // non-scrolling child for exactly that reason.
+        // The window hosts this page in a non-scrolling child.
         using var tabs = ImRaii.TabBar("##debugtabs");
         if (!tabs)
             return;
@@ -88,9 +84,7 @@ internal sealed class DebugPage
         }
     }
 
-    // ---------------------------------------------------------------- probes
-
-    // One-shot diagnostics, each a chat command under the hood. Output lands in the Dalamud log.
+    // Chat commands. Output lands in the Dalamud log.
     private static void DrawProbes()
     {
         Ui.Section("Render probes");
@@ -101,7 +95,7 @@ internal sealed class DebugPage
         ProbeButton("Frame dump", "framedump sweep", "Writes images of what each bind produced across one frame. Stalls that frame.");
         ProbeButton("G-buffer dump", "gbuffer", "Reads back the five G-buffer targets as images. Needs a bind log first.");
         ProbeButton("Shadow probe", "shadowprobe", "Records the depth-only binds and the VS constants at each one's first draw.");
-        ProbeButton("Camera trace", "camtrace", "Reports the camera constant capture's state and discovery table.");
+        ProbeButton("Capture probe", "cbprobe", "Reports the camera constant capture's discovery table.");
 
         Ui.Gap();
         Ui.Section("Toggles");
@@ -109,7 +103,7 @@ internal sealed class DebugPage
 
         ProbeButton("Stencil overlay", "stencil", "Logs the game stencil values in view until toggled off.");
         ProbeButton("Wireframe", "wire", "Draws this renderer's geometry as wireframe.");
-        ProbeButton("GPU camera", "gpucam", "Switches between the captured camera constants and the struct snapshot.");
+        ProbeButton("GPU camera", "gpucam", "Switches between the captured camera constants and the control's view-projection.");
         ProbeButton("Stats", "stats", "Prints the renderer's counters.");
     }
 
@@ -125,9 +119,7 @@ internal sealed class DebugPage
         Ui.Mono($"/noire3d {command}", ImGuiColors.DalamudGrey3);
     }
 
-    // ---------------------------------------------------------------- G-buffer channels
-
-    // The values the G-buffer injection writes. Defaults are the measured ones.
+    // Defaults are the measured values.
     private void DrawGameLitChannels()
     {
         Ui.Section("Injection channels");
@@ -203,9 +195,6 @@ internal sealed class DebugPage
         }
     }
 
-    // ---------------------------------------------------------------- G-buffer compare
-
-    // Reads the game's G-buffer under the cursor and diffs it against a held reading.
     private void DrawGBufferCompare()
     {
         Ui.Section("G-buffer compare");
@@ -221,8 +210,7 @@ internal sealed class DebugPage
         if (!compareGBuffer)
             return;
 
-        // Sampling freezes while the cursor is over a window, so reaching for the hold button does not
-        // overwrite the reading it is about to hold.
+        // Sampling freezes over a window.
         var overWorld = !ImGui.GetIO().WantCaptureMouse;
         if (overWorld)
             sampleValid = NoireDraw3D.TrySampleGameGBuffer(ImGui.GetMousePos(), cursorSample);
@@ -265,8 +253,6 @@ internal sealed class DebugPage
             Ui.Mono($"     vs reference {d.X,7:F3} {d.Y,7:F3} {d.Z,7:F3} {d.W,7:F3}",
                 worst < 0.01f ? ImGuiColors.HealerGreen : worst < 0.05f ? ImGuiColors.DalamudYellow : ImGuiColors.DalamudRed);
 
-            // The ratio makes readings comparable without landing on the same texel twice: steady across a
-            // region means the texture cancels and what remains is a factor one side is not applying.
             Ui.Mono($"     ratio        {Ratio(v.X, r.X)} {Ratio(v.Y, r.Y)} {Ratio(v.Z, r.Z)} {Ratio(v.W, r.W)}",
                 ImGuiColors.DalamudGrey3);
         }

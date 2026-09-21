@@ -12,20 +12,15 @@ using Mesh = NoireLib.Draw3D.Geometry.Mesh;
 namespace NoireLib.Draw3D.Assets;
 
 /// <summary>
-/// glTF 2.0 importer. Decoding runs on the thread pool and meshes and textures are created where decoding finishes,
-/// so the returned <see cref="Model3D"/> is ready to attach. The node tree maps to a <see cref="SceneNode"/> subtree
-/// with one mesh and renderer per primitive, and triangle winding is reversed since glTF is counter-clockwise-front
-/// while this renderer is clockwise-front. Materials with an authored metallic, a metallic-roughness or normal
-/// texture, an emissive factor or an alpha-mask cutoff are shaded by <see cref="GltfPbrPipeline"/>; emissive
-/// textures, separate occlusion maps, texture transforms, specular-glossiness, transmission and clearcoat
-/// extensions, skins, animations, cameras and lights are dropped and logged once per file.
+/// Imports glTF 2.0 files on the thread pool into a <see cref="Model3D"/>, one mesh per primitive.<br/>
+/// PBR inputs use <see cref="GltfPbrPipeline"/>. Emissive textures, separate occlusion maps, texture transforms, specular-glossiness, skins, animations, cameras and lights are dropped and logged.
 /// </summary>
 public static class GltfLoader
 {
     /// <summary>Loads a .gltf or .glb file into a detached, ready-to-attach model.</summary>
     /// <param name="path">Absolute file path.</param>
     /// <param name="keepCpuData">Whether CPU-side geometry is retained on the meshes for exact picking.</param>
-    /// <param name="importVertexColors">Whether <c>COLOR_0</c> is applied as an albedo tint; off by default, since FFXIV-derived exports store shader data there.</param>
+    /// <param name="importVertexColors">Whether <c>COLOR_0</c> is applied as an albedo tint. FFXIV-derived exports store shader data there.</param>
     /// <param name="generateLods">Whether large primitives get a level-of-detail chain, tuned with <see cref="NoireDraw3D.Performance"/>.</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>The loaded model, detached from any scene.</returns>
@@ -35,20 +30,18 @@ public static class GltfLoader
     /// <summary>Loads a binary .glb from memory into a detached, ready-to-attach model.</summary>
     /// <param name="glbBytes">GLB file contents.</param>
     /// <param name="keepCpuData">Whether CPU-side geometry is retained on the meshes for exact picking.</param>
-    /// <param name="importVertexColors">Whether <c>COLOR_0</c> is applied as an albedo tint; off by default, since FFXIV-derived exports store shader data there.</param>
+    /// <param name="importVertexColors">Whether <c>COLOR_0</c> is applied as an albedo tint. FFXIV-derived exports store shader data there.</param>
     /// <param name="generateLods">Whether large primitives get a level-of-detail chain, tuned with <see cref="NoireDraw3D.Performance"/>.</param>
     /// <param name="ct">Optional cancellation token.</param>
     /// <returns>The loaded model, detached from any scene.</returns>
     public static Task<Model3D> LoadGlbAsync(byte[] glbBytes, bool keepCpuData = false, bool importVertexColors = false, bool generateLods = false, CancellationToken ct = default)
         => Task.Run(() => Import(ModelRoot.ParseGLB(glbBytes), "glb", keepCpuData, importVertexColors, generateLods, ct), ct);
 
-    // Below this triangle count a mesh is left at full detail.
     private const int LodMinTriangles = 4000;
 
-    // Target triangle fractions for the LOD levels (finest first): 50%, 25%, 12% of the original.
+    // Finest first.
     private static readonly float[] LodTargetRatios = { 0.5f, 0.25f, 0.12f };
 
-    // Counts what the import did, reported as a single log line.
     private sealed class ImportStats
     {
         public int Primitives;
@@ -58,7 +51,7 @@ public static class GltfLoader
         public bool SawVertexColors;
         public int LodLevels;
 
-        /// <summary>Shared 1x1 white base texture for factor-only PBR materials, owned by the model's texture list.</summary>
+        // Shared 1x1 white for factor-only PBR materials.
         public GpuTexture? WhitePixel;
     }
 
@@ -136,7 +129,6 @@ public static class GltfLoader
 
     private static void ApplyTransform(SceneNode node, Matrix4x4 local)
     {
-        // Transforms are taken as authored so they agree with the vertices; only triangle winding is reversed.
         local = NoireDraw3D.Diagnostics.ImportFlips.Apply(local);
 
         if (Matrix4x4.Decompose(local, out var scale, out var rotation, out var translation))
@@ -174,7 +166,7 @@ public static class GltfLoader
         if (colors != null)
             stats.SawVertexColors = true;
         if (!importVertexColors)
-            colors = null; // COLOR_0 is shader data on FFXIV-derived models, not albedo, so nothing is tinted by default.
+            colors = null; // COLOR_0 is shader data on FFXIV-derived models
         if (primitive.GetVertexAccessor("JOINTS_0") != null)
             dropped.Add("skinning attributes");
 
@@ -191,7 +183,7 @@ public static class GltfLoader
                 tangents != null && i < tangents.Count ? tangents[i] : default);
         }
 
-        // glTF is counter-clockwise-front and this renderer is clockwise-front, so the winding is reversed here.
+        // glTF is counter-clockwise-front and this renderer clockwise-front.
         var triangles = new List<uint>();
         foreach (var (a, b, c) in primitive.GetTriangleIndices())
         {
@@ -203,7 +195,6 @@ public static class GltfLoader
         if (triangles.Count == 0)
             return;
 
-        // Applied inside the loader so this path matches the game-model one; a no-op unless a flip is enabled.
         NoireDraw3D.Diagnostics.ImportFlips.Apply(vertices, triangles);
 
         Mesh mesh;
@@ -229,8 +220,7 @@ public static class GltfLoader
         renderNode.SetMesh(mesh, material);
     }
 
-    // Builds and attaches a quadric-error LOD chain for a large primitive, skipping small meshes and leaving the mesh
-    // at full detail when decimation fails.
+    // A failed decimation leaves the primitive at full detail.
     private static void GenerateLods(Mesh mesh, Vertex3D[] vertices, List<uint> triangles, ImportStats stats)
     {
         if (triangles.Count / 3 < LodMinTriangles)
@@ -247,7 +237,7 @@ public static class GltfLoader
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "glTF: LOD generation failed for a primitive; it draws at full detail.", "Draw3D");
+            NoireLogger.LogError(ex, "glTF: LOD generation failed for a primitive. It draws at full detail.", "Draw3D");
         }
     }
 
@@ -274,7 +264,7 @@ public static class GltfLoader
 
         if (gltfMaterial != null)
         {
-            // Specular-glossiness models carry their color in the Diffuse channel.
+            // Specular-glossiness models carry their color in Diffuse.
             var baseColor = gltfMaterial.FindChannel("BaseColor") ?? gltfMaterial.FindChannel("Diffuse");
             if (gltfMaterial.FindChannel("SpecularGlossiness") != null)
                 dropped.Add("specular-glossiness workflow (approximated as metallic-roughness)");
@@ -295,7 +285,7 @@ public static class GltfLoader
             var mr = gltfMaterial.FindChannel("MetallicRoughness");
             if (mr.HasValue)
             {
-                // The spec defaults metallic to 1, so only an authored metallic engages PBR.
+                // The spec defaults metallic to 1. Only an authored metallic engages PBR.
                 metallic = ChannelFactor(mr.Value, "MetallicFactor", 1f, out var metallicIsDefault);
                 roughness = ChannelFactor(mr.Value, "RoughnessFactor", 1f, out _);
                 if (mr.Value.Texture != null)
@@ -336,7 +326,7 @@ public static class GltfLoader
             var occlusion = gltfMaterial.FindChannel("Occlusion");
             if (occlusion is { Texture: not null })
             {
-                // The usual packing is one ORM image; a separate occlusion map has no texture slot left.
+                // A separate occlusion map has no texture slot left.
                 if (ormTexture != null && mr.HasValue && ReferenceEquals(occlusion.Value.Texture, mr.Value.Texture))
                     ormMode = 2f;
                 else
@@ -361,7 +351,7 @@ public static class GltfLoader
                     alphaControl = -1f;
                     break;
                 case AlphaMode.MASK:
-                    // A cutout is opaque with a kill threshold; spec default 0.5.
+                    // Spec default cutoff 0.5.
                     blend = BlendMode.Opaque;
                     alphaControl = gltfMaterial.AlphaCutoff;
                     wantsPbr = true;
@@ -375,7 +365,6 @@ public static class GltfLoader
             if (gltfMaterial.DoubleSided)
                 cull = CullMode.None;
 
-            // The KHR unlit extension asks for exactly what the standard Unlit domain does.
             if (gltfMaterial.Unlit)
             {
                 if (texture != null)
@@ -399,8 +388,7 @@ public static class GltfLoader
             stats.PbrMaterials++;
             return new Materials.Material
             {
-                // Lit is the fallback look if the pipeline ever unregisters. An unbound base texture samples
-                // black, so factor-only materials get the shared 1x1 white.
+                // An unbound base texture samples black.
                 Domain = MaterialDomain.Lit,
                 CustomPipeline = GltfPbrPipeline.Name,
                 Blend = blend,
@@ -427,7 +415,6 @@ public static class GltfLoader
         };
     }
 
-    // Reads a channel factor by name;  says whether it was authored or is the spec default.
     private static float ChannelFactor(in MaterialChannel channel, string name, float fallback, out bool isDefault)
     {
         isDefault = true;
@@ -445,7 +432,6 @@ public static class GltfLoader
         return fallback;
     }
 
-    // The import's shared 1x1 white texture, created on first use and owned by the model's texture list.
     private static GpuTexture WhitePixel(List<GpuTexture> textures, ImportStats stats)
     {
         if (stats.WhitePixel != null)
@@ -470,7 +456,7 @@ public static class GltfLoader
             var content = gltfTexture.PrimaryImage?.Content;
             if (content is { IsValid: true })
             {
-                // Dalamud decodes the PNG/JPG bytes; blocking is fine, this runs on the thread pool.
+                // Thread pool. Blocking is fine.
                 using var wrap = NoireService.TextureProvider.CreateFromImageAsync(content.Value.Content.ToArray()).GetAwaiter().GetResult();
                 result = TextureLoader.FromWrap(wrap);
                 if (result != null)
@@ -479,7 +465,7 @@ public static class GltfLoader
         }
         catch (Exception ex)
         {
-            NoireLogger.LogError(ex, "glTF: base color texture failed to decode; the material renders untextured.", "Draw3D");
+            NoireLogger.LogError(ex, "glTF: base color texture failed to decode. The material renders untextured.", "Draw3D");
         }
 
         textureCache[gltfTexture] = result;

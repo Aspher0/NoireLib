@@ -55,9 +55,7 @@ public class NoireComboBox<T>
             this.items.AddRange(items);
     }
 
-    /// <summary>
-    /// Whether this combo's id was generated rather than given.
-    /// </summary>
+    /// <summary>Whether this combo's id was generated.</summary>
     public bool HasGeneratedId { get; }
 
     /// <summary>
@@ -70,9 +68,7 @@ public class NoireComboBox<T>
     /// </summary>
     public string? Label { get; set; } = null;
 
-    /// <summary>
-    /// The width of the combo box, in real pixels, not scaled.
-    /// </summary>
+    /// <summary>The width of the combo box, in unscaled pixels.</summary>
     public float? Width { get; set; } = null;
 
     /// <summary>
@@ -80,9 +76,7 @@ public class NoireComboBox<T>
     /// </summary>
     public ImGuiComboFlags ComboFlags { get; set; } = ImGuiComboFlags.None;
 
-    /// <summary>
-    /// Paints the closed combo as a <see cref="NoireShapes.Plate"/> instead of as an ImGui frame.
-    /// </summary>
+    /// <summary>Paints the closed combo as a <see cref="NoireShapes.Plate"/>.</summary>
     public PlateStyle? BoxStyle { get; set; }
 
     /// <summary>
@@ -139,15 +133,15 @@ public class NoireComboBox<T>
     public bool FilterPinned { get; set; } = true;
 
     /// <summary>
-    /// Whether the filter text is cleared every time the dropdown opens.
+    /// Whether the filter text is cleared every time the dropdown opens.<br/>
+    /// Any <see cref="FilterMemory"/> other than <see cref="UiMemoryScope.None"/> turns this off.
     /// </summary>
-    /// <remarks>Setting <see cref="FilterMemory"/> to anything but <see cref="UiMemoryScope.None"/> turns this off.</remarks>
     public bool ClearFilterOnOpen { get; set; } = true;
 
     /// <summary>
-    /// How long the search text is remembered.
+    /// How long the search text is remembered.<br/>
+    /// <see cref="UiMemoryScope.Persisted"/> needs a stable id.
     /// </summary>
-    /// <remarks><see cref="UiMemoryScope.Persisted"/> needs a stable id.</remarks>
     public UiMemoryScope FilterMemory
     {
         get => filterMemory;
@@ -158,8 +152,7 @@ public class NoireComboBox<T>
 
             filterMemory = value;
 
-            // Restored on the next draw rather than here, because this is usually set in a constructor, before the
-            // state file has been read and possibly before there is a plugin interface to read it with.
+            // Restored on the next draw. This is usually set in a constructor, before the state file is read.
             if (value != UiMemoryScope.None)
                 filterRestored = false;
         }
@@ -171,15 +164,12 @@ public class NoireComboBox<T>
     public bool WheelCycleFiltered { get; set; }
 
     /// <summary>
-    /// Whether the filter matches fuzzily and orders the options by how well they matched.
+    /// Whether the filter matches fuzzily and orders the options by score.<br/>
+    /// A <see cref="FilterPredicate"/> overrides this.
     /// </summary>
-    /// <remarks>A <see cref="FilterPredicate"/> of your own overrides this.</remarks>
     public bool FilterFuzzy { get; set; } = true;
 
-    /// <summary>
-    /// Whether the characters the filter matched are picked out in the option list.
-    /// </summary>
-    /// <remarks>Only applies while <see cref="FilterFuzzy"/> is on and something has been typed.</remarks>
+    /// <summary>Whether the matched characters are highlighted while <see cref="FilterFuzzy"/> is on.</summary>
     public bool FilterHighlight { get; set; } = true;
 
     /// <summary>
@@ -187,21 +177,19 @@ public class NoireComboBox<T>
     /// </summary>
     public Vector4? FilterHighlightColor { get; set; }
 
-    /// <summary>Draws each option yourself.</summary>
-    /// <remarks>Set <see cref="ItemHeight"/> alongside this when the rows are taller than one line.</remarks>
+    /// <summary>
+    /// Draws each option yourself.<br/>
+    /// Set <see cref="ItemHeight"/> as well when the rows are taller than one line.
+    /// </summary>
     public Action<UiComboItemDraw<T>>? ItemRenderer { get; set; }
 
-    /// <summary>
-    /// The height of one option at 100%. When <see langword="null"/>, one line of text.
-    /// </summary>
-    /// <remarks>A row that does not match this value scrolls out of step with the list.</remarks>
+    /// <summary>The height of one option at 100%. When <see langword="null"/>, one line of text.</summary>
     public float? ItemHeight { get; set; }
 
     /// <summary>
-    /// Whether the option list is drawn through a clipper; when <see langword="null"/>, the default, it turns itself
-    /// on past <see cref="VirtualizeThreshold"/> options.
+    /// Whether the option list is drawn through a clipper. When <see langword="null"/>, it turns on past <see cref="VirtualizeThreshold"/> options.<br/>
+    /// Every row must be the same height.
     /// </summary>
-    /// <remarks>Every row must be the same height.</remarks>
     public bool? Virtualize { get; set; }
 
     /// <summary>
@@ -214,10 +202,7 @@ public class NoireComboBox<T>
     /// </summary>
     public int DrawnRowCount { get; private set; }
 
-    /// <summary>
-    /// How an item is matched against the filter text. When <see langword="null"/>, <see cref="FilterFuzzy"/> decides.
-    /// </summary>
-    /// <remarks>A predicate has no score to order by: the options keep the order they were given.</remarks>
+    /// <summary>How an item is matched against the filter text. When <see langword="null"/>, <see cref="FilterFuzzy"/> decides.</summary>
     public Func<T, string, bool>? FilterPredicate { get; set; } = null;
 
     /// <summary>
@@ -249,19 +234,12 @@ public class NoireComboBox<T>
     public bool WheelCycleEnabled { get; set; } = false;
 
     /// <summary>
-    /// An optional binding that must be held for the closed-combo wheel cycling to trigger; a plain
-    /// <see cref="VirtualKey"/> converts implicitly.
+    /// The binding that must be held for the closed-combo wheel cycling.<br/>
+    /// Ignored while a hotkey is attached through <see cref="BindWheelCycleHotkey"/>.
     /// </summary>
-    /// <remarks>
-    /// Ignored while a hotkey is attached through <see cref="BindWheelCycleHotkey"/>; read
-    /// <see cref="ResolvedWheelCycleBinding"/> for the binding actually in effect.
-    /// </remarks>
     public HotkeyBinding WheelCycleBinding { get; set; } = default;
 
-    /// <summary>
-    /// Whether the closed-combo wheel cycling wraps around when reaching the first/last item, instead of stopping at
-    /// the boundaries.
-    /// </summary>
+    /// <summary>Whether the closed-combo wheel cycling wraps around at the first and last item.</summary>
     public bool WheelCycleLoop { get; set; } = false;
 
     /// <summary>
@@ -269,10 +247,7 @@ public class NoireComboBox<T>
     /// </summary>
     public bool WheelCycleHintEnabled { get; set; } = true;
 
-    /// <summary>
-    /// A custom content for the wheel shortcut hint tooltip; when <see langword="null"/>, a default hint is generated
-    /// from <see cref="ResolvedWheelCycleBinding"/>.
-    /// </summary>
+    /// <summary>The wheel hint tooltip's content. When <see langword="null"/>, it is generated from the binding.</summary>
     public NoireContent? WheelCycleHintContent { get; set; } = null;
 
     /// <summary>
@@ -299,8 +274,6 @@ public class NoireComboBox<T>
         }
     }
 
-    // False when an attached hotkey cannot be honored (disabled, or unregistered since attaching), so the cycling
-    // stays off rather than becoming unconditional.
     private bool TryResolveWheelCycleBinding(out HotkeyBinding binding)
     {
         if (wheelCycleHotkeyManager == null || wheelCycleHotkeyId == null)
@@ -320,14 +293,14 @@ public class NoireComboBox<T>
     }
 
     /// <summary>
-    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>.
+    /// Drives the closed-combo wheel cycling from a hotkey registered on a <see cref="NoireHotkeyManager"/>.<br/>
+    /// <see cref="WheelCycleEnabled"/> must be set as well.
     /// </summary>
-    /// <remarks>Does not enable the cycling on its own; set <see cref="WheelCycleEnabled"/> as well.</remarks>
     /// <param name="hotkeyManager">The hotkey manager owning the hotkey.</param>
-    /// <param name="hotkeyId">The id of the hotkey whose binding gates the cycling.</param>
-    /// <returns>This <see cref="NoireComboBox{T}"/> instance, for chaining.</returns>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="hotkeyManager"/> is <see langword="null"/>.</exception>
-    /// <exception cref="ArgumentException">Thrown when <paramref name="hotkeyId"/> is null, empty or blank.</exception>
+    /// <param name="hotkeyId">The hotkey's id.</param>
+    /// <returns>This instance, for chaining.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="hotkeyManager"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException"><paramref name="hotkeyId"/> is null, empty or blank.</exception>
     public NoireComboBox<T> BindWheelCycleHotkey(NoireHotkeyManager hotkeyManager, string hotkeyId)
     {
         ArgumentNullException.ThrowIfNull(hotkeyManager);
@@ -338,11 +311,8 @@ public class NoireComboBox<T>
         return this;
     }
 
-    /// <summary>
-    /// Detaches the hotkey attached through <see cref="BindWheelCycleHotkey"/>, so the cycling falls back to
-    /// <see cref="WheelCycleBinding"/>.
-    /// </summary>
-    /// <returns>This <see cref="NoireComboBox{T}"/> instance, for chaining.</returns>
+    /// <summary>Detaches the hotkey attached through <see cref="BindWheelCycleHotkey"/>.</summary>
+    /// <returns>This instance, for chaining.</returns>
     public NoireComboBox<T> UnbindWheelCycleHotkey()
     {
         wheelCycleHotkeyManager = null;
@@ -360,9 +330,9 @@ public class NoireComboBox<T>
     public IReadOnlyList<T> Items => items;
 
     /// <summary>
-    /// The index of the selected item, or -1 when nothing is selected.
+    /// The index of the selected item, or -1 when nothing is selected.<br/>
+    /// Setting it does not invoke <see cref="OnSelectionChanged"/>. Use <see cref="Select(int)"/> for that.
     /// </summary>
-    /// <remarks>Setting this property does not invoke <see cref="OnSelectionChanged"/>; use <see cref="Select(int)"/> for that.</remarks>
     public int SelectedIndex
     {
         get => selectedIndex;
@@ -435,11 +405,8 @@ public class NoireComboBox<T>
 
     #region Drawing
 
-    /// <summary>
-    /// Draws the combo box.
-    /// </summary>
-    /// <remarks>Call this every frame inside your window.</remarks>
-    /// <returns>True if the selection changed this frame, false otherwise.</returns>
+    /// <summary>Draws the combo box. Call it every frame.</summary>
+    /// <returns>True when the selection changed this frame.</returns>
     public bool Draw()
     {
         using var profile = UiProfile.Widget(nameof(NoireComboBox<T>), Id);
@@ -454,32 +421,24 @@ public class NoireComboBox<T>
         var preview = selectedIndex >= 0 ? DisplayOf(items[selectedIndex]) : PreviewPlaceholder;
         var label = string.IsNullOrEmpty(Label) ? UiIds.For("###NoireCombo_", Id) : UiIds.Labelled(Label, "###NoireCombo_", Id);
 
-        // Capped to exactly what it is meant to show: left alone, ImGui budgets the popup at eight options and knows
-        // nothing about the filter input, so the filter would push the list past the budget and grow a second,
-        // nested scrollbar.
-        // The dropdown's style is pushed before its height is measured, not after: the measurement reads the window
-        // padding and item spacing in force, and pushing afterwards would budget the popup against the host's own
-        // settings instead, coming out too short and growing that same second scrollbar.
+        // ImGui budgets the popup at eight options and ignores the filter input. Uncapped, the list grows a nested scrollbar.
+        // The style is pushed before measuring. The measurement reads the padding and spacing in force.
         var popup = BeginPopupStyle();
 
         ApplyPopupConstraints();
 
         var box = BeginBox(out var boxRect);
 
-        // Read here rather than after the popup, because the last item by then is whatever the dropdown's contents
-        // submitted last. The mark itself is painted further down, once the box and its arrow are drawn.
+        // Read before the popup. Afterwards the last item is whatever the dropdown submitted.
         var boxFocused = NoireFocus.IsLastFocused();
         var boxItem = boxFocused ? ImGuiP.GetItemID() : 0u;
 
-        // Read out here, because inside the popup the current window is the popup. A dropdown opened from a window that
-        // is holding itself in front has to be held there too, or it opens underneath the combo it belongs to.
+        // Inside the popup the current window is the popup.
         var ownerInFront = UiWindowOrder.InTopLayer;
 
         var comboOpen = false;
         using (var combo = ImRaii.Combo(label, preview, ComboFlags | (BoxStyle != null ? ImGuiComboFlags.NoArrowButton : ImGuiComboFlags.None)))
         {
-            // Released as soon as the box has been drawn, so the popup and everything drawn inside it is styled
-            // normally rather than inheriting a transparent frame that exists only to uncover the plate.
             box.Dispose();
 
             if (combo)
@@ -489,8 +448,7 @@ public class NoireComboBox<T>
                 if (ownerInFront)
                     UiWindowOrder.KeepInFront();
 
-                // The size has to be pushed inside the popup rather than around it: a font handle pushed before Begin
-                // is not what the popup window draws with.
+                // A font handle pushed before Begin is not what the popup draws with.
                 if (PopupStyle?.TextSizePx is { } size)
                     NoireText.At(size, this, static self => self.DrawPopupContent());
                 else
@@ -500,15 +458,12 @@ public class NoireComboBox<T>
             }
         }
 
-        // A second call on a scope already released inside the combo pops nothing, so the plated and unplated paths
-        // both land here rather than one of them needing to remember it has already let go.
         box.Dispose();
         popup.Dispose();
         DrawBoxArrow(boxRect);
 
         NoireFocus.On(UiRect.FromBounds(boxRect.Min, boxRect.Max), boxFocused, boxItem, FocusStyle);
 
-        // While the dropdown is open the popup is a separate window that owns the wheel itself, so the cycling stands down.
         if (comboOpen)
             return changedThisFrame;
 
@@ -517,7 +472,6 @@ public class NoireComboBox<T>
         return changedThisFrame;
     }
 
-    // Returns an empty scope when the dropdown is left as ImGui's.
     private UiPush BeginPopupStyle()
     {
         if (PopupStyle == null)
@@ -546,17 +500,13 @@ public class NoireComboBox<T>
         if (style.TextColor is { } text)
             pushed.Push(ImGuiCol.Text, text);
 
-        // Snapped to whole pixels: ImGui floors a window's size whenever a size constraint is present, and a combo
-        // popup always has one, but compares that floored size against an unfloored ContentSize + WindowPadding * 2.
-        // The two differ by exactly the padding's fraction, so at a non-whole UI scale a padding of 6 becomes 7.5
-        // and the popup ends up half a pixel short of its own contents.
+        // ImGui floors a constrained window's size but compares it against an unfloored content size. Fractional padding leaves the popup short.
         var padding = NoireUI.Scaled(style.Padding);
 
         pushed.Push(ImGuiStyleVar.FrameBorderSize, style.FilterBorderSize);
         pushed.Push(ImGuiStyleVar.WindowPadding, new Vector2(MathF.Round(padding.X), MathF.Round(padding.Y)));
 
-        // The popup fields, not the window ones: ImGui picks the style field by window flag and this window carries
-        // the popup flag, so pushing WindowRounding and WindowBorderSize here was silent.
+        // The popup flag makes ImGui read the Popup* style fields.
         pushed.Push(ImGuiStyleVar.PopupRounding, NoireUI.Scaled(style.Rounding ?? theme.ResolveRounding()));
         pushed.Push(ImGuiStyleVar.PopupBorderSize, style.BorderSize);
         pushed.Push(ImGuiStyleVar.ScrollbarSize, NoireUI.Scaled(style.ScrollbarWidth));
@@ -566,7 +516,6 @@ public class NoireComboBox<T>
         return pushed;
     }
 
-    // Always pushes at least a border, since the box is drawn either way.
     private UiPush PushFilterStyle()
     {
         var style = PopupStyle;
@@ -582,7 +531,6 @@ public class NoireComboBox<T>
         return pushed;
     }
 
-    // The pushed colours are released once the box has been drawn; an empty scope when there is no plate.
     private UiPush BeginBox(out (Vector2 Min, Vector2 Max) rect)
     {
         rect = default;
@@ -598,8 +546,7 @@ public class NoireComboBox<T>
 
         var clear = new Vector4(0f, 0f, 0f, 0f);
 
-        // The border goes with the background. ImGui draws it rounded from its own style, so leaving it lit puts a
-        // rounded outline around a square plate, which is the one part of the old frame that would still show.
+        // ImGui draws the border rounded from its own style, around a square plate.
         var pushed = UiPush.Color(ImGuiCol.FrameBg, clear);
 
         pushed.Push(ImGuiCol.FrameBgHovered, clear);
@@ -629,7 +576,6 @@ public class NoireComboBox<T>
         NoireShapes.Stroke(chevron, color, MathF.Max(1f, NoireUI.Scaled(1.5f)), closed: false);
     }
 
-
     private void RecordPopupHeight()
     {
         if (!NoireService.IsInitialized())
@@ -641,51 +587,42 @@ public class NoireComboBox<T>
             neededPopupHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
     }
 
-    // Never shorter than its own contents, and never taller than VisibleItemCount options once there are more of them.
     private void ApplyPopupConstraints()
     {
-        // A list longer than the dropdown is capped and scrolls. Only a list that fits gets the floor it needs to
-        // stop scrolling.
         if (filteredIndices.Count > Math.Max(1, VisibleItemCount))
         {
             ImGui.SetNextWindowSizeConstraints(Vector2.Zero, new Vector2(float.MaxValue, MeasureMaxPopupHeight()));
             return;
         }
 
-        ImGui.SetNextWindowSizeConstraints(
-            new Vector2(0f, MathF.Ceiling(neededPopupHeight)),
-            new Vector2(float.MaxValue, float.MaxValue));
+        var floor = RoundedUpTo(MeasurePopupHeightFor(filteredIndices.Count), MathF.Ceiling(neededPopupHeight));
+
+        ImGui.SetNextWindowSizeConstraints(new Vector2(0f, floor), new Vector2(float.MaxValue, float.MaxValue));
     }
 
-    // The height the dropdown reported needing last time it was drawn.
     private float neededPopupHeight;
 
-    // The height the dropdown is capped at: the filter row, when shown, plus exactly VisibleItemCount options.
-    private float MeasureMaxPopupHeight()
+    private float MeasureMaxPopupHeight() => MeasurePopupHeightFor(VisibleItemCount);
+
+    private float MeasurePopupHeightFor(int rowCount)
     {
         var style = ImGui.GetStyle();
-        var visibleCount = Math.Max(1, VisibleItemCount);
+        var visibleCount = Math.Max(1, Math.Min(rowCount, Math.Max(1, VisibleItemCount)));
         var height = (visibleCount * ResolveRowStep()) - style.ItemSpacing.Y + (style.WindowPadding.Y * 2f);
 
         if (FilterEnabled)
         {
-            // Measured at the dropdown's own text size, not whatever is in force out here: this runs before the
-            // popup begins, so ImGui's frame height would otherwise answer for the host's font. A dropdown with
-            // larger text than its host would be budgeted a filter row shorter than the one it draws, overflowing
-            // the cap and growing a scrollbar around a list that fits.
+            // This runs before the popup begins. ImGui's frame height would answer for the host's font.
             var line = PopupStyle?.TextSizePx is { } filterSize
                 ? NoireText.CalcSize(" ", filterSize).Y
                 : ImGui.GetTextLineHeight();
 
             height += line + (style.FramePadding.Y * 2f) + style.ItemSpacing.Y;
 
-            // With the filter pinned, the options live in a fixed-height child sized to this same cap: a budget
-            // equal to its own content means a rounding hair of difference becomes a stray scrollbar.
             if (FilterPinned)
                 height += style.ItemSpacing.Y;
         }
 
-        // Rounded up for the reason the option list is: a cap carrying a fraction is a cap the content cannot fit in.
         return MathF.Ceiling(height);
     }
 
@@ -694,8 +631,6 @@ public class NoireComboBox<T>
         var appearing = ImGui.IsWindowAppearing();
         if (appearing)
         {
-            // A search restored from disk and then cleared on the first opening would have been restored for nothing,
-            // so persisting it implies keeping it.
             if (ClearFilterOnOpen && filterMemory == UiMemoryScope.None)
                 filterText = string.Empty;
 
@@ -713,9 +648,7 @@ public class NoireComboBox<T>
 
             ImGui.SetNextItemWidth(ImGui.GetContentRegionAvail().X);
 
-            // The filter box's own border and text, pushed here rather than with the rest of the dropdown's style:
-            // ImGui draws a frame's border from the same colour as a window's, so the two cannot be set apart from
-            // outside the popup without the window's border following the field's.
+            // ImGui draws a frame's border with a window's border colour. Pushed here, it only reaches the field.
             using (PushFilterStyle())
                 confirm |= ImGui.InputTextWithHint(UiIds.For("###NoireComboFilter_", Id), FilterHint, ref filterText, 256, ImGuiInputTextFlags.EnterReturnsTrue);
 
@@ -749,8 +682,6 @@ public class NoireComboBox<T>
         }
     }
 
-    // A scrolling child of its own when the filter is pinned above it, straight into the dropdown otherwise. Exactly
-    // one of the two scrolls in either case, keeping the dropdown to a single scrollbar.
     private void DrawItemList()
     {
         if (!FilterEnabled || !FilterPinned)
@@ -759,21 +690,15 @@ public class NoireComboBox<T>
             return;
         }
 
-        // Sized to the options it holds rather than the space left over, so a short list shrinks the dropdown instead
-        // of leaving it padded with dead space.
-        // Rounded up, because ImGui floors a child's size while the content keeps its fraction: a row step landing
-        // off a whole pixel leaves the region a pixel short, and a pixel short is a scrollbar on a list that fits.
+        // ImGui floors a child's size while the content keeps its fraction. A pixel short is a scrollbar.
         var visibleCount = Math.Max(1, Math.Min(VisibleItemCount, Math.Max(filteredIndices.Count, 1)));
         var listHeight = MathF.Ceiling((visibleCount * ResolveRowStep()) - ImGui.GetStyle().ItemSpacing.Y);
 
-        // Taken up to what the list reported needing last time, for the same reason as the dropdown itself: a height
-        // worked out from the row step disagrees with what ImGui measured by whatever the layout rounded off; the
-        // measurement cannot.
+        // The computed height disagrees with ImGui's measurement by what the layout rounded off.
         if (filteredIndices.Count <= VisibleItemCount)
-            listHeight = MathF.Max(listHeight, MathF.Ceiling(neededListHeight));
+            listHeight = RoundedUpTo(listHeight, MathF.Ceiling(neededListHeight));
 
-        // NoBackground: the dropdown's own background is the backdrop here, and the list must not paint a second panel of
-        // its own over it out of whatever ImGuiCol.ChildBg the consumer happens to have pushed around the combo.
+        // NoBackground: the list must not paint ChildBg over the dropdown's own background.
         using var child = ImRaii.Child(UiIds.For("###NoireComboItems_", Id), new Vector2(0f, listHeight), false, ImGuiWindowFlags.NoBackground);
         if (!child)
             return;
@@ -793,8 +718,11 @@ public class NoireComboBox<T>
             neededListHeight = window.ContentSize.Y + (window.WindowPadding.Y * 2f);
     }
 
-    // The height the option list reported needing last time it was drawn.
     private float neededListHeight;
+
+    // A measurement off by a row or more describes a list no longer on screen.
+    private float RoundedUpTo(float computed, float measured)
+        => measured > computed && measured - computed < ResolveRowStep() ? measured : computed;
 
     private void DrawItemRows()
     {
@@ -816,13 +744,11 @@ public class NoireComboBox<T>
             return;
         }
 
-        // A clipper is told the row height rather than left to measure it, which would cost a pass over every row
-        // anyway. Only correct while rows are a uniform height. A taller renderer must declare ItemHeight.
+        // Only correct while rows share one height. A taller renderer must set ItemHeight.
         var clipper = new ImGuiListClipper();
         clipper.Begin(filteredIndices.Count, ResolveRowStep());
 
-        // Without this the row the arrow keys are on is simply not drawn once it scrolls out of view, so the call
-        // that scrolls the list to it never runs and keyboard navigation stops at the edge of the visible range.
+        // The highlighted row must be drawn even off screen, or scrolling to it never runs.
         if (highlightIndex >= 0 && highlightIndex < filteredIndices.Count)
             clipper.ForceDisplayRangeByIndices(highlightIndex, highlightIndex + 1);
 
@@ -835,13 +761,12 @@ public class NoireComboBox<T>
         clipper.End();
     }
 
-    // Hovering only takes the highlight when the mouse moved this frame.
     private void DrawItemRow(int position, bool mouseMoved)
     {
         var itemIndex = filteredIndices[position];
 
         if (itemIndex >= items.Count)
-            return; // The items changed while the dropdown was open.
+            return;
 
         DrawnRowCount++;
 
@@ -850,15 +775,12 @@ public class NoireComboBox<T>
         var isHighlighted = position == highlightIndex;
         var display = DisplayOf(item);
 
-        // The selectable carries no label of its own; the content is drawn over it instead, since this needs the
-        // theme's type scale, filter highlighting and possibly a renderer's icons, not one colour and one font. The
-        // content lands where the label would have, since a selectable renders its own at the given cursor.
+        // The content is drawn over a label-less selectable, where its label would have been.
         var start = ImGui.GetCursorPos();
 
         if (ImGui.Selectable(UiIds.For("###NoireComboItem_", Id, itemIndex), isSelected || isHighlighted, ImGuiSelectableFlags.None, new Vector2(0f, ResolveItemHeight())))
             Choose(itemIndex);
 
-        // Read before anything is drawn on top, so the hover stays the row rather than the last piece of text in it.
         var hovered = ImGui.IsItemHovered();
         var after = ImGui.GetCursorPos();
 
@@ -892,7 +814,6 @@ public class NoireComboBox<T>
             highlightIndex = position;
     }
 
-    // Called by UiComboItemDraw.DrawLabel.
     internal void DrawItemLabel(string display)
     {
         if (!showMatches)
@@ -911,22 +832,18 @@ public class NoireComboBox<T>
 
     internal bool IsVirtualizing => Virtualize ?? filteredIndices.Count >= VirtualizeThreshold;
 
-    // Every row must share this height for virtualization to place them correctly.
     private float ResolveItemHeight()
     {
         if (ItemHeight.HasValue)
             return NoireUI.Scaled(ItemHeight.Value);
 
-        // The dropdown's text need not be the size in force outside it, and measuring at the outer size lays the rows
-        // out for a font they are not drawn in. The padding is not added on top: it is already pushed as ImGui's
-        // frame padding, and counting it twice leaves each row a line of empty space taller than its text.
+        // The padding is already pushed as frame padding.
         if (PopupStyle?.TextSizePx is { } size)
             return NoireText.CalcSize(" ", size).Y;
 
         return NoireText.LineHeight();
     }
 
-    // The vertical distance from one option to the next: the option itself plus the spacing after it.
     private float ResolveRowStep() => ResolveItemHeight() + ImGui.GetStyle().ItemSpacing.Y;
 
     private void Choose(int itemIndex)
@@ -935,7 +852,6 @@ public class NoireComboBox<T>
         ImGui.CloseCurrentPopup();
     }
 
-    // Includes the wheel claim that stops a cycling scroll from also moving the window.
     private void HandleClosedComboInteractions()
     {
         if (!WheelCycleEnabled || !ImGui.IsItemHovered())
@@ -968,11 +884,9 @@ public class NoireComboBox<T>
             SelectFromUi(newIndex);
     }
 
-    // Direction is +1 for the next match, -1 for the previous one; returns -1 when there is nothing to move to.
     private int ComputeFilteredCycleTarget(int currentIndex, int direction)
     {
-        // The filtered set is rebuilt when the dropdown opens or the search changes, and the search can outlive both
-        // when it is persisted, so it is refreshed here rather than assumed current.
+        // A persisted search can outlive the filtered set.
         RebuildFilteredIndices();
 
         var position = filteredIndices.IndexOf(currentIndex);
@@ -985,7 +899,6 @@ public class NoireComboBox<T>
 
     #region Internal logic
 
-    // Direction is +1 for the next item, -1 for the previous one; returns -1 when there are no items.
     internal static int ComputeCycledIndex(int current, int direction, int count, bool loop)
     {
         if (count <= 0)
@@ -1003,7 +916,6 @@ public class NoireComboBox<T>
     internal static bool DefaultFilterMatch(string displayText, string filter)
         => displayText.Contains(filter, StringComparison.OrdinalIgnoreCase);
 
-    // Applies the remembered search once, the first time the combo draws after FilterMemory is set.
     private void RestorePersistedFilter()
     {
         if (filterMemory == UiMemoryScope.None || filterRestored)
@@ -1084,8 +996,7 @@ public class NoireComboBox<T>
                 scored.Add((i, score));
         }
 
-        // Ties keep the order the items were given in, so a list does not reshuffle itself between keystrokes that
-        // happen to score the same.
+        // Stable on ties. The list must not reshuffle between keystrokes.
         scored.Sort(static (left, right) => right.Score != left.Score
             ? right.Score.CompareTo(left.Score)
             : left.Index.CompareTo(right.Index));
@@ -1173,7 +1084,6 @@ public class NoireComboBox<T>
         }
     }
 
-    // Rebuilt only when the binding it describes changed, since an attached hotkey can be rebound at any time.
     private NoireContent GetWheelCycleHint(HotkeyBinding binding)
     {
         if (WheelCycleHintContent != null)
@@ -1183,8 +1093,7 @@ public class NoireComboBox<T>
         {
             cachedHintBinding = binding;
             hasCachedHint = true;
-            // Keycaps and text rather than mouse and arrow glyphs: the icon font is the one part of the hint a
-            // consumer's own font and styling cannot reach, and a keycap is drawn from the theme instead.
+            // The icon font is out of reach of the consumer's styling. Keycaps are drawn from the theme.
             cachedHintContent = new NoireContent();
 
             if (binding.IsEmpty)
@@ -1193,8 +1102,7 @@ public class NoireComboBox<T>
                 return cachedHintContent;
             }
 
-            // One cap per key rather than one around the whole shortcut: "Ctrl + G" in a single tile reads as a key
-            // called "Ctrl + G".
+            // One cap per key. "Ctrl + G" in a single tile reads as one key.
             var keys = KeybindsHelper.FormatBinding(binding).Split(" + ", StringSplitOptions.RemoveEmptyEntries);
 
             for (var i = 0; i < keys.Length; i++)

@@ -5,16 +5,12 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Core;
 
-// Runtime self-calibration of the game's depth-buffer value convention. Every perspective depth mapping is affine in
-// 1/w (w = clip-space w after v*ViewProj): reversed-Z infinite far is z = near/w, reversed finite and standard finite
-// are z = a + b/w with other constants. Rather than trusting any camera field, this fits (a, b) from ground truth
-// (the game's own collision raycasts vs. actual depth texels), so a wrong near plane, a swapped projection matrix or
-// an engine convention change degrade to one recalibration rather than a visual bug.
+// Fits sample = A + B/clipW from collision raycasts against depth texels.
 internal sealed class DepthCalibration
 {
-    private const int GridN = 5;                 // 5x5 sample grid across the screen interior
+    private const int GridN = 5;                 // 5x5 grid across the screen interior
     private const int MinInliers = 8;
-    private const float MinSpread = 1.3f;        // max(w)/min(w) - a flat wall can't calibrate
+    private const float MinSpread = 1.3f;        // max(w)/min(w). A flat wall cannot calibrate.
     private const float MaxMedianResidual = 5e-4f;
     private const int RetryIntervalFrames = 30;
     private const int BackoffIntervalFrames = 300;
@@ -27,22 +23,18 @@ internal sealed class DepthCalibration
     private int failStreak;
     private bool troubleLogged;
 
-    /// <summary>True when a fit is locked in - depth compares are trustworthy this frame.</summary>
     public bool IsValid { get; private set; }
 
-    /// <summary>Fitted intercept: <c>gameDepthSample = A + B / clipW</c>.</summary>
     public float A { get; private set; }
 
-    /// <summary>Fitted slope. Positive = reversed-Z (sample grows as surfaces get nearer); for reversed infinite-far this equals the real near plane.</summary>
+    // Positive means reversed-Z. For reversed infinite far it equals the near plane.
     public float B { get; private set; }
 
-    /// <summary>Human-readable fit summary for stats/probe.</summary>
     public string Description { get; private set; } = "uncalibrated";
 
-    /// <summary>The shader-facing constants: x = A, y = B, z = 1 when valid.</summary>
+    // x = A, y = B, z = 1 when valid.
     public Vector4 ShaderParams => new(A, B, IsValid ? 1f : 0f, 0f);
 
-    /// <summary>Drops the fit; the next <see cref="Update"/> re-attempts.</summary>
     public void Invalidate()
     {
         IsValid = false;
@@ -51,13 +43,9 @@ internal sealed class DepthCalibration
         failStreak = 0;
     }
 
-    /// <summary>
-    /// Per-frame validation and throttled (re)calibration. Cheap when locked; a full depth readback
-    /// only on attempts. Returns <see cref="IsValid"/>.
-    /// </summary>
     public unsafe bool Update(RenderDevice device, in Matrix4x4 viewProj, Vector2 displaySize, in GameRenderSources.CameraData cam, long frameId)
     {
-        // A near-plane or convention flip invalidates the fit immediately (stale constants are worse than depth-off).
+        // Stale constants are worse than no depth test.
         if (IsValid && (MathF.Abs(cam.NearPlane - calibratedNear) > 1e-4f
                         || cam.StandardZ != calibratedStandardZ
                         || cam.FiniteFarPlane != calibratedFiniteFar))
@@ -76,7 +64,6 @@ internal sealed class DepthCalibration
         if (!GameRenderSources.TryGetDepthTexture(out var info))
             return false;
 
-        // Ground truth: the game's own collision raycasts under a screen grid.
         var screens = new List<Vector2>(GridN * GridN);
         var clipWs = new List<float>(GridN * GridN);
         for (var gy = 0; gy < GridN; gy++)
@@ -105,7 +92,6 @@ internal sealed class DepthCalibration
         if (measured == null)
             return Fail("depth readback failed");
 
-        // Assemble (1/w, sample) pairs.
         var xs = new List<float>(screens.Count);
         var ys = new List<float>(screens.Count);
         float wMin = float.MaxValue, wMax = 0f;
@@ -146,12 +132,7 @@ internal sealed class DepthCalibration
         return true;
     }
 
-    // The depth-buffer value mapping (sample = A + B/clipW) computed directly from the camera's own convention flags,
-    // returned in the shader-facing ShaderParams layout (x = A, y = B, z = 1 valid). FFXIV is reversed-Z infinite-far
-    // (StandardZ=false, FiniteFarPlane=false), which gives sample = near/clipW. Preferred over the raycast fit
-    // (Update) for rendering: it needs no readback, is available on the first frame, tracks a per-frame near-plane
-    // change, cannot be "lost", and carries no fit bias - the raycast surface and the rendered depth texel are
-    // frequently DIFFERENT surfaces, which biased the fit and made ground decals slide under camera motion.
+    // FFXIV is reversed-Z infinite far (sample = near/clipW). Raycasts often hit another surface than the depth texel.
     internal static Vector4 AnalyticMap(float near, float far, bool standardZ, bool finiteFar)
     {
         near = near > 1e-6f ? near : 0.1f;
@@ -184,8 +165,7 @@ internal sealed class DepthCalibration
         return false;
     }
 
-    // Robust least squares of y = a + b*x: one plain fit, one outlier-rejected refit (collision raycasts can hit
-    // invisible walls the depth buffer never saw). Exposed for unit tests.
+    // One outlier-rejected refit. Raycasts can hit invisible walls absent from depth.
     internal static bool TrySolve(IReadOnlyList<float> xs, IReadOnlyList<float> ys, out float a, out float b, out float medianResidual, out int inliers)
     {
         a = b = 0f;
@@ -198,7 +178,6 @@ internal sealed class DepthCalibration
         if (!SolveOnce(xs, ys, null, out a, out b))
             return false;
 
-        // Residuals + outlier gate.
         var residuals = new float[xs.Count];
         for (var i = 0; i < xs.Count; i++)
             residuals[i] = MathF.Abs(ys[i] - (a + b * xs[i]));
@@ -223,7 +202,6 @@ internal sealed class DepthCalibration
         if (kept < xs.Count && !SolveOnce(xs, ys, keep, out a, out b))
             return false;
 
-        // Final residuals over the inlier set.
         var final = new List<float>(kept);
         for (var i = 0; i < xs.Count; i++)
         {

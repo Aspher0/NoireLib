@@ -9,6 +9,8 @@ You are reading the documentation for the `AddonHelper` static helper.
 - [Finding Addons](#finding-addons)
 - [Working with Nodes](#working-with-nodes)
 - [Reading Text and Values](#reading-text-and-values)
+- [List Components](#list-components)
+- [Components by Kind](#components-by-kind)
 - [Screen Geometry and Hit-Testing](#screen-geometry-and-hit-testing)
 - [Sending Callbacks](#sending-callbacks)
 - [Node Events, Hover and Cursor](#node-events-hover-and-cursor)
@@ -97,8 +99,7 @@ if (addon)
 }
 ```
 
-`GetAddon` always returns a wrapper - never null. Guard with `IsReady` (or use the wrapper in a boolean
-context) before interacting.
+`GetAddon` always returns a wrapper, never null. Check `IsReady` before interacting.
 
 ---
 
@@ -169,14 +170,62 @@ string one  = AddonHelper.FormatValue(atkValuePtr);        // e.g. "42", "\"text
 string many = AddonHelper.FormatValues(valuesPtr, count);  // e.g. "[[0]=42, [1]=\"text\"]"
 ```
 
-`TryReadValue` handles Null, Bool, Int/UInt, Int64/UInt64, Float, String/ManagedString, and Pointer types.
+`TryReadValue` handles Null, Bool, Int/UInt, Int64/UInt64, Float, String/ConstString/ManagedString, and Pointer types.
+
+Text reads return what the node displays, with SeString payloads (item links, colours) extracted.
+
+---
+
+## List Components
+
+A list component (`AtkComponentList`) only keeps item renderers for the rows around its scroll
+position. Reading node text finds the visible rows and nothing else. `GetListItemCount` gives the
+real length, and `ScrollListToItem` brings a row into view. The renderers follow one frame later.
+
+```csharp
+if (AddonHelper.TryGetComponentList(addon, out var list, 1, 8, 13)
+    || AddonHelper.TryFindComponentList(addon, out list))
+{
+    int count = AddonHelper.GetListItemCount(list);
+    IReadOnlyDictionary<int, string> loaded = AddonHelper.ReadLoadedListItems(list, textNodeId: 3);
+    IReadOnlyDictionary<int, IReadOnlyList<string>> full = AddonHelper.ReadLoadedListItemTexts(list);
+
+    if (AddonHelper.TryReadListItemText(list, 12, 3, out var text))
+        NoireLogger.LogDebug(text);
+
+    AddonHelper.ScrollListToItem(list, 12);
+}
+```
+
+Walking a long list takes one scroll per frame: read the loaded rows, scroll to the lowest unread row, read again next frame.
+
+---
+
+## Components by Kind
+
+A component node's own `Type` is its id in the addon layout (1000 and up), not its component kind. Casting on it can crash the game. These helpers read the kind the layout declares, once the component is loaded.
+
+```csharp
+if (AddonHelper.TryGetComponentList(addon, 4u, out var list)) { /* node 4 holds a list */ }
+
+if (AddonHelper.TryGetComponent(addon, 12u, ComponentType.Button, out var button)) { }
+if (AddonHelper.TryFindComponent(addon, ComponentType.TextInput, out var input)) { }
+if (AddonHelper.TryGetComponent(iconNodePtr, ComponentType.Icon, out var icon)) { }
+AddonHelper.TryGetComponentType(componentPtr, out ComponentType kind);
+
+// What a text input holds, as typed, markup left out
+if (AddonHelper.TryReadTextInput(addon, out var typed)) { }
+
+// Every text shown inside a component, a list item renderer for instance
+IReadOnlyList<string> texts = AddonHelper.ReadComponentTexts(rendererPtr);
+```
 
 ---
 
 ## Screen Geometry and Hit-Testing
 
 Rects are `Vector4` in framebuffer pixels (the ImGui mouse space Dalamud shares with the game), `xy` = min, `zw` = max.
-These are addon reads, so unlike the object table they are safe from the draw thread as well as the framework thread.
+These are addon reads. Unlike the object table, they are safe from the draw thread as well as the framework thread.
 
 ```csharp
 // Node rects. ScreenRect applies the node's own scale, not the owning addon's Scale.
@@ -194,7 +243,7 @@ Vector4 addonRect = addon.ScreenRect;
 // The game's own hide-UI toggle.
 bool uiShown = AddonHelper.IsNativeUiVisible();
 
-// Every loaded, visible addon with usable bounds. Allocation-free, so it is safe per frame.
+// Every loaded, visible addon with usable bounds. Allocation-free, safe per frame.
 foreach (NoireAddon visible in AddonHelper.VisibleAddons(ImGui.GetIO().DisplaySize))
     NoireLogger.LogInfo($"{visible.Name} at {visible.ScreenRect}");
 
@@ -204,12 +253,9 @@ if (hit.IsValid)
     NoireLogger.LogInfo($"Cursor is over {hit.Name}");
 ```
 
-`HitTest` matches only visible **collision nodes**, the regions the game itself hit-tests, so the transparent margins
-around HUD elements (the empty space beside action-bar slots, a window's padding) do not catch the point. Component
-nodes are recursed into, since a component's inner controls live in its own node list.
+`HitTest` matches only visible **collision nodes**, the regions the game hit-tests. Transparent margins around HUD elements do not catch the point. Component nodes are recursed into.
 
-Both `VisibleAddons` and `HitTest` skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info)
-by default, since each covers the whole viewport. Every knob is a named optional parameter:
+`VisibleAddons` and `HitTest` skip near-fullscreen transparent overlay roots (nameplates, fly text, screen info) by default. Every knob is a named optional parameter:
 
 ```csharp
 // Keep the fullscreen overlays.
@@ -222,16 +268,13 @@ AddonHelper.HitTest(point, displaySize, respectNativeUiToggle: false);
 AddonHelper.HitTest(point, displaySize, phantomCollisions: AddonPhantomCollisionScope.All);
 ```
 
-`AddonPhantomCollisionScope` defaults to `ActionBars`: an action bar keeps a hotbar-number badge's collision node live
-while its label and arrows are switched off, so that collision is a hit region for a control nobody can see.
-`None` keeps every visible collision node, `All` applies the gate everywhere.
+`AddonPhantomCollisionScope` defaults to `ActionBars`. An action bar keeps a hotbar-number badge's collision node live while its label and arrows are off. `None` keeps every visible collision node, `All` applies the gate everywhere.
 
 ---
 
 ## Sending Callbacks
 
-Callbacks marshal managed values into `AtkValue` for you - pass primitives, strings, enums, pointers, or
-even enumerables (marshalled as vectors).
+Callbacks marshal managed values into `AtkValue`: primitives, strings, enums, pointers, and enumerables as vectors.
 
 ```csharp
 // Fluent - updates addon state by default
@@ -244,8 +287,7 @@ addon.SendCallback(updateState: false, 0, 1);
 AddonHelper.SendCallback(addonPtr, updateState: true, 0, "value");
 ```
 
-Returns `false` when the addon isn't ready. `null` values become `AtkValueType.Null`; unknown types fall
-back to their `Convert.ToString` representation.
+Returns `false` when the addon is not ready. `null` becomes `AtkValueType.Null`. Unknown types fall back to `Convert.ToString`.
 
 ---
 
@@ -279,8 +321,7 @@ hover?.Dispose();
 
 ## Lifecycle Listeners
 
-Register handlers for addon lifecycle events. The convenience wrappers hand you a `NoireAddon` and support
-**one-shot** registration (auto-unregister after the first invocation).
+Handlers for addon lifecycle events. The convenience wrappers hand you a `NoireAddon` and support **one-shot** registration.
 
 ```csharp
 // Convenience wrappers
@@ -303,8 +344,7 @@ setup.Dispose();
 
 ## Waiting for an Addon to be Ready
 
-Instead of polling manually, run an action (or `await`) as soon as the addon becomes ready. Checks run once
-per framework tick and the action runs on the framework thread.
+Runs an action, or completes an `await`, once the addon is ready. Checked once per framework tick. The action runs on the framework thread.
 
 ```csharp
 // Callback style, with an optional timeout
@@ -323,8 +363,7 @@ Dispose the returned registration to cancel a pending `RunWhenReady`.
 
 ## Keyed Event Registrations
 
-Store any `IDisposable` (or `IAddonEventHandle`) registration under a string key so it can be unregistered in
-bulk later - handy for grouping everything a feature creates.
+Stores any `IDisposable` or `IAddonEventHandle` registration under a string key, for bulk unregistration.
 
 ```csharp
 AddonHelper.RegisterEvent("myFeature", addon.GetNode(5u).AddClickEvent(handler));
@@ -359,12 +398,10 @@ implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 ## Safety Model
 
 - `GetAddon` / `GetReadyAddon` **never return null** - they return a wrapper that may be invalid.
-- Every wrapper member is safe on an invalid/not-ready target: getters return sensible defaults
-  (`""`, `0`, `default`) and actions become no-ops returning `false`/`null`.
+- Every wrapper member is safe on an invalid target: getters return defaults (`""`, `0`, `default`) and actions return `false` or `null`.
 - Pointer-level `Try*` methods follow the standard bool + `out` pattern and never dereference null.
-- The geometry surface fails soft: `HitTest` returns an invalid wrapper and `VisibleAddons` ends the walk when a torn
-  or mid-load addon faults, so a UI probe never takes a frame down.
-- Prefer the fluent wrappers to avoid `unsafe` blocks entirely; drop to pointers only when you need them.
+- The geometry surface fails soft. `HitTest` returns an invalid wrapper and `VisibleAddons` ends the walk when a torn or mid-load addon faults.
+- Prefer the fluent wrappers. Drop to pointers only when needed.
 
 ---
 
@@ -372,7 +409,10 @@ implicitly to `bool` (`NoireAddon` -> `IsReady`, `NoireAddonNode` -> `IsValid`).
 
 **`AddonHelper` (pointer primitives)** - `TryGetAddon`, `TryGetReadyAddon`, `IsAddonLoaded`,
 `TryGetRootNode`, `TryGetNode`, `TryGetTextNode`, `TryGetComponentNode`, `TryReadText`, `ReadTextOrEmpty`,
-`TryReadValue`, `ReadValueOrDefault`, `FormatValue`, `FormatValues`, `SendCallback`, `AddEvent`,
+`TryReadValue`, `ReadValueOrDefault`, `FormatValue`, `FormatValues`, `TryGetComponentList`,
+`TryFindComponentList`, `GetListItemCount`, `ReadLoadedListItems`, `ReadLoadedListItemTexts`, `TryReadListItemText`,
+`ScrollListToItem`, `TryGetComponentType`, `TryGetComponent`, `TryFindComponent`, `TryReadTextInput`,
+`ReadComponentTexts`, `SendCallback`, `AddEvent`,
 `RemoveEvent`, `RemoveEvents`, `AddHoverEvents`, `AddCursorOnHover`, `TrySetNodeCursor`, `SetCursor`,
 `ResetCursor`, `TryPreventOriginal`, `GetOriginalVirtualTable`.
 

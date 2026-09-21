@@ -3,6 +3,7 @@ using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Interface.Colors;
 using Dalamud.Interface.Utility.Raii;
+using NoireDraw3DDemoPlugin.Models;
 using NoireLib.Draw3D.Materials;
 using NoireLib.Draw3D.Scene;
 using System;
@@ -10,15 +11,9 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// The per-object editor: everything the public SceneNode / MeshRenderer / Material surface exposes for one object -
-// transform, material, overlays, interaction flags, decal exclusions, selection and destroy. It is deep, so it is
-// split across its own tab strip rather than a stack of collapsing headers: one object has more settings than fit a
-// screen, and tabs make each group a fixed, findable place instead of something whose position depends on what
-// happens to be expanded above it.
 internal sealed class NodeInspector
 {
-    // A tighter caption column than a full-width page uses: the inspector lives in a split pane, where the default
-    // would starve the controls.
+    // The inspector lives in a split pane.
     private const float InspectorLabelWidth = 150f;
 
     private float rotStepDeg = 15f;
@@ -30,7 +25,7 @@ internal sealed class NodeInspector
     /// <summary>Draws the inspector for <paramref name="node"/> inside <paramref name="demo"/>.</summary>
     /// <param name="demo">The scene the node belongs to.</param>
     /// <param name="node">The node to edit.</param>
-    /// <returns>False when the node was destroyed here, so the caller drops its reference to it.</returns>
+    /// <returns>False when the node was destroyed here. The caller then drops its reference to it.</returns>
     public bool Draw(DemoScene demo, SceneNode node)
     {
         if (!DrawHeader(demo, node))
@@ -38,7 +33,7 @@ internal sealed class NodeInspector
 
         var isDecal = node.Renderer?.Material.Domain == MaterialDomain.GroundDecal;
 
-        // Header above, tab strip here, scroll inside each tab: the strip stays reachable however deep a tab's body runs.
+        // The tab strip stays reachable however deep a tab's body runs.
         using var tabs = ImRaii.TabBar("##inspectortabs");
         if (!tabs)
             return true;
@@ -105,7 +100,6 @@ internal sealed class NodeInspector
         return true;
     }
 
-    // The object's identity strip: what is being edited, whether it is selected, and the destructive action.
     private static bool DrawHeader(DemoScene demo, SceneNode node)
     {
         var selection = demo.Selection;
@@ -157,11 +151,11 @@ internal sealed class NodeInspector
         using var form = Ui.Form("insp.basics", InspectorLabelWidth);
         Ui.Text("Name", () => node.Name ?? string.Empty, v => node.Name = string.IsNullOrWhiteSpace(v) ? null : v, maxLength: 128);
         Ui.Toggle("Visible", () => node.Visible, v => node.Visible = v,
-            "ANDs down the hierarchy - hiding a parent hides its children.");
+            "ANDs down the hierarchy. Hiding a parent hides its children.");
         Ui.Int("Layer", () => node.Layer, v => node.Layer = v,
             "Orders ground decals against each other and feeds the sort key. Higher draws later within a bucket.");
         Ui.Value("Has renderer", node.HasRenderer ? "yes" : "no",
-            "A model root or grouping node has none - only its children draw.");
+            "A model root or grouping node has none. Only its children draw.");
     }
 
     private void DrawTransform(SceneNode node)
@@ -179,7 +173,7 @@ internal sealed class NodeInspector
         }
 
         Ui.Section("Rotation");
-        Ui.Note("Incremental, so it stays exact - no euler round-trip. A Ground/Wall decal ignores all but yaw.");
+        Ui.Note("Incremental, staying exact with no euler round-trip. A Ground/Wall decal ignores all but yaw.");
         Ui.Gap();
         using (Ui.Form("insp.rotation", InspectorLabelWidth))
         {
@@ -253,8 +247,7 @@ internal sealed class NodeInspector
             {
                 renderer.Material = renderer.Material with
                 {
-                    // Alpha 0 is the "unset" sentinel the shader reads, so clearing it restores the decal-coloured rim.
-                    // Seeding from the decal colour at full alpha means enabling it changes nothing until you pick a colour.
+                    // Alpha 0 is the shader's "unset" sentinel, restoring the decal-colored rim.
                     OutlineColor = hasOutlineColor
                         ? new Vector4(renderer.Material.Color.X, renderer.Material.Color.Y, renderer.Material.Color.Z, 1f)
                         : default,
@@ -278,7 +271,7 @@ internal sealed class NodeInspector
         Ui.Section("Outline");
         using (Ui.Form("insp.outline", InspectorLabelWidth))
         {
-            Ui.Row("Outline", "A post-process rim from a coverage mask, not a second mesh, so it traces the real silhouette.");
+            Ui.Row("Outline", "A post-process rim from a coverage mask, tracing the real silhouette.");
             var hasOutline = node.HasOutline;
             if (Ui.Check("##hasoutline", ref hasOutline))
             {
@@ -308,7 +301,7 @@ internal sealed class NodeInspector
         if (renderer.Material.Domain == MaterialDomain.GroundDecal)
         {
             Ui.Gap();
-            Ui.Callout("This object is a ground decal, and decal outlines are inert - a decal has no mesh silhouette to trace. Use the decal shape outline below instead.");
+            Ui.Callout("This object is a ground decal. Decal outlines are inert since a decal has no mesh silhouette to trace. Use the decal shape outline below.");
         }
 
         Ui.Section("Decal overlays");
@@ -364,18 +357,18 @@ internal sealed class NodeInspector
             Ui.Toggle("Interactable", () => node.Interactable, v => node.Interactable = v,
                 "Off, it is invisible to picking.");
             Ui.Toggle("Draggable", () => node.Draggable, v => node.Draggable = v,
-                "A left press begins a drag, which takes the mouse so the camera can't pan underneath. Implies Interactable.");
+                "A left press begins a drag, which takes the mouse to keep the camera from panning underneath. Implies Interactable.");
             Ui.Toggle("Selectable", () => node.Selectable, v => node.Selectable = v,
                 "A left-click routes into the scene selection, attaching the gizmo. Only while 'Select on click' is on.");
             Ui.Value("Hovered", node.IsHovered ? "yes" : "no",
                 node.IsHovered ? ImGuiColors.HealerGreen : ImGuiColors.DalamudGrey3,
-                "Live: whether the cursor is over this object right now.");
+                "Whether the cursor is over this object right now.");
         }
 
         Ui.Section("Opt-in shortcuts");
         using (Ui.Form("insp.optin", InspectorLabelWidth))
         {
-            Ui.Row("Apply", "MakeSelectable: hover tint plus click-to-select. MakeInteractable: hover and click only. ClearHoverHighlight: drops the built-in tint.");
+            Ui.Row("Apply", "MakeSelectable adds hover tint plus click-to-select. MakeInteractable adds hover and click only. ClearHoverHighlight drops the built-in tint.");
             if (Ui.SmallButton("MakeSelectable()"))
                 node.MakeSelectable();
             ImGui.SameLine();
@@ -391,7 +384,7 @@ internal sealed class NodeInspector
     {
         Ui.Section("Exclusions");
         Ui.Note("The decal paints the ground normally and the actor simply isn't painted on, cut along their exact stencil "
-                + "silhouette. Refreshed each frame on the framework thread - no per-frame plumbing.");
+                + "silhouette. Refreshed each frame on the framework thread. No per-frame plumbing.");
         Ui.Gap();
 
         if (Ui.Button("Exclude characters, monsters and NPCs", new Vector2(280f * Ui.Scale, 0f)))
@@ -404,6 +397,6 @@ internal sealed class NodeInspector
             Ui.Tooltip("The decal paints over everything again, actors included.");
 
         Ui.Gap();
-        Ui.Callout("Needs the character stencil value set correctly (Decals page) - that is what identifies an actor's pixels. Default 0x08.");
+        Ui.Callout("Needs the character stencil value set correctly (Decals page). That is what identifies an actor's pixels. Default 0x08.");
     }
 }

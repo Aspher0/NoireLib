@@ -6,14 +6,10 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// CPU readback of individual depth-texture texels (calibration + probe ground truth). Depth resources must be copied
-// whole - a full staging copy per readback, so callers throttle.
+// Depth resources can only be copied whole. Callers throttle.
 internal static unsafe class DepthReadback
 {
-    /// <summary>
-    /// Copies a depth texture to staging and reads it back at the given display positions.
-    /// Returns null when the copy/map fails; individual unreadable texels come back as NaN.
-    /// </summary>
+    // An unreadable texel is NaN.
     public static float[]? TryReadAtPoints(RenderDevice device, in GameRenderSources.DepthTextureInfo info, IReadOnlyList<Vector2> screens, Vector2 displaySize, out string description)
     {
         description = "unavailable";
@@ -33,7 +29,7 @@ internal static unsafe class DepthReadback
             stagingDesc.MiscFlags = 0;
 
             ComPtr<ID3D11Texture2D> staging = default;
-            using (staging)
+            try
             {
                 if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
                     return null;
@@ -50,7 +46,6 @@ internal static unsafe class DepthReadback
                     var values = new float[screens.Count];
                     for (var i = 0; i < screens.Count; i++)
                     {
-                        // displayUv * ActualSize = the texel the shader's scaled sample lands on.
                         var px = Math.Clamp((int)(screens[i].X / displaySize.X * info.ActualWidth), 0, (int)info.AllocatedWidth - 1);
                         var py = Math.Clamp((int)(screens[i].Y / displaySize.Y * info.ActualHeight), 0, (int)info.AllocatedHeight - 1);
                         values[i] = ReadDepthTexel(mapped, desc.Format, px, py) ?? float.NaN;
@@ -63,14 +58,14 @@ internal static unsafe class DepthReadback
                     ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
                 }
             }
+            finally
+            {
+                staging.Dispose();
+            }
         }
     }
 
-    /// <summary>
-    /// Copies the depth-STENCIL texture to staging and reads back the <b>stencil</b> byte at the given display positions
-    /// (the game marks object categories - characters, etc. - in stencil). Returns null when the copy/map fails or the
-    /// format has no stencil plane; individual unreadable texels come back as -1. Whole-texture copy, so callers throttle.
-    /// </summary>
+    // An unreadable texel is -1.
     public static int[]? TryReadStencilAtPoints(RenderDevice device, in GameRenderSources.DepthTextureInfo info, IReadOnlyList<Vector2> screens, Vector2 displaySize, out string description)
     {
         description = "unavailable";
@@ -92,7 +87,7 @@ internal static unsafe class DepthReadback
             stagingDesc.MiscFlags = 0;
 
             ComPtr<ID3D11Texture2D> staging = default;
-            using (staging)
+            try
             {
                 if (device.Device->CreateTexture2D(&stagingDesc, null, staging.GetAddressOf()) < 0)
                     return null;
@@ -121,17 +116,19 @@ internal static unsafe class DepthReadback
                     ctx->Unmap((ID3D11Resource*)staging.Get(), 0);
                 }
             }
+            finally
+            {
+                staging.Dispose();
+            }
         }
     }
 
-    // Whether the (typeless / depth-stencil) format carries a readable 8-bit stencil plane.
     internal static bool HasStencilPlane(DXGI_FORMAT format) => format
         is DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS
         or DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT
         or DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS
         or DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT;
 
-    // Reads the 8-bit stencil value of a depth-stencil texel (null when the format has no stencil plane).
     internal static int? ReadStencilTexel(in D3D11_MAPPED_SUBRESOURCE mapped, DXGI_FORMAT format, int x, int y)
     {
         var row = (byte*)mapped.pData + (nint)y * (nint)mapped.RowPitch;
@@ -139,10 +136,10 @@ internal static unsafe class DepthReadback
         {
             case DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS:
             case DXGI_FORMAT.DXGI_FORMAT_D24_UNORM_S8_UINT:
-                return (int)((*(uint*)(row + x * 4L) >> 24) & 0xFFu); // stencil is the top byte of the 32-bit texel
+                return (int)((*(uint*)(row + x * 4L) >> 24) & 0xFFu); // stencil is the top byte
             case DXGI_FORMAT.DXGI_FORMAT_R32G8X24_TYPELESS:
             case DXGI_FORMAT.DXGI_FORMAT_D32_FLOAT_S8X24_UINT:
-                return *(byte*)(row + x * 8L + 4L); // stencil byte follows the 4-byte float depth (then 3 bytes pad)
+                return *(byte*)(row + x * 8L + 4L); // stencil byte follows the float depth
             default:
                 return null;
         }

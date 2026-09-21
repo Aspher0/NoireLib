@@ -4,20 +4,17 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// A thin ID3D11Buffer wrapper: immutable (mesh data), dynamic (rings), or default-usage constant buffers.
 internal sealed unsafe class GpuBuffer : IDisposable
 {
     private TerraFX.Interop.Windows.ComPtr<ID3D11Buffer> buffer;
 
-    /// <summary>The raw buffer pointer (null after dispose).</summary>
     public ID3D11Buffer* Buffer => buffer.Get();
 
-    /// <summary>Buffer capacity in bytes.</summary>
     public uint SizeBytes { get; private init; }
 
     private GpuBuffer() { }
 
-    /// <summary>Creates an immutable buffer with initial data. Safe from any thread (devices are free-threaded).</summary>
+    // Safe from any thread. The device is free-threaded.
     public static GpuBuffer CreateImmutable(RenderDevice device, void* data, uint sizeBytes, D3D11_BIND_FLAG bind)
     {
         var desc = new D3D11_BUFFER_DESC
@@ -33,7 +30,6 @@ internal sealed unsafe class GpuBuffer : IDisposable
         return result;
     }
 
-    /// <summary>Creates a CPU-writable dynamic buffer (ring usage: WRITE_DISCARD / WRITE_NO_OVERWRITE).</summary>
     public static GpuBuffer CreateDynamic(RenderDevice device, uint sizeBytes, D3D11_BIND_FLAG bind)
     {
         var desc = new D3D11_BUFFER_DESC
@@ -49,7 +45,6 @@ internal sealed unsafe class GpuBuffer : IDisposable
         return result;
     }
 
-    /// <summary>Creates a default-usage constant buffer updated via UpdateSubresource. Size is rounded up to 16 bytes.</summary>
     public static GpuBuffer CreateConstant(RenderDevice device, uint sizeBytes)
     {
         sizeBytes = (sizeBytes + 15u) & ~15u;
@@ -65,7 +60,7 @@ internal sealed unsafe class GpuBuffer : IDisposable
         return result;
     }
 
-    /// <summary>Uploads a struct into a default-usage constant buffer. Render thread only.</summary>
+    // Render thread only.
     public void UpdateConstant<T>(ID3D11DeviceContext* ctx, in T value) where T : unmanaged
     {
         var copy = value;
@@ -78,7 +73,6 @@ internal sealed unsafe class GpuBuffer : IDisposable
             throw new InvalidOperationException($"Draw3D: failed to create {what} (hr=0x{(int)hr:X8}).");
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         buffer.Dispose();
@@ -86,9 +80,7 @@ internal sealed unsafe class GpuBuffer : IDisposable
     }
 }
 
-// A growable dynamic-buffer ring: WRITE_DISCARD on the first map of each frame or on wrap, WRITE_NO_OVERWRITE for
-// appends within a frame. Growth doubles capacity and is logged, since a resize after warm-up means a steady-state
-// frame just allocated a GPU resource, which should not happen.
+// A resize after warm-up is a steady-state GPU allocation.
 internal sealed unsafe class DynamicRing : IDisposable
 {
     private readonly D3D11_BIND_FLAG bind;
@@ -97,13 +89,10 @@ internal sealed unsafe class DynamicRing : IDisposable
     private uint cursor;
     private bool discardNext = true;
 
-    /// <summary>The current raw buffer pointer (may change on growth; null before first use).</summary>
     public ID3D11Buffer* Buffer => buffer != null ? buffer.Buffer : null;
 
-    /// <summary>Current capacity in bytes.</summary>
     public uint CapacityBytes => buffer?.SizeBytes ?? 0;
 
-    /// <summary>Creates a ring for the given bind point.</summary>
     public DynamicRing(D3D11_BIND_FLAG bind, uint initialCapacityBytes, string name)
     {
         this.bind = bind;
@@ -113,13 +102,9 @@ internal sealed unsafe class DynamicRing : IDisposable
 
     private uint InitialCapacity { get; }
 
-    /// <summary>Marks the start of a frame: the next write discards and rewinds the ring.</summary>
     public void BeginFrame() => discardNext = true;
 
-    /// <summary>
-    /// Copies <paramref name="bytes"/> bytes into the ring and returns the byte offset they landed at.
-    /// Grows (double, logged) when a single write exceeds capacity. Render thread only.
-    /// </summary>
+    // Render thread only.
     public bool TryWrite(RenderDevice device, ID3D11DeviceContext* ctx, void* src, uint bytes, uint alignment, out uint offset)
     {
         offset = 0;
@@ -135,7 +120,7 @@ internal sealed unsafe class DynamicRing : IDisposable
             if (buffer != null)
                 NoireLogger.LogDebug<DynamicRing>($"Growing {name} ring {buffer.SizeBytes} to {newSize} bytes.", "Draw3D");
 
-            buffer?.Dispose(); // in-flight GPU commands hold their own reference; safe.
+            buffer?.Dispose(); // in-flight GPU commands hold their own reference
             buffer = GpuBuffer.CreateDynamic(device, newSize, bind);
             cursor = 0;
             discardNext = true;
@@ -160,7 +145,6 @@ internal sealed unsafe class DynamicRing : IDisposable
         return true;
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         buffer?.Dispose();

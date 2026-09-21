@@ -3,7 +3,6 @@ using System;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// The collision height-map that HighestOnly reads, and the stencil value that cuts actors out of a decal.
 internal sealed class DecalsPage
 {
     public void Draw()
@@ -24,7 +23,7 @@ internal sealed class DecalsPage
         using (Ui.Form("decals.stencil"))
         {
             Ui.Int("Character stencil", static () => (int)NoireDraw3D.CharacterStencilValue, static v => NoireDraw3D.CharacterStencilValue = (uint)Math.Max(0, v),
-                "The game stencil value marking characters, used to cut them out of decals. Default 8; 0 disables.");
+                "The game stencil value marking characters, used to cut them out of decals. Default 8. 0 disables.");
         }
     }
 }

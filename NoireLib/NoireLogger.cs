@@ -1,4 +1,4 @@
-using Dalamud.Game.Text;
+﻿using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Utility;
@@ -123,9 +123,6 @@ public static class NoireLogger
 
     #region Log once
 
-    /// <summary>
-    /// The keys that have already reported.
-    /// </summary>
     private static readonly HashSet<string> ReportedOnce = [];
 
     /// <summary>
@@ -376,14 +373,12 @@ public static class NoireLogger
         }
 
         /// <summary>
-        /// Adds tagged text to the chat message.
+        /// Adds tagged text to the chat message.<br/>
+        /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+        /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
         /// </summary>
         /// <param name="taggedText">The tagged text to add.</param>
         /// <returns>The current chat message builder.</returns>
-        /// <remarks>
-        /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
-        /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-        /// </remarks>
         public ChatMessageBuilder AddTaggedText(string taggedText)
         {
             AppendTaggedTextSegments(segments, taggedText);
@@ -391,14 +386,14 @@ public static class NoireLogger
         }
 
         /// <summary>
-        /// Adds text the player can click, running whatever the payload was registered with.
+        /// Adds text the player can click, running whatever the payload was registered with.<br/>
+        /// A link has no default styling.
         /// </summary>
         /// <param name="text">The clickable text to add.</param>
         /// <param name="link">The payload from <see cref="Helpers.ChatLinkHelper.Register"/>. A null one adds the text unclickable.</param>
         /// <param name="foregroundColor">The optional foreground RGB color to apply.</param>
         /// <param name="glowColor">The optional glow RGB color to apply.</param>
         /// <returns>The current chat message builder.</returns>
-        /// <remarks>A link has no default styling.</remarks>
         public ChatMessageBuilder AddLink(string text, DalamudLinkPayload? link, Vector3? foregroundColor = null, Vector3? glowColor = null)
         {
             if (!string.IsNullOrEmpty(text))
@@ -441,14 +436,12 @@ public static class NoireLogger
         => new();
 
     /// <summary>
-    /// Parses tagged chat text into a chat message builder.
+    /// Parses tagged chat text into a chat message builder.<br/>
+    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
+    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
     /// </summary>
     /// <param name="taggedMessage">The tagged message to parse.</param>
     /// <returns>A chat message builder containing the parsed message segments.</returns>
-    /// <remarks>
-    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
-    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-    /// </remarks>
     public static ChatMessageBuilder ParseTaggedChatMessage(string taggedMessage)
         => new ChatMessageBuilder().AddTaggedText(taggedMessage);
 
@@ -506,12 +499,10 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message.<br/>
-    /// Safe to call from any thread.
-    /// </summary>
-    /// <remarks>
+    /// Safe to call from any thread.<br/>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
     /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-    /// </remarks>
+    /// </summary>
     /// <param name="taggedMessage">The tagged message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
     /// <param name="senderName">The optional sender name to display for the chat entry.</param>
@@ -522,12 +513,10 @@ public static class NoireLogger
 
     /// <summary>
     /// Prints a tagged message to the in-game chat as an echo message with the caller instance prefix.<br/>
-    /// Safe to call from any thread.
-    /// </summary>
-    /// <remarks>
+    /// Safe to call from any thread.<br/>
     /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
     /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-    /// </remarks>
+    /// </summary>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
     /// <param name="taggedMessage">The tagged message to display.</param>
@@ -595,13 +584,9 @@ public static class NoireLogger
         => PrintToChatInternal(chatType, messageBuilder.Build(GetChatLeadingText(instance, prefix)), senderName, senderForegroundColor, senderGlowColor);
 
     /// <summary>
-    /// Prints a tagged message to the in-game chat with specified chat type.<br/>
+    /// Prints a tagged message to the in-game chat. Tags: <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c> and <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>.<br/>
     /// Safe to call from any thread.
     /// </summary>
-    /// <remarks>
-    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
-    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-    /// </remarks>
     /// <param name="chatType">The type of chat message.</param>
     /// <param name="taggedMessage">The tagged message to display.</param>
     /// <param name="prefix">The optional prefix to prepend to the message.</param>
@@ -612,13 +597,9 @@ public static class NoireLogger
         => PrintToChat(chatType, ParseTaggedChatMessage(taggedMessage), prefix, senderName, senderForegroundColor, senderGlowColor);
 
     /// <summary>
-    /// Prints a tagged message to the in-game chat with specified chat type and the caller instance prefix.<br/>
+    /// Prints a tagged message to the in-game chat with the caller instance prefix. Tags: <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c> and <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>.<br/>
     /// Safe to call from any thread.
     /// </summary>
-    /// <remarks>
-    /// Supported tags are <c>&lt;color=#RRGGBB&gt;</c>, <c>&lt;glow=#RRGGBB&gt;</c>, and
-    /// <c>&lt;style color=#RRGGBB glow=#RRGGBB&gt;</c>, with matching closing tags.
-    /// </remarks>
     /// <typeparam name="T">The caller type.</typeparam>
     /// <param name="instance">The caller instance.</param>
     /// <param name="chatType">The type of chat message.</param>
@@ -662,28 +643,9 @@ public static class NoireLogger
     public static void PrintToChat<T>(T instance, XivChatType chatType, string message, Vector3 foregroundColor, Vector3? glowColor = null, string? prefix = null, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null) where T : class
         => PrintToChatInternal(chatType, GetLogStringWithCaller(instance, message, prefix), null, senderName, foregroundColor, glowColor, senderForegroundColor, senderGlowColor);
 
-    /// <summary>
-    /// Prints a message to the in-game chat with optional colors for both the message and sender name.
-    /// </summary>
-    /// <param name="chatType">The type of chat message.</param>
-    /// <param name="message">The message to display.</param>
-    /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
-    /// <param name="messageForegroundColor">The optional foreground RGB color of the message.</param>
-    /// <param name="messageGlowColor">The optional glow RGB color of the message.</param>
-    /// <param name="senderForegroundColor">The optional foreground RGB color of the sender name.</param>
-    /// <param name="senderGlowColor">The optional glow RGB color of the sender name.</param>
     private static void PrintToChatInternal(XivChatType chatType, string message, string? prefix = null, string? senderName = null, Vector3? messageForegroundColor = null, Vector3? messageGlowColor = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
         => PrintToChatInternal(chatType, BuildChatMessage(message, prefix, messageForegroundColor, messageGlowColor), senderName, senderForegroundColor, senderGlowColor);
 
-    /// <summary>
-    /// Prints a message to the in-game chat.
-    /// </summary>
-    /// <param name="chatType">The type of chat message.</param>
-    /// <param name="message">The message to display.</param>
-    /// <param name="senderName">The optional sender name to display for the chat entry.</param>
-    /// <param name="senderForegroundColor">The optional foreground RGB color for the sender name.</param>
-    /// <param name="senderGlowColor">The optional glow RGB color for the sender name.</param>
     private static void PrintToChatInternal(XivChatType chatType, SeString message, string? senderName = null, Vector3? senderForegroundColor = null, Vector3? senderGlowColor = null)
     {
         if (message.Payloads.Count == 0)
@@ -701,20 +663,14 @@ public static class NoireLogger
         PrintChatEntry(entry);
     }
 
-    /// <summary>
-    /// Hands a fully built chat entry to the chat log on the framework thread, from any calling thread.
-    /// </summary>
-    /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntry(XivChatEntry entry)
     {
-        // NoireService.ChatGui is null before initialization.
         if (!NoireService.IsInitialized())
             return;
 
         try
         {
-            // The chat queue is unsynchronized and drained on the framework thread, so filling it from another
-            // thread corrupts it. On-thread callers hand over directly, keeping consecutive lines in order.
+            // The chat queue is drained on the framework thread and filling it from elsewhere corrupts it.
             if (NoireService.Framework.IsInFrameworkUpdateThread)
             {
                 PrintChatEntryToChatLog(entry);
@@ -725,18 +681,14 @@ public static class NoireLogger
         }
         catch (Exception ex)
         {
-            // Reaching the framework thread at all can fail while NoireLib is being torn down.
+            // Can fail while NoireLib is torn down.
             LogError(ex, "A chat message could not be scheduled for printing.", ChatPrintLogPrefix);
         }
     }
 
-    /// <summary>
-    /// Hands a chat entry to the chat log. Framework thread only.
-    /// </summary>
-    /// <param name="entry">The chat entry to print.</param>
     private static void PrintChatEntryToChatLog(XivChatEntry entry)
     {
-        // Caught here rather than at the call site: when marshalled, an escaping exception faults a task nobody awaits.
+        // When marshalled, an escaping exception faults a task nobody awaits.
         try
         {
             NoireService.ChatGui.Print(entry);
@@ -751,9 +703,6 @@ public static class NoireLogger
 
     #region Helper Methods
 
-    /// <summary>
-    /// The prefix used when a failed chat print is reported to the log.
-    /// </summary>
     private const string ChatPrintLogPrefix = $"[{nameof(NoireLogger)}] ";
 
     private readonly record struct ChatMessageSegment(string Text, Vector3? ForegroundColor, Vector3? GlowColor,
@@ -765,9 +714,6 @@ public static class NoireLogger
 
     private readonly record struct ChatTag(string Name, bool IsClosing, Vector3? ForegroundColor, Vector3? GlowColor);
 
-    /// <summary>
-    /// The supported log levels.
-    /// </summary>
     private enum LogLevel
     {
         Info,
@@ -778,12 +724,6 @@ public static class NoireLogger
         Verbose
     }
 
-    /// <summary>
-    /// Writes a message to the plugin log at the given level.
-    /// </summary>
-    /// <param name="level">The log level.</param>
-    /// <param name="message">The formatted message to log.</param>
-    /// <param name="exception">The optional exception to include in the log.</param>
     private static void WriteLog(LogLevel level, string message, Exception? exception = null)
     {
         try
@@ -794,11 +734,9 @@ public static class NoireLogger
         {
             // PluginLog is not initialized outside a running plugin.
         }
+
     }
 
-    /// <summary>
-    /// Dispatches the message to the matching plugin log method.
-    /// </summary>
     private static void WriteLogInternal(LogLevel level, string message, Exception? exception)
     {
         if (exception != null)
@@ -812,7 +750,6 @@ public static class NoireLogger
                     NoireService.PluginLog.Fatal(exception, message);
                     break;
                 default:
-                    // Only Error and Fatal take an exception overload.
                     break;
             }
         }
@@ -842,11 +779,6 @@ public static class NoireLogger
         }
     }
 
-    /// <summary>
-    /// Returns the prefix to use in log messages.
-    /// </summary>
-    /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <returns>The formatted prefix to use in log messages.</returns>
     private static string GetPrefix(string? prefix = null)
     {
         if (prefix.IsNullOrWhitespace())
@@ -855,18 +787,9 @@ public static class NoireLogger
         return prefix;
     }
 
-    /// <summary>
-    /// Gets the friendly name of the caller type, stripping any generic type information.
-    /// </summary>
-    /// <typeparam name="T">The caller type.</typeparam>
-    /// <returns>The friendly name of the caller type.</returns>
     private static string GetCallerFriendlyName<T>() where T : class
         => typeof(T).Name.Split('`')[0];
 
-    /// <summary>
-    /// Gets a log string with caller type name.
-    /// </summary>
-    /// <returns>The formatted log string.</returns>
     private static string GetLogStringWithCaller<T>(string message, string? prefix = null) where T : class
     {
         prefix = GetPrefix(prefix);
@@ -874,10 +797,6 @@ public static class NoireLogger
         return $"{prefix}[{caller}] {message}";
     }
 
-    /// <summary>
-    /// Gets a log string with caller instance, including module ID if applicable.
-    /// </summary>
-    /// <returns>The formatted log string.</returns>
     private static string GetLogStringWithCaller<T>(T instance, string message, string? prefix = null) where T : class
     {
         prefix = GetPrefix(prefix);
@@ -893,34 +812,15 @@ public static class NoireLogger
         return $"{prefix}[{caller}] {message}";
     }
 
-    /// <summary>
-    /// Gets a log string without caller information.
-    /// </summary>
-    /// <returns>The formatted log string.</returns>
     private static string GetLogString(string message, string? prefix = null)
     {
         prefix = GetPrefix(prefix);
         return $"{prefix}{message}";
     }
 
-    /// <summary>
-    /// Gets the leading text to prepend to chat messages for a caller instance.
-    /// </summary>
-    /// <typeparam name="T">The caller type.</typeparam>
-    /// <param name="instance">The caller instance.</param>
-    /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <returns>The formatted leading text to use in chat messages.</returns>
     private static string GetChatLeadingText<T>(T instance, string? prefix = null) where T : class
         => GetLogStringWithCaller(instance, string.Empty, prefix);
 
-    /// <summary>
-    /// Builds a styled chat message from plain text.
-    /// </summary>
-    /// <param name="message">The message to display.</param>
-    /// <param name="prefix">The optional prefix to prepend to the message.</param>
-    /// <param name="foregroundColor">The optional foreground RGB color of the message.</param>
-    /// <param name="glowColor">The optional glow RGB color of the message.</param>
-    /// <returns>The built chat message.</returns>
     private static SeString BuildChatMessage(string message, string? prefix = null, Vector3? foregroundColor = null, Vector3? glowColor = null)
     {
         var builder = new SeStringBuilder();
@@ -928,38 +828,23 @@ public static class NoireLogger
         return builder.Build();
     }
 
-    /// <summary>
-    /// Builds the sender name string for a chat entry.
-    /// </summary>
-    /// <param name="senderName">The sender name of the message.</param>
-    /// <param name="foregroundColor">The optional foreground RGB color of the sender name.</param>
-    /// <param name="glowColor">The optional glow RGB color of the sender name.</param>
-    /// <returns>The built sender name string.</returns>
     private static SeString BuildSenderName(string senderName, Vector3? foregroundColor = null, Vector3? glowColor = null)
     {
         var builder = new SeStringBuilder();
 
-        // No player payload for the sender: a made-up name or world id breaks the game's context menu.
+        // A made-up player payload breaks the game's context menu.
         AppendStyledText(builder, senderName, foregroundColor, glowColor);
 
         return builder.Build();
     }
 
-    /// <summary>
-    /// Appends styled text to a chat string builder.
-    /// </summary>
-    /// <param name="builder">The chat string builder.</param>
-    /// <param name="text">The text to append.</param>
-    /// <param name="foregroundColor">The optional foreground RGB color of the text.</param>
-    /// <param name="glowColor">The optional glow RGB color of the text.</param>
-    /// <param name="link">The optional payload that makes the text clickable.</param>
     private static void AppendStyledText(SeStringBuilder builder, string text, Vector3? foregroundColor = null,
         Vector3? glowColor = null, DalamudLinkPayload? link = null)
     {
         if (string.IsNullOrEmpty(text))
             return;
 
-        // Outside the colours, so the whole run is clickable rather than only the part after the last colour.
+        // The whole run is clickable, including the part before the first colour.
         if (link != null)
             builder.Add(link);
 
@@ -981,12 +866,6 @@ public static class NoireLogger
             builder.Add(RawPayload.LinkTerminator);
     }
 
-    /// <summary>
-    /// Adds a chat message segment to the segment collection.
-    /// </summary>
-    /// <param name="segments">The target segment collection.</param>
-    /// <param name="text">The text to add.</param>
-    /// <param name="style">The style to apply to the text.</param>
     private static void AddChatMessageSegment(List<ChatMessageSegment> segments, string text, ChatStyle style)
     {
         if (string.IsNullOrEmpty(text))
@@ -995,11 +874,6 @@ public static class NoireLogger
         segments.Add(new ChatMessageSegment(text, style.ForegroundColor, style.GlowColor));
     }
 
-    /// <summary>
-    /// Appends tagged text as styled segments.
-    /// </summary>
-    /// <param name="segments">The target segment collection.</param>
-    /// <param name="taggedText">The tagged text to parse.</param>
     private static void AppendTaggedTextSegments(List<ChatMessageSegment> segments, string taggedText)
     {
         if (string.IsNullOrEmpty(taggedText))
@@ -1051,12 +925,6 @@ public static class NoireLogger
         AddChatMessageSegment(segments, taggedText[textStartIndex..], currentStyle);
     }
 
-    /// <summary>
-    /// Tries to parse a chat tag.
-    /// </summary>
-    /// <param name="rawTag">The raw tag content without angle brackets.</param>
-    /// <param name="tag">The parsed tag when successful.</param>
-    /// <returns><see langword="true"/> when the tag was parsed successfully; otherwise, <see langword="false"/>.</returns>
     private static bool TryParseChatTag(string rawTag, out ChatTag tag)
     {
         rawTag = rawTag.Trim();
@@ -1123,32 +991,14 @@ public static class NoireLogger
         return false;
     }
 
-    /// <summary>
-    /// Determines whether a tag name is supported by the chat parser.
-    /// </summary>
-    /// <param name="tagName">The tag name to check.</param>
-    /// <returns><see langword="true"/> when the tag is supported; otherwise, <see langword="false"/>.</returns>
     private static bool IsSupportedChatTag(string tagName)
         => tagName.Equals("color", StringComparison.OrdinalIgnoreCase)
         || tagName.Equals("glow", StringComparison.OrdinalIgnoreCase)
         || tagName.Equals("style", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Applies a parsed tag to the current chat style.
-    /// </summary>
-    /// <param name="currentStyle">The current chat style.</param>
-    /// <param name="tag">The parsed tag.</param>
-    /// <returns>The resulting chat style.</returns>
     private static ChatStyle ApplyChatStyle(ChatStyle currentStyle, ChatTag tag)
         => new(tag.ForegroundColor ?? currentStyle.ForegroundColor, tag.GlowColor ?? currentStyle.GlowColor);
 
-    /// <summary>
-    /// Tries to restore the previous chat style for a closing tag.
-    /// </summary>
-    /// <param name="styleStack">The style stack.</param>
-    /// <param name="tagName">The closing tag name.</param>
-    /// <param name="previousStyle">The restored previous style when successful.</param>
-    /// <returns><see langword="true"/> when a matching style was restored; otherwise, <see langword="false"/>.</returns>
     private static bool TryPopChatStyle(Stack<ChatStyleFrame> styleStack, string tagName, out ChatStyle previousStyle)
     {
         if (styleStack.Count > 0 && styleStack.Peek().TagName.Equals(tagName, StringComparison.OrdinalIgnoreCase))
@@ -1161,13 +1011,6 @@ public static class NoireLogger
         return false;
     }
 
-    /// <summary>
-    /// Tries to read a color attribute from a chat style tag.
-    /// </summary>
-    /// <param name="attributes">The attribute text to parse.</param>
-    /// <param name="attributeName">The attribute name to read.</param>
-    /// <param name="color">The parsed color when successful.</param>
-    /// <returns><see langword="true"/> when the attribute was found and parsed successfully; otherwise, <see langword="false"/>.</returns>
     private static bool TryGetChatTagColorAttribute(string attributes, string attributeName, out Vector3 color)
     {
         var parts = attributes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -1185,12 +1028,6 @@ public static class NoireLogger
         return false;
     }
 
-    /// <summary>
-    /// Tries to parse a hexadecimal color into an RGB vector.
-    /// </summary>
-    /// <param name="value">The color value to parse.</param>
-    /// <param name="color">The parsed RGB color when successful.</param>
-    /// <returns><see langword="true"/> when the color was parsed successfully; otherwise, <see langword="false"/>.</returns>
     private static bool TryParseHexColor(string value, out Vector3 color)
     {
         value = value.Trim().Trim('"', '\'');

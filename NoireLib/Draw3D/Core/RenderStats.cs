@@ -4,13 +4,11 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Frame counters plus a 4-deep GPU timestamp-query ring, resolved oldest-first and never stalling. Every frame the
-// renderer skips increments one of the named counters.
+// Every frame the renderer skips increments one of the named counters.
 internal sealed unsafe class RenderStats : IDisposable
 {
     private const int RingDepth = 4;
 
-    // Cumulative counters (reset via ResetCounters).
     public long FramesRendered;
     public long FramesSkippedDisabled;
     public long FramesSkippedInitPending;
@@ -23,9 +21,9 @@ internal sealed unsafe class RenderStats : IDisposable
     public long DisposedAssetDraws;
     public long DynamicGeometryOverflows;
     public long ImCommandsDropped;
-    public long GpuCameraFrames; // frames projected with the captured GPU camera constants
+    public long GpuCameraFrames;
+    public long ControlCameraFrames;
 
-    // Per-frame values (rewritten every rendered frame).
     public int DrawCalls;
     public int Instances;
     public int Triangles;
@@ -38,15 +36,13 @@ internal sealed unsafe class RenderStats : IDisposable
     public bool UsedFallbackCamera;
     public bool UsedGpuCamera;
 
-    // Last-pick values, written by Pick on the UI thread and not frame-reset, so they survive until the next pick.
+    // Written by Pick on the UI thread and not reset per frame.
     public int PickMicros;
     public int PickNodes;
     public int PickRefined;
 
-    /// <summary>Last resolved GPU time for the scene pass, in milliseconds.</summary>
     public float SceneGpuMs { get; private set; }
 
-    /// <summary>Last resolved GPU time for the composite, in milliseconds.</summary>
     public float CompositeGpuMs { get; private set; }
 
     private readonly ComPtr<ID3D11Query>[] disjoint = new ComPtr<ID3D11Query>[RingDepth];
@@ -57,7 +53,6 @@ internal sealed unsafe class RenderStats : IDisposable
     private int writeIndex;
     private bool queriesCreated;
 
-    /// <summary>Resets the per-frame values at the top of a rendered frame.</summary>
     public void BeginFrameCounters()
     {
         DrawCalls = 0;
@@ -70,7 +65,6 @@ internal sealed unsafe class RenderStats : IDisposable
         ObjectCbUpdates = 0;
     }
 
-    /// <summary>Begins GPU timing for this frame (resolves the oldest completed ring slot first).</summary>
     public void BeginGpuTiming(RenderDevice device, ID3D11DeviceContext* ctx)
     {
         if (!queriesCreated)
@@ -87,7 +81,7 @@ internal sealed unsafe class RenderStats : IDisposable
             }
         }
 
-        // Query results arrive several frames later, so the oldest slot is resolved without ever blocking on it.
+        // Results arrive several frames later.
         var readIndex = (writeIndex + 1) % RingDepth;
         if (inFlight[readIndex])
             TryResolve(ctx, readIndex);
@@ -99,14 +93,12 @@ internal sealed unsafe class RenderStats : IDisposable
         ctx->End((ID3D11Asynchronous*)tsStart[writeIndex].Get());
     }
 
-    /// <summary>Marks the end of the scene pass on the GPU timeline.</summary>
     public void MarkSceneDone(ID3D11DeviceContext* ctx)
     {
         if (queriesCreated && !inFlight[writeIndex] && tsScene[writeIndex].Get() != null)
             ctx->End((ID3D11Asynchronous*)tsScene[writeIndex].Get());
     }
 
-    /// <summary>Ends GPU timing for this frame and advances the ring.</summary>
     public void EndGpuTiming(ID3D11DeviceContext* ctx)
     {
         if (!queriesCreated || inFlight[writeIndex] || disjoint[writeIndex].Get() == null)
@@ -141,7 +133,6 @@ internal sealed unsafe class RenderStats : IDisposable
         CompositeGpuMs = (float)((end - scene) * toMs);
     }
 
-    /// <summary>Resets the cumulative counters.</summary>
     public void ResetCounters()
     {
         FramesRendered = 0;
@@ -157,9 +148,9 @@ internal sealed unsafe class RenderStats : IDisposable
         DynamicGeometryOverflows = 0;
         ImCommandsDropped = 0;
         GpuCameraFrames = 0;
+        ControlCameraFrames = 0;
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         for (var i = 0; i < RingDepth; i++)

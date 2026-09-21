@@ -41,4 +41,30 @@ public sealed record ShopOffer(
 
     /// <summary>Whether gil is the whole price.</summary>
     public bool IsGilPurchase => Costs.Count == 1 && Costs[0].IsGil;
+
+    /// <summary>What the line asks for: gil, currencies, an ordinary item, or nothing.</summary>
+    public PurchaseKind PurchaseKind
+    {
+        get
+        {
+            if (Costs.Count == 0)
+                return Helpers.PurchaseKind.Free;
+
+            var gilAlone = true;
+
+            foreach (var cost in Costs)
+            {
+                if (!cost.IsCurrency)
+                    return Helpers.PurchaseKind.ItemExchange;
+
+                if (!cost.IsGil)
+                    gilAlone = false;
+            }
+
+            return gilAlone ? Helpers.PurchaseKind.GilShop : Helpers.PurchaseKind.CurrencyExchange;
+        }
+    }
+
+    /// <summary>Whether the line is bought with gil or currencies alone.</summary>
+    public bool IsPurchase => PurchaseKind is Helpers.PurchaseKind.GilShop or Helpers.PurchaseKind.CurrencyExchange;
 }

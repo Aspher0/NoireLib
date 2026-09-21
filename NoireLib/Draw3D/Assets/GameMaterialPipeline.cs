@@ -3,12 +3,7 @@ using System.Reflection;
 
 namespace NoireLib.Draw3D.Assets;
 
-/// <summary>
-/// The shading pipeline game materials are drawn with, registered on first use.<br/>
-/// It exists because these materials use the color map's alpha as a dyeable mask rather than as
-/// coverage: the surface must be drawn opaque, and any color applied to it must be confined to the
-/// masked area or it darkens the detail the texture already colored correctly.
-/// </summary>
+/// <summary>The pipeline game materials draw with. The color map's alpha is a dye mask.</summary>
 public static class GameMaterialPipeline
 {
     /// <summary>Name to pass to <see cref="Materials.Material.Custom"/> for this pipeline.</summary>
@@ -21,29 +16,13 @@ public static class GameMaterialPipeline
     private static bool missingSource;
     private static bool warnedNotReady;
 
-    /// <summary>
-    /// Why the pipeline is unavailable, or null when it is usable; materials then fall back to the standard
-    /// lit shader, so a dye applied through <see cref="GameMaterial.ToGameShaded"/> has no visible effect,
-    /// worth surfacing wherever that would otherwise read as the dye doing nothing.
-    /// </summary>
+    /// <summary>Why the pipeline is unavailable (materials then fall back to the lit shader and ignore dye), or null when it is usable.</summary>
     public static string? Unavailable { get; private set; }
 
-    /// <summary>
-    /// Whether the pipeline is registered, so a material built now draws with it rather than falling back;
-    /// <b>a caller that keeps built materials around must watch this</b> and rebuild on the false-to-true
-    /// transition, since a material built before registration is not repaired later and stays flatter than
-    /// ones built after.<br/>
-    /// Unlike <see cref="Unavailable"/>, this is meaningful before the first registration attempt, exactly
-    /// when the decision has to be made.
-    /// </summary>
+    /// <summary>Whether the pipeline is registered. Materials built earlier must be rebuilt.</summary>
     public static bool Ready => registered;
 
-    /// <summary>
-    /// Registers the pipeline if it is not already, and reports whether it is usable; a missing shader
-    /// resource is a permanent failure (not retried), while a renderer that has not started yet is retried on
-    /// every call, so the first material built before the device exists does not disable the pipeline for the
-    /// rest of the session.
-    /// </summary>
+    /// <summary>Registers the pipeline if needed. A missing shader resource fails permanently. A renderer not started yet is retried.</summary>
     public static bool EnsureRegistered()
     {
         if (registered)
@@ -76,9 +55,7 @@ public static class GameMaterialPipeline
                 return true;
             }
 
-            // The renderer has no device yet. This is ordinary during startup and resolves itself, so it is
-            // reported once rather than on every material built until then.
-            Unavailable = "The renderer has not started yet, so the pipeline could not be registered.";
+            Unavailable = "The renderer has not started yet. The pipeline could not be registered.";
             if (!warnedNotReady)
             {
                 warnedNotReady = true;

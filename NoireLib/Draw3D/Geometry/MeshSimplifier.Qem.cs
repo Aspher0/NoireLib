@@ -6,16 +6,11 @@ namespace NoireLib.Draw3D.Geometry;
 
 public static partial class MeshSimplifier
 {
-    /// <summary>
-    /// Quadric error edge-collapse decimation (Garland-Heckbert): repeatedly collapses the edge whose removal adds
-    /// the least squared distance to the surface, placing the merged vertex at whichever of its two endpoints or
-    /// their midpoint costs least, so every output vertex sits on an original edge and the surface degrades smoothly
-    /// instead of shattering; boundary edges are pinned, a collapse that would flip a face is skipped, and null is
-    /// returned when the mesh is too small, already at/below target, or nothing could be collapsed.
-    /// </summary>
+    /// <summary>Decimates a mesh by Garland-Heckbert quadric error edge collapse, pinning boundary edges and rejecting face flips.</summary>
     /// <param name="vertices">Source vertices.</param>
     /// <param name="indices">Source indices (triangle list).</param>
     /// <param name="targetRatio">Fraction of the original triangle count to keep (clamped to 0.02..0.95).</param>
+    /// <returns>The reduced geometry, or null when the mesh is too small, already at target, or nothing collapsed.</returns>
     public static Result? Simplify(ReadOnlySpan<Vertex3D> vertices, ReadOnlySpan<uint> indices, float targetRatio)
     {
         var vCount = vertices.Length;
@@ -57,8 +52,7 @@ public static partial class MeshSimplifier
             incident[t2[t]].Add(t);
         }
 
-        // Per-vertex quadrics: the sum of the fundamental error quadrics of the incident faces, plus a pinning plane
-        // for each boundary edge so open borders (a cut-out model) are not eroded.
+        // Plus a pinning plane per boundary edge. Open borders are not eroded.
         var quad = new Quadric[vCount];
         var edgeFaces = new Dictionary<long, int>(triCount * 3);
         for (var t = 0; t < triCount; t++)
@@ -87,7 +81,7 @@ public static partial class MeshSimplifier
         var version = new int[vCount];
         var current = triCount;
 
-        // Seed the queue with every unique edge, keyed by the endpoints' current versions for lazy invalidation.
+        // Keyed by endpoint versions for lazy invalidation.
         var pq = new PriorityQueue<(int U, int V, int VerU, int VerV), double>();
         foreach (var key in edgeFaces.Keys)
         {
@@ -97,18 +91,16 @@ public static partial class MeshSimplifier
             pq.Enqueue((u, v, version[u], version[v]), cost);
         }
 
-        var guard = triCount * 6 + 16; // hard iteration bound against a pathological non-manifold loop
+        var guard = triCount * 6 + 16; // bound against a non-manifold loop
         while (current > targetTriangles && pq.Count > 0 && guard-- > 0)
         {
             var e = pq.Dequeue();
             if (!alive[e.U] || !alive[e.V] || version[e.U] != e.VerU || version[e.V] != e.VerV)
-                continue; // stale entry (an endpoint moved or died since this was queued)
+                continue; // stale
 
             TryCollapse(e.U, e.V, quad, pos, vert, t0, t1, t2, removed, incident, alive, version, ref current, pq);
         }
 
-        // Compact the survivors. Every collapse repoints its triangles onto the surviving vertex, so triangle corners
-        // always reference an alive vertex; still, guard against any residual degenerate.
         var remap = new int[vCount];
         Array.Fill(remap, -1);
         var outVerts = new List<Vertex3D>(vCount);
@@ -144,7 +136,7 @@ public static partial class MeshSimplifier
         return (uint)remap[index];
     }
 
-    // Attempts to collapse edge (u,v) onto its least-cost placement; commits only if no incident face would flip.
+    // Commits only if no incident face would flip.
     private static void TryCollapse(
         int u, int v, Quadric[] quad, Vector3[] pos, Vertex3D[] vert,
         int[] t0, int[] t1, int[] t2, bool[] removed, List<int>[] incident,
@@ -152,12 +144,11 @@ public static partial class MeshSimplifier
     {
         var (_, target) = EvalCollapse(quad, pos, u, v);
 
-        // Flip guard: every surviving face touching u or v is re-evaluated with v folded onto u at the target position.
         foreach (var t in Faces(incident, removed, u, v))
         {
             int a = Fold(t0[t], v, u), b = Fold(t1[t], v, u), c = Fold(t2[t], v, u);
             if (a == b || b == c || a == c)
-                continue; // a face that used both endpoints dies in the collapse - not a flip candidate
+                continue; // a face using both endpoints dies
 
             var oldN = Vector3.Cross(pos[t1[t]] - pos[t0[t]], pos[t2[t]] - pos[t0[t]]);
             var pa = Place(a, u, v, target, pos);
@@ -165,10 +156,9 @@ public static partial class MeshSimplifier
             var pc = Place(c, u, v, target, pos);
             var newN = Vector3.Cross(pb - pa, pc - pa);
             if (newN.LengthSquared() < 1e-16f || Vector3.Dot(oldN, newN) < 0f)
-                return; // degenerate or flipped - reject this collapse
+                return;
         }
 
-        // Commit: move u to the target, merge v's quadric, repoint v's faces onto u, retire the shared faces.
         pos[u] = target;
         vert[u].Position = target;
         quad[u].Add(in quad[v]);
@@ -192,7 +182,6 @@ public static partial class MeshSimplifier
             incident[u].Add(t);
         }
 
-        // u changed: invalidate its old edges (version bump) and re-queue edges to its current neighbours.
         version[u]++;
         foreach (var t in incident[u])
         {
@@ -214,7 +203,6 @@ public static partial class MeshSimplifier
         pq.Enqueue((u, w, version[u], version[w]), cost);
     }
 
-    // Deduplicated union of the non-retired faces incident to u or v (for the flip test).
     private static IEnumerable<int> Faces(List<int>[] incident, bool[] removed, int u, int v)
     {
         foreach (var t in incident[u])
@@ -230,8 +218,7 @@ public static partial class MeshSimplifier
     private static Vector3 Place(int corner, int u, int v, Vector3 target, Vector3[] pos)
         => corner == u || corner == v ? target : pos[corner];
 
-    // The least-cost placement for collapsing (u,v): whichever of u, v, or their midpoint minimizes the summed
-    // quadric error.
+    // Whichever of u, v or their midpoint minimizes the summed error.
     private static (double Cost, Vector3 Target) EvalCollapse(Quadric[] quad, Vector3[] pos, int u, int v)
     {
         var q = quad[u];
@@ -259,10 +246,9 @@ public static partial class MeshSimplifier
         return ((long)lo << 32) | (uint)hi;
     }
 
-    // Adds a pinning quadric for each boundary edge (an edge used by exactly one face), so open borders hold.
     private static void AddBoundaryQuadrics(Dictionary<long, int> edgeFaces, int[] t0, int[] t1, int[] t2, Vector3[] pos, Quadric[] quad, int triCount)
     {
-        const float boundaryWeight = 3.16f; // sqrt(10): scales the plane so its quadric weighs ~10x a face's
+        const float boundaryWeight = 3.16f; // sqrt(10), the plane weighs about 10x a face
         for (var t = 0; t < triCount; t++)
         {
             AddBoundaryEdge(edgeFaces, t0[t], t1[t], t2[t], pos, quad, boundaryWeight);
@@ -274,12 +260,12 @@ public static partial class MeshSimplifier
     private static void AddBoundaryEdge(Dictionary<long, int> edgeFaces, int a, int b, int opposite, Vector3[] pos, Quadric[] quad, float weight)
     {
         if (edgeFaces.GetValueOrDefault(EdgeKey(a, b)) != 1)
-            return; // shared edge - not a boundary
+            return; // interior edge
 
         var pa = pos[a];
         var edge = pos[b] - pa;
         var faceN = Vector3.Cross(edge, pos[opposite] - pa);
-        var perp = Vector3.Cross(edge, faceN); // in the face plane, perpendicular to the edge
+        var perp = Vector3.Cross(edge, faceN);
         var len = perp.Length();
         if (len < 1e-12f)
             return;
@@ -290,10 +276,10 @@ public static partial class MeshSimplifier
         quad[b].Add(in q);
     }
 
-    // A symmetric 4x4 error quadric (upper triangle), evaluating squared distance to a set of planes.
+    // Symmetric 4x4, upper triangle.
     private struct Quadric
     {
-        private double a, b, c, d, e, f, g, h, i, j; // xx xy xz xw  yy yz yw  zz zw  ww
+        private double a, b, c, d, e, f, g, h, i, j; // xx xy xz xw yy yz yw zz zw ww
 
         public static Quadric FromPlane(double px, double py, double pz, double pw) => new()
         {
@@ -311,7 +297,6 @@ public static partial class MeshSimplifier
             j += q.j;
         }
 
-        /// <summary>Evaluates vᵀQv for the homogeneous point [v, 1] - the squared distance to the accumulated planes.</summary>
         public readonly double Error(Vector3 v)
         {
             double x = v.X, y = v.Y, z = v.Z;

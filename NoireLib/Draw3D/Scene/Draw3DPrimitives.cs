@@ -4,15 +4,10 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Primitive-shape shortcuts over <see cref="Scene3D.Spawn(MeshData, Material, Vector3, string, bool)"/> - one call
-/// per <see cref="MeshBuilder"/> primitive. Extension methods so the scene core stays lean; each is two lines over
-/// <c>Spawn(MeshBuilder.X(...), ...)</c> and never locks you in - pass any <see cref="MeshData"/> / <see cref="Mesh"/>
-/// to <c>Spawn</c> for anything not in this list.
-/// </summary>
+/// <summary>Primitive-shape shortcuts over <see cref="Scene3D.Spawn(MeshData, Material, Vector3, string, bool)"/>, one per <see cref="MeshBuilder"/> primitive.</summary>
 public static class Draw3DPrimitives
 {
-    /// <summary>Spawns a unit box (owned mesh); fluent-chainable via the returned node's transform setters.</summary>
+    /// <summary>Spawns a unit box (owned mesh).</summary>
     public static SceneNode AddBox(this Scene3D scene, Material material, Vector3 position = default, string? name = null, bool keepCpuData = false)
         => scene.Spawn(MeshBuilder.Box(), material, position, name, keepCpuData);
 
@@ -28,7 +23,7 @@ public static class Draw3DPrimitives
     public static SceneNode AddQuad(this Scene3D scene, float width, float depth, Material material, Vector3 position = default, string? name = null, bool keepCpuData = false)
         => scene.Spawn(MeshBuilder.Quad(width, depth), material, position, name, keepCpuData);
 
-    /// <summary>Spawns a flat disc on the XZ plane (owned mesh) - the natural base for a circular ground decal.</summary>
+    /// <summary>Spawns a flat disc on the XZ plane (owned mesh).</summary>
     public static SceneNode AddDisc(this Scene3D scene, float radius, Material material, Vector3 position = default, string? name = null, bool keepCpuData = false)
         => scene.Spawn(MeshBuilder.Disc(radius), material, position, name, keepCpuData);
 

@@ -2,7 +2,6 @@ using NoireLib.Draw3D;
 
 namespace NoireDraw3DDemoPlugin.Windows.Pages;
 
-// Layer-wide render switches: whether Draw3D draws, how opaque, what it does while the game hides its UI.
 internal sealed class RendererPage
 {
     private readonly DemoShell shell;
@@ -33,14 +32,14 @@ internal sealed class RendererPage
         using (Ui.Form("renderer.performance"))
         {
             Ui.Toggle("Batched object constants", static () => NoireDraw3D.Performance.BatchedObjectConstants, static v => NoireDraw3D.Performance.BatchedObjectConstants = v,
-                "A/B experiment: single draws ride the instanced route, so the object constant buffer re-uploads only when material params change. Compare fps and the Diagnostics page's objectCb counter in a heavy scene.");
+                "A/B experiment. Single draws ride the instanced route, and the object constant buffer re-uploads only when material params change. Compare fps and the Diagnostics page's objectCb counter in a heavy scene.");
         }
 
         Ui.Section("Debug draw");
         using (Ui.Form("renderer.debug"))
         {
             Ui.Toggle("Wireframe", static () => NoireDraw3D.Diagnostics.Wireframe, static v => NoireDraw3D.Diagnostics.Wireframe = v,
-                "Draws geometry as wireframe. Decals trace their painted outline instead.");
+                "Draws geometry as wireframe. Decals still trace their painted outline.");
             Ui.Toggle("Decal outlines", static () => NoireDraw3D.Diagnostics.DecalShapeOutlines, static v => NoireDraw3D.Diagnostics.DecalShapeOutlines = v,
                 "Traces what every decal paints. Always on while wireframe is.");
             Ui.Toggle("Decal volume boxes", static () => NoireDraw3D.Diagnostics.DecalVolumeOutlines, static v => NoireDraw3D.Diagnostics.DecalVolumeOutlines = v,

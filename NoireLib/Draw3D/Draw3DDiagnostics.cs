@@ -1,23 +1,17 @@
 using NoireLib.Draw3D.Core;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Numerics;
 using System.Text;
 
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// Runtime diagnostics behind <c>/noire3d</c>, exposed programmatically so a consumer can run them under another
-/// command name. Every measurement samples from the render thread only, since an off-thread read would be scored
-/// against a camera that has already moved. Findings go to the plugin log, with a one-line chat summary.
+/// The runtime diagnostics behind <c>/noire3d</c>, every measurement sampling on the render thread and reporting to the log.
 /// </summary>
 public sealed unsafe class Draw3DDiagnostics
 {
-    /// <summary>
-    /// Orientation overrides applied by both import paths, for a model authored in a convention the loaders do not
-    /// expect. See <see cref="Assets.Draw3DImportFlips"/>.
-    /// </summary>
+    /// <summary>Gets the orientation overrides both import paths apply, for a model authored in an unexpected convention.</summary>
     public Assets.Draw3DImportFlips ImportFlips { get; } = new();
 
     private int validateFramesRemaining;
@@ -27,81 +21,50 @@ public sealed unsafe class Draw3DDiagnostics
     private float validateMaxMatrixDelta;
     private bool probePending;
 
-    // Camera-phase trace: sweeps the recorded camera history for the frame-lag between the CPU camera the overlay
-    // projects with and the pixels already in the present buffer.
-    private const int LagSweepMax = 8;
-    private const int DepthReadbackEvery = 6; // a whole-texture depth copy is heavy, so the depth residual samples a subset of frames
-    private int camTraceFramesRemaining;
-    private int camTraceInjectFrames;
-    private int camTraceFallbackFrames;
-    private int camTraceSnapshotFrames;
-    private int camTraceMainPassFrames;
-    private float camTraceMaxScreenDelta;
-    private double camTraceScreenSum;
-    private int camTraceScreenSamples;
-    private float camTraceMaxMatrixDelta;
-
-    // Frame-lag sweep accumulators: per candidate lag k (0 = the camera this frame projected with), how well that
-    // camera reprojects world anchors onto this frame's rendered image. The depth residual is anchored to the pixels
-    // and decides. The screen residual carries a lag-0 bias, since its anchors come from ScreenToWorld unprojecting
-    // through the live struct camera, so a row beating lag 0 on depth while trailing it on screen is still in phase.
-    private readonly double[] camTraceDepthResidual = new double[LagSweepMax];
-    private readonly int[] camTraceDepthResidualN = new int[LagSweepMax];
-    private readonly double[] camTraceScreenResidual = new double[LagSweepMax];
-    private readonly int[] camTraceScreenResidualN = new int[LagSweepMax];
-    private int camTraceDepthReadbacks;
-
-    // The captured-GPU-camera row of the same sweep: when the capture is the pixels' true camera, it beats every
-    // struct lag.
-    private double camTraceCapDepthResidual;
-    private int camTraceCapDepthResidualN;
-    private double camTraceCapScreenResidual;
-    private int camTraceCapScreenResidualN;
-    private int camTraceCapAvailableFrames;
-    private int camTraceCapUsedFrames;
-
-    // Load analysis (see CameraSwimAnalysis): the same residuals bucketed by frame-time band, scored for the camera
-    // the overlay actually projected with each frame, plus per-frame camera motion in anchor pixels and the settle
-    // classification.
-    private const float MovingPxPerFrame = 0.75f; // anchor motion below this = the camera is steady this frame
-    private const float DriftingPx = 2f;          // used-camera residual above this = visibly off
-    private long camTracePrevTimestamp;
-    private readonly int[] bandFrames = new int[CameraSwimAnalysis.BandCount];
-    private readonly double[] bandFrameMsSum = new double[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandInject = new int[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandCapFresh = new int[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandCapUsed = new int[CameraSwimAnalysis.BandCount];
-    private readonly double[] bandMotionSum = new double[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandMotionN = new int[CameraSwimAnalysis.BandCount];
-    private readonly double[] bandUsedScreenSum = new double[CameraSwimAnalysis.BandCount];
-    private readonly float[] bandUsedScreenMax = new float[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandUsedScreenN = new int[CameraSwimAnalysis.BandCount];
-    private readonly double[] bandUsedDepthSum = new double[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandUsedDepthN = new int[CameraSwimAnalysis.BandCount];
-    private readonly double[] bandLag0ScreenSum = new double[CameraSwimAnalysis.BandCount];
-    private readonly int[] bandLag0ScreenN = new int[CameraSwimAnalysis.BandCount];
-    private SettleTracker? settleTracker;
-    private int settleCapUsedFrames;
-    private int settleFallbackCompositeFrames;
-    private List<Vector2>? camTracePointScratch;
-    private long camTraceArmRendered;
-    private long camTraceArmEmpty;
-
-    // Below these, after-stop drift is single-frame blips rather than a real multi-frame settle; the raw counts
-    // still print, only the verdict holds back.
-    private const int SettleVerdictMinEvents = 2;
-    private const int SettleVerdictMinFrames = 6;
-    private const int SettleVerdictMinRun = 3;
-
     internal Draw3DDiagnostics() { }
 
-    /// <summary>
-    /// Projects the layer with the captured GPU camera constants whenever a frame has them (default true).
-    /// A frame with no fresh capture, and every frame while this is off, falls back to the struct snapshot.
-    /// </summary>
+    /// <summary>Gets or sets whether the layer projects with the captured GPU camera constants whenever a frame has them (default true).</summary>
     public bool PreferCapturedCamera { get; set; } = true;
 
-    /// <summary>Arms the projection parity validator for the next 10 rendered frames (results logged). Gate: max &lt;= 1 px.</summary>
+    /// <summary>Gets or sets whether the temporal anti-aliasing jitter is removed from the captured camera before compositing (default true).</summary>
+    public bool RemoveTemporalJitter { get; set; } = true;
+
+    /// <summary>Gets or sets whether the layer is temporally resolved. Occlusion edges against the game's jittered depth settle (default true).</summary>
+    public bool TemporalStabilization { get; set; } = true;
+
+    /// <summary>Gets or sets the weight of the current frame in the temporal resolve (default 0.125, one jitter cycle).</summary>
+    public float TemporalWeight { get; set; } = 0.125f;
+
+    /// <summary>
+    /// Gets or sets where the game rasterizes relative to its camera constants, in display pixels (x right, y down),
+    /// which the layer's projection reproduces (default (0.5, 0.5)).
+    /// </summary>
+    public Vector2 GamePixelOffset { get; set; } = new(0.5f, 0.5f);
+
+    /// <summary>Gets the temporal anti-aliasing jitter removed from the last composited frame, in normalized device units.</summary>
+    public Vector2 LastRemovedJitter { get; internal set; }
+
+    /// <summary>
+    /// Gets or sets a fixed present-buffer bind ordinal to force the layer in at for testing, 0 (the default) injecting at
+    /// the first present-buffer bind carrying a depth-stencil.
+    /// </summary>
+    public int InjectOrdinal
+    {
+        get => NoireDraw3D.RenderTargetTapForDiagnostics?.InjectOrdinal ?? 0;
+        set
+        {
+            if (NoireDraw3D.RenderTargetTapForDiagnostics is { } tap)
+                tap.InjectOrdinal = value;
+        }
+    }
+
+    /// <summary>Gets where the layer went in during the last presented frame: the rule, the bind and the bind count.</summary>
+    public string InjectionDescription => NoireDraw3D.RenderTargetTapForDiagnostics?.InjectionDescription ?? "no render-target tap";
+
+    /// <summary>Logs one frame's render-target bind sequence, a few frames from now.</summary>
+    public void CaptureBindSequence() => NoireDraw3D.RenderTargetTapForDiagnostics?.ArmCapture();
+
+    /// <summary>Arms the projection parity validator for the next 10 rendered frames. The gate is a 1 px maximum.</summary>
     public void RunValidate()
     {
         NoireDraw3D.EnsureInitialized();
@@ -112,72 +75,14 @@ public sealed unsafe class Draw3DDiagnostics
         validateMaxMatrixDelta = 0f;
     }
 
-    /// <summary>
-    /// Arms the ground-truth depth probe for the next rendered frame (results logged): the analytic depth map,
-    /// a diagnostic-only raycast fit, and a per-point depth table for both candidate buffers. Read-only.
-    /// Gate: &gt;= 90 % of hit points within 1e-3.
-    /// </summary>
+    /// <summary>Arms the raycast ground-truth depth probe for the next rendered frame.</summary>
     public void RunProbe()
     {
         NoireDraw3D.EnsureInitialized();
         probePending = true;
     }
 
-    /// <summary>
-    /// Arms the camera-phase trace for the next <paramref name="frames"/> rendered frames (results logged): scores
-    /// each candidate frame-lag's camera by how well it reprojects world anchors onto this frame's rendered image,
-    /// and reports the best fit alongside the frame-time band breakdown and the after-stop drift classification.
-    /// Read-only, and measures nothing useful unless the camera is moved hard while it runs.
-    /// </summary>
-    /// <param name="frames">Rendered frames to trace, clamped to 1..6000.</param>
-    public void RunCameraPhaseTrace(int frames = 120)
-    {
-        NoireDraw3D.EnsureInitialized();
-        camTraceFramesRemaining = Math.Clamp(frames, 1, 6000);
-        camTraceInjectFrames = 0;
-        camTraceFallbackFrames = 0;
-        camTraceSnapshotFrames = 0;
-        camTraceMainPassFrames = 0;
-        camTraceMaxScreenDelta = 0f;
-        camTraceScreenSum = 0;
-        camTraceScreenSamples = 0;
-        camTraceMaxMatrixDelta = 0f;
-        Array.Clear(camTraceDepthResidual);
-        Array.Clear(camTraceDepthResidualN);
-        Array.Clear(camTraceScreenResidual);
-        Array.Clear(camTraceScreenResidualN);
-        camTraceDepthReadbacks = 0;
-        camTraceCapDepthResidual = 0;
-        camTraceCapDepthResidualN = 0;
-        camTraceCapScreenResidual = 0;
-        camTraceCapScreenResidualN = 0;
-        camTraceCapAvailableFrames = 0;
-        camTraceCapUsedFrames = 0;
-        camTracePrevTimestamp = 0;
-        Array.Clear(bandFrames);
-        Array.Clear(bandFrameMsSum);
-        Array.Clear(bandInject);
-        Array.Clear(bandCapFresh);
-        Array.Clear(bandCapUsed);
-        Array.Clear(bandMotionSum);
-        Array.Clear(bandMotionN);
-        Array.Clear(bandUsedScreenSum);
-        Array.Clear(bandUsedScreenMax);
-        Array.Clear(bandUsedScreenN);
-        Array.Clear(bandUsedDepthSum);
-        Array.Clear(bandUsedDepthN);
-        Array.Clear(bandLag0ScreenSum);
-        Array.Clear(bandLag0ScreenN);
-        settleTracker = new SettleTracker();
-        settleCapUsedFrames = 0;
-        settleFallbackCompositeFrames = 0;
-        (camTraceArmRendered, camTraceArmEmpty) = NoireDraw3D.FrameCounters;
-    }
-
-    /// <summary>
-    /// Wireframe rasterization of the scene pass. Ground decals have no mesh to wireframe, so they trace
-    /// <see cref="DecalShapeOutlines"/> instead while this is on.
-    /// </summary>
+    /// <summary>Gets or sets wireframe rasterization of the scene pass, ground decals tracing <see cref="DecalShapeOutlines"/> instead.</summary>
     public bool Wireframe
     {
         get => NoireDraw3D.Wireframe;
@@ -189,8 +94,8 @@ public sealed unsafe class Draw3DDiagnostics
     public bool ToggleWireframe() => Wireframe = !Wireframe;
 
     /// <summary>
-    /// Traces every decal's painted shape as an outline over normal rendering, retained decals and immediate
-    /// <see cref="Im.ImDraw3D"/> shapes alike. Always on while <see cref="Wireframe"/> is.
+    /// Gets or sets whether every decal's painted shape, retained or immediate, is traced as an outline over normal
+    /// rendering, always the case while <see cref="Wireframe"/> is on.
     /// </summary>
     public bool DecalShapeOutlines
     {
@@ -199,9 +104,8 @@ public sealed unsafe class Draw3DDiagnostics
     }
 
     /// <summary>
-    /// Draws every decal's projection box (the volume its SDF is evaluated in) as a wireframe over normal rendering.
-    /// Independent of <see cref="Wireframe"/> and of <see cref="DecalShapeOutlines"/>;
-    /// <see cref="Scene.SceneNode.ShowDecalVolume"/> is the per-node version.
+    /// Gets or sets whether every decal's projection box, the volume its SDF is evaluated in, is drawn as a wireframe
+    /// (per node: <see cref="Scene.SceneNode.ShowDecalVolume"/>).
     /// </summary>
     public bool DecalVolumeOutlines
     {
@@ -213,8 +117,6 @@ public sealed unsafe class Draw3DDiagnostics
     /// <returns>The formatted snapshot.</returns>
     public string GetStatsText() => NoireDraw3D.Stats.ToString();
 
-    // Frame hooks, called by the render hub.
-
     internal void OnFrame(in FrameContext frame, in GameRenderSources.CameraData cam, bool hasDepth)
     {
         if (validateFramesRemaining <= 0)
@@ -222,8 +124,7 @@ public sealed unsafe class Draw3DDiagnostics
 
         validateFramesRemaining--;
 
-        // The object-table and GameGui reads happen on the render thread deliberately: marshalling to the framework
-        // thread would compare the two projections against a camera that has since moved.
+        // On the framework thread the camera would move between the two projections.
         Span<Vector3> points = stackalloc Vector3[24];
         var count = 0;
 
@@ -278,467 +179,333 @@ public sealed unsafe class Draw3DDiagnostics
         {
             var mean = validateSamples > 0 ? validateDeltaSum / validateSamples : 0;
             var verdict = validateMaxDelta <= 1.0f ? "PASS" : "FAIL";
-            var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames - max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max <= 1 px). " +
+            var report = $"Draw3D validate [{verdict}]: {validateSamples} samples over 10 frames, max {validateMaxDelta:F3} px, mean {mean:F3} px (gate: max <= 1 px). " +
                          $"VP cross-check max element delta: {validateMaxMatrixDelta:E2}. Camera fallback active: {frame.UsedFallbackCamera}. " +
                          "Repeat across camera poses: orbit, side-on grazing, wall-collision camera, first-person, max zoom.";
-            NoireLogger.PrintToChat($"Draw3D validate: {verdict} - max {validateMaxDelta:F3} px (details in log).");
+            NoireLogger.PrintToChat($"Draw3D validate: {verdict}, max {validateMaxDelta:F3} px (details in log).");
             NoireLogger.LogInfo(report, "Draw3D");
         }
     }
 
-    // Per-rendered-frame camera-phase sampling for RunCameraPhaseTrace, called from the shared render body on the
-    // render thread.
-    internal void OnCameraTrace(RenderDevice device, in FrameContext frame, in GameRenderSources.CameraData projCam, bool viaInject, bool usedWorldSnapshot, bool usedMainPass, bool usedGpuCamera, in Matrix4x4 gpuVp, bool hasGpuVp)
+    // Only the offset matching the game's raster convention reconstructs the same points from two views.
+    private static readonly Vector2[] CalibrationOffsets =
     {
-        if (camTraceFramesRemaining <= 0)
-            return;
+        new(-0.5f, 0f), new(0f, 0f), new(0.5f, 0f),
+        new(-0.5f, 0.5f), new(0f, 0.5f), new(0.5f, 0.5f),
+        new(-0.5f, 1f), new(0f, 1f), new(0.5f, 1f),
+    };
 
-        camTraceFramesRemaining--;
-        if (viaInject)
-        {
-            camTraceInjectFrames++;
-            if (usedWorldSnapshot)
-                camTraceSnapshotFrames++;
-            if (usedMainPass)
-                camTraceMainPassFrames++;
-        }
-        else
-        {
-            camTraceFallbackFrames++;
-        }
+    private const int CalibrationGridX = 24;
+    private const int CalibrationGridY = 14;
+    private int calibrationStage;      // 1 = snapshot armed, 2 = snapshot held, 3 = compare armed
+    private Vector3[][]? calibrationPoints;
+    private Vector3 calibrationEye;
 
-        if (hasGpuVp)
-            camTraceCapAvailableFrames++;
-        if (usedGpuCamera)
-            camTraceCapUsedFrames++;
-
-        // Frame-time banding over the render-thread cadence between traced frames; the first traced frame has no
-        // predecessor and lands in no band.
-        var now = Stopwatch.GetTimestamp();
-        var band = -1;
-        if (camTracePrevTimestamp != 0)
-        {
-            var frameMs = (float)((now - camTracePrevTimestamp) * 1000.0 / Stopwatch.Frequency);
-            band = CameraSwimAnalysis.BandOf(frameMs);
-            bandFrames[band]++;
-            bandFrameMsSum[band] += frameMs;
-            if (viaInject)
-                bandInject[band]++;
-            if (hasGpuVp)
-                bandCapFresh[band]++;
-            if (usedGpuCamera)
-                bandCapUsed[band]++;
-        }
-
-        camTracePrevTimestamp = now;
-
-        // Secondary signal only: both the projection camera and a live read taken now are ahead of the pixels
-        // already in the present buffer, so the lag sweep below is what measures the real overlay-vs-pixels error.
-        if (projCam.HasRenderCamera && GameRenderSources.TryGetCamera(out var live) && live.HasRenderCamera)
-        {
-            var projVp = projCam.View * projCam.Proj;
-            var liveVp = live.View * live.Proj;
-            camTraceMaxMatrixDelta = MathF.Max(camTraceMaxMatrixDelta, MaxElementDelta(in projVp, in liveVp));
-
-            for (var gy = 0; gy < 4; gy++)
-            {
-                for (var gx = 0; gx < 4; gx++)
-                {
-                    var screen = new Vector2(frame.ViewportSize.X * (0.15f + 0.2f * gx), frame.ViewportSize.Y * (0.15f + 0.2f * gy));
-                    if (!frame.TryScreenToRay(screen, out var origin, out var dir))
-                        continue;
-
-                    var wp = origin + dir * 20f;
-                    if (!TryProjectToScreen(in projVp, wp, frame.ViewportSize, out var s1))
-                        continue;
-                    if (!TryProjectToScreen(in liveVp, wp, frame.ViewportSize, out var s2))
-                        continue;
-
-                    var d = Vector2.Distance(s1, s2);
-                    camTraceMaxScreenDelta = MathF.Max(camTraceMaxScreenDelta, d);
-                    camTraceScreenSum += d;
-                    camTraceScreenSamples++;
-                }
-            }
-        }
-
-        SweepFrameLags(device, in frame, in gpuVp, hasGpuVp, band, usedGpuCamera, viaInject);
-
-        if (camTraceFramesRemaining == 0)
-            ReportCameraTrace();
+    /// <summary>Takes the first view of the pixel-convention calibration. Turn the camera, then call <see cref="CompareDepthCalibration"/>.</summary>
+    public void SnapshotDepthCalibration()
+    {
+        NoireDraw3D.EnsureInitialized();
+        calibrationStage = 1;
     }
 
-    // Scores each candidate frame-lag's camera by reprojecting world anchors onto this frame's image, a screen
-    // residual every frame and a depth residual on a throttled subset, and files the captured-camera row, the
-    // per-band used-camera residual and the after-stop drift classification alongside it.
-    private void SweepFrameLags(RenderDevice device, in FrameContext frame, in Matrix4x4 gpuVp, bool hasGpuVp, int band, bool usedGpuCamera, bool viaInject)
+    /// <summary>Takes the second view of the pixel-convention calibration and logs each candidate offset's disagreement. The smallest wins.</summary>
+    public void CompareDepthCalibration()
     {
-        // The game's collision raycast under a screen grid gives camera-agnostic physical anchors.
-        Span<Vector2> screens = stackalloc Vector2[16];
-        Span<Vector3> worlds = stackalloc Vector3[16];
-        var n = 0;
-        for (var gy = 0; gy < 4; gy++)
+        NoireDraw3D.EnsureInitialized();
+        if (calibrationStage == 2)
+            calibrationStage = 3;
+    }
+
+    // Reads the game's depth like the occlusion shader, shifted by a candidate pixel offset.
+    private bool TryReconstruct(RenderDevice device, in FrameContext frame, IReadOnlyList<Vector2> displayPixels, Vector2 offset, Vector3[] into)
+    {
+        var vp = frame.ViewProj;
+        if (!Core.CameraConstantCapture.TryReadViewShape(in vp, out var shape) || !GameRenderSources.TryGetDepthTexture(out var info)
+            || !Matrix4x4.Invert(vp, out var inv))
+            return false;
+
+        var eye = shape.Eye;
+        var jitterUv = NoireDraw3D.DepthSampleJitterUv;
+        var cam = NoireDraw3D.LastCameraData;
+        var near = cam.NearPlane > 1e-6f ? cam.NearPlane : 0.1f;
+        var map = DepthCalibration.AnalyticMap(near, cam.FarPlane, cam.StandardZ, cam.FiniteFarPlane);
+        var size = new Vector2(info.ActualWidth, info.ActualHeight);
+        var display = frame.ViewportSize;
+        var texelScale = size / display;
+
+        var jitterOnly = new Vector2(jitterUv.X, jitterUv.Y);
+
+        var screens = new List<Vector2>(displayPixels.Count * 4);
+        var fracs = new Vector2[displayPixels.Count];
+        for (var i = 0; i < displayPixels.Count; i++)
         {
-            for (var gx = 0; gx < 4; gx++)
+            var uv = (displayPixels[i] / display) + jitterOnly + (offset / display);
+            var t = (uv * size) - new Vector2(0.5f);
+            var i0 = new Vector2(MathF.Floor(t.X), MathF.Floor(t.Y));
+            fracs[i] = t - i0;
+            foreach (var o in new[] { Vector2.Zero, Vector2.UnitX, Vector2.UnitY, Vector2.One })
             {
-                var s = new Vector2(frame.ViewportSize.X * (0.2f + 0.2f * gx), frame.ViewportSize.Y * (0.2f + 0.2f * gy));
-                if (NoireService.GameGui.ScreenToWorld(s, out var w))
-                {
-                    screens[n] = s;
-                    worlds[n] = w;
-                    n++;
-                }
+                var centre = i0 + o + new Vector2(0.5f);
+                screens.Add(centre / texelScale);
             }
         }
 
-        if (n == 0)
-            return;
+        var raw = DepthReadback.TryReadAtPoints(device, in info, screens, display, out _);
+        if (raw == null)
+            return false;
 
-        // Each candidate camera's View*Proj and analytic depth map: sample = map.x + map.y / clipW.
-        var lags = Math.Min(LagSweepMax, NoireDraw3D.CameraHistoryDepth);
-        Span<Matrix4x4> vp = stackalloc Matrix4x4[LagSweepMax];
-        Span<Vector4> map = stackalloc Vector4[LagSweepMax];
-        Span<bool> ok = stackalloc bool[LagSweepMax];
-        var available = 0;
-        for (var k = 0; k < lags; k++)
+        for (var i = 0; i < displayPixels.Count; i++)
         {
-            if (NoireDraw3D.TryGetCameraHistory(k, out var camK) && camK.HasRenderCamera)
+            var f = fracs[i];
+            var z00 = raw[(i * 4) + 0];
+            var z10 = raw[(i * 4) + 1];
+            var z01 = raw[(i * 4) + 2];
+            var z11 = raw[(i * 4) + 3];
+            var w00 = map.Y / (z00 - map.X);
+            var w11 = map.Y / (z11 - map.X);
+            var w10 = map.Y / (z10 - map.X);
+            var w01 = map.Y / (z01 - map.X);
+            var wMin = MathF.Min(MathF.Min(w00, w10), MathF.Min(w01, w11));
+            var wMax = MathF.Max(MathF.Max(w00, w10), MathF.Max(w01, w11));
+
+            // Across an object's edge the interpolation means nothing.
+            if (!(wMin > 0f) || !float.IsFinite(wMax) || wMax - wMin > 0.03f * wMin || wMax > 400f)
             {
-                vp[k] = camK.View * camK.Proj;
-                var near = camK.NearPlane > 1e-6f ? camK.NearPlane : 0.1f;
-                map[k] = DepthCalibration.AnalyticMap(near, camK.FarPlane, camK.StandardZ, camK.FiniteFarPlane);
-                ok[k] = true;
-                available = k + 1;
-            }
-        }
-
-        if (available == 0)
-            return;
-
-        // The camera the frame was actually projected with, which is the misalignment the eye sees.
-        var useCap = usedGpuCamera && hasGpuVp;
-        var hasUsed = useCap || ok[0];
-        var usedVp = useCap ? gpuVp : vp[0];
-
-        // Screen residual: how far each candidate camera puts the anchor from where the game shows it.
-        var motionSum = 0.0;
-        var motionN = 0;
-        var usedSum = 0.0;
-        var usedN = 0;
-        var lag0Sum = 0.0;
-        var lag0N = 0;
-        for (var i = 0; i < n; i++)
-        {
-            for (var k = 0; k < available; k++)
-            {
-                if (!ok[k] || !TryProjectToScreen(in vp[k], worlds[i], frame.ViewportSize, out var proj))
-                    continue;
-                camTraceScreenResidual[k] += Vector2.Distance(proj, screens[i]);
-                camTraceScreenResidualN[k]++;
-            }
-
-            if (hasGpuVp && TryProjectToScreen(in gpuVp, worlds[i], frame.ViewportSize, out var capProj))
-            {
-                camTraceCapScreenResidual += Vector2.Distance(capProj, screens[i]);
-                camTraceCapScreenResidualN++;
-            }
-
-            // Camera motion this frame in anchor pixels: this frame's camera against last frame's, same world point.
-            if (ok[0] && TryProjectToScreen(in vp[0], worlds[i], frame.ViewportSize, out var s0))
-            {
-                lag0Sum += Vector2.Distance(s0, screens[i]);
-                lag0N++;
-
-                if (ok[1] && TryProjectToScreen(in vp[1], worlds[i], frame.ViewportSize, out var s1))
-                {
-                    motionSum += Vector2.Distance(s0, s1);
-                    motionN++;
-                }
-            }
-
-            if (hasUsed && TryProjectToScreen(in usedVp, worlds[i], frame.ViewportSize, out var usedProj))
-            {
-                usedSum += Vector2.Distance(usedProj, screens[i]);
-                usedN++;
-            }
-        }
-
-        // The band means and the settle classification both need this frame's motion and residual, so a frame
-        // missing anchors for either stays unclassified.
-        var usedMean = usedN > 0 ? usedSum / usedN : double.NaN;
-        if (band >= 0)
-        {
-            if (motionN > 0)
-            {
-                bandMotionSum[band] += motionSum / motionN;
-                bandMotionN[band]++;
-            }
-
-            if (usedN > 0)
-            {
-                bandUsedScreenSum[band] += usedMean;
-                bandUsedScreenMax[band] = MathF.Max(bandUsedScreenMax[band], (float)usedMean);
-                bandUsedScreenN[band]++;
-            }
-
-            if (lag0N > 0)
-            {
-                bandLag0ScreenSum[band] += lag0Sum / lag0N;
-                bandLag0ScreenN[band]++;
-            }
-        }
-
-        if (settleTracker != null && motionN > 0 && usedN > 0)
-        {
-            var kind = settleTracker.Advance(motionSum / motionN >= MovingPxPerFrame, usedMean >= DriftingPx);
-            if (kind == SettleFrame.Settle)
-            {
-                if (usedGpuCamera)
-                    settleCapUsedFrames++;
-                if (!viaInject)
-                    settleFallbackCompositeFrames++;
-            }
-        }
-
-        // Depth residual (predicted depth-buffer sample against the actual texel), throttled because a whole-texture
-        // readback is heavy. Anchored to the pixels themselves, so it is the tie-breaker, not the screen residual.
-        if (camTraceFramesRemaining % DepthReadbackEvery != 0 || !GameRenderSources.TryGetDepthTexture(out var info))
-            return;
-
-        camTracePointScratch ??= new List<Vector2>(16);
-        var pts = camTracePointScratch;
-        pts.Clear();
-        for (var i = 0; i < n; i++)
-            pts.Add(screens[i]);
-
-        var depth = DepthReadback.TryReadAtPoints(device, in info, pts, frame.ViewportSize, out _);
-        if (depth == null)
-            return;
-        camTraceDepthReadbacks++;
-
-        for (var i = 0; i < n; i++)
-        {
-            var actual = depth[i];
-            if (float.IsNaN(actual) || actual < 0f || actual > 1f)
+                into[i] = new Vector3(float.NaN);
                 continue;
+            }
 
-            for (var k = 0; k < available; k++)
+            var z = ((z00 * (1 - f.X)) + (z10 * f.X)) * (1 - f.Y) + ((z01 * (1 - f.X)) + (z11 * f.X)) * f.Y;
+            var sceneW = map.Y / (z - map.X);
+
+            var ndc = new Vector2((displayPixels[i].X / display.X * 2f) - 1f, 1f - (displayPixels[i].Y / display.Y * 2f));
+            var farPoint = Vector4.Transform(new Vector4(ndc, 0.5f, 1f), inv);
+            var p = new Vector3(farPoint.X, farPoint.Y, farPoint.Z) / farPoint.W;
+            var pClip = Vector4.Transform(new Vector4(p, 1f), vp);
+            into[i] = eye + ((p - eye) * (sceneW / pClip.W));
+        }
+
+        return true;
+    }
+
+    private void RunCalibration(RenderDevice device, in FrameContext frame)
+    {
+        var display = frame.ViewportSize;
+        if (calibrationStage == 1)
+        {
+            var pixels = new List<Vector2>();
+            for (var gy = 0; gy < CalibrationGridY; gy++)
             {
-                if (!ok[k])
+                for (var gx = 0; gx < CalibrationGridX; gx++)
+                    pixels.Add(new Vector2(MathF.Floor(display.X * (gx + 0.5f) / CalibrationGridX) + 0.5f, MathF.Floor(display.Y * (0.15f + (0.7f * (gy + 0.5f) / CalibrationGridY))) + 0.5f));
+            }
+
+            calibrationPoints = new Vector3[CalibrationOffsets.Length][];
+            for (var c = 0; c < CalibrationOffsets.Length; c++)
+            {
+                calibrationPoints[c] = new Vector3[pixels.Count];
+                if (!TryReconstruct(device, in frame, pixels, CalibrationOffsets[c], calibrationPoints[c]))
+                {
+                    Report("Draw3D depth calibration: snapshot failed (no camera shape or depth).");
+                    calibrationStage = 0;
+                    return;
+                }
+            }
+
+            Core.CameraConstantCapture.TryReadViewShape(frame.ViewProj, out var s);
+            calibrationEye = s.Eye;
+            calibrationStage = 2;
+            Report($"Draw3D depth calibration: snapshot taken from eye {calibrationEye:0.00}. Turn the camera, then compare.");
+            return;
+        }
+
+        if (calibrationStage != 3 || calibrationPoints == null)
+            return;
+
+        calibrationStage = 0;
+        Core.CameraConstantCapture.TryReadViewShape(frame.ViewProj, out var now);
+        var sb = new StringBuilder();
+        sb.AppendLine($"Draw3D depth calibration: snapshot eye {calibrationEye:0.00}, compare eye {now.Eye:0.00} (moved {Vector3.Distance(calibrationEye, now.Eye):0.00} m).");
+        sb.AppendLine("  offset (x, y) px | points | median error | mean error   (distance between the two views' reconstructions)");
+        for (var c = 0; c < CalibrationOffsets.Length; c++)
+        {
+            var pts = calibrationPoints[c];
+            var pixels = new List<Vector2>();
+            var index = new List<int>();
+            for (var i = 0; i < pts.Length; i++)
+            {
+                if (float.IsNaN(pts[i].X))
                     continue;
 
-                var clip = Vector4.Transform(new Vector4(worlds[i], 1f), vp[k]);
+                var clip = Vector4.Transform(new Vector4(pts[i], 1f), frame.ViewProj);
+                if (clip.W <= 0.5f)
+                    continue;
+
+                var ndc = new Vector2(clip.X / clip.W, clip.Y / clip.W);
+                if (MathF.Abs(ndc.X) > 0.95f || MathF.Abs(ndc.Y) > 0.95f)
+                    continue;
+
+                pixels.Add(new Vector2(((ndc.X * 0.5f) + 0.5f) * display.X, (0.5f - (ndc.Y * 0.5f)) * display.Y));
+                index.Add(i);
+            }
+
+            var again = new Vector3[pixels.Count];
+            if (pixels.Count == 0 || !TryReconstruct(device, in frame, pixels, CalibrationOffsets[c], again))
+            {
+                sb.AppendLine($"  {CalibrationOffsets[c].X,4:+0.0;-0.0;0.0}, {CalibrationOffsets[c].Y,4:+0.0;-0.0;0.0} | no points");
+                continue;
+            }
+
+            var errors = new List<float>();
+            for (var k = 0; k < again.Length; k++)
+            {
+                if (!float.IsNaN(again[k].X))
+                    errors.Add(Vector3.Distance(again[k], pts[index[k]]));
+            }
+
+            if (errors.Count == 0)
+            {
+                sb.AppendLine($"  {CalibrationOffsets[c].X,4:+0.0;-0.0;0.0}, {CalibrationOffsets[c].Y,4:+0.0;-0.0;0.0} | no points");
+                continue;
+            }
+
+            errors.Sort();
+            var mean = 0f;
+            foreach (var e in errors)
+                mean += e;
+            mean /= errors.Count;
+            sb.AppendLine($"  {CalibrationOffsets[c].X,4:+0.0;-0.0;0.0}, {CalibrationOffsets[c].Y,4:+0.0;-0.0;0.0} | {errors.Count,6} | {errors[errors.Count / 2] * 100f,8:0.00} cm | {mean * 100f,8:0.00} cm");
+        }
+
+        Report(sb.ToString());
+    }
+
+    private bool groundGridPending;
+    private Vector3 groundGridCentre;
+    private float groundGridSpacing;
+
+    /// <summary>Logs, on the next rendered frame, the game's rendered surface height under a 3 x 3 world grid, read as the occlusion shader reads it.</summary>
+    /// <param name="centre">The grid centre, at the height of the shape being judged.</param>
+    /// <param name="spacing">The distance between grid points, in world units.</param>
+    public void ProbeGroundGrid(Vector3 centre, float spacing)
+    {
+        NoireDraw3D.EnsureInitialized();
+        groundGridCentre = centre;
+        groundGridSpacing = spacing;
+        groundGridPending = true;
+    }
+
+    private void RunGroundGrid(RenderDevice device, in FrameContext frame)
+    {
+        var vp = frame.ViewProj;
+        if (!Core.CameraConstantCapture.TryReadViewShape(in vp, out var shape) || !GameRenderSources.TryGetDepthTexture(out var info))
+        {
+            Report("Draw3D ground grid: no camera shape or no depth texture this frame.");
+            return;
+        }
+
+        var eye = shape.Eye;
+        var jitterUv = NoireDraw3D.DepthSampleJitterUv;
+        var cam = NoireDraw3D.LastCameraData;
+        var near = cam.NearPlane > 1e-6f ? cam.NearPlane : 0.1f;
+        var map = DepthCalibration.AnalyticMap(near, cam.FarPlane, cam.StandardZ, cam.FiniteFarPlane);
+        var texelScale = new Vector2(info.ActualWidth / frame.ViewportSize.X, info.ActualHeight / frame.ViewportSize.Y);
+
+        var points = new List<Vector3>();
+        var fracs = new List<Vector2>();
+        var clips = new List<Vector4>();
+        var screens = new List<Vector2>();
+        for (var gz = -1; gz <= 1; gz++)
+        {
+            for (var gx = -1; gx <= 1; gx++)
+            {
+                var p = groundGridCentre + new Vector3(gx * groundGridSpacing, 0f, gz * groundGridSpacing);
+                var clip = Vector4.Transform(new Vector4(p, 1f), vp);
                 if (clip.W <= 1e-4f)
                     continue;
 
-                var predicted = map[k].X + map[k].Y / clip.W;
-                camTraceDepthResidual[k] += MathF.Abs(predicted - actual);
-                camTraceDepthResidualN[k]++;
-            }
+                var ndc = new Vector2(clip.X / clip.W, clip.Y / clip.W);
+                var uv = new Vector2((ndc.X * 0.5f) + 0.5f + jitterUv.X, 0.5f - (ndc.Y * 0.5f) + jitterUv.Y);
 
-            // The capture's clip-w comes from the uploaded W column; the value mapping only needs the near plane,
-            // so the lag-0 camera's map applies.
-            if (hasGpuVp && ok[0])
-            {
-                var capClip = Vector4.Transform(new Vector4(worlds[i], 1f), gpuVp);
-                if (capClip.W > 1e-4f)
+                // Same texel arithmetic as DepthVisibility.
+                var t = (uv * new Vector2(info.ActualWidth, info.ActualHeight)) - new Vector2(0.5f);
+                var i0 = new Vector2(MathF.Floor(t.X), MathF.Floor(t.Y));
+                points.Add(p);
+                clips.Add(clip);
+                fracs.Add(t - i0);
+                foreach (var o in new[] { Vector2.Zero, Vector2.UnitX, Vector2.UnitY, Vector2.One })
                 {
-                    var capPredicted = map[0].X + map[0].Y / capClip.W;
-                    camTraceCapDepthResidual += MathF.Abs(capPredicted - actual);
-                    camTraceCapDepthResidualN++;
-                }
-            }
-
-            // The used camera per frame-time band, accumulated per anchor sample like the other depth rows.
-            if (band >= 0 && hasUsed && ok[0])
-            {
-                var usedClip = Vector4.Transform(new Vector4(worlds[i], 1f), usedVp);
-                if (usedClip.W > 1e-4f)
-                {
-                    var usedPredicted = map[0].X + map[0].Y / usedClip.W;
-                    bandUsedDepthSum[band] += MathF.Abs(usedPredicted - actual);
-                    bandUsedDepthN[band]++;
+                    var texelCentre = i0 + o + new Vector2(0.5f);
+                    screens.Add(new Vector2(texelCentre.X / texelScale.X, texelCentre.Y / texelScale.Y));
                 }
             }
         }
-    }
 
-    // Formats the frame-lag sweep and names the best-fit lag (the correction the injected overlay should apply).
-    private void ReportCameraTrace()
-    {
-        var traced = camTraceInjectFrames + camTraceFallbackFrames;
-        var meanLegacy = camTraceScreenSamples > 0 ? camTraceScreenSum / camTraceScreenSamples : 0;
-
-        var bestDepthK = -1;
-        var bestDepth = double.MaxValue;
-        var bestScreenK = -1;
-        var bestScreen = double.MaxValue;
+        var raw = DepthReadback.TryReadAtPoints(device, in info, screens, frame.ViewportSize, out _);
+        if (raw == null)
+        {
+            Report("Draw3D ground grid: depth readback failed.");
+            return;
+        }
 
         var sb = new StringBuilder();
-        sb.AppendLine($"Draw3D camtrace: {traced} frames - inject {camTraceInjectFrames} (world-snapshot {camTraceSnapshotFrames}, main-pass {camTraceMainPassFrames}), present-time fallback {camTraceFallbackFrames}. Depth readbacks: {camTraceDepthReadbacks}.");
-        sb.AppendLine($"  GPU camera capture: {NoireDraw3D.DescribeCameraCapture()}");
-        sb.AppendLine($"  capture during trace: fresh on {camTraceCapAvailableFrames}/{traced} frames, projected with on {camTraceCapUsedFrames} (toggle: /noire3d gpucam).");
-        if (camTraceSnapshotFrames > 0 && camTraceMainPassFrames == 0)
-            sb.AppendLine("  WARNING: 0 main-pass snapshots - the RTM.DepthStencil fingerprint is not matching, so both the struct fix and the capture commit are inert. Report this.");
-        sb.AppendLine($"  Secondary proj-vs-live drift (blind to the true swim): max {camTraceMaxScreenDelta:F2} px, mean {meanLegacy:F2} px; View*Proj max element delta {camTraceMaxMatrixDelta:E2}.");
-        sb.AppendLine("  Frame-lag sweep - how well the camera k frames back reprojects onto THIS frame's rendered image (lower = better fit):");
-        sb.AppendLine("   lag | depth residual (sample units, n) | screen residual (px, n)");
-        for (var k = 0; k < LagSweepMax; k++)
+        sb.AppendLine($"Draw3D ground grid around {groundGridCentre:0.000}, spacing {groundGridSpacing:0.00}: eye {eye:0.000}, "
+                      + $"forward {Vector3.Normalize(groundGridCentre - eye):0.000}, jitter uv {jitterUv.X:E2},{jitterUv.Y:E2}.");
+        sb.AppendLine("  point (x, z) | distance | pitch | surface Y | surface Y - point Y");
+        for (var k = 0; k < points.Count; k++)
         {
-            var dN = camTraceDepthResidualN[k];
-            var sN = camTraceScreenResidualN[k];
-            if (dN == 0 && sN == 0)
+            var z00 = raw[(k * 4) + 0];
+            var z10 = raw[(k * 4) + 1];
+            var z01 = raw[(k * 4) + 2];
+            var z11 = raw[(k * 4) + 3];
+            var f = fracs[k];
+            var z = ((z00 * (1 - f.X)) + (z10 * f.X)) * (1 - f.Y) + ((z01 * (1 - f.X)) + (z11 * f.X)) * f.Y;
+            var denom = z - map.X;
+            var p = points[k];
+            var dist = Vector3.Distance(eye, p);
+            var pitch = MathF.Asin(Math.Clamp((p.Y - eye.Y) / MathF.Max(dist, 1e-4f), -1f, 1f)) * 180f / MathF.PI;
+            if (float.IsNaN(z) || denom * map.Y <= 1e-12f)
+            {
+                sb.AppendLine($"  {p.X:0.000}, {p.Z:0.000} | {dist:0.00} | {pitch:0.0} | sky/unwritten");
                 continue;
-
-            var dMean = dN > 0 ? camTraceDepthResidual[k] / dN : double.NaN;
-            var sMean = sN > 0 ? camTraceScreenResidual[k] / sN : double.NaN;
-            if (dN > 0 && dMean < bestDepth) { bestDepth = dMean; bestDepthK = k; }
-            if (sN > 0 && sMean < bestScreen) { bestScreen = sMean; bestScreenK = k; }
-
-            var dTxt = dN > 0 ? $"{dMean:E3} ({dN})" : "-";
-            var sTxt = sN > 0 ? $"{sMean:F2} ({sN})" : "-";
-            sb.AppendLine($"   {k,3} | {dTxt,-32} | {sTxt}");
-        }
-
-        var capDepthMean = camTraceCapDepthResidualN > 0 ? camTraceCapDepthResidual / camTraceCapDepthResidualN : double.NaN;
-        var capScreenMean = camTraceCapScreenResidualN > 0 ? camTraceCapScreenResidual / camTraceCapScreenResidualN : double.NaN;
-        if (camTraceCapDepthResidualN > 0 || camTraceCapScreenResidualN > 0)
-        {
-            var dTxt = camTraceCapDepthResidualN > 0 ? $"{capDepthMean:E3} ({camTraceCapDepthResidualN})" : "-";
-            var sTxt = camTraceCapScreenResidualN > 0 ? $"{capScreenMean:F2} ({camTraceCapScreenResidualN})" : "-";
-            sb.AppendLine($"   cap | {dTxt,-32} | {sTxt}   (the captured GPU camera constants)");
-        }
-
-        sb.AppendLine("  Frame-time bands - 'used' is the camera the overlay actually projected with. Screen px carry the anchor bias under motion; used depth is the pixel-anchored truth:");
-        sb.AppendLine("   band              | frames | inject | capFresh | capUsed | motion px | used px mean/max | used depth (n)  | lag0 px");
-        for (var b = 0; b < CameraSwimAnalysis.BandCount; b++)
-        {
-            if (bandFrames[b] == 0)
-                continue;
-
-            var motionTxt = bandMotionN[b] > 0 ? (bandMotionSum[b] / bandMotionN[b]).ToString("F2") : "-";
-            var usedTxt = bandUsedScreenN[b] > 0 ? $"{bandUsedScreenSum[b] / bandUsedScreenN[b]:F2}/{bandUsedScreenMax[b]:F1}" : "-";
-            var usedDepthTxt = bandUsedDepthN[b] > 0 ? $"{bandUsedDepthSum[b] / bandUsedDepthN[b]:E2} ({bandUsedDepthN[b]})" : "-";
-            var lag0Txt = bandLag0ScreenN[b] > 0 ? (bandLag0ScreenSum[b] / bandLag0ScreenN[b]).ToString("F2") : "-";
-            sb.AppendLine($"   {CameraSwimAnalysis.BandLabel(b),-17} | {bandFrames[b],6} | {bandInject[b],6} | {bandCapFresh[b],8} | {bandCapUsed[b],7} | {motionTxt,9} | {usedTxt,-16} | {usedDepthTxt,-15} | {lag0Txt}");
-        }
-
-        var settle = settleTracker;
-        if (settle != null)
-        {
-            sb.AppendLine($"  After-stop drift (camera steady, used residual >= {DriftingPx:F0} px, starting within {SettleTracker.WindowFrames} frames of motion): "
-                          + $"{settle.Events} event(s), {settle.SettleFrames} frame(s), longest {settle.LongestRun}; capture-projected on {settleCapUsedFrames} of them, present-time composite on {settleFallbackCompositeFrames}. "
-                          + $"Context: moving {settle.MovingFrames}, quiet-clean {settle.QuietCleanFrames}, late drift {settle.LateDriftFrames}.");
-        }
-
-        // The camera measures clean while the layer draws nothing, so a trace with an empty screen has reproduced
-        // no visible misalignment at all.
-        var (renderedNow, emptyNow) = NoireDraw3D.FrameCounters;
-        var renderedDuringTrace = renderedNow - camTraceArmRendered;
-        var emptyDuringTrace = emptyNow - camTraceArmEmpty;
-        sb.AppendLine($"  Content during trace: {renderedDuringTrace} frame(s) drew content, {emptyDuringTrace} were empty."
-                      + (renderedDuringTrace == 0 ? " NOTHING WAS DRAWN - the camera was measured, the visible swim was not. Put the swimming content on screen and trace again." : string.Empty));
-
-        var best = bestDepthK >= 0 ? bestDepthK : bestScreenK;
-        var capBeatsStruct = camTraceCapDepthResidualN > 0 && bestDepthK >= 0 && capDepthMean <= bestDepth * 1.05;
-        string verdict;
-        if (best < 0)
-            verdict = "no usable anchors - aim at terrain/walls and keep the camera moving while tracing.";
-        else if (capBeatsStruct)
-            verdict = "the captured GPU camera fits the pixels at least as well as every struct lag - it is the pixels' camera. "
-                      + (camTraceCapUsedFrames > 0 ? "The overlay is projecting with it; camera swim is eliminated." : "Turn it on (/noire3d gpucam) - the overlay is not using it.");
-        else if (camTraceCapDepthResidualN > 0)
-            verdict = "the captured GPU camera fits WORSE than the best struct lag - the capture may be locked on the wrong window. "
-                      + "Run /noire3d cbprobe.";
-        else if (best == 0)
-            verdict = "best fit is lag 0 and no capture was available - the struct snapshot is in phase here; capture engages under load "
-                      + "(check the capture state above if it never locks).";
-        else
-            verdict = $"the pixels best match the camera from {best} frame(s) back and no capture was available. "
-                      + "The capture should remove this once locked - check its state above, and run /noire3d cbprobe if it stays unlocked.";
-
-        sb.AppendLine($"  Verdict: {verdict}");
-
-        // Load verdict over the populated frame-time bands: flat means the projection is not time-derived, rising
-        // means something in the path still is.
-        var loBand = -1;
-        var hiBand = -1;
-        for (var b = 0; b < CameraSwimAnalysis.BandCount; b++)
-        {
-            if (bandUsedDepthN[b] >= 8)
-            {
-                if (loBand < 0)
-                    loBand = b;
-                hiBand = b;
             }
+
+            var sceneW = map.Y / denom;
+            var surface = eye + ((p - eye) * (sceneW / clips[k].W));
+            sb.AppendLine($"  {p.X:0.000}, {p.Z:0.000} | {dist:0.00} | {pitch:0.0} | {surface.Y:0.0000} | {(surface.Y - p.Y) * 100f:0.00} cm");
         }
 
-        if (loBand >= 0 && hiBand > loBand)
-        {
-            var loMean = bandUsedDepthSum[loBand] / bandUsedDepthN[loBand];
-            var hiMean = bandUsedDepthSum[hiBand] / bandUsedDepthN[hiBand];
-            sb.AppendLine(hiMean > loMean * 2 && hiMean > 1e-4
-                ? $"  Load verdict: used-camera depth residual RISES with frame time ({loMean:E2} at {CameraSwimAnalysis.BandLabel(loBand)} -> {hiMean:E2} at {CameraSwimAnalysis.BandLabel(hiBand)}) - something in the path is still time-derived."
-                : $"  Load verdict: used-camera depth residual is flat across frame-time bands ({loMean:E2} -> {hiMean:E2}) - the projection is not load-derived; low-fps judder and any after-stop drift are the remaining suspects.");
-        }
-        else
-        {
-            sb.AppendLine("  Load verdict: not enough band coverage - trace longer (camtrace 600+) while the load varies (heavy scene, zoom cycles), so several bands collect depth samples.");
-        }
-
-        if (settle is { Events: > 0 })
-        {
-            if (settle.Events >= SettleVerdictMinEvents && settle.SettleFrames >= SettleVerdictMinFrames && settle.LongestRun >= SettleVerdictMinRun)
-            {
-                sb.AppendLine(settleCapUsedFrames * 2 >= settle.SettleFrames
-                    ? "  Settle verdict: the overlay keeps drifting after the camera stops WHILE projecting the captured camera - not a camera-phase error. Suspect the composite path: inject skips, or a stale scene render being re-presented."
-                    : "  Settle verdict: after-stop drift happens on struct-fallback frames - the capture starves right after motion under load. Correlate with commit misses (/noire3d stats).");
-            }
-            else
-            {
-                sb.AppendLine($"  Settle verdict: {settle.SettleFrames} isolated frame(s) across {settle.Events} event(s) is within noise - no meaningful after-stop drift measured.");
-            }
-        }
-
-        NoireLogger.PrintToChat($"Draw3D camtrace: best-fit lag = {(best < 0 ? "n/a" : best.ToString())}, cap row {(camTraceCapDepthResidualN > 0 ? capDepthMean.ToString("E2") : "n/a")}, fallback {camTraceFallbackFrames}/{traced}, settle events {settleTracker?.Events ?? 0} (details in log).");
-        NoireLogger.LogInfo(sb.ToString(), "Draw3D");
-    }
-
-    private static float MaxElementDelta(in Matrix4x4 a, in Matrix4x4 b)
-    {
-        var m = MathF.Abs(a.M11 - b.M11);
-        m = MathF.Max(m, MathF.Abs(a.M12 - b.M12));
-        m = MathF.Max(m, MathF.Abs(a.M13 - b.M13));
-        m = MathF.Max(m, MathF.Abs(a.M14 - b.M14));
-        m = MathF.Max(m, MathF.Abs(a.M21 - b.M21));
-        m = MathF.Max(m, MathF.Abs(a.M22 - b.M22));
-        m = MathF.Max(m, MathF.Abs(a.M23 - b.M23));
-        m = MathF.Max(m, MathF.Abs(a.M24 - b.M24));
-        m = MathF.Max(m, MathF.Abs(a.M31 - b.M31));
-        m = MathF.Max(m, MathF.Abs(a.M32 - b.M32));
-        m = MathF.Max(m, MathF.Abs(a.M33 - b.M33));
-        m = MathF.Max(m, MathF.Abs(a.M34 - b.M34));
-        m = MathF.Max(m, MathF.Abs(a.M41 - b.M41));
-        m = MathF.Max(m, MathF.Abs(a.M42 - b.M42));
-        m = MathF.Max(m, MathF.Abs(a.M43 - b.M43));
-        return MathF.Max(m, MathF.Abs(a.M44 - b.M44));
-    }
-
-    // Projects a world point through a raw View*Proj into framebuffer-pixel screen space.
-    private static bool TryProjectToScreen(in Matrix4x4 viewProj, Vector3 world, Vector2 viewport, out Vector2 screen)
-    {
-        screen = default;
-        var clip = Vector4.Transform(new Vector4(world, 1f), viewProj);
-        if (clip.W <= 1e-4f)
-            return false;
-
-        var ndc = new Vector2(clip.X / clip.W, clip.Y / clip.W);
-        screen = new Vector2((ndc.X * 0.5f + 0.5f) * viewport.X, (0.5f - ndc.Y * 0.5f) * viewport.Y);
-        return true;
+        Report(sb.ToString());
     }
 
     internal void OnFrameRendered(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)
     {
+        if (calibrationStage is 1 or 3)
+        {
+            try
+            {
+                RunCalibration(device, in frame);
+            }
+            catch (Exception ex)
+            {
+                calibrationStage = 0;
+                NoireLogger.LogError(ex, "Draw3D depth calibration failed.", "Draw3D");
+            }
+        }
+
+        if (groundGridPending)
+        {
+            groundGridPending = false;
+            try
+            {
+                RunGroundGrid(device, in frame);
+            }
+            catch (Exception ex)
+            {
+                NoireLogger.LogError(ex, "Draw3D ground grid failed.", "Draw3D");
+            }
+        }
+
         if (!probePending)
             return;
 
@@ -756,8 +523,6 @@ public sealed unsafe class Draw3DDiagnostics
 
     private void RunProbeNow(RenderDevice device, in FrameContext frame, SceneDepth? sceneDepth)
     {
-        // The game's own raycast is read here on the render thread so the points compare against this frame's depth
-        // texels under the same camera.
         var screens = new List<Vector2>();
         var worlds = new List<Vector3>();
         for (var gy = 0; gy < 4; gy++)
@@ -779,8 +544,6 @@ public sealed unsafe class Draw3DDiagnostics
             return;
         }
 
-        // Expected buffer value from the analytic depth map rendering uses, plus the reconstructed device-z as a
-        // cross-check. Both come from the camera, never from a fit.
         var cam = NoireDraw3D.LastCameraData;
         var near = cam.NearPlane > 1e-6f ? cam.NearPlane : 0.1f;
         var map = DepthCalibration.AnalyticMap(near, cam.FarPlane, cam.StandardZ, cam.FiniteFarPlane);
@@ -802,8 +565,7 @@ public sealed unsafe class Draw3DDiagnostics
         if (GameRenderSources.TryGetSwapChainDepthTexture(out var swapInfo))
             actualSwap = DepthReadback.TryReadAtPoints(device, in swapInfo, screens, frame.ViewportSize, out swapDesc);
 
-        // A least-squares fit of the same raycast points, reported only: a gap between it and the analytic map is
-        // collision-vs-rendered-surface disagreement, and rendering always uses the analytic map.
+        // A gap to the analytic map is collision-vs-rendered-surface disagreement.
         var fitXs = new List<float>(screens.Count);
         var fitYs = new List<float>(screens.Count);
         if (actualMain != null)

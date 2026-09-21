@@ -3,11 +3,7 @@ using System.Reflection;
 
 namespace NoireLib.Draw3D.Assets;
 
-/// <summary>
-/// The shading pipeline PBR glTF materials are drawn with, registered on first use. The importer routes only
-/// materials using metallic-roughness, a normal map, emissive or an alpha cutoff here, and leaves plain
-/// base-color materials on the instancing-friendly lit path.
-/// </summary>
+/// <summary>The pipeline PBR glTF materials draw with. Plain base-color materials stay on the instanced lit path.</summary>
 public static class GltfPbrPipeline
 {
     /// <summary>Name to pass to <see cref="Materials.Material.Custom"/> for this pipeline.</summary>
@@ -20,21 +16,14 @@ public static class GltfPbrPipeline
     private static bool missingSource;
     private static bool warnedNotReady;
 
-    /// <summary>
-    /// Why the pipeline is unavailable, or null when it is usable; materials fall back to the lit shader while set.
-    /// </summary>
+    /// <summary>Why the pipeline is unavailable (materials then fall back to the lit shader), or null when it is usable.</summary>
     public static string? Unavailable { get; private set; }
 
-    /// <summary>
-    /// Whether the pipeline is registered; a material built while this is false keeps the fallback shader for good.
-    /// </summary>
+    /// <summary>Whether the pipeline is registered. A material built while this is false keeps the fallback shader.</summary>
     public static bool Ready => registered;
 
-    /// <summary>
-    /// Registers the pipeline if it is not already registered.
-    /// </summary>
-    /// <returns>True when the pipeline is usable. A missing shader resource is permanent; a renderer that has
-    /// not started yet is retried on the next call.</returns>
+    /// <summary>Registers the pipeline if needed. A missing shader resource fails permanently. A renderer not started yet is retried.</summary>
+    /// <returns>Whether the pipeline is usable.</returns>
     public static bool EnsureRegistered()
     {
         if (registered)
@@ -67,8 +56,7 @@ public static class GltfPbrPipeline
                 return true;
             }
 
-            // The renderer has no device yet, which is ordinary during startup, so this reports once only.
-            Unavailable = "The renderer has not started yet, so the pipeline could not be registered.";
+            Unavailable = "The renderer has not started yet. The pipeline could not be registered.";
             if (!warnedNotReady)
             {
                 warnedNotReady = true;

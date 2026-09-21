@@ -4,14 +4,9 @@ using static TerraFX.Interop.Windows.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// COM reference-count helpers. The one place the "QueryInterface already AddRef'd" rule is encoded, so it is never
-// hand-rolled (and hand-rolled wrong) anywhere else.
+// QueryInterface already AddRef'd its result. It is attached, never AddRef'd again.
 internal static unsafe class ComPtrUtil
 {
-    /// <summary>
-    /// QueryInterfaces <paramref name="unknown"/> for <typeparamref name="T"/> and wraps the result with exactly
-    /// one net reference. Returns false (and an empty ComPtr) when the pointer is null or does not implement the interface.
-    /// </summary>
     public static bool TryQi<T>(IUnknown* unknown, out ComPtr<T> result) where T : unmanaged, INativeGuid, IUnknown.Interface
     {
         result = default;
@@ -22,11 +17,10 @@ internal static unsafe class ComPtrUtil
         if (unknown->QueryInterface(__uuidof<T>(), (void**)&typed) < 0 || typed == null)
             return false;
 
-        result.Attach(typed); // QI already AddRef'd; Attach takes ownership without another AddRef.
+        result.Attach(typed);
         return true;
     }
 
-    /// <summary>Releases a raw COM pointer if non-null and nulls the reference.</summary>
     public static void Release<T>(ref T* ptr) where T : unmanaged
     {
         if (ptr != null)

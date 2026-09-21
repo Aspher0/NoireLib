@@ -4,9 +4,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Owns the (borrowed) game D3D11 device and immediate context, validated via QueryInterface. The device is
-// free-threaded (resource creation is safe from any thread); the immediate context may only be used on the render
-// thread inside the present callback.
+// The device is free-threaded. The immediate context is render thread only.
 internal sealed unsafe class RenderDevice : IDisposable
 {
     private ComPtr<ID3D11Device> device;
@@ -14,24 +12,17 @@ internal sealed unsafe class RenderDevice : IDisposable
     private ComPtr<ID3D11Device1> device1;
     private bool disposed;
 
-    /// <summary>The game's D3D11 device. Never null while not disposed.</summary>
     public ID3D11Device* Device => device.Get();
 
-    /// <summary>The immediate context. Render thread only.</summary>
     public ID3D11DeviceContext* Context => context.Get();
 
-    /// <summary>The ID3D11Device1 interface when available (shared-handle textures); null otherwise.</summary>
+    // Null without ID3D11Device1.
     public ID3D11Device1* Device1 => device1.Get();
 
-    /// <summary>The device feature level, captured at creation.</summary>
     public D3D_FEATURE_LEVEL FeatureLevel { get; private set; }
 
     private RenderDevice() { }
 
-    /// <summary>
-    /// Acquires the game device via <see cref="GameRenderSources.GetDeviceUnknown"/> (Kernel.Device primary,
-    /// Dalamud's DeviceHandle fallback), QI-validated. Returns null when no device is reachable yet.
-    /// </summary>
     public static RenderDevice? TryCreate()
     {
         var unknown = (IUnknown*)GameRenderSources.GetDeviceUnknown();
@@ -55,10 +46,7 @@ internal sealed unsafe class RenderDevice : IDisposable
         return result;
     }
 
-    /// <summary>
-    /// Developer affordance: when the D3D11 debug layer is active, break into the debugger on corruption/error messages.
-    /// No-op when the debug layer is absent (the normal case).
-    /// </summary>
+    // A no-op without the D3D11 debug layer.
     public bool TryEnableInfoQueueBreaks()
     {
         if (disposed || device.Get() == null)
@@ -76,10 +64,7 @@ internal sealed unsafe class RenderDevice : IDisposable
         return true;
     }
 
-    /// <summary>
-    /// Debug-build leak audit: prints live device objects to the debug output when the debug layer is available.
-    /// After a clean dispose only the device itself should remain.
-    /// </summary>
+    // After a clean dispose only the device itself should remain.
     public void ReportLiveObjects()
     {
         if (device.Get() == null)
@@ -92,7 +77,6 @@ internal sealed unsafe class RenderDevice : IDisposable
         }
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         if (disposed)

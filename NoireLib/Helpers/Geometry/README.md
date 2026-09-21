@@ -28,7 +28,7 @@ draws:
 - **`TransformHelper`** - `LookRotation`, `FromToRotation` and a `Matrix4x4.Decompose` that cannot hand back garbage.
 - **`FrustumPlanes`** - Gribb-Hartmann plane extraction from a view-projection matrix, plus a sphere test.
 
-Every method is a pure function of its arguments. Nothing reads game state, so all of it runs on any thread and tests
+Every method is a pure function of its arguments. Nothing reads game state. All of it runs on any thread and tests
 without a game running.
 
 Conventions: rays take a normalized direction unless a parameter says otherwise, matrices are row-vector, and angles
@@ -58,7 +58,7 @@ Geometry3DHelper.RayBox(origin, inv, min, max, tMax);
 Geometry3DHelper.RayRing(origin, direction, center, axis, ringRadius, tolerance, out float t);
 ```
 
-`RayBox` takes each slab's own min and max, so a box whose corners arrive swapped describes the same box rather than
+`RayBox` takes each slab's own min and max. A box whose corners arrive swapped still describes the same box, never
 an empty one. A direction component of zero is passed as an infinite reciprocal and the slab still resolves.
 
 ---
@@ -85,7 +85,7 @@ float angle = Geometry3DHelper.SignedAngleOnPlane(center, axis, from, to);
 // Touching faces count as an overlap.
 Geometry3DHelper.AabbOverlap(aMin, aMax, bMin, bMax);
 
-// Normalize with a fallback instead of a NaN.
+// Normalize with a fallback, never a NaN.
 Vector3 dir = Geometry3DHelper.SafeNormalize(v, Vector3.UnitY);
 
 // Per-component grid snap; a component whose step is zero or less passes through.
@@ -96,7 +96,7 @@ var result = new List<Vector3>();
 Geometry3DHelper.ClipConvexPolygon(polygon, result, axis: 0, limit: halfWidth, keepGreater: false);
 ```
 
-`ClipConvexPolygon` clears `result` before it adds anything, so a stale vertex never survives a clip. Pass two
+`ClipConvexPolygon` clears `result` before it adds anything. A stale vertex never survives a clip. Pass two
 different lists and swap them between passes.
 
 ---
@@ -110,8 +110,8 @@ if (frustum.Intersects(center, radius))
     Draw(thing);
 ```
 
-Five planes, not six: under an infinite-far projection the far plane is degenerate, so it is skipped rather than
-extracted and normalized to nothing. The sphere test is conservative, so a sphere just outside a corner can still
+Five planes, not six. Under an infinite-far projection the far plane is degenerate and is skipped, never
+extracted and normalized to nothing. The sphere test is conservative. A sphere just outside a corner can still
 report true.
 
 ---
@@ -122,7 +122,7 @@ report true.
 // Distance to a finite segment, measured to the nearer endpoint when the segment has no length.
 float d = Geometry2DHelper.PointToSegmentDistance(cursor, a, b);
 
-// Winding-agnostic, so a quad projected from 3D works whichever way it happens to face.
+// Winding-agnostic: a quad projected from 3D works whichever way it happens to face.
 bool inside = Geometry2DHelper.PointInConvexQuad(cursor, a, b, c, d);
 
 // The building block both rest on: which side of a directed edge a point falls on.
@@ -135,7 +135,7 @@ float side = Geometry2DHelper.Cross(a, b, p);
 
 ```csharp
 // The rotation whose +Z aims along a direction. The up hint resolves the roll; a hint parallel to
-// forward is substituted rather than producing a NaN.
+// forward is substituted, never producing a NaN.
 Quaternion facing = TransformHelper.LookRotation(target - position, Vector3.UnitY);
 
 // Aim a mesh built along a fixed axis. Opposed directions get a half turn about an arbitrary perpendicular.
@@ -150,8 +150,7 @@ TransformHelper.DecomposeSafe(in world, out Vector3 scale, out Quaternion rotati
 ## Used by
 
 Draw3D's picker (`NoireDraw3D.Pick`), the mesh BVH, the native gizmo's handle hit-tests and drag solvers, scene
-frustum culling, world-decal polygon trimming, and `SceneNode.LookAt`. `InteractMath` and `GizmoMath` remain the
-documented names for the interaction layer and forward here.
+frustum culling, world-decal polygon trimming, and `SceneNode.LookAt`. `GizmoMath` builds its drag solvers on it.
 
 ---
 

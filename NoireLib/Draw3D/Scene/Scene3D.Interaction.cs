@@ -3,26 +3,14 @@ using NoireLib.Draw3D.Interaction.Gizmo;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Per-scene interaction state. Selection is a property of the scene, not a process-global: each scene has its own
-/// <see cref="Selection"/>, so multiple scenes select independently and there is no global mode to set and reset.
-/// A left-click on an interactable, selectable node routes into that node's scene selection automatically.
-/// </summary>
 public sealed partial class Scene3D
 {
-    /// <summary>
-    /// This scene's selection - the set the scene's <see cref="SceneEditor"/> and gizmo read from - own to the
-    /// scene, so two scenes have two independent selections; single by default, drive multi-select through
-    /// <see cref="SceneEditor.MultiSelect"/> (scoped) or <see cref="InteractSelection.Mode"/> directly.
-    /// </summary>
+    /// <summary>This scene's own selection, which its <see cref="SceneEditor"/> and gizmo read from.</summary>
     public InteractSelection Selection { get; } = new();
 
-    /// <summary>
-    /// Creates a <see cref="SceneEditor"/> - "click to select, gizmo follows the selection" - bound to this scene and
-    /// <b>owned</b> by it (<see cref="Dispose"/> tears it down; disposing the editor yourself is optional), configured
-    /// via <c>editor.Gizmo</c> / <c>editor.MultiSelect</c>; make nodes pickable with <see cref="SceneNode.MakeSelectable"/>.
-    /// </summary>
-    /// <param name="op">Which transform operations the gizmo exposes; default <see cref="GizmoOp.Universal"/>.</param>
+    /// <summary>Creates a click-to-select <see cref="SceneEditor"/> bound to and owned by this scene.</summary>
+    /// <param name="op">Which transform operations the gizmo exposes.</param>
+    /// <returns>The new editor.</returns>
     public SceneEditor CreateEditor(GizmoOp op = GizmoOp.Universal)
     {
         var editor = new SceneEditor(this, op);

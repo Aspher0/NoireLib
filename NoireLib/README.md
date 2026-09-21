@@ -36,13 +36,8 @@ This method is useful since it will store the instance of the module for you to 
 Additionnaly, you can add multiple modules of the same type if you want multiple instances for debugging or any other needs.
 
 ```csharp
-// Add the module with an ID:
 NoireLibMain.AddModule<NoireChangelogManager>("ChangelogModule");
-
-// Or, without ID:
 NoireLibMain.AddModule<NoireChangelogManager>();
-
-// Or directly storing the instance of the created module:
 var changelogManager = NoireLibMain.AddModule<NoireChangelogManager>();
 ```
 
@@ -50,7 +45,6 @@ But the best way to create a module is by constructing the module beforehand and
 This way, you are sure that every module option is set before getting initialized, meaning no unintended behavior will happen.
 
 ```csharp
-// Constructing the module, hence configuring it directly:
 var changelogManager = new NoireChangelogManager(
     active: true,
     moduleId: "ChangelogModule",
@@ -62,7 +56,6 @@ NoireLibMain.AddModule(changelogManager);
 You can then retrieve that module at any time, anywhere in your project, hence without having to store the created module, with the `NoireLibMain.GetModule<NoireChangelogManager>(string? moduleId);` method:
 
 ```csharp
-// Retrieve the module later, anywhere:
 var changelogManager = NoireLibMain.GetModule<NoireChangelogManager>("ChangelogModule");
 ```
 
@@ -73,15 +66,11 @@ Once your module is added, you can access it and use it as you would do with any
 You can then set the module active or inactive with the `SetActive(bool active)` method, and check if it's active with the `IsActive` property.
 
 ```csharp
-// Activate the module:
 changelogManager.SetActive(true);
-changelogManager.Activate(); // Alternative
-changelogManager.Deactivate(); // Alternative
+changelogManager.Activate();
+changelogManager.Deactivate();
 
-// Check if the module is active:
 bool isActive = changelogManager.IsActive;
-
-// Or with NoireLibMain:
 isActive = NoireLibMain.IsModuleActive<NoireChangelogManager>("ChangelogModule");
 ```
 
@@ -90,49 +79,35 @@ When active, the module functions normally. When inactive, the module will not d
 All modules share the same few settings and methods:
 
 ```csharp
-// The active state of the module:
 bool isActive = module.IsActive;
 
-// Activate or deactivate the module:
 module.SetActive(!isActive);
 module.Activate();
 module.Deactivate();
 
-// Enable logging for the module
 module.EnableLogging();
 
-// Dispose the module when no longer needed (not needed if added with NoireLibMain.AddModule):
+// Not needed if the module was added with NoireLibMain.AddModule.
 module.Dispose();
+```
 
-/*
- * For modules with an associated window
- */
+For modules with an associated window:
 
-// Gets or sets the window name:
+```csharp
 string windowName = module.DisplayWindowName;
-// Or with the method (for chaining):
-module.SetWindowName(windowName);
+module.SetWindowName(windowName); // chainable
 
-// Get the full window name (including ID):
 string fullWindowName = module.GetFullWindowName();
 
-// Add title bar buttons:
 module.AddTitleBarButton(titleBarButton);
-
-// Remove title bar buttons:
 module.RemoveTitleBarButton(index);
-
-// Replace all title bar buttons:
 module.SetTitleBarButtons(titleBarButtons);
-
-// Remove all title bar buttons:
 module.ClearTitleBarButtons();
 
-// Show or hide the window:
-module.SetShowWindow(bool? show); // If null: toggles the window
-module.ShowWindow(); // Forces showing the window
-module.HideWindow(); // Forces hiding the window
-module.ToggleWindow(); // Toggles the window
+module.SetShowWindow(bool? show); // null toggles
+module.ShowWindow();
+module.HideWindow();
+module.ToggleWindow();
 ```
 
 For a list of modules, see the [Modules Section](#modules)
@@ -142,6 +117,8 @@ For a list of modules, see the [Modules Section](#modules)
 - [Configuration System](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Configuration/README.md)
 - [Database System](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Database/README.md)
 - [IPC Manager](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/IPC/README.md)
+- [NoireRemote](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Remote/README.md) - Publishes part of a plugin to the world outside the game, over HTTP and over a socket, and calls what other programs publish
+- [NoireWebsocket](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Websocket/README.md) - Four client transports (raw RFC 6455, server-sent events, long-polling and Socket.IO) and a WebSocket server with rooms and broadcast, upgrading on the listener NoireRemote already binds
 
 ## UI Helpers
 
@@ -150,6 +127,7 @@ For a list of modules, see the [Modules Section](#modules)
 ## Documented Helpers
 
 - [AddonHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/AddonHelper/README.md) - Reading and manipulating the game's own UI addons and their nodes, with no signature scanning
+- [ContextMenuHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/ContextMenu/README.md) - Entries on the game's right-click menus: both menu types, any menu opened on an item, several glyphs ahead of the label, submenus, per-opening filters and a token that takes the entry away
 - [EncryptionHelper](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/EncryptionHelper/README.md) - Encoding, hashing, password hashing, and AES encryption for memory and files
 - [FuzzyMatcher](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/FuzzyMatcher/README.md) - The one subsequence scorer: match, score, rank a list, and highlight what matched
 - [Game data helpers](https://github.com/Aspher0/NoireLib/blob/main/NoireLib/Helpers/GameData/README.md) - Everything the game's own files and sheets say about the world: level (`.lgb`) files, map coordinates and markers, territories, aetherytes and aethernet shards, warps, chocobo taxis, residential housing, the loaded layout, quest progress

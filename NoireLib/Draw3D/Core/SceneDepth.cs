@@ -5,12 +5,7 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Read-only access to the game's scene depth buffer: bound only as an SRV, never as a DSV, since the game's depth
-// buffer is never written by Draw3D. Creates its own SRV over the typeless texture first, and only falls back to
-// borrowing the game's pre-made one (QI-validated) when that fails, since the game's view can legally be a stencil
-// view of the same resource and sampling stencil as depth inverts occlusion. Re-derives itself whenever the
-// underlying texture changes (resolution, GPose, upscaler changes) and fails soft to depth-off mode on anything
-// unknown.
+// The game's own SRV can be a stencil view. Sampling stencil as depth inverts occlusion.
 internal sealed unsafe class SceneDepth : IDisposable
 {
     private ComPtr<ID3D11ShaderResourceView> srv;
@@ -18,22 +13,15 @@ internal sealed unsafe class SceneDepth : IDisposable
     private bool valid;
     private bool loggedUnknownFormat;
 
-    /// <summary>The depth SRV for this frame, or null in depth-off mode.</summary>
     public ID3D11ShaderResourceView* Srv => valid ? srv.Get() : null;
 
-    /// <summary>True when the depth buffer is readable this frame.</summary>
     public bool IsValid => valid;
 
-    /// <summary>UV scale mapping display UVs into the depth texture's actual region (dynamic resolution).</summary>
+    // Maps display UVs into the texture's actual region under dynamic resolution.
     public Vector2 UvScale { get; private set; } = Vector2.One;
 
-    /// <summary>Human-readable description of the active depth source (route + format) for stats/probe.</summary>
     public string Description { get; private set; } = "none";
 
-    /// <summary>
-    /// Per-frame validation and (re)acquisition. Cheap when nothing changed (a record-struct compare).
-    /// Returns true when depth is usable this frame.
-    /// </summary>
     public bool Update(RenderDevice device)
     {
         if (!GameRenderSources.TryGetDepthTexture(out var info))
@@ -52,10 +40,6 @@ internal sealed unsafe class SceneDepth : IDisposable
             info.ActualWidth / (float)info.AllocatedWidth,
             info.ActualHeight / (float)info.AllocatedHeight);
 
-        // Route 1 (primary): create our own SRV from the typeless texture - WE control which plane it
-        // reads. This deliberately comes before borrowing: the game's own pre-made SRV can legally be a
-        // STENCIL view of the same resource, and sampling stencil as depth inverts occlusion everywhere
-        // geometry was drawn (sky = stencil 0 stays visible) - the "only draws against the sky" bug.
         if (!ComPtrUtil.TryQi<ID3D11Texture2D>((IUnknown*)info.Texture, out var texture))
             return false;
 
@@ -85,9 +69,7 @@ internal sealed unsafe class SceneDepth : IDisposable
                 }
             }
 
-            // Route 2 (fallback): borrow the game's own SRV - but only when it is a known depth-readable
-            // format (never a stencil or color view; QueryInterface and the description struct prove
-            // that, never an assumption).
+            // Borrowed only when its description proves a depth-readable format.
             if (info.GameSrv != 0 && ComPtrUtil.TryQi<ID3D11ShaderResourceView>((IUnknown*)info.GameSrv, out var borrowed))
             {
                 D3D11_SHADER_RESOURCE_VIEW_DESC desc;
@@ -114,7 +96,6 @@ internal sealed unsafe class SceneDepth : IDisposable
         }
     }
 
-    // Maps a depth texture's (typeless) format to the SRV format that reads its depth plane.
     internal static DXGI_FORMAT DepthSrvFormat(DXGI_FORMAT textureFormat) => textureFormat switch
     {
         DXGI_FORMAT.DXGI_FORMAT_R24G8_TYPELESS => DXGI_FORMAT.DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
@@ -131,7 +112,6 @@ internal sealed unsafe class SceneDepth : IDisposable
         or DXGI_FORMAT.DXGI_FORMAT_R16_UNORM
         or DXGI_FORMAT.DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS;
 
-    /// <summary>Drops the current SRV (borrowed refs released exactly once). The next Update re-acquires.</summary>
     public void Invalidate()
     {
         srv.Dispose();
@@ -140,6 +120,5 @@ internal sealed unsafe class SceneDepth : IDisposable
         lastInfo = default;
     }
 
-    /// <inheritdoc/>
     public void Dispose() => Invalidate();
 }

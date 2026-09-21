@@ -6,16 +6,7 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Interaction;
 
-/// <summary>
-/// The packaged "click to select, gizmo follows the selection" controller, created from and owned by a scene via
-/// <see cref="Scene3D.CreateEditor"/>, subscribing to the scene's <see cref="Scene3D.Selection"/> and attaching its
-/// <see cref="Gizmo"/> to the current pick (one node, or the whole group).<br/>
-/// <b>Owned by the scene:</b> <see cref="Scene3D.Dispose"/> disposes the editor; <see cref="Dispose"/> is available
-/// for early teardown but is <b>never required</b>.<br/>
-/// <b>Scoped multi-select:</b> <see cref="MultiSelect"/> sets the scene selection's mode and restores it on dispose
-/// - no lingering global - and since the scene's selection only ever holds that scene's nodes, the editor naturally
-/// reacts to picks in its own scene only.
-/// </summary>
+/// <summary>A click-to-select controller whose <see cref="Gizmo"/> follows <see cref="Scene3D.Selection"/>. The scene owns and disposes it.</summary>
 public sealed class SceneEditor : IDisposable
 {
     private readonly Scene3D scene;
@@ -33,41 +24,33 @@ public sealed class SceneEditor : IDisposable
 
         selectionChanged = OnSelectionChanged;
         scene.Selection.Changed += selectionChanged;
-        OnSelectionChanged(); // sync to whatever is already selected
+        OnSelectionChanged();
     }
 
-    /// <summary>The gizmo the editor drives; configure it via the flattened surface (<c>editor.Gizmo.Space = ...</c>, <c>editor.Gizmo.Snap = 0.5f</c>) or its <see cref="NoireGizmo.Options"/>.</summary>
+    /// <summary>The gizmo the editor drives.</summary>
     public NoireGizmo Gizmo { get; }
 
-    /// <summary>The selection the editor follows - the scene's own <see cref="Scene3D.Selection"/>.</summary>
+    /// <summary>The selection the editor follows, the scene's own <see cref="Scene3D.Selection"/>.</summary>
     public InteractSelection Selection => scene.Selection;
 
     /// <summary>The scene this editor belongs to.</summary>
     public Scene3D Scene => scene;
 
-    /// <summary>
-    /// Whether picking builds a multi-node selection (Ctrl-toggle / Shift-add); setting it drives the scene
-    /// selection's mode as a <b>scoped</b> setting - the mode in effect when the editor was created is restored on
-    /// <see cref="Dispose"/>, so this never leaves a lingering global.
-    /// </summary>
+    /// <summary>Whether picking builds a multi-node selection. The original selection mode is restored on <see cref="Dispose"/>.</summary>
     public bool MultiSelect
     {
         get => scene.Selection.Mode == SelectionMode.Multi;
         set => scene.Selection.Mode = value ? SelectionMode.Multi : SelectionMode.Single;
     }
 
-    /// <summary>Master enable: when false the gizmo neither draws nor interacts (selection still tracks). Default true.</summary>
+    /// <summary>Whether the gizmo draws and interacts. The selection still tracks when false (default true).</summary>
     public bool Enabled
     {
         get => Gizmo.Enabled;
         set => Gizmo.Enabled = value;
     }
 
-    /// <summary>
-    /// Optional: when set, selected nodes get a real silhouette outline in this color (via
-    /// <see cref="SceneNode.ShowOutline"/>), removed on deselect; off by default (the default selection feedback is
-    /// the gizmo plus the per-node hover tint), set to null to turn outlines off.
-    /// </summary>
+    /// <summary>Silhouette outline color applied to selected nodes and their subtrees, or null for none (the default).</summary>
     public Vector4? SelectionOutline
     {
         get => selectionOutline;
@@ -78,10 +61,10 @@ public sealed class SceneEditor : IDisposable
         }
     }
 
-    /// <summary>Outline thickness in screen pixels for <see cref="SelectionOutline"/> (default 4); set before enabling the outline.</summary>
+    /// <summary>Outline thickness in screen pixels for <see cref="SelectionOutline"/> (default 4). Set before enabling the outline.</summary>
     public float OutlineWidth { get; set; } = 4f;
 
-    /// <summary>True once disposed.</summary>
+    /// <summary>Whether the editor is disposed.</summary>
     public bool IsDisposed => disposed;
 
     private void OnSelectionChanged()
@@ -97,13 +80,9 @@ public sealed class SceneEditor : IDisposable
         UpdateOutlines();
     }
 
-    // Applies / removes selection outlines to match the current selection and SelectionOutline.
     private void UpdateOutlines()
     {
-        // The outline covers each selected node's SUBTREE, not just the node: selecting a group node - the
-        // shape a multi-mesh model selects as via SceneNode.SelectionProxy - outlines every mesh under it,
-        // because the group itself draws nothing and a selection with no visible acknowledgement reads as a
-        // missed click. Tracked per outlined node so removal mirrors application exactly.
+        // A group node draws nothing itself.
         var wanted = new List<SceneNode>();
         if (selectionOutline is not null)
         {
@@ -135,7 +114,6 @@ public sealed class SceneEditor : IDisposable
         }
     }
 
-    // A node and all its live descendants, once each, cycle-safe by the visited check.
     private static void CollectSubtree(SceneNode node, List<SceneNode> into)
     {
         if (node.Destroyed || into.Contains(node))
@@ -146,10 +124,7 @@ public sealed class SceneEditor : IDisposable
             CollectSubtree(child, into);
     }
 
-    /// <summary>
-    /// Early teardown: unwires the selection follow, disposes the gizmo and restores the selection mode; optional,
-    /// since <see cref="Scene3D.Dispose"/> does all of this for you, and idempotent.
-    /// </summary>
+    /// <summary>Tears the editor down early, disposing the gizmo and restoring the selection mode. <see cref="Scene3D.Dispose"/> also does this.</summary>
     public void Dispose()
     {
         if (disposed)
@@ -167,6 +142,6 @@ public sealed class SceneEditor : IDisposable
         outlined.Clear();
         Gizmo.Dispose();
         scene.Selection.Mode = originalMode;
-        scene.Disown(this); // release from the scene's ownership (no-op when the scene is already tearing down)
+        scene.Disown(this);
     }
 }

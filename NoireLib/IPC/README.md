@@ -1,4 +1,4 @@
-# NoireLib Documentation - NoireIPC
+﻿# NoireLib Documentation - NoireIPC
 
 You are reading the documentation for `NoireIPC`.
 
@@ -45,7 +45,7 @@ You are reading the documentation for `NoireIPC`.
 
 ## Overview
 
-`NoireIPC` is a high-level wrapper over Dalamud IPC that focuses on **simple provider registration**, **simple consumer binding**, and **strong attribute-based ergonomics**.
+`NoireIPC` wraps Dalamud IPC with attribute-based providers and consumers.
 
 It provides:
 
@@ -60,14 +60,14 @@ It provides:
 - **Automatic disposal** of all tracked handles when `NoireLibMain.Dispose()` runs
 - **Direct access** to raw Dalamud call gates when needed
 
-The strongest part of `NoireIPC` is the combination of:
+The core is the combination of:
 
 - `[NoireIpcClass]`
 - `[NoireIpc]`
 - `NoireIpcConsumer<TDelegate>`
 - `NoireIpcEventConsumer<TDelegate>`
 
-If you want the easiest and cleanest setup, start with the [recommended attributed approach](#recommended-approach-attributes--consumer-wrappers) below.
+Start with the [attributed approach](#recommended-approach-attributes--consumer-wrappers).
 
 ---
 
@@ -99,7 +99,7 @@ Instance attributed types must be initialized manually with `NoireIPC.Initialize
 
 **This is the recommended way to use `NoireIPC`.**
 
-You expose providers with attributed methods/events and consume them with attributed wrapper properties. This gives you:
+Attributed methods and events provide. Attributed wrapper properties consume:
 
 - Clean provider code
 - Clean consumer code
@@ -198,11 +198,11 @@ CounterConsumer.OnUpdated += message =>
 
 ## Consumer Methods and Direct Consumer Events
 
-When wrappers are not what you want, you can consume event-style IPC directly with attributed methods.
+Event-style IPC can also be consumed with attributed methods.
 
 ### Consumer Method
 
-Use this when you want a plain method callback for an event-style IPC channel.
+A plain method callback for an event-style channel.
 
 ```csharp
 [NoireIpc("OnUpdated", Mode = NoireIpcMode.Consumer, Target = NoireIpcTargetKind.Event)]
@@ -214,14 +214,12 @@ public static void HandleUpdated(string message)
 
 ### When Metadata is Required
 
-For wrapper properties (`NoireIpcConsumer<TDelegate>` or `NoireIpcEventConsumer<TDelegate>`), `NoireIPC` can infer the correct behavior automatically.
+Wrapper properties infer their behavior.
 
-For **public methods** and **direct consumer events**, `Mode` and `Target` should be specified explicitly so there is no ambiguity:
+**Public methods** and **direct consumer events** need `Mode` and `Target`:
 
 - `Mode = NoireIpcMode.Consumer` - marks the member as a consumer
 - `Target = NoireIpcTargetKind.Event` - marks the member as event-style
-
-In practice:
 
 - Provider methods and wrapper properties usually work with defaults (`Mode = Auto`, `Target = Auto`)
 - Event consumer methods should explicitly specify `Mode = Consumer` and `Target = Event`
@@ -380,14 +378,13 @@ if (myAction.IsIpcAvailable())
 }
 ```
 
-This works for delegates created internally by `NoireIPC` that are backed by a `NoireIpcConsumerProxy`.
+It works for delegates `NoireIPC` created, backed by a `NoireIpcConsumerProxy`.
 
 ---
 
 ## Using Attributed IPC with Instances
 
-Static types are automatically discovered when decorated with `[NoireIpcClass]`.
-For instance types, you must initialize them manually.
+Static types with `[NoireIpcClass]` are discovered automatically. Instance types are initialized manually.
 
 ### Provider Instance
 
@@ -451,13 +448,13 @@ public sealed class CounterConsumerInstance
 }
 ```
 
-`NoireIPC.Initialize(...)` returns a `NoireIpcGroup` containing all handles created for the instance. The group implements `IDisposable` and can be disposed early if needed, but all handles are automatically disposed when `NoireLibMain.Dispose()` runs.
+`NoireIPC.Initialize(...)` returns a `NoireIpcGroup` of the instance's handles. Dispose it early if needed. `NoireLibMain.Dispose()` disposes every handle.
 
 ---
 
 ## Availability and Binding State
 
-The wrapper types are designed so you can safely inspect IPC state before invoking or subscribing.
+The wrappers expose IPC state before invoking or subscribing.
 
 ### Call Consumer Availability
 
@@ -488,7 +485,7 @@ catch (InvalidOperationException ex)
 
 ### Standalone Availability Checks
 
-You can check availability without a wrapper using the static `NoireIPC` methods:
+Without a wrapper, use the static `NoireIPC` methods:
 
 ```csharp
 bool funcReady = NoireIPC.IsFuncAvailable<int>("GetCounter", prefix: "MyPlugin");
@@ -502,7 +499,7 @@ bool available = NoireIPC.IsAvailable(
     prefix: "MyPlugin");
 ```
 
-These read the call gate's `HasFunction`/`HasAction` flags. They never invoke the provider.
+They read the call gate's `HasFunction` / `HasAction` flags without invoking the provider.
 
 ---
 
@@ -564,6 +561,20 @@ public static int DoGetCounter() => 42;
 public static NoireIpcConsumer<Action<int>> Increment { get; set; }
 ```
 
+**What a member does, by kind:**
+
+- A **method** provides.
+- An **event** publishes, or subscribes when `Mode = Consumer`.
+- A **property whose type is a delegate**, `NoireIpcConsumer<>` or `NoireIpcEvent<>` **consumes**: it is
+  filled with a binding to someone else's channel.
+- A **property of any other type provides its value**, read on every call:
+
+```csharp
+[NoireIpc] public static int MajorVersion => 1;     // channel "Prefix.MajorVersion"
+```
+
+A property without a getter is a compile error (`NoireLib_007`). A static class with `[NoireIpc]` members and no `[NoireIpcClass]` is a warning (`NoireLib_006`): nothing registers it unless you call `NoireIPC.RegisterType`.
+
 **Properties:**
 
 - `Name` (`string?`) - the IPC name for the member (defaults to the member name)
@@ -621,7 +632,7 @@ public enum NoireIpcRegistrationKind
 
 ## Global Configuration
 
-`NoireIPC.Configure(...)` lets you set global defaults that affect name resolution and message channels.
+`NoireIPC.Configure(...)` sets global defaults for name resolution and message channels.
 
 ```csharp
 NoireIPC.Configure(
@@ -653,7 +664,7 @@ The configuration is automatically reset when `NoireLibMain.Dispose()` runs.
 
 ## Handle Types and Lifecycle
 
-Every registration, subscription, or consumer binding creates a tracked handle. All handles inherit from `NoireIpcHandle`.
+Every registration, subscription or consumer binding creates a tracked handle deriving from `NoireIpcHandle`.
 
 ### `NoireIpcHandle` (base class)
 
@@ -685,18 +696,17 @@ Returned by `Initialize(...)`, `RegisterType(...)`, `RegisterType<T>(...)`, and 
 
 ### Automatic Disposal
 
-All tracked handles are automatically disposed when `NoireLibMain.Dispose()` runs. You do not need to dispose them manually unless you want early cleanup.
+Every tracked handle is disposed when `NoireLibMain.Dispose()` runs.
 
 ---
 
 ## Advanced APIs
 
-The sections above should cover most plugins.
-The APIs below are for users who want more control over naming, scoping, message result types, manual registration, or direct Dalamud interop.
+The APIs below give more control over naming, scoping, message result types, manual registration and Dalamud interop.
 
 ### Direct `NoireIPC` Usage
 
-You can use `NoireIPC` directly without attributes for full control.
+`NoireIPC` works without attributes:
 
 #### Register Providers
 
@@ -746,7 +756,7 @@ bool actionReady = NoireIPC.IsActionAvailable("Reset", prefix: "MyPlugin");
 
 #### Batch Registration with `RegisterType`
 
-You can register all attributed static members of a type without needing `[NoireIpcClass]` for automatic discovery:
+Registers every attributed static member of a type, without `[NoireIpcClass]`:
 
 ```csharp
 NoireIpcGroup group = NoireIPC.RegisterType<MyProviderType>(prefix: "MyPlugin");
@@ -757,7 +767,7 @@ NoireIpcGroup group = NoireIPC.RegisterType(typeof(MyProviderType), prefix: "MyP
 
 #### Assembly-Wide Registration
 
-`RegisterAttributedTypes(...)` scans an assembly for all static types decorated with `[NoireIpcClass]` and registers them. This is called automatically by `NoireLibMain.Initialize(...)`, but you can also call it manually on other assemblies:
+`RegisterAttributedTypes(...)` registers every static `[NoireIpcClass]` type in an assembly. `NoireLibMain.Initialize(...)` calls it for your plugin. Call it for other assemblies:
 
 ```csharp
 NoireIpcGroup group = NoireIPC.RegisterAttributedTypes(typeof(SomeType).Assembly);
@@ -767,7 +777,7 @@ NoireIpcGroup group = NoireIPC.RegisterAttributedTypes(typeof(SomeType).Assembly
 
 ### `NoireIpcScope`
 
-Use `NoireIpcScope` when several IPC channels share the same prefix and message configuration.
+For several channels sharing a prefix and message configuration.
 
 ```csharp
 var scope = NoireIPC.Scope(prefix: "MyPlugin.Counter");
@@ -779,7 +789,7 @@ var count = scope.InvokeFunc<int>("GetCounter");
 scope.InvokeAction("Increment", 5);
 ```
 
-A scope provides the same registration, invocation, subscription, and send methods as `NoireIPC`, but with a fixed prefix and message result type.
+A scope has the same methods as `NoireIPC`, with a fixed prefix and message result type.
 
 #### Scope API
 
@@ -797,7 +807,7 @@ A scope provides the same registration, invocation, subscription, and send metho
 
 #### Unprefixed Scope
 
-Use `NoireIPC.Raw()` to create a scope that does not apply any automatic prefix resolution:
+`NoireIPC.Raw()` creates a scope without automatic prefix resolution:
 
 ```csharp
 var raw = NoireIPC.Raw();
@@ -808,7 +818,7 @@ raw.InvokeFunc<int>("SomePlugin.ExactChannelName");
 
 ### `NoireIpcChannel`
 
-Use `NoireIpcChannel` when you want to work with one specific fully resolved channel.
+One fully resolved channel.
 
 ```csharp
 var channel = NoireIPC.Channel("Updated", prefix: "MyPlugin.Counter");
@@ -833,7 +843,7 @@ channel.Send("Updated from channel");
 
 ### Name Resolution
 
-`NoireIPC` resolves IPC names through a prefix + separator + local name pipeline.
+Names resolve as prefix + separator + local name.
 
 **`NoireIPC.BuildName(name, prefix, useDefaultPrefix)`** produces a fully qualified name:
 
@@ -860,22 +870,20 @@ NoireIPC.BuildName("MyPlugin.GetCounter", prefix: "MyPlugin"); // "MyPlugin.GetC
 
 ### Raw Dalamud Access
 
-When you need full control over the underlying call gates:
+The underlying call gates:
 
 ```csharp
 var rawProvider = NoireIPC.GetRawProvider("MyPlugin.Counter.GetCounter", typeof(int));
 var rawSubscriber = NoireIPC.GetRawSubscriber("MyPlugin.Counter.GetCounter", typeof(int));
 ```
 
-You can also retrieve raw provider/subscriber objects from a `NoireIpcChannel`:
+Or from a `NoireIpcChannel`:
 
 ```csharp
 var channel = NoireIPC.Channel("GetCounter", prefix: "MyPlugin.Counter");
 var rawProvider = channel.GetRawProvider(typeof(int));
 var rawSubscriber = channel.GetRawSubscriber(typeof(int));
 ```
-
-This is intended for advanced scenarios only.
 
 ---
 
@@ -886,7 +894,7 @@ This is intended for advanced scenarios only.
 - The message result type (trailing generic type) **cannot be `void`**
 - Open generic methods **cannot be registered** as IPC providers
 - Attributed event consumers must use delegates that **return `void`**
-- Assembly scanning only auto-registers **static types** with `[NoireIpcClass]`; non-static types are skipped
+- Assembly scanning only auto-registers **static types** with `[NoireIpcClass]`
 - Null arguments require **explicit parameter types** to be passed (types cannot be inferred from `null`)
 
 ---
@@ -906,7 +914,7 @@ This is intended for advanced scenarios only.
 
 - Static attributed types are registered automatically only if the type has `[NoireIpcClass]`
 - Automatic registration happens during `NoireLibMain.Initialize(...)`
-- The class must be `static` (both `abstract` and `sealed` in IL terms); non-static classes are skipped by `RegisterAttributedTypes`
+- The class must be `static` (`abstract` and `sealed` in IL)
 
 ### Event consumer method is not binding as expected
 

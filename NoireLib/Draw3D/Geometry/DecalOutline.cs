@@ -5,26 +5,15 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Geometry;
 
-// Traces a ground decal as world-space lines, re-derived from Shape / ShapeParams and the world matrix since a decal
-// has no geometry of its own. BuildLoop traces the painted shape (the SDF outline, shared by ShowDecalShape and
-// wireframe mode); BuildVolumeCorners traces the projection box (the SDF's bounding square, swept above and below the
-// surface, drawn by ShowDecalVolume).
+// A decal has no geometry of its own. BuildLoop traces the painted SDF outline, BuildVolumeCorners the projection box.
 internal static class DecalOutline
 {
-    /// <summary>Corner count of a decal's projection box (<see cref="BuildVolumeCorners"/>).</summary>
     public const int VolumeCorners = 8;
 
-    /// <summary>
-    /// Fills <paramref name="corners"/> (length <see cref="VolumeCorners"/>) with the decal's projection-box corners in
-    /// world space: 0-3 are the bottom face in loop order, 4-7 the top face directly above them; the 12 edges are the
-    /// two 4-point loops plus corner <c>i</c> to corner <c>i + 4</c>.
-    /// </summary>
-    /// <param name="world">The decal's world matrix, constraint already applied.</param>
-    /// <param name="corners">Receives the 8 world-space corners.</param>
+    // Corners 0-3 are the bottom face in loop order, 4-7 the top. Corner i joins corner i + 4.
     public static void BuildVolumeCorners(in Matrix4x4 world, Span<Vector3> corners)
     {
-        // The decal volume is the unit box the shader tests lp against (any(abs(lp) > 0.5) rejects), so the corners are
-        // the eight combinations of +/-0.5 - bottom face first, both faces wound the same way so i -> i+4 is a vertical.
+        // The shader rejects any(abs(lp) > 0.5).
         corners[0] = Vector3.Transform(new Vector3(-0.5f, -0.5f, -0.5f), world);
         corners[1] = Vector3.Transform(new Vector3(+0.5f, -0.5f, -0.5f), world);
         corners[2] = Vector3.Transform(new Vector3(+0.5f, -0.5f, +0.5f), world);
@@ -35,10 +24,8 @@ internal static class DecalOutline
         corners[7] = Vector3.Transform(new Vector3(-0.5f, +0.5f, +0.5f), world);
     }
 
-    /// <summary>Segment count for a full turn of a curved outline; a partial arc gets a proportional share.</summary>
     public const int Segments = 64;
 
-    /// <summary>How many separate closed loops <paramref name="shape"/> traces: two for a ring with a real inner radius, one otherwise.</summary>
     public static int LoopCount(DecalShape shape, Vector4 shapeParams) => shape switch
     {
         DecalShape.Ring => HasInner(shapeParams.X) ? 2 : 1,
@@ -46,15 +33,7 @@ internal static class DecalOutline
         _ => 1,
     };
 
-    /// <summary>
-    /// Fills <paramref name="points"/> (cleared first) with loop <paramref name="index"/> of the shape's outline in world
-    /// space; every loop is closed, so the caller joins the last point back to the first rather than repeating it.
-    /// </summary>
-    /// <param name="shape">The decal's shape.</param>
-    /// <param name="shapeParams">The decal's shape parameters (see <see cref="DecalShape"/> members).</param>
-    /// <param name="world">The decal's world matrix, constraint already applied.</param>
-    /// <param name="index">Loop index, 0 based (see <see cref="LoopCount"/>); loop 0 is the outer edge.</param>
-    /// <param name="points">Receives the loop's world-space points.</param>
+    // Loop 0 is the outer edge. The last point is not repeated.
     public static void BuildLoop(DecalShape shape, Vector4 shapeParams, in Matrix4x4 world, int index, List<Vector3> points)
     {
         points.Clear();
@@ -65,11 +44,15 @@ internal static class DecalOutline
                 break;
 
             case DecalShape.Sector:
-                // A slice half a turn or wider closes on itself: the angular edges vanish and it is a ring (or a disc).
+                // Half a turn or wider closes into a ring or disc.
                 if (IsFullTurn(shapeParams.X))
                     Circle(index == 0 ? 1f : Math.Clamp(shapeParams.Y, 0f, 1f), in world, points);
                 else
                     Sector(MathF.Abs(shapeParams.X), Math.Clamp(shapeParams.Y, 0f, 1f), in world, points);
+                break;
+
+            case DecalShape.Chevron:
+                Chevron(shapeParams.X, in world, points);
                 break;
 
             case DecalShape.Rect:
@@ -80,7 +63,7 @@ internal static class DecalOutline
                 points.Add(ToWorld(-1f, +1f, in world));
                 break;
 
-            default: // Circle
+            default:
                 Circle(1f, in world, points);
                 break;
         }
@@ -99,7 +82,6 @@ internal static class DecalOutline
         }
     }
 
-    // The outer arc, then the inner arc back (or the apex), which the caller's closing segment joins into a wedge.
     private static void Sector(float halfAngle, float inner, in Matrix4x4 world, List<Vector3> points)
     {
         var arc = Math.Max(2, (int)MathF.Ceiling(Segments * halfAngle / MathF.PI));
@@ -111,7 +93,7 @@ internal static class DecalOutline
 
         if (!HasInner(inner))
         {
-            points.Add(ToWorld(0f, 0f, in world)); // no inner radius: the apex closes the wedge
+            points.Add(ToWorld(0f, 0f, in world));
             return;
         }
 
@@ -122,9 +104,39 @@ internal static class DecalOutline
         }
     }
 
-    // Footprint space to world: the shader evaluates its SDF on p = local.xz * 2 (outer edge at |p| = 1), so a
-    // footprint point maps back to local (p.x / 2, 0, p.y / 2) (Y 0 = the decal's own plane), with the angle running
-    // from local +Z to match the shader's atan2(p.x, p.y).
+    private static void Chevron(float stroke, in Matrix4x4 world, List<Vector3> points)
+    {
+        Span<Vector2> corners = stackalloc Vector2[6];
+        ChevronOutline(stroke, corners);
+
+        foreach (var corner in corners)
+            points.Add(ToWorld(corner.X, corner.Y, in world));
+    }
+
+    // Mitred at the tip like the shader. Stroke 0 means 0.22.
+    public static void ChevronOutline(float stroke, Span<Vector2> corners)
+    {
+        var half = stroke > 0f ? stroke : 0.22f;
+        var reach = 1f - half;
+        var left = new Vector2(-reach, -0.6f * reach);
+        var tip = new Vector2(0f, 0.6f * reach);
+        var right = new Vector2(reach, -0.6f * reach);
+
+        var up = Vector2.Normalize(tip - left);
+        var down = Vector2.Normalize(right - tip);
+        var leftNormal = new Vector2(-up.Y, up.X);
+        var rightNormal = new Vector2(-down.Y, down.X);
+        var mitre = (leftNormal + rightNormal) * (half / (1f + Vector2.Dot(leftNormal, rightNormal)));
+
+        corners[0] = left + leftNormal * half;
+        corners[1] = tip + mitre;
+        corners[2] = right + rightNormal * half;
+        corners[3] = right - rightNormal * half;
+        corners[4] = tip - mitre;
+        corners[5] = left - leftNormal * half;
+    }
+
+    // The shader's SDF runs on p = local.xz * 2 with the angle from local +Z.
     private static Vector3 ToWorld(float px, float pz, in Matrix4x4 world)
         => Vector3.Transform(new Vector3(px * 0.5f, 0f, pz * 0.5f), world);
 }

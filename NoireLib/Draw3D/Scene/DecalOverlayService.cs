@@ -3,11 +3,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Scene;
 
-// Draws the opt-in decal overlays on the render thread: nodes that turned on a painted-shape outline (ShowDecalShape)
-// or a projection-box wireframe (ShowDecalVolume) are traced here each frame off OnRenderOverlay - the same
-// zero-latency point the native gizmo uses - so an overlay tracks the live camera and lands this frame; a node
-// registers once and keeps the slot while either overlay is on. Fail-soft: a destroyed or fully turned-off node
-// auto-unregisters; a node that throws while emitting is logged and skipped.
+// Render thread, from OnRenderOverlay.
 internal static class DecalOverlayService
 {
     private const string DisposeKey = "NoireLib.Draw3D.DecalOverlayService";
@@ -15,13 +11,10 @@ internal static class DecalOverlayService
     private static readonly object Sync = new();
     private static readonly List<SceneNode> Nodes = new();
 
-    // Reused snapshot for the per-frame pass: the loop unregisters stale nodes as it goes, so it cannot run over the
-    // live list, and a fresh array every frame would allocate in the steady state, which this path must not do.
-    // Render thread only (see OnOverlay).
+    // Render thread only. The loop unregisters as it goes.
     private static readonly List<SceneNode> Scratch = new();
     private static bool hooked;
 
-    /// <summary>Registers a node for per-frame decal-overlay drawing (idempotent); hooks the render overlay on first use.</summary>
     public static void Register(SceneNode node)
     {
         lock (Sync)
@@ -32,7 +25,7 @@ internal static class DecalOverlayService
         }
     }
 
-    /// <summary>Stops drawing a node's decal overlays; callers check the other overlay first, since a node needs the slot while either is on.</summary>
+    // A node keeps its slot while either overlay is on.
     public static void Unregister(SceneNode node)
     {
         lock (Sync)
@@ -53,8 +46,7 @@ internal static class DecalOverlayService
 
     private static void OnOverlay(FrameContext frame)
     {
-        // The master toggles trace every decal, opted in or not, so tracing here as well would double-draw this node's
-        // overlay. Each is skipped independently: the shape master does not suppress an opted-in volume box.
+        // The master toggles already trace every decal.
         var skipShapes = NoireDraw3D.Wireframe || NoireDraw3D.DecalShapeOutlines;
         var skipVolumes = NoireDraw3D.DecalVolumeOutlines;
         if (skipShapes && skipVolumes)
@@ -100,7 +92,7 @@ internal static class DecalOverlayService
                 NoireDraw3D.OnRenderOverlay -= OnOverlay;
             hooked = false;
             Nodes.Clear();
-            Scratch.Clear(); // the reused snapshot must not keep node references alive past teardown
+            Scratch.Clear(); // releases node references past teardown
         }
     }
 }

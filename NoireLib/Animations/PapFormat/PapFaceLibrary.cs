@@ -1,3 +1,4 @@
+using NoireLib.Animations.PapFormat.Tmb;
 using System;
 using System.Buffers.Binary;
 using System.Collections.Generic;
@@ -7,34 +8,29 @@ using System.Text;
 namespace NoireLib.Animations.PapFormat;
 
 /// <summary>
-/// Reads and injects TMPP face-library declarations across the TMB timelines embedded in a .pap, on raw bytes only.
-/// A TMPP is the 12-byte TMB item naming the face-animation .pap loaded alongside an emote. <see cref="Inject"/>
-/// splices bytes rather than rebuilding the timeline, so relative offsets in unrecognized entries stay valid.
+/// Reads and injects TMPP face-library declarations across the TMB timelines embedded in a .pap, on raw bytes only.<br/>
+/// A TMPP is the 12-byte TMB item naming the face-animation .pap loaded alongside an emote. <see cref="Inject"/> splices bytes directly. Relative offsets in unrecognized entries stay valid.
 /// </summary>
 public static class PapFaceLibrary
 {
     private const int PapMagic = 0x20706170;
 
-    // Magic, version, count, model id, model type, variant, and three offsets.
+    // Magic, version, count, model id, model type, variant, three offsets.
     private const int PapHeaderLength = 26;
 
     private const int AnimationCountOffset = 8;
 
-    // Offset of the footer field (where the embedded TMB region starts) inside a .pap header.
     private const int FooterFieldOffset = 22;
 
     private const int TmlbHeaderLength = 12;
 
-    // TMDH is always the first item and always this size.
     private const int TmdhLength = 0x10;
 
-    // TMPP is magic, size and one offset string; it carries no id or time.
+    // Magic, size, one offset string. No id or time.
     private const int TmppLength = 0x0C;
 
-    // Offset of the TMPP inside a TMB, present or injected: right after TMDH.
     private const int TmppInsertOffset = TmlbHeaderLength + TmdhLength;
 
-    // One embedded TMB: where it sits in the pap, and the face library it declares.
     private readonly record struct TmbSlice(int Start, int Length, string? FaceLibrary);
 
     /// <summary>
@@ -71,7 +67,7 @@ public static class PapFaceLibrary
     /// The face library to declare, relative to the skeleton's nonresident animation folder, such as "wrysmile" or
     /// "emot/joy", stored as-is.
     /// </param>
-    /// <returns>A fresh array holding the patched .pap.</returns>
+    /// <returns>A fresh array holding the patched .pap, or <paramref name="papBytes"/> itself when every TMB already carries a TMPP.</returns>
     /// <exception cref="ArgumentException"> <paramref name="faceLibraryName"/> is null, empty or contains a NUL. </exception>
     /// <exception cref="InvalidDataException">
     /// The input is not a structurally recognizable .pap (see <see cref="Read"/>), or the spliced result failed to
@@ -90,11 +86,15 @@ public static class PapFaceLibrary
                 nameof(faceLibraryName));
 
         var tmbs = WalkTmbs(papBytes, out var footerOffset, out var tmbRegionEnd);
+
+        if (tmbs.TrueForAll(tmb => tmb.FaceLibrary != null))
+            return papBytes;
+
         var nameBytes = Encoding.UTF8.GetBytes(faceLibraryName);
 
         using var output = new MemoryStream(papBytes.Length + tmbs.Count * (TmppLength + nameBytes.Length + 1));
 
-        // The TMBs sit at the tail of the file, so nothing ahead of the TMB region shifts when they grow.
+        // The TMBs sit at the tail of the file. Nothing ahead of them shifts.
         output.Write(papBytes, 0, footerOffset);
 
         var expectedLibraries = new List<string>(tmbs.Count);
@@ -118,13 +118,13 @@ public static class PapFaceLibrary
             }
             else
             {
-                var patched = BuildInjectedTmb(papBytes, tmb, nameBytes);
+                var patched = BuildCanonicalInjectedTmb(papBytes, tmb, faceLibraryName)
+                    ?? BuildInjectedTmb(papBytes, tmb, nameBytes);
                 output.Write(patched, 0, patched.Length);
                 expectedLibraries.Add(faceLibraryName);
             }
         }
 
-        // Bytes after the last TMB are preserved, even though PapFile never writes any.
         output.Write(papBytes, tmbRegionEnd, papBytes.Length - tmbRegionEnd);
 
         var result = output.ToArray();
@@ -132,9 +132,7 @@ public static class PapFaceLibrary
         return result;
     }
 
-    // One TMB with the TMPP spliced in: bytes up to the insertion point, the 12-byte item, the remaining bytes
-    // shifted as one block, then the name string and its terminator. Only the total size and item count are
-    // rewritten, since every stored offset is forward-pointing and relative to its own item's start+8.
+    // Only total size and item count are rewritten. Every stored offset is relative to its own item's start + 8.
     private static byte[] BuildInjectedTmb(byte[] pap, TmbSlice tmb, byte[] nameBytes)
     {
         var newSize = tmb.Length + TmppLength + nameBytes.Length + 1;
@@ -144,7 +142,7 @@ public static class PapFaceLibrary
 
         WriteAsciiMagic(bytes, TmppInsertOffset, "TMPP");
         BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(TmppInsertOffset + 4), TmppLength);
-        // The name lands at (old size + 12) in the new TMB; the offset is relative to the TMPP's own start+8.
+        // The name lands at old size + 12. The offset is relative to the TMPP's start + 8.
         BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(TmppInsertOffset + 8),
             tmb.Length + TmppLength - (TmppInsertOffset + 8));
 
@@ -160,8 +158,129 @@ public static class PapFaceLibrary
         return bytes;
     }
 
-    // Walks the pap's embedded TMB region without parsing the timelines, returning one slice per TMB and the region's
-    // bounds. Anything that does not match the TMLB, TMDH, then TMPP-or-TMAL shape is refused.
+    private readonly record struct TmbStringField(int ItemStart, int FieldOffset, int Target, string Value);
+
+    private static byte[]? BuildCanonicalInjectedTmb(byte[] pap, TmbSlice tmb, string faceLibraryName)
+    {
+        var itemCount = ReadInt32(pap, tmb.Start + 8);
+        var fields = new List<TmbStringField>();
+        var position = TmlbHeaderLength;
+        var stringStart = tmb.Length;
+
+        for (var index = 0; index < itemCount; index++)
+        {
+            if (position + 8 > tmb.Length)
+                return null;
+
+            var itemSize = ReadInt32(pap, tmb.Start + position + 4);
+
+            if (itemSize < 8 || position + itemSize > tmb.Length)
+                return null;
+
+            var magic = Encoding.ASCII.GetString(pap, tmb.Start + position, 4);
+
+            if (TmbFile.StringFieldOffsets.TryGetValue(magic, out var fieldOffset) && fieldOffset + 4 <= itemSize)
+            {
+                var offset = ReadInt32(pap, tmb.Start + position + fieldOffset);
+                var target = position + 8 + offset;
+
+                if (offset <= 0 || position < TmppInsertOffset || target >= tmb.Length)
+                    return null;
+
+                var end = Array.IndexOf(pap, (byte)0, tmb.Start + target, tmb.Length - target);
+
+                if (end < 0)
+                    return null;
+
+                var value = Encoding.UTF8.GetString(pap, tmb.Start + target, end - tmb.Start - target);
+
+                fields.Add(new TmbStringField(position, fieldOffset, target,
+                    magic == "C063" ? value.ToLowerInvariant() : value));
+
+                stringStart = Math.Min(stringStart, target);
+            }
+
+            position += itemSize;
+        }
+
+        if (stringStart < position || !OnlyReferencedStrings(pap, tmb, stringStart, fields))
+            return null;
+
+        using var table = new MemoryStream();
+        var placedAt = new Dictionary<string, int>(StringComparer.Ordinal);
+
+        int Place(string text)
+        {
+            if (placedAt.TryGetValue(text, out var existing))
+                return existing;
+
+            var at = (int)table.Length;
+            placedAt[text] = at;
+            table.Write(Encoding.UTF8.GetBytes(text));
+            table.WriteByte(0);
+
+            return at;
+        }
+
+        var libraryOffset = Place(faceLibraryName);
+        var fieldOffsets = fields.ConvertAll(field => Place(field.Value));
+        var strings = table.ToArray();
+
+        var newStringStart = stringStart + TmppLength;
+        var bytes = new byte[newStringStart + strings.Length];
+
+        Buffer.BlockCopy(pap, tmb.Start, bytes, 0, TmppInsertOffset);
+
+        WriteAsciiMagic(bytes, TmppInsertOffset, "TMPP");
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(TmppInsertOffset + 4), TmppLength);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(TmppInsertOffset + 8),
+            newStringStart + libraryOffset - (TmppInsertOffset + 8));
+
+        Buffer.BlockCopy(pap, tmb.Start + TmppInsertOffset, bytes, TmppInsertOffset + TmppLength,
+            stringStart - TmppInsertOffset);
+
+        Buffer.BlockCopy(strings, 0, bytes, newStringStart, strings.Length);
+
+        for (var index = 0; index < fields.Count; index++)
+        {
+            var itemStart = fields[index].ItemStart + TmppLength;
+
+            BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(itemStart + fields[index].FieldOffset),
+                newStringStart + fieldOffsets[index] - (itemStart + 8));
+        }
+
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4), bytes.Length);
+        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(8), itemCount + 1);
+
+        return bytes;
+    }
+
+    private static bool OnlyReferencedStrings(byte[] pap, TmbSlice tmb, int stringStart, List<TmbStringField> fields)
+    {
+        var referenced = new HashSet<int>();
+
+        foreach (var field in fields)
+            referenced.Add(field.Target);
+
+        var position = stringStart;
+
+        while (position < tmb.Length)
+        {
+            if (!referenced.Contains(position))
+                return false;
+
+            var end = Array.IndexOf(pap, (byte)0, tmb.Start + position, tmb.Length - position);
+
+            if (end < 0)
+                return false;
+
+            position = end - tmb.Start + 1;
+        }
+
+        return true;
+    }
+
+    // Refuses anything but the TMLB, TMDH, TMPP-or-TMAL shape.
     private static List<TmbSlice> WalkTmbs(byte[] pap, out int footerOffset, out int tmbRegionEnd)
     {
         if (pap.Length < PapHeaderLength)
@@ -231,13 +350,11 @@ public static class PapFaceLibrary
         return tmbs;
     }
 
-    // Re-parses the spliced bytes with PapFile, then re-walks them and checks every TMB declares the library it was
-    // meant to end up with.
     private static void Verify(byte[] result, List<string> expectedLibraries)
     {
         try
         {
-            _ = new PapFile(new BinaryReader(new MemoryStream(result)));
+            _ = PapFile.FromBytes(result);
         }
         catch (Exception ex)
         {
@@ -257,16 +374,14 @@ public static class PapFaceLibrary
         }
     }
 
-    // Pads every inter-TMB gap but the last to a 4-byte boundary, measured against the TMB region's own alignment
-    // rather than absolute zero, matching PapFile.
+    // Every gap but the last pads to 4 bytes, aligned to the TMB region's start, like PapFile.
     private static int PaddingBeforeNextTmb(int position, int footerOffset)
     {
         var leftover = (position - footerOffset % 4) % 4;
         return leftover == 0 ? 0 : 4 - leftover;
     }
 
-    // The string a TMB offset field points at: 0 is the empty string, anything else is relative to the field's own
-    // position and must land on a NUL-terminated run inside the same TMB.
+    // 0 is the empty string. Any other value is relative to the field's own position.
     private static string ReadTmbOffsetString(byte[] pap, int tmbStart, int tmbSize, int fieldPosition, int index, int count)
     {
         var offset = ReadInt32(pap, fieldPosition);

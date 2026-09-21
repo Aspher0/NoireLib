@@ -5,42 +5,32 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// Composite constants - must match CompositeCB in Composite.hlsl exactly (4112 bytes).
+// Must match CompositeCB in Composite.hlsl (4112 bytes).
 [StructLayout(LayoutKind.Sequential)]
 internal unsafe struct CompositeCBData
 {
     public Vector4 OpacityProtect; // x = layer opacity, y = ui mask enabled, z = rect count, w = difference gain
     public fixed float Rects[128 * 4];
-    public fixed float Factors[128 * 4]; // x of each float4 = UI visibility inside the rect (1 = UI on top)
+    public fixed float Factors[128 * 4]; // x = UI visibility inside the rect (1 = UI on top)
 }
 
-// Outline composite constants - must match OutlineCB in Outline.hlsl exactly (16 bytes).
+// Must match OutlineCB in Outline.hlsl (16 bytes).
 [StructLayout(LayoutKind.Sequential)]
 internal struct OutlineCBData
 {
-    public Vector4 OutlineParams; // x = width px, yz = 1/viewport, w unused
+    public Vector4 OutlineParams; // x = width px, yz = 1/viewport
 }
 
-// Blits the premultiplied scene layer onto the target with one fullscreen triangle; no ImGui call is involved
-// anywhere in Draw3D's visible output. On the over-everything path it also applies per-pixel game-UI-on-top masking
-// (the difference between the pre-UI and post-UI present-buffer snapshots) and the nameplate policy rects in the same
-// pass. The blend writes RGB only, leaving the target's alpha channel untouched.
+// The blend writes RGB only. The target's alpha stays untouched.
 internal sealed unsafe class Compositor : IDisposable
 {
-    // Scales the pre/post-UI colour difference into mask coverage, steeply enough that any pixel the UI touched at
-    // all masks fully: one 8-bit step of change saturates. This is safe because both snapshots are bit-identical
-    // outside what the UI drew, so any difference at all is the UI; a gentler gain would let a semi-transparent HUD
-    // panel bleed the layer through at half strength instead of masking it.
+    // Both snapshots are bit-identical outside the UI. A gentler gain shows the layer through semi-transparent HUD panels.
     private const float UiDiffGain = 255f;
 
     private GpuBuffer? compositeCb;
     private GpuBuffer? outlineCb;
 
-    /// <summary>
-    /// Composites the scene layer onto the target. Bind order matters: the target RTV is set
-    /// <i>before</i> the scene SRV so the runtime never sees the scene texture bound on both ends.<br/>
-    /// Pass null snapshots to composite unmasked (the under-UI path, where the game paints over the layer itself).
-    /// </summary>
+    // The target is bound before the scene SRV, never as input and output at once.
     public void Blit(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -87,7 +77,7 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.Disabled), 0);
         ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided));
 
-        ctx->IASetInputLayout(null); // SV_VertexID triangle - no vertex buffer
+        ctx->IASetInputLayout(null);
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(pipeline.Vs, null, 0);
         ctx->PSSetShader(pipeline.Ps, null, 0);
@@ -97,17 +87,13 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->PSSetConstantBuffers(0, 1, &cb);
         var srvs = stackalloc ID3D11ShaderResourceView*[3] { layerSrv, uiBeforeSrv, uiAfterSrv };
         ctx->PSSetShaderResources(0, 3, srvs);
-        // s0 point (the UI-mask difference must read exact texels), s1 linear (box-downsamples a supersampled layer).
+        // s0 point: the UI-mask difference reads exact texels. s1 linear: box-downsamples a supersampled layer.
         var samplers = stackalloc ID3D11SamplerState*[2] { cache.GetSampler(device, SamplerKey.PointClamp), cache.GetSampler(device, SamplerKey.LinearClamp) };
         ctx->PSSetSamplers(0, 2, samplers);
 
         ctx->Draw(3, 0);
     }
 
-    /// <summary>
-    /// Dilates the outline coverage mask into a real silhouette rim and blends it (premultiplied) onto the scene
-    /// layer. Binds the target RTV before the mask SRV so the runtime never sees the mask on both ends.
-    /// </summary>
     public void BlitOutline(
         RenderDevice device,
         ID3D11DeviceContext* ctx,
@@ -140,7 +126,7 @@ internal sealed unsafe class Compositor : IDisposable
         ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.Disabled), 0);
         ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided));
 
-        ctx->IASetInputLayout(null); // SV_VertexID triangle - no vertex buffer
+        ctx->IASetInputLayout(null);
         ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
         ctx->VSSetShader(pipeline.Vs, null, 0);
         ctx->PSSetShader(pipeline.Ps, null, 0);
@@ -148,19 +134,17 @@ internal sealed unsafe class Compositor : IDisposable
         var cb = outlineCb.Buffer;
         ctx->VSSetConstantBuffers(0, 1, &cb);
         ctx->PSSetConstantBuffers(0, 1, &cb);
-        var srvs = stackalloc ID3D11ShaderResourceView*[2] { maskSrv, visSrv }; // t0 = colour+coverage, t1 = worldVisible
+        var srvs = stackalloc ID3D11ShaderResourceView*[2] { maskSrv, visSrv }; // t0 = colour and coverage, t1 = worldVisible
         ctx->PSSetShaderResources(0, 2, srvs);
         var sampler = cache.GetSampler(device, SamplerKey.PointClamp);
         ctx->PSSetSamplers(0, 1, &sampler);
 
         ctx->Draw(3, 0);
 
-        // Unbind the mask SRVs so they can serve as RTVs again next frame with no read+write hazard.
         var nullSrvs = stackalloc ID3D11ShaderResourceView*[2];
         ctx->PSSetShaderResources(0, 2, nullSrvs);
     }
 
-    /// <inheritdoc/>
     public void Dispose()
     {
         compositeCb?.Dispose();

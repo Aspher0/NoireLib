@@ -4,10 +4,7 @@ using System.Collections.Generic;
 
 namespace NoireLib.Draw3D.Scene;
 
-// Drives per-decal actor exclusions on the framework thread: nodes that opted in (IGameObject, bool}, float) and
-// friends) are refreshed here each tick - the library walks the object table where it is safe to and assigns the
-// resulting volumes to each node's renderer, so consumers never plumb the object table by hand. Fail-soft: a throwing
-// collector is logged and skipped; a destroyed node is auto-unregistered.
+// Framework tick, where the object table is safe to walk.
 internal static class DecalExclusionService
 {
     private const string DisposeKey = "NoireLib.Draw3D.DecalExclusionService";
@@ -16,7 +13,6 @@ internal static class DecalExclusionService
     private static readonly List<SceneNode> Nodes = new();
     private static bool hooked;
 
-    /// <summary>Registers a node for per-frame exclusion refresh (idempotent); hooks the framework tick on first use.</summary>
     public static void Register(SceneNode node)
     {
         lock (Sync)
@@ -27,7 +23,6 @@ internal static class DecalExclusionService
         }
     }
 
-    /// <summary>Stops refreshing a node's exclusions.</summary>
     public static void Unregister(SceneNode node)
     {
         lock (Sync)

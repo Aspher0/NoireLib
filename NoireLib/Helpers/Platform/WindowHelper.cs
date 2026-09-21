@@ -227,6 +227,21 @@ public static class WindowHelper
     }
 
     /// <summary>
+    /// Returns whether the mouse cursor is over the game window, and not over another application's window above it.
+    /// </summary>
+    /// <returns>True if the cursor is over the game window.</returns>
+    public static bool IsCursorOverGameWindow()
+    {
+        var handle = GetGameWindowHandle();
+
+        if (handle == nint.Zero || !GetCursorPos(out var cursor))
+            return false;
+
+        var under = WindowFromPoint(cursor);
+        return under != nint.Zero && (under == handle || GetAncestor(under, GaRoot) == handle);
+    }
+
+    /// <summary>
     /// Sets the screen mode and resolution for the game, updating both the game's configuration and the actual window state.
     /// </summary>
     /// <param name="width">The desired screen width.</param>
@@ -313,6 +328,24 @@ public static class WindowHelper
     /// <returns>The handle of the foreground window.</returns>
     [DllImport("user32.dll")]
     public static extern nint GetForegroundWindow();
+
+    private const uint GaRoot = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct CursorPoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out CursorPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern nint WindowFromPoint(CursorPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern nint GetAncestor(nint hWnd, uint flags);
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(nint hWnd);

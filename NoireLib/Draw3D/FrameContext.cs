@@ -1,51 +1,51 @@
+using NoireLib.Helpers;
 using System.Numerics;
 
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// The immutable per-frame snapshot every part of the renderer consumes: one camera snapshot per presented frame,
-/// taken at a stable point and passed by <c>in</c> reference. Shaders consume only <see cref="ViewProj"/>/
-/// <see cref="InvViewProj"/> (the VP-only contract); <see cref="View"/>/<see cref="Proj"/> exist for diagnostics only.
+/// The immutable per-frame camera snapshot every part of the renderer consumes, shaders reading only
+/// <see cref="ViewProj"/> and <see cref="InvViewProj"/>.
 /// </summary>
 public readonly struct FrameContext
 {
-    /// <summary>Combined view-projection matrix (row-vector convention: <c>clip = v * VP</c>).</summary>
+    /// <summary>The combined view-projection matrix, in row-vector convention (<c>clip = v * VP</c>).</summary>
     public readonly Matrix4x4 ViewProj;
 
-    /// <summary>Inverse of <see cref="ViewProj"/> (clip to world; decal reconstruction, picking, unprojection).</summary>
+    /// <summary>The inverse of <see cref="ViewProj"/>, mapping clip space to world space.</summary>
     public readonly Matrix4x4 InvViewProj;
 
-    /// <summary>View matrix - diagnostics only (identity when the wholesale VP fallback is active).</summary>
+    /// <summary>The view matrix, for diagnostics only and identity when no render camera was readable.</summary>
     public readonly Matrix4x4 View;
 
-    /// <summary>Projection matrix - diagnostics only (identity when the wholesale VP fallback is active).</summary>
+    /// <summary>The projection matrix, for diagnostics only and identity when no render camera was readable.</summary>
     public readonly Matrix4x4 Proj;
 
-    /// <summary>Camera origin in world space (sort keys, LOD, billboards).</summary>
+    /// <summary>The camera origin in world space.</summary>
     public readonly Vector3 EyePos;
 
-    /// <summary>Seconds since the renderer initialized (shader animation time).</summary>
+    /// <summary>The seconds since the renderer initialized, used as shader animation time.</summary>
     public readonly float Time;
 
-    /// <summary>Backbuffer size in pixels.</summary>
+    /// <summary>The backbuffer size in pixels.</summary>
     public readonly Vector2 ViewportSize;
 
-    /// <summary>UV scale mapping display UVs into the depth texture's actual (in-use) region - handles dynamic resolution and upscalers.</summary>
+    /// <summary>The UV scale mapping display UVs into the in-use region of the depth texture, under dynamic resolution and upscalers.</summary>
     public readonly Vector2 DepthUvScale;
 
-    /// <summary>True when the game runs reversed-Z (near = 1, far to 0). Expected true; carried so an engine flip degrades to one constant.</summary>
+    /// <summary>Whether the game's depth runs reversed-Z, with near at 1 and far toward 0.</summary>
     public readonly bool ReversedZ;
 
-    /// <summary>Camera near-plane distance (reversed-Z linearization).</summary>
+    /// <summary>The camera near-plane distance.</summary>
     public readonly float NearPlane;
 
-    /// <summary>True when the game's depth buffer is readable this frame; false = depth-off mode.</summary>
+    /// <summary>Whether the game's depth buffer is readable this frame, false meaning depth-off mode.</summary>
     public readonly bool HasDepth;
 
-    /// <summary>True when the camera came from the wholesale Control.ViewProjectionMatrix fallback instead of the RenderCamera pair.</summary>
+    /// <summary>Whether no render camera was readable and the frame projected with <c>Control.ViewProjectionMatrix</c> alone.</summary>
     public readonly bool UsedFallbackCamera;
 
-    /// <summary>Monotonic frame counter (Im-layer timing contract, diagnostics).</summary>
+    /// <summary>The monotonic frame counter.</summary>
     public readonly long FrameId;
 
     internal FrameContext(
@@ -68,12 +68,10 @@ public readonly struct FrameContext
         FrameId = frameId;
     }
 
-    /// <summary>
-    /// Projects a world position to screen pixels. Returns false when the point is behind the camera (w &lt;= 0). Same
-    /// math the GPU performs; used by the parity validator and available to consumers for labels/anchors.
-    /// </summary>
-    /// <param name="world">World-space position.</param>
+    /// <summary>Projects a world position to screen pixels with the same math the GPU performs.</summary>
+    /// <param name="world">The world-space position.</param>
     /// <param name="screen">Receives the screen position in pixels.</param>
+    /// <returns>False when the point is behind the camera.</returns>
     public bool TryWorldToScreen(Vector3 world, out Vector2 screen)
     {
         var clip = Vector4.Transform(new Vector4(world, 1f), ViewProj);
@@ -89,12 +87,11 @@ public readonly struct FrameContext
         return true;
     }
 
-    /// <summary>
-    /// Unprojects a screen-pixel position into a world-space ray (origin on the near plane, direction normalized).
-    /// </summary>
-    /// <param name="screenPx">Screen position in pixels.</param>
+    /// <summary>Unprojects a screen-pixel position into a world-space ray starting on the near plane.</summary>
+    /// <param name="screenPx">The screen position in pixels.</param>
     /// <param name="origin">Receives the ray origin.</param>
     /// <param name="direction">Receives the normalized ray direction.</param>
+    /// <returns>True when the position unprojects.</returns>
     public bool TryScreenToRay(Vector2 screenPx, out Vector3 origin, out Vector3 direction)
     {
         origin = default;
@@ -104,7 +101,7 @@ public readonly struct FrameContext
 
         var ndc = new Vector2(screenPx.X / ViewportSize.X * 2f - 1f, 1f - screenPx.Y / ViewportSize.Y * 2f);
 
-        // Reversed-Z: near plane is z = 1. Pick two depths and unproject.
+        // Reversed-Z puts the near plane at z = 1.
         var nearClip = Vector4.Transform(new Vector4(ndc.X, ndc.Y, 1f, 1f), InvViewProj);
         var farClip = Vector4.Transform(new Vector4(ndc.X, ndc.Y, 0.05f, 1f), InvViewProj);
         if (System.MathF.Abs(nearClip.W) <= 1e-9f || System.MathF.Abs(farClip.W) <= 1e-9f)
@@ -120,5 +117,63 @@ public readonly struct FrameContext
         origin = nearWorld;
         direction = dir / len;
         return true;
+    }
+
+    /// <summary>Computes the world length spanning one screen pixel at a point, plus the screen-aligned world axes there. False when the point is behind the camera.</summary>
+    /// <param name="worldPoint">The point to size around.</param>
+    /// <param name="worldPerPixel">Receives the world length that spans one pixel at that depth.</param>
+    /// <param name="rightWorld">Receives the world-space +screen-x axis at that depth (normalized).</param>
+    /// <param name="upWorld">Receives the world-space +screen-y (visually up) axis at that depth (normalized).</param>
+    public bool TryWorldPerPixel(Vector3 worldPoint, out float worldPerPixel, out Vector3 rightWorld, out Vector3 upWorld)
+    {
+        worldPerPixel = 0f;
+        rightWorld = Vector3.UnitX;
+        upWorld = Vector3.UnitY;
+
+        var vp = ViewportSize;
+        if (vp.X <= 0f || vp.Y <= 0f)
+            return false;
+
+        var toPoint = worldPoint - EyePos;
+        var dist = toPoint.Length();
+        if (dist < 1e-5f)
+            return false;
+
+        toPoint /= dist;
+        var refUp = System.MathF.Abs(toPoint.Y) < 0.99f ? Vector3.UnitY : Vector3.UnitX;
+        rightWorld = Geometry3DHelper.SafeNormalize(Vector3.Cross(refUp, toPoint), Vector3.UnitX);
+        upWorld = Geometry3DHelper.SafeNormalize(Vector3.Cross(toPoint, rightWorld), Vector3.UnitY);
+
+        // Analytic derivative. Reconstructing depth from NDC collapses near the camera under reversed-Z.
+        var vpMat = ViewProj;
+        var clip = Vector4.Transform(new Vector4(worldPoint, 1f), vpMat);
+        if (clip.W <= 1e-4f)
+            return false;
+
+        var colX = new Vector3(vpMat.M11, vpMat.M21, vpMat.M31);
+        var colY = new Vector3(vpMat.M12, vpMat.M22, vpMat.M32);
+        var colW = new Vector3(vpMat.M14, vpMat.M24, vpMat.M34);
+        var ndcX = clip.X / clip.W;
+        var ndcY = clip.Y / clip.W;
+        var invW = 1f / clip.W;
+        var halfX = 0.5f * vp.X;
+        var halfY = 0.5f * vp.Y;
+
+        float PixelsPerWorld(Vector3 axis)
+        {
+            var dNdcX = (Vector3.Dot(axis, colX) - ndcX * Vector3.Dot(axis, colW)) * invW;
+            var dNdcY = (Vector3.Dot(axis, colY) - ndcY * Vector3.Dot(axis, colW)) * invW;
+            var dPxX = halfX * dNdcX;
+            var dPxY = halfY * dNdcY;
+            return System.MathF.Sqrt(dPxX * dPxX + dPxY * dPxY);
+        }
+
+        var pxRight = PixelsPerWorld(rightWorld);
+        var pxUp = PixelsPerWorld(upWorld);
+        if (pxRight < 1e-6f || pxUp < 1e-6f)
+            return false;
+
+        worldPerPixel = 0.5f * (1f / pxRight + 1f / pxUp);
+        return worldPerPixel > 0f;
     }
 }

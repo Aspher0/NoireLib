@@ -4,15 +4,11 @@ using TerraFX.Interop.Windows;
 
 namespace NoireLib.Draw3D.Core;
 
-// Saves and restores exactly the pipeline slots Draw3D touches. The slot list below is the exhaustive contract:
-// touching a new slot anywhere in the renderer without adding it here is a bug. Rules encoded: every XXGet AddRefs
-// (each gets one Release); null is a value (restored, never skipped); viewport/scissor counts are captured and
-// restored exactly.
+// Saves and restores exactly the pipeline slots Draw3D touches. Touching a slot not listed here is a bug.
 internal sealed unsafe class StateGuard
 {
     private const int ViewportSlotCount = 16; // D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE
 
-    // IA
     private ID3D11InputLayout* inputLayout;
     private D3D_PRIMITIVE_TOPOLOGY topology;
     private ID3D11Buffer* vb0, vb1;
@@ -21,18 +17,12 @@ internal sealed unsafe class StateGuard
     private DXGI_FORMAT indexFormat;
     private uint indexOffset;
 
-    // VS
     private ID3D11VertexShader* vs;
     private ID3D11Buffer* vsCb0, vsCb1;
-    // One VS shader-resource slot: the shadow injection reads the light matrix through t0 on the vertex
-    // stage, inside the game's own shadow pass, where the game may have its own view (skinning) bound.
+    // The shadow injection reads t0 on the vertex stage inside the game's shadow pass, where skinning may be bound.
     private ID3D11ShaderResourceView* vsSrv0;
 
-    // PS
-    // Six SRV slots, not two: Common.hlsli declares t0..t5 (scene depth, base texture, world height, scene
-    // stencil, and the two auxiliary material maps), and the G-buffer injection binds t4 and t5 inside the
-    // GAME's own geometry pass. A slot left bound there is not Draw3D's problem to survive - it is whatever the
-    // game draws next reading our texture.
+    // The G-buffer injection binds t4 and t5 inside the game's geometry pass. A slot left bound is read by the game's next draw.
     private const int PsSrvSlotCount = 6;
 
     private ID3D11PixelShader* ps;
@@ -40,14 +30,12 @@ internal sealed unsafe class StateGuard
     private readonly void*[] psSrvs = new void*[PsSrvSlotCount];
     private ID3D11SamplerState* psSamp0, psSamp1;
 
-    // RS
     private ID3D11RasterizerState* rasterizer;
     private readonly D3D11_VIEWPORT[] viewports = new D3D11_VIEWPORT[ViewportSlotCount];
     private uint viewportCount;
     private readonly RECT[] scissors = new RECT[ViewportSlotCount];
     private uint scissorCount;
 
-    // OM
     private ID3D11BlendState* blend;
     private float blendFactor0, blendFactor1, blendFactor2, blendFactor3;
     private uint sampleMask;
@@ -58,12 +46,11 @@ internal sealed unsafe class StateGuard
 
     private bool captured;
 
-    /// <summary>Captures every slot in the contract. Must be paired with <see cref="Restore"/> (run it in a finally).</summary>
+    // Must be paired with Restore in a finally.
     public void Capture(ID3D11DeviceContext* ctx)
     {
         Debug.Assert(!captured, "StateGuard.Capture called twice without Restore.");
 
-        // IA
         fixed (ID3D11InputLayout** p = &inputLayout)
             ctx->IAGetInputLayout(p);
         fixed (D3D_PRIMITIVE_TOPOLOGY* p = &topology)
@@ -82,7 +69,6 @@ internal sealed unsafe class StateGuard
         fixed (uint* o = &indexOffset)
             ctx->IAGetIndexBuffer(p, f, o);
 
-        // VS
         fixed (ID3D11VertexShader** p = &vs)
             ctx->VSGetShader(p, null, null);
         var cbs = stackalloc ID3D11Buffer*[2];
@@ -91,7 +77,6 @@ internal sealed unsafe class StateGuard
         fixed (ID3D11ShaderResourceView** p = &vsSrv0)
             ctx->VSGetShaderResources(0, 1, p);
 
-        // PS
         fixed (ID3D11PixelShader** p = &ps)
             ctx->PSGetShader(p, null, null);
         ctx->PSGetConstantBuffers(0, 2, cbs);
@@ -102,7 +87,6 @@ internal sealed unsafe class StateGuard
         ctx->PSGetSamplers(0, 2, samps);
         psSamp0 = samps[0]; psSamp1 = samps[1];
 
-        // RS
         fixed (ID3D11RasterizerState** p = &rasterizer)
             ctx->RSGetState(p);
 
@@ -126,7 +110,6 @@ internal sealed unsafe class StateGuard
 
         scissorCount = scCount;
 
-        // OM
         var factor = stackalloc float[4];
         fixed (ID3D11BlendState** p = &blend)
         fixed (uint* m = &sampleMask)
@@ -145,7 +128,6 @@ internal sealed unsafe class StateGuard
         AssertUntouchedStagesClean(ctx);
     }
 
-    /// <summary>Restores every captured slot exactly (null included) and releases the AddRef each getter took.</summary>
     public void Restore(ID3D11DeviceContext* ctx)
     {
         if (!captured)
@@ -153,14 +135,13 @@ internal sealed unsafe class StateGuard
 
         captured = false;
 
-        // OM first (unbinds our SRV-vs-RTV hazards in the safest order).
+        // OM first. SRV and RTV hazards unbind in the safest order.
         fixed (void** p = rtvs)
             ctx->OMSetRenderTargets(8, (ID3D11RenderTargetView**)p, dsv);
         var factor = stackalloc float[4] { blendFactor0, blendFactor1, blendFactor2, blendFactor3 };
         ctx->OMSetBlendState(blend, factor, sampleMask);
         ctx->OMSetDepthStencilState(depthStencil, stencilRef);
 
-        // RS
         ctx->RSSetState(rasterizer);
         if (viewportCount > 0)
         {
@@ -182,7 +163,6 @@ internal sealed unsafe class StateGuard
             ctx->RSSetScissorRects(0, null);
         }
 
-        // PS
         ctx->PSSetShader(ps, null, 0);
         var cbs = stackalloc ID3D11Buffer*[2] { psCb0, psCb1 };
         ctx->PSSetConstantBuffers(0, 2, cbs);
@@ -191,14 +171,12 @@ internal sealed unsafe class StateGuard
         var samps = stackalloc ID3D11SamplerState*[2] { psSamp0, psSamp1 };
         ctx->PSSetSamplers(0, 2, samps);
 
-        // VS
         ctx->VSSetShader(vs, null, 0);
         cbs[0] = vsCb0; cbs[1] = vsCb1;
         ctx->VSSetConstantBuffers(0, 2, cbs);
         var vsSrv = vsSrv0;
         ctx->VSSetShaderResources(0, 1, &vsSrv);
 
-        // IA
         ctx->IASetInputLayout(inputLayout);
         ctx->IASetPrimitiveTopology(topology);
         var vbs = stackalloc ID3D11Buffer*[2] { vb0, vb1 };
@@ -210,9 +188,7 @@ internal sealed unsafe class StateGuard
         ReleaseAll();
     }
 
-    // Debug-only: verifies stages Draw3D never touches (and therefore never saves) are clean at the present-time
-    // callback - a null geometry shader and zero OM UAVs. If either assert ever fires, the slot enters the
-    // save/restore contract above.
+    // If either assert fires, that slot joins the save and restore contract.
     [Conditional("DEBUG")]
     private void AssertUntouchedStagesClean(ID3D11DeviceContext* ctx)
     {

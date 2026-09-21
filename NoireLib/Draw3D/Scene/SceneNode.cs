@@ -7,11 +7,7 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// A node in the retained scene graph: local TRS transform, hierarchy, visibility, optional renderer.<br/>
-/// Thread-safe: all mutation goes through the shared scene-graph lock; the render thread snapshots
-/// resolved world matrices once per frame.
-/// </summary>
+/// <summary>A node in the retained scene graph: a local transform, children, visibility and an optional renderer. Mutation is thread-safe.</summary>
 public sealed partial class SceneNode
 {
     private Vector3 localPosition = Vector3.Zero;
@@ -24,32 +20,28 @@ public sealed partial class SceneNode
     internal Scene3D? SceneRef;
     internal bool Destroyed;
 
-    // The mesh this node created and owns (via a MeshData SetMesh(MeshData, Material, bool) / Spawn), freed on
-    // replace or destroy; null when the node references a shared mesh instead.
+    // Null for a shared mesh.
     private Mesh? ownedMesh;
 
     /// <summary>Optional debug/lookup name.</summary>
     public string? Name { get; set; }
 
-    /// <summary>The parent node (null for scene roots and detached subtrees). Reparent via <see cref="SetParent"/>.</summary>
+    /// <summary>The parent node, null for scene roots and detached subtrees.</summary>
     public SceneNode? Parent => parent;
 
-    /// <summary>The scene this node currently belongs to (null while detached, e.g. an unattached imported model).</summary>
+    /// <summary>The scene this node currently belongs to, null while detached.</summary>
     public Scene3D? Scene => SceneRef;
 
-    /// <summary>True once this node has been destroyed (via <see cref="Destroy"/>, <see cref="Scene3D.Remove"/>, or the scene's disposal); a destroyed node must not be reused.</summary>
+    /// <summary>True once this node has been destroyed. A destroyed node must not be reused.</summary>
     public bool IsDestroyed => Destroyed;
 
-    /// <summary>Draw layer: orders ground decals and feeds the sort key (higher layers draw later within a bucket).</summary>
+    /// <summary>Draw layer ordering ground decals and draws within a bucket, higher layers drawing later.</summary>
     public int Layer { get; set; }
 
-    /// <summary>Whether this node (and its whole subtree) renders. ANDs down the hierarchy.</summary>
+    /// <summary>Whether this node and its whole subtree render.</summary>
     public bool Visible { get; set; } = true;
 
-    // The frame on which this node was submitted to the G-buffer injection, so the scene pass skips drawing it itself
-    // and the object is not rendered twice. Deliberately not Visible: hiding a node also removes it from picking and
-    // hover, and an injected object is still standing in the world and still has to be clickable, so only the drawing
-    // is suppressed, and only for the one frame that was submitted.
+    // The scene pass skips the node that frame. Visible = false would also remove it from picking.
     internal long GameLitFrameId;
 
     /// <summary>The node's renderer, when one was attached via <see cref="SetMesh"/>.</summary>
@@ -97,7 +89,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>The resolved local-to-world matrix (lazily recomputed via dirty flags).</summary>
+    /// <summary>The resolved local-to-world matrix.</summary>
     public Matrix4x4 WorldMatrix
     {
         get
@@ -115,6 +107,7 @@ public sealed partial class SceneNode
 
     /// <summary>Creates a child node.</summary>
     /// <param name="name">Optional debug/lookup name.</param>
+    /// <returns>The new child.</returns>
     public SceneNode CreateChild(string? name = null)
     {
         lock (Scene3D.GraphLock)
@@ -127,10 +120,10 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Attaches (or replaces) a renderer drawing the given <b>shared</b> mesh with the given material; fluent.</summary>
-    /// <param name="mesh">The mesh to draw; referenced, never owned - you (or a <see cref="Scene3D.Own"/> scope) dispose it.</param>
+    /// <summary>Attaches or replaces a renderer drawing a shared mesh, disposing any mesh the node previously owned.</summary>
+    /// <param name="mesh">The mesh to draw. Referenced, never owned.</param>
     /// <param name="material">The material to draw with.</param>
-    /// <remarks>If this node previously owned a mesh (attached via the <see cref="MeshData"/> overload), that owned mesh is disposed; the shared <paramref name="mesh"/> is left untouched.</remarks>
+    /// <returns>The attached renderer.</returns>
     public MeshRenderer SetMesh(Mesh mesh, Material material)
     {
         ArgumentNullException.ThrowIfNull(mesh);
@@ -145,13 +138,11 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>
-    /// Attaches (or replaces) a renderer drawing a mesh the node builds and <b>owns</b> from the given geometry data,
-    /// disposing it when replaced, cleared or destroyed - no mesh bookkeeping; fluent.
-    /// </summary>
-    /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>); a fresh <see cref="Mesh"/> is built from it and owned exclusively by this node.</param>
+    /// <summary>Attaches or replaces a renderer drawing a mesh the node builds from the data and disposes when replaced, cleared or destroyed.</summary>
+    /// <param name="data">CPU mesh data (see <see cref="MeshBuilder"/>).</param>
     /// <param name="material">The material to draw with.</param>
     /// <param name="keepCpuData">Retain the CPU arrays on the mesh for exact triangle picking.</param>
+    /// <returns>The attached renderer.</returns>
     public MeshRenderer SetMesh(MeshData data, Material material, bool keepCpuData = false)
     {
         ArgumentNullException.ThrowIfNull(material);
@@ -159,8 +150,7 @@ public sealed partial class SceneNode
         return SetMeshOwnedInternal(mesh, material);
     }
 
-    // Attaches a renderer for a mesh this node should own (dispose on replace/destroy); the caller must not dispose
-    // or share .
+    // The caller must not dispose or share the mesh.
     internal MeshRenderer SetMeshOwnedInternal(Mesh mesh, Material material)
     {
         lock (Scene3D.GraphLock)
@@ -173,7 +163,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Removes the node's renderer, if any (disposing an owned mesh; a shared mesh is left untouched).</summary>
+    /// <summary>Removes the node's renderer, disposing an owned mesh but not a shared one.</summary>
     public void ClearMesh()
     {
         lock (Scene3D.GraphLock)
@@ -183,8 +173,7 @@ public sealed partial class SceneNode
         }
     }
 
-    // Disposes the node's owned mesh (if any) and clears the reference; caller holds GraphLock, idempotent since
-    // Dispose is render-thread-deferred and safe to call twice.
+    // Caller holds GraphLock.
     private void DisposeOwnedMeshNoLock()
     {
         var owned = ownedMesh;
@@ -192,10 +181,9 @@ public sealed partial class SceneNode
         owned?.Dispose();
     }
 
-    /// <summary>
-    /// Reparents the node (null = make it a root of its scene); rejects cycles with <see cref="InvalidOperationException"/>.
-    /// </summary>
+    /// <summary>Reparents the node, or makes it a root of its scene when <paramref name="newParent"/> is null.</summary>
     /// <param name="newParent">The new parent, or null.</param>
+    /// <exception cref="InvalidOperationException">The reparent would create a cycle.</exception>
     public void SetParent(SceneNode? newParent)
     {
         lock (Scene3D.GraphLock)
@@ -223,7 +211,7 @@ public sealed partial class SceneNode
         }
     }
 
-    /// <summary>Removes this node and its whole subtree from the scene; referenced meshes/materials are untouched (the creator owns them).</summary>
+    /// <summary>Removes this node and its whole subtree from the scene, leaving shared meshes untouched.</summary>
     public void Destroy()
     {
         lock (Scene3D.GraphLock)
@@ -239,12 +227,12 @@ public sealed partial class SceneNode
     internal void DestroyRecursiveNoLock()
     {
         Destroyed = true;
-        DisposeOwnedMeshNoLock(); // free the mesh the node built for itself; a shared mesh stays with its owner
+        DisposeOwnedMeshNoLock();
         Renderer = null;
-        ReleaseInteraction(); // drop this node from the interaction bookkeeping if it opted in
-        ReleaseExclusions();  // stop any per-frame decal-exclusion refresh for this node
-        ReleaseDecalShape();  // stop any per-frame decal-shape outline drawing for this node
-        ReleaseDecalVolume(); // and any per-frame decal projection-box drawing
+        ReleaseInteraction();
+        ReleaseExclusions();
+        ReleaseDecalShape();
+        ReleaseDecalVolume();
         SceneRef?.OnNodeRemoved();
         SceneRef = null;
         foreach (var child in Children)
@@ -288,9 +276,7 @@ public sealed partial class SceneNode
                     * Matrix4x4.CreateTranslation(localPosition);
         var world = parent != null ? local * parent.ResolveWorld() : local;
 
-        // A Ground/Wall decal is locked to its plane: the mode re-orients the box (keeping heading + scale) so it can never
-        // be rotated out of horizontal (Ground) / vertical (Wall). The decal shader then always projects it onto the
-        // intended surface with no surface-mode branching. Both leaves the box free.
+        // Re-oriented onto their plane. The shader needs no surface-mode branching.
         if (Renderer?.Material is { Domain: MaterialDomain.GroundDecal } decalMat && decalMat.Surface != DecalSurface.Both)
             world = ConstrainDecalWorld(in world, decalMat.Surface);
 
@@ -299,19 +285,16 @@ public sealed partial class SceneNode
         return worldMatrix;
     }
 
-    // Re-orients a ground-decal's world matrix to its DecalSurface plane, keeping the box's horizontal heading (yaw),
-    // scale and position but dropping any pitch/roll: Ground forces the footprint (local XZ) horizontal with the
-    // sweep (local Y) pointing down, Wall stands the footprint upright with the sweep pointing horizontally into the
-    // wall, and the thin (local Y) axis is the projection depth in both, so one box works for either mode.
+    // Local Y stays the projection sweep in both modes.
     private static Matrix4x4 ConstrainDecalWorld(in Matrix4x4 world, DecalSurface surface)
     {
-        // Row-vector basis: rows = local X/Y/Z in world, length = per-axis scale.
+        // Rows are local X/Y/Z in world. Length is per-axis scale.
         var xAxis = new Vector3(world.M11, world.M12, world.M13);
         var yAxis = new Vector3(world.M21, world.M22, world.M23);
         var zAxis = new Vector3(world.M31, world.M32, world.M33);
         float sx = xAxis.Length(), sy = yAxis.Length(), sz = zAxis.Length();
 
-        // Horizontal heading from local Z (forward); if it is vertical, fall back to local X (which leads Z by 90 deg).
+        // Heading from local Z, falling back to local X when Z is vertical.
         float yaw;
         var hz = new Vector2(zAxis.X, zAxis.Z);
         if (hz.LengthSquared() > 1e-8f)
@@ -323,25 +306,23 @@ public sealed partial class SceneNode
         }
 
         var (sin, cos) = MathF.SinCos(yaw);
-        var tangent = new Vector3(cos, 0f, -sin); // horizontal, perpendicular to the heading
-        var facing = new Vector3(sin, 0f, cos);   // horizontal heading
+        var tangent = new Vector3(cos, 0f, -sin);
+        var facing = new Vector3(sin, 0f, cos);
         var up = new Vector3(0f, 1f, 0f);
 
         Vector3 nx, ny, nz;
         if (surface == DecalSurface.Wall)
         {
-            // -facing (not +facing) keeps this a PROPER rotation (det +1) instead of a reflection - the box is symmetric
-            // along the sweep axis, so the projection is identical, but a reflection breaks Matrix4x4.Decompose (the gizmo
-            // decomposes the world matrix on drag, so a reflected wall decal collapses the moment it is moved/rotated/scaled).
-            nx = tangent * sx;  // footprint width  (horizontal along the wall)
-            ny = -facing * sy;  // sweep: horizontally through the wall (thin axis = depth); sign keeps det +1
-            nz = up * sz;       // footprint height (world up), so the shape stands upright
+            // -facing keeps det +1. A reflection breaks Matrix4x4.Decompose, which the gizmo uses.
+            nx = tangent * sx;  // footprint width
+            ny = -facing * sy;  // sweep through the wall
+            nz = up * sz;       // footprint height
         }
         else // Ground
         {
-            nx = tangent * sx; // footprint width  (horizontal)
-            ny = up * sy;      // sweep: straight down (thin axis = depth)
-            nz = facing * sz;  // footprint depth  (horizontal, along the heading)
+            nx = tangent * sx; // footprint width
+            ny = up * sy;      // sweep straight down
+            nz = facing * sz;  // footprint depth
         }
 
         return new Matrix4x4(

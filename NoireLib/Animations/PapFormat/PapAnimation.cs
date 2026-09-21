@@ -22,6 +22,8 @@ public class PapAnimation
     /// </summary>
     public const int MaxNameLength = 31;
 
+    internal const int InfoSize = MaxNameLength + 1 + sizeof(short) + sizeof(short) + sizeof(int);
+
     /// <summary>The name the game matches against an emote's expected animation name.</summary>
     public readonly ParsedPaddedString Name = new("Name", "cbbm_replace_this", MaxNameLength + 1, 0x00);
     private readonly ParsedShort Type = new("Type", 0);
@@ -50,7 +52,7 @@ public class PapAnimation
         Face.Read(reader);
     }
 
-    /// <summary>Writes this animation's fixed-size entry, but not its TMB, which is written separately.</summary>
+    /// <summary>Writes this animation's fixed-size entry. The TMB is written separately.</summary>
     /// <param name="writer">The writer positioned at the entry.</param>
     public void Write(BinaryWriter writer)
     {
@@ -101,10 +103,7 @@ public class PapAnimation
     /// <returns>The name.</returns>
     public string GetName() => Name.Value;
 
-    /// <summary>
-    /// Renames this animation, refusing a name longer than <see cref="MaxNameLength"/> bytes, which would overrun
-    /// the header field and shift every offset after it.
-    /// </summary>
+    /// <summary>Renames this animation. A name longer than <see cref="MaxNameLength"/> bytes would overrun the header field.</summary>
     /// <param name="newName">The new animation name.</param>
     /// <exception cref="ArgumentException">The name exceeds <see cref="MaxNameLength"/> bytes.</exception>
     public void SetName(string newName)

@@ -5,66 +5,41 @@ using System.Text;
 
 namespace NoireLib.Draw3D.Core;
 
-// One 16-byte row of a game constant buffer, with what its contents could plausibly be.
 internal readonly record struct ConstantRow(int Offset, Vector4 Value, RowKind Kind);
 
-// What a constant-buffer row's shape allows it to be. A classification narrows the candidates; it never identifies a
-// row on its own, because many unrelated values share a shape.
+// Narrows the candidates. Many unrelated values share a shape.
 [Flags]
 internal enum RowKind
 {
-    /// <summary>Nothing recognizable, or all zero.</summary>
     None = 0,
 
-    /// <summary>Every component is zero.</summary>
     Zero = 1,
 
-    /// <summary>The xyz components form a unit vector: a direction, possibly a light's.</summary>
     UnitVector = 2,
 
-    /// <summary>The xyz components are non-negative and within a plausible color range.</summary>
     ColorLike = 4,
 
-    /// <summary>Every component is between 0 and 1.</summary>
     Normalized = 8,
 
-    /// <summary>At least one component is large enough to be a position or a matrix entry rather than a color.</summary>
     Large = 16,
 
-    /// <summary>
-    /// The row is one axis of an orthonormal basis formed with its neighbours: a rotation, so transform data. A
-    /// rotation's rows are unit vectors, so shape alone calls every one of them a possible light direction, and a
-    /// frame buffer full of view matrices then drowns anything real.
-    /// </summary>
+    // One axis of an orthonormal basis: rotation data.
     MatrixRow = 32,
 }
 
-// A buffer's rows at one moment, kept so two moments can be compared.
 internal sealed record ConstantSnapshot(nint Pointer, int ByteWidth, ConstantRow[] Rows, long Captures);
 
-// Reads the game's tracked constant buffers and reports what is in them, so the values that drive its lighting can be
-// found rather than guessed at. A single dump cannot say which bytes they are - too many rows share a shape - so this
-// also diffs two moments: a row that moves when the light moves and holds still otherwise is a candidate, and one
-// that never moves is not a light at all.
+// Diffs two moments. A row that moves with the light and holds still otherwise is a candidate.
 internal static class LightConstantProbe
 {
-    // A direction's length may drift this far from 1 and still count as normalized.
     private const float UnitTolerance = 0.02f;
 
-    // Above this, a component is a position or a matrix entry rather than a color or a direction.
     private const float LargeThreshold = 8f;
 
-    // Components differing by less than this are treated as unchanged between two snapshots.
     private const float ChangeEpsilon = 1e-4f;
 
-    // Two unit vectors whose dot product is under this are treated as perpendicular.
     private const float OrthogonalTolerance = 0.03f;
 
-    /// <summary>Classifies every row of one buffer.</summary>
-    /// <param name="pointer">The buffer's resource pointer.</param>
-    /// <param name="bytes">Its contents.</param>
-    /// <param name="validBytes">How much of <paramref name="bytes"/> was actually written.</param>
-    /// <param name="captures">How many whole payloads had been copied into the buffer, so staleness is detectable.</param>
     public static ConstantSnapshot Classify(nint pointer, ReadOnlySpan<byte> bytes, int validBytes, long captures = 0)
     {
         var usable = Math.Min(validBytes, bytes.Length);
@@ -87,9 +62,7 @@ internal static class LightConstantProbe
         return new ConstantSnapshot(pointer, usable, rows, captures);
     }
 
-    // Flags every run of three consecutive rows whose xyz form an orthonormal basis. A rotation matrix is three
-    // mutually perpendicular unit vectors: both a view-matrix row and a light direction are unit vectors, but only
-    // the matrix row comes with two perpendicular partners.
+    // A light direction is a unit vector too. Only a rotation row has two perpendicular partners.
     private static void MarkMatrixRows(ConstantRow[] rows)
     {
         for (var i = 0; i + 2 < rows.Length; i++)
@@ -115,7 +88,6 @@ internal static class LightConstantProbe
 
     private static bool IsUnit(Vector3 v) => Math.Abs(v.Length() - 1f) <= UnitTolerance;
 
-    /// <summary>What a single row's shape allows it to be.</summary>
     public static RowKind Classify(Vector4 v)
     {
         if (!IsFinite(v))
@@ -142,12 +114,6 @@ internal static class LightConstantProbe
         return kind;
     }
 
-    /// <summary>
-    /// Rows that changed between two snapshots of the same buffer, taken across a change in the game's light: the
-    /// rows that moved are the short list, and everything constant is ruled out.
-    /// </summary>
-    /// <param name="before">The earlier snapshot.</param>
-    /// <param name="after">The later snapshot of the same buffer.</param>
     public static IReadOnlyList<(ConstantRow Before, ConstantRow After)> Changed(ConstantSnapshot before, ConstantSnapshot after)
     {
         ArgumentNullException.ThrowIfNull(before);
@@ -165,13 +131,6 @@ internal static class LightConstantProbe
         return changed;
     }
 
-    /// <summary>
-    /// Renders a snapshot for the log, listing only the rows whose shape allows them to be a light value.<br/>
-    /// Zero rows and matrix-sized runs are dropped: they are the bulk of a frame buffer and none of them is
-    /// a colour or a direction.
-    /// </summary>
-    /// <param name="snapshot">The snapshot to describe.</param>
-    /// <param name="maxRows">How many rows to list at most.</param>
     public static string Describe(ConstantSnapshot snapshot, int maxRows = 48)
     {
         ArgumentNullException.ThrowIfNull(snapshot);
@@ -201,21 +160,16 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    /// <summary>Renders the rows that moved between two snapshots.</summary>
-    /// <param name="before">The earlier snapshot.</param>
-    /// <param name="after">The later snapshot of the same buffer.</param>
-    /// <param name="maxRows">How many rows to list at most.</param>
     public static string DescribeChanges(ConstantSnapshot before, ConstantSnapshot after, int maxRows = 32)
     {
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
 
-        // Identical bytes because nothing was captured is not the same finding as identical bytes because
-        // nothing moved, and the two are indistinguishable from the rows alone.
+        // Without a new capture the rows are the same bytes.
         if (after.Captures == before.Captures)
         {
             return $"buffer 0x{after.Pointer:X}: NOT RE-CAPTURED since the mark ({after.Captures} payload copies both times) - "
-                 + "these are the same bytes, so no conclusion can be drawn. Keep the capture armed across the whole comparison.\n";
+                 + "these are the same bytes. Keep the capture armed across the whole comparison.\n";
         }
 
         var changed = Changed(before, after);
@@ -231,8 +185,6 @@ internal static class LightConstantProbe
                 break;
             }
 
-            // Transform data moves every frame and says nothing about the light: a row large at both ends is a
-            // position or a projection entry, and one that sits in an orthonormal basis at either end is a rotation.
             if (a.Kind.HasFlag(RowKind.Large) && b.Kind.HasFlag(RowKind.Large))
                 continue;
 
@@ -249,28 +201,8 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    // A row that could be a light value, paired with the reason it is a candidate.
     internal readonly record struct LightCandidate(nint Pointer, ConstantRow Row, string Reason, int Corroboration, bool Responded);
 
-    /// <summary>
-    /// Ranks the rows across every buffer that could carry a light.<br/>
-    /// <b>Colour:</b> three components inside 0..1 that are not all equal, with w exactly 1. A light's colour is a
-    /// tint with unit weight; a grey triple is more likely a scale, and a w that is not 1 is usually a distance.<br/>
-    /// <b>Direction:</b> a unit vector that is not part of a contiguous rotation.<br/>
-    /// <b>Corroboration across buffers</b> is the strongest signal available without knowing the layout: the game
-    /// feeds the same light to several passes, so a direction appearing in more than one buffer is far more likely
-    /// real than one seen once. A matrix row repeated by coincidence does not survive this.
-    /// </summary>
-    /// <param name="snapshots">Every buffer's current contents.</param>
-    /// <param name="marked">
-    /// Optional earlier snapshots taken before the lighting was changed. When given, a row that moved is ranked
-    /// above every row that did not: responding to a lighting change is the only direct evidence available.
-    /// </param>
-    /// <param name="volatileRows">
-    /// Rows already known to change on their own, from a control comparison taken with nothing altered. Without
-    /// this the responded flag is close to worthless: a jittered sample kernel changes every frame, so it moves
-    /// across any comparison and outranks everything that moved for a reason.
-    /// </param>
     public static IReadOnlyList<LightCandidate> Candidates(
         IReadOnlyList<ConstantSnapshot> snapshots,
         IReadOnlyList<ConstantSnapshot>? marked = null,
@@ -278,7 +210,6 @@ internal static class LightConstantProbe
     {
         ArgumentNullException.ThrowIfNull(snapshots);
 
-        // Rows that moved between the mark and now, by buffer and offset.
         var responded = new HashSet<(nint, int)>();
         if (marked is not null)
         {
@@ -291,7 +222,6 @@ internal static class LightConstantProbe
 
                     foreach (var (_, a) in Changed(before, after))
                     {
-                        // A row that moves on its own tells us nothing by moving again.
                         if (volatileRows is not null && volatileRows.Contains((after.Pointer, a.Offset)))
                             continue;
 
@@ -303,7 +233,6 @@ internal static class LightConstantProbe
             }
         }
 
-        // How many distinct buffers hold each xyz, so a shared value can be told from a one-off.
         var seenIn = new Dictionary<(int, int, int), HashSet<nint>>();
         foreach (var snapshot in snapshots)
         {
@@ -338,8 +267,6 @@ internal static class LightConstantProbe
             }
         }
 
-        // Responding to the lighting change outranks everything: it is evidence rather than shape. Corroboration
-        // only breaks ties among rows that are equally direct.
         candidates.Sort((a, b) => a.Responded != b.Responded
             ? b.Responded.CompareTo(a.Responded)
             : b.Corroboration.CompareTo(a.Corroboration));
@@ -347,13 +274,6 @@ internal static class LightConstantProbe
         return candidates;
     }
 
-    /// <summary>
-    /// Every row that differs between two snapshots taken with nothing deliberately changed: the rows that move
-    /// on their own. The game jitters sample kernels per frame and animates constants nothing asked it to; without
-    /// subtracting these rows, a lighting comparison reports mostly noise ranked at the top.
-    /// </summary>
-    /// <param name="before">The earlier snapshots.</param>
-    /// <param name="after">Later snapshots taken with nothing altered in between.</param>
     public static IReadOnlySet<(nint Pointer, int Offset)> VolatileRows(
         IReadOnlyList<ConstantSnapshot> before,
         IReadOnlyList<ConstantSnapshot> after)
@@ -379,9 +299,6 @@ internal static class LightConstantProbe
         return rows;
     }
 
-    /// <summary>Renders the ranked candidates for the log.</summary>
-    /// <param name="snapshots">Every buffer's current contents.</param>
-    /// <param name="maxRows">How many to list at most.</param>
     public static string DescribeCandidates(
         IReadOnlyList<ConstantSnapshot> snapshots,
         IReadOnlyList<ConstantSnapshot>? marked = null,
@@ -400,12 +317,12 @@ internal static class LightConstantProbe
 
         sb.AppendLine($"{candidates.Count} candidate row(s). Rows built only from 0 and 1 are excluded: they are axes and flags, and they appear everywhere by being generic.");
         sb.AppendLine(marked is null
-            ? "No mark to compare against, so these are ranked by shape and corroboration only. Mark, change the lighting, then run this again - a row that responds is worth more than any number of buffers agreeing."
+            ? "No mark to compare against. Ranked by shape and corroboration only. Mark, change the lighting, then run this again."
             : $"{respondedCount} of them responded to the lighting change and are listed first. Those are the ones with evidence behind them.");
 
         sb.AppendLine(volatileRows is null
             ? "NO CONTROL TAKEN: rows that change every frame on their own are still in here and will sit at the top. Run /noire3d lights baseline before changing anything."
-            : $"{volatileRows.Count} row(s) known to change on their own were subtracted, so what responded did so for a reason.");
+            : $"{volatileRows.Count} row(s) known to change on their own were subtracted.");
 
         var listed = 0;
         foreach (var c in candidates)
@@ -426,9 +343,7 @@ internal static class LightConstantProbe
         return sb.ToString();
     }
 
-    // Whether every component is 0 or plus/minus 1: a canonical axis, an identity row, or a flag. These must be
-    // excluded before ranking by corroboration, because they appear in many buffers precisely by being generic -
-    // ranking on how widely a value is shared otherwise puts every default axis above the real measurement.
+    // Axes, identity rows and flags appear in many buffers and would top the ranking.
     private static bool IsTrivial(Vector4 v)
     {
         return Trivial(v.X) && Trivial(v.Y) && Trivial(v.Z);
@@ -440,10 +355,7 @@ internal static class LightConstantProbe
         }
     }
 
-    // Whether a row is the depth pair of a projection matrix: (0, 0, m22, m32). A perspective projection puts
-    // far/(near-far) and near*far/(near-far) in those two slots, so their ratio is exactly 1/near and the third
-    // component sits near 1. Such a row is a unit vector by shape and moves whenever a shadow frustum is refitted,
-    // which makes it a convincing false positive.
+    // (0, 0, m22, m32) of a perspective projection. m22/m32 is 1/near.
     private static bool IsProjectionDepthRow(Vector4 v)
     {
         if (Math.Abs(v.X) > 1e-4f || Math.Abs(v.Y) > 1e-4f)
@@ -452,30 +364,25 @@ internal static class LightConstantProbe
         if (Math.Abs(v.Z) < 0.5f || Math.Abs(v.W) < 1e-6f)
             return false;
 
-        // A near plane between a millimetre and ten metres covers every frustum the game plausibly builds.
         var near = Math.Abs(v.Z / v.W);
         return near is > 0.1f and < 1000f;
     }
 
-    // Why a row is worth looking at, or null when it is not.
     private static string? Reason(ConstantRow row)
     {
         var v = row.Value;
         var xyz = Xyz(v);
 
-        // A light's direction and colour are measurements, so their components are fractional. A row built
-        // only from 0 and 1 is a default, an identity row or a flag.
         if (IsTrivial(v))
             return null;
 
         if (IsProjectionDepthRow(v))
             return null;
 
-        // A colour is a tint with unit weight. All-equal components are more likely a uniform scale.
         if (row.Kind.HasFlag(RowKind.Normalized)
             && Math.Abs(v.W - 1f) < 1e-4f
             && (Math.Abs(xyz.X - xyz.Y) > 1e-3f || Math.Abs(xyz.Y - xyz.Z) > 1e-3f))
-            return "colour-shaped (rgb in 0..1, w=1, not grey)";
+            return "colour-shaped (rgb in 0..1, w=1, non-grey)";
 
         if (row.Kind.HasFlag(RowKind.UnitVector))
             return "direction-shaped (unit vector outside any rotation)";
@@ -483,7 +390,7 @@ internal static class LightConstantProbe
         return null;
     }
 
-    // Buckets an xyz so the same value written by two passes compares equal despite float noise.
+    // Buckets xyz against float noise.
     private static (int, int, int) Quantize(Vector4 v)
         => ((int)MathF.Round(v.X * 2048f), (int)MathF.Round(v.Y * 2048f), (int)MathF.Round(v.Z * 2048f));
 

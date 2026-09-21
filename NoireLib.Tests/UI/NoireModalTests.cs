@@ -7,11 +7,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the modal contracts whose failure is a hang rather than an error: every pending dialog completes when the
-/// library goes away, a cancelled dialog resolves rather than being dropped, dialogs queue in order, and a remembered
-/// answer skips the dialog entirely.
-/// </summary>
+/// <summary>Locks the modal contracts whose failure is a hang.</summary>
 [Collection(NoireUiTestCollection.Name)]
 public class NoireModalTests : IDisposable
 {
@@ -184,7 +180,7 @@ public class NoireModalTests : IDisposable
 
         _ = NoireModal.ConfirmAsync("Close", "Minimise instead?", options);
 
-        NoireModal.PendingCount.Should().Be(1, "because nothing was remembered, so the dialog has to appear again");
+        NoireModal.PendingCount.Should().Be(1, "because nothing was remembered");
     }
 
     [Fact]
@@ -215,7 +211,7 @@ public class NoireModalTests : IDisposable
         NoireModal.Complete(request, NoireModal.CancelledResult);
 
         NoireUiState.TryGet<bool>(NoireModal.StateKeyFor("declined"), out _)
-            .Should().BeFalse("because a cancelled dialog was not answered, so there is nothing to remember");
+            .Should().BeFalse("because a cancelled dialog was not answered");
     }
 
     [Fact]
@@ -224,5 +220,71 @@ public class NoireModalTests : IDisposable
         var act = () => NoireModal.ChoiceAsync("Pick", "Which?", Array.Empty<string>());
 
         act.Should().ThrowAsync<ArgumentException>();
+    }
+
+    [Theory]
+    [InlineData(10, ModalRequest.NoFrame, 11, true, "because the caller gets two frames to draw a new dialog")]
+    [InlineData(10, ModalRequest.NoFrame, 13, false, "because a dialog nobody drew falls back to the built-in popup")]
+    [InlineData(10, 40, 42, true, "because a dialog presented last frame is still the caller's")]
+    [InlineData(10, 40, 43, false, "because a caller that stopped drawing hands the dialog back")]
+    public void DefersToCaller_FallsBackWhenTheCallerStopsDrawing(int firstSeen, int presented, int frame, bool expected, string because)
+        => NoireModalHost.DefersToCaller(firstSeen, presented, frame).Should().Be(expected, because);
+
+    [Fact]
+    public async Task Active_ConfirmsThroughTheView()
+    {
+        var confirm = NoireModal.ConfirmAsync("Switch", "Really?", new ModalOptions { CustomDraw = true, ConfirmLabel = "Switch" });
+
+        var view = NoireModal.Active!;
+        view.Title.Should().Be("Switch");
+        view.ConfirmLabel.Should().Be("Switch");
+        view.Confirm().Should().BeTrue();
+
+        (await confirm).Should().BeTrue();
+        NoireModal.Active.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task Active_CountsDownFromTheFirstPresentedFrame()
+    {
+        var time = 100f;
+        NoireUI.TimeOverride = () => time;
+        NoireUI.FrameOverride = () => 1;
+
+        try
+        {
+            var confirm = NoireModal.ConfirmAsync("Unsafe", "Really?", new ModalOptions { CustomDraw = true, ConfirmLabel = "Enable", EnableAfterSeconds = 5f });
+            var view = NoireModal.Active!;
+
+            view.ConfirmLabel.Should().Be("Enable (5)", "because the wait has not started before the dialog is presented");
+
+            view.MarkPresented();
+            time = 102.5f;
+
+            view.SecondsUntilEnabled.Should().Be(3);
+            view.ConfirmLabel.Should().Be("Enable (3)");
+            view.Confirm().Should().BeFalse("because the confirming button is still disabled");
+
+            time = 105f;
+
+            view.ConfirmLabel.Should().Be("Enable");
+            view.Confirm().Should().BeTrue();
+            (await confirm).Should().BeTrue();
+        }
+        finally
+        {
+            NoireUI.TimeOverride = null;
+            NoireUI.FrameOverride = null;
+        }
+    }
+
+    [Fact]
+    public async Task Active_CancelDeclines()
+    {
+        var confirm = NoireModal.ConfirmAsync("Switch", "Really?", new ModalOptions { CustomDraw = true });
+
+        NoireModal.Active!.Cancel();
+
+        (await confirm).Should().BeFalse();
     }
 }

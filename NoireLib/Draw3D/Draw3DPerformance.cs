@@ -4,9 +4,9 @@ using System.Collections.Generic;
 namespace NoireLib.Draw3D;
 
 /// <summary>
-/// Performance settings for the world pass, reached via <see cref="NoireDraw3D.Performance"/>: level-of-detail for
-/// imported models and optional distance and screen-size culling. Nothing here changes what is drawn until it is
-/// configured: LOD needs <c>generateLods: true</c> at import, and both culls default off.
+/// The world pass's performance settings, reached via <see cref="NoireDraw3D.Performance"/>: model level-of-detail
+/// (which needs <c>generateLods: true</c> at import), distance and screen-size culling (both off by default), and
+/// supersampling.
 /// </summary>
 public sealed class Draw3DPerformance
 {
@@ -15,22 +15,20 @@ public sealed class Draw3DPerformance
     internal Draw3DPerformance() { }
 
     /// <summary>
-    /// Whether meshes carrying a LOD chain draw a coarser level as they shrink on screen. Only affects meshes with
-    /// <see cref="Geometry.Mesh.LodCount"/> &gt; 0, which requires importing with <c>generateLods: true</c>;
-    /// primitives, small meshes and decals are never touched.
+    /// Gets or sets whether meshes with a <see cref="Geometry.Mesh.LodCount"/> above 0 draw a coarser level as they
+    /// shrink on screen, primitives and decals never being touched.
     /// </summary>
     public bool Lod { get; set; } = true;
 
     /// <summary>
-    /// Multiplier on the <see cref="LodScreenRadii"/> switch points, above 1 to coarsen sooner and below 1 to keep
-    /// detail longer. Clamped to a minimum of 0.01.
+    /// Gets or sets the multiplier on the <see cref="LodScreenRadii"/> switch points, above 1 to coarsen sooner and
+    /// below 1 to keep detail longer, clamped to a minimum of 0.01.
     /// </summary>
     public float LodBias { get; set; } = 1f;
 
     /// <summary>
-    /// The projected on-screen radii in pixels, highest first, below which each successive LOD level takes over,
-    /// clamped to the mesh's available levels. Assignment sorts descending, and an empty or null list disables the
-    /// size-based switch.
+    /// Gets or sets the projected on-screen radii in pixels, sorted descending on assignment, below which each
+    /// successive LOD level takes over, an empty or null list disabling the size-based switch.
     /// </summary>
     public IReadOnlyList<float> LodScreenRadii
     {
@@ -52,40 +50,36 @@ public sealed class Draw3DPerformance
     }
 
     /// <summary>
-    /// The world-unit distance from the camera beyond which a retained object's bounds center is not drawn, or zero
-    /// for unlimited. The immediate layer is never distance-culled.
+    /// Gets or sets the world-unit camera distance beyond which a retained object's bounds center is not drawn, zero
+    /// meaning unlimited, the immediate layer never being distance-culled.
     /// </summary>
     public float MaxDrawDistance { get; set; }
 
     /// <summary>
-    /// The projected on-screen radius in pixels below which a retained object is not drawn, or zero for off.
-    /// Outlined and selected objects are exempt, and the cull only applies while the game camera is active.
+    /// Gets or sets the projected on-screen radius in pixels below which a retained object is not drawn, zero meaning
+    /// off, applied only under the game camera and never to outlined or selected objects.
     /// </summary>
     public float MinScreenPixels { get; set; }
 
     /// <summary>
-    /// Renders the 3D layer at this multiple of the display resolution and box-downsamples at composite, clamped to
-    /// 1..2. Applies to the main game view only, and falls back to 1 when the larger target cannot be allocated.
+    /// Gets or sets the multiple of the display resolution the main view's layer renders at before a box downsample
+    /// at composite, clamped to 1..2 and falling back to 1 when the larger target cannot be allocated.
     /// </summary>
     public float Supersample { get; set; } = 1f;
 
-    // The clamped supersample factor, read once per frame when sizing the scene target.
     internal float SupersampleFactor => Math.Clamp(Supersample, 1f, 2f);
 
     /// <summary>
-    /// Routes every standard single draw through the instanced pipeline, so world and tint travel in the
-    /// per-instance vertex stream and the object constant buffer is re-uploaded only when material parameters
-    /// change. Decals and custom pipelines always keep the per-draw path.
+    /// Gets or sets whether standard single draws take the instanced pipeline, re-uploading the object constant buffer
+    /// only when material parameters change, decals and custom pipelines always keeping the per-draw path.
     /// </summary>
     public bool BatchedObjectConstants { get; set; } = true;
 
-    // An immutable copy of the settings for one frame's collection pass.
+    // Taken once per frame. A mid-frame change never tears a pass.
     internal readonly record struct Snapshot(bool Lod, float LodBias, float MaxDrawDistance, float MinScreenPixels, float[] LodScreenRadii, bool BatchedObjectConstants);
 
-    // Takes a frame snapshot, read once on the render thread so a mid-frame change never tears a pass.
     internal Snapshot Take() => new(Lod, MathF.Max(0.01f, LodBias), MathF.Max(0f, MaxDrawDistance), MathF.Max(0f, MinScreenPixels), lodScreenRadii, BatchedObjectConstants);
 
-    // Selects the LOD level to draw at from an object's projected on-screen radius.
     internal static int SelectLevel(float radiusPixels, int lodCount, in Snapshot s)
     {
         if (!s.Lod || lodCount <= 0)
@@ -98,7 +92,7 @@ public sealed class Draw3DPerformance
             if (radiusPixels < radii[i] * s.LodBias)
                 level = i + 1;
             else
-                break; // the radii descend, so clearing one boundary clears every smaller one
+                break; // the radii descend
         }
 
         return Math.Min(level, lodCount);

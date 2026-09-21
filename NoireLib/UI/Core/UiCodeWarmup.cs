@@ -8,9 +8,10 @@ using System.Threading.Tasks;
 
 namespace NoireLib.UI;
 
-// Compiles the drawing methods ahead of the frame that would otherwise compile them, on a background thread.
 internal static class UiCodeWarmup
 {
+    private const int MaxWorkers = 4;
+
     private static int started;
 
     internal static bool Finished { get; private set; }
@@ -20,8 +21,7 @@ internal static class UiCodeWarmup
         if (Interlocked.Exchange(ref started, 1) != 0)
             return Task.CompletedTask;
 
-        // Copied before leaving the calling thread: the array is the caller's and nothing promises it will not be
-        // reused after this returns.
+        // The array is the caller's and may be reused after this returns.
         var extra = Copy(alsoWarm);
 
         return Task.Run(() => Run(extra));
@@ -47,20 +47,43 @@ internal static class UiCodeWarmup
 
         try
         {
-            foreach (var type in DrawingTypes(extra))
-                prepared += Prepare(type);
+            var types = new List<Type>(DrawingTypes(extra));
+            var workers = Math.Clamp(Environment.ProcessorCount / 2, 1, MaxWorkers);
+            var next = -1;
+
+            void Compile()
+            {
+                int index;
+
+                while ((index = Interlocked.Increment(ref next)) < types.Count)
+                    Interlocked.Add(ref prepared, Prepare(types[index]));
+            }
+
+            if (workers == 1)
+            {
+                Compile();
+            }
+            else
+            {
+                var running = new Task[workers];
+
+                for (var worker = 0; worker < workers; worker++)
+                    running[worker] = Task.Run(Compile);
+
+                Task.WaitAll(running);
+            }
 
             Finished = true;
 
             NoireLogger.LogInformation(
-                $"Compiled {prepared} drawing method(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms. "
+                $"Compiled {prepared} drawing method(s) in {Stopwatch.GetElapsedTime(started).TotalMilliseconds:0} ms "
+                + $"over {workers} thread(s). "
                 + "This is time a window's first frame would otherwise have spent jitting its own draw path.",
                 nameof(NoireUI));
         }
         catch (Exception ex)
         {
-            // Reported rather than thrown: a failed warmup costs a slow first frame, no more. This runs on a
-            // background thread, where an escaping exception has nothing to catch it.
+            // Background thread. An escaping exception has nothing to catch it.
             NoireLogger.LogError(ex, "Could not finish compiling the drawing methods.", nameof(NoireUI));
         }
     }
@@ -115,7 +138,7 @@ internal static class UiCodeWarmup
             }
             catch (Exception)
             {
-                // A method that will not compile early still compiles when it is called.
+                // A method that will not compile early still compiles when called.
             }
         }
 

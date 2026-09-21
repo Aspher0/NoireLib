@@ -16,10 +16,7 @@ public class ModalOptions
     /// </summary>
     public string? CancelLabel { get; set; }
 
-    /// <summary>
-    /// Whether the dialog is about something destructive, which colors the confirming button in the theme's danger
-    /// color.
-    /// </summary>
+    /// <summary>Whether the dialog is destructive. The confirming button takes the theme's danger color.</summary>
     public bool Danger { get; set; }
 
     /// <summary>
@@ -48,6 +45,11 @@ public class ModalOptions
     /// The dialog width, at 100%. See <see cref="NoireUI.Scale"/>.
     /// </summary>
     public float Width { get; set; } = 420f;
+
+    /// <summary>
+    /// Whether the caller draws the dialog itself through <see cref="NoireModal.Active"/>, the built-in popup taking over when a frame passes without <see cref="NoireModalView.MarkPresented"/>.
+    /// </summary>
+    public bool CustomDraw { get; set; }
 
     internal float ScaledWidth => NoireUI.Scaled(Width);
 }

@@ -36,9 +36,9 @@ public static class NoireWindowChrome
     public const ImGuiWindowFlags FixedBodyFlags = Flags | ImGuiWindowFlags.NoScrollWithMouse;
 
     /// <summary>
-    /// Keeps the window in front of every other, for the frame being drawn.
+    /// Keeps the window in front of every other for the current frame.<br/>
+    /// Call it once per frame from inside the window, and again inside any popup it opens.
     /// </summary>
-    /// <remarks>Call it once per frame from inside the window, and again from inside any popup it opens.</remarks>
     public static void KeepInFront() => UiWindowOrder.KeepInFront();
 
     /// <summary>
@@ -69,12 +69,9 @@ public static class NoireWindowChrome
         var min = ImGui.GetWindowPos();
         var max = min + ImGui.GetWindowSize();
 
-        // The opacity is spent on the surface alone: fading the whole window through ImGui's alpha would take the text
-        // and the controls with it too, dimming rather than making it translucent.
+        // Only the surface fades. ImGui's alpha would dim the text and controls too.
         var opacity = Math.Clamp(settings.Opacity, 0f, 1f);
 
-        // Held around the chrome alone and closed before the body runs. The body is the caller's own drawing, and
-        // charging it here would make every window's frame read as the most expensive thing in the interface.
         using (var draw = UiDraw.Begin())
         {
             if (settings.Plate is { } plate)
@@ -88,15 +85,11 @@ public static class NoireWindowChrome
 
         var padding = NoireUI.Scaled(settings.Padding);
 
-        // Advanced from wherever the cursor already is rather than placed at the window's corner: the two agree on the
-        // first frame but diverge once the window scrolls, since the corner stays fixed while the content moves past
-        // it. An absolute position would pin the contents in place and make the wheel appear to do nothing. The chrome
-        // itself is painted at the corner, so the border stays with the window.
+        // Advanced from the cursor. An absolute position would pin the contents while the window scrolls.
         ImGui.Indent(padding.X);
         ImGui.Dummy(new Vector2(0f, padding.Y));
 
-        // Stated rather than inferred, for the reason a hand-drawn panel has to state its width: ImGui's content region
-        // reports the window's own right edge, which is outside the padding this chrome just applied.
+        // ImGui's content region reports the window's right edge, outside this padding.
         var inner = MathF.Max(1f, (max.X - min.X) - (padding.X * 2f));
 
         try
@@ -145,49 +138,153 @@ public static class NoireWindowChrome
     /// <param name="min">The top left of the handle, in screen space.</param>
     /// <param name="max">The bottom right of the handle.</param>
     /// <returns>True while the window is being dragged.</returns>
-    public static bool DragFrom(Vector2 min, Vector2 max)
+    public static bool DragFrom(Vector2 min, Vector2 max) => DragFrom(min, max, ImGuiMouseCursor.Hand);
+
+    /// <summary>Makes a rectangle drag the window, with your own cursor over the handle and during the drag.</summary>
+    /// <param name="min">The top left of the handle, in screen space.</param>
+    /// <param name="max">The bottom right of the handle.</param>
+    /// <param name="cursor">The cursor to show. <see cref="ImGuiMouseCursor.Arrow"/> leaves the pointer alone.</param>
+    /// <returns>True while the window is being dragged.</returns>
+    public static bool DragFrom(Vector2 min, Vector2 max, ImGuiMouseCursor cursor)
     {
         NoireUI.EnsureFrameServices();
 
-        var current = ImGuiP.GetCurrentWindow();
-
-        // Refused unless ImGui has been told not to move this window. This is the replacement for ImGui's own drag, not
-        // an addition to it: with both running, a movement is applied twice in the same frame from two different
-        // reference points, and the contents visibly swim and lag behind the frame as it is dragged.
-        if (!current.Flags.HasFlag(ImGuiWindowFlags.NoMove))
+        if (!TryBeginDrag(out var window))
             return false;
 
-        var io = ImGui.GetIO();
-        var window = current.ID;
-        var inside = io.MousePos.X >= min.X && io.MousePos.X <= max.X && io.MousePos.Y >= min.Y && io.MousePos.Y <= max.Y;
+        var mouse = ImGui.GetMousePos();
+        var inside = mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y;
 
-        if (draggingWindow != 0u && draggingWindow == window)
-        {
-            if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
-            {
-                draggingWindow = 0u;
-                return false;
-            }
-
-            if (io.MouseDelta != Vector2.Zero)
-                ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
-
+        if (Continue(window, cursor))
             return true;
-        }
 
-        // Started only from a press that lands on the handle with nothing else claiming it, so a button sitting in the
-        // title strip is a button rather than a place the window happens to move from.
-        if (inside && ImGui.IsMouseClicked(ImGuiMouseButton.Left) && ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows) && !ImGui.IsAnyItemHovered())
+        // A button in the title strip keeps its press.
+        if (ShouldStart(inside, ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows), ImGui.IsAnyItemHovered(), ImGui.IsAnyItemActive(), ImGui.IsMouseClicked(ImGuiMouseButton.Left)))
         {
-            draggingWindow = window;
+            Start(window);
             return true;
         }
 
         if (inside && !ImGui.IsAnyItemHovered())
-            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+            ImGui.SetMouseCursor(cursor);
 
         return false;
     }
+
+    /// <summary>
+    /// Reports a double click on a chrome handle, for a title bar's collapse.<br/>
+    /// Can be used together with <see cref="DragFrom(Vector2, Vector2)"/> on the same rectangle.
+    /// </summary>
+    /// <param name="min">The top left of the handle, in screen space.</param>
+    /// <param name="max">The bottom right of the handle.</param>
+    /// <returns>True on the frame the handle is double clicked.</returns>
+    public static bool DoubleClickFrom(Vector2 min, Vector2 max)
+    {
+        NoireUI.EnsureFrameServices();
+
+        var mouse = ImGui.GetMousePos();
+        var inside = mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y;
+
+        return ShouldStart(
+            inside,
+            ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows),
+            ImGui.IsAnyItemHovered(),
+            ImGui.IsAnyItemActive(),
+            ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left));
+    }
+
+    /// <summary>
+    /// Makes every part of the window no item has claimed drag it, like a title bar.<br/>
+    /// Call it once per frame from inside the window, <b>after</b> its contents.
+    /// </summary>
+    /// <returns>True while the window is being dragged.</returns>
+    public static bool DragFromBody() => DragFromBody(ImGuiMouseCursor.Hand);
+
+    /// <summary>Makes every part of the window no item has claimed drag it, with your own cursor during the drag.</summary>
+    /// <param name="cursor">The cursor to show while dragging. <see cref="ImGuiMouseCursor.Arrow"/> leaves the pointer alone.</param>
+    /// <returns>True while the window is being dragged.</returns>
+    public static bool DragFromBody(ImGuiMouseCursor cursor)
+    {
+        NoireUI.EnsureFrameServices();
+
+        if (!TryBeginDrag(out var window))
+            return false;
+
+        if (Continue(window, cursor))
+            return true;
+
+        var mouse = ImGui.GetMousePos();
+        var min = ImGui.GetWindowPos();
+        var max = min + ImGui.GetWindowSize();
+        var inside = mouse.X >= min.X && mouse.X <= max.X && mouse.Y >= min.Y && mouse.Y <= max.Y;
+
+        // Anything the mouse can act on owns its press. Only what is left over moves the window.
+        if (!ShouldStart(inside, ImGui.IsWindowHovered(ImGuiHoveredFlags.ChildWindows), ImGui.IsAnyItemHovered(), ImGui.IsAnyItemActive(), ImGui.IsMouseClicked(ImGuiMouseButton.Left)))
+            return false;
+
+        Start(window);
+        return true;
+    }
+
+    /// <summary>
+    /// Moves the window with a drag already under way, before its contents are drawn.<br/>
+    /// Call it first thing inside the window so the frame is drawn where the pointer is, as ImGui's own move does.
+    /// </summary>
+    /// <param name="cursor">The cursor to show while dragging.</param>
+    /// <returns>True while the window is being dragged.</returns>
+    public static bool ContinueDrag(ImGuiMouseCursor cursor = ImGuiMouseCursor.Hand)
+    {
+        NoireUI.EnsureFrameServices();
+        return TryBeginDrag(out var window) && Continue(window, cursor);
+    }
+
+    // Replaces ImGui's own drag. With both running, the contents swim behind the frame.
+    private static bool TryBeginDrag(out uint window)
+    {
+        var current = ImGuiP.GetCurrentWindow();
+        window = current.ID;
+
+        return (current.Flags & ImGuiWindowFlags.NoMove) != 0;
+    }
+
+    private static bool Continue(uint window, ImGuiMouseCursor cursor)
+    {
+        if (draggingWindow == 0u || draggingWindow != window)
+            return false;
+
+        if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            draggingWindow = 0u;
+            return false;
+        }
+
+        var frame = ImGui.GetFrameCount();
+
+        if (draggedFrame != frame)
+        {
+            draggedFrame = frame;
+
+            var mouse = ImGui.GetMousePos();
+            var delta = mouse - dragOrigin;
+            dragOrigin = mouse;
+
+            if (delta != Vector2.Zero)
+                ImGui.SetWindowPos(ImGui.GetWindowPos() + delta);
+        }
+
+        ImGui.SetMouseCursor(cursor);
+        return true;
+    }
+
+    private static void Start(uint window)
+    {
+        draggingWindow = window;
+        draggedFrame = ImGui.GetFrameCount();
+        dragOrigin = ImGui.GetMousePos();
+    }
+
+    internal static bool ShouldStart(bool inside, bool windowHovered, bool itemHovered, bool itemActive, bool pressed)
+        => inside && pressed && windowHovered && !itemHovered && !itemActive;
 
     /// <summary>
     /// Draws one of the window's own chrome buttons, needing no icon font.
@@ -275,7 +372,6 @@ public static class NoireWindowChrome
 
             case ChromeGlyph.Minimize:
             {
-                // A chevron rather than a bar: a bar means "hide" elsewhere, this means "collapse".
                 Span<Vector2> chevron =
                 [
                     new(centre.X - reach, centre.Y - (reach * 0.4f)),
@@ -317,10 +413,7 @@ public static class NoireWindowChrome
 
     private static PlateStyle Faded(PlateStyle plate, float opacity)
     {
-        // Written into a scratch rather than cloned. A window below full opacity takes this branch on every frame it
-        // is drawn, and cloning there put a style's worth of garbage per frame on the draw thread. Drawing is single
-        // threaded and the scratch is only read inside the call that fills it, so there is nothing for a second window
-        // to see half written.
+        // Drawing is single threaded and the scratch is only read inside this call.
         FadedScratch.CopyFrom(plate);
 
         if (FadedScratch.Fill is { } fill)
@@ -332,13 +425,17 @@ public static class NoireWindowChrome
         return FadedScratch;
     }
 
-    // The faded copy of the caller's plate, reused rather than allocated per frame.
     private static readonly PlateStyle FadedScratch = new();
 
     private static readonly ChromeButtonStyle DefaultChromeStyle = new();
 
-    // Which window is being dragged, so a drag survives the pointer leaving the handle.
+    // A drag survives the pointer leaving the handle.
     private static uint draggingWindow;
+
+    // Two handles in the same window must not move it twice.
+    private static int draggedFrame = -1;
+
+    private static Vector2 dragOrigin;
 
     private static readonly WindowChromeStyle DefaultStyle = new();
 }

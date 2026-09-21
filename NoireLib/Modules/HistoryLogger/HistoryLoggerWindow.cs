@@ -17,10 +17,7 @@ namespace NoireLib.HistoryLogger;
 /// </summary>
 public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 {
-    // Identifies a column of the entries table independently of where it sits. The Category and Source columns are
-    // only registered when the display preferences show them, so a column's positional index shifts with those
-    // preferences. These values are handed to ImGui as the column user id and come back unchanged in the sort specs,
-    // resolving a clicked header to the field it sorts regardless of layout.
+    // ImGui returns the column id unchanged in the sort specs.
     private enum EntryColumn : uint
     {
         Time = 1,
@@ -30,30 +27,16 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         Source = 5,
     }
 
+    private readonly HistoryLogView view;
     private string filterText = string.Empty;
-    private string lastFilterText = string.Empty;
     private string newMessage = string.Empty;
     private string newCategory = "General";
     private int newEntryLevelIndex = (int)HistoryLogLevel.Info;
-    private readonly HashSet<string> selectedCategories = new();
-    private readonly HashSet<HistoryLogLevel> selectedLevels = new();
     private readonly HashSet<HistoryLogEntry> selectedEntries = new();
     private readonly HashSet<(HistoryLogEntry Entry, int LineIndex)> selectedLines = new();
-    // Matches the column carrying ImGuiTableColumnFlags.DefaultSort below: ImGui selects that column before the
-    // first sort spec is reported.
-    private EntryColumn sortColumn = EntryColumn.Time;
-    private ImGuiSortDirection sortDirection = ImGuiSortDirection.Descending;
     private int lastSelectedIndex = -1;
     private HistoryLogEntry? contextEntry;
-    private int currentPage = 1;
-
-    // Filtering the whole log is far too expensive to redo on every frame the window is open, so the result is
-    // cached and rebuilt only once the entries or the active filters actually change.
-    private List<HistoryLogEntry>? filteredEntries;
-    private int totalEntryCount;
-    private int filterVersion;
-    private int cachedFilterVersion = -1;
-    private int cachedEntriesVersion = -1;
+    private int prunedRevision = -1;
 
     /// <summary>
     /// Gets or sets the name of the display window.
@@ -67,6 +50,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
     public HistoryLoggerWindow(NoireHistoryLogger noireHistoryLogger)
         : base(noireHistoryLogger, ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
     {
+        view = new HistoryLogView(noireHistoryLogger);
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(800, 420),
@@ -133,17 +117,12 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.SetNextItemWidth(itemWidth);
         ImGui.InputTextWithHint("##HistoryLoggerSearch", "Search for a message, category, source...", ref filterText, 200);
-
-        if (filterText != lastFilterText)
-        {
-            currentPage = 1;
-            lastFilterText = filterText;
-            filterVersion++;
-        }
+        view.SearchText = filterText;
 
         ImGui.SameLine();
 
         ImGui.SetNextItemWidth(itemWidth);
+        var selectedCategories = view.SelectedCategories;
         var categoryLabel = selectedCategories.Count switch
         {
             0 => "All categories",
@@ -154,25 +133,12 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (ImGui.BeginCombo("##HistoryLoggerCategory", categoryLabel, ImGuiComboFlags.None))
         {
             if (ImGui.Selectable("All categories", selectedCategories.Count == 0))
-            {
-                selectedCategories.Clear();
-                currentPage = 1;
-                filterVersion++;
-            }
+                view.ClearCategoryFilter();
 
-            var categories = ParentModule.GetCategories();
-            foreach (var category in categories)
+            foreach (var category in view.Categories)
             {
-                var isSelected = selectedCategories.Contains(category);
-                if (ImGui.Selectable(category, isSelected, ImGuiSelectableFlags.DontClosePopups))
-                {
-                    if (isSelected)
-                        selectedCategories.Remove(category);
-                    else
-                        selectedCategories.Add(category);
-                    currentPage = 1;
-                    filterVersion++;
-                }
+                if (ImGui.Selectable(category, view.IsCategorySelected(category), ImGuiSelectableFlags.DontClosePopups))
+                    view.ToggleCategory(category);
             }
 
             ImGui.EndCombo();
@@ -181,6 +147,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.SameLine();
 
         ImGui.SetNextItemWidth(itemWidth);
+        var selectedLevels = view.SelectedLevels;
         var levelLabel = selectedLevels.Count switch
         {
             0 => "All levels",
@@ -191,25 +158,13 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         if (ImGui.BeginCombo("##HistoryLoggerLevel", levelLabel, ImGuiComboFlags.None))
         {
             if (ImGui.Selectable("All levels", selectedLevels.Count == 0))
-            {
-                selectedLevels.Clear();
-                currentPage = 1;
-                filterVersion++;
-            }
+                view.ClearLevelFilter();
 
             var levels = Enum.GetValues<HistoryLogLevel>();
             foreach (var level in levels)
             {
-                var isSelected = selectedLevels.Contains(level);
-                if (ImGui.Selectable(level.ToString(), isSelected, ImGuiSelectableFlags.DontClosePopups))
-                {
-                    if (isSelected)
-                        selectedLevels.Remove(level);
-                    else
-                        selectedLevels.Add(level);
-                    currentPage = 1;
-                    filterVersion++;
-                }
+                if (ImGui.Selectable(level.ToString(), view.IsLevelSelected(level), ImGuiSelectableFlags.DontClosePopups))
+                    view.ToggleLevel(level);
             }
 
             ImGui.EndCombo();
@@ -237,7 +192,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             var previousMode = HistoryLoggerConfig.SelectLinesSeparately;
             HistoryLoggerConfig.SelectLinesSeparately = allowSelectLinesSeparately;
 
-            // Synchronize selections when switching modes
             if (allowSelectLinesSeparately && !previousMode)
             {
                 selectedLines.Clear();
@@ -276,11 +230,11 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         var buttonCount = 0;
         if (ParentModule.PersistLogs)
-            buttonCount++; // refresh entries
+            buttonCount++;
         if (!ParentModule.PersistLogs && ParentModule.AllowUserClearInMemory)
-            buttonCount++; // Clear in-memory
+            buttonCount++;
         if (ParentModule.PersistLogs && ParentModule.AllowUserClearDatabase)
-            buttonCount++; // Clear database
+            buttonCount++;
 
         var buttonWidth = buttonCount > 0 ? (panelWidthRemaining - buttonSpacing * (buttonCount - 1)) / buttonCount : panelWidthRemaining;
 
@@ -369,15 +323,14 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
     private void DrawLogEntries()
     {
+        view.ItemsPerPage = HistoryLoggerConfig.ItemsPerPage;
         var filtered = GetFilteredEntries();
 
-        var itemsPerPage = Math.Max(1, HistoryLoggerConfig.ItemsPerPage);
-        var totalPages = Math.Max(1, (int)Math.Ceiling(filtered.Count / (double)itemsPerPage));
-        currentPage = Math.Clamp(currentPage, 1, totalPages);
-
-        var startIndex = (currentPage - 1) * itemsPerPage;
-        var endIndex = Math.Min(startIndex + itemsPerPage, filtered.Count);
-        var pagedEntries = filtered.Skip(startIndex).Take(itemsPerPage).ToList();
+        var itemsPerPage = view.ItemsPerPage;
+        var totalPages = view.PageCount;
+        var startIndex = view.PageStartIndex;
+        var pagedEntries = view.PageEntries;
+        var endIndex = startIndex + pagedEntries.Count;
 
         var isExpanded = HistoryLoggerConfig.IsHeaderPanelExpanded;
         if (!isExpanded)
@@ -386,7 +339,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             ImGui.SameLine();
         }
 
-        ImGui.TextDisabled($"Showing {startIndex + 1}-{endIndex} of {filtered.Count} entries ({totalEntryCount} total)");
+        ImGui.TextDisabled($"Showing {startIndex + 1}-{endIndex} of {filtered.Count} entries ({view.TotalCount} total)");
         ImGui.SameLine();
         DrawPaginationControls(totalPages, itemsPerPage);
 
@@ -406,8 +359,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.TableSetupScrollFreeze(0, 1);
 
-        // Each column is registered with its EntryColumn value as the user id, so that the sort specs identify the
-        // clicked header even though the conditional columns move every later column's index.
+        // The conditional columns shift every later index. Sort specs use these ids.
         ImGui.TableSetupColumn("Time", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.DefaultSort | ImGuiTableColumnFlags.NoResize, 0f, (uint)EntryColumn.Time);
         ImGui.TableSetupColumn("Level", ImGuiTableColumnFlags.WidthFixed | ImGuiTableColumnFlags.NoResize, 0f, (uint)EntryColumn.Level);
         if (!hideCategory)
@@ -419,7 +371,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         UpdateSortSpecs();
 
-        // The message column sits after the category column only when the category column is shown.
         int messageColIndex = 2;
         if (!hideCategory) messageColIndex++;
         ImGui.TableNextRow();
@@ -432,7 +383,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             DrawLogEntriesStandard(pagedEntries, messageColumnWidth, hideCategory, hideSource);
     }
 
-    private void DrawLogEntriesStandard(List<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
+    private void DrawLogEntriesStandard(IReadOnlyList<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
     {
         for (var index = 0; index < pagedEntries.Count; index++)
         {
@@ -514,7 +465,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         }
     }
 
-    private void DrawLogEntriesWithLineSeparation(List<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
+    private void DrawLogEntriesWithLineSeparation(IReadOnlyList<HistoryLogEntry> pagedEntries, float messageColumnWidth, bool hideCategory, bool hideSource)
     {
         var rowIndex = 0;
         for (var entryIndex = 0; entryIndex < pagedEntries.Count; entryIndex++)
@@ -672,12 +623,12 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.SetNextItemWidth(80f);
         var itemsPerPageOptions = new[] { 5, 10, 25, 50, 100, 200, 500, 1000 };
         var selectedIndex = Array.IndexOf(itemsPerPageOptions, currentItemsPerPage);
-        if (selectedIndex < 0) selectedIndex = 4; // Default to 100
+        if (selectedIndex < 0) selectedIndex = 4; // 100
 
         if (ImGui.Combo("##ItemsPerPage", ref selectedIndex, itemsPerPageOptions.Select(x => x.ToString()).ToArray(), itemsPerPageOptions.Length))
         {
             HistoryLoggerConfig.ItemsPerPage = itemsPerPageOptions[selectedIndex];
-            currentPage = 1;
+            view.ItemsPerPage = itemsPerPageOptions[selectedIndex];
         }
 
         ImGui.SameLine();
@@ -687,10 +638,12 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
 
         ImGui.PushFont(NoireService.PluginInterface.UiBuilder.FontIcon);
 
+        var currentPage = view.Page;
+
         using (UiPush.Disabled(currentPage <= 1))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleDoubleLeft.ToIconString()}##FirstPage"))
-                currentPage = 1;
+                view.Page = 1;
         }
 
         ImGui.SameLine();
@@ -698,7 +651,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         using (UiPush.Disabled(currentPage <= 1))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleLeft.ToIconString()}##PrevPage"))
-                currentPage = Math.Max(1, currentPage - 1);
+                view.Page = currentPage - 1;
         }
 
         ImGui.PopFont();
@@ -708,7 +661,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         ImGui.SetNextItemWidth(60f);
         var pageInput = currentPage;
         if (ImGui.InputInt("##PageNumber", ref pageInput, 0, 0))
-            currentPage = Math.Clamp(pageInput, 1, totalPages);
+            view.Page = pageInput;
 
         ImGui.SameLine();
         ImGui.TextDisabled($"/ {totalPages}");
@@ -720,7 +673,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         using (UiPush.Disabled(currentPage >= totalPages))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleRight.ToIconString()}##NextPage"))
-                currentPage = Math.Min(totalPages, currentPage + 1);
+                view.Page = currentPage + 1;
         }
 
         ImGui.SameLine();
@@ -728,36 +681,27 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         using (UiPush.Disabled(currentPage >= totalPages))
         {
             if (ImGui.Button($"{FontAwesomeIcon.AngleDoubleRight.ToIconString()}##LastPage"))
-                currentPage = totalPages;
+                view.Page = totalPages;
         }
 
         ImGui.PopFont();
     }
 
-    // Gets the filtered and sorted entries backing the current view, rebuilding them only when the module's entries
-    // or the active filters have changed since the last rebuild.
-    private List<HistoryLogEntry> GetFilteredEntries()
+    private IReadOnlyList<HistoryLogEntry> GetFilteredEntries()
     {
-        var entriesVersion = ParentModule.EntriesVersion;
+        var entries = view.Entries;
 
-        if (filteredEntries != null && cachedEntriesVersion == entriesVersion && cachedFilterVersion == filterVersion)
-            return filteredEntries;
+        if (prunedRevision != view.Revision)
+        {
+            prunedRevision = view.Revision;
+            PruneSelectionsOutsideFilter(entries);
+        }
 
-        var entries = ParentModule.GetEntriesSnapshot();
-
-        filteredEntries = ApplyFilters(entries);
-        totalEntryCount = entries.Count;
-        cachedEntriesVersion = entriesVersion;
-        cachedFilterVersion = filterVersion;
-
-        PruneSelectionsOutsideFilter(filteredEntries);
-
-        return filteredEntries;
+        return entries;
     }
 
-    // Drops selections that the current filters no longer show, so hidden rows cannot be acted on from the context
-    // menu.
-    private void PruneSelectionsOutsideFilter(List<HistoryLogEntry> filtered)
+    // Hidden rows cannot be acted on from the context menu.
+    private void PruneSelectionsOutsideFilter(IReadOnlyList<HistoryLogEntry> filtered)
     {
         if (selectedEntries.Count == 0 && selectedLines.Count == 0)
             return;
@@ -771,58 +715,27 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             selectedLines.RemoveWhere(line => !filteredSet.Contains(line.Entry));
     }
 
-    private List<HistoryLogEntry> ApplyFilters(IReadOnlyList<HistoryLogEntry> entries)
-    {
-        IEnumerable<HistoryLogEntry> query = entries;
-
-        if (!string.IsNullOrWhiteSpace(filterText))
-        {
-            var search = filterText.Trim();
-            query = query.Where(entry =>
-                entry.Message.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                entry.Category.Contains(search, StringComparison.OrdinalIgnoreCase) ||
-                (entry.Source?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-
-        if (selectedCategories.Count > 0)
-            query = query.Where(entry => selectedCategories.Contains(entry.Category));
-
-        if (selectedLevels.Count > 0)
-            query = query.Where(entry => selectedLevels.Contains(entry.Level));
-
-        query = ApplySorting(query);
-
-        return query.ToList();
-    }
-
-    // Orders  by the field the currently sorted column stands for.
-    private IEnumerable<HistoryLogEntry> ApplySorting(IEnumerable<HistoryLogEntry> entries)
-    {
-        var descending = sortDirection == ImGuiSortDirection.Descending;
-
-        return sortColumn switch
-        {
-            EntryColumn.Time => descending ? entries.OrderByDescending(entry => entry.Timestamp) : entries.OrderBy(entry => entry.Timestamp),
-            EntryColumn.Level => descending ? entries.OrderByDescending(entry => entry.Level) : entries.OrderBy(entry => entry.Level),
-            EntryColumn.Category => descending ? entries.OrderByDescending(entry => entry.Category) : entries.OrderBy(entry => entry.Category),
-            EntryColumn.Source => descending ? entries.OrderByDescending(entry => entry.Source) : entries.OrderBy(entry => entry.Source),
-            _ => entries
-        };
-    }
-
     private void UpdateSortSpecs()
     {
         var sortSpecs = ImGui.TableGetSortSpecs();
         if (sortSpecs.SpecsDirty && sortSpecs.SpecsCount > 0)
         {
             var spec = sortSpecs.Specs[0];
-            var column = (EntryColumn)spec.ColumnUserID;
+            HistoryLogSortColumn? column = (EntryColumn)spec.ColumnUserID switch
+            {
+                EntryColumn.Time => HistoryLogSortColumn.Time,
+                EntryColumn.Level => HistoryLogSortColumn.Level,
+                EntryColumn.Category => HistoryLogSortColumn.Category,
+                EntryColumn.Source => HistoryLogSortColumn.Source,
+                _ => null,
+            };
 
-            if (sortColumn != column || sortDirection != spec.SortDirection)
-                filterVersion++;
+            if (column.HasValue)
+            {
+                view.SortColumn = column.Value;
+                view.SortDescending = spec.SortDirection == ImGuiSortDirection.Descending;
+            }
 
-            sortColumn = column;
-            sortDirection = spec.SortDirection;
             sortSpecs.SpecsDirty = false;
         }
     }
@@ -850,7 +763,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         }
         else
         {
-            // Plain click: toggles off only when it was the sole selection, otherwise selects just this one.
+            // A plain click toggles off only the sole selection.
             var isCurrentlySelected = selectedEntries.Contains(entry);
             var isOnlyOneSelected = selectedEntries.Count == 1;
 
@@ -950,7 +863,6 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
             CopyEntriesToClipboard(copyEntries);
         }
 
-        // Shown when not in line-separation mode, or when the first line of an entry is selected.
         var showMessageOnlyCopy = !HistoryLoggerConfig.SelectLinesSeparately ||
             selectedLines.Any(l => l.LineIndex == 0);
 
@@ -1019,13 +931,7 @@ public class HistoryLoggerWindow : NoireModuleWindowBase<NoireHistoryLogger>
         }
         else
         {
-            var lines = entries.Select(entry =>
-            {
-                var source = string.IsNullOrWhiteSpace(entry.Source) ? "-" : entry.Source;
-                return $"{entry.Timestamp:yyyy-MM-dd HH:mm:ss} | {entry.Level} | {entry.Category} | {entry.Message} | {source}";
-            });
-
-            ImGui.SetClipboardText(string.Join(Environment.NewLine, lines));
+            ImGui.SetClipboardText(NoireHistoryLogger.FormatEntries(entries));
         }
     }
 

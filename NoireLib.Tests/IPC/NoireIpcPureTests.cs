@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using NoireLib.IPC;
 using System;
 using Xunit;
@@ -8,7 +8,7 @@ namespace NoireLib.Tests;
 /// <summary>
 /// Game-free tests for the IPC layers that never touch a call gate: name and prefix resolution, delegate and
 /// signature validation, the attribute scan's silent-skip branch, and registration lookup.<br/>
-/// <see cref="NoireIPC"/> is a static facade, so every test resets its configuration.
+/// <see cref="NoireIPC"/> is a static facade. Every test resets its configuration.
 /// </summary>
 public sealed class NoireIpcPureTests : IDisposable
 {
@@ -20,16 +20,80 @@ public sealed class NoireIpcPureTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// An instance type carrying the class attribute, which automatic registration must skip: only static types
-    /// register automatically, instance types go through <see cref="NoireIPC.Initialize(object, string?, bool, Type?, System.Reflection.BindingFlags)"/>.
-    /// </summary>
+    /// <summary>An instance type carrying the class attribute. Automatic registration must skip it.</summary>
     [NoireIpcClass("PureProbe")]
     public sealed class InstanceAttributedProbe
     {
         [NoireIpc("Ping")]
         public int Ping(int value) => value;
     }
+
+    /// <summary>Properties in every shape the scan tells apart. No class attribute: this assembly must offer nothing to register.</summary>
+    // Both analyzers fire on this probe by design.
+#pragma warning disable NoireLib_006, NoireLib_007
+    public static class PropertyProbe
+    {
+        private static int written;
+
+        [NoireIpc] public static int MajorVersion => 7;
+
+        [NoireIpc] public static int Counter { get; set; }
+
+        [NoireIpc] public static Func<int>? Borrowed { get; set; }
+
+        [NoireIpc] public static NoireIpcConsumer<Func<int>>? Wrapped { get; set; }
+
+        [NoireIpc] public static int WriteOnly { set => written = value; }
+
+        internal static int Written => written;
+    }
+#pragma warning restore NoireLib_006, NoireLib_007
+
+    #region Property members
+
+    [Fact]
+    public void AValueProperty_IsAProviderRatherThanAConsumer()
+    {
+        var property = typeof(PropertyProbe).GetProperty(nameof(PropertyProbe.MajorVersion))!;
+
+        NoireIPC.IsConsumerProperty(property).Should().BeFalse("a property that is not a delegate publishes its value");
+    }
+
+    [Fact]
+    public void ADelegateProperty_IsAConsumer()
+    {
+        var borrowed = typeof(PropertyProbe).GetProperty(nameof(PropertyProbe.Borrowed))!;
+        var wrapped = typeof(PropertyProbe).GetProperty(nameof(PropertyProbe.Wrapped))!;
+
+        NoireIPC.IsConsumerProperty(borrowed).Should().BeTrue();
+        NoireIPC.IsConsumerProperty(wrapped).Should().BeTrue("the wrapper calls someone else's channel");
+    }
+
+    [Fact]
+    public void AProviderProperty_ReadsItsValueOnEveryCall()
+    {
+        var property = typeof(PropertyProbe).GetProperty(nameof(PropertyProbe.Counter))!;
+        var provider = (Func<int>)NoireIPC.CreateProviderDelegateForProperty(null, property);
+
+        PropertyProbe.Counter = 1;
+        provider().Should().Be(1);
+
+        PropertyProbe.Counter = 2;
+        provider().Should().Be(2, "the delegate reads the property, it does not capture what it held at registration");
+    }
+
+    [Fact]
+    public void APropertyWithNoGetter_IsRefusedByName()
+    {
+        var property = typeof(PropertyProbe).GetProperty(nameof(PropertyProbe.WriteOnly))!;
+
+        var act = () => NoireIPC.CreateProviderDelegateForProperty(null, property);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*WriteOnly*getter*", "skipping this in silence would leave nothing registered and nothing said");
+    }
+
+    #endregion
 
     #region Names and prefixes
 
@@ -145,7 +209,7 @@ public sealed class NoireIpcPureTests : IDisposable
     {
         var act = () => NoireIPC.ValidateEventHandlerType(typeof(ByRefHandler));
 
-        act.Should().Throw<NotSupportedException>("IPC serializes arguments, so ref and out cannot round-trip");
+        act.Should().Throw<NotSupportedException>("ref and out cannot round-trip through serialized IPC arguments");
     }
 
     [Fact]
@@ -188,8 +252,7 @@ public sealed class NoireIpcPureTests : IDisposable
     [Fact]
     public void RegisterAttributedTypes_SkipsInstanceTypes_AndReturnsAnEmptyGroup()
     {
-        // The probe above is the only attributed type in this assembly; being an instance type it must be skipped
-        // before anything touches a call gate, so this runs without NoireLib being initialized.
+        // The probe above is the only attributed type here. Runs without NoireLib initialized.
         var group = NoireIPC.RegisterAttributedTypes(typeof(NoireIpcPureTests).Assembly);
 
         group.Should().BeEmpty("instance types only register through NoireIPC.Initialize");

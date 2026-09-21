@@ -1,4 +1,5 @@
-using Dalamud.Game;
+﻿using Dalamud.Game;
+using Dalamud.Game.Text;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Utility;
@@ -19,7 +20,7 @@ public static class SeStringHelper
     /// Resolves a SeString message's sender into a <see cref="PlayerModel"/>. Framework thread only.
     /// </summary>
     /// <param name="sender">The message's sender.</param>
-    /// <returns>A <see cref="PlayerModel"/> if the sender could be resolved; otherwise, null.</returns>
+    /// <returns>A <see cref="PlayerModel"/> if the sender could be resolved, or null.</returns>
     public static PlayerModel? ResolveSender(SeString sender)
     {
         PlayerPayload? playerPayload = null;
@@ -100,6 +101,47 @@ public static class SeStringHelper
             }
         }
         return sb.ToString();
+    }
+
+    /// <summary>Builds a string of one of the game's own glyphs followed by text.</summary>
+    /// <param name="icon">The glyph, drawn from the game's font.</param>
+    /// <param name="text">The text after it, or null for the glyph alone.</param>
+    /// <returns>The built string.</returns>
+    public static SeString WithIcon(SeIconChar icon, string? text = null)
+    {
+        var builder = new SeStringBuilder().AddText(icon.ToIconString());
+        return string.IsNullOrEmpty(text) ? builder.Build() : builder.AddText(text).Build();
+    }
+
+    /// <summary>Builds text in one of the game's UI colours.</summary>
+    /// <param name="text">The text to colour.</param>
+    /// <param name="colorKey">The UIColor sheet row the game resolves the colour from.</param>
+    /// <returns>The built string.</returns>
+    public static SeString Colored(string text, ushort colorKey)
+        => new SeStringBuilder().AddUiForeground(text, colorKey).Build();
+
+    /// <summary>Joins parts with a separator, skipping the ones that carry no text.</summary>
+    /// <param name="separator">The text placed between two parts.</param>
+    /// <param name="parts">The parts to join.</param>
+    /// <returns>The joined string.</returns>
+    public static SeString Join(string separator, params ReadOnlySpan<SeString?> parts)
+    {
+        var builder = new SeStringBuilder();
+        var written = false;
+
+        foreach (var part in parts)
+        {
+            if (part == null || string.IsNullOrEmpty(part.TextValue))
+                continue;
+
+            if (written && !string.IsNullOrEmpty(separator))
+                builder.AddText(separator);
+
+            builder.Append(part);
+            written = true;
+        }
+
+        return builder.Build();
     }
 
     private static unsafe ReadOnlySpan<byte> GetUtf8Span(Utf8String* str)

@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
     <TargetFramework>net10.0-windows7.0</TargetFramework>
@@ -7,8 +7,7 @@
     <Nullable>enable</Nullable>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Use_DalamudPackager>false</Use_DalamudPackager>
-    <!-- The hook guard emits IL for detour signatures that carry pointer parameters, so the tests that
-         cover it declare pointer delegates. -->
+    <!-- Detour signatures with pointer parameters need pointer delegates in the tests that cover them. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Tests exercise the Windows-only NoireLib assembly and only ever run on Windows. -->
     <NoWarn>$(NoWarn);CA1416</NoWarn>
@@ -47,8 +46,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NoireLib\NoireLib.csproj" />
-    <!-- The analyzers and source generators, wired the way a consumer plugin wires them, so the tests can compile
-         probe configuration classes against the generated static accessors. -->
+    <!-- Wired the way a consumer plugin wires them, to compile probe configuration classes against the generated accessors. -->
     <ProjectReference Include="..\NoireLib.SourceGenerators\NoireLib.SourceGenerators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
@@ -110,18 +108,17 @@
     </ItemGroup>
 
     <ItemGroup>
-      <!-- The native library the managed SQLitePCLRaw assemblies P/Invoke into. A plugin gets it from the Dalamud
-           runtime rather than from the package graph, so nothing places it next to the test host on its own and the
-           Database system is unreachable without this copy. -->
+      <!-- SQLitePCLRaw's native library. The Dalamud runtime supplies it; copied here for the test host to load it directly. -->
       <None Include="$(DalamudPath)runtimes\win-x64\native\e_sqlite3.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
 
-      <!-- The native ImGui library Dalamud.Bindings.ImGui P/Invokes into. UiHarness creates a real context and runs
-           real frames, so without this copy every native call fails at load time and the drawing tests cannot run.
-           Copied by the build rather than by hand so a clean clone is not a broken test run. -->
+      <!-- cimgui.dll for UiHarness's real ImGui frames. Copied by the build so a clean clone can still run the drawing tests. -->
       <None Include="$(DalamudPath)cimgui.dll" CopyToOutputDirectory="PreserveNewest" Visible="false" />
     </ItemGroup>
 
     <ItemGroup>
       <PackageReference Update="DotNet.ReproducibleBuilds" Version="2.0.5" />
+    </ItemGroup>
+
+    <ItemGroup>
     </ItemGroup>
 </Project>

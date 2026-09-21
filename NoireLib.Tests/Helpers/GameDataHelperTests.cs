@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using NoireLib.Helpers;
 using System.Collections.Generic;
 using System.Numerics;
@@ -6,11 +6,7 @@ using Xunit;
 
 namespace NoireLib.Tests;
 
-/// <summary>
-/// Locks the pure rules in the game-data helpers: the ones that resolve a path, project a coordinate, factor a name,
-/// pick a canonical territory, or reduce a set of placed objects. Every one of them is a function over its inputs, so
-/// none of these needs a game. The sheet and level-file reads around them are exercised in game.
-/// </summary>
+/// <summary>Locks the pure rules in the game-data helpers.</summary>
 public sealed class GameDataHelperTests
 {
     [Theory]
@@ -25,10 +21,7 @@ public sealed class GameDataHelperTests
     public void ResolveLevelDirectory_ReturnsNullWhenThereIsNoLevelSegment(string bg)
         => LevelFileHelper.ResolveLevelDirectory(bg).Should().BeNull();
 
-    /// <summary>
-    /// The asset root is the directory a territory's <c>level/</c> and <c>collision/</c> folders sit in, which is
-    /// what anything built from its files is keyed on, since several territories can share one.
-    /// </summary>
+    /// <summary>The asset root is the directory a territory's <c>level/</c> and <c>collision/</c> folders sit in.</summary>
     [Theory]
     [InlineData("ffxiv/fst_f1/fld/f1f1/level/f1f1", "bg/ffxiv/fst_f1/fld/f1f1/")]
     [InlineData("ex4/05_zon_z5/dun/z5d1/level/z5d1", "bg/ex4/05_zon_z5/dun/z5d1/")]
@@ -73,7 +66,7 @@ public sealed class GameDataHelperTests
     [Fact]
     public void MarkerToWorld_PutsTheMapCentreAtTheNegatedOffset()
     {
-        // The marker space is 2048 across with the world origin at its centre, so the centre pixel is the offset back.
+        // The marker space is 2048 across with the world origin at its centre.
         var (x, z) = MapCoordinateHelper.MarkerToWorld(1024f, 1024f, 100f, 40f, -60f);
 
         x.Should().BeApproximately(-40f, 0.001f);
@@ -92,6 +85,33 @@ public sealed class GameDataHelperTests
     }
 
     [Fact]
+    public void PickMap_TakesTheMapThePositionLandsInside()
+    {
+        var main = new MapProjection(1, 0, 100f, 0f, 0f);
+        var subdivision = new MapProjection(2, 0, 100f, -600f, -600f);
+
+        MapCoordinateHelper.PickMap([main, subdivision], main.MapId, new Vector3(1200f, 0f, 1200f))
+            .Should().Be(subdivision, "the position falls outside the territory's own map and inside the other");
+        MapCoordinateHelper.PickMap([main, subdivision], main.MapId, new Vector3(10f, 0f, 10f))
+            .Should().Be(main, "the territory's own map wins wherever it covers the position");
+    }
+
+    [Fact]
+    public void PickMap_WithNoMapAtAll_IsNull()
+        => MapCoordinateHelper.PickMap([], 0, Vector3.Zero).Should().BeNull();
+
+    [Fact]
+    public void IsInsideMap_HoldsExactlyOverTheMapsOwnSpan()
+    {
+        var map = new MapProjection(1, 0, 100f, 0f, 0f);
+
+        MapCoordinateHelper.IsInsideMap(map, Vector3.Zero).Should().BeTrue();
+        MapCoordinateHelper.IsInsideMap(map, new Vector3(1023f, 0f, 1023f)).Should().BeTrue();
+        MapCoordinateHelper.IsInsideMap(map, new Vector3(1025f, 0f, 0f)).Should().BeFalse();
+        MapCoordinateHelper.IsInsideMap(map, new Vector3(0f, 0f, -1025f)).Should().BeFalse();
+    }
+
+    [Fact]
     public void TryFindNearestMarker_ComparesOnTheGroundPlaneOnly()
     {
         var markers = new List<ProjectedMapMarker>
@@ -100,7 +120,7 @@ public sealed class GameDataHelperTests
             new(new MapMarkerEntry(MapMarkerDataType.AethernetShard, 200, 0, 0, 0), new Vector3(50, 0, 0), 1),
         };
 
-        // A height far from either marker must not decide the match, since a marker carries no height at all.
+        // A marker carries no height.
         MapCoordinateHelper.TryFindNearestMarker(markers, new Vector3(40, 900, 0), out var nearest).Should().BeTrue();
         nearest.Marker.DataKey.Should().Be(200);
     }
@@ -128,7 +148,7 @@ public sealed class GameDataHelperTests
     [Fact]
     public void BuildAliases_KeepsTerritoriesApartWhenOnlyThePathMatches()
     {
-        // An apartment and the private chambers are built from one level file and are genuinely different places.
+        // An apartment and the private chambers share one level file.
         var aliases = TerritoryHelper.BuildAliases(
         [
             new TerritoryEntry(608, "ffxiv/hou_ha1/hou/dyn_a1/level/dyn_a1", 2109),
@@ -249,7 +269,7 @@ public sealed class GameDataHelperTests
     [Fact]
     public void FindInteriorDoors_RestrictsToTheDoorsThatBelongToTheTerritoryBeingRead()
     {
-        // An apartment and the private chambers share a level file, so both doors sit in both territories.
+        // An apartment and the private chambers share a level file. Both doors sit in both territories.
         var objects = new List<LevelObject>
         {
             new(LevelObjectKind.EventObject, InstanceId: 1, new Vector3(0, 0, 14), BaseId: 2001),
@@ -290,7 +310,7 @@ public sealed class GameDataHelperTests
         => AetheryteHelper.IsResidentialCrystal(path).Should().Be(expected);
 
     /// <summary>
-    /// The teleport list is game memory that outlives a character switch, so a read only answers for the character
+    /// The teleport list is game memory that outlives a character switch. A read only answers for the character
     /// standing there now when the refresh that filled it was theirs. Right after switching, the previous
     /// character's non-empty list must read as no answer at all, never as the new character's attunements.
     /// </summary>
@@ -401,7 +421,6 @@ public sealed class GameDataHelperTests
         filter.Keeps(new LevelObject(LevelObjectKind.EventObject, 3, Vector3.Zero, BaseId: 2001)).Should().BeTrue();
         filter.Keeps(new LevelObject(LevelObjectKind.EventObject, 4, Vector3.Zero, BaseId: 2002)).Should().BeFalse();
 
-        // A kind the filter says nothing about is untouched by it.
         filter.Keeps(new LevelObject(LevelObjectKind.Aetheryte, 5, Vector3.Zero, BaseId: 2)).Should().BeTrue();
     }
 

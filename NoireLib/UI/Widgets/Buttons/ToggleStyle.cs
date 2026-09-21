@@ -34,17 +34,22 @@ public sealed class ToggleStyle
     public float WidthRatio { get; set; } = 1.85f;
 
     /// <summary>
-    /// The track corner radius at 100%; when <see langword="null"/>, the track is a full pill, and 0 a square switch.
+    /// The track corner radius at 100%. When <see langword="null"/>, the track is a full pill, and 0 a square switch.
     /// </summary>
     public float? Rounding { get; set; }
 
     /// <summary>
-    /// How long the knob takes to travel, in seconds; ignored under <see cref="NoireUI.ReducedMotion"/>.
+    /// How long the knob takes to travel, in seconds. Ignored under <see cref="NoireUI.ReducedMotion"/>.
     /// </summary>
     public float AnimationDuration { get; set; } = 0.14f;
 
     /// <summary>
-    /// Whether the label is drawn before the switch rather than after it.
+    /// The curve the knob follows, such as <see cref="UiCubicBezier.Curve"/>. When <see langword="null"/>, <see cref="UiEasing.OutCubic"/>.
+    /// </summary>
+    public Func<float, float>? AnimationCurve { get; set; }
+
+    /// <summary>
+    /// Whether the label is drawn before the switch.
     /// </summary>
     public bool LabelFirst { get; set; }
 
@@ -78,6 +83,7 @@ public sealed class ToggleStyle
         WidthRatio = WidthRatio,
         Rounding = Rounding,
         AnimationDuration = AnimationDuration,
+        AnimationCurve = AnimationCurve,
         LabelFirst = LabelFirst,
         CustomDraw = CustomDraw,
     };

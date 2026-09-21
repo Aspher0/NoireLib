@@ -6,20 +6,9 @@ using TerraFX.Interop.DirectX;
 
 namespace NoireLib.Draw3D.Core;
 
-// Draws meshes into the GAME's G-buffer, inside the game's own geometry pass, so the game's deferred lighting pass
-// lights them. What this buys. Deferred lighting runs over pixels rather than objects: the lighting shader reads
-// albedo, normal and depth out of the G-buffer and cannot tell which object wrote any given pixel. Geometry placed
-// there is therefore lit by every lamp, the sun and the ambient term, receives shadow-map lookups, is occluded by
-// walls at pixel precision, and passes through the game's tonemapping and exposure - all of it identical to the wall
-// beside it by construction rather than by approximation. What it costs. Everything that lives in Draw3D's own pass
-// is unavailable here: outlines and rims, transparency, ground decals, and drawing above everything. Deferred
-// geometry is opaque. An object needing any of those stays on the normal path. What it does not do. Cast shadows.
-// Shadow maps are rendered in earlier depth-only passes this pass never sees; casting is its own injection
-// (ShadowInject, opted into per frame through CastShadows).
+// Draws into the game's G-buffer inside its geometry pass. The game's deferred lighting treats the meshes as world geometry.
 internal sealed unsafe class GBufferInject : IDisposable
 {
-    // One mesh queued for injection this frame. Everything here is per mesh; what gets written into the channels the
-    // game authored is per frame and lives on Draw3DGameLit.
     internal readonly record struct Item(
         Mesh Mesh,
         Matrix4x4 World,
@@ -32,10 +21,8 @@ internal sealed unsafe class GBufferInject : IDisposable
         Vector4 DyeColorStrength,
         float DyeReference);
 
-    // Depth-state variants, indexed by DepthStateIndex: depth write on or off, stencil stamp on or off.
     private const int DepthStateCount = 4;
 
-    // Blend-state variants: writing the five targets, or writing none of them.
     private const int BlendStateCount = 2;
 
     private readonly List<Item> queue = new(16);
@@ -49,29 +36,17 @@ internal sealed unsafe class GBufferInject : IDisposable
     private ID3D11SamplerState* sampler;
     private bool statesReady;
 
-    // Which depth state a given combination of depth write and stencil stamp needs.
     private static int DepthStateIndex(bool writeDepth, bool writeStencil) => (writeDepth ? 1 : 0) | (writeStencil ? 2 : 0);
 
-    /// <summary>How many meshes were injected on the last frame that ran, for diagnostics.</summary>
     public int LastInjectedCount { get; private set; }
 
-    /// <summary>Whether anything is queued for this frame.</summary>
     public bool HasWork => queue.Count > 0;
 
-    /// <summary>Queues a mesh for injection. Called from the normal render path, not the render thread.</summary>
     public void Enqueue(in Item item) => queue.Add(item);
 
-    /// <summary>Drops anything queued but not drawn, so a frame that never reached the pass does not leak into the next.</summary>
     public void Clear() => queue.Clear();
 
-    /// <summary>
-    /// Draws the queued meshes into the currently bound G-buffer. Runs on the render thread, inside the game's
-    /// geometry pass, with the game's targets already bound.
-    /// </summary>
-    /// <param name="device">The render device.</param>
-    /// <param name="shaders">The shader library supplying the G-buffer pipeline.</param>
-    /// <param name="viewProj">The game's own view-projection for this frame, already transposed for the shader.</param>
-    /// <param name="options">What to write into the channels the game authored; read fresh so a live change applies next frame.</param>
+    // viewProj is the game's own, already transposed.
     public void Execute(RenderDevice device, ShaderLibrary shaders, in Matrix4x4 viewProj, Draw3DGameLit options)
     {
         if (queue.Count == 0)
@@ -85,8 +60,6 @@ internal sealed unsafe class GBufferInject : IDisposable
             return;
         }
 
-        // Everything below this line runs against the game's pipeline. The restore in the finally block prevents
-        // a failure here from becoming the game's problem.
         guard.Capture(ctx);
         try
         {
@@ -102,12 +75,9 @@ internal sealed unsafe class GBufferInject : IDisposable
             ctx->VSSetConstantBuffers(1, 1, &ocb);
             ctx->PSSetConstantBuffers(1, 1, &ocb);
 
-            // The viewport is deliberately left as the game set it: this draws at the game's resolution into
-            // the game's targets, and overriding it would put the geometry in the wrong pixels.
             ctx->RSSetState(rasterState);
 
-            // The game marks object categories in the stencil plane. World geometry measures 0x00, which is
-            // also what an unwritten pixel holds, so the stamp is off unless a caller asks for a category.
+            // World geometry's stencil category is 0x00, the same as an unwritten pixel.
             var stencil = options.Stencil;
             ctx->OMSetDepthStencilState(depthStates[DepthStateIndex(options.WriteDepth, stencil != 0)], stencil);
 
@@ -140,8 +110,7 @@ internal sealed unsafe class GBufferInject : IDisposable
         if (shaders.GetGameGBuffer(device, item.Textured, hasMaps) is not { } pipeline)
             return false;
 
-        // The slot meanings here are GameGBuffer.hlsl's, not the scene shaders' - it aliases the shared
-        // ObjectCB rather than carrying a second layout, the same way the decal shader does.
+        // Slot meanings are GameGBuffer.hlsl's.
         var obj = default(ObjectCBData);
         obj.World = Matrix4x4.Transpose(item.World);
         obj.BaseColor = item.Color;
@@ -159,23 +128,19 @@ internal sealed unsafe class GBufferInject : IDisposable
         if (item.Textured && item.Srv != 0)
         {
             var srv = (ID3D11ShaderResourceView*)item.Srv;
-            ctx->PSSetShaderResources(1, 1, &srv);   // t1 = BaseTex, matching Common.hlsli
+            ctx->PSSetShaderResources(1, 1, &srv);
 
-            // s1, not s0. BaseSamp is declared at register(s1); binding s0 left the shader sampling through
-            // whatever sampler the game happened to have bound, which is not a defined state to rely on.
+            // BaseSamp is register(s1).
             var samp = sampler;
             ctx->PSSetSamplers(1, 1, &samp);
         }
 
-        // The material's normal and specular maps carry every surface detail the game's own G-buffer shows -
-        // the carvings in the normal buffer and the rings in the material buffer. Without them the object is
-        // written as a flat surface with a constant material response.
         if (item.NormalSrv != 0 && item.SpecularSrv != 0)
         {
             var aux0 = (ID3D11ShaderResourceView*)item.NormalSrv;
             var aux1 = (ID3D11ShaderResourceView*)item.SpecularSrv;
-            ctx->PSSetShaderResources(4, 1, &aux0);  // t4 = AuxTex0, the normal map
-            ctx->PSSetShaderResources(5, 1, &aux1);  // t5 = AuxTex1, the specular map
+            ctx->PSSetShaderResources(4, 1, &aux0);  // t4 = normal map
+            ctx->PSSetShaderResources(5, 1, &aux1);  // t5 = specular map
         }
 
         var vb = mesh.Vb;
@@ -187,7 +152,6 @@ internal sealed unsafe class GBufferInject : IDisposable
         return true;
     }
 
-    // Creates the constant buffers and pipeline states once. Returns whether they are usable.
     private bool EnsureResources(RenderDevice device)
     {
         if (statesReady)
@@ -199,14 +163,7 @@ internal sealed unsafe class GBufferInject : IDisposable
         if (frameCb == null || objectCb == null)
             return false;
 
-        // The depth test always runs, so walls occlude the object under every variant below. What varies is
-        // whether the object writes depth back: doing so makes it occlude the world in turn, and makes its
-        // surface exist for every later pass that reads depth.
-        //
-        // GREATER_EQUAL, not LESS: FFXIV renders reversed-Z infinite-far, so near maps to 1 and far to 0 and
-        // the nearer surface is the one with the LARGER depth value (see DepthCalibration). Getting this
-        // backwards would not hide the object - it would draw it only where the world already occludes it,
-        // which reads as an object visible exclusively through walls.
+        // GREATER_EQUAL: FFXIV renders reversed-Z.
         for (var i = 0; i < DepthStateCount; i++)
         {
             var writeDepth = (i & 1) != 0;
@@ -220,9 +177,6 @@ internal sealed unsafe class GBufferInject : IDisposable
             depthDesc.DepthFunc = D3D11_COMPARISON_FUNC.D3D11_COMPARISON_GREATER_EQUAL;
             depthDesc.StencilEnable = (byte)(writeStencil ? 1 : 0);
 
-            // Pass unconditionally and replace, so every pixel the geometry covers ends up carrying the
-            // reference value rather than combining with what was there. The reference is supplied per draw,
-            // so one state serves any value.
             depthDesc.StencilReadMask = 0xFF;
             depthDesc.StencilWriteMask = 0xFF;
             depthDesc.FrontFace.StencilFunc = D3D11_COMPARISON_FUNC.D3D11_COMPARISON_ALWAYS;
@@ -238,10 +192,7 @@ internal sealed unsafe class GBufferInject : IDisposable
             }
         }
 
-        // Opaque into all five targets. Deferred geometry cannot blend: each target holds a different quantity,
-        // and blending a normal against the wall behind it produces a direction that describes neither.
-        // The write-mask-zero variant keeps the draw and its depth behaviour while writing no target at all,
-        // isolating whether an artefact comes from describing the surface or merely from occupying the pixels.
+        // Each G-buffer target holds a different quantity. Blending would corrupt normals.
         for (var i = 0; i < BlendStateCount; i++)
         {
             var blendDesc = default(D3D11_BLEND_DESC);
@@ -286,7 +237,6 @@ internal sealed unsafe class GBufferInject : IDisposable
         return true;
     }
 
-    /// <summary>Releases the pipeline states and constant buffers.</summary>
     public void Dispose()
     {
         queue.Clear();

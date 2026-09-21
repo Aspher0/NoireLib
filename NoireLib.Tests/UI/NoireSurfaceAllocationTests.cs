@@ -7,13 +7,9 @@ using Xunit;
 namespace NoireLib.Tests;
 
 /// <summary>
-/// Holds the surfaces underneath the widgets at zero allocation per frame: text, shapes, layout, panels, attention and
-/// content.
+/// Checks the surfaces under the widgets allocate nothing per frame.<br/>
+/// Every delegate handed to a scope is <see langword="static"/>. A capturing lambda allocates on entry to the enclosing method.
 /// </summary>
-/// <remarks>
-/// Every delegate handed to a scope is <see langword="static"/> with its state passed alongside: a capturing lambda is
-/// allocated on entry to the enclosing method.
-/// </remarks>
 [Collection(NoireUiTestCollection.Name)]
 public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
 {
@@ -21,10 +17,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
 
     private static readonly Vector4 Color = new(0.8f, 0.4f, 0.2f, 1f);
 
-    /// <summary>
-    /// A content built once, the way a consumer holds one, so the measurement is of drawing it rather than of building
-    /// it.
-    /// </summary>
     private static readonly NoireContent Content = new NoireContent()
         .AddText("A line of explanation.")
         .AddKeyCap("Ctrl")
@@ -69,8 +61,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // Measurement is asked for far more often than painting: a widget sizes itself, then centres its label, then
-        // paints, and every one of those is a measure of the same string.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -137,8 +127,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // The expensive decorations, and the ones most likely to grow a scratch buffer: a sunburst tessellates per ray
-        // per layer and a guilloche walks a lissajous, both of which are written into stack or pooled storage.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -204,8 +192,22 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // A persisting section resolved its state key by interpolating the id on every frame it drew, which is once per
-        // section per frame on a settings page built out of them. The key is a constant of the section.
+        result.AllocatedBytes.Should().Be(0L);
+    }
+
+    [Fact]
+    public void CollapsibleWithAStyledHeader_AllocatesNothing()
+    {
+        var options = new CollapsibleOptions { HeaderBackground = Color, HeaderRounding = 0f, HeaderPadding = new Vector2(10f, 6f) };
+
+        var result = harness.Draw(
+            () =>
+            {
+                for (var i = 0; i < Repeats; i++)
+                    NoireLayout.Collapsible("alloc_styled", "A section", static () => NoireText.Draw("Body."), options);
+            },
+            warmUpFrames: 3);
+
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -242,7 +244,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
         result.AllocatedBytes.Should().Be(0L);
     }
 
-    /// <summary>The splitter's options, held between frames rather than described again on each one.</summary>
     private static readonly SplitterOptions SplitOptions = new()
     {
         MinSize = 50f,
@@ -265,8 +266,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // The overload above this one takes its bounds as numbers and was the only one measured, which left the options
-        // form uncovered: the call itself is free, and what a caller pays is entirely in how it produces the options.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -292,10 +291,7 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // Stated rather than merely warned about, because the natural way to call an options overload is to describe
-        // the options at the call, and describing them there is an object on every frame the call is reached. Measured
-        // at 112 bytes; the assertion is a floor rather than the exact figure, since what matters is that it is not
-        // zero and that the reused form above it is.
+        // Measured at 112 bytes. Only non-zero matters.
         var perCall = result.AllocatedBytes / (double)Repeats;
 
         perCall.Should().BeGreaterThan(64d);
@@ -306,8 +302,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
     {
         var result = harness.Draw(static () => Content.Draw(), warmUpFrames: 3);
 
-        // Content is what every tooltip is made of, so a per-frame cost here is paid by the surface most likely to be
-        // on screen while the user is doing something else.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -328,8 +322,6 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // The count was written out on every frame, which is a string per badge per frame to arrive at digits that
-        // change when something arrives and at no other time.
         result.AllocatedBytes.Should().Be(0L);
     }
 
@@ -369,18 +361,13 @@ public sealed class NoireSurfaceAllocationTests : IClassFixture<UiHarness>
             },
             warmUpFrames: 3);
 
-        // Reading a shake or a flash back is the per-frame half of this API, and it composed the caller's id into a
-        // sub key on each of those reads. The id is the entry's id; which motion it is, is a constant.
         result.AllocatedBytes.Should().Be(0L);
     }
 
     [Fact]
     public void AttentionStillMovesWhatItWasAskedToMove()
     {
-        // The keys behind these moved, so the fact worth holding is that a fired motion is still the one read back:
-        // a mismatch would be silent, and would look exactly like a motion that had already finished.
-        // Fired on the first frame only and read on the ones after it, because a bounce read on the frame it started is
-        // at a progress of zero and is legitimately still at rest.
+        // A bounce read on the frame it started is at progress zero and still at rest.
         var frame = 0;
         var moved = false;
 

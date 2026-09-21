@@ -11,23 +11,17 @@ using System.Numerics;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
-// The demo's widget kit. Pages are built from these so the window reads as one thing instead of nine. The unit of
-// layout is the form: a two-column table, captions left, controls stretched right. Widgets bind through a
-// getter/setter and write back only on change, so pages keep no mirror state.
+// A form is a two-column table, captions left, controls right. Widgets write back only on change.
 internal static class Ui
 {
     private const float LabelColumnWidth = 190f;
 
     private const float TooltipWrapEm = 24f;
 
-    /// <summary>The one accent. Nav selection and section rules; everything else is theme default or grey.</summary>
+    /// <summary>The one accent. Nav selection and section rules. Everything else is theme default or grey.</summary>
     public static readonly Vector4 Accent = new(0.45f, 0.72f, 0.90f, 1f);
 
-    /// <summary>Derives every NoireUI widget's palette from the demo accent.</summary>
     static Ui() => NoireTheme.Current = NoireTheme.FromAccent(Accent);
-
-    // ---------------------------------------------------------------- widget skin
-    // The demo's choices on top of the accent theme. Shared instances, so no row can drift.
 
     private static readonly SliderStyle SliderLook = new()
     {
@@ -42,7 +36,7 @@ internal static class Ui
         GlowSpread = 6f,
     };
 
-    // Toggles: a slim pill, sized independently of the frame height so the roomier frame padding cannot inflate it.
+    // Sized independently of the frame height.
     private static readonly ToggleStyle ToggleLook = new()
     {
         Height = 18f,
@@ -68,12 +62,7 @@ internal static class Ui
     /// <summary>Dalamud's global DPI scale, applied to every hard-coded size here.</summary>
     public static float Scale => ImGuiHelpers.GlobalScale;
 
-    // ---------------------------------------------------------------- chrome
-
-    /// <summary>
-    /// The window's style: tighter than stock ImGui, which is loose enough that a dense panel reads as a pile. Pushed
-    /// once per frame around the whole window.
-    /// </summary>
+    /// <summary>The window's style, tighter than stock ImGui. Pushed once per frame around the whole window.</summary>
     public static IDisposable Style() => new Skin();
 
     private static readonly Vector4 Hairline = new(1f, 1f, 1f, 0.08f);
@@ -82,7 +71,7 @@ internal static class Ui
     private static readonly Vector4 AccentHover = new(0.45f, 0.72f, 0.90f, 0.32f);
     private static readonly Vector4 AccentActive = new(0.45f, 0.72f, 0.90f, 0.45f);
 
-    // The accent lifted toward white, for marks that must read at glyph size.
+    // Readable at glyph size.
     private static readonly Vector4 AccentBright = new(0.62f, 0.85f, 1f, 1f);
 
     private sealed class Skin : IDisposable
@@ -175,7 +164,7 @@ internal static class Ui
     }
 
     /// <summary>A coloured callout for a caveat or prerequisite.</summary>
-    /// <param name="color">Its colour; defaults to Dalamud's warning yellow.</param>
+    /// <param name="color">Its colour. Defaults to Dalamud's warning yellow.</param>
     public static void Callout(string text, Vector4? color = null)
     {
         using var pushed = ImRaii.PushColor(ImGuiCol.Text, color ?? ImGuiColors.DalamudYellow);
@@ -193,7 +182,7 @@ internal static class Ui
     /// <summary>A <c>using</c>-scoped block that greys out and blocks everything inside it.</summary>
     public static IDisposable Disabled(bool disabled) => ImRaii.Disabled(disabled);
 
-    /// <summary>Numbers in the mono font, so columns of them line up and stop jittering as they change.</summary>
+    /// <summary>Numbers in the mono font. Columns of them line up and stop jittering as they change.</summary>
     public static void Mono(string text, Vector4? color = null)
     {
         using var font = ImRaii.PushFont(UiBuilder.MonoFont);
@@ -207,7 +196,7 @@ internal static class Ui
         ImGui.TextUnformatted(icon.ToIconString());
     }
 
-    /// <param name="width">Button width before scaling; 0 fits the content.</param>
+    /// <param name="width">Button width before scaling. 0 fits the content.</param>
     public static bool IconButton(FontAwesomeIcon icon, string label, float width = 0f)
     {
         var iconText = icon.ToIconString();
@@ -224,7 +213,7 @@ internal static class Ui
         var start = ImGui.GetCursorScreenPos();
         var pressed = ImGui.Button($"##{label}", size);
 
-        // The caption is painted over the button: it needs two fonts, which a button label cannot carry.
+        // A button label cannot carry two fonts.
         var pad = ImGui.GetStyle().FramePadding;
         var dl = ImGui.GetWindowDrawList();
         var textColor = ImGui.GetColorU32(ImGuiCol.Text);
@@ -234,8 +223,6 @@ internal static class Ui
 
         return pressed;
     }
-
-    // ---------------------------------------------------------------- form
 
     /// <summary>The scope opened by <see cref="Form"/>: a two-column caption/control table.</summary>
     public readonly ref struct FormScope
@@ -263,14 +250,11 @@ internal static class Ui
         }
     }
 
-    /// <summary>Opens a caption/control form. Rows drawn outside one still render, stacked, rather than corrupting the enclosing table.</summary>
+    /// <summary>Opens a caption/control form. Rows drawn outside one still render, stacked, without corrupting the enclosing table.</summary>
     /// <param name="labelWidth">Caption-column width before scaling. Narrow it inside a split pane, where the default would starve the controls.</param>
     public static FormScope Form(string id, float labelWidth = LabelColumnWidth) => new(id, labelWidth);
 
-    /// <summary>
-    /// Opens one form row: caption (and its help marker) left, cursor left in the control cell with the next item
-    /// stretched to fill.
-    /// </summary>
+    /// <summary>Opens one form row, caption (and its help marker) left, cursor left in the control cell with the next item stretched to fill.</summary>
     /// <param name="hint">Optional help, shown on hover of the caption or its marker.</param>
     public static void Row(string label, string? hint = null)
     {
@@ -290,10 +274,7 @@ internal static class Ui
         ImGui.SetNextItemWidth(-1f);
     }
 
-    /// <summary>
-    /// Appends the "(?)" marker to the item just drawn, and shows <paramref name="hint"/> when either that item or the
-    /// marker is hovered - so the caption itself is a hover target, not just the glyph.
-    /// </summary>
+    /// <summary>Appends the "(?)" marker to the item just drawn, and shows <paramref name="hint"/> when either that item or the marker is hovered. The caption itself is a hover target.</summary>
     /// <param name="hint">The help text. Nothing is drawn when it is empty.</param>
     public static void HelpMarker(string? hint)
     {
@@ -318,15 +299,15 @@ internal static class Ui
 
         Note("Overrides for files authored in an unusual convention. Leave off for game models and spec-conforming glTF.");
         Gap();
-        Note("A single mirror reflects, so it turns a model into its mirror image. Mirror X and Mirror Z together are a 180 degree turn instead, which changes only which way the model faces.");
+        Note("A single mirror reflects, turning a model into its mirror image. Mirror X and Mirror Z together make a 180 degree turn, which changes only which way the model faces.");
         Gap();
 
         var changed = false;
         using (Form(id))
         {
             changed |= Toggle2("Mirror Z", () => flips.MirrorZ, v => flips.MirrorZ = v, "Reflects the model through the XY plane.");
-            changed |= Toggle2("Mirror X", () => flips.MirrorX, v => flips.MirrorX = v, "Reflects through the YZ plane. With Mirror Z on, the two together are a 180 degree turn about Y rather than a reflection.");
-            changed |= Toggle2("Reverse winding", () => flips.ReverseWinding, v => flips.ReverseWinding = v, "Undoes the reversal the loaders already apply. A file whose winding was converted before it got here needs this; anything else will render inside out with it.");
+            changed |= Toggle2("Mirror X", () => flips.MirrorX, v => flips.MirrorX = v, "Reflects through the YZ plane. With Mirror Z on, the two together make a 180 degree turn about Y.");
+            changed |= Toggle2("Reverse winding", () => flips.ReverseWinding, v => flips.ReverseWinding = v, "Undoes the reversal the loaders already apply. A file whose winding was converted before it got here needs this. Anything else will render inside out with it.");
             changed |= Toggle2("Flip texture U", () => flips.FlipU, v => flips.FlipU = v, "Mirrors the texture horizontally.");
             changed |= Toggle2("Flip texture V", () => flips.FlipV, v => flips.FlipV = v, "Mirrors the texture vertically.");
         }
@@ -334,7 +315,7 @@ internal static class Ui
         return changed;
     }
 
-    /// <summary>A toggle row that reports whether it changed, for callers that must react to the edit rather than just store it.</summary>
+    /// <summary>A toggle row that reports whether it changed, for callers that need to react to the edit.</summary>
     public static bool Toggle2(string label, Func<bool> get, Action<bool> set, string? hint = null)
     {
         Row(label, hint);
@@ -361,8 +342,6 @@ internal static class Ui
             ImGui.EndTooltip();
         }
     }
-
-    // ---------------------------------------------------------------- bound widgets
 
     public static void Toggle(string label, Func<bool> get, Action<bool> set, string? hint = null)
     {
@@ -473,8 +452,6 @@ internal static class Ui
         Mono(value.ToString("N0"), value == 0 ? ImGuiColors.DalamudGrey3 : null);
     }
 
-    // ---------------------------------------------------------------- enums
-
     public static bool Enum<T>(string label, Func<T> get, Action<T> set, string? hint = null) where T : struct, Enum
     {
         Row(label, hint);
@@ -506,10 +483,7 @@ internal static class Ui
         return Combo($"##{label}", names, ref index);
     }
 
-    /// <summary>
-    /// A toggle per flag of a <c>[Flags]</c> enum, on one line. The zero member and combined aliases are skipped: they
-    /// are states of the single-bit toggles, not toggles of their own. A dropdown cannot edit flags - it holds one member.
-    /// </summary>
+    /// <summary>A toggle per flag of a <c>[Flags]</c> enum, on one line. The zero member and combined aliases are skipped, since they are states of the single-bit toggles. A dropdown cannot edit flags. It holds one member.</summary>
     public static void Flags<T>(string label, Func<T> get, Action<T> set, string? hint = null) where T : struct, Enum
     {
         Row(label, hint);
@@ -537,7 +511,7 @@ internal static class Ui
             set((T)System.Enum.ToObject(typeof(T), value));
     }
 
-    // The dropdown instances behind Combo, kept because the widget is stateful, keyed by widget id.
+    // Keyed by widget id. The combo is stateful.
     private static readonly Dictionary<string, (NoireComboBox<string> Combo, string[] Names)> combos = new();
 
     /// <param name="id">The widget id (pass "##..." to suppress a duplicate caption).</param>
@@ -554,8 +528,7 @@ internal static class Ui
             combos[id] = (entry.Combo, names);
         }
 
-        // Synced silently every frame, so a value changed behind the widget's back (a reset, another control)
-        // shows in the preview instead of the widget arguing with its owner.
+        // A value changed behind the widget shows in the preview.
         entry.Combo.SelectedIndex = index;
 
         if (!entry.Combo.Draw())
@@ -582,9 +555,7 @@ internal static class Ui
         return true;
     }
 
-    // ---------------------------------------------------------------- buttons
-
-    /// <summary>A themed button. A zero size component is measured from the label; a negative one fills the space, leaving that many pixels.</summary>
+    /// <summary>A themed button. A zero size component is measured from the label. A negative one fills the space, leaving that many pixels.</summary>
     public static bool Button(string label, Vector2 size = default)
         => NoireButtons.Button(label, ButtonLook, size);
 

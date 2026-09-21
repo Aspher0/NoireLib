@@ -19,11 +19,9 @@ public static class NoireIPC
     private static readonly object SyncRoot = new();
     private static readonly List<NoireIpcHandle> OwnedHandles = [];
 
-    // Resolved Dalamud call gates, keyed by side, name and exact generic arguments. Cleared when the owned handles
-    // are disposed.
+    // Keyed by side, name and exact generic arguments.
     private static readonly ConcurrentDictionary<CallGateKey, object> CallGateCache = new();
 
-    // The scored method per call-gate type, member name and argument count.
     private static readonly ConcurrentDictionary<(Type TargetType, string MethodName, int ArgumentCount), MethodInfo> InstanceMethodCache = new();
     private static readonly IReadOnlyDictionary<int, MethodInfo> ProviderFactoryMethods = typeof(IDalamudPluginInterface)
         .GetMethods(BindingFlags.Instance | BindingFlags.Public)
@@ -372,7 +370,7 @@ public static class NoireIPC
     /// <param name="returnType">The return type expected by the IPC signature. Use <see langword="null"/> or <see cref="System.Object"/> for action channels.</param>
     /// <param name="prefix">The explicit prefix to apply when <paramref name="name"/> is not already fully qualified.</param>
     /// <param name="useDefaultPrefix">If set to <see langword="true"/>, default prefix resolution is used when <paramref name="prefix"/> is not supplied.</param>
-    /// <returns><see langword="true"/> if the IPC provider appears available for the requested signature; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the IPC provider appears available for the requested signature. Otherwise <see langword="false"/>.</returns>
     public static bool IsAvailable(string name, Type[] parameterTypes, Type? returnType = null, string? prefix = null, bool useDefaultPrefix = true)
     {
         var fullName = BuildName(name, prefix, useDefaultPrefix);
@@ -428,7 +426,7 @@ public static class NoireIPC
     /// <param name="prefix">The explicit prefix to apply when <paramref name="name"/> is not already fully qualified.</param>
     /// <param name="useDefaultPrefix">If set to <see langword="true"/>, default prefix resolution is used when <paramref name="prefix"/> is not supplied.</param>
     /// <param name="parameterTypes">The parameter types expected by the action signature.</param>
-    /// <returns><see langword="true"/> if the action provider is available; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the action provider is available. Otherwise <see langword="false"/>.</returns>
     public static bool IsActionAvailable(string name, string? prefix = null, bool useDefaultPrefix = true, params Type[] parameterTypes)
         => IsAvailable(name, parameterTypes, typeof(object), prefix, useDefaultPrefix);
 
@@ -440,7 +438,7 @@ public static class NoireIPC
     /// <param name="prefix">The explicit prefix to apply when <paramref name="name"/> is not already fully qualified.</param>
     /// <param name="useDefaultPrefix">If set to <see langword="true"/>, default prefix resolution is used when <paramref name="prefix"/> is not supplied.</param>
     /// <param name="parameterTypes">The parameter types expected by the function signature.</param>
-    /// <returns><see langword="true"/> if the function provider is available; otherwise, <see langword="false"/>.</returns>
+    /// <returns><see langword="true"/> if the function provider is available. Otherwise <see langword="false"/>.</returns>
     public static bool IsFuncAvailable<TResult>(string name, string? prefix = null, bool useDefaultPrefix = true, params Type[] parameterTypes)
         => IsAvailable(name, parameterTypes, typeof(TResult), prefix, useDefaultPrefix);
 
@@ -699,6 +697,45 @@ public static class NoireIPC
             : target != null
                 ? method.CreateDelegate(delegateType, target)
                 : throw new ArgumentNullException(nameof(target), $"An instance is required to register method '{method.DeclaringType?.FullName}.{method.Name}'.");
+    }
+
+    /// <summary>Builds the provider delegate for a property that publishes its value. It reads the property on every call.</summary>
+    /// <param name="target">The instance the property is read from, or null for a static property.</param>
+    /// <param name="property">The property to publish.</param>
+    /// <returns>A <see cref="Func{TResult}"/> over the property type.</returns>
+    /// <exception cref="InvalidOperationException">If the property has no getter, or needs an instance and none was given.</exception>
+    internal static Delegate CreateProviderDelegateForProperty(object? target, PropertyInfo property)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+
+        var getter = property.GetGetMethod(nonPublic: true) ?? property.GetGetMethod(nonPublic: false);
+
+        if (getter == null)
+        {
+            throw new InvalidOperationException(
+                $"Property '{property.DeclaringType?.FullName}.{property.Name}' publishes its value and must have a getter. " +
+                "A property whose type is a delegate or a NoireIpc wrapper consumes instead.");
+        }
+
+        var delegateType = Expression.GetFuncType(property.PropertyType);
+
+        return getter.IsStatic
+            ? getter.CreateDelegate(delegateType)
+            : target != null
+                ? getter.CreateDelegate(delegateType, target)
+                : throw new InvalidOperationException($"An instance is required to publish property '{property.DeclaringType?.FullName}.{property.Name}'.");
+    }
+
+    /// <summary>Whether an annotated property consumes a channel: a delegate or wrapper type consumes, anything else publishes.</summary>
+    /// <param name="property">The annotated property.</param>
+    /// <returns>True when the property is a consumer.</returns>
+    internal static bool IsConsumerProperty(PropertyInfo property)
+    {
+        ArgumentNullException.ThrowIfNull(property);
+
+        return IsNullableDelegateType(property.PropertyType, out _)
+            || IsConsumerWrapperType(property.PropertyType, out _)
+            || IsEventWrapperType(property.PropertyType, out _);
     }
 
     internal static Delegate CreateConsumerDelegate(string fullName, MethodInfo method, Type messageResultType)
@@ -1463,16 +1500,7 @@ public static class NoireIPC
         => new(fullName, messageResultType);
 
     private static Type[] GetLoadableTypes(Assembly assembly)
-    {
-        try
-        {
-            return assembly.GetTypes();
-        }
-        catch (ReflectionTypeLoadException ex)
-        {
-            return ex.Types.Where(type => type != null).Cast<Type>().ToArray();
-        }
-    }
+        => NoireLib.Core.Reflection.AttributedTypes.Loadable(assembly);
 
     #endregion
 

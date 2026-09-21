@@ -5,47 +5,30 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// Draws a mesh with a material at its node's world transform. Attached via <see cref="SceneNode.SetMesh"/>.
-/// </summary>
+/// <summary>Draws a mesh with a material at its node's world transform, attached via <see cref="SceneNode.SetMesh"/>.</summary>
 public sealed class MeshRenderer
 {
     private readonly SceneNode node;
 
-    /// <summary>The mesh to draw; referenced, never owned, dispose it wherever it was created.</summary>
+    /// <summary>The mesh to draw. Referenced, never owned.</summary>
     public Mesh Mesh { get; set; }
 
-    /// <summary>The material to draw with; immutable record, swap the reference to change appearance.</summary>
+    /// <summary>The material to draw with.</summary>
     public Material Material { get; set; }
 
-    /// <summary>
-    /// Whether opaque draws write the private Draw3D depth buffer (so other Draw3D meshes occlude correctly);
-    /// defaults to true for opaque materials, ignored for blended ones.
-    /// </summary>
+    /// <summary>Whether opaque draws write the Draw3D depth buffer so other Draw3D meshes occlude against them. Ignored for blended materials.</summary>
     public bool CastsIntoPrivateDepth { get; set; } = true;
 
-    /// <summary>Per-node color multiplier on top of the material color (cheap variation without a new material).</summary>
+    /// <summary>Per-node color multiplier on top of the material color.</summary>
     public Vector4 Tint { get; set; } = new(1f, 1f, 1f, 1f);
 
-    /// <summary>
-    /// Selection/highlight outline color, straight alpha: alpha &gt; 0 draws a real screen-space silhouette outline
-    /// around this object (a post-process rim, computed from a coverage mask - works for solid meshes and ground
-    /// decals alike), default transparent means no outline; drive it via <see cref="SceneNode.ShowOutline"/> /
-    /// <see cref="SceneNode.HideOutline"/>.
-    /// </summary>
+    /// <summary>Screen-space silhouette outline color in straight alpha, where alpha 0 (the default) draws no outline.</summary>
     public Vector4 OutlineColor { get; set; }
 
-    /// <summary>Outline thickness in screen pixels (used when <see cref="OutlineColor"/>'s alpha &gt; 0); default 4.</summary>
+    /// <summary>Outline thickness in screen pixels (default 4).</summary>
     public float OutlineWidthPixels { get; set; } = 4f;
 
-    /// <summary>
-    /// <see cref="MaterialDomain.GroundDecal"/> materials only: world cylinders this decal will <b>not</b>
-    /// paint on, so a character / monster / NPC standing in it is excluded (not painted on) without holing the
-    /// ground around their feet; settable per frame (null = paint over everything), up to 64 volumes honored.
-    /// The easy path is
-    /// <see cref="SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/>
-    /// (library-threaded) - this is the deepest floor.
-    /// </summary>
+    /// <summary><see cref="MaterialDomain.GroundDecal"/> only: world cylinders the decal skips, up to 64. <see cref="SceneNode.ExcludeObjects(System.Func{Dalamud.Game.ClientState.Objects.Types.IGameObject, bool}, float)"/> fills this each tick.</summary>
     public IReadOnlyList<ExcludeVolume>? ExcludeVolumes { get; set; }
 
     /// <summary>The mesh bounds transformed by the node's current world matrix.</summary>

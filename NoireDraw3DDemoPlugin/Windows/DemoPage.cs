@@ -3,35 +3,27 @@ using System.Collections.Generic;
 
 namespace NoireDraw3DDemoPlugin.Windows;
 
-// The demo's pages. One page is one screen; the rail lists them all.
 internal enum DemoPage
 {
     Showcase,
 
-    /// <summary>Scenes, spawning, the object list and the per-object inspector.</summary>
     Scenes,
 
-    /// <summary>Models loaded out of the game's own archives.</summary>
     GameAssets,
 
-    /// <summary>Layer-wide render switches.</summary>
     Renderer,
 
     Decals,
 
-    /// <summary>Where the layer lands against the game's HUD and nameplates.</summary>
     NativeUi,
 
-    /// <summary>The light <c>Material.Lit</c> shades against.</summary>
     Lighting,
 
     Interaction,
 
-    /// <summary>Validators, live stats, fault feed.</summary>
     Diagnostics,
 
 #if DEBUG
-    /// <summary>Development tooling. Debug builds only.</summary>
     Debug,
 #endif
 }

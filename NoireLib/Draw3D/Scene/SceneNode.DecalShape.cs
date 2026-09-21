@@ -7,49 +7,28 @@ using System.Numerics;
 
 namespace NoireLib.Draw3D.Scene;
 
-/// <summary>
-/// An opt-in wireframe of a decal's painted shape - the circle, ring, pie or rectangle the material's SDF actually
-/// paints - traced as a closed world-space line lying on the decal's own plane, re-emitted every frame through the
-/// immediate layer (camera-facing, so it stays crisp and is never distorted by the decal's non-uniform scale); a
-/// placement / sizing aid, turned on to position and size a decal by eye, off to ship.
-/// <br/>
-/// It traces the shape rather than the projection volume deliberately: that volume is an oriented box whose footprint
-/// is the SDF's <i>bounding square</i> and whose sweep runs well above and below the painted surface, so for anything
-/// but a full-footprint circle it is far larger than the paint and centered where the paint is not, reading as stray
-/// lines crossing the view rather than as the decal.
-/// </summary>
 public sealed partial class SceneNode
 {
     private const float DefaultDecalShapeWidth = 0.03f;
 
-    // The immediate-layer style for the outline: a world-depth-tested line, so it reads as a real marking on the
-    // surface.
     private static readonly ImShapeStyle DecalShapeEdgeStyle = new();
 
-    // Reusable point buffer for the outline loops; render-thread only (see DecalOverlayService), so one per thread
-    // costs nothing and keeps the per-frame trace allocation-free.
+    // Per thread.
     [System.ThreadStatic]
     private static List<Vector3>? decalShapePath;
 
-    // The outline color (straight alpha); alpha 0 = the opt-in outline is off, driven by ShowDecalShape /
-    // HideDecalShape.
+    // Straight alpha. Alpha 0 = off.
     private Vector4 decalShapeColor;
 
     private float decalShapeWidth = DefaultDecalShapeWidth;
 
-    /// <summary>Whether the decal-shape outline is currently shown (its color's alpha &gt; 0).</summary>
+    /// <summary>Whether the decal-shape outline is currently shown.</summary>
     public bool HasDecalShape => decalShapeColor.W > 0f;
 
-    /// <summary>
-    /// Shows a wireframe outline tracing the shape this node's decal paints - the same SDF the
-    /// <see cref="MaterialDomain.GroundDecal"/> shader evaluates, so the line lands exactly on the painted edge; toggle
-    /// it back off with <see cref="HideDecalShape"/> (calling it again updates the color / width), fluent.<br/>
-    /// It follows the material's <see cref="Material.Shape"/> and <see cref="Material.ShapeParams"/> live, and mirrors
-    /// the decal's <see cref="DecalSurface"/> constraint, so it tracks the decal through any edit; no-op (logged) when
-    /// the node carries no decal material.
-    /// </summary>
-    /// <param name="color">Outline color, straight alpha (alpha &gt; 0 to be visible); null uses the decal's own color, made opaque.</param>
-    /// <param name="edgeWidth">Outline thickness in world units (default 0.03).</param>
+    /// <summary>Shows a world-space outline tracing the shape this node's decal paints, or logs and does nothing without a decal material. Fluent.</summary>
+    /// <param name="color">Outline color in straight alpha, or null for the decal's own color made opaque.</param>
+    /// <param name="edgeWidth">Outline thickness in world units.</param>
+    /// <returns>This node.</returns>
     public SceneNode ShowDecalShape(Vector4? color = null, float edgeWidth = DefaultDecalShapeWidth)
     {
         if (Renderer?.Material is not { Domain: MaterialDomain.GroundDecal } decalMat)
@@ -67,17 +46,15 @@ public sealed partial class SceneNode
         return this;
     }
 
-    /// <summary>Hides the decal-shape outline, if shown; fluent.</summary>
+    /// <summary>Hides the decal-shape outline, if shown. Fluent.</summary>
     public SceneNode HideDecalShape()
     {
         decalShapeColor = default;
         if (!HasDecalVolume)
-            DecalOverlayService.Unregister(this); // the volume box may still need the per-frame slot
+            DecalOverlayService.Unregister(this); // the volume box may still need the slot
         return this;
     }
 
-    // Stops the decal-shape outline and drops the node from the service when nothing else needs it (called on
-    // destroy).
     private void ReleaseDecalShape()
     {
         if (decalShapeColor.W <= 0f)
@@ -88,9 +65,7 @@ public sealed partial class SceneNode
             DecalOverlayService.Unregister(this);
     }
 
-    // Emits this node's decal-shape outline into the immediate layer for this frame; render-thread only, driven off
-    // OnRenderOverlay by DecalOverlayService (the opt-in path) or by TraceDecalShapes (wireframe mode), reading the
-    // shape and world matrix under the graph lock and skipping a destroyed, hidden, or no-longer-decal node.
+    // Render thread. Force draws a node that did not opt in.
     internal void DrawDecalShapeEdges(ImDraw3D im, bool force = false)
     {
         Vector4 color;
@@ -125,10 +100,9 @@ public sealed partial class SceneNode
         }
     }
 
-    // A decal color at full alpha - the outline's default, so it reads as the decal it traces.
     private static Vector4 OpaqueOf(Vector4 color) => new(color.X, color.Y, color.Z, 1f);
 
-    // Effective visibility: this node and every ancestor is visible; caller holds GraphLock.
+    // Caller holds GraphLock.
     private bool IsEffectivelyVisibleNoLock()
     {
         for (var n = this; n != null; n = n.parent)
