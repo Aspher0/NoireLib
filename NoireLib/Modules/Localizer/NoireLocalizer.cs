@@ -1,5 +1,6 @@
 using Dalamud.Bindings.ImGui;
-using Dalamud.Game;
+using Dalamud.Utility;
+using Lumina.Data;
 using Newtonsoft.Json;
 using NoireLib.Core.Modules;
 using NoireLib.EventBus;
@@ -1478,12 +1479,21 @@ public class NoireLocalizer : NoireModuleBase<NoireLocalizer, LocalizerConfigIns
 
     private string ResolveGameClientLocale()
     {
-        return NoireService.ClientState?.ClientLanguage switch
+        if (NoireService.ClientState is not { } clientState)
+            return DefaultLocale;
+
+        // Korean and Chinese exist only in the regional Dalamud builds, whose ToLumina knows them.
+        var language = SafeExecutor.ExecuteSafely(() => clientState.ClientLanguage.ToLumina(), Language.None);
+
+        return language switch
         {
-            ClientLanguage.English => "en-US",
-            ClientLanguage.French => "fr-FR",
-            ClientLanguage.German => "de-DE",
-            ClientLanguage.Japanese => "ja-JP",
+            Language.English => "en-US",
+            Language.French => "fr-FR",
+            Language.German => "de-DE",
+            Language.Japanese => "ja-JP",
+            Language.Korean => "ko-KR",
+            Language.ChineseSimplified => "zh-CN",
+            Language.ChineseTraditional or Language.TraditionalChinese => "zh-TW",
             _ => DefaultLocale,
         };
     }

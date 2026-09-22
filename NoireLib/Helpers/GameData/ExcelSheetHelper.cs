@@ -1,5 +1,6 @@
 using Dalamud.Game;
 using Lumina.Excel;
+using Lumina.Excel.Exceptions;
 using NoireLib.Helpers.ObjectExtensions;
 using System;
 using System.Collections.Concurrent;
@@ -20,7 +21,17 @@ public static class ExcelSheetHelper
     {
         foreach (var lang in Enum.GetValues<ClientLanguage>())
         {
-            var sheet = NoireService.DataManager.GetExcelSheet<T>(lang);
+            ExcelSheet<T>? sheet;
+            try
+            {
+                sheet = NoireService.DataManager.GetExcelSheet<T>(lang);
+            }
+            catch (UnsupportedLanguageException)
+            {
+                // A regional Dalamud that does not remap languages throws for one the installed client does not ship.
+                continue;
+            }
+
             if (sheet != null)
                 Sheets[(typeof(T), lang)] = sheet;
         }
@@ -29,7 +40,7 @@ public static class ExcelSheetHelper
     /// <summary>The Excel sheet of a type and language, loaded and cached on first use.</summary>
     /// <typeparam name="T">The Excel row type.</typeparam>
     /// <param name="lang">The client language, or the current one when null.</param>
-    /// <returns>The sheet, or null when not found.</returns>
+    /// <returns>The sheet, or null when not found or when the installed client ships no data in that language.</returns>
     public static ExcelSheet<T>? GetSheet<T>(ClientLanguage? lang = null) where T : struct, IExcelRow<T>
     {
         var language = lang.HasValue ? lang.Value : NoireService.ClientState.ClientLanguage;
@@ -119,7 +130,7 @@ public static class ExcelSheetHelper
     /// </summary>
     /// <typeparam name="T">The Excel subrow type.</typeparam>
     /// <param name="lang">The client language, or the current one when null.</param>
-    /// <returns>The sheet, or null when not found.</returns>
+    /// <returns>The sheet, or null when not found or when the installed client ships no data in that language.</returns>
     public static SubrowExcelSheet<T>? GetSubrowSheet<T>(ClientLanguage? lang = null) where T : struct, IExcelSubrow<T>
     {
         var language = lang ?? NoireService.ClientState.ClientLanguage;
@@ -127,7 +138,16 @@ public static class ExcelSheetHelper
         if (SubrowSheets.TryGetValue((typeof(T), language), out var cached))
             return cached as SubrowExcelSheet<T>;
 
-        var sheet = NoireService.DataManager.GetSubrowExcelSheet<T>(language);
+        SubrowExcelSheet<T>? sheet;
+        try
+        {
+            sheet = NoireService.DataManager.GetSubrowExcelSheet<T>(language);
+        }
+        catch (UnsupportedLanguageException)
+        {
+            return null;
+        }
+
         if (sheet == null)
             return null;
 

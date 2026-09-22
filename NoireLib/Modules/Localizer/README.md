@@ -158,7 +158,7 @@ The `DefaultLocaleSource` enum controls how the default locale is resolved:
 - `Custom` Uses the locale set via `SetDefaultLocale()`, or the `defaultLocale` constructor argument when none has been
 set. See [Default locale precedence](#default-locale-precedence).
 - `Windows` Uses the current Windows UI culture (`CultureInfo.CurrentUICulture`).
-- `GameClient` Maps the Dalamud game client language to a locale (`en-US`, `fr-FR`, `de-DE`, `ja-JP`).
+- `GameClient` Maps the Dalamud game client language to a locale (`en-US`, `fr-FR`, `de-DE`, `ja-JP`, and `ko-KR`, `zh-CN`, `zh-TW` on the Korean and Chinese clients).
 
 ```csharp
 // Explicit custom default

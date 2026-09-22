@@ -79,7 +79,7 @@ public static class TextCommandHelper
     /// <param name="command">The command as spelled in <paramref name="sourceLanguage"/>, with or without its slash.</param>
     /// <param name="targetLanguage">The language to rewrite into, or null for the client's own.</param>
     /// <param name="sourceLanguage">The language the command is written in.</param>
-    /// <returns>The command in the target language, or null when the source language knows no such command.</returns>
+    /// <returns>The command in the target language, or null when the source language knows no such command or the installed client ships no data in it.</returns>
     public static string? Localize(
         string command,
         ClientLanguage? targetLanguage = null,
