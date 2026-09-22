@@ -23,6 +23,7 @@ internal sealed unsafe class RenderStats : IDisposable
     public long ImCommandsDropped;
     public long GpuCameraFrames;
     public long ControlCameraFrames;
+    public long CameraRejectedAtUse;
 
     public int DrawCalls;
     public int Instances;
@@ -149,6 +150,7 @@ internal sealed unsafe class RenderStats : IDisposable
         ImCommandsDropped = 0;
         GpuCameraFrames = 0;
         ControlCameraFrames = 0;
+        CameraRejectedAtUse = 0;
     }
 
     public void Dispose()

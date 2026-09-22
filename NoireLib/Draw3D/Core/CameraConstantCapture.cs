@@ -924,6 +924,13 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
                 statUntrackedCaptures++;
             }
 
+            // Garbage uploads are refused whatever the reference.
+            if (!IsCameraScaled(in vp))
+            {
+                statValidationFails++;
+                return;
+            }
+
             // Environment probes and shadow cascades share this byte width every frame. Their view shape rejects them.
             if (hasCaptureRefShape)
             {
@@ -1339,9 +1346,36 @@ internal sealed unsafe class CameraConstantCapture : IDisposable
         }
     }
 
+    // A camera's X, Y and W columns are a focal scale and a unit axis, and its jitter is a fraction of a pixel.
+    // Some uploads at the locked offset carry 1e20 and more there and still reached the commit, which only asked for
+    // an invertible matrix; this refuses them at capture and at commit, whatever the reference.
+    internal static bool IsCameraScaled(in Matrix4x4 m)
+    {
+        var c1 = new Vector3(m.M11, m.M21, m.M31);
+        var c2 = new Vector3(m.M12, m.M22, m.M32);
+        var c4 = new Vector3(m.M14, m.M24, m.M34);
+        var w = c4.Length();
+        if (!float.IsFinite(w + c1.X + c1.Y + c1.Z + c2.X + c2.Y + c2.Z + m.M41 + m.M42 + m.M44))
+            return false;
+
+        if (c1.Length() > MaxFocalScale || c2.Length() > MaxFocalScale || w > MaxFocalScale)
+            return false;
+
+        if (w < 1e-4f)
+            return true; // orthographic: no jitter term to bound
+
+        return MathF.Abs(Vector3.Dot(c1, c4)) / (w * w) <= MaxJitterNdc && MathF.Abs(Vector3.Dot(c2, c4)) / (w * w) <= MaxJitterNdc;
+    }
+
+    private const float MaxFocalScale = 1e3f;
+    private const float MaxJitterNdc = 0.05f;
+
     // A matrix invertible before the reversed-Z rebuild can be singular after it.
     private static bool IsUsableCamera(in Matrix4x4 m, float nearPlane)
     {
+        if (!IsCameraScaled(in m))
+            return false;
+
         var sum = MathF.Abs(m.M11) + MathF.Abs(m.M22) + MathF.Abs(m.M41) + MathF.Abs(m.M42) + MathF.Abs(m.M44);
         if (!float.IsFinite(sum) || sum <= 1e-6f)
             return false;

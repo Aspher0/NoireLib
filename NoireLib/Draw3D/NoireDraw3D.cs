@@ -55,11 +55,14 @@ public static unsafe partial class NoireDraw3D
     private static Compositor? compositor;
     private static TemporalResolver? temporalResolver;
     private const int JitterGraceFrames = 16; // an 8-phase cycle can land on its centre
+    private const float MaxJitterPixels = 4f;
+    private const float MinJitterNdc = 1e-5f; // float noise without jitter measured at 5e-8; a real jitter is ~1e-3
     private static int framesSinceJitter = int.MaxValue / 2;
     private static RenderTarget? sceneRt;
     private static RenderTarget? outlineMaskRt;
     private static RenderTarget? outlineVisRt;  // r = worldVisible per silhouette pixel
     private static DepthTarget? privateDepth;
+    private static DepthTarget? layerDepth; // private depth plus translucent items, for the temporal resolve
     private static RenderTarget? worldHeightRt; // R32F, read only by HighestOnly decals
     private const uint WorldHeightResolution = 1024; // texels per side over the ~80m region
     private static SceneDepth? sceneDepth;
@@ -704,6 +707,8 @@ public static unsafe partial class NoireDraw3D
             outlineVisRt = null;
             privateDepth?.Dispose();
             privateDepth = null;
+            layerDepth?.Dispose();
+            layerDepth = null;
             worldHeightRt?.Dispose();
             worldHeightRt = null;
             worldCollision?.Mesh?.Dispose();
@@ -930,13 +935,32 @@ public static unsafe partial class NoireDraw3D
             // Composited after the game's TAA resolve.
             var removedJitter = Vector2.Zero;
             if (usedGpuCamera && Diagnostics.RemoveTemporalJitter)
-                viewProj = Core.CameraConstantCapture.RemoveTemporalJitter(in viewProj, out removedJitter);
+            {
+                var centred = Core.CameraConstantCapture.RemoveTemporalJitter(in viewProj, out removedJitter);
+
+                // TAA jitter is sub-pixel. More than a few pixels means the matrix is not the main camera.
+                var maxJitter = MaxJitterPixels * 2f / Math.Max(Math.Min(backBuffer.Width, backBuffer.Height), 1f);
+                if (!float.IsFinite(removedJitter.X) || !float.IsFinite(removedJitter.Y)
+                    || MathF.Abs(removedJitter.X) > maxJitter || MathF.Abs(removedJitter.Y) > maxJitter)
+                {
+                    stats.CameraRejectedAtUse++;
+                    usedGpuCamera = false;
+                    removedJitter = Vector2.Zero;
+                    viewProj = fallbackViewProj;
+                    if (cam.HasControlViewProj)
+                        stats.ControlCameraFrames++;
+                }
+                else
+                {
+                    viewProj = centred;
+                }
+            }
 
             viewProj = Core.CameraConstantCapture.ApplyPixelOffset(in viewProj, Diagnostics.GamePixelOffset, new Vector2(backBuffer.Width, backBuffer.Height));
 
             // The game's depth is still jittered.
             Diagnostics.LastRemovedJitter = removedJitter;
-            framesSinceJitter = removedJitter.LengthSquared() > 1e-14f ? 0 : Math.Min(framesSinceJitter + 1, int.MaxValue / 2);
+            framesSinceJitter = removedJitter.LengthSquared() > MinJitterNdc * MinJitterNdc ? 0 : Math.Min(framesSinceJitter + 1, int.MaxValue / 2);
             DepthSampleJitterUv = new Vector4(removedJitter.X * 0.5f, -removedJitter.Y * 0.5f, 0f, 0f);
         }
         else if (cam.HasControlViewProj)
@@ -1218,33 +1242,28 @@ public static unsafe partial class NoireDraw3D
     {
         // Without jitter, accumulation only adds lag.
         var raw = sceneRt!.Srv;
-        if (!Diagnostics.TemporalStabilization || !lastFrameValid || privateDepth == null || framesSinceJitter > JitterGraceFrames)
+        if (!Diagnostics.TemporalStabilization || !lastFrameValid || scenePass == null || framesSinceJitter > JitterGraceFrames)
         {
             temporalResolver?.Reset();
             return raw;
         }
 
-        // Cleared, the private depth reads as empty and decal pixels reproject through the game's depth.
-        if (scenePass is not { LastPrivateDepthWritten: true })
-        {
-            if (!privateDepth.EnsureSize(device, sceneRt.Width, sceneRt.Height))
-                return raw;
-
-            ctx->ClearDepthStencilView(privateDepth.Dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0f, 0);
-        }
-
-        if (privateDepth.Srv == null)
-            return raw;
-
         var pipeline = shaderLibrary!.GetTemporalResolve(device);
         if (pipeline == null)
+            return raw;
+
+        // Translucent items write no private depth; without their own, they would reproject through the game surface
+        // in front of or behind them.
+        layerDepth ??= new DepthTarget();
+        if (!scenePass.RenderLayerDepth(device, ctx, layerDepth, sceneRt.Width, sceneRt.Height, lastFrame.ViewProj, shaderLibrary, stateCache!)
+            || layerDepth.Srv == null)
             return raw;
 
         temporalResolver ??= new TemporalResolver();
         var gameDepthSrv = lastFrame.HasDepth && sceneDepth != null ? sceneDepth.Srv : null;
         var gameDepthMap = new Vector4(lastDepthMap.X, lastDepthMap.Y, lastFrame.NearPlane, 1f);
         var gameDepthUv = new Vector4(lastFrame.DepthUvScale.X, lastFrame.DepthUvScale.Y, DepthSampleJitterUv.X, DepthSampleJitterUv.Y);
-        var resolved = temporalResolver.Resolve(device, ctx, pipeline, stateCache!, raw, privateDepth.Srv, gameDepthSrv, gameDepthMap, gameDepthUv,
+        var resolved = temporalResolver.Resolve(device, ctx, pipeline, stateCache!, raw, layerDepth.Srv, gameDepthSrv, gameDepthMap, gameDepthUv,
             sceneRt.Width, sceneRt.Height, lastFrame.ViewProj, lastFrame.InvViewProj, Diagnostics.TemporalWeight);
         return resolved != null ? resolved : raw;
     }
@@ -2192,7 +2211,7 @@ public static unsafe partial class NoireDraw3D
                 DisposedAssetDraws = 0, ImCommandsDropped = 0, DrawCalls = 0, Instances = 0, Triangles = 0, Batches = 0,
                 ObjectCbUpdates = 0, CulledItems = 0, VisibleItems = 0, ProtectRects = 0, DepthAvailable = false, UsedFallbackCamera = false,
                 DepthSource = "none", SceneGpuMs = 0, CompositeGpuMs = 0,
-                CameraCapture = "not installed", GpuCameraFrames = 0, ControlCameraFrames = 0, UsedGpuCamera = false,
+                CameraCapture = "not installed", GpuCameraFrames = 0, ControlCameraFrames = 0, CameraRejectedAtUse = 0, UsedGpuCamera = false,
                 LastPickMicros = 0, LastPickNodes = 0, LastPickRefined = 0,
             };
         }
@@ -2226,6 +2245,7 @@ public static unsafe partial class NoireDraw3D
             CameraCapture = cameraCapture?.Describe() ?? "not installed",
             GpuCameraFrames = s.GpuCameraFrames,
             ControlCameraFrames = s.ControlCameraFrames,
+            CameraRejectedAtUse = s.CameraRejectedAtUse,
             UsedGpuCamera = s.UsedGpuCamera,
             LastPickMicros = s.PickMicros,
             LastPickNodes = s.PickNodes,

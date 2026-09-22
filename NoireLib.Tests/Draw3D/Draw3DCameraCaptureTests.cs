@@ -213,6 +213,48 @@ public class Draw3DCameraCaptureTests
     }
 
     [Fact]
+    public void IsCameraScaled_AcceptsRealCameras()
+    {
+        var view = Matrix4x4.CreateLookAt(new Vector3(4800f, 120f, -5100f), new Vector3(4790f, 118f, -5095f), Vector3.UnitY);
+        var jittered = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 3f, 16f / 9f, 0.1f, 1000f);
+        jittered.M31 = 0.5f * 2f / 1920f;
+        jittered.M32 = -0.5f * 2f / 1080f;
+        var telephoto = Matrix4x4.CreatePerspectiveFieldOfView(MathF.PI / 90f, 16f / 9f, 0.1f, 1000f);
+        var shadow = Matrix4x4.CreateLookAt(new Vector3(50f, 100f, 20f), Vector3.Zero, Vector3.UnitY) * Matrix4x4.CreateOrthographic(80f, 80f, 1f, 500f);
+
+        CameraConstantCapture.IsCameraScaled(MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero)).Should().BeTrue();
+        CameraConstantCapture.IsCameraScaled(view * jittered).Should().BeTrue("half a pixel of jitter far from the origin");
+        CameraConstantCapture.IsCameraScaled(view * telephoto).Should().BeTrue("a two degree field of view");
+        CameraConstantCapture.IsCameraScaled(in shadow).Should().BeTrue("orthographic views are left to the shape check");
+    }
+
+    [Fact]
+    public void IsCameraScaled_RefusesTheGarbageUploadsSeenInGame()
+    {
+        // The in-game uploads read back as a jitter of 1e20 to 1e23 and focal terms of 1e24.
+        var reference = MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero);
+        var garbage = reference;
+        garbage.M11 += 3e22f * reference.M14;
+        garbage.M21 += 3e22f * reference.M24;
+        garbage.M31 += 3e22f * reference.M34;
+        CameraConstantCapture.IsCameraScaled(in garbage).Should().BeFalse();
+
+        var largeJitter = reference;
+        largeJitter.M11 += 0.2f * reference.M14;
+        largeJitter.M21 += 0.2f * reference.M24;
+        largeJitter.M31 += 0.2f * reference.M34;
+        CameraConstantCapture.IsCameraScaled(in largeJitter).Should().BeFalse("a fifth of the screen is no jitter");
+
+        var huge = reference;
+        huge.M11 = -6e24f;
+        CameraConstantCapture.IsCameraScaled(in huge).Should().BeFalse();
+
+        var notFinite = reference;
+        notFinite.M42 = float.NaN;
+        CameraConstantCapture.IsCameraScaled(in notFinite).Should().BeFalse();
+    }
+
+    [Fact]
     public void ViewShape_RejectsAnOrthographicShadowView()
     {
         var reference = MakeViewProj(new Vector3(10f, 5f, 10f), Vector3.Zero);

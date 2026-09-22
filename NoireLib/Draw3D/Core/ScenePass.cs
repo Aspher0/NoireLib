@@ -102,6 +102,11 @@ internal sealed unsafe class ScenePass : IDisposable
     private float maxOutlineWidth;
     private bool lastPrivateDepthWritten;
 
+    // Where this frame's dynamic geometry landed in the rings, for passes that replay it.
+    private bool lastHasDynamic;
+    private uint lastDynVbOffset;
+    private uint lastDynIbOffset;
+
     public bool HasOutlinedItems => hasOutlined;
 
     public int CountTopSurfaceDecals()
@@ -445,6 +450,10 @@ internal sealed unsafe class ScenePass : IDisposable
             }
         }
 
+        lastHasDynamic = hasDynamic;
+        lastDynVbOffset = dynVbOffset;
+        lastDynIbOffset = dynIbOffset;
+
         // DepthUv.zw must match the reversed-Z column rebuilt in NoireDraw3D.RenderMainScene.
         var frameData = new FrameCBData
         {
@@ -774,6 +783,97 @@ internal sealed unsafe class ScenePass : IDisposable
 
         foreach (var tex in KeyedTextures)
             tex.ReleaseSync();
+    }
+
+    // The nearest surface of the whole layer, translucent items included, for the temporal resolve to reproject
+    // through. Decals are left out: they lie on the game's surface and reproject through its depth. The caller holds
+    // the StateGuard.
+    public bool RenderLayerDepth(RenderDevice device, ID3D11DeviceContext* ctx, DepthTarget target, uint width, uint height, in Matrix4x4 viewProj, ShaderLibrary shaders, StateCache cache)
+    {
+        if (!collectingForMainPass || frameCb == null || objectCb == null || !target.EnsureSize(device, width, height) || target.Dsv == null)
+            return false;
+
+        var pipeline = shaders.GetOutlineMaskMesh(device);
+        if (pipeline == null)
+            return false;
+
+        var frameData = new FrameCBData { ViewProj = Matrix4x4.Transpose(viewProj) };
+        frameCb.UpdateConstant(ctx, in frameData);
+
+        ctx->OMSetRenderTargets(0, null, target.Dsv);
+        ctx->ClearDepthStencilView(target.Dsv, (uint)D3D11_CLEAR_FLAG.D3D11_CLEAR_DEPTH, 0f, 0);
+        var viewport = new D3D11_VIEWPORT { Width = width, Height = height, MaxDepth = 1f };
+        ctx->RSSetViewports(1, &viewport);
+        var scissor = new TerraFX.Interop.Windows.RECT { right = (int)width, bottom = (int)height };
+        ctx->RSSetScissorRects(1, &scissor);
+        ctx->OMSetDepthStencilState(cache.GetDepth(device, DepthKey.WriteGE), 0);
+        ctx->RSSetState(cache.GetRaster(device, RasterKey.TwoSided));
+
+        ctx->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY.D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx->IASetInputLayout(pipeline.Layout);
+        ctx->VSSetShader(pipeline.Vs, null, 0);
+        ctx->PSSetShader(null, null, 0);
+        var cb = frameCb.Buffer;
+        ctx->VSSetConstantBuffers(0, 1, &cb);
+        var ocb = objectCb.Buffer;
+        ctx->VSSetConstantBuffers(1, 1, &ocb);
+
+        Mesh? curMesh = null;
+        var dynBound = false;
+        for (var i = 0; i < itemCount; i++)
+        {
+            ref var item = ref items[i];
+            if (item.Mat.Domain == MaterialDomain.GroundDecal)
+                continue;
+
+            uint indexCount;
+            int startIndex;
+            if (item.Mesh != null)
+            {
+                var vb = item.Mesh.Vb;
+                if (vb == null)
+                    continue;
+
+                if (!ReferenceEquals(item.Mesh, curMesh))
+                {
+                    uint stride = (uint)sizeof(Vertex3D), offset = 0;
+                    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &offset);
+                    ctx->IASetIndexBuffer(item.Mesh.Ib, item.Mesh.IndexFormat, 0);
+                    curMesh = item.Mesh;
+                    dynBound = false;
+                }
+
+                indexCount = (uint)item.Mesh.IndexCount;
+                startIndex = 0;
+            }
+            else
+            {
+                if (!lastHasDynamic)
+                    continue;
+
+                if (!dynBound)
+                {
+                    var vb = dynVertexRing.Buffer;
+                    uint stride = (uint)sizeof(Vertex3D);
+                    var vbOffset = lastDynVbOffset;
+                    ctx->IASetVertexBuffers(0, 1, &vb, &stride, &vbOffset);
+                    ctx->IASetIndexBuffer(dynIndexRing.Buffer, DXGI_FORMAT.DXGI_FORMAT_R16_UINT, lastDynIbOffset);
+                    curMesh = null;
+                    dynBound = true;
+                }
+
+                indexCount = (uint)item.DynIndexCount;
+                startIndex = item.DynStartIndex;
+            }
+
+            var objData = new ObjectCBData { World = Matrix4x4.Transpose(item.World), InvWorld = Matrix4x4.Identity };
+            objectCb.UpdateConstant(ctx, in objData);
+            ctx->DrawIndexed(indexCount, (uint)startIndex, 0);
+        }
+
+        objectCbCacheValid = false;
+        ctx->OMSetRenderTargets(0, null, null);
+        return true;
     }
 
     // The caller holds the StateGuard.
