@@ -16,7 +16,6 @@ namespace NoireLib.Helpers;
 /// <param name="Entrance">The spot in front of the building's door where an arriving character is placed.</param>
 /// <param name="Placard">The plot's placard, or null for an apartment building.</param>
 /// <param name="ExitLanding">Where a character stepping out of the estate lands, or null for an apartment building.</param>
-/// <param name="Found">Whether the address resolved at all.</param>
 public readonly record struct HousingPlotLocation(
     uint District,
     int Ward,
@@ -27,8 +26,7 @@ public readonly record struct HousingPlotLocation(
     Vector3 Anchor,
     Vector3 Entrance,
     Vector3? Placard,
-    Vector3? ExitLanding,
-    bool Found = true)
+    Vector3? ExitLanding)
 {
     /// <summary>An address that resolved to nothing.</summary>
     public static HousingPlotLocation None => default;
