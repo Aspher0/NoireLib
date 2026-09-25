@@ -7,9 +7,9 @@
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
         <ImplicitUsings>disable</ImplicitUsings>
-        <Title>NoireLib.Client - NoireRemote and NoireWebsocket, both directions</Title>
+        <Title>NoireLib.Client - NoireRemote and NoireWebsocket</Title>
         <Authors>Aspher0</Authors>
-        <Description>The Dalamud-free half of NoireLib: the NoireRemote listener, the wire contract, endpoint discovery and the caller entry point, plus NoireWebsocket's four client transports (raw RFC 6455, server-sent events, long-polling and Socket.IO) and its WebSocket server. Reference this from a program that is not a plugin to host endpoints or sockets of your own, or to call and connect to a plugin's.</Description>
+        <Description>The external half of NoireLib providing the NoireRemote listener, the wire contract, endpoint discovery and the caller entry point, plus NoireWebsocket's four client transports (raw RFC 6455, server-sent events, long-polling and Socket.IO) and its WebSocket server.</Description>
         <Copyright>© 2026 Aspher0</Copyright>
         <RepositoryUrl>https://github.com/Aspher0/NoireLib</RepositoryUrl>
         <RepositoryType>git</RepositoryType>
